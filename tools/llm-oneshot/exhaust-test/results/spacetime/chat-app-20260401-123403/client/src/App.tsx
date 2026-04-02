@@ -15,8 +15,13 @@ function App() {
   const [selectedRoomId, setSelectedRoomId] = useState<bigint | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomIsPrivate, setNewRoomIsPrivate] = useState(false);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [error, setError] = useState('');
+
+  // Private room / invite UI state
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
+  const [inviteIdentityInput, setInviteIdentityInput] = useState('');
 
   // Scheduled message UI state
   const [showScheduler, setShowScheduler] = useState(false);
@@ -71,6 +76,9 @@ function App() {
         'SELECT * FROM message_edit',
         'SELECT * FROM room_permission',
         'SELECT * FROM thread_reply',
+        'SELECT * FROM room_invitation',
+        'SELECT * FROM room_activity',
+        'SELECT * FROM message_draft',
       ]);
   }, [conn, isActive]);
 
@@ -86,6 +94,14 @@ function App() {
   const [messageEdits] = useTable(tables.messageEdit);
   const [roomPermissions] = useTable(tables.roomPermission);
   const [threadReplies] = useTable(tables.threadReply);
+  const [roomInvitations] = useTable(tables.roomInvitation);
+  const [roomActivities] = useTable(tables.roomActivity);
+  const [messageDrafts] = useTable(tables.messageDraft);
+
+  // Draft save debounce ref
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track the last draft text we set from server (to avoid overwriting user's active typing)
+  const lastServerDraftRef = useRef<string>('');
 
   // Derived: my user record
   const myUser = myIdentity
@@ -186,6 +202,21 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Live draft sync: update messageInput when the server-side draft changes
+  // (handles cross-session sync — another tab saves a draft, this tab sees it)
+  useEffect(() => {
+    if (!selectedRoomId || !myIdentity) return;
+    const draft = messageDrafts.find(
+      d => d.roomId === selectedRoomId && d.userIdentity.toHexString() === myIdentity.toHexString()
+    );
+    const serverText = draft?.text ?? '';
+    // Only update if the server draft changed (not just a round-trip echo of our own save)
+    if (serverText !== lastServerDraftRef.current) {
+      lastServerDraftRef.current = serverText;
+      setMessageInput(serverText);
+    }
+  }, [messageDrafts, selectedRoomId, myIdentity]);
+
   // Auto-away: set status to 'away' after 5 minutes of inactivity
   const autoAwayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAutoAwayRef = useRef(false);
@@ -226,9 +257,36 @@ function App() {
   const handleCreateRoom = () => {
     if (!conn || !newRoomName.trim()) return;
     setError('');
-    conn.reducers.createRoom({ name: newRoomName.trim() });
+    conn.reducers.createRoom({ name: newRoomName.trim(), isPrivate: newRoomIsPrivate });
     setNewRoomName('');
+    setNewRoomIsPrivate(false);
     setShowCreateRoom(false);
+  };
+
+  const handleInviteUser = () => {
+    if (!conn || !selectedRoomId || !inviteIdentityInput.trim()) return;
+    try {
+      conn.reducers.inviteToRoom({ roomId: selectedRoomId, inviteeIdentity: Identity.fromString(inviteIdentityInput.trim()) });
+      setInviteIdentityInput('');
+      setShowInvitePanel(false);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleAcceptInvitation = (invitationId: bigint) => {
+    if (!conn) return;
+    conn.reducers.acceptInvitation({ invitationId });
+  };
+
+  const handleDeclineInvitation = (invitationId: bigint) => {
+    if (!conn) return;
+    conn.reducers.declineInvitation({ invitationId });
+  };
+
+  const handleOpenDm = (targetIdentityHex: string) => {
+    if (!conn) return;
+    conn.reducers.openDm({ targetIdentity: Identity.fromString(targetIdentityHex) });
   };
 
   const handleJoinRoom = (roomId: bigint) => {
@@ -243,12 +301,28 @@ function App() {
   };
 
   const handleSelectRoom = (roomId: bigint) => {
+    // Save current draft for the room we're leaving
+    if (conn && selectedRoomId !== null) {
+      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+      conn.reducers.saveDraft({ roomId: selectedRoomId, text: messageInput });
+    }
+    // Load draft for the new room synchronously from cached table data
+    const draft = myIdentity
+      ? messageDrafts.find(d => d.roomId === roomId && d.userIdentity.toHexString() === myIdentity.toHexString())
+      : undefined;
+    const draftText = draft?.text ?? '';
+    lastServerDraftRef.current = draftText;
+    setMessageInput(draftText);
     setSelectedRoomId(roomId);
   };
 
   const handleSendMessage = () => {
     if (!conn || !selectedRoomId || !messageInput.trim()) return;
     conn.reducers.sendMessage({ roomId: selectedRoomId, text: messageInput.trim(), ttlSecs: BigInt(ephemeralDuration) });
+    // Clear draft
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    conn.reducers.saveDraft({ roomId: selectedRoomId, text: '' });
+    lastServerDraftRef.current = '';
     setMessageInput('');
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     conn.reducers.setTyping({ roomId: selectedRoomId, isTyping: false });
@@ -258,6 +332,11 @@ function App() {
   const handleMessageInput = (text: string) => {
     setMessageInput(text);
     if (!conn || !selectedRoomId) return;
+    // Debounced draft save (300ms)
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      conn.reducers.saveDraft({ roomId: selectedRoomId, text });
+    }, 300);
     const now2 = Date.now();
     if (now2 - lastTypingSentRef.current > 1500) {
       conn.reducers.setTyping({ roomId: selectedRoomId, isTyping: true });
@@ -467,46 +546,70 @@ function App() {
     );
   }
 
-  // Registration screen
+  // If we have no user record yet (shouldn't happen with auto-create, but guard during initial load)
   if (!myUser) {
     return (
-      <div className="register-screen">
-        <div className="register-card">
-          <div className="logo">⚡ SpacetimeDB Chat</div>
-          <h2>Set your display name</h2>
-          {error && <div className="error">{error}</div>}
-          <input
-            className="input"
-            type="text"
-            placeholder="Enter your name..."
-            value={nameInput}
-            onChange={e => setNameInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleRegister()}
-            maxLength={32}
-            autoFocus
-          />
-          <button className="btn btn-primary" onClick={handleRegister} disabled={!nameInput.trim()}>
-            Join Chat
-          </button>
-        </div>
+      <div className="loading">
+        <div className="spinner" />
+        <span>Connecting to SpacetimeDB...</span>
       </div>
     );
   }
 
-  // Sorted rooms: joined first, then others
-  const allRooms = [...rooms].sort((a, b) => {
-    const aJoined = joinedRoomIds.has(a.id);
-    const bJoined = joinedRoomIds.has(b.id);
-    if (aJoined && !bJoined) return -1;
-    if (!aJoined && bJoined) return 1;
-    return a.id < b.id ? -1 : 1;
-  });
+  // Pending invitations for current user
+  const myPendingInvitations = myIdentity
+    ? roomInvitations.filter(
+        inv => inv.inviteeIdentity.toHexString() === myIdentity.toHexString() && inv.status === 'pending'
+      )
+    : [];
+
+  // Sorted rooms: public rooms + private rooms where user is member
+  const allRooms = [...rooms]
+    .filter(r => !r.isPrivate || joinedRoomIds.has(r.id))
+    .sort((a, b) => {
+      const aJoined = joinedRoomIds.has(a.id);
+      const bJoined = joinedRoomIds.has(b.id);
+      if (aJoined && !bJoined) return -1;
+      if (!aJoined && bJoined) return 1;
+      return a.id < b.id ? -1 : 1;
+    });
 
   const selectedRoom = selectedRoomId !== null ? rooms.find(r => r.id === selectedRoomId) : undefined;
   const onlineUsers = users.filter(u => u.online);
 
   return (
     <div className="app">
+      {/* Anonymous registration banner */}
+      {myUser.isAnonymous && (
+        <div className="anon-banner">
+          <span className="anon-banner-text">
+            You are chatting as <strong>{myUser.name}</strong> (guest).
+            Register to set a permanent name and keep your history.
+          </span>
+          <div className="anon-banner-form">
+            {error && <span className="anon-banner-error">{error}</span>}
+            <input
+              className="input input-sm anon-name-input"
+              type="text"
+              placeholder="Choose a display name..."
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleRegister()}
+              maxLength={32}
+            />
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={handleRegister}
+              disabled={!nameInput.trim()}
+            >
+              Register
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Content row: sidebar + main + thread panel */}
+      <div className="app-content-row">
       {/* Sidebar */}
       <div className="sidebar">
         <div className="sidebar-header">
@@ -552,11 +655,19 @@ function App() {
                 maxLength={64}
                 autoFocus
               />
+              <label className="private-room-toggle">
+                <input
+                  type="checkbox"
+                  checked={newRoomIsPrivate}
+                  onChange={e => setNewRoomIsPrivate(e.target.checked)}
+                />
+                <span>Private room</span>
+              </label>
               <div className="create-room-actions">
                 <button className="btn btn-sm btn-primary" onClick={handleCreateRoom} disabled={!newRoomName.trim()}>
                   Create
                 </button>
-                <button className="btn btn-sm" onClick={() => { setShowCreateRoom(false); setNewRoomName(''); }}>
+                <button className="btn btn-sm" onClick={() => { setShowCreateRoom(false); setNewRoomName(''); setNewRoomIsPrivate(false); }}>
                   Cancel
                 </button>
               </div>
@@ -568,14 +679,19 @@ function App() {
               const isJoined = joinedRoomIds.has(room.id);
               const unread = isJoined ? getUnreadCount(room.id) : 0;
               const isSelected = selectedRoomId === room.id;
+              const activity = roomActivities.find(a => a.roomId === room.id);
+              const activityLevel = activity?.activityLevel ?? '';
               return (
                 <div
                   key={String(room.id)}
                   className={`room-item ${isSelected ? 'room-item-selected' : ''} ${!isJoined ? 'room-item-unjoined' : ''}`}
                   onClick={() => isJoined && handleSelectRoom(room.id)}
                 >
-                  <span className="room-icon">#</span>
+                  <span className="room-icon">{room.isDm ? '💬' : room.isPrivate ? '🔒' : '#'}</span>
                   <span className="room-name">{room.name}</span>
+                  {room.isPrivate && !room.isDm && <span className="private-badge">private</span>}
+                  {activityLevel === 'hot' && <span className="activity-badge activity-hot" title={`${activity?.recentMessageCount ?? 0} messages in last 2 min`}>🔥 Hot</span>}
+                  {activityLevel === 'active' && <span className="activity-badge activity-active" title={`${activity?.recentMessageCount ?? 0} messages in last 5 min`}>⚡ Active</span>}
                   <div className="room-actions">
                     {unread > 0 && <span className="unread-badge">{unread}</span>}
                     {isJoined ? (
@@ -605,6 +721,33 @@ function App() {
           </div>
         </div>
 
+        {/* Pending invitations section */}
+        {myPendingInvitations.length > 0 && (
+          <div className="sidebar-section">
+            <div className="sidebar-section-header">
+              <span>Invitations <span className="invite-count-badge">{myPendingInvitations.length}</span></span>
+            </div>
+            <div className="invitation-list">
+              {myPendingInvitations.map(inv => {
+                const invRoom = rooms.find(r => r.id === inv.roomId);
+                const inviter = users.find(u => u.identity.toHexString() === inv.inviterIdentity.toHexString());
+                return (
+                  <div key={String(inv.id)} className="invitation-item">
+                    <div className="invitation-info">
+                      <span className="invitation-room">{invRoom?.name ?? 'Unknown room'}</span>
+                      <span className="invitation-from">from {inviter?.name ?? 'Unknown'}</span>
+                    </div>
+                    <div className="invitation-actions">
+                      <button className="btn btn-sm btn-success" onClick={() => handleAcceptInvitation(inv.id)}>Accept</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeclineInvitation(inv.id)}>Decline</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Users section — all users with presence */}
         <div className="sidebar-section sidebar-section-users">
           <div className="sidebar-section-header">
@@ -623,7 +766,7 @@ function App() {
                   <span className={statusDotClass(u)} />
                   <div className="user-item-info">
                     <span className={isMe ? 'user-name user-name-me' : 'user-name'}>
-                      {u.name}{isMe ? ' (you)' : ''}
+                      {u.name}{isMe ? ' (you)' : ''}{u.isAnonymous ? <span className="anon-badge"> anon</span> : null}
                     </span>
                     {!u.online && u.lastActiveAt && (
                       <span className="user-last-active">{lastActiveText(u.lastActiveAt)}</span>
@@ -632,6 +775,15 @@ function App() {
                       <span className="user-status-label">{statusLabel(u.status)}</span>
                     )}
                   </div>
+                  {!isMe && (
+                    <button
+                      className="btn-icon btn-icon-sm dm-btn"
+                      onClick={() => handleOpenDm(u.identity.toHexString())}
+                      title={`DM ${u.name}`}
+                    >
+                      💬
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -656,6 +808,15 @@ function App() {
                   title="Manage members"
                 >
                   ⚙ Manage
+                </button>
+              )}
+              {amIAdmin && selectedRoom.isPrivate && (
+                <button
+                  className="btn btn-sm invite-btn"
+                  onClick={() => setShowInvitePanel(p => !p)}
+                  title="Invite user"
+                >
+                  + Invite
                 </button>
               )}
             </div>
@@ -709,6 +870,39 @@ function App() {
                       </div>
                     );
                   })}
+              </div>
+            )}
+
+            {/* Invite panel (admin of private rooms) */}
+            {amIAdmin && selectedRoom.isPrivate && showInvitePanel && (
+              <div className="invite-panel">
+                <div className="invite-panel-title">Invite User by Identity</div>
+                <div className="invite-panel-row">
+                  <select
+                    className="input input-sm invite-select"
+                    value={inviteIdentityInput}
+                    onChange={e => setInviteIdentityInput(e.target.value)}
+                  >
+                    <option value="">Select user...</option>
+                    {users
+                      .filter(u => u.identity.toHexString() !== myIdentity?.toHexString())
+                      .filter(u => !roomMembers.some(m => m.roomId === selectedRoomId && m.userIdentity.toHexString() === u.identity.toHexString()))
+                      .map(u => (
+                        <option key={u.identity.toHexString()} value={u.identity.toHexString()}>
+                          {u.name}
+                        </option>
+                      ))
+                    }
+                  </select>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handleInviteUser}
+                    disabled={!inviteIdentityInput}
+                  >
+                    Send Invite
+                  </button>
+                  <button className="btn btn-sm" onClick={() => setShowInvitePanel(false)}>Cancel</button>
+                </div>
               </div>
             )}
 
@@ -1031,6 +1225,7 @@ function App() {
           </div>
         );
       })()}
+      </div>{/* end app-content-row */}
     </div>
   );
 }

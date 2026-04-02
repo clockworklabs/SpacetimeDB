@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface User { id: number; name: string; }
+interface User { id: number; name: string; isAnonymous?: boolean; }
 interface UserStatus { userId: number; status: string; lastActiveAt: string; }
 
 interface Room {
@@ -12,6 +12,19 @@ interface Room {
   memberIds: number[];
   adminIds: number[];
   unreadCount: number;
+  isPrivate: boolean;
+  isDm: boolean;
+  activityLevel?: string; // 'hot' | 'active' | ''
+}
+
+interface Invitation {
+  id: number;
+  roomId: number;
+  roomName: string;
+  inviterId: number;
+  inviterName: string;
+  status: string;
+  createdAt: string;
 }
 
 interface Reaction {
@@ -85,6 +98,9 @@ export default function App() {
   });
   const [nameInput, setNameInput] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registerInput, setRegisterInput] = useState('');
+  const [registerError, setRegisterError] = useState('');
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [currentRoomId, setCurrentRoomId] = useState<number | null>(null);
@@ -106,7 +122,13 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
 
   const [newRoomName, setNewRoomName] = useState('');
+  const [isPrivateRoom, setIsPrivateRoom] = useState(false);
   const [messageInput, setMessageInput] = useState('');
+
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [inviteError, setInviteError] = useState('');
 
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [editInput, setEditInput] = useState('');
@@ -120,6 +142,9 @@ export default function App() {
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadInput, setThreadInput] = useState('');
   const threadMessagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [drafts, setDrafts] = useState<Map<number, string>>(new Map());
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -295,6 +320,14 @@ export default function App() {
       });
     });
 
+    socket.on('invitation:received', (inv: Invitation) => {
+      setInvitations(prev => prev.find(i => i.id === inv.id) ? prev : [...prev, inv]);
+    });
+
+    socket.on('room:activity', ({ roomId, level }: { roomId: number; level: string }) => {
+      setRooms(prev => prev.map(r => r.id === roomId ? { ...r, activityLevel: level } : r));
+    });
+
     socket.on('user:status', (status: UserStatus) => {
       setUserStatuses(prev => {
         const next = new Map(prev);
@@ -304,6 +337,30 @@ export default function App() {
       if (status.userId === currentUser.id) {
         setMyStatus(status.status);
       }
+    });
+
+    socket.on('draft:update', ({ roomId, content }: { roomId: number; content: string }) => {
+      setDrafts(prev => {
+        const next = new Map(prev);
+        if (content === '') {
+          next.delete(roomId);
+        } else {
+          next.set(roomId, content);
+        }
+        return next;
+      });
+      // Apply to input if we're currently in that room and input matches old draft
+      setCurrentRoomId(curr => {
+        if (curr === roomId) {
+          setMessageInput(prev => {
+            // Only overwrite if input is empty or exactly the old draft value
+            const old = prev;
+            if (old === '' || old === content) return content;
+            return prev;
+          });
+        }
+        return curr;
+      });
     });
 
     return () => {
@@ -337,10 +394,16 @@ export default function App() {
     fetch(`/api/rooms?userId=${currentUser.id}`).then(r => r.json()).then(setRooms);
     fetch('/api/users/online').then(r => r.json()).then(setOnlineUserIds);
     fetch(`/api/users/${currentUser.id}/scheduled`).then(r => r.json()).then(setScheduledMessages);
+    fetch(`/api/users/${currentUser.id}/invitations`).then(r => r.json()).then(setInvitations);
     fetch('/api/users/statuses').then(r => r.json()).then((statuses: UserStatus[]) => {
       const map = new Map<number, UserStatus>();
       for (const s of statuses) map.set(s.userId, s);
       setUserStatuses(map);
+    });
+    fetch(`/api/users/${currentUser.id}/drafts`).then(r => r.json()).then((draftList: { roomId: number; content: string }[]) => {
+      const map = new Map<number, string>();
+      for (const d of draftList) if (d.content) map.set(d.roomId, d.content);
+      setDrafts(map);
     });
   }, [currentUser]);
 
@@ -372,6 +435,17 @@ export default function App() {
       if (autoAwayTimerRef.current) clearTimeout(autoAwayTimerRef.current);
     };
   }, [currentUser]);
+
+  // ── Load draft when switching rooms ──────────────────────────────────────────
+  useEffect(() => {
+    if (!currentRoomId) return;
+    // Cancel any pending draft save for the previous room
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+    }
+    setMessageInput(drafts.get(currentRoomId) ?? '');
+  }, [currentRoomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load messages when switching rooms ────────────────────────────────────────
   useEffect(() => {
@@ -433,6 +507,47 @@ export default function App() {
     }
   }
 
+  async function handleJoinAsGuest() {
+    setLoginError('');
+    try {
+      const res = await fetch('/api/users/anonymous', { method: 'POST' });
+      if (!res.ok) { setLoginError('Failed to create guest session'); return; }
+      const user: User = await res.json();
+      localStorage.setItem('chat_user', JSON.stringify(user));
+      setCurrentUser(user);
+    } catch {
+      setLoginError('Connection error');
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentUser) return;
+    const name = registerInput.trim();
+    if (!name) return;
+    setRegisterError('');
+    try {
+      const res = await fetch(`/api/users/${currentUser.id}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setRegisterError(err.error ?? 'Registration failed');
+        return;
+      }
+      const updated: User = await res.json();
+      localStorage.setItem('chat_user', JSON.stringify(updated));
+      setCurrentUser(updated);
+      setAllUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+      setShowRegisterModal(false);
+      setRegisterInput('');
+    } catch {
+      setRegisterError('Connection error');
+    }
+  }
+
   // ── Room actions ──────────────────────────────────────────────────────────────
   async function handleCreateRoom(e: React.FormEvent) {
     e.preventDefault();
@@ -440,11 +555,16 @@ export default function App() {
     const res = await fetch('/api/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newRoomName.trim(), userId: currentUser.id }),
+      body: JSON.stringify({ name: newRoomName.trim(), userId: currentUser.id, isPrivate: isPrivateRoom }),
     });
     if (res.ok) {
       const room: Room = await res.json();
       setNewRoomName('');
+      setIsPrivateRoom(false);
+      // Private rooms are only emitted to creator via socket, add directly from response
+      if (room.isPrivate) {
+        setRooms(prev => prev.find(r => r.id === room.id) ? prev : [...prev, room]);
+      }
       setCurrentRoomId(room.id);
     }
   }
@@ -498,6 +618,97 @@ export default function App() {
     setCurrentRoomId(roomId);
   }
 
+  async function handleInviteUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteUsername.trim() || !currentRoomId || !currentUser) return;
+    setInviteError('');
+    const res = await fetch(`/api/rooms/${currentRoomId}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviterId: currentUser.id, inviteeUsername: inviteUsername.trim() }),
+    });
+    if (res.ok) {
+      setInviteUsername('');
+      setShowInviteModal(false);
+    } else {
+      const err = await res.json();
+      setInviteError(err.error ?? 'Failed to invite user');
+    }
+  }
+
+  async function handleAcceptInvitation(invitationId: number) {
+    if (!currentUser) return;
+    const res = await fetch(`/api/invitations/${invitationId}/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUser.id }),
+    });
+    if (res.ok) {
+      const { room } = await res.json();
+      setInvitations(prev => prev.filter(i => i.id !== invitationId));
+      setRooms(prev => prev.find(r => r.id === room.id) ? prev : [...prev, room]);
+      setCurrentRoomId(room.id);
+    }
+  }
+
+  async function handleDeclineInvitation(invitationId: number) {
+    if (!currentUser) return;
+    await fetch(`/api/invitations/${invitationId}/decline`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUser.id }),
+    });
+    setInvitations(prev => prev.filter(i => i.id !== invitationId));
+  }
+
+  async function handleStartDm(targetUserId: number) {
+    if (!currentUser) return;
+    const res = await fetch('/api/dms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUser.id, targetUserId }),
+    });
+    if (res.ok) {
+      const room: Room = await res.json();
+      setRooms(prev => prev.find(r => r.id === room.id) ? prev : [...prev, room]);
+      setCurrentRoomId(room.id);
+    }
+  }
+
+  function getDmDisplayName(room: Room): string {
+    if (!currentUser) return room.name;
+    const otherId = room.memberIds.find(id => id !== currentUser.id);
+    return `@${otherId ? getUserName(otherId) : room.name}`;
+  }
+
+  // ── Draft sync ────────────────────────────────────────────────────────────────
+  function saveDraft(roomId: number, content: string) {
+    if (!currentUser) return;
+    fetch(`/api/users/${currentUser.id}/rooms/${roomId}/draft`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  function handleMessageInputChange(value: string) {
+    setMessageInput(value);
+    if (currentRoomId && currentUser) {
+      setDrafts(prev => {
+        const next = new Map(prev);
+        if (value === '') next.delete(currentRoomId);
+        else next.set(currentRoomId, value);
+        return next;
+      });
+      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+      const capturedRoomId = currentRoomId;
+      draftSaveTimerRef.current = setTimeout(() => {
+        saveDraft(capturedRoomId, value);
+        draftSaveTimerRef.current = null;
+      }, 500);
+    }
+  }
+
   // ── Typing ────────────────────────────────────────────────────────────────────
   function handleTyping() {
     if (!currentUser || !currentRoomId) return;
@@ -529,6 +740,11 @@ export default function App() {
     const content = messageInput.trim();
     setMessageInput('');
 
+    // Clear draft
+    if (draftSaveTimerRef.current) { clearTimeout(draftSaveTimerRef.current); draftSaveTimerRef.current = null; }
+    setDrafts(prev => { const next = new Map(prev); next.delete(currentRoomId); return next; });
+    saveDraft(currentRoomId, '');
+
     const body: Record<string, unknown> = { userId: currentUser.id, content };
     if (expiresAfterSeconds !== null) body.expiresAfterSeconds = expiresAfterSeconds;
 
@@ -557,6 +773,10 @@ export default function App() {
       setMessageInput('');
       setScheduleMode(false);
       setScheduleTime('');
+      // Clear draft for this room
+      if (draftSaveTimerRef.current) { clearTimeout(draftSaveTimerRef.current); draftSaveTimerRef.current = null; }
+      setDrafts(prev => { const next = new Map(prev); next.delete(currentRoomId); return next; });
+      saveDraft(currentRoomId, '');
     }
   }
 
@@ -690,6 +910,16 @@ export default function App() {
               Join Chat
             </button>
           </form>
+          <div style={{ marginTop: 12, textAlign: 'center' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>or </span>
+            <button
+              className="btn"
+              style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '4px 8px', textDecoration: 'underline' }}
+              onClick={handleJoinAsGuest}
+            >
+              Join as Guest
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -711,41 +941,134 @@ export default function App() {
         <div className="user-badge">
           <div className="online-dot" style={{ background: getStatusColor(myStatus) }} />
           <div style={{ flex: 1 }}>
-            <div><strong>{currentUser.name}</strong></div>
-            <select
-              value={myStatus}
-              onChange={e => handleSetStatus(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
-              title="Set your status"
-            >
-              <option value="online">🟢 Online</option>
-              <option value="away">🟡 Away</option>
-              <option value="do-not-disturb">🔴 Do Not Disturb</option>
-              <option value="invisible">⚫ Invisible</option>
-            </select>
+            <div>
+              <strong>{currentUser.name}</strong>
+              {currentUser.isAnonymous && (
+                <span style={{ marginLeft: 4, fontSize: '0.7rem', color: 'var(--text-muted)', background: 'var(--bg-secondary)', padding: '1px 5px', borderRadius: 4 }}>guest</span>
+              )}
+            </div>
+            {currentUser.isAnonymous ? (
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ fontSize: '0.75rem', padding: '2px 8px', marginTop: 2 }}
+                onClick={() => { setShowRegisterModal(true); setRegisterError(''); setRegisterInput(''); }}
+              >Register Account</button>
+            ) : (
+              <select
+                value={myStatus}
+                onChange={e => handleSetStatus(e.target.value)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
+                title="Set your status"
+              >
+                <option value="online">🟢 Online</option>
+                <option value="away">🟡 Away</option>
+                <option value="do-not-disturb">🔴 Do Not Disturb</option>
+                <option value="invisible">⚫ Invisible</option>
+              </select>
+            )}
           </div>
         </div>
 
+        {showRegisterModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 24, minWidth: 300 }}>
+              <h3 style={{ margin: '0 0 8px' }}>Create Account</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 12px' }}>
+                Your messages and room memberships will be preserved.
+              </p>
+              <form onSubmit={handleRegister}>
+                <input
+                  type="text"
+                  placeholder="Choose a username"
+                  value={registerInput}
+                  onChange={e => setRegisterInput(e.target.value)}
+                  maxLength={32}
+                  autoFocus
+                  style={{ width: '100%', marginBottom: 8 }}
+                />
+                {registerError && <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginBottom: 8 }}>{registerError}</p>}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowRegisterModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary btn-sm" disabled={!registerInput.trim()}>Register</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {invitations.length > 0 && (
+          <div style={{ padding: '8px 12px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>INVITATIONS</div>
+            {invitations.map(inv => (
+              <div key={inv.id} style={{ fontSize: '0.8rem', marginBottom: 6 }}>
+                <span style={{ color: 'var(--text)' }}>
+                  <strong>{inv.inviterName}</strong> invited you to <strong>{inv.roomName}</strong>
+                </span>
+                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleAcceptInvitation(inv.id)}
+                    style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                  >Accept</button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleDeclineInvitation(inv.id)}
+                    style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                  >Decline</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="section-title">Rooms</div>
         <div className="room-list">
-          {rooms.map(room => (
+          {rooms.filter(r => !r.isDm).map(room => (
             <div
               key={room.id}
               className={`room-item${currentRoomId === room.id ? ' active' : ''}`}
               onClick={() => handleSelectRoom(room.id)}
             >
-              <span className="room-item-name"># {room.name}</span>
+              <span className="room-item-name">{room.isPrivate ? '🔒' : '#'} {room.name}</span>
+              {room.activityLevel === 'hot' && <span className="activity-badge hot">🔥 Hot</span>}
+              {room.activityLevel === 'active' && <span className="activity-badge active">Active</span>}
+              {drafts.has(room.id) && currentRoomId !== room.id && (
+                <span title="Draft saved" style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 2 }}>✏️</span>
+              )}
               {room.unreadCount > 0 && (
                 <span className="unread-badge">{room.unreadCount > 99 ? '99+' : room.unreadCount}</span>
               )}
             </div>
           ))}
-          {rooms.length === 0 && (
+          {rooms.filter(r => !r.isDm).length === 0 && (
             <div style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               No rooms yet
             </div>
           )}
         </div>
+
+        {rooms.filter(r => r.isDm).length > 0 && (
+          <>
+            <div className="section-title">Direct Messages</div>
+            <div className="room-list">
+              {rooms.filter(r => r.isDm).map(room => (
+                <div
+                  key={room.id}
+                  className={`room-item${currentRoomId === room.id ? ' active' : ''}`}
+                  onClick={() => handleSelectRoom(room.id)}
+                >
+                  <span className="room-item-name">{getDmDisplayName(room)}</span>
+                  {drafts.has(room.id) && currentRoomId !== room.id && (
+                    <span title="Draft saved" style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 2 }}>✏️</span>
+                  )}
+                  {room.unreadCount > 0 && (
+                    <span className="unread-badge">{room.unreadCount > 99 ? '99+' : room.unreadCount}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="create-room">
           <form className="create-room-form" onSubmit={handleCreateRoom}>
@@ -758,6 +1081,15 @@ export default function App() {
             />
             <button className="btn btn-primary btn-sm" type="submit" disabled={!newRoomName.trim()}>+</button>
           </form>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, cursor: 'pointer', paddingLeft: 4 }}>
+            <input
+              type="checkbox"
+              checked={isPrivateRoom}
+              onChange={e => setIsPrivateRoom(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Private (invite only)
+          </label>
         </div>
 
         {/* Online users + presence */}
@@ -771,13 +1103,22 @@ export default function App() {
             const status = userStatuses.get(u.id);
             const displayStatus = isOnline ? (status?.status ?? 'online') : 'offline';
             const lastActive = !isOnline ? getLastActiveText(u.id) : '';
+            const isMe = u.id === currentUser.id;
             return (
               <div key={u.id} className="online-user" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
                   <div className="online-dot" style={{ background: isOnline ? getStatusColor(displayStatus) : '#6b7280', flexShrink: 0 }} />
-                  <span style={{ fontSize: '0.875rem' }}>
-                    {u.name}{u.id === currentUser.id ? ' (you)' : ''}
+                  <span style={{ fontSize: '0.875rem', flex: 1 }}>
+                    {u.name}{isMe ? ' (you)' : ''}
                   </span>
+                  {!isMe && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => handleStartDm(u.id)}
+                      title={`DM ${u.name}`}
+                      style={{ fontSize: '0.7rem', padding: '1px 6px', opacity: 0.7 }}
+                    >DM</button>
+                  )}
                 </div>
                 {lastActive && (
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', paddingLeft: 18 }}>{lastActive}</span>
@@ -805,7 +1146,7 @@ export default function App() {
         ) : (
           <>
             <div className="chat-header">
-              <h2># {currentRoom.name}</h2>
+              <h2>{currentRoom.isDm ? getDmDisplayName(currentRoom) : (currentRoom.isPrivate ? `🔒 ${currentRoom.name}` : `# ${currentRoom.name}`)}</h2>
               <span className="member-info">{currentRoom.memberIds.length} members</span>
               {isAdmin && (
                 <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600, marginLeft: 8 }}>ADMIN</span>
@@ -819,6 +1160,13 @@ export default function App() {
                 >
                   {showAdminPanel ? '▲ Members' : '▼ Members'}
                 </button>
+              )}
+              {isMember && currentRoom.isPrivate && !currentRoom.isDm && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { setShowInviteModal(true); setInviteError(''); setInviteUsername(''); }}
+                  style={{ marginLeft: 8 }}
+                >+ Invite</button>
               )}
               {isMember ? (
                 <button className="btn btn-ghost btn-sm btn-danger" onClick={handleLeaveRoom}>Leave</button>
@@ -1024,7 +1372,7 @@ export default function App() {
                           type="text"
                           placeholder={expiresAfterSeconds !== null ? `Ephemeral message (disappears in ${expiresAfterSeconds >= 60 ? expiresAfterSeconds / 60 + 'm' : expiresAfterSeconds + 's'})...` : 'Type a message...'}
                           value={messageInput}
-                          onChange={e => { setMessageInput(e.target.value); handleTyping(); }}
+                          onChange={e => { handleMessageInputChange(e.target.value); handleTyping(); }}
                           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { handleSend(e); } }}
                           maxLength={2000}
                         />
@@ -1108,6 +1456,33 @@ export default function App() {
           </>
         )}
       </div>
+      {/* Invite user modal */}
+      {showInviteModal && (
+        <div className="modal-overlay" onClick={() => setShowInviteModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Invite to {currentRoom?.name}</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowInviteModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleInviteUser} style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={inviteUsername}
+                  onChange={e => setInviteUsername(e.target.value)}
+                  autoFocus
+                  maxLength={32}
+                  style={{ flex: 1, padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }}
+                />
+                <button type="submit" className="btn btn-primary btn-sm" disabled={!inviteUsername.trim()}>Invite</button>
+              </form>
+              {inviteError && <p style={{ color: 'var(--danger)', fontSize: '0.85rem', marginTop: 8 }}>{inviteError}</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit history modal */}
       {historyMessageId !== null && (
         <div className="modal-overlay" onClick={closeHistory}>

@@ -151,3 +151,109 @@ Threading was **already fully implemented** in the level 7 codebase (added proac
 **Total iterations:** 0
 **Final score:** 33/33 (pending browser grading)
 **All features passing:** Yes (threading was pre-implemented; code verified via TypeScript compilation)
+
+---
+
+## Level 9 Upgrade — Private Rooms and Direct Messages (2026-04-01)
+
+**New feature:** Feature 12 — Private Rooms and Direct Messages
+
+### What was added
+
+**Schema (applied via `drizzle-kit push`):**
+- `is_private` boolean column on `rooms` (default false)
+- `is_dm` boolean column on `rooms` (default false)
+- `room_invitations` table: `(id, room_id, inviter_id, invitee_id, status, created_at)`
+
+**Server (`src/schema.ts`):**
+- Added `isPrivate` and `isDm` fields to `rooms` table definition
+- Added `roomInvitations` table export
+
+**Server (`src/index.ts`):**
+- `GET /api/rooms`: filters to only show public rooms + private rooms the user is a member of
+- `POST /api/rooms`: accepts `isPrivate` flag; private rooms only emit `room:created` to creator
+- `POST /api/rooms/:id/join`: blocks private rooms with 403 (invitation required)
+- `POST /api/rooms/:id/invite`: member invites user by username; emits `invitation:received` to invitee's socket
+- `GET /api/users/:userId/invitations`: returns pending invitations with room/inviter names
+- `POST /api/invitations/:id/accept`: adds user to room_members, returns full room data, emits `room:membership` join
+- `POST /api/invitations/:id/decline`: marks invitation as declined
+- `POST /api/dms`: finds or creates a DM room between two users (deterministic `__dm_u1_u2` name, `isDm=true`, both users added as members, emits `room:created` to both)
+
+**Client (`src/App.tsx`):**
+- `Room` type: added `isPrivate: boolean`, `isDm: boolean`
+- `Invitation` interface
+- State: `invitations`, `showInviteModal`, `inviteUsername`, `inviteError`, `isPrivateRoom`
+- Socket handler: `invitation:received` (appends to invitations list)
+- Initial data load: fetches pending invitations for current user
+- `handleCreateRoom`: sends `isPrivate` flag; adds private rooms directly from response
+- `handleInviteUser`: POSTs to `/api/rooms/:id/invite`, closes modal on success
+- `handleAcceptInvitation`: accepts invite, adds room to state, navigates to it
+- `handleDeclineInvitation`: declines invite, removes from list
+- `handleStartDm`: creates/gets DM room, adds to state, navigates to it
+- `getDmDisplayName`: returns `@OtherUserName` for DM rooms
+- Invitations notification panel in sidebar (with accept/decline buttons)
+- Room list: shows public rooms only (DMs in separate section), lock icon (🔒) for private rooms
+- DMs section in sidebar showing `@Username` display names
+- Create room form: private/invite-only checkbox
+- Chat header: `🔒 name` for private rooms, `@User` for DMs, `+ Invite` button for private room members
+- Invite user modal (modal overlay with username input)
+- DM button next to each user in the Users section
+
+**Files changed:** `server/src/schema.ts`, `server/src/index.ts`, `client/src/App.tsx`
+**TypeScript:** Both compile clean (no errors)
+**Reprompts:** 0
+
+---
+
+## Level 10 Upgrade — Room Activity Indicators (2026-04-01)
+
+**New feature:** Feature 13 — Room Activity Indicators
+
+### What was added
+
+**Server (`src/index.ts`):**
+- `roomMessageTimestamps: Map<number, number[]>` — rolling window of message timestamps per room (pruned to last 10 min)
+- `roomActivityLevel: Map<number, string>` — cached activity level per room
+- `computeActivity(roomId)`: returns `'hot'` (≥5 messages in last 2 min), `'active'` (≥1 message in last 5 min), or `''`
+- `recordMessageActivity(roomId)`: pushes new timestamp, prunes old ones, returns new level
+- In `POST /api/rooms/:id/messages` (root messages): calls `recordMessageActivity`, emits `room:activity` event if level changed
+- `setInterval` every 30s: recomputes activity for all rooms, emits `room:activity` on decay
+
+**Client (`src/App.tsx`):**
+- `Room` type: added `activityLevel?: string`
+- Socket handler for `room:activity`: updates `activityLevel` on matching room in state
+- Room list UI: shows `🔥 Hot` badge for `'hot'` activity, `Active` badge for `'active'` activity
+
+**Client (`src/styles.css`):**
+- `.activity-badge`, `.activity-badge.hot` (orange/red), `.activity-badge.active` (green)
+
+**Files changed:** `server/src/index.ts`, `client/src/App.tsx`, `client/src/styles.css`
+**TypeScript:** Both compile clean (no errors)
+**Reprompts:** 0
+
+---
+
+## Level 12 Upgrade — Anonymous to Registered Migration (2026-04-01)
+
+**What was added:**
+
+**Schema (`server/src/schema.ts`):**
+- Added `isAnonymous: boolean('is_anonymous').default(false).notNull()` to `users` table
+- `npx drizzle-kit push` applied migration successfully
+
+**Server (`server/src/index.ts`):**
+- `POST /api/users/anonymous` — creates guest user with name `Guest-XXXXX` (isAnonymous=true), emits `user:registered`
+- `POST /api/users/:id/register` — upgrades anonymous user to registered: validates user exists and is anonymous, checks name uniqueness, updates name + sets `isAnonymous=false`, emits `user:registered`
+
+**Client (`client/src/App.tsx`):**
+- `User` interface: added `isAnonymous?: boolean`
+- State: `showRegisterModal`, `registerInput`, `registerError`
+- `handleJoinAsGuest()`: calls `POST /api/users/anonymous`, stores returned user in localStorage
+- `handleRegister(e)`: calls `POST /api/users/:id/register`, updates localStorage + currentUser + allUsers state on success
+- Login screen: added "Join as Guest" button below the name form
+- User badge (sidebar): shows "guest" chip for anon users; shows "Register Account" button instead of status selector; shows registration modal (name input + error + Cancel/Register buttons)
+- Registration modal preserves all history automatically — messages/rooms use userId (not name), so renaming = full migration
+
+**Files changed:** `server/src/schema.ts`, `server/src/index.ts`, `client/src/App.tsx`
+**TypeScript:** Both compile clean (no errors)
+**Reprompts:** 0

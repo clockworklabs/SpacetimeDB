@@ -1,0 +1,16 @@
+{
+  "level": 9,
+  "backend": "spacetime",
+  "timestamp": "20260401-185335",
+  "startedAt": "2026-04-01T18:53:35-0400",
+  "startedAtUtc": "2026-04-01T22:53:35Z",
+  "runId": "spacetime-upgrade-to-level9-20260401-185335",
+  "appDir": "results\\spacetime\\chat-app-20260401-123403",
+  "promptFile": "09_private_rooms.md",
+  "phase": "upgrade",
+  "sessionId": "cc1a2929-cdc1-5638-fc3e-9854e8eff1a9",
+  "endedAt": "2026-04-01T19:00:15-0400",
+  "endedAtUtc": "2026-04-01T23:00:15Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

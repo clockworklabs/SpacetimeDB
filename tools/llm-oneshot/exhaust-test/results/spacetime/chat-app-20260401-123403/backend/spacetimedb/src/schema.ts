@@ -10,6 +10,7 @@ const user = table(
     online: t.bool(),
     status: t.string(),       // 'online' | 'away' | 'dnd' | 'invisible'
     lastActiveAt: t.timestamp(),
+    isAnonymous: t.bool(),    // true = auto-created guest; false = registered with a chosen name
   }
 );
 
@@ -21,6 +22,8 @@ const room = table(
     name: t.string(),
     createdBy: t.identity(),
     createdAt: t.timestamp(),
+    isPrivate: t.bool(),
+    isDm: t.bool(),
   }
 );
 
@@ -145,7 +148,43 @@ const threadReply = table(
   }
 );
 
-const spacetimedb = schema({ user, room, roomMember, message, typingState, userRoomState, typingCleanupTimer, scheduledMessage, reaction, messageEdit, roomPermission, threadReply });
+// Room invitations for private rooms
+const roomInvitation = table(
+  { name: 'room_invitation', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64().index('btree'),
+    inviterIdentity: t.identity().index('btree'),
+    inviteeIdentity: t.identity().index('btree'),
+    sentAt: t.timestamp(),
+    status: t.string(), // 'pending' | 'accepted' | 'declined'
+  }
+);
+
+// Room activity indicators — updated by the cleanup timer every second
+const roomActivity = table(
+  { name: 'room_activity', public: true },
+  {
+    roomId: t.u64().primaryKey(),
+    lastMessageAt: t.timestamp(),
+    recentMessageCount: t.u32(),   // messages in last 5 minutes
+    activityLevel: t.string(),     // 'hot' | 'active' | ''
+  }
+);
+
+// Message drafts — per user per room, synced across sessions
+const messageDraft = table(
+  { name: 'message_draft', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    userIdentity: t.identity().index('btree'),
+    roomId: t.u64().index('btree'),
+    text: t.string(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({ user, room, roomMember, message, typingState, userRoomState, typingCleanupTimer, scheduledMessage, reaction, messageEdit, roomPermission, threadReply, roomInvitation, roomActivity, messageDraft });
 export default spacetimedb;
 
 // Schedule the typing cleanup to run every 1 second
@@ -156,7 +195,7 @@ export const init = spacetimedb.init((ctx) => {
   });
 });
 
-// Cleanup expired typing indicators and ephemeral messages
+// Cleanup expired typing indicators and ephemeral messages, and recompute room activity
 export const cleanupTyping = spacetimedb.reducer(
   { timer: typingCleanupTimer.rowType },
   (ctx, { timer: _timer }) => {
@@ -170,6 +209,29 @@ export const cleanupTyping = spacetimedb.reducer(
     for (const row of [...ctx.db.message.iter()]) {
       if (row.expiresAtMicros > 0n && row.expiresAtMicros <= now) {
         ctx.db.message.id.delete(row.id);
+      }
+    }
+    // Recompute room activity levels (messages in last 5 min / 2 min)
+    const cutoff5min = now - 5n * 60n * 1_000_000n;
+    const cutoff2min = now - 2n * 60n * 1_000_000n;
+    for (const room of [...ctx.db.room.iter()]) {
+      let count5 = 0;
+      let count2 = 0;
+      let lastMsgMicros = 0n;
+      for (const m of [...ctx.db.message.roomId.filter(room.id)]) {
+        const ts = m.sentAt.microsSinceUnixEpoch;
+        if (ts > cutoff5min) count5++;
+        if (ts > cutoff2min) count2++;
+        if (ts > lastMsgMicros) lastMsgMicros = ts;
+      }
+      const level = count2 >= 5 ? 'hot' : count5 >= 2 ? 'active' : '';
+      const existing = ctx.db.roomActivity.roomId.find(room.id);
+      if (existing) {
+        if (existing.activityLevel !== level || existing.recentMessageCount !== count5) {
+          ctx.db.roomActivity.roomId.update({ ...existing, recentMessageCount: count5, activityLevel: level });
+        }
+      } else if (count5 > 0) {
+        ctx.db.roomActivity.insert({ roomId: room.id, lastMessageAt: ctx.timestamp, recentMessageCount: count5, activityLevel: level });
       }
     }
   }

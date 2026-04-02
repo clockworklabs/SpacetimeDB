@@ -7,6 +7,7 @@ export const users = pgTable('users', {
   socketId: text('socket_id'),
   status: text('status').notNull().default('online'), // 'online' | 'away' | 'do-not-disturb' | 'invisible'
   lastActiveAt: timestamp('last_active_at', { withTimezone: true }).defaultNow().notNull(),
+  isAnonymous: boolean('is_anonymous').default(false).notNull(),
 });
 
 export const rooms = pgTable('rooms', {
@@ -14,6 +15,8 @@ export const rooms = pgTable('rooms', {
   name: text('name').notNull().unique(),
   createdBy: integer('created_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  isPrivate: boolean('is_private').default(false).notNull(),
+  isDm: boolean('is_dm').default(false).notNull(),
 });
 
 export const roomMembers = pgTable('room_members', {
@@ -93,6 +96,24 @@ export const roomBans = pgTable('room_bans', {
   roomId: integer('room_id').notNull().references(() => rooms.id),
   bannedBy: integer('banned_by').notNull().references(() => users.id),
   bannedAt: timestamp('banned_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.roomId] }),
+]);
+
+export const roomInvitations = pgTable('room_invitations', {
+  id: serial('id').primaryKey(),
+  roomId: integer('room_id').notNull().references(() => rooms.id),
+  inviterId: integer('inviter_id').notNull().references(() => users.id),
+  inviteeId: integer('invitee_id').notNull().references(() => users.id),
+  status: text('status').notNull().default('pending'), // 'pending' | 'accepted' | 'declined'
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const messageDrafts = pgTable('message_drafts', {
+  userId: integer('user_id').notNull().references(() => users.id),
+  roomId: integer('room_id').notNull().references(() => rooms.id),
+  content: text('content').notNull().default(''),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   primaryKey({ columns: [t.userId, t.roomId] }),
 ]);

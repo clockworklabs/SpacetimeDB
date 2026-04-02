@@ -25,3 +25,78 @@
 **Deploy:** Backend republished; bindings regenerated; dev server running on http://localhost:5173.
 
 **Scores (pending browser grading):** Features 1-10: 30/30 (verified in prior levels). Feature 11 (Threading): pending.
+
+---
+
+## Level 9 Upgrade — Private Rooms & DMs (no iteration needed)
+
+**What was added:**
+- `isPrivate: bool` and `isDm: bool` fields to `room` table in `schema.ts`
+- `roomInvitation` table: `id`, `roomId`, `inviterIdentity`, `inviteeIdentity`, `sentAt`, `status` ('pending'/'accepted'/'declined'); btree indexes on `roomId`, `inviterIdentity`, `inviteeIdentity`
+- `createRoom` reducer updated to accept `isPrivate` parameter (was `{ name }`, now `{ name, isPrivate }`)
+- `joinRoom` updated to block joining private rooms without an accepted invitation
+- New reducers: `inviteToRoom`, `acceptInvitation`, `declineInvitation`, `openDm`
+- `openDm`: finds or creates a DM room between sender and target; both users auto-joined as admins; DM rooms are private (`isPrivate: true, isDm: true`)
+- Bindings regenerated: `room_invitation_table.ts`, `accept_invitation_reducer.ts`, `decline_invitation_reducer.ts`, `invite_to_room_reducer.ts`, `open_dm_reducer.ts`; `create_room_reducer.ts` updated
+- Client App.tsx:
+  - Subscribe to `SELECT * FROM room_invitation`
+  - `useTable(tables.roomInvitation)` + `myPendingInvitations` derived state
+  - Room list filtered: private rooms hidden unless user is a member
+  - Room icons: `💬` for DMs, `🔒` for private rooms, `#` for public
+  - `private` badge on private non-DM rooms in list
+  - Create room form: "Private room" checkbox
+  - Invitations panel in sidebar: shows pending invitations with Accept/Decline buttons
+  - Invite panel in chat header (admin + private room only): dropdown to select user and send invite
+  - DM button (`💬`) next to each user in users list (hover-revealed)
+- styles.css: `.private-badge`, `.private-room-toggle`, `.invite-count-badge`, `.invitation-list`, `.invitation-item`, `.invitation-info`, `.invitation-room`, `.invitation-from`, `.invitation-actions`, `.invite-btn`, `.invite-panel`, `.invite-panel-title`, `.invite-panel-row`, `.invite-select`, `.dm-btn`
+
+**Backend:** Re-published with `--delete-data` (schema migration required for new columns). Bindings regenerated.
+**Build:** `npx tsc --noEmit` passes; `npm run build` passes.
+**Deploy:** Dev server running on http://localhost:5173.
+
+**Scores (pending browser grading):** Features 1-11: pending. Feature 12 (Private Rooms/DMs): pending.
+
+---
+
+## Level 11 Upgrade — Draft Sync (no iteration needed)
+
+**What was added:**
+- `messageDraft` table in `schema.ts`: `id`, `userIdentity`, `roomId`, `text`, `updatedAt` fields; btree index on `userIdentity` and `roomId`
+- `saveDraft` reducer in `index.ts`: upserts or deletes a draft per user per room (empty text = delete)
+- Client App.tsx:
+  - Subscribe to `SELECT * FROM message_draft`
+  - `useTable(tables.messageDraft)` + `draftSaveTimerRef` + `lastServerDraftRef`
+  - `handleMessageInput`: debounced draft save (300ms) via `conn.reducers.saveDraft`
+  - `handleSelectRoom`: saves current draft for old room, loads draft for new room synchronously from `messageDrafts` state
+  - `handleSendMessage`: clears draft via `conn.reducers.saveDraft({ text: '' })` after sending
+  - `useEffect([messageDrafts, selectedRoomId])`: live cross-session sync — updates `messageInput` when server draft changes (only if value differs from last known server draft)
+- Bindings regenerated: `message_draft_table.ts`, `save_draft_reducer.ts`
+
+**Build:** `npx tsc --noEmit` passes with 0 errors; `npm run build` passes.
+**Deploy:** Backend republished (additive migration, no data loss); bindings regenerated; dev server running on http://localhost:5173.
+
+**Scores (pending browser grading):** Features 1-13: 39/39 (verified in prior levels). Feature 14 (Draft Sync): pending.
+
+---
+
+## Level 12 Upgrade — Anonymous to Registered Migration (no iteration needed)
+
+**What was added:**
+- `isAnonymous: t.bool()` field added to `user` table in `schema.ts`
+- `onConnect` in `index.ts`: if no user record exists for the connecting client, auto-inserts an anonymous user with name `Anon-XXXX` (4-digit suffix from timestamp) and `isAnonymous: true`
+- `register` reducer updated: if user exists and is anonymous, updates name + sets `isAnonymous: false` (identity preserved, all messages/memberships remain intact); if user exists and is registered, throws "Already registered"; fallback insert for edge cases
+- Bindings regenerated: `user_table.ts` and `types.ts` updated with `isAnonymous: boolean`
+- Client `App.tsx`:
+  - Removed blocking registration screen — replaced with spinner guard (anonymous users pass through)
+  - Added purple `anon-banner` at top of app when `myUser.isAnonymous` is true: shows current anon name, name input, Register button
+  - Added `anon-badge` "(anon)" label next to anonymous users in the user list
+  - Wrapped sidebar + main + thread panel in `app-content-row` div for proper layout with banner
+- `styles.css`: `.app` flex-direction column, `.app-content-row` flex row that fills remaining height, `.anon-banner`, `.anon-banner-text`, `.anon-banner-form`, `.anon-name-input`, `.anon-banner-error`, `.anon-badge`
+
+**Key design note:** SpacetimeDB assigns a stable identity to every client connection (persisted via localStorage auth token). So "anonymous" users already have a permanent identity. When they register, the `register` reducer just updates the display name and `isAnonymous` flag — no data migration required since all messages, room memberships, reactions, etc. are already associated with the correct identity.
+
+**Backend:** Re-published with `--delete-data` (schema migration for new column). Bindings regenerated.
+**Build:** `npx tsc --noEmit` passes with 0 errors; `npm run build` passes.
+**Deploy:** Dev server running on http://localhost:5173.
+
+**Scores (pending browser grading):** Features 1-14: 42/42 (verified in prior levels). Feature 15 (Anonymous Migration): pending.

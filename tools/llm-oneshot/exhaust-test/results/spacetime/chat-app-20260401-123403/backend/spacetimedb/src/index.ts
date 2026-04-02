@@ -15,6 +15,17 @@ export const onConnect = spacetimedb.clientConnected((ctx) => {
       ? existing.status
       : 'online';
     ctx.db.user.identity.update({ ...existing, online: true, status: newStatus, lastActiveAt: ctx.timestamp });
+  } else {
+    // Auto-create an anonymous user so guests can chat immediately
+    const suffix = String(ctx.timestamp.microsSinceUnixEpoch % 10000n).padStart(4, '0');
+    ctx.db.user.insert({
+      identity: ctx.sender,
+      name: `Anon-${suffix}`,
+      online: true,
+      status: 'online',
+      lastActiveAt: ctx.timestamp,
+      isAnonymous: true,
+    });
   }
 });
 
@@ -39,8 +50,16 @@ export const register = spacetimedb.reducer(
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new SenderError('Name cannot be empty');
     if (trimmed.length > 32) throw new SenderError('Name too long (max 32 characters)');
-    if (ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Already registered');
-    ctx.db.user.insert({ identity: ctx.sender, name: trimmed, online: true, status: 'online', lastActiveAt: ctx.timestamp });
+    const existing = ctx.db.user.identity.find(ctx.sender);
+    if (existing) {
+      if (!existing.isAnonymous) throw new SenderError('Already registered');
+      // Migrate anonymous → registered: update name and clear anonymous flag.
+      // All messages, memberships, and other data remain intact since identity is preserved.
+      ctx.db.user.identity.update({ ...existing, name: trimmed, isAnonymous: false, online: true, lastActiveAt: ctx.timestamp });
+    } else {
+      // Fallback: insert directly (shouldn't happen with auto-create in onConnect)
+      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, online: true, status: 'online', lastActiveAt: ctx.timestamp, isAnonymous: false });
+    }
   }
 );
 
@@ -59,16 +78,15 @@ export const updateName = spacetimedb.reducer(
 // ── Room reducers ──────────────────────────────────────────────────────────
 
 export const createRoom = spacetimedb.reducer(
-  { name: t.string() },
-  (ctx, { name }) => {
+  { name: t.string(), isPrivate: t.bool() },
+  (ctx, { name, isPrivate }) => {
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new SenderError('Room name cannot be empty');
     if (trimmed.length > 64) throw new SenderError('Room name too long (max 64 characters)');
     if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
     // Insert room
-    ctx.db.room.insert({ id: 0n, name: trimmed, createdBy: ctx.sender, createdAt: ctx.timestamp });
+    ctx.db.room.insert({ id: 0n, name: trimmed, createdBy: ctx.sender, createdAt: ctx.timestamp, isPrivate, isDm: false });
     // Auto-join the creator: find the room by scanning for latest by this user
-    // We use iter and find the last inserted (highest id)
     let maxId = 0n;
     for (const r of ctx.db.room.iter()) {
       if (r.createdBy.equals(ctx.sender) && r.name === trimmed && r.id > maxId) {
@@ -87,7 +105,14 @@ export const joinRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
-    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+    const roomRow = ctx.db.room.id.find(roomId);
+    if (!roomRow) throw new SenderError('Room not found');
+    // Private rooms require an accepted invitation
+    if (roomRow.isPrivate) {
+      const hasInvitation = [...ctx.db.roomInvitation.roomId.filter(roomId)]
+        .some(inv => inv.inviteeIdentity.equals(ctx.sender) && inv.status === 'accepted');
+      if (!hasInvitation) throw new SenderError('This is a private room. You need an invitation.');
+    }
     // Check not banned
     const isBanned = [...ctx.db.roomPermission.roomId.filter(roomId)]
       .some(row => row.userIdentity.equals(ctx.sender) && row.role === 'banned');
@@ -367,6 +392,129 @@ export const editMessage = spacetimedb.reducer(
     });
     // Update the message text
     ctx.db.message.id.update({ ...msg, text: trimmed });
+  }
+);
+
+// ── Private rooms / DMs / Invitations ─────────────────────────────────────
+
+export const inviteToRoom = spacetimedb.reducer(
+  { roomId: t.u64(), inviteeIdentity: t.identity() },
+  (ctx, { roomId, inviteeIdentity }) => {
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
+    const roomRow = ctx.db.room.id.find(roomId);
+    if (!roomRow) throw new SenderError('Room not found');
+    if (!roomRow.isPrivate) throw new SenderError('Room is not private');
+    if (!isAdmin(ctx, roomId, ctx.sender)) throw new SenderError('Not an admin of this room');
+    if (!ctx.db.user.identity.find(inviteeIdentity)) throw new SenderError('User not found');
+    if (inviteeIdentity.equals(ctx.sender)) throw new SenderError('Cannot invite yourself');
+    // Check not already a member
+    const alreadyMember = [...ctx.db.roomMember.roomId.filter(roomId)]
+      .some(row => row.userIdentity.equals(inviteeIdentity));
+    if (alreadyMember) throw new SenderError('User is already a member');
+    // Check no pending invitation
+    const existing = [...ctx.db.roomInvitation.roomId.filter(roomId)]
+      .find(inv => inv.inviteeIdentity.equals(inviteeIdentity) && inv.status === 'pending');
+    if (existing) throw new SenderError('Invitation already sent');
+    ctx.db.roomInvitation.insert({
+      id: 0n,
+      roomId,
+      inviterIdentity: ctx.sender,
+      inviteeIdentity,
+      sentAt: ctx.timestamp,
+      status: 'pending',
+    });
+  }
+);
+
+export const acceptInvitation = spacetimedb.reducer(
+  { invitationId: t.u64() },
+  (ctx, { invitationId }) => {
+    const inv = ctx.db.roomInvitation.id.find(invitationId);
+    if (!inv) throw new SenderError('Invitation not found');
+    if (!inv.inviteeIdentity.equals(ctx.sender)) throw new SenderError('Not your invitation');
+    if (inv.status !== 'pending') throw new SenderError('Invitation already resolved');
+    ctx.db.roomInvitation.id.update({ ...inv, status: 'accepted' });
+    // Add as member if not already
+    const alreadyMember = [...ctx.db.roomMember.roomId.filter(inv.roomId)]
+      .some(row => row.userIdentity.equals(ctx.sender));
+    if (!alreadyMember) {
+      ctx.db.roomMember.insert({ id: 0n, roomId: inv.roomId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
+    }
+  }
+);
+
+export const declineInvitation = spacetimedb.reducer(
+  { invitationId: t.u64() },
+  (ctx, { invitationId }) => {
+    const inv = ctx.db.roomInvitation.id.find(invitationId);
+    if (!inv) throw new SenderError('Invitation not found');
+    if (!inv.inviteeIdentity.equals(ctx.sender)) throw new SenderError('Not your invitation');
+    if (inv.status !== 'pending') throw new SenderError('Invitation already resolved');
+    ctx.db.roomInvitation.id.update({ ...inv, status: 'declined' });
+  }
+);
+
+export const openDm = spacetimedb.reducer(
+  { targetIdentity: t.identity() },
+  (ctx, { targetIdentity }) => {
+    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Not registered');
+    if (!ctx.db.user.identity.find(targetIdentity)) throw new SenderError('Target user not found');
+    if (targetIdentity.equals(ctx.sender)) throw new SenderError('Cannot DM yourself');
+    // Check if a DM room already exists between these two users
+    for (const r of [...ctx.db.room.iter()]) {
+      if (!r.isDm) continue;
+      const members = [...ctx.db.roomMember.roomId.filter(r.id)];
+      if (members.length === 2 &&
+          members.some(m => m.userIdentity.equals(ctx.sender)) &&
+          members.some(m => m.userIdentity.equals(targetIdentity))) {
+        // DM already exists — ensure sender is a member (they might have left)
+        const isMember = members.some(m => m.userIdentity.equals(ctx.sender));
+        if (!isMember) {
+          ctx.db.roomMember.insert({ id: 0n, roomId: r.id, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
+        }
+        return; // DM already exists
+      }
+    }
+    // Create a new DM room
+    const senderUser = ctx.db.user.identity.find(ctx.sender)!;
+    const targetUser = ctx.db.user.identity.find(targetIdentity)!;
+    const dmName = [senderUser.name, targetUser.name].sort().join(' & ');
+    ctx.db.room.insert({ id: 0n, name: dmName, createdBy: ctx.sender, createdAt: ctx.timestamp, isPrivate: true, isDm: true });
+    // Find the new room id
+    let maxId = 0n;
+    for (const r of ctx.db.room.iter()) {
+      if (r.isDm && r.createdBy.equals(ctx.sender) && r.name === dmName && r.id > maxId) {
+        maxId = r.id;
+      }
+    }
+    if (maxId > 0n) {
+      ctx.db.roomMember.insert({ id: 0n, roomId: maxId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
+      ctx.db.roomMember.insert({ id: 0n, roomId: maxId, userIdentity: targetIdentity, joinedAt: ctx.timestamp });
+      // Both are admins in DM
+      ctx.db.roomPermission.insert({ id: 0n, roomId: maxId, userIdentity: ctx.sender, role: 'admin' });
+      ctx.db.roomPermission.insert({ id: 0n, roomId: maxId, userIdentity: targetIdentity, role: 'admin' });
+      // Auto-accept: mark invitation as accepted for both parties (no explicit invite needed)
+    }
+  }
+);
+
+// ── Draft sync ─────────────────────────────────────────────────────────────
+
+export const saveDraft = spacetimedb.reducer(
+  { roomId: t.u64(), text: t.string() },
+  (ctx, { roomId, text }) => {
+    if (!ctx.db.user.identity.find(ctx.sender)) return;
+    const existing = [...ctx.db.messageDraft.userIdentity.filter(ctx.sender)]
+      .find(d => d.roomId === roomId);
+    if (text.length === 0) {
+      if (existing) ctx.db.messageDraft.id.delete(existing.id);
+    } else {
+      if (existing) {
+        ctx.db.messageDraft.id.update({ ...existing, text, updatedAt: ctx.timestamp });
+      } else {
+        ctx.db.messageDraft.insert({ id: 0n, userIdentity: ctx.sender, roomId, text, updatedAt: ctx.timestamp });
+      }
+    }
   }
 );
 

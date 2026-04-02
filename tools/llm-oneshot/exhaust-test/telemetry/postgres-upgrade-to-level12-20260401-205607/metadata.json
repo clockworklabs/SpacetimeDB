@@ -1,0 +1,16 @@
+{
+  "level": 12,
+  "backend": "postgres",
+  "timestamp": "20260401-205607",
+  "startedAt": "2026-04-01T20:56:07-0400",
+  "startedAtUtc": "2026-04-02T00:56:07Z",
+  "runId": "postgres-upgrade-to-level12-20260401-205607",
+  "appDir": "results\\postgres\\chat-app-20260401-131906",
+  "promptFile": "12_full.md",
+  "phase": "upgrade",
+  "sessionId": "d114bd50-7589-ae22-b7df-a07dd1861911",
+  "endedAt": "2026-04-01T21:02:19-0400",
+  "endedAtUtc": "2026-04-02T01:02:19Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

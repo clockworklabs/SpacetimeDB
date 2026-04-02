@@ -2,7 +2,7 @@
 
 **Model:** Claude Code (Sonnet 4.6)
 **Date:** 2026-04-01
-**Prompt:** `08_threading.md` (upgraded from `07_presence.md`)
+**Prompt:** `12_full.md` (upgraded from `11_drafts.md`)
 **Backend:** spacetime
 **Grading Method:** Automated browser interaction (exhaust-test)
 
@@ -12,9 +12,9 @@
 
 | Metric                  | Value                          |
 | ----------------------- | ------------------------------ |
-| **Prompt Level Used**   | 8 (threading)                  |
-| **Features Evaluated**  | 1-11                           |
-| **Total Feature Score** | 33 / 33                        |
+| **Prompt Level Used**   | 12 (full)                      |
+| **Features Evaluated**  | 1-15                           |
+| **Total Feature Score** | 45 / 45                        |
 
 - [x] Compiles without errors
 - [x] Runs without crashing
@@ -22,8 +22,8 @@
 
 | Metric                   | Value  |
 | ------------------------ | ------ |
-| Lines of code (backend)  | 595 (index.ts 399 + schema.ts 196) |
-| Lines of code (frontend) | 1038 (+ auto-gen bindings) |
+| Lines of code (backend)  | 805 (index.ts 547 + schema.ts 258) |
+| Lines of code (frontend) | 1265 (+ auto-gen bindings) |
 | Number of files created  | 84     |
 | External dependencies    | react, react-dom, spacetimedb, vite, @vitejs/plugin-react, typescript |
 | Reprompt Count           | 0      |
@@ -41,7 +41,11 @@
 | Level 6 (upgrade)  | $1.99 | 62 | ~8.4 min |
 | Level 7 (upgrade)  | $1.27 | 40 | ~8.4 min |
 | Level 8 (upgrade)  | $2.18 | 21 | ~6 min |
-| **Cumulative**      | **$10.54** | **287** | **~50.5 min** |
+| Level 9 (upgrade)  | $2.05 | 62 | ~6.5 min |
+| Level 10 (upgrade) | $0.82 | 24 | ~3 min |
+| Level 11 (upgrade) | $1.93 | 54 | ~5 min |
+| Level 12 (upgrade) | $2.23 | 67 | ~9.7 min |
+| **Cumulative**      | **$17.57** | **494** | **~74.7 min** |
 
 ---
 
@@ -170,6 +174,83 @@
 
 ---
 
+## Feature 12: Private Rooms & DMs (Score: 3 / 3)
+
+- [x] Users can create private rooms that are hidden from non-members (1)
+- [x] Room creators can invite users; invitees accept/decline (1)
+- [x] Users can open direct messages (DMs) with any online user (1)
+
+**Implementation Notes:** `isPrivate` and `isDm` fields on `room` table. `roomInvitation` table with `inviterIdentity`, `inviteeIdentity`, `roomId`, `status`. `inviteToRoom` reducer validates admin + private room. `acceptInvitation` auto-joins room. `openDm` creates private DM room with auto-accepted invitations for both parties. Client filters private rooms by membership, shows 🔒 + "private" badge, 💬 DM button on hover in user list.
+
+**Browser Test Observations:**
+1. Alice clicked "+" → room creation form showed "Room name..." input and "Private room" checkbox.
+2. Alice typed "Secret-Room", checked "Private room", clicked Create → room appeared with 🔒 icon and "private" badge in sidebar.
+3. Bob's tab showed "No rooms yet. Create one!" — private room correctly hidden from non-members.
+4. Alice entered Secret-Room → header showed "# Secret-Room 1 members" with "Manage" and "+ Invite" buttons.
+5. Alice clicked "+ Invite" → "INVITE USER BY IDENTITY" panel with "Select user..." dropdown appeared. Selected Bob → clicked "Send Invite".
+6. Bob's sidebar instantly showed "INVITATIONS 1" section with "Secret-Room from Alice" and Accept/Decline buttons (real-time via SpacetimeDB subscription).
+7. Bob clicked Accept → Secret-Room appeared in his room list with 🔒 icon and "private" badge. Invitation section disappeared. Alice's header updated to "2 members".
+8. Bob hovered over Alice in user list → 💬 DM button appeared. Clicked it → "💬 Alice & Bob" DM room created on both tabs simultaneously.
+9. No app-related console errors during private rooms/DM testing.
+
+---
+
+## Feature 13: Room Activity Indicators (Score: 3 / 3)
+
+- [x] Rooms with recent messages show an "Active" badge (green) when 1+ messages in last 5 minutes (1)
+- [x] Rooms with high activity show a "Hot" badge (orange/fire emoji) when 5+ messages in last 2 minutes (1)
+- [x] Activity badges update in real-time as messages are sent (1)
+
+**Implementation Notes:** Activity tracking via SpacetimeDB subscriptions. Client computes activity level from message timestamps. Green "ACTIVE" badge for 1+ messages in 5 min, orange "🔥 HOT" badge for 5+ messages in 2 min.
+
+**Browser Test Observations:**
+1. Alice entered #General room and sent "Testing activity indicators message 1" — green "ACTIVE" badge appeared on #General in sidebar on both Alice's and Bob's tabs.
+2. Alice sent 4 more messages rapidly (total 5 within 2 minutes) — badge changed to "🔥 HOT" on both tabs in real-time.
+3. Bob's tab showed "🔥 HOT" badge alongside purple "5" unread count badge.
+4. No app-related console errors during activity indicator testing.
+
+---
+
+## Feature 14: Draft Sync (Score: 3 / 3)
+
+- [x] Message drafts save automatically as user types (1)
+- [x] Drafts sync across devices/sessions in real-time (1)
+- [x] Each room maintains its own draft per user (0.5)
+- [x] Drafts persist until sent or manually cleared (0.5)
+
+**Implementation Notes:** `messageDraft` table in SpacetimeDB with `saveDraft` reducer. Client auto-saves with 300ms debounce. Drafts persist in database and sync via SpacetimeDB subscriptions.
+
+**Browser Test Observations:**
+1. Alice entered #General, typed "This is a draft message for testing" — did NOT send.
+2. Switched to #Random room, then back to #General — draft text preserved in input.
+3. Typed "Random room draft text" in #Random, switched to #General — General draft still intact, switched back to Random — Random draft still intact. Per-room drafts working.
+4. Sent the General draft — input cleared. Switched away and back — no draft restored (cleared on send).
+5. Typed "Cross-session draft test" in #Random, refreshed page — draft persisted across page refresh via SpacetimeDB.
+6. No app-related console errors during draft testing.
+
+---
+
+## Feature 15: Anonymous to Registered Migration (Score: 3 / 3)
+
+- [x] Users can use the app without registering, with an auto-generated anonymous name and guest badge (1)
+- [x] Anonymous session persists across page refreshes (0.5)
+- [x] Registration migrates all messages to the new display name (1)
+- [x] Room membership is preserved after registration (0.5)
+
+**Implementation Notes:** Auto-creates anonymous user with `Anon-XXXX` name and `isGuest` flag on connect. Purple registration banner with name input and Register button. `register` reducer updates user name and clears guest status. Messages reference user by identity, so name changes propagate automatically via SpacetimeDB subscriptions.
+
+**Browser Test Observations:**
+1. Cleared localStorage and loaded app — auto-created "Anon-5829" with "anon" badge and purple guest registration banner at top.
+2. Created General room, sent 3 messages ("anon msg 1/2/3") — all attributed to "Anon-5829".
+3. Refreshed page — still recognized as "Anon-5829", guest badge and banner persisted, room membership intact.
+4. Entered General — all 3 messages still visible and attributed to "Anon-5829".
+5. Entered "Alice" in registration input and clicked Register — banner disappeared, name changed to "Alice", "anon" badge removed.
+6. All 3 messages instantly re-attributed from "Anon-5829" to "Alice" (identity-based lookup).
+7. Still a member of General room after registration — no re-join needed.
+8. No app-related console errors during anonymous migration testing.
+
+---
+
 ## Reprompt Log
 
 | # | Iteration | Category | Issue Summary | Fixed? |
@@ -193,4 +274,8 @@
 | 9. Real-Time Permissions | 3 | 3 | Promote, kick, ban all working with real-time sync |
 | 10. Rich User Presence | 3 | 3 | Status selector, last active, real-time sync, auto-away |
 | 11. Message Threading | 3 | 3 | Thread panel, reply count badge, real-time sync all working |
-| **TOTAL** | **33** | **33** | |
+| 12. Private Rooms & DMs | 3 | 3 | Private creation, invite flow, DM via user list, real-time sync |
+| 13. Room Activity Indicators | 3 | 3 | Active badge, Hot badge, real-time updates on both tabs |
+| 14. Draft Sync | 3 | 3 | Auto-save, cross-session sync, per-room drafts, clear on send |
+| 15. Anonymous to Registered Migration | 3 | 3 | Auto-anon, session persistence, message re-attribution, room membership preserved |
+| **TOTAL** | **45** | **45** | |

@@ -1087,3 +1087,204 @@ body {
   flex: 1;
   min-width: 0;
 }
+
+/* Private rooms */
+.private-badge {
+  font-size: 10px;
+  background: rgba(124, 58, 237, 0.2);
+  color: var(--accent-light);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+.private-room-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.private-room-toggle input[type='checkbox'] {
+  cursor: pointer;
+}
+
+/* Invitations */
+.invite-count-badge {
+  background: var(--unread);
+  color: white;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.invitation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.invitation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.invitation-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.invitation-room {
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invitation-from {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.invitation-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Invite panel */
+.invite-btn {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--accent-light);
+  border-color: rgba(124, 58, 237, 0.3);
+}
+
+.invite-btn:hover {
+  background: rgba(124, 58, 237, 0.25);
+}
+
+.invite-panel {
+  padding: 10px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.invite-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.invite-panel-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.invite-select {
+  flex: 1;
+}
+
+/* DM button */
+.dm-btn {
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.user-item:hover .dm-btn {
+  opacity: 1;
+}
+
+/* Room activity badges */
+.activity-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+.activity-hot {
+  background: linear-gradient(135deg, #ff4500, #ff6b00);
+  color: #fff;
+}
+
+.activity-active {
+  background: linear-gradient(135deg, #00b09b, #96c93d);
+  color: #fff;
+}
+
+/* Anonymous to Registered Migration */
+.app {
+  flex-direction: column;
+}
+
+.app-content-row {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.anon-banner {
+  background: linear-gradient(90deg, #7c3aed, #4c1d95);
+  border-bottom: 1px solid #6d28d9;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.anon-banner-text {
+  color: #e9d5ff;
+  font-size: 13px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.anon-banner-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.anon-name-input {
+  width: 200px;
+}
+
+.anon-banner-error {
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.anon-badge {
+  font-size: 10px;
+  color: var(--accent-light);
+  background: rgba(124, 58, 237, 0.2);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 2px;
+  font-weight: 600;
+}
+

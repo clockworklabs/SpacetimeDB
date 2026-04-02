@@ -34,6 +34,40 @@ const typingTimers = new Map<string, ReturnType<typeof setTimeout>>(); // `roomI
 const typingUsers = new Map<number, Set<number>>(); // roomId → Set<userId>
 const userNameCache = new Map<number, string>(); // userId → name
 const lastMessageTime = new Map<number, number>(); // userId → timestamp (rate limiting)
+const roomMessageTimestamps = new Map<number, number[]>(); // roomId → recent message timestamps
+const roomActivityLevel = new Map<number, string>(); // roomId → 'hot' | 'active' | ''
+
+function computeActivity(roomId: number): string {
+  const now = Date.now();
+  const ts = roomMessageTimestamps.get(roomId) ?? [];
+  const recent2min = ts.filter(t => now - t < 2 * 60 * 1000);
+  const recent5min = ts.filter(t => now - t < 5 * 60 * 1000);
+  if (recent2min.length >= 5) return 'hot';
+  if (recent5min.length >= 1) return 'active';
+  return '';
+}
+
+function recordMessageActivity(roomId: number): string {
+  const now = Date.now();
+  const ts = roomMessageTimestamps.get(roomId) ?? [];
+  ts.push(now);
+  // Keep only timestamps within 10 minutes
+  const pruned = ts.filter(t => now - t < 10 * 60 * 1000);
+  roomMessageTimestamps.set(roomId, pruned);
+  return computeActivity(roomId);
+}
+
+// Decay activity levels every 30 seconds and emit changes
+setInterval(() => {
+  for (const [roomId] of roomMessageTimestamps) {
+    const newLevel = computeActivity(roomId);
+    const prev = roomActivityLevel.get(roomId) ?? '';
+    if (newLevel !== prev) {
+      roomActivityLevel.set(roomId, newLevel);
+      io.emit('room:activity', { roomId, level: newLevel });
+    }
+  }
+}, 30_000);
 
 function getOnlineUserIds(): number[] {
   return [...new Set(onlineUsers.values())];
@@ -70,6 +104,52 @@ app.post('/api/users', async (req, res) => {
       }
     }
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Create an anonymous guest user
+app.post('/api/users/anonymous', async (_req, res) => {
+  const suffix = Math.random().toString(36).slice(2, 7).toUpperCase();
+  const name = `Guest-${suffix}`;
+  try {
+    const [user] = await db.insert(schema.users).values({ name, isAnonymous: true }).returning();
+    userNameCache.set(user.id, user.name);
+    io.emit('user:registered', user);
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: 'Failed to create guest user' });
+  }
+});
+
+// Upgrade an anonymous user to a registered account
+app.post('/api/users/:id/register', async (req, res) => {
+  const userId = parseInt(req.params.id);
+  const { name } = req.body as { name: string };
+  if (!name || typeof name !== 'string') { res.status(400).json({ error: 'Name required' }); return; }
+  const trimmed = name.trim().slice(0, 32);
+  if (!trimmed) { res.status(400).json({ error: 'Name cannot be empty' }); return; }
+
+  const [existing] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
+  if (!existing) { res.status(404).json({ error: 'User not found' }); return; }
+  if (!existing.isAnonymous) { res.status(400).json({ error: 'User is already registered' }); return; }
+
+  // Check name uniqueness
+  const nameTaken = await db.select().from(schema.users).where(eq(schema.users.name, trimmed)).limit(1);
+  if (nameTaken.length > 0 && nameTaken[0].id !== userId) {
+    res.status(409).json({ error: 'Name already taken' }); return;
+  }
+
+  try {
+    const [updated] = await db.update(schema.users)
+      .set({ name: trimmed, isAnonymous: false })
+      .where(eq(schema.users.id, userId))
+      .returning();
+    userNameCache.set(updated.id, updated.name);
+    io.emit('user:registered', updated);
+    res.json(updated);
+  } catch (e: any) {
+    if (e.code === '23505') { res.status(409).json({ error: 'Name already taken' }); return; }
+    res.status(500).json({ error: 'Failed to register user' });
   }
 });
 
@@ -147,24 +227,41 @@ async function getRoomWithMeta(roomId: number, userId?: number) {
 app.get('/api/rooms', async (req, res) => {
   const { userId } = req.query as { userId?: string };
   const uid = userId ? parseInt(userId) : undefined;
-  const rooms = await db.select().from(schema.rooms).orderBy(schema.rooms.id);
 
-  const result = await Promise.all(rooms.map(r => getRoomWithMeta(r.id, uid)));
+  let roomList: typeof schema.rooms.$inferSelect[];
+  if (uid) {
+    // Return public rooms + private rooms the user is a member of
+    const allRooms = await db.select().from(schema.rooms).orderBy(schema.rooms.id);
+    const memberRows = await db.select({ roomId: schema.roomMembers.roomId })
+      .from(schema.roomMembers).where(eq(schema.roomMembers.userId, uid));
+    const memberRoomIds = new Set(memberRows.map(r => r.roomId));
+    roomList = allRooms.filter(r => !r.isPrivate || memberRoomIds.has(r.id));
+  } else {
+    roomList = await db.select().from(schema.rooms)
+      .where(eq(schema.rooms.isPrivate, false)).orderBy(schema.rooms.id);
+  }
+
+  const result = await Promise.all(roomList.map(r => getRoomWithMeta(r.id, uid)));
   res.json(result.filter(Boolean));
 });
 
 app.post('/api/rooms', async (req, res) => {
-  const { name, userId } = req.body as { name: string; userId: number };
+  const { name, userId, isPrivate } = req.body as { name: string; userId: number; isPrivate?: boolean };
   if (!name || !userId) { res.status(400).json({ error: 'Name and userId required' }); return; }
   const trimmed = name.trim().slice(0, 64);
   if (!trimmed) { res.status(400).json({ error: 'Room name cannot be empty' }); return; }
 
   try {
-    const [room] = await db.insert(schema.rooms).values({ name: trimmed, createdBy: userId }).returning();
+    const [room] = await db.insert(schema.rooms).values({ name: trimmed, createdBy: userId, isPrivate: !!isPrivate }).returning();
     await db.insert(schema.roomMembers).values({ userId, roomId: room.id });
     await db.insert(schema.roomAdmins).values({ userId, roomId: room.id });
     const full = await getRoomWithMeta(room.id, userId);
-    io.emit('room:created', full);
+    // Private rooms: only notify creator; public rooms: broadcast to all
+    if (isPrivate) {
+      io.to(`user:${userId}`).emit('room:created', full);
+    } else {
+      io.emit('room:created', full);
+    }
     res.json(full);
   } catch (e: any) {
     if (e.code === '23505') { res.status(409).json({ error: 'Room name already exists' }); return; }
@@ -176,6 +273,12 @@ app.post('/api/rooms/:id/join', async (req, res) => {
   const roomId = parseInt(req.params.id);
   const { userId } = req.body as { userId: number };
   try {
+    const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, roomId)).limit(1);
+    if (!room) { res.status(404).json({ error: 'Room not found' }); return; }
+    if (room.isPrivate) {
+      res.status(403).json({ error: 'This is a private room. You need an invitation to join.' });
+      return;
+    }
     const ban = await db.select().from(schema.roomBans)
       .where(and(eq(schema.roomBans.userId, userId), eq(schema.roomBans.roomId, roomId)))
       .limit(1);
@@ -262,6 +365,184 @@ app.post('/api/rooms/:id/leave', async (req, res) => {
   );
   io.emit('room:membership', { roomId, userId, action: 'leave' });
   res.json({ success: true });
+});
+
+// ── Invitations ───────────────────────────────────────────────────────────────
+// Invite a user to a private room by username
+app.post('/api/rooms/:id/invite', async (req, res) => {
+  const roomId = parseInt(req.params.id);
+  const { inviterId, inviteeUsername } = req.body as { inviterId: number; inviteeUsername: string };
+
+  if (!inviteeUsername) { res.status(400).json({ error: 'inviteeUsername required' }); return; }
+
+  // Verify inviter is a member
+  const member = await db.select().from(schema.roomMembers)
+    .where(and(eq(schema.roomMembers.userId, inviterId), eq(schema.roomMembers.roomId, roomId)))
+    .limit(1);
+  if (member.length === 0) { res.status(403).json({ error: 'Not a room member' }); return; }
+
+  // Find invitee by username
+  const [invitee] = await db.select().from(schema.users)
+    .where(eq(schema.users.name, inviteeUsername.trim())).limit(1);
+  if (!invitee) { res.status(404).json({ error: 'User not found' }); return; }
+
+  // Check if already a member
+  const alreadyMember = await db.select().from(schema.roomMembers)
+    .where(and(eq(schema.roomMembers.userId, invitee.id), eq(schema.roomMembers.roomId, roomId)))
+    .limit(1);
+  if (alreadyMember.length > 0) { res.status(409).json({ error: 'User is already a member' }); return; }
+
+  // Check if pending invite already exists
+  const existing = await db.select().from(schema.roomInvitations)
+    .where(and(
+      eq(schema.roomInvitations.roomId, roomId),
+      eq(schema.roomInvitations.inviteeId, invitee.id),
+      eq(schema.roomInvitations.status, 'pending'),
+    )).limit(1);
+  if (existing.length > 0) { res.status(409).json({ error: 'Invitation already pending' }); return; }
+
+  const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, roomId)).limit(1);
+  const inviter = await db.select().from(schema.users).where(eq(schema.users.id, inviterId)).limit(1);
+
+  const [invitation] = await db.insert(schema.roomInvitations)
+    .values({ roomId, inviterId, inviteeId: invitee.id }).returning();
+
+  // Notify invitee in real-time
+  io.to(`user:${invitee.id}`).emit('invitation:received', {
+    id: invitation.id,
+    roomId,
+    roomName: room?.name ?? '',
+    inviterId,
+    inviterName: inviter[0]?.name ?? '',
+    status: 'pending',
+    createdAt: invitation.createdAt,
+  });
+
+  res.json({ success: true, invitationId: invitation.id });
+});
+
+// Get pending invitations for a user
+app.get('/api/users/:userId/invitations', async (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const invitations = await db.select({
+    id: schema.roomInvitations.id,
+    roomId: schema.roomInvitations.roomId,
+    inviterId: schema.roomInvitations.inviterId,
+    inviteeId: schema.roomInvitations.inviteeId,
+    status: schema.roomInvitations.status,
+    createdAt: schema.roomInvitations.createdAt,
+    roomName: schema.rooms.name,
+    inviterName: schema.users.name,
+  })
+    .from(schema.roomInvitations)
+    .innerJoin(schema.rooms, eq(schema.rooms.id, schema.roomInvitations.roomId))
+    .innerJoin(schema.users, eq(schema.users.id, schema.roomInvitations.inviterId))
+    .where(and(eq(schema.roomInvitations.inviteeId, userId), eq(schema.roomInvitations.status, 'pending')));
+  res.json(invitations);
+});
+
+// Accept an invitation
+app.post('/api/invitations/:id/accept', async (req, res) => {
+  const invitationId = parseInt(req.params.id);
+  const { userId } = req.body as { userId: number };
+
+  const [inv] = await db.select().from(schema.roomInvitations)
+    .where(and(eq(schema.roomInvitations.id, invitationId), eq(schema.roomInvitations.inviteeId, userId)))
+    .limit(1);
+  if (!inv) { res.status(404).json({ error: 'Invitation not found' }); return; }
+  if (inv.status !== 'pending') { res.status(400).json({ error: 'Invitation is not pending' }); return; }
+
+  await db.update(schema.roomInvitations).set({ status: 'accepted' }).where(eq(schema.roomInvitations.id, invitationId));
+  await db.insert(schema.roomMembers).values({ userId, roomId: inv.roomId }).onConflictDoNothing();
+
+  const full = await getRoomWithMeta(inv.roomId, userId);
+
+  // Notify existing room members
+  io.to(`room:${inv.roomId}`).emit('room:membership', { roomId: inv.roomId, userId, action: 'join' });
+
+  res.json({ room: full });
+});
+
+// Decline an invitation
+app.post('/api/invitations/:id/decline', async (req, res) => {
+  const invitationId = parseInt(req.params.id);
+  const { userId } = req.body as { userId: number };
+
+  const [inv] = await db.select().from(schema.roomInvitations)
+    .where(and(eq(schema.roomInvitations.id, invitationId), eq(schema.roomInvitations.inviteeId, userId)))
+    .limit(1);
+  if (!inv) { res.status(404).json({ error: 'Invitation not found' }); return; }
+
+  await db.update(schema.roomInvitations).set({ status: 'declined' }).where(eq(schema.roomInvitations.id, invitationId));
+  res.json({ success: true });
+});
+
+// Start or get a DM with another user
+app.post('/api/dms', async (req, res) => {
+  const { userId, targetUserId } = req.body as { userId: number; targetUserId: number };
+  if (!userId || !targetUserId || userId === targetUserId) {
+    res.status(400).json({ error: 'Invalid user IDs' }); return;
+  }
+
+  // Check if DM room already exists (both users are members of a DM room)
+  const existing = await db.execute<{ room_id: number }>(sql`
+    SELECT rm1.room_id
+    FROM room_members rm1
+    JOIN room_members rm2 ON rm1.room_id = rm2.room_id
+    JOIN rooms r ON rm1.room_id = r.id
+    WHERE rm1.user_id = ${userId}
+      AND rm2.user_id = ${targetUserId}
+      AND r.is_dm = true
+    LIMIT 1
+  `);
+
+  if (existing.rows.length > 0) {
+    const roomId = existing.rows[0].room_id;
+    const full = await getRoomWithMeta(roomId, userId);
+    res.json(full);
+    return;
+  }
+
+  // Create new DM room
+  const u1 = Math.min(userId, targetUserId);
+  const u2 = Math.max(userId, targetUserId);
+  const dmName = `__dm_${u1}_${u2}`;
+
+  try {
+    const [room] = await db.insert(schema.rooms)
+      .values({ name: dmName, createdBy: userId, isPrivate: true, isDm: true })
+      .returning();
+    await db.insert(schema.roomMembers).values({ userId, roomId: room.id });
+    await db.insert(schema.roomMembers).values({ userId: targetUserId, roomId: room.id });
+
+    const full = await getRoomWithMeta(room.id, userId);
+
+    // Notify both users
+    io.to(`user:${userId}`).emit('room:created', full);
+    io.to(`user:${targetUserId}`).emit('room:created', await getRoomWithMeta(room.id, targetUserId));
+
+    res.json(full);
+  } catch (e: any) {
+    if (e.code === '23505') {
+      // DM already exists (race condition), fetch it
+      const retry = await db.execute<{ room_id: number }>(sql`
+        SELECT rm1.room_id
+        FROM room_members rm1
+        JOIN room_members rm2 ON rm1.room_id = rm2.room_id
+        JOIN rooms r ON rm1.room_id = r.id
+        WHERE rm1.user_id = ${userId}
+          AND rm2.user_id = ${targetUserId}
+          AND r.is_dm = true
+        LIMIT 1
+      `);
+      if (retry.rows.length > 0) {
+        const full = await getRoomWithMeta(retry.rows[0].room_id, userId);
+        res.json(full);
+        return;
+      }
+    }
+    res.status(500).json({ error: 'Failed to create DM' });
+  }
 });
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -399,6 +680,14 @@ app.post('/api/rooms/:id/messages', async (req, res) => {
       });
 
     io.to(`room:${roomId}`).emit('message:new', msgWithReads);
+
+    // Update room activity level
+    const newLevel = recordMessageActivity(roomId);
+    const prevLevel = roomActivityLevel.get(roomId) ?? '';
+    if (newLevel !== prevLevel) {
+      roomActivityLevel.set(roomId, newLevel);
+      io.emit('room:activity', { roomId, level: newLevel });
+    }
 
     // Notify other room members of unread update
     const members = await db.select({ userId: schema.roomMembers.userId })
@@ -733,6 +1022,44 @@ setInterval(async () => {
     console.error('Ephemeral cleanup error:', e);
   }
 }, 5000);
+
+// ── Drafts ────────────────────────────────────────────────────────────────────
+app.get('/api/users/:userId/drafts', async (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const drafts = await db.select().from(schema.messageDrafts)
+    .where(eq(schema.messageDrafts.userId, userId));
+  res.json(drafts);
+});
+
+app.put('/api/users/:userId/rooms/:roomId/draft', async (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const roomId = parseInt(req.params.roomId);
+  const { content } = req.body as { content: string };
+
+  if (typeof content !== 'string') { res.status(400).json({ error: 'Content required' }); return; }
+  const trimmed = content.slice(0, 2000);
+
+  try {
+    if (trimmed === '') {
+      await db.delete(schema.messageDrafts)
+        .where(and(eq(schema.messageDrafts.userId, userId), eq(schema.messageDrafts.roomId, roomId)));
+    } else {
+      await db.insert(schema.messageDrafts)
+        .values({ userId, roomId, content: trimmed })
+        .onConflictDoUpdate({
+          target: [schema.messageDrafts.userId, schema.messageDrafts.roomId],
+          set: { content: trimmed, updatedAt: sql`now()` },
+        });
+    }
+  } catch {
+    res.status(500).json({ error: 'Failed to save draft' });
+    return;
+  }
+
+  // Notify user's other sessions (multi-device sync)
+  io.to(`user:${userId}`).emit('draft:update', { roomId, content: trimmed });
+  res.json({ success: true });
+});
 
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
