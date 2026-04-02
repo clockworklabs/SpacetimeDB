@@ -24,7 +24,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Configurable container name for PostgreSQL backend
-POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-spacetime-web-postgres-1}"
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-exhaust-test-postgres-1}"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 

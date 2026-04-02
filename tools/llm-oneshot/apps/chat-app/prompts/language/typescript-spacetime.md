@@ -25,14 +25,20 @@ Module name: `chat-app`
 ## Branding & Styling
 
 - App title: **"SpacetimeDB Chat"**
-- Dark theme with SpacetimeDB brand colors:
-  - Primary: `#8957E5` (purple)
-  - Background: `#0D1117` (dark navy)
-  - Surface: `#161B22` (slightly lighter)
-  - Text: `#E6EDF3` (light gray)
-  - Accent: `#A371F7` (lighter purple for hover/active)
-  - Success: `#3FB950` (green for online indicators)
-  - Danger: `#F85149` (red for errors/destructive actions)
+- Dark theme using official SpacetimeDB brand colors:
+  - Primary: `#4cf490` (SpacetimeDB green)
+  - Primary hover: `#4cf490bf` (green 75% opacity)
+  - Secondary: `#a880ff` (SpacetimeDB purple)
+  - Background: `#0d0d0e` (shade2 — near black)
+  - Surface: `#141416` (shade1 — slightly lighter)
+  - Border: `#202126` (n6)
+  - Text: `#e6e9f0` (n1 — light gray)
+  - Text muted: `#6f7987` (n4)
+  - Accent: `#02befa` (SpacetimeDB blue)
+  - Success: `#4cf490` (green — same as primary)
+  - Warning: `#fbdc8e` (SpacetimeDB yellow)
+  - Danger: `#ff4c4c` (SpacetimeDB red)
+  - Gradient (optional, for headers): `linear-gradient(266deg, #4cf490 0%, #8a38f5 100%)` (green to purple)
 
 ## Output
 

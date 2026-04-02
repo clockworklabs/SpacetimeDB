@@ -25,14 +25,19 @@ Database name: `chat-app`
 ## Branding & Styling
 
 - App title: **"PostgreSQL Chat"**
-- Dark theme with PostgreSQL brand colors:
+- Dark theme using official PostgreSQL brand colors:
   - Primary: `#336791` (PostgreSQL blue)
-  - Background: `#1A1A2E` (dark navy)
-  - Surface: `#16213E` (slightly lighter)
-  - Text: `#E8E8E8` (light gray)
-  - Accent: `#4A90D9` (lighter blue for hover/active)
-  - Success: `#27AE60` (green for online indicators)
-  - Danger: `#E74C3C` (red for errors/destructive actions)
+  - Primary hover: `#008bb9` (lighter PostgreSQL blue)
+  - Secondary: `#0064a5` (dark PostgreSQL blue)
+  - Background: `#1a1a2e` (dark navy)
+  - Surface: `#16213e` (slightly lighter)
+  - Border: `#2a2a4a` (muted border)
+  - Text: `#e8e8e8` (light gray)
+  - Text muted: `#848484` (PostgreSQL light grey)
+  - Accent: `#008bb9` (PostgreSQL light blue)
+  - Success: `#27ae60` (green for online indicators)
+  - Warning: `#f26522` (PostgreSQL light orange)
+  - Danger: `#cc3b03` (PostgreSQL dark orange/red)
 
 ## Output
 

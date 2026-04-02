@@ -1,4 +1,4 @@
-# OpenTelemetry Collector for capturing Claude Code token usage.
+# Infrastructure for the exhaust test benchmark.
 # Run: docker compose -f docker-compose.otel.yaml up -d
 
 services:
@@ -11,3 +11,22 @@ services:
       - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
       - ./telemetry:/telemetry
     command: ["--config", "/etc/otelcol-contrib/config.yaml"]
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: spacetime
+      POSTGRES_PASSWORD: spacetime
+      POSTGRES_DB: spacetime
+    volumes:
+      - exhaust-test-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spacetime"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  exhaust-test-pgdata:
