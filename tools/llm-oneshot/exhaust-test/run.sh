@@ -195,10 +195,15 @@ export OTEL_LOGS_EXPORT_INTERVAL=1000
 export OTEL_METRIC_EXPORT_INTERVAL=5000
 
 # ─── Generate session ID ───────────────────────────────────────────────────
+# NOTE: OTEL_RESOURCE_ATTRIBUTES is set AFTER SESSION_ID is generated (below)
 # Pre-generate a UUID so we can pass --session-id to Claude and save it in
 # metadata for future --resume-session use.
 
 SESSION_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || node -e "const c=require('crypto');console.log([c.randomBytes(4),c.randomBytes(2),c.randomBytes(2),c.randomBytes(2),c.randomBytes(6)].map(b=>b.toString('hex')).join('-'))")
+
+# Tag all OTel records with run.id and session.id so parse-telemetry.mjs can
+# filter by session even when multiple backends run in parallel on the same collector.
+export OTEL_RESOURCE_ATTRIBUTES="run.id=$RUN_ID,session.id=$SESSION_ID"
 
 # ─── Save run metadata ──────────────────────────────────────────────────────
 
@@ -266,7 +271,7 @@ Fix the bugs in the exhaust test app.
 4. Fix each bug described in the report
 5. Redeploy as needed (see backend file for steps)
 6. Verify: npx tsc --noEmit && npm run build
-7. Make sure the dev server is running on port 5173
+7. Make sure the dev server is running on the correct port (SpacetimeDB: 5173, PostgreSQL: 5174)
 8. Append this fix iteration to ITERATION_LOG.md in the app directory
 
 Do NOT do browser testing — that happens in the grading session.
@@ -350,7 +355,7 @@ Upgrade the existing chat app to add the new feature(s) from level $LEVEL.
 5. Add the new feature(s) to both backend and frontend, integrating with the existing code
 6. Rebuild and redeploy (see CLAUDE.md for backend-specific steps)
 7. Verify the build succeeds: npx tsc --noEmit && npm run build (if applicable)
-8. Make sure the dev server is running on port 5173
+8. Make sure the dev server is running on the correct port (SpacetimeDB: 5173, PostgreSQL: 5174)
 
 IMPORTANT: Do NOT rewrite existing features. Only add new code for the new feature(s).
 Do NOT do browser testing — that happens in a separate grading session.

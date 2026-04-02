@@ -70,7 +70,7 @@ cd tools/llm-oneshot/exhaust-test
 This:
 1. Runs pre-flight checks (SpacetimeDB, Docker, OTel, prompts)
 2. Launches headless Claude Code with OTel telemetry enabled
-3. Generates backend + client code, builds, deploys to localhost:5173
+3. Generates backend + client code, builds, deploys (SpacetimeDB: localhost:5173, PostgreSQL: localhost:5174)
 4. Parses telemetry → `COST_REPORT.md`
 5. Prints the app directory path
 
@@ -88,7 +88,7 @@ Or use the helper script:
 ```
 
 The grading agent will:
-1. Open Chrome, navigate to localhost:5173
+1. Open Chrome, navigate to the backend's port (5173 for SpacetimeDB, 5174 for PostgreSQL)
 2. Test each feature using the test plans
 3. Score features 0-3
 4. If bugs found: write `BUG_REPORT.md` in the app directory

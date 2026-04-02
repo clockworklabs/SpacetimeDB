@@ -1,0 +1,11 @@
+{
+  "level": 3,
+  "backend": "spacetime",
+  "timestamp": "20260401-153518",
+  "startedAt": "2026-04-01T15:35:18-0400",
+  "startedAtUtc": "2026-04-01T19:35:18Z",
+  "runId": "spacetime-upgrade-to-level3-20260401-153518",
+  "appDir": "results\\spacetime\\chat-app-20260401-123403",
+  "promptFile": "03_realtime.md",
+  "phase": "upgrade"
+}

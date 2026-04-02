@@ -114,7 +114,7 @@ export default defineConfig({
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chat App</title>
+    <title>SpacetimeDB Chat</title>
   </head>
   <body>
     <div id="root"></div>

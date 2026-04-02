@@ -3,7 +3,7 @@
 **Max Score: 3** | **Multi-user: Yes (2 tabs)**
 
 ## Preconditions
-- App is running at http://localhost:5173
+- App is running (SpacetimeDB: http://localhost:5173, PostgreSQL: http://localhost:5174)
 - Two browser tabs open (Tab A, Tab B)
 
 ## Test Steps

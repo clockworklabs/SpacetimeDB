@@ -1,9 +1,0 @@
-{
-  "level": 1,
-  "backend": "spacetime",
-  "timestamp": "20260331-085432",
-  "startedAt": "2026-03-31T08:54:32-0400",
-  "runId": "spacetime-level1-20260331-085432",
-  "appDir": "/d/Development/ClockworkLabs/SpacetimeDB/SpacetimeDBPrivate/public/tools/llm-oneshot/exhaust-test/results/spacetime/chat-app-20260331-085432",
-  "promptFile": "01_basic.md"
-}

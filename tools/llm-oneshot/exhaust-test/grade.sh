@@ -48,12 +48,27 @@ echo "This launches an INTERACTIVE Claude Code session with Chrome MCP."
 echo "It will test the deployed app, write bug reports, and grade features."
 echo ""
 
+# Auto-detect backend from app directory structure
+if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
+  GRADE_BACKEND="spacetime"
+  VITE_PORT=5173
+elif [[ -d "$APP_DIR/server" ]]; then
+  GRADE_BACKEND="postgres"
+  VITE_PORT=5174
+else
+  GRADE_BACKEND="unknown"
+  VITE_PORT=5173
+fi
+echo "  Backend:  $GRADE_BACKEND (port $VITE_PORT)"
+
 # Interactive mode — no --print, no --dangerously-skip-permissions
 cd "$SCRIPT_DIR"
 $CLAUDE_CMD -p "Grade the exhaust test app at: $APP_DIR_NATIVE
 
+Backend: $GRADE_BACKEND
+
 Follow CLAUDE.md Phases 6-8:
-1. Open http://localhost:5173 in Chrome and verify the app loads
+1. Open http://localhost:$VITE_PORT in Chrome and verify the app loads
 2. Test each feature using the test plans in test-plans/feature-*.md
 3. Score each feature 0-3 based on browser observations
 4. If any features score < 3, write a BUG_REPORT.md in the app directory with:

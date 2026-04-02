@@ -140,7 +140,7 @@ Create the Express + Socket.io server:
 
 - `server/src/schema.ts` — Drizzle ORM table definitions for all features
 - `server/src/index.ts` — Express server with:
-  - CORS configured for `http://localhost:5173`
+  - CORS configured for `http://localhost:5174`
   - Socket.io with CORS
   - REST endpoints for rooms, messages, users
   - Socket.io events for real-time: typing, messages, presence, read receipts
@@ -186,7 +186,7 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
   }
   ```
 
-- `client/vite.config.ts` — port 5173, proxy `/api` and `/socket.io` to `http://localhost:3001`
+- `client/vite.config.ts` — port **5174** (NOT 5173 — that's SpacetimeDB), proxy `/api` and `/socket.io` to `http://localhost:3001`
   ```typescript
   import { defineConfig } from 'vite';
   import react from '@vitejs/plugin-react';
@@ -194,7 +194,7 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
   export default defineConfig({
     plugins: [react()],
     server: {
-      port: 5173,
+      port: 5174,
       proxy: {
         '/api': 'http://localhost:3001',
         '/socket.io': {
@@ -238,7 +238,7 @@ Both must pass. If either fails:
 
 ```bash
 # Kill any existing servers
-npx kill-port 5173 2>/dev/null || true
+npx kill-port 5174 2>/dev/null || true
 npx kill-port 3001 2>/dev/null || true
 
 # Start the API server in background
@@ -252,7 +252,7 @@ cd <client-dir> && npm run dev &
 
 Wait for both servers to be ready:
 - API server at `http://localhost:3001`
-- Client dev server at `http://localhost:5173`
+- Client dev server at `http://localhost:5174`
 
 ---
 
@@ -286,6 +286,24 @@ For context on what makes this backend different (this helps the benchmark compa
 | Online presence | Via lifecycle hooks | Manual Socket.io tracking |
 | Typing indicators | Reducer + subscription | Socket.io events |
 | Infra dependencies | SpacetimeDB only | PostgreSQL + Express + Socket.io + CORS |
+
+---
+
+## App Identity
+
+- HTML `<title>` MUST be **"PostgreSQL Chat"** (not "Chat App", not "SpacetimeDB Chat")
+- The app MUST show **"PostgreSQL Chat"** as the visible header/title in the UI
+- This distinguishes it from the SpacetimeDB version during testing
+
+---
+
+## Port Configuration
+
+| Service | Port | Notes |
+|---------|------|-------|
+| PostgreSQL (Docker) | 5433 | Database |
+| Express API server | 3001 | REST + Socket.io |
+| Vite dev server | **5174** | React client — NOT 5173 (that's SpacetimeDB) |
 
 ---
 

@@ -81,9 +81,11 @@ This is where you interact with the running app via Chrome MCP tools to test eve
 
 ### 6.1 Browser Setup
 
-1. Navigate to `http://localhost:5173` in a Chrome tab
+1. Navigate to the app URL in a Chrome tab:
+   - **SpacetimeDB:** `http://localhost:5173`
+   - **PostgreSQL:** `http://localhost:5174`
 2. Register as "Alice" (User A)
-3. Open a second tab at `http://localhost:5173`
+3. Open a second tab at the same URL
 4. Register as "Bob" (User B)
 
 Use Chrome MCP tools:
@@ -121,6 +123,14 @@ Test features in order (1 through N based on level). For each feature:
 3. Take a screenshot at key verification points
 4. Check `read_console_messages` for JavaScript errors
 5. Score the feature 0-3 based on the grading rubric
+6. **IMMEDIATELY** append this feature's score block to `GRADING_RESULTS.md` in the app directory:
+   ```markdown
+   ## Feature N: <Name> (Score: X / 3)
+   - [x/ ] <criterion> (<points>)
+   **Browser Test Observations:** ...
+   ---
+   ```
+   **This is critical.** Write each feature's result to disk right after testing it. If the session crashes or compacts, the per-feature evidence survives. Do NOT wait until Phase 8 to write scores.
 
 ### 6.4 Evidence Collection
 

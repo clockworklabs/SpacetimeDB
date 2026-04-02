@@ -1,0 +1,16 @@
+{
+  "level": 8,
+  "backend": "spacetime",
+  "timestamp": "20260401-175721",
+  "startedAt": "2026-04-01T17:57:21-0400",
+  "startedAtUtc": "2026-04-01T21:57:21Z",
+  "runId": "spacetime-upgrade-to-level8-20260401-175721",
+  "appDir": "results\\spacetime\\chat-app-20260401-123403",
+  "promptFile": "08_threading.md",
+  "phase": "upgrade",
+  "sessionId": "3c583901-8e38-f778-d405-b21e8ad0a424",
+  "endedAt": "2026-04-01T18:02:11-0400",
+  "endedAtUtc": "2026-04-01T22:02:11Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

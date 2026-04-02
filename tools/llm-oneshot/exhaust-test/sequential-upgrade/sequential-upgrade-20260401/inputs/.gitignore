@@ -1,0 +1,8 @@
+# Node modules inside generated apps
+results/**/node_modules/
+results/**/dist/
+results/**/.vite/
+results/**/drizzle/
+
+# Telemetry raw logs (large)
+telemetry/logs.jsonl

@@ -39,6 +39,19 @@ const metadata = fs.existsSync(metadataFile)
   ? JSON.parse(fs.readFileSync(metadataFile, 'utf-8'))
   : { level: '?', backend: '?', timestamp: '?' };
 
+// Session-ID filtering: prefer session.id match over time-range-only filtering.
+// When both backends run in parallel, time ranges overlap — session ID is the
+// only reliable way to attribute telemetry records to the correct run.
+const sessionId = metadata.sessionId || null;
+const runId = metadata.runId || null;
+
+if (sessionId) {
+  console.log(`Session-ID filtering enabled: session.id=${sessionId}`);
+} else {
+  console.warn('WARNING: No sessionId in metadata — falling back to time-range-only filtering.');
+  console.warn('         Results may include records from other concurrent runs.');
+}
+
 // Time-range filtering: only include records from this run's time window
 const startTime = metadata.startedAtUtc || metadata.startedAt;
 const endTime = endTimeOverride || metadata.endedAtUtc || metadata.endedAt;
@@ -65,6 +78,7 @@ let totalCostUsd = 0;
 
 let skippedOutOfRange = 0;
 let skippedNonApi = 0;
+let skippedWrongSession = 0;
 
 for (const line of lines) {
   try {
@@ -73,6 +87,24 @@ for (const line of lines) {
     // OTLP log records can be nested in different ways depending on the collector.
     // We look for attributes containing token counts.
     const attrs = extractAttributes(record);
+
+    // Extract resource-level attributes (contain session.id, run.id from OTEL_RESOURCE_ATTRIBUTES)
+    const resourceAttrs = extractResourceAttributes(record);
+
+    // Filter by session ID (if available in metadata)
+    // This is the primary filter when both backends run in parallel on the same collector.
+    if (sessionId) {
+      const recordSessionId = resourceAttrs['session.id'];
+      const recordRunId = resourceAttrs['run.id'];
+      if (recordSessionId || recordRunId) {
+        // Record has session tags — must match
+        if (recordSessionId !== sessionId && recordRunId !== runId) {
+          skippedWrongSession++;
+          continue;
+        }
+      }
+      // else: record has no session tags (older telemetry) — fall through to time-range filter
+    }
 
     // Filter by time range — only include records within this run's window
     const eventTimestamp = attrs['event.timestamp'] || attrs.timestamp;
@@ -158,7 +190,7 @@ const reportPath = path.join(runDir, 'COST_REPORT.md');
 fs.writeFileSync(reportPath, report);
 
 console.log(`Parsed ${apiCalls.length} API calls from ${lines.length} telemetry records.`);
-console.log(`  Skipped: ${skippedOutOfRange} out of time range, ${skippedNonApi} non-API events`);
+console.log(`  Skipped: ${skippedOutOfRange} out of time range, ${skippedNonApi} non-API events, ${skippedWrongSession} wrong session`);
 console.log(`Total tokens: ${totalTokens.toLocaleString()} (${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out)`);
 console.log(`Total cost: $${totalCostUsd.toFixed(4)}`);
 console.log(`Report saved to: ${reportPath}`);
@@ -197,6 +229,22 @@ function extractAttributes(record) {
     }
   }
 
+  return attrs;
+}
+
+/**
+ * Extract resource-level attributes from an OTLP record.
+ * These contain OTEL_RESOURCE_ATTRIBUTES values (session.id, run.id).
+ */
+function extractResourceAttributes(record) {
+  const attrs = {};
+  if (record.resourceLogs) {
+    for (const rl of record.resourceLogs) {
+      if (rl.resource?.attributes) {
+        flattenAttributes(rl.resource.attributes, attrs);
+      }
+    }
+  }
   return attrs;
 }
 
