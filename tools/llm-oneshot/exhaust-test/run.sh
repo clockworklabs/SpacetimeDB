@@ -7,7 +7,8 @@
 # Usage:
 #   ./run.sh                                    # defaults: level=1, backend=spacetime, variant=sequential-upgrade
 #   ./run.sh --level 5 --backend postgres       # generate from scratch at level 5
-#   ./run.sh --variant one-shot --backend spacetime  # one-shot: all 15 features in one prompt
+#   ./run.sh --variant one-shot --backend spacetime  # one-shot: all features in one prompt
+#   ./run.sh --rules standard --backend spacetime   # standard: SDK rules only, no templates
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
 #   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app
 #   ./run.sh --upgrade <app-dir> --level 3 --resume-session  # same, but resume prior session for cache
@@ -30,6 +31,7 @@ LEVEL=1
 LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
+RULES="guided"
 FIX_MODE=""
 FIX_APP_DIR=""
 UPGRADE_MODE=""
@@ -40,12 +42,19 @@ while [[ $# -gt 0 ]]; do
     --level) LEVEL="$2"; LEVEL_EXPLICIT=1; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
+    --rules) RULES="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
     --resume-session) RESUME_SESSION=1; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+# Validate rules level
+case "$RULES" in
+  guided|standard|minimal) ;;
+  *) echo "ERROR: --rules must be guided, standard, or minimal"; exit 1 ;;
+esac
 
 # Variant-specific defaults
 if [[ "$VARIANT" == "one-shot" ]]; then
@@ -244,6 +253,7 @@ fi
 
 echo "=== Exhaust Test: ${MODE_LABEL^} ==="
 echo "  Variant:   $VARIANT"
+echo "  Rules:     $RULES"
 echo "  Level:     $LEVEL"
 echo "  Backend:   $BACKEND"
 echo "  Run ID:    $RUN_ID"
@@ -290,6 +300,7 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "promptFile": "$(basename "$PROMPT_FILE")",
   "phase": "$MODE_LABEL",
   "variant": "$VARIANT",
+  "rules": "$RULES",
   "sessionId": "$SESSION_ID"
 }
 EOF
@@ -521,22 +532,51 @@ echo "────────────────────────�
 # (no "go find and read this other file" that it might skip).
 
 if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
-  if [[ "$BACKEND" == "spacetime" ]]; then
-    {
-      cat "$SCRIPT_DIR/backends/spacetime.md"
-      echo ""
-      echo "---"
-      echo ""
-      cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md"
-      echo ""
-      echo "---"
-      echo ""
-      cat "$SCRIPT_DIR/backends/spacetime-templates.md"
-    } > "$APP_DIR/CLAUDE.md"
-    echo "Assembled CLAUDE.md from spacetime.md + sdk-rules + templates"
+  # Assemble CLAUDE.md based on --rules level:
+  #   guided:   full phases + SDK rules + code templates (most prescriptive)
+  #   standard: SDK rules only (no templates, no step-by-step phases)
+  #   minimal:  just the tech stack name (least prescriptive)
+  if [[ "$RULES" == "minimal" ]]; then
+    if [[ "$BACKEND" == "spacetime" ]]; then
+      echo "Build this app using the SpacetimeDB TypeScript SDK (npm package: spacetimedb)." > "$APP_DIR/CLAUDE.md"
+      echo "Server module in backend/spacetimedb/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+    else
+      echo "Build this app using PostgreSQL + Express + Socket.io + Drizzle ORM." > "$APP_DIR/CLAUDE.md"
+      echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+      echo "PostgreSQL connection: postgresql://spacetime:spacetime@localhost:5433/spacetime" >> "$APP_DIR/CLAUDE.md"
+    fi
+    echo "Assembled minimal CLAUDE.md (rules=$RULES)"
+  elif [[ "$RULES" == "standard" ]]; then
+    if [[ "$BACKEND" == "spacetime" ]]; then
+      cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" > "$APP_DIR/CLAUDE.md"
+    else
+      # PostgreSQL: just connection info (LLM already knows Express/Socket.io/Drizzle)
+      echo "# PostgreSQL Backend" > "$APP_DIR/CLAUDE.md"
+      echo "" >> "$APP_DIR/CLAUDE.md"
+      echo "PostgreSQL connection: \`postgresql://spacetime:spacetime@localhost:5433/spacetime\`" >> "$APP_DIR/CLAUDE.md"
+      echo "" >> "$APP_DIR/CLAUDE.md"
+      echo "Use Express + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
+    fi
+    echo "Assembled standard CLAUDE.md (rules=$RULES)"
   else
-    cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
-    echo "Copied backends/$BACKEND.md → app CLAUDE.md"
+    # guided (default) — full phases + SDK rules + templates
+    if [[ "$BACKEND" == "spacetime" ]]; then
+      {
+        cat "$SCRIPT_DIR/backends/spacetime.md"
+        echo ""
+        echo "---"
+        echo ""
+        cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md"
+        echo ""
+        echo "---"
+        echo ""
+        cat "$SCRIPT_DIR/backends/spacetime-templates.md"
+      } > "$APP_DIR/CLAUDE.md"
+      echo "Assembled guided CLAUDE.md from spacetime.md + sdk-rules + templates"
+    else
+      cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
+      echo "Copied backends/$BACKEND.md → app CLAUDE.md"
+    fi
   fi
 fi
 

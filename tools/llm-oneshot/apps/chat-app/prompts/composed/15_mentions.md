@@ -1,4 +1,4 @@
-# Chat App - Full Features
+# Chat App - Full Features (18)
 
 Create a **real-time chat app**.
 
@@ -111,3 +111,29 @@ See language file for branding and color scheme.
 - Anonymous users have a temporary identity that persists for their session
 - When an anonymous user registers, their identity and message history are preserved
 - Room memberships and all associated data transfer to the registered account
+
+### Pinned Messages
+
+- Users can pin important messages in a channel (admins and message authors can pin)
+- Pinned messages show a pin indicator in the message list
+- A "Pinned Messages" panel accessible from the channel header shows all pins for that channel
+- Users can unpin messages
+- Pin/unpin actions sync to all users in the channel in real-time
+
+### User Profiles
+
+- Users can edit their profile: display name, bio/status message, and avatar URL
+- Clicking on a username anywhere in the app opens a profile card/popover showing their info
+- When a user updates their profile, the changes propagate everywhere in real-time — message attributions, member lists, online user lists, and DM headers all reflect the new name/avatar immediately
+- Profile changes are visible to all users across all channels without page refresh
+
+### @Mentions and Notification Feed
+
+- Users can @mention other users in messages by typing `@username`
+- Mentioned usernames are highlighted/styled in the message text
+- When a user is mentioned, a notification is created for them
+- Notification bell icon in the sidebar/header shows unread notification count
+- Clicking the bell opens a notification panel listing all notifications (mentions, invites, etc.) with the source message and channel
+- Users can mark individual notifications as read, or mark all as read
+- Notifications update in real-time — new mentions appear instantly in the bell count
+- Clicking a notification navigates to the source message in its channel

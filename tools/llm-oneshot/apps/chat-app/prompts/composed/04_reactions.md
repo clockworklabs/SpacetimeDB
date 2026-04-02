@@ -6,7 +6,7 @@ Create a **real-time chat app**.
 
 ## UI Requirements
 
-Use SpacetimeDB brand styling (dark theme).
+See language file for branding and color scheme.
 
 ## Features
 

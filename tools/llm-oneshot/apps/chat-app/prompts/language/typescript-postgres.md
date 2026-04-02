@@ -22,6 +22,18 @@ Database name: `chat-app`
   - `.../client/` (client-side TypeScript/React)
 - Keep it minimal and readable.
 
+## Branding & Styling
+
+- App title: **"PostgreSQL Chat"**
+- Dark theme with PostgreSQL brand colors:
+  - Primary: `#336791` (PostgreSQL blue)
+  - Background: `#1A1A2E` (dark navy)
+  - Surface: `#16213E` (slightly lighter)
+  - Text: `#E8E8E8` (light gray)
+  - Accent: `#4A90D9` (lighter blue for hover/active)
+  - Success: `#27AE60` (green for online indicators)
+  - Danger: `#E74C3C` (red for errors/destructive actions)
+
 ## Output
 
 Return only code blocks with file headers for the files you create.
