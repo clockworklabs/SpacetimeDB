@@ -204,7 +204,7 @@ impl Default for GlobalTxConfig {
     fn default() -> Self {
         Self {
             wound_grace_period: default_wound_grace_period(),
-            fake_2pc_persistence: false,
+            fake_2pc_persistence: true,
         }
     }
 }
@@ -491,7 +491,7 @@ mod tests {
     fn global_tx_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
         assert_eq!(config.global_tx.wound_grace_period, Duration::from_millis(10));
-        assert!(!config.global_tx.fake_2pc_persistence);
+        assert!(config.global_tx.fake_2pc_persistence);
     }
 
     #[test]
