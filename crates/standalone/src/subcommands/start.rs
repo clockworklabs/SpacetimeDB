@@ -526,6 +526,9 @@ mod tests {
             heap-gc-trigger-fraction = 0.6
             heap-retire-fraction = 0.8
             heap-limit-mb = 128
+
+            [global-tx]
+            fake_2pc_persistence = true
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -542,6 +545,7 @@ mod tests {
         assert_eq!(config.common.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.common.v8_heap_policy.heap_retire_fraction, 0.8);
         assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, Some(128 * 1024 * 1024));
+        assert!(config.common.global_tx.fake_2pc_persistence);
 
         assert_eq!(
             config.websocket,

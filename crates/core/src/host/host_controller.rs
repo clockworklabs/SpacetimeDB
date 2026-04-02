@@ -746,6 +746,7 @@ async fn make_replica_ctx(
         global_tx_manager: Arc::new(crate::host::global_tx::GlobalTxManager::new(
             global_tx_config.wound_grace_period,
         )),
+        fake_2pc_persistence: global_tx_config.fake_2pc_persistence,
     })
 }
 

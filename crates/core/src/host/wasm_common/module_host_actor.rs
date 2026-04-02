@@ -727,14 +727,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
         stdb.request_durability_for_tx_data(None, &marker_tx_data);
 
-        // Step 3: wait for the PREPARE marker to be durable before signalling PREPARED.
-        // B must not claim PREPARED until the marker is on disk — if B crashes after
-        // claiming PREPARED but before the marker is durable, recovery has nothing to recover.
-        if let Some(prepare_offset) = marker_tx_data.tx_offset()
-            && let Some(mut durable) = stdb.durable_tx_offset()
-        {
-            let handle = tokio::runtime::Handle::current();
-            let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
+        // Step 3: unless fake 2PC persistence is enabled, wait for the PREPARE marker
+        // to be durable before signalling PREPARED. B must not claim PREPARED until
+        // the marker is on disk — if B crashes after claiming PREPARED but before the
+        // marker is durable, recovery has nothing to recover.
+        if !replica_ctx.fake_2pc_persistence {
+            if let Some(prepare_offset) = marker_tx_data.tx_offset()
+                && let Some(mut durable) = stdb.durable_tx_offset()
+            {
+                let handle = tokio::runtime::Handle::current();
+                let _ = block_on_scoped(&handle, durable.wait_for(prepare_offset));
+            }
         }
 
         // Step 4: signal PREPARED.
@@ -776,17 +779,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
             let commit_result = commit_and_broadcast_event(&self.common.info.subscriptions, client, event, tx);
 
-            // Wait for B's COMMIT to be durable before acking to coordinator.
-            // Without this, A could delete its coordinator log entry while B's commit
-            // is still in-memory — a B crash at that point would leave the tx uncommitted
-            // with no way to recover (A has already forgotten it committed).
-            if let Some(mut durable) = stdb.durable_tx_offset() {
-                let handle = tokio::runtime::Handle::current();
-                block_on_scoped(&handle, async move {
-                    if let Ok(offset) = commit_result.tx_offset.await {
-                        let _ = durable.wait_for(offset).await;
-                    }
-                });
+            // Unless fake 2PC persistence is enabled, wait for B's COMMIT to be durable
+            // before acking to coordinator. Without this, A could delete its coordinator
+            // log entry while B's commit is still in-memory — a B crash at that point
+            // would leave the tx uncommitted with no way to recover
+            // (A has already forgotten it committed).
+            if !replica_ctx.fake_2pc_persistence {
+                if let Some(mut durable) = stdb.durable_tx_offset() {
+                    let handle = tokio::runtime::Handle::current();
+                    block_on_scoped(&handle, async move {
+                        if let Ok(offset) = commit_result.tx_offset.await {
+                            let _ = durable.wait_for(offset).await;
+                        }
+                    });
+                }
             }
 
             if let Some(tx_id) = global_tx_id {
@@ -1242,7 +1248,8 @@ impl InstanceCommon {
             let committed = matches!(event.status, EventStatus::Committed(_));
             let stdb = self.info.subscriptions.relational_db().clone();
             let handle = tokio::runtime::Handle::current();
-            let local_db = inst.replica_ctx().database.database_identity;
+            let replica_ctx = inst.replica_ctx();
+            let local_db = replica_ctx.database.database_identity;
 
             if committed {
                 WORKER_METRICS
@@ -1251,11 +1258,12 @@ impl InstanceCommon {
                     .inc();
             }
 
-            // Wait for A's coordinator log (committed atomically with the tx) to be
-            // durable before sending COMMIT to B.  This guarantees that if A crashes
-            // after sending COMMIT, recovery can retransmit from the durable log.
-            // Only needed for COMMIT; ABORT carries no durability requirement.
-            if committed {
+            // Unless fake 2PC persistence is enabled, wait for A's coordinator log
+            // (committed atomically with the tx) to be durable before sending COMMIT
+            // to B. This guarantees that if A crashes after sending COMMIT, recovery
+            // can retransmit from the durable log. Only needed for COMMIT; ABORT
+            // carries no durability requirement.
+            if committed && !replica_ctx.fake_2pc_persistence {
                 if let Some(mut durable_offset) = stdb.durable_tx_offset() {
                     block_on_scoped(&handle, async move {
                         if let Ok(offset) = commit_tx_offset.await {

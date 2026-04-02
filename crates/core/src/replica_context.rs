@@ -80,6 +80,8 @@ pub struct ReplicaContext {
     pub tx_id_nonce: Arc<AtomicU32>,
     /// In-memory distributed transaction sessions and lock scheduling state.
     pub global_tx_manager: Arc<GlobalTxManager>,
+    /// If true, 2PC skips internal durability waits used for crash-safe recovery.
+    pub fake_2pc_persistence: bool,
 }
 
 impl ReplicaContext {

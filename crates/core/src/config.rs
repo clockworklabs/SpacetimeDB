@@ -196,12 +196,15 @@ pub struct V8HeapPolicyConfig {
 pub struct GlobalTxConfig {
     #[serde(default = "default_wound_grace_period", deserialize_with = "de_duration")]
     pub wound_grace_period: Duration,
+    #[serde(default, alias = "fake_2pc_persistence")]
+    pub fake_2pc_persistence: bool,
 }
 
 impl Default for GlobalTxConfig {
     fn default() -> Self {
         Self {
             wound_grace_period: default_wound_grace_period(),
+            fake_2pc_persistence: false,
         }
     }
 }
@@ -488,6 +491,7 @@ mod tests {
     fn global_tx_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
         assert_eq!(config.global_tx.wound_grace_period, Duration::from_millis(10));
+        assert!(!config.global_tx.fake_2pc_persistence);
     }
 
     #[test]
@@ -495,9 +499,11 @@ mod tests {
         let toml = r#"
             [global-tx]
             wound-grace-period = "25ms"
+            fake_2pc_persistence = true
         "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
         assert_eq!(config.global_tx.wound_grace_period, Duration::from_millis(25));
+        assert!(config.global_tx.fake_2pc_persistence);
     }
 }

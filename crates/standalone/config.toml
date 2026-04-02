@@ -38,4 +38,8 @@ directives = [
 # Delay before an older transaction wounds a younger owner.
 # wound-grace-period = "10ms"
 
+# If true, distributed transactions skip the internal durability waits used to
+# make 2PC crash-safe. Client-facing read-committed waits still apply.
+# fake_2pc_persistence = false
+
 # vim: set nowritebackup: << otherwise triggers cargo-watch

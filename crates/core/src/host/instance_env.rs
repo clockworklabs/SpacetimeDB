@@ -1575,6 +1575,7 @@ mod test {
                 call_reducer_auth_token: None,
                 tx_id_nonce: Arc::default(),
                 global_tx_manager: Arc::default(),
+                fake_2pc_persistence: false,
             },
             runtime,
         ))
