@@ -1,0 +1,18 @@
+{
+  "backend": "postgres",
+  "level": 7,
+  "variant": "one-shot",
+  "rules": "guided",
+  "runIndex": 1,
+  "sessionId": "a1d5ed40-8cd2-3141-e9ef-b675fc812345",
+  "startedAt": "2026-04-02T19:57:07Z",
+  "endedAt": "2026-04-02T20:05:36Z",
+  "totalInputTokens": 24,
+  "totalOutputTokens": 30849,
+  "totalTokens": 30873,
+  "cacheReadTokens": 1206664,
+  "cacheCreationTokens": 40225,
+  "totalCostUsd": 0.9756499500000001,
+  "apiCalls": 22,
+  "totalDurationSec": 403.189
+}

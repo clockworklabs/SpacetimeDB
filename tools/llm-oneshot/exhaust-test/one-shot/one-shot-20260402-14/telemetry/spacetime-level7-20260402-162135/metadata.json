@@ -1,0 +1,23 @@
+{
+  "level": 7,
+  "backend": "spacetime",
+  "timestamp": "20260402-162135",
+  "startedAt": "2026-04-02T16:21:35-0400",
+  "startedAtUtc": "2026-04-02T20:21:35Z",
+  "runId": "spacetime-level7-20260402-162135",
+  "appDir": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\one-shot\\one-shot-20260402-14\\results\\spacetime\\chat-app-20260402-162135",
+  "promptFile": "exhaust-prompt-0-07_presence.md",
+  "phase": "generate",
+  "variant": "one-shot",
+  "rules": "standard",
+  "testMode": "none",
+  "runIndex": 0,
+  "vitePort": 5173,
+  "expressPort": 3001,
+  "pgDatabase": "spacetime",
+  "sessionId": "df5c67fd-2a1f-e3f3-6818-506e15339a61",
+  "endedAt": "2026-04-02T16:51:49-0400",
+  "endedAtUtc": "2026-04-02T20:51:49Z",
+  "exitCode": 0,
+  "mode": "generate"
+}

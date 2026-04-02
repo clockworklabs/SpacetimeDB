@@ -1,0 +1,72 @@
+- generic [ref=e3]:
+  - complementary [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - text: Alice
+        - combobox [ref=e12] [cursor=pointer]:
+          - option "🟢 Online" [selected]
+          - option "🟡 Away"
+          - option "🔴 Do Not Disturb"
+          - option "⚫ Invisible"
+      - heading "SpacetimeDB Chat" [level=2] [ref=e13]
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - text: Rooms
+        - button "+" [ref=e16]
+      - generic [ref=e32] [cursor=pointer]: "#TestRoom"
+    - generic [ref=e19]:
+      - generic [ref=e21]: Users (3)
+      - generic [ref=e22]:
+        - generic [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: 🟢
+          - generic [ref=e25]: Alice (you)
+        - generic [ref=e71] [cursor=pointer]:
+          - generic [ref=e72]: 🟢
+          - generic [ref=e73]: t
+        - generic [ref=e78] [cursor=pointer]:
+          - generic [ref=e79]: 🟢
+          - generic [ref=e80]: "2"
+  - main [ref=e26]:
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - heading "#TestRoom" [level=3] [ref=e35]
+        - button "Leave" [ref=e36]
+      - generic [ref=e38]: 🟢🟢🟢
+    - generic [ref=e39]:
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - generic [ref=e55]: Alice
+          - generic [ref=e56]: 05:05 PM
+        - paragraph [ref=e58]: Hello from Alice!
+        - button "👍 1" [ref=e70]
+        - generic [ref=e99]: "Seen by: t"
+      - generic [ref=e101]:
+        - generic [ref=e102]:
+          - generic [ref=e103]: t
+          - generic [ref=e104]: 05:05 PM
+        - paragraph [ref=e106]: sdfsdf
+    - generic [ref=e107]:
+      - generic [ref=e108]:
+        - generic [ref=e109]:
+          - checkbox "Ephemeral" [ref=e110]
+          - text: Ephemeral
+        - generic [ref=e111]:
+          - checkbox "Schedule" [checked] [active] [ref=e112]
+          - text: Schedule
+        - textbox [ref=e116]
+      - generic [ref=e113]:
+        - textbox "Type a message to schedule..." [ref=e117]
+        - button "⏰" [disabled] [ref=e118]
+  - complementary [ref=e49]:
+    - heading "Room Members" [level=3] [ref=e50]
+    - generic [ref=e52]: Alice (admin)
+    - generic [ref=e89]:
+      - generic [ref=e90]: "2"
+      - generic [ref=e91]:
+        - button "↑" [ref=e92]
+        - button "✕" [ref=e93]
+    - generic [ref=e94]:
+      - generic [ref=e95]: t
+      - generic [ref=e96]:
+        - button "↑" [ref=e97]
+        - button "✕" [ref=e98]

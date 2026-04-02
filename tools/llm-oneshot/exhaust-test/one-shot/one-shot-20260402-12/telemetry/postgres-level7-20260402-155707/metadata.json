@@ -1,0 +1,23 @@
+{
+  "level": 7,
+  "backend": "postgres",
+  "timestamp": "20260402-155707",
+  "startedAt": "2026-04-02T15:57:07-0400",
+  "startedAtUtc": "2026-04-02T19:57:07Z",
+  "runId": "postgres-level7-20260402-155707",
+  "appDir": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\one-shot\\one-shot-20260402-12\\results\\postgres\\chat-app-20260402-155707",
+  "promptFile": "exhaust-prompt-1-07_presence.md",
+  "phase": "generate",
+  "variant": "one-shot",
+  "rules": "guided",
+  "testMode": "none",
+  "runIndex": 1,
+  "vitePort": 5274,
+  "expressPort": 3101,
+  "pgDatabase": "spacetime_run1",
+  "sessionId": "a1d5ed40-8cd2-3141-e9ef-b675fc812345",
+  "endedAt": "2026-04-02T16:05:36-0400",
+  "endedAtUtc": "2026-04-02T20:05:36Z",
+  "exitCode": 0,
+  "mode": "generate"
+}

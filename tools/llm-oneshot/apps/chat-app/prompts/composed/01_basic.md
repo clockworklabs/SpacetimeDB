@@ -2,11 +2,40 @@
 
 Create a **real-time chat app**.
 
-**See `language/*.md` for language-specific setup, architecture, and constraints.**
 
-## UI Requirements
+## UI & Style Guide
 
-See language file for branding and color scheme.
+### Layout
+- **Sidebar** (left, ~220px fixed): app title/branding, user info with status, room list, online users
+- **Main area** (right, flex): room header bar, scrollable message list, input bar pinned to bottom
+- **Panels** (right slide-in or overlay): threads, pinned messages, profiles, settings
+
+### Visual Design
+- Dark theme using the brand colors from the language section below
+- Background: darkest shade for main bg, slightly lighter for sidebar and cards
+- Text: light on dark, muted color for timestamps and secondary info
+- Borders: subtle 1px, low contrast against background
+- Consistent spacing scale (8/12/16/24px)
+- Font: system font stack, clear hierarchy (bold headers, regular body, small muted metadata)
+- Rounded corners on inputs, buttons, cards, and message containers
+
+### Components
+- **Messages**: sender name (colored) + timestamp (muted) + text. Group consecutive messages from same sender. Action buttons (edit, react, reply, pin, forward, bookmark) appear on hover only.
+- **Inputs**: full-width, rounded, subtle border, placeholder text, focus ring using primary color
+- **Buttons**: filled with primary color for main actions, outlined/ghost for secondary. Clear hover and active states.
+- **Badges**: small pill-shaped with count, contrasting color (e.g., unread count on rooms)
+- **Modals/panels**: slide-in from right with subtle backdrop, or dropdown overlays
+- **Status indicators**: small colored dots (green=online, yellow=away, red=DND, grey=offline)
+- **Room list**: room names with optional icon prefix (#), active room highlighted, unread badge
+
+### Interaction & UX
+- Show loading/connecting state while backend connects (spinner or skeleton, not blank screen)
+- Empty states: helpful text when no rooms, no messages, no results ("Create a room to get started")
+- Error feedback: inline error messages or toast notifications, never silent failures
+- Smooth transitions: fade/slide for panels, modals, and state changes
+- Hover reveals: message action buttons, tooltips on reactions, user profile cards
+- Keyboard support: Enter to send messages, Escape to close modals/panels
+- Auto-scroll to newest message, with scroll-to-bottom button when scrolled up
 
 ## Features
 

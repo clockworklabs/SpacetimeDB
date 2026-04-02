@@ -1,0 +1,24 @@
+- generic [ref=e3]:
+  - complementary [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - text: Alice
+        - combobox [ref=e12] [cursor=pointer]:
+          - option "🟢 Online" [selected]
+          - option "🟡 Away"
+          - option "🔴 Do Not Disturb"
+          - option "⚫ Invisible"
+      - heading "SpacetimeDB Chat" [level=2] [ref=e13]
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - text: Rooms
+        - button "+" [ref=e16]
+      - textbox "Room name..." [active] [ref=e30]
+      - generic [ref=e18]: No rooms yet. Create one!
+    - generic [ref=e19]:
+      - generic [ref=e21]: Users (1)
+      - generic [ref=e23] [cursor=pointer]:
+        - generic [ref=e24]: 🟢
+        - generic [ref=e25]: Alice (you)
+  - main [ref=e26]:
+    - paragraph [ref=e28]: Select a room to start chatting

@@ -238,7 +238,7 @@ fi
 if [[ "$TEST_MODE" != "playwright" ]]; then
   STRIPPED_PROMPT="/tmp/exhaust-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
   # Remove **UI contract:** blocks (from the line through the next blank line or next ###)
-  sed '/^\*\*UI contract:\*\*/,/^$/d; /^**Important:** Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
+  sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
   PROMPT_FILE="$STRIPPED_PROMPT"
   echo "[OK] UI contracts stripped (test=$TEST_MODE)"
 fi
@@ -529,6 +529,10 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
   echo "  Prompt: $(basename "$PROMPT_FILE")"
   echo ""
 
+  # Read language and feature files to inline into the prompt
+  LANG_CONTENT=$(cat "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md" 2>/dev/null || echo "")
+  FEATURE_CONTENT=$(cat "$PROMPT_FILE" 2>/dev/null || echo "")
+
   PROMPT=$(cat <<PROMPT_EOF
 Upgrade the existing chat app to add the new feature(s) from level $LEVEL.
 
@@ -538,22 +542,28 @@ Upgrade the existing chat app to add the new feature(s) from level $LEVEL.
 **Target level:** $LEVEL
 
 **Instructions:**
-1. Read the CLAUDE.md in this directory for backend-specific architecture and constraints
-2. Read the language prompt: $LANG_PROMPT_NATIVE
-3. Read the full feature prompt: $PROMPT_FILE_NATIVE
-   - Features from level $PREV_LEVEL and below are ALREADY IMPLEMENTED — do NOT rewrite them
-   - Only add the NEW feature(s) that appear in level $LEVEL but not in level $PREV_LEVEL
-4. Read the existing source code to understand the current architecture
-5. Add the new feature(s) to both backend and frontend, integrating with the existing code
-6. Rebuild and redeploy (see CLAUDE.md for backend-specific steps)
-7. Verify the build succeeds: npx tsc --noEmit && npm run build (if applicable)
-8. Make sure the dev server is running on port $VITE_PORT
+1. Read the CLAUDE.md in this directory for backend-specific architecture and SDK reference
+2. Read the existing source code to understand the current architecture
+3. Add the new feature(s) to both backend and frontend, integrating with the existing code
+4. Rebuild and redeploy (see CLAUDE.md for backend-specific steps)
+5. Verify the build succeeds: npx tsc --noEmit && npm run build (if applicable)
+6. Make sure the dev server is running on port $VITE_PORT
 
-IMPORTANT: Do NOT rewrite existing features. Only add new code for the new feature(s).
+Features from level $PREV_LEVEL and below are ALREADY IMPLEMENTED — do NOT rewrite them.
+Only add the NEW feature(s) that appear in the feature spec below but not in level $PREV_LEVEL.
+
 Do NOT do browser testing — that happens in a separate grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
 
 When done, output: UPGRADE_COMPLETE
+
+---
+
+$LANG_CONTENT
+
+---
+
+$FEATURE_CONTENT
 PROMPT_EOF
   )
 
@@ -569,6 +579,10 @@ else
     LANG_PROMPT_NATIVE="$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$BACKEND.md"
   fi
 
+  # Read language and feature files to inline into the prompt
+  LANG_CONTENT=$(cat "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$BACKEND.md" 2>/dev/null || echo "")
+  FEATURE_CONTENT=$(cat "$PROMPT_FILE" 2>/dev/null || echo "")
+
   PROMPT=$(cat <<PROMPT_EOF
 Run the exhaust test benchmark — GENERATE AND DEPLOY ONLY.
 
@@ -579,11 +593,9 @@ Run the exhaust test benchmark — GENERATE AND DEPLOY ONLY.
 - Run ID: $RUN_ID
 
 **Instructions:**
-1. Read the CLAUDE.md in this directory — it has backend-specific setup, architecture, and phase instructions
-2. Read the language prompt: $LANG_PROMPT_NATIVE
-3. Read the feature prompt: $PROMPT_FILE_NATIVE
-4. Follow the phases in CLAUDE.md to generate, build, and deploy the app
-5. Write all code in the current directory (server/ and client/ subdirectories)
+1. Read the CLAUDE.md in this directory — it has backend-specific setup, architecture, and SDK reference
+2. Follow the phases in CLAUDE.md to generate, build, and deploy the app
+3. Write all code in the current directory
 
 If the build fails, fix and retry (up to 3 times per phase).
 Write an ITERATION_LOG.md tracking any build reprompts.
@@ -592,6 +604,14 @@ Do NOT do browser testing — that happens in a separate grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
 
 When done, output: DEPLOY_COMPLETE
+
+---
+
+$LANG_CONTENT
+
+---
+
+$FEATURE_CONTENT
 PROMPT_EOF
   )
 fi
@@ -866,6 +886,10 @@ if [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "playwright" && -f "$PLAYWRIGHT_DIR/no
   else
     echo "WARNING: Dev server not responding on port $VITE_PORT — skipping Playwright grading"
   fi
+elif [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "agents" ]]; then
+  echo ""
+  echo "=== Auto-grading with Playwright Agents ==="
+  "$SCRIPT_DIR/grade-agents.sh" "$APP_DIR" 2>&1 || echo "WARNING: Agent grading failed"
 elif [[ $EXIT_CODE -ne 0 ]]; then
   echo "Skipping auto-grade — code generation failed (exit $EXIT_CODE)"
 fi
