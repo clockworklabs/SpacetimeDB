@@ -32,13 +32,28 @@ fi
 # Auto-detect backend from app directory structure
 if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
   GRADE_BACKEND="spacetime"
-  VITE_PORT=5173
+  DEFAULT_PORT=5173
 elif [[ -d "$APP_DIR/server" ]]; then
   GRADE_BACKEND="postgres"
-  VITE_PORT=5174
+  DEFAULT_PORT=5174
 else
   GRADE_BACKEND="unknown"
-  VITE_PORT=5173
+  DEFAULT_PORT=5173
+fi
+
+# Try to read the port from telemetry metadata (set by --run-index)
+VITE_PORT="$DEFAULT_PORT"
+# Walk up from app dir to find telemetry metadata
+RUN_BASE="$(cd "$APP_DIR/../../.." 2>/dev/null && pwd)"
+if [[ -d "$RUN_BASE/telemetry" ]]; then
+  # Find the most recent metadata.json for this backend
+  LATEST_META=$(find "$RUN_BASE/telemetry" -name "metadata.json" -path "*$GRADE_BACKEND*" -exec ls -t {} + 2>/dev/null | head -1)
+  if [[ -n "$LATEST_META" ]]; then
+    META_PORT=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')); process.stdout.write(String(m.vitePort||''))" -- "$(cygpath -w "$LATEST_META" 2>/dev/null || echo "$LATEST_META")" 2>/dev/null)
+    if [[ -n "$META_PORT" ]]; then
+      VITE_PORT="$META_PORT"
+    fi
+  fi
 fi
 
 APP_URL="http://localhost:$VITE_PORT"

@@ -9,6 +9,7 @@
 #   ./run.sh --level 5 --backend postgres       # generate from scratch at level 5
 #   ./run.sh --variant one-shot --backend spacetime  # one-shot: all features in one prompt
 #   ./run.sh --rules standard --backend spacetime   # standard: SDK rules only, no templates
+#   ./run.sh --run-index 1 --backend spacetime      # parallel run with offset ports
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
 #   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app
 #   ./run.sh --upgrade <app-dir> --level 3 --resume-session  # same, but resume prior session for cache
@@ -32,6 +33,7 @@ LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
 RULES="guided"
+RUN_INDEX=0
 FIX_MODE=""
 FIX_APP_DIR=""
 UPGRADE_MODE=""
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --backend) BACKEND="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
+    --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
     --resume-session) RESUME_SESSION=1; shift ;;
@@ -55,6 +58,24 @@ case "$RULES" in
   guided|standard|minimal) ;;
   *) echo "ERROR: --rules must be guided, standard, or minimal"; exit 1 ;;
 esac
+
+# ─── Port allocation ──────────────────────────────────────────────────────────
+# Each run-index offsets all ports by 100 to allow parallel execution.
+#   Run 0: Vite(stdb)=5173, Vite(pg)=5174, Express=3001, PG=5433
+#   Run 1: Vite(stdb)=5273, Vite(pg)=5274, Express=3101, PG=5533
+#   Run 2: Vite(stdb)=5373, Vite(pg)=5374, Express=3201, PG=5633
+PORT_OFFSET=$((RUN_INDEX * 100))
+VITE_PORT_STDB=$((5173 + PORT_OFFSET))
+VITE_PORT_PG=$((5174 + PORT_OFFSET))
+EXPRESS_PORT=$((3001 + PORT_OFFSET))
+PG_PORT=$((5433 + PORT_OFFSET))
+STDB_PORT=3000  # SpacetimeDB server is shared, modules are isolated by name
+
+if [[ "$BACKEND" == "spacetime" ]]; then
+  VITE_PORT=$VITE_PORT_STDB
+else
+  VITE_PORT=$VITE_PORT_PG
+fi
 
 # Variant-specific defaults
 if [[ "$VARIANT" == "one-shot" ]]; then
@@ -127,7 +148,7 @@ if [[ "$BACKEND" == "spacetime" ]]; then
   fi
 elif [[ "$BACKEND" == "postgres" ]]; then
   if docker exec "$POSTGRES_CONTAINER" psql -U spacetime -d spacetime -c "SELECT 1" &>/dev/null; then
-    echo "[OK] PostgreSQL is running (port 5433)"
+    echo "[OK] PostgreSQL is running (port $PG_PORT)"
   else
     echo "[FAIL] PostgreSQL is not reachable. Check Docker container $POSTGRES_CONTAINER."
     exit 1
@@ -256,6 +277,7 @@ echo "  Variant:   $VARIANT"
 echo "  Rules:     $RULES"
 echo "  Level:     $LEVEL"
 echo "  Backend:   $BACKEND"
+echo "  Run index: $RUN_INDEX (Vite=$VITE_PORT)"
 echo "  Run ID:    $RUN_ID"
 echo "  Run base:  $RUN_BASE_DIR"
 echo "  App dir:   $APP_DIR_NATIVE"
@@ -301,6 +323,8 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "phase": "$MODE_LABEL",
   "variant": "$VARIANT",
   "rules": "$RULES",
+  "runIndex": $RUN_INDEX,
+  "vitePort": $VITE_PORT,
   "sessionId": "$SESSION_ID"
 }
 EOF
@@ -390,7 +414,7 @@ Fix the bugs in the exhaust test app.
 4. Fix each bug described in the report
 5. Redeploy as needed (see backend file for steps)
 6. Verify: npx tsc --noEmit && npm run build
-7. Make sure the dev server is running on the correct port (SpacetimeDB: 5173, PostgreSQL: 5174)
+7. Make sure the dev server is running on port $VITE_PORT
 8. Append this fix iteration to ITERATION_LOG.md in the app directory
 
 Do NOT do browser testing — that happens in the grading session.
@@ -474,7 +498,7 @@ Upgrade the existing chat app to add the new feature(s) from level $LEVEL.
 5. Add the new feature(s) to both backend and frontend, integrating with the existing code
 6. Rebuild and redeploy (see CLAUDE.md for backend-specific steps)
 7. Verify the build succeeds: npx tsc --noEmit && npm run build (if applicable)
-8. Make sure the dev server is running on the correct port (SpacetimeDB: 5173, PostgreSQL: 5174)
+8. Make sure the dev server is running on port $VITE_PORT
 
 IMPORTANT: Do NOT rewrite existing features. Only add new code for the new feature(s).
 Do NOT do browser testing — that happens in a separate grading session.
@@ -540,22 +564,24 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     if [[ "$BACKEND" == "spacetime" ]]; then
       echo "Build this app using the SpacetimeDB TypeScript SDK (npm package: spacetimedb)." > "$APP_DIR/CLAUDE.md"
       echo "Server module in backend/spacetimedb/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+      echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
     else
       echo "Build this app using PostgreSQL + Express + Socket.io + Drizzle ORM." > "$APP_DIR/CLAUDE.md"
       echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: postgresql://spacetime:spacetime@localhost:5433/spacetime" >> "$APP_DIR/CLAUDE.md"
+      echo "PostgreSQL connection: postgresql://spacetime:spacetime@localhost:$PG_PORT/spacetime" >> "$APP_DIR/CLAUDE.md"
+      echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
     fi
     echo "Assembled minimal CLAUDE.md (rules=$RULES)"
   elif [[ "$RULES" == "standard" ]]; then
     if [[ "$BACKEND" == "spacetime" ]]; then
       cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" > "$APP_DIR/CLAUDE.md"
     else
-      # PostgreSQL: just connection info (LLM already knows Express/Socket.io/Drizzle)
       echo "# PostgreSQL Backend" > "$APP_DIR/CLAUDE.md"
       echo "" >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: \`postgresql://spacetime:spacetime@localhost:5433/spacetime\`" >> "$APP_DIR/CLAUDE.md"
+      echo "PostgreSQL connection: \`postgresql://spacetime:spacetime@localhost:$PG_PORT/spacetime\`" >> "$APP_DIR/CLAUDE.md"
       echo "" >> "$APP_DIR/CLAUDE.md"
-      echo "Use Express + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
+      echo "Use Express (port $EXPRESS_PORT) + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
+      echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
     fi
     echo "Assembled standard CLAUDE.md (rules=$RULES)"
   else
@@ -577,6 +603,19 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
       cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
       echo "Copied backends/$BACKEND.md → app CLAUDE.md"
     fi
+  fi
+
+  # Patch ports in CLAUDE.md for parallel runs (run-index > 0)
+  if [[ $RUN_INDEX -gt 0 ]]; then
+    sed -i \
+      -e "s/5173/$VITE_PORT_STDB/g" \
+      -e "s/5174/$VITE_PORT_PG/g" \
+      -e "s/:3001/:$EXPRESS_PORT/g" \
+      -e "s/localhost:3001/localhost:$EXPRESS_PORT/g" \
+      -e "s/:5433/:$PG_PORT/g" \
+      -e "s/localhost:5433/localhost:$PG_PORT/g" \
+      "$APP_DIR/CLAUDE.md"
+    echo "  Patched ports for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, PG=$PG_PORT)"
   fi
 fi
 
@@ -676,7 +715,7 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
 fi
 
 echo "Parsing telemetry..."
-if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=$LOGS_FILE_NATIVE"; then
+if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=$LOGS_FILE_NATIVE" "--extract-raw"; then
   echo ""
   echo "=== Results ==="
   echo "  App:        $APP_DIR_NATIVE"

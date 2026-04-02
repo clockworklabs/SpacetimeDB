@@ -18,12 +18,15 @@ const runDir = process.argv[2];
 // Parse optional arguments (positional or --key=value)
 let endTimeOverride = null;
 let logsFileOverride = null;
+let extractRaw = false;
 for (let i = 3; i < process.argv.length; i++) {
   const arg = process.argv[i];
   if (arg.startsWith('--logs-file=')) {
     logsFileOverride = arg.split('=').slice(1).join('=');
   } else if (arg.startsWith('--end-time=')) {
     endTimeOverride = arg.split('=').slice(1).join('=');
+  } else if (arg === '--extract-raw') {
+    extractRaw = true;
   } else if (!arg.startsWith('--')) {
     endTimeOverride = arg; // legacy positional arg
   }
@@ -82,6 +85,7 @@ console.log(`Filtering telemetry: ${startTime || '(start)'} → ${endTime || '(n
 const lines = fs.readFileSync(logsFile, 'utf-8').trim().split('\n').filter(Boolean);
 
 const apiCalls = [];
+const matchedRawLines = []; // raw lines that passed all filters (for --extract-raw)
 let totalInput = 0;
 let totalOutput = 0;
 let totalCacheRead = 0;
@@ -126,6 +130,11 @@ for (const line of lines) {
         skippedOutOfRange++;
         continue;
       }
+    }
+
+    // This record passed session-ID and time-range filters — collect for raw extraction
+    if (extractRaw) {
+      matchedRawLines.push(line);
     }
 
     // Filter by event type — only api_request records have token data
@@ -206,6 +215,35 @@ console.log(`  Skipped: ${skippedOutOfRange} out of time range, ${skippedNonApi}
 console.log(`Total tokens: ${totalTokens.toLocaleString()} (${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out)`);
 console.log(`Total cost: $${totalCostUsd.toFixed(4)}`);
 console.log(`Report saved to: ${reportPath}`);
+
+// Write raw telemetry extract if requested
+if (extractRaw && matchedRawLines.length > 0) {
+  const rawPath = path.join(runDir, 'raw-telemetry.jsonl');
+  fs.writeFileSync(rawPath, matchedRawLines.join('\n') + '\n');
+  console.log(`Raw telemetry: ${matchedRawLines.length} records saved to ${rawPath}`);
+}
+
+// Write machine-readable summary alongside the markdown report
+const summaryPath = path.join(runDir, 'cost-summary.json');
+fs.writeFileSync(summaryPath, JSON.stringify({
+  backend: metadata.backend,
+  level: metadata.level,
+  variant: metadata.variant,
+  rules: metadata.rules,
+  runIndex: metadata.runIndex,
+  sessionId: metadata.sessionId,
+  startedAt: metadata.startedAtUtc || metadata.startedAt,
+  endedAt: metadata.endedAtUtc || metadata.endedAt,
+  totalInputTokens: totalInput,
+  totalOutputTokens: totalOutput,
+  totalTokens,
+  cacheReadTokens: totalCacheRead,
+  cacheCreationTokens: totalCacheCreation,
+  totalCostUsd,
+  apiCalls: apiCalls.length,
+  totalDurationSec: apiCalls.reduce((sum, c) => sum + c.durationMs, 0) / 1000,
+}, null, 2));
+console.log(`Cost summary JSON: ${summaryPath}`);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
