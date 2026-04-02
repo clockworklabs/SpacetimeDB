@@ -39,6 +39,13 @@ const FEATURES = {
   'feature-13-activity-indicators': { num: 13, name: 'Room Activity Indicators' },
   'feature-14-draft-sync': { num: 14, name: 'Draft Sync' },
   'feature-15-anonymous-migration': { num: 15, name: 'Anonymous to Registered Migration' },
+  'feature-16-pinned-messages': { num: 16, name: 'Pinned Messages' },
+  'feature-17-user-profiles': { num: 17, name: 'User Profiles' },
+  'feature-18-mentions-notifications': { num: 18, name: '@Mentions and Notifications' },
+  'feature-19-bookmarked-messages': { num: 19, name: 'Bookmarked/Saved Messages' },
+  'feature-20-message-forwarding': { num: 20, name: 'Message Forwarding' },
+  'feature-21-slow-mode': { num: 21, name: 'Slow Mode' },
+  'feature-22-polls': { num: 22, name: 'Polls' },
 };
 
 // Parse suites → extract test results per feature

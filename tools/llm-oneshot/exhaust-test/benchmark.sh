@@ -142,11 +142,23 @@ for run_num in $(seq 1 "$NUM_RUNS"); do
           --run-index "$RUN_INDEX" \
           --level 1
 
-        # Find the app directory that was just created
-        APP_DIR=$(ls -dt "$SCRIPT_DIR/$VARIANT"/*"/results/$backend"/chat-app-* 2>/dev/null | head -1)
+        # Find the app directory from the telemetry metadata (written by run.sh)
+        # Look for the most recent app-dir.txt in this variant's telemetry
+        APP_DIR_FILE=$(find "$SCRIPT_DIR/$VARIANT" -path "*/telemetry/$backend-level1-*/app-dir.txt" -newer "$LOG_FILE" 2>/dev/null | head -1)
+        if [[ -z "$APP_DIR_FILE" ]]; then
+          # Fallback: find most recent by modification time
+          APP_DIR_FILE=$(ls -t "$SCRIPT_DIR/$VARIANT"/*/telemetry/$backend-level1-*/app-dir.txt 2>/dev/null | head -1)
+        fi
+
+        if [[ -n "$APP_DIR_FILE" ]]; then
+          APP_DIR=$(cat "$APP_DIR_FILE")
+        else
+          APP_DIR=""
+        fi
 
         if [[ -z "$APP_DIR" || ! -d "$APP_DIR" ]]; then
           echo "[Run $RUN_INDEX/$backend] ERROR: Could not find generated app directory"
+          update_status "$RUN_INDEX" "$backend" "failed" "app-dir not found"
           exit 1
         fi
 
@@ -214,4 +226,4 @@ echo ""
 echo "Next steps:"
 echo "  1. Grade each app: ./grade-playwright.sh <app-dir>"
 echo "  2. Or grade all: for d in $VARIANT/*/results/*/chat-app-*; do ./grade-playwright.sh \"\$d\"; done"
-echo "  3. Generate comparison report (TODO: generate-report.mjs)"
+echo "  3. Generate report: node generate-report.mjs $VARIANT/$VARIANT-$(date +%Y%m%d)"

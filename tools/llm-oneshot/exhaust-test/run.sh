@@ -68,7 +68,7 @@ PORT_OFFSET=$((RUN_INDEX * 100))
 VITE_PORT_STDB=$((5173 + PORT_OFFSET))
 VITE_PORT_PG=$((5174 + PORT_OFFSET))
 EXPRESS_PORT=$((3001 + PORT_OFFSET))
-PG_PORT=$((5433 + PORT_OFFSET))
+PG_PORT=5433  # Shared container, isolation via per-run database names
 STDB_PORT=3000  # SpacetimeDB server is shared, modules are isolated by name
 
 if [[ "$BACKEND" == "spacetime" ]]; then
@@ -100,6 +100,19 @@ else
 fi
 
 # ─── Find Claude CLI ─────────────────────────────────────────────────────────
+
+# Add Claude Code desktop install to PATH if not already findable
+_APPDATA_UNIX="${APPDATA:-$HOME/AppData/Roaming}"
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+  _APPDATA_UNIX=$(cygpath "$_APPDATA_UNIX" 2>/dev/null || echo "$_APPDATA_UNIX")
+fi
+CLAUDE_DESKTOP_DIR="$_APPDATA_UNIX/Claude/claude-code"
+if [[ -d "$CLAUDE_DESKTOP_DIR" ]]; then
+  CLAUDE_LATEST=$(ls -d "$CLAUDE_DESKTOP_DIR"/*/ 2>/dev/null | sort -V | tail -1)
+  if [[ -n "$CLAUDE_LATEST" ]]; then
+    export PATH="$PATH:$CLAUDE_LATEST"
+  fi
+fi
 
 CLAUDE_CMD=""
 if command -v claude &>/dev/null; then
@@ -139,6 +152,9 @@ if [[ -d "/c/Users/$_USER/AppData/Local/SpacetimeDB" ]]; then
   export PATH="$PATH:/c/Users/$_USER/AppData/Local/SpacetimeDB"
 fi
 
+PG_DATABASE="spacetime"
+PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:5433/spacetime"
+
 if [[ "$BACKEND" == "spacetime" ]]; then
   if spacetime server ping local &>/dev/null; then
     echo "[OK] SpacetimeDB is running"
@@ -148,11 +164,27 @@ if [[ "$BACKEND" == "spacetime" ]]; then
   fi
 elif [[ "$BACKEND" == "postgres" ]]; then
   if docker exec "$POSTGRES_CONTAINER" psql -U spacetime -d spacetime -c "SELECT 1" &>/dev/null; then
-    echo "[OK] PostgreSQL is running (port $PG_PORT)"
+    echo "[OK] PostgreSQL container is running"
   else
     echo "[FAIL] PostgreSQL is not reachable. Check Docker container $POSTGRES_CONTAINER."
     exit 1
   fi
+
+  # Per-run database isolation: each run-index gets its own database
+  # Run 0 uses "spacetime" (default), Run N uses "spacetime_runN"
+  if [[ $RUN_INDEX -gt 0 ]]; then
+    PG_DATABASE="spacetime_run${RUN_INDEX}"
+    # Create the database if it doesn't exist
+    docker exec "$POSTGRES_CONTAINER" psql -U spacetime -d spacetime -c \
+      "SELECT 1 FROM pg_database WHERE datname = '$PG_DATABASE'" | grep -q 1 || \
+      docker exec "$POSTGRES_CONTAINER" psql -U spacetime -d spacetime -c \
+      "CREATE DATABASE $PG_DATABASE OWNER spacetime;" 2>/dev/null
+    echo "[OK] PostgreSQL database: $PG_DATABASE (run-index $RUN_INDEX)"
+  else
+    PG_DATABASE="spacetime"
+    echo "[OK] PostgreSQL database: $PG_DATABASE (default)"
+  fi
+  PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:5433/$PG_DATABASE"
 fi
 
 if ! docker info &>/dev/null; then
@@ -325,6 +357,8 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "rules": "$RULES",
   "runIndex": $RUN_INDEX,
   "vitePort": $VITE_PORT,
+  "expressPort": $EXPRESS_PORT,
+  "pgDatabase": "${PG_DATABASE:-}",
   "sessionId": "$SESSION_ID"
 }
 EOF
@@ -367,6 +401,9 @@ snapshot_inputs() {
 }
 
 snapshot_inputs
+
+# Write app-dir.txt so benchmark.sh can find the app directory without racing
+echo "$APP_DIR" > "$RUN_DIR/app-dir.txt"
 
 # ─── Build the prompt ────────────────────────────────────────────────────────
 
@@ -568,7 +605,7 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     else
       echo "Build this app using PostgreSQL + Express + Socket.io + Drizzle ORM." > "$APP_DIR/CLAUDE.md"
       echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: postgresql://spacetime:spacetime@localhost:$PG_PORT/spacetime" >> "$APP_DIR/CLAUDE.md"
+      echo "PostgreSQL connection: $PG_CONNECTION_URL" >> "$APP_DIR/CLAUDE.md"
       echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
     fi
     echo "Assembled minimal CLAUDE.md (rules=$RULES)"
@@ -578,7 +615,7 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     else
       echo "# PostgreSQL Backend" > "$APP_DIR/CLAUDE.md"
       echo "" >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: \`postgresql://spacetime:spacetime@localhost:$PG_PORT/spacetime\`" >> "$APP_DIR/CLAUDE.md"
+      echo "PostgreSQL connection: \`$PG_CONNECTION_URL\`" >> "$APP_DIR/CLAUDE.md"
       echo "" >> "$APP_DIR/CLAUDE.md"
       echo "Use Express (port $EXPRESS_PORT) + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
       echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
@@ -605,17 +642,17 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     fi
   fi
 
-  # Patch ports in CLAUDE.md for parallel runs (run-index > 0)
+  # Patch ports and database names in CLAUDE.md for parallel runs (run-index > 0)
   if [[ $RUN_INDEX -gt 0 ]]; then
     sed -i \
       -e "s/5173/$VITE_PORT_STDB/g" \
       -e "s/5174/$VITE_PORT_PG/g" \
       -e "s/:3001/:$EXPRESS_PORT/g" \
       -e "s/localhost:3001/localhost:$EXPRESS_PORT/g" \
-      -e "s/:5433/:$PG_PORT/g" \
-      -e "s/localhost:5433/localhost:$PG_PORT/g" \
+      -e "s|localhost:5433/spacetime|localhost:5433/$PG_DATABASE|g" \
+      -e "s|spacetime:spacetime@localhost:5433/spacetime|spacetime:spacetime@localhost:5433/$PG_DATABASE|g" \
       "$APP_DIR/CLAUDE.md"
-    echo "  Patched ports for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, PG=$PG_PORT)"
+    echo "  Patched for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, DB=$PG_DATABASE)"
   fi
 fi
 
