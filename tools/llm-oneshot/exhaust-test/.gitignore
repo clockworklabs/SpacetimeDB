@@ -1,8 +1,18 @@
-# Node modules inside generated apps
-results/**/node_modules/
-results/**/dist/
-results/**/.vite/
-results/**/drizzle/
+# Node modules and build artifacts inside generated apps
+**/results/**/node_modules/
+**/results/**/dist/
+**/results/**/.vite/
+**/results/**/drizzle/
 
 # Telemetry raw logs (large)
-telemetry/logs.jsonl
+**/telemetry/logs.jsonl
+**/telemetry/metrics.jsonl
+**/telemetry/*.jsonl.bak
+
+# Input snapshots (copies of shared tooling, not source of truth)
+**/inputs/
+
+# Playwright
+**/playwright/node_modules/
+**/playwright/test-results/
+**/playwright/playwright-report/

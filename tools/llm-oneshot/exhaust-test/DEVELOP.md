@@ -79,12 +79,12 @@ This:
 In this Claude Code session (or a new interactive one), say:
 
 ```
-Grade the app at results/spacetime/chat-app-<timestamp>
+Grade the app at sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
 ```
 
 Or use the helper script:
 ```bash
-./grade.sh results/spacetime/chat-app-<timestamp>
+./grade.sh sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
 ```
 
 The grading agent will:
@@ -99,7 +99,7 @@ The grading agent will:
 If bugs were found:
 
 ```bash
-./run.sh --fix results/spacetime/chat-app-<timestamp>
+./run.sh --fix sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
 ```
 
 This:
@@ -111,7 +111,7 @@ This:
 
 Back in Claude Code:
 ```
-Re-grade the app at results/spacetime/chat-app-<timestamp>
+Re-grade the app at sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
 ```
 
 Repeat Steps 3-4 until all features pass.
@@ -122,7 +122,10 @@ Repeat Steps 3-4 until all features pass.
 |------|---------|-------------|
 | `--level` | `1` | Prompt level (1-12). Level 1 = 4 features, Level 12 = all 15 |
 | `--backend` | `spacetime` | `spacetime` or `postgres` |
+| `--variant` | `sequential-upgrade` | Test variant: `sequential-upgrade` or `one-shot` |
 | `--fix <dir>` | — | Fix mode: read BUG_REPORT.md, fix code, redeploy |
+| `--upgrade <dir>` | — | Upgrade mode: add features to existing app |
+| `--resume-session` | — | Resume prior Claude session for cache reuse |
 
 ### Recommended Test Levels
 
@@ -136,24 +139,29 @@ Repeat Steps 3-4 until all features pass.
 
 ## Output Files
 
-### In the generated app directory
+### Per-run directory structure
 ```
-exhaust-test/results/<backend>/chat-app-<timestamp>/
-  GRADING_RESULTS.md    # Per-feature scores (written by grade agent)
-  ITERATION_LOG.md      # Per-iteration progress log (both agents append)
-  BUG_REPORT.md         # Current bugs for fix agent to read (deleted when all pass)
-  backend/              # Generated SpacetimeDB or PostgreSQL backend
-  client/               # Generated React client
+exhaust-test/<variant>/<variant>-YYYYMMDD/
+  BENCHMARK_REPORT.md     # Comparison report (written manually after all grading)
+  inputs/                 # Frozen snapshot of all inputs used for this run
+  results/
+    <backend>/chat-app-<timestamp>/
+      GRADING_RESULTS.md  # Per-feature scores (written by grade agent)
+      ITERATION_LOG.md    # Per-iteration progress log (both agents append)
+      BUG_REPORT.md       # Current bugs for fix agent to read (deleted when all pass)
+      backend/            # Generated SpacetimeDB or PostgreSQL backend
+      client/             # Generated React client
+  telemetry/
+    <backend>-level<N>-<timestamp>/
+      metadata.json       # Run parameters, timing, session ID
+      COST_REPORT.md      # Exact token counts per API call
 ```
 
-### In the telemetry directory
+### Shared telemetry (OTel Collector output)
 ```
 exhaust-test/telemetry/
-  logs.jsonl            # Raw OTLP log records from OTel Collector
-  metrics.jsonl         # Raw OTLP metrics
-  <backend>-level<N>-<timestamp>/
-    metadata.json       # Run parameters, timing
-    COST_REPORT.md      # Exact token counts per API call
+  logs.jsonl              # Raw OTLP log records (shared across all runs)
+  metrics.jsonl           # Raw OTLP metrics
 ```
 
 ---
@@ -216,17 +224,28 @@ spacetime start  # if not running
 
 ## Running a Full Comparison
 
+### Sequential Upgrade (default)
+
 ```bash
-# SpacetimeDB
+# Generate level 1, then upgrade through each level
 ./run.sh --level 1 --backend spacetime
 # (grade, fix loop...)
-./run.sh --level 5 --backend spacetime
-./run.sh --level 12 --backend spacetime
+./run.sh --upgrade <app-dir> --level 2
+# ... continue through level 12
 
-# PostgreSQL
+# Same for PostgreSQL
 ./run.sh --level 1 --backend postgres
-./run.sh --level 5 --backend postgres
-./run.sh --level 12 --backend postgres
+# (grade, fix loop...)
+./run.sh --upgrade <app-dir> --level 2
+# ... continue through level 12
+```
+
+### One-Shot
+
+```bash
+# Generate all 15 features in a single prompt
+./run.sh --variant one-shot --backend spacetime
+./run.sh --variant one-shot --backend postgres
 ```
 
 ---
@@ -235,19 +254,29 @@ spacetime start  # if not running
 
 ```
 exhaust-test/
-  CLAUDE.md                      # Instructions for the Code Agent
-  DEVELOP.md                     # This file (for humans)
-  run.sh                         # Code Agent launcher (generate or fix mode)
-  grade.sh                       # Grade Agent launcher (interactive)
-  docker-compose.otel.yaml       # OTel Collector container
-  otel-collector-config.yaml     # Collector config (OTLP → JSON files)
-  parse-telemetry.mjs            # Telemetry → COST_REPORT.md
+  CLAUDE.md                        # Instructions for the Code Agent
+  DEVELOP.md                       # This file (for humans)
+  run.sh                           # Code Agent launcher (generate/fix/upgrade)
+  grade.sh                         # Grade Agent launcher (interactive Chrome MCP)
+  grade-playwright.sh              # Grade via Playwright (optional, deterministic)
+  docker-compose.otel.yaml         # OTel Collector container
+  otel-collector-config.yaml       # Collector config (OTLP → JSON files)
+  parse-telemetry.mjs              # Telemetry → COST_REPORT.md
+  backends/
+    spacetime.md                   # SpacetimeDB-specific phases
+    spacetime-sdk-rules.md         # SpacetimeDB SDK patterns
+    spacetime-templates.md         # Code templates
+    postgres.md                    # PostgreSQL-specific phases
   test-plans/
-    feature-01-basic-chat.md     # Per-feature browser test scripts
+    feature-01-basic-chat.md       # Per-feature browser test scripts
     ...
     feature-15-anonymous-migration.md
-  results/                       # Generated apps (gitignored)
-  telemetry/                     # OTel output (gitignored)
+    playwright/                    # Optional Playwright test suite
+  telemetry/                       # Shared OTel Collector output
+  sequential-upgrade/              # Sequential upgrade test variant
+    sequential-upgrade-YYYYMMDD/   # Dated run with results, telemetry, inputs
+  one-shot/                        # One-shot test variant
+    one-shot-YYYYMMDD/
 ```
 
 ---

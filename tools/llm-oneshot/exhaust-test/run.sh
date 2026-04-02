@@ -5,8 +5,9 @@
 # After this completes, run grade.sh to do browser testing and grading interactively.
 #
 # Usage:
-#   ./run.sh                                    # defaults: level=1, backend=spacetime
+#   ./run.sh                                    # defaults: level=1, backend=spacetime, variant=sequential-upgrade
 #   ./run.sh --level 5 --backend postgres       # generate from scratch at level 5
+#   ./run.sh --variant one-shot --backend spacetime  # one-shot: all 15 features in one prompt
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
 #   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app
 #   ./run.sh --upgrade <app-dir> --level 3 --resume-session  # same, but resume prior session for cache
@@ -19,13 +20,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TELEMETRY_DIR="$SCRIPT_DIR/telemetry"
-RESULTS_DIR="$SCRIPT_DIR/results"
+
+# Configurable container name for PostgreSQL backend
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-spacetime-web-postgres-1}"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
 LEVEL=1
+LEVEL_EXPLICIT=""
 BACKEND="spacetime"
+VARIANT="sequential-upgrade"
 FIX_MODE=""
 FIX_APP_DIR=""
 UPGRADE_MODE=""
@@ -33,14 +37,28 @@ UPGRADE_APP_DIR=""
 RESUME_SESSION=""
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --level) LEVEL="$2"; shift 2 ;;
+    --level) LEVEL="$2"; LEVEL_EXPLICIT=1; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
+    --variant) VARIANT="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
     --resume-session) RESUME_SESSION=1; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+# Variant-specific defaults
+if [[ "$VARIANT" == "one-shot" ]]; then
+  if [[ -z "$LEVEL_EXPLICIT" ]]; then
+    LEVEL=12  # one-shot defaults to all features
+  fi
+  if [[ -n "$UPGRADE_MODE" ]]; then
+    echo "WARNING: --upgrade is not meaningful with --variant one-shot"
+    echo "One-shot generates all features in a single session."
+    UPGRADE_MODE=""
+    UPGRADE_APP_DIR=""
+  fi
+fi
 
 # Determine mode label early (used in metadata and output)
 if [[ -n "$FIX_MODE" ]]; then
@@ -59,10 +77,16 @@ if command -v claude &>/dev/null; then
 elif command -v claude.exe &>/dev/null; then
   CLAUDE_CMD="claude.exe"
 else
-  if npx @anthropic-ai/claude-code --version &>/dev/null; then
-    CLAUDE_CMD="npx @anthropic-ai/claude-code"
+  if command -v npx &>/dev/null; then
+    if npx @anthropic-ai/claude-code --version &>/dev/null; then
+      CLAUDE_CMD="npx @anthropic-ai/claude-code"
+    else
+      echo "ERROR: Claude Code CLI not found via npx."
+      echo "Install it with: npm install -g @anthropic-ai/claude-code"
+      exit 1
+    fi
   else
-    echo "ERROR: Claude Code CLI not found."
+    echo "ERROR: Claude Code CLI not found (tried: claude, claude.exe, npx)."
     echo "Install it with: npm install -g @anthropic-ai/claude-code"
     exit 1
   fi
@@ -93,10 +117,10 @@ if [[ "$BACKEND" == "spacetime" ]]; then
     exit 1
   fi
 elif [[ "$BACKEND" == "postgres" ]]; then
-  if docker exec spacetime-web-postgres-1 psql -U spacetime -d spacetime -c "SELECT 1" &>/dev/null; then
+  if docker exec "$POSTGRES_CONTAINER" psql -U spacetime -d spacetime -c "SELECT 1" &>/dev/null; then
     echo "[OK] PostgreSQL is running (port 5433)"
   else
-    echo "[FAIL] PostgreSQL is not reachable. Check Docker container spacetime-web-postgres-1."
+    echo "[FAIL] PostgreSQL is not reachable. Check Docker container $POSTGRES_CONTAINER."
     exit 1
   fi
 fi
@@ -106,12 +130,16 @@ if ! docker info &>/dev/null; then
   exit 1
 fi
 
+# Shared telemetry directory (OTel Collector writes here)
+SHARED_TELEMETRY_DIR="$SCRIPT_DIR/telemetry"
+mkdir -p "$SHARED_TELEMETRY_DIR"
+
 # Rotate telemetry log if over 10MB to prevent unbounded growth
-LOGS_FILE="$TELEMETRY_DIR/logs.jsonl"
+LOGS_FILE="$SHARED_TELEMETRY_DIR/logs.jsonl"
 if [[ -f "$LOGS_FILE" ]]; then
   SIZE=$(wc -c < "$LOGS_FILE")
   if [[ $SIZE -gt 10485760 ]]; then
-    ARCHIVE="$TELEMETRY_DIR/logs-$(date +%Y%m%d-%H%M%S).jsonl.bak"
+    ARCHIVE="$SHARED_TELEMETRY_DIR/logs-$(date +%Y%m%d-%H%M%S).jsonl.bak"
     mv "$LOGS_FILE" "$ARCHIVE"
     echo "[INFO] Rotated logs.jsonl ($SIZE bytes) to $(basename "$ARCHIVE")"
   fi
@@ -147,15 +175,53 @@ echo ""
 # ─── Create run directories ─────────────────────────────────────────────────
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+DATE_STAMP=$(date +%Y%m%d)
 START_TIME=$(date +%Y-%m-%dT%H:%M:%S%z)
 START_TIME_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# Variant-based directory structure:
+#   exhaust-test/<variant>/<variant>-YYYYMMDD/
+#     results/<backend>/chat-app-<timestamp>/
+#     telemetry/<run-id>/
+#     inputs/  (snapshot of all inputs)
+VARIANT_DIR="$SCRIPT_DIR/$VARIANT"
+
+# For upgrade/fix, reuse the existing RUN_BASE_DIR from the app's parent structure.
+# For generate, create a new dated run directory.
+if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
+  # Derive RUN_BASE_DIR from existing app directory structure:
+  #   <variant>/<variant>-DATE/results/<backend>/chat-app-*/
+  if [[ -n "$UPGRADE_MODE" ]]; then
+    APP_DIR="$UPGRADE_APP_DIR"
+  else
+    APP_DIR="$FIX_APP_DIR"
+  fi
+  # Walk up from app dir: chat-app-* → <backend> → results → <variant>-DATE
+  RUN_BASE_DIR="$(cd "$APP_DIR/../../.." 2>/dev/null && pwd)"
+  # Validate it looks like a run base dir (has results/ subdir)
+  if [[ ! -d "$RUN_BASE_DIR/results" ]]; then
+    # Fallback: create new run base dir (legacy app dir not under variant structure)
+    RUN_BASE_DIR="$VARIANT_DIR/$VARIANT-$DATE_STAMP"
+  fi
+  TELEMETRY_DIR="$RUN_BASE_DIR/telemetry"
+  RESULTS_DIR="$RUN_BASE_DIR/results"
+else
+  # Generate mode: create new dated run directory
+  RUN_BASE_DIR="$VARIANT_DIR/$VARIANT-$DATE_STAMP"
+  # Handle duplicate dates (second run on same day)
+  if [[ -d "$RUN_BASE_DIR" ]]; then
+    SEQ=2
+    while [[ -d "$RUN_BASE_DIR-$SEQ" ]]; do ((SEQ++)); done
+    RUN_BASE_DIR="$RUN_BASE_DIR-$SEQ"
+  fi
+  TELEMETRY_DIR="$RUN_BASE_DIR/telemetry"
+  RESULTS_DIR="$RUN_BASE_DIR/results"
+fi
+
 if [[ -n "$UPGRADE_MODE" ]]; then
   RUN_ID="$BACKEND-upgrade-to-level$LEVEL-$TIMESTAMP"
-  APP_DIR="$UPGRADE_APP_DIR"
 elif [[ -n "$FIX_MODE" ]]; then
   RUN_ID="$BACKEND-fix-level$LEVEL-$TIMESTAMP"
-  APP_DIR="$FIX_APP_DIR"
 else
   RUN_ID="$BACKEND-level$LEVEL-$TIMESTAMP"
   APP_DIR="$RESULTS_DIR/$BACKEND/chat-app-$TIMESTAMP"
@@ -177,9 +243,11 @@ else
 fi
 
 echo "=== Exhaust Test: ${MODE_LABEL^} ==="
+echo "  Variant:   $VARIANT"
 echo "  Level:     $LEVEL"
 echo "  Backend:   $BACKEND"
 echo "  Run ID:    $RUN_ID"
+echo "  Run base:  $RUN_BASE_DIR"
 echo "  App dir:   $APP_DIR_NATIVE"
 echo "  Telemetry: $RUN_DIR"
 echo ""
@@ -221,9 +289,49 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "appDir": "$APP_DIR_JSON",
   "promptFile": "$(basename "$PROMPT_FILE")",
   "phase": "$MODE_LABEL",
+  "variant": "$VARIANT",
   "sessionId": "$SESSION_ID"
 }
 EOF
+
+# ─── Snapshot inputs ───────────────────────────────────────────────────────
+# Copy all inputs (prompts, backend specs, tooling, etc.) into the run directory
+# so each run is self-contained and reproducible even if the tooling changes.
+
+snapshot_inputs() {
+  local INPUTS_DIR="$RUN_BASE_DIR/inputs"
+  if [[ -d "$INPUTS_DIR" ]]; then
+    return  # already snapshotted (upgrade/fix into existing run)
+  fi
+  mkdir -p "$INPUTS_DIR/backends" "$INPUTS_DIR/test-plans" \
+           "$INPUTS_DIR/prompts/composed" "$INPUTS_DIR/prompts/language"
+
+  # Shared tooling
+  for f in CLAUDE.md run.sh grade.sh parse-telemetry.mjs \
+           docker-compose.otel.yaml otel-collector-config.yaml \
+           DEVELOP.md .gitignore; do
+    cp "$SCRIPT_DIR/$f" "$INPUTS_DIR/" 2>/dev/null || true
+  done
+
+  # Backend specs (only relevant backend)
+  cp "$SCRIPT_DIR/backends/$BACKEND.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
+  if [[ "$BACKEND" == "spacetime" ]]; then
+    cp "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
+    cp "$SCRIPT_DIR/backends/spacetime-templates.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
+  fi
+
+  # Test plans
+  cp "$SCRIPT_DIR/test-plans/"*.md "$INPUTS_DIR/test-plans/" 2>/dev/null || true
+
+  # Prompts (only relevant language file, all composed levels)
+  local PROMPTS_SRC="$SCRIPT_DIR/../apps/chat-app/prompts"
+  cp "$PROMPTS_SRC/composed/"*.md "$INPUTS_DIR/prompts/composed/" 2>/dev/null || true
+  cp "$PROMPTS_SRC/language/typescript-$BACKEND.md" "$INPUTS_DIR/prompts/language/" 2>/dev/null || true
+
+  echo "  Inputs snapshotted to $INPUTS_DIR"
+}
+
+snapshot_inputs
 
 # ─── Build the prompt ────────────────────────────────────────────────────────
 
@@ -441,15 +549,20 @@ cd "$APP_DIR"
 # Build resume flag if --resume-session was passed and a prior session ID exists
 RESUME_FLAG=""
 if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
-  # Find the most recent telemetry dir for this app to get its session ID
+  # Find the most recent telemetry dir for this app to get its session ID.
+  # Search variant structure: <variant>/<variant>-DATE/telemetry/*/
+  # Sort by modification time (newest first), break on first match.
   PREV_SESSION_ID=""
-  for tdir in "$TELEMETRY_DIR"/*; do
+  SEARCH_DIRS=$(find "$VARIANT_DIR" -path "*/telemetry/*" -name "metadata.json" -exec dirname {} \; 2>/dev/null | sort -r)
+  for tdir in $SEARCH_DIRS; do
     if [[ -f "$tdir/metadata.json" ]]; then
-      TDIR_APP=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')); process.stdout.write(m.appDir||'')" -- "$(cygpath -w "$tdir/metadata.json" 2>/dev/null || echo "$tdir/metadata.json")" 2>/dev/null)
+      META_PATH="$(cygpath -w "$tdir/metadata.json" 2>/dev/null || echo "$tdir/metadata.json")"
+      TDIR_APP=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')); process.stdout.write(m.appDir||'')" -- "$META_PATH" 2>/dev/null)
       if [[ "$TDIR_APP" == "$APP_DIR_NATIVE" || "$TDIR_APP" == "$APP_DIR_JSON" ]]; then
-        SID=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')); process.stdout.write(m.sessionId||'')" -- "$(cygpath -w "$tdir/metadata.json" 2>/dev/null || echo "$tdir/metadata.json")" 2>/dev/null)
+        SID=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')); process.stdout.write(m.sessionId||'')" -- "$META_PATH" 2>/dev/null)
         if [[ -n "$SID" ]]; then
           PREV_SESSION_ID="$SID"
+          break  # newest match found, stop searching
         fi
       fi
     fi
@@ -516,8 +629,14 @@ echo "  Started: $START_TIME"
 echo "  Ended:   $END_TIME"
 echo ""
 
+# Resolve shared logs file path for telemetry parser
+LOGS_FILE_NATIVE="$SHARED_TELEMETRY_DIR/logs.jsonl"
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+  LOGS_FILE_NATIVE=$(cygpath -w "$SHARED_TELEMETRY_DIR/logs.jsonl")
+fi
+
 echo "Parsing telemetry..."
-if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE"; then
+if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=$LOGS_FILE_NATIVE"; then
   echo ""
   echo "=== Results ==="
   echo "  App:        $APP_DIR_NATIVE"
@@ -547,5 +666,5 @@ if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE"; then
     echo ""
   fi
 else
-  echo "WARNING: Telemetry parsing failed. Raw logs at: $TELEMETRY_DIR/logs.jsonl"
+  echo "WARNING: Telemetry parsing failed. Raw logs at: $SHARED_TELEMETRY_DIR/logs.jsonl"
 fi

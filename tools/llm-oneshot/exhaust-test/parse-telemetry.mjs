@@ -15,17 +15,29 @@ import fs from 'fs';
 import path from 'path';
 
 const runDir = process.argv[2];
-const endTimeOverride = process.argv[3]; // optional: ISO timestamp for reparsing old runs
+// Parse optional arguments (positional or --key=value)
+let endTimeOverride = null;
+let logsFileOverride = null;
+for (let i = 3; i < process.argv.length; i++) {
+  const arg = process.argv[i];
+  if (arg.startsWith('--logs-file=')) {
+    logsFileOverride = arg.split('=').slice(1).join('=');
+  } else if (arg.startsWith('--end-time=')) {
+    endTimeOverride = arg.split('=').slice(1).join('=');
+  } else if (!arg.startsWith('--')) {
+    endTimeOverride = arg; // legacy positional arg
+  }
+}
 if (!runDir) {
-  console.error('Usage: node parse-telemetry.mjs <run-dir> [end-time-iso]');
-  console.error('  end-time-iso: optional upper bound for time filtering (e.g. "2026-03-30T22:00:00Z")');
+  console.error('Usage: node parse-telemetry.mjs <run-dir> [--logs-file=<path>] [--end-time=<iso>]');
+  console.error('  --logs-file: path to logs.jsonl (default: <run-dir>/../logs.jsonl)');
+  console.error('  --end-time:  upper bound for time filtering (e.g. "2026-03-30T22:00:00Z")');
   process.exit(1);
 }
 
-// telemetry/logs.jsonl is in the parent of the run dir
-// e.g. runDir = telemetry/spacetime-level1-20260330/ → parent = telemetry/
-const telemetryDir = path.dirname(path.resolve(runDir));
-const logsFile = path.join(telemetryDir, 'logs.jsonl');
+// Locate logs.jsonl: explicit path, or derive from run dir parent
+const logsFile = logsFileOverride
+  || path.join(path.dirname(path.resolve(runDir)), 'logs.jsonl');
 
 if (!fs.existsSync(logsFile)) {
   console.error(`Telemetry file not found: ${logsFile}`);

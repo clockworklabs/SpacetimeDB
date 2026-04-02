@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./grade.sh <app-dir>
-#   ./grade.sh results/spacetime/chat-app-20260331-083613
+#   ./grade.sh sequential-upgrade/sequential-upgrade-20260401/results/spacetime/chat-app-20260401-123403
 #
 # This script is a convenience wrapper. You can also just open Claude Code
 # in the exhaust-test/ directory and say:
@@ -37,8 +37,12 @@ if command -v claude &>/dev/null; then
   CLAUDE_CMD="claude"
 elif command -v claude.exe &>/dev/null; then
   CLAUDE_CMD="claude.exe"
-else
+elif command -v npx &>/dev/null; then
   CLAUDE_CMD="npx @anthropic-ai/claude-code"
+else
+  echo "ERROR: Claude Code CLI not found (tried: claude, claude.exe, npx)."
+  echo "Install it with: npm install -g @anthropic-ai/claude-code"
+  exit 1
 fi
 
 echo "=== Exhaust Test: Grade ==="

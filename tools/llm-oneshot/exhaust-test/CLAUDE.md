@@ -289,6 +289,7 @@ Produce `GRADING_RESULTS.md` in the app folder. Follow this exact format:
 
 ### Scoring Rules
 
+- **Do NOT include token counts, cost estimates, or API call counts** in GRADING_RESULTS.md. Cost data is generated automatically in COST_REPORT.md by parse-telemetry.mjs.
 - Score ONLY from observed browser behavior, never from source code
 - If a criterion wasn't testable (UI didn't load, couldn't find element), score 0
 - When in doubt, score lower
