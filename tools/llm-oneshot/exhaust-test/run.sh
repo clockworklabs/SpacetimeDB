@@ -684,14 +684,19 @@ if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
     fi
   done
   if [[ -n "$PREV_SESSION_ID" ]]; then
-    RESUME_FLAG="--resume $PREV_SESSION_ID"
-    echo "Resuming prior session: $PREV_SESSION_ID"
+    RESUME_FLAG="--continue $PREV_SESSION_ID"
+    echo "Continuing prior session: $PREV_SESSION_ID"
   else
     echo "No prior session ID found for this app — starting fresh"
   fi
 fi
 
-$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
+if [[ -n "$RESUME_FLAG" ]]; then
+  # When continuing a prior session, don't pass --session-id (reuses the existing one)
+  $CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions $RESUME_FLAG -p "$PROMPT"
+else
+  $CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions --session-id "$SESSION_ID" -p "$PROMPT"
+fi
 EXIT_CODE=$?
 
 echo ""
@@ -783,4 +788,48 @@ if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=
   fi
 else
   echo "WARNING: Telemetry parsing failed. Raw logs at: $SHARED_TELEMETRY_DIR/logs.jsonl"
+fi
+
+# ─── Auto-grade with Playwright (if installed) ──────────────────────────────
+
+PLAYWRIGHT_DIR="$SCRIPT_DIR/test-plans/playwright"
+if [[ $EXIT_CODE -eq 0 && -f "$PLAYWRIGHT_DIR/node_modules/.bin/playwright" ]]; then
+  echo ""
+  echo "=== Auto-grading with Playwright ==="
+  echo "  App URL: http://localhost:$VITE_PORT"
+
+  # Wait for dev server to be ready
+  READY=0
+  for i in $(seq 1 30); do
+    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$VITE_PORT" 2>/dev/null | grep -q "200"; then
+      READY=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ $READY -eq 1 ]]; then
+    mkdir -p /tmp/pw-results-$RUN_INDEX
+    cd "$PLAYWRIGHT_DIR"
+    APP_URL="http://localhost:$VITE_PORT" npx playwright test --reporter=json \
+      1>/tmp/pw-results-$RUN_INDEX/results.json 2>/dev/null || true
+    cd "$APP_DIR"
+
+    RESULTS_SIZE=$(wc -c < /tmp/pw-results-$RUN_INDEX/results.json 2>/dev/null || echo "0")
+    if [[ "$RESULTS_SIZE" -gt 100 ]]; then
+      PW_RESULTS="/tmp/pw-results-$RUN_INDEX/results.json"
+      if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+        PW_RESULTS=$(cygpath -w "$PW_RESULTS")
+      fi
+      node "$SCRIPT_DIR_NATIVE/parse-playwright-results.mjs" "$PW_RESULTS" "$APP_DIR_NATIVE" "$BACKEND"
+      # Copy raw results into telemetry dir for archival
+      cp /tmp/pw-results-$RUN_INDEX/results.json "$RUN_DIR/playwright-results.json" 2>/dev/null || true
+    else
+      echo "WARNING: Playwright produced no results (app may not have loaded)"
+    fi
+  else
+    echo "WARNING: Dev server not responding on port $VITE_PORT — skipping Playwright grading"
+  fi
+elif [[ $EXIT_CODE -ne 0 ]]; then
+  echo "Skipping auto-grade — code generation failed (exit $EXIT_CODE)"
 fi

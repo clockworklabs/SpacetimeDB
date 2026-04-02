@@ -1,0 +1,18 @@
+{
+  "backend": "spacetime",
+  "level": 7,
+  "variant": "one-shot",
+  "rules": "standard",
+  "runIndex": 0,
+  "sessionId": "ff0ce42b-3527-efe3-9396-ef50ef8d2f95",
+  "startedAt": "2026-04-02T15:49:31Z",
+  "endedAt": "2026-04-02T16:14:59Z",
+  "totalInputTokens": 70,
+  "totalOutputTokens": 112165,
+  "totalTokens": 112235,
+  "cacheReadTokens": 6583669,
+  "cacheCreationTokens": 134764,
+  "totalCostUsd": 4.163150699999998,
+  "apiCalls": 66,
+  "totalDurationSec": 1545.308
+}

@@ -10,6 +10,8 @@ See language file for branding and color scheme.
 
 ## Features
 
+**Important:** Each feature below includes a "UI contract" section specifying required element attributes for automated testing. You MUST follow these — they define the user-facing interface. Your architecture, state management, and backend design are entirely up to you.
+
 ### Basic Chat Features
 
 - Users can set a display name
@@ -18,11 +20,27 @@ See language file for branding and color scheme.
 - Show who's online
 - Include reasonable validation (e.g., don't let users spam, enforce sensible limits)
 
+**UI contract:**
+- Name input: `placeholder` contains "name" (case-insensitive)
+- Name submit: `button` with text "Join", "Register", "Set Name", or `type="submit"`
+- Room creation: `button` with text containing "Create" or "New" or "+"
+- Room name input: `placeholder` contains "room" or "name" (case-insensitive)
+- Message input: `placeholder` contains "message" (case-insensitive)
+- Send message: pressing Enter in the message input sends the message
+- Room list: room names visible as clickable text in a sidebar or list
+- Join room: clicking room name joins/enters it, or a `button` with text "Join"
+- Leave room: `button` with text "Leave"
+- Online users: user names displayed as text in a visible user list or member panel
+
 ### Typing Indicators
 
 - Show when other users are currently typing in a room
 - Typing indicator should automatically expire after a few seconds of inactivity
 - Display "User is typing..." or "Multiple users are typing..." in the UI
+
+**UI contract:**
+- Typing text: visible text containing "typing" (case-insensitive) when another user types
+- Auto-expiry: typing indicator text disappears within 6 seconds of inactivity
 
 ### Read Receipts
 
@@ -30,11 +48,19 @@ See language file for branding and color scheme.
 - Display "Seen by X, Y, Z" under messages (or a seen indicator)
 - Update read status in real-time as users view messages
 
+**UI contract:**
+- Receipt text: text containing "seen" or "read" (case-insensitive) appears near messages after another user views them
+- Reader names: the receipt text includes the viewing user’s display name
+
 ### Unread Message Counts
 
 - Show unread message count badges on the room list
 - Track last-read position per user per room
 - Update counts in real-time as new messages arrive or are read
+
+**UI contract:**
+- Badge: a visible numeric badge (e.g., "3") appears next to room names in the sidebar when there are unread messages
+- Badge clears when the room is opened/entered
 
 ### Scheduled Messages
 
@@ -42,8 +68,20 @@ See language file for branding and color scheme.
 - Show pending scheduled messages to the author (with option to cancel)
 - Message appears in the room at the scheduled time
 
+**UI contract:**
+- Schedule button: `button` with text "Schedule" or `aria-label` containing "schedule", or an icon button with `title` containing "schedule"
+- Time picker: an `input[type="datetime-local"]` or `input[type="time"]` or `input[type="number"]` for setting the send time
+- Pending list: text "Scheduled" or "Pending" visible when viewing scheduled messages
+- Cancel: `button` with text "Cancel" next to pending scheduled messages
+
 ### Ephemeral/Disappearing Messages
 
 - Users can send messages that auto-delete after a set duration (e.g., 1 minute, 5 minutes)
 - Show a countdown or indicator that the message will disappear
 - Message is permanently deleted from the database when time expires
+
+**UI contract:**
+- Ephemeral toggle: `select`, `button`, or `input` with text/label containing "ephemeral", "disappear", or "expire" (case-insensitive)
+- Duration options: selectable durations (e.g., 30s, 1m, 5m)
+- Indicator: visible text containing a countdown, "expires", or "disappearing" on ephemeral messages
+- Deletion: the message text is removed from the DOM after the duration expires

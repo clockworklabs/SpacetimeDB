@@ -61,6 +61,19 @@ echo ""
 
 # ─── Validate prerequisites ─────────────────────────────────────────────────
 
+# Add Claude Code desktop install to PATH
+_APPDATA_UNIX="${APPDATA:-$HOME/AppData/Roaming}"
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+  _APPDATA_UNIX=$(cygpath "$_APPDATA_UNIX" 2>/dev/null || echo "$_APPDATA_UNIX")
+fi
+CLAUDE_DESKTOP_DIR="$_APPDATA_UNIX/Claude/claude-code"
+if [[ -d "$CLAUDE_DESKTOP_DIR" ]]; then
+  CLAUDE_LATEST=$(ls -d "$CLAUDE_DESKTOP_DIR"/*/ 2>/dev/null | sort -V | tail -1)
+  if [[ -n "$CLAUDE_LATEST" ]]; then
+    export PATH="$PATH:$CLAUDE_LATEST"
+  fi
+fi
+
 # Check Claude CLI
 if ! command -v claude &>/dev/null && ! command -v claude.exe &>/dev/null; then
   echo "ERROR: Claude Code CLI not found."
@@ -222,8 +235,30 @@ if [[ $FAILURES -gt 0 ]]; then
   echo "  Failed: $FAILURES"
 fi
 echo "═══════════════════════════════════════════════════"
+# ─── Auto-generate reports ──────────────────────────────────────────────────
+
 echo ""
-echo "Next steps:"
-echo "  1. Grade each app: ./grade-playwright.sh <app-dir>"
-echo "  2. Or grade all: for d in $VARIANT/*/results/*/chat-app-*; do ./grade-playwright.sh \"\$d\"; done"
-echo "  3. Generate report: node generate-report.mjs $VARIANT/$VARIANT-$(date +%Y%m%d)"
+echo "Generating reports for each run..."
+for run_dir in "$SCRIPT_DIR/$VARIANT"/*/; do
+  if [[ -d "$run_dir/telemetry" ]]; then
+    RUN_DIR_NATIVE="$run_dir"
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+      RUN_DIR_NATIVE=$(cygpath -w "$run_dir")
+    fi
+    node "$SCRIPT_DIR/generate-report.mjs" "$RUN_DIR_NATIVE" 2>/dev/null && \
+      echo "  Report: $run_dir/BENCHMARK_REPORT.md" || \
+      echo "  WARNING: Report generation failed for $run_dir"
+  fi
+done
+
+echo ""
+echo "═══════════════════════════════════════════════════"
+echo "  All Done"
+echo "═══════════════════════════════════════════════════"
+echo ""
+echo "Results:"
+for run_dir in "$SCRIPT_DIR/$VARIANT"/*/; do
+  if [[ -f "$run_dir/BENCHMARK_REPORT.md" ]]; then
+    echo "  $run_dir/BENCHMARK_REPORT.md"
+  fi
+done
