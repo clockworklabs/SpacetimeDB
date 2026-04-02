@@ -7,8 +7,46 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.Runtime" Version="2.1.*" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <WasmEnableThreads>false</WasmEnableThreads>
+  </PropertyGroup>
 
+  <Target Name="UseWasiRuntimeOverlayWithoutComponentWit"
+          Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'"
+          AfterTargets="SetupProperties"
+          BeforeTargets="LinkNativeLlvm">
+    <PropertyGroup>
+      <_OriginalIlcSdkPath>$(IlcSdkPath)</_OriginalIlcSdkPath>
+      <_WasiRuntimeOverlayDir>$(IntermediateOutputPath)native-hidden-no-wit\</_WasiRuntimeOverlayDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_WasiRuntimeOverlaySource Include="$(IlcFrameworkNativePath)**\*" Exclude="$(IlcFrameworkNativePath)**\*.wit" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(_WasiRuntimeOverlayDir)" />
+    <MakeDir Directories="$(_WasiRuntimeOverlayDir)" />
+    <Copy SourceFiles="@(_WasiRuntimeOverlaySource)"
+          DestinationFiles="@(_WasiRuntimeOverlaySource->'$(_WasiRuntimeOverlayDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+
+    <PropertyGroup>
+      <IlcFrameworkNativePath>$(_WasiRuntimeOverlayDir)</IlcFrameworkNativePath>
+      <IlcSdkPath>$(_OriginalIlcSdkPath)</IlcSdkPath>
+    </PropertyGroup>
+  </Target>
+  
+  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+  </ItemGroup>
 </Project>

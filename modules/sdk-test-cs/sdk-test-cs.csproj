@@ -10,8 +10,7 @@
     <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-      <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
-      <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" GeneratePathProperty="true" />
-      <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+      <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" GeneratePathProperty="true" />
+      <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
   </ItemGroup>
 </Project>
