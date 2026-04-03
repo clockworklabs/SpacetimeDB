@@ -694,6 +694,14 @@ fi
 
 cd "$APP_DIR"
 
+# Initialize a git repo in the app dir to isolate Claude Code from the parent repo.
+# This prevents Claude from walking up and finding SpacetimeDB repo configs/code.
+if [[ ! -d "$APP_DIR/.git" ]]; then
+  git init -q "$APP_DIR" 2>/dev/null || true
+  echo "node_modules/" > "$APP_DIR/.gitignore"
+  git -C "$APP_DIR" add -A 2>/dev/null && git -C "$APP_DIR" commit -q -m "initial" 2>/dev/null || true
+fi
+
 # Build resume flag if --resume-session was passed and a prior session ID exists
 RESUME_FLAG=""
 if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
@@ -893,3 +901,4 @@ elif [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "agents" ]]; then
 elif [[ $EXIT_CODE -ne 0 ]]; then
   echo "Skipping auto-grade — code generation failed (exit $EXIT_CODE)"
 fi
+

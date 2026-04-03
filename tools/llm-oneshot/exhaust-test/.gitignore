@@ -16,3 +16,6 @@
 **/playwright/node_modules/
 **/playwright/test-results/
 **/playwright/playwright-report/
+
+# Isolation git repos inside generated apps (created by run.sh, cleaned up after)
+**/results/**/.git/

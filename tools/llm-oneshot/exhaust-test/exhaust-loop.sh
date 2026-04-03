@@ -115,6 +115,7 @@ fix_bugs() {
     $TEST_FLAG \
     --run-index "$RUN_INDEX" \
     --level "$LEVEL" \
+    --resume-session \
     2>&1 | tee "$app_dir/fix-output-iter${iteration}.log"
 }
 
@@ -232,3 +233,5 @@ echo "  App dir: $APP_DIR"
 echo "  Variant: $VARIANT"
 echo "  Backend: $BACKEND"
 echo "═══════════════════════════════════════════"
+echo ""
+echo "When done grading, clean up with: ./cleanup.sh $APP_DIR"
