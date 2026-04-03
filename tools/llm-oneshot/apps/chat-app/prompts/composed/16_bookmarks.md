@@ -20,7 +20,7 @@ Create a **real-time chat app**.
 - Rounded corners on inputs, buttons, cards, and message containers
 
 ### Components
-- **Messages**: sender name (colored) + timestamp (muted) + text. Group consecutive messages from same sender. Action buttons (edit, react, reply, pin, forward, bookmark) appear on hover only.
+- **Messages**: sender name (colored) + timestamp (muted) + text. Group consecutive messages from same sender. Action buttons appear on hover only (which buttons depend on the features below).
 - **Inputs**: full-width, rounded, subtle border, placeholder text, focus ring using primary color
 - **Buttons**: filled with primary color for main actions, outlined/ghost for secondary. Clear hover and active states.
 - **Badges**: small pill-shaped with count, contrasting color (e.g., unread count on rooms)
@@ -63,7 +63,7 @@ Create a **real-time chat app**.
 
 ### Typing Indicators
 
-- Show when other users are currently typing in a room
+- Show when other users are currently typing in the SAME room (typing must be scoped to room — do not broadcast typing to users in different rooms)
 - Typing indicator should automatically expire after a few seconds of inactivity
 - Display "User is typing..." or "Multiple users are typing..." in the UI
 
@@ -74,7 +74,7 @@ Create a **real-time chat app**.
 ### Read Receipts
 
 - Track which users have seen which messages
-- Display "Seen by X, Y, Z" under messages (or a seen indicator)
+- Display "Seen by X, Y, Z" under messages — only show OTHER users who have seen it, not the sender
 - Update read status in real-time as users view messages
 
 **UI contract:**

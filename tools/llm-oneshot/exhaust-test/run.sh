@@ -62,15 +62,14 @@ case "$RULES" in
 esac
 
 # ─── Port allocation ──────────────────────────────────────────────────────────
-# Each run-index offsets all ports by 100 to allow parallel execution.
-#   Run 0: Vite(stdb)=5173, Vite(pg)=5174, Express=3001, PG=5433
-#   Run 1: Vite(stdb)=5273, Vite(pg)=5274, Express=3101, PG=5533
-#   Run 2: Vite(stdb)=5373, Vite(pg)=5374, Express=3201, PG=5633
-PORT_OFFSET=$((RUN_INDEX * 100))
-VITE_PORT_STDB=$((5173 + PORT_OFFSET))
-VITE_PORT_PG=$((5174 + PORT_OFFSET))
-EXPRESS_PORT=$((3001 + PORT_OFFSET))
-PG_PORT=5433  # Shared container, isolation via per-run database names
+# Each backend has a 100-port range. Run-index offsets within that range.
+#   SpacetimeDB: 6173 + run-index  (6173, 6174, 6175, ...)
+#   PostgreSQL:  6273 + run-index  (6273, 6274, 6275, ...)
+#   Express:     6001 + run-index  (6001, 6002, 6003, ...)
+VITE_PORT_STDB=$((6173 + RUN_INDEX))
+VITE_PORT_PG=$((6273 + RUN_INDEX))
+EXPRESS_PORT=$((6001 + RUN_INDEX))
+PG_PORT=6432  # Shared container, isolation via per-run database names
 STDB_PORT=3000  # SpacetimeDB server is shared, modules are isolated by name
 
 if [[ "$BACKEND" == "spacetime" ]]; then
@@ -155,7 +154,7 @@ if [[ -d "/c/Users/$_USER/AppData/Local/SpacetimeDB" ]]; then
 fi
 
 PG_DATABASE="spacetime"
-PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:5433/spacetime"
+PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:6432/spacetime"
 
 if [[ "$BACKEND" == "spacetime" ]]; then
   if spacetime server ping local &>/dev/null; then
@@ -186,7 +185,7 @@ elif [[ "$BACKEND" == "postgres" ]]; then
     PG_DATABASE="spacetime"
     echo "[OK] PostgreSQL database: $PG_DATABASE (default)"
   fi
-  PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:5433/$PG_DATABASE"
+  PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:6432/$PG_DATABASE"
 fi
 
 if ! docker info &>/dev/null; then
@@ -457,14 +456,21 @@ Fix the bugs in the exhaust test app.
 **Backend:** $FIX_BACKEND
 
 **Instructions:**
-1. Read backends/$FIX_BACKEND.md for backend-specific redeploy instructions
+1. Read the CLAUDE.md in this directory for backend-specific architecture and deploy instructions
 2. Read BUG_REPORT.md in the app directory — it describes what's broken
 3. Read the relevant source code files mentioned in the bug report
 4. Fix each bug described in the report
-5. Redeploy as needed (see backend file for steps)
-6. Verify: npx tsc --noEmit && npm run build
-7. Make sure the dev server is running on port $VITE_PORT
+5. Rebuild and redeploy ALL servers:
+   - For PostgreSQL: restart the Express server (npm run dev in server/) AND the Vite client
+   - For SpacetimeDB: run spacetime publish, then restart the Vite client
+6. Verify the fix by testing the endpoint/behavior described in the bug report
+7. Make sure ALL servers are running:
+   - Client dev server on port $VITE_PORT
+   - For PostgreSQL: Express API server on port $EXPRESS_PORT (test with curl)
 8. Append this fix iteration to ITERATION_LOG.md in the app directory
+
+CRITICAL: After fixing code, you MUST verify the servers are running and the bug is fixed.
+Do NOT just edit files and say "done" — actually restart the servers and test.
 
 Do NOT do browser testing — that happens in the grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
@@ -677,12 +683,12 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
   # Patch ports and database names in CLAUDE.md for parallel runs (run-index > 0)
   if [[ $RUN_INDEX -gt 0 ]]; then
     sed -i \
-      -e "s/5173/$VITE_PORT_STDB/g" \
-      -e "s/5174/$VITE_PORT_PG/g" \
-      -e "s/:3001/:$EXPRESS_PORT/g" \
-      -e "s/localhost:3001/localhost:$EXPRESS_PORT/g" \
-      -e "s|localhost:5433/spacetime|localhost:5433/$PG_DATABASE|g" \
-      -e "s|spacetime:spacetime@localhost:5433/spacetime|spacetime:spacetime@localhost:5433/$PG_DATABASE|g" \
+      -e "s/6173/$VITE_PORT_STDB/g" \
+      -e "s/6273/$VITE_PORT_PG/g" \
+      -e "s/:6001/:$EXPRESS_PORT/g" \
+      -e "s/localhost:6001/localhost:$EXPRESS_PORT/g" \
+      -e "s|localhost:6432/spacetime|localhost:6432/$PG_DATABASE|g" \
+      -e "s|spacetime:spacetime@localhost:6432/spacetime|spacetime:spacetime@localhost:6432/$PG_DATABASE|g" \
       "$APP_DIR/CLAUDE.md"
     echo "  Patched for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, DB=$PG_DATABASE)"
   fi
@@ -694,13 +700,10 @@ fi
 
 cd "$APP_DIR"
 
-# Initialize a git repo in the app dir to isolate Claude Code from the parent repo.
-# This prevents Claude from walking up and finding SpacetimeDB repo configs/code.
-if [[ ! -d "$APP_DIR/.git" ]]; then
-  git init -q "$APP_DIR" 2>/dev/null || true
-  echo "node_modules/" > "$APP_DIR/.gitignore"
-  git -C "$APP_DIR" add -A 2>/dev/null && git -C "$APP_DIR" commit -q -m "initial" 2>/dev/null || true
-fi
+# NOTE: Git isolation disabled — it breaks --resume-session because Claude Code
+# ties sessions to the project root (.git location). Without isolation, Claude
+# may see parent repo files, but session continuity is more important for
+# sequential upgrades. Use cleanup.sh after testing to remove any artifacts.
 
 # Build resume flag if --resume-session was passed and a prior session ID exists
 RESUME_FLAG=""
@@ -724,19 +727,15 @@ if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
     fi
   done
   if [[ -n "$PREV_SESSION_ID" ]]; then
-    RESUME_FLAG="--continue $PREV_SESSION_ID"
-    echo "Continuing prior session: $PREV_SESSION_ID"
+    RESUME_FLAG="--resume $PREV_SESSION_ID --fork-session"
+    echo "Forking prior session: $PREV_SESSION_ID"
   else
     echo "No prior session ID found for this app — starting fresh"
   fi
 fi
 
-if [[ -n "$RESUME_FLAG" ]]; then
-  # When continuing a prior session, don't pass --session-id (reuses the existing one)
-  $CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions $RESUME_FLAG -p "$PROMPT"
-else
-  $CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions --session-id "$SESSION_ID" -p "$PROMPT"
-fi
+# --fork-session creates a new session branched from the prior one (keeps context)
+$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
 EXIT_CODE=$?
 
 echo ""

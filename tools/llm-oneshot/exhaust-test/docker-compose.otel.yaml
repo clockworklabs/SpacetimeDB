@@ -15,7 +15,7 @@ services:
   postgres:
     image: postgres:16
     ports:
-      - "5433:5432"
+      - "6432:5432"
     environment:
       POSTGRES_USER: spacetime
       POSTGRES_PASSWORD: spacetime

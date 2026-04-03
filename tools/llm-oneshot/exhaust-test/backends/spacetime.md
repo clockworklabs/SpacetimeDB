@@ -102,13 +102,13 @@ Both must pass. If either fails:
 
 ```bash
 # Kill any existing dev server
-npx kill-port 5173 2>/dev/null || true
+npx kill-port 6173 2>/dev/null || true
 
 # Start dev server in background
 cd <client-dir> && npm run dev &
 ```
 
-Wait for the dev server to be ready (poll `http://localhost:5173` up to 30 seconds).
+Wait for the dev server to be ready (poll `http://localhost:6173` up to 30 seconds).
 
 ---
 

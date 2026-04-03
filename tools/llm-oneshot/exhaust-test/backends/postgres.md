@@ -27,12 +27,12 @@ PostgreSQL is already running in a Docker container.
 | Parameter | Value |
 |-----------|-------|
 | Host | `localhost` |
-| Port | `5433` (mapped from container 5432) |
+| Port | `6432` (mapped from container 5432) |
 | User | `spacetime` |
 | Password | `spacetime` |
 | Database | `spacetime` |
 | Container | `spacetime-web-postgres-1` |
-| Connection URL | `postgresql://spacetime:spacetime@localhost:5433/spacetime` |
+| Connection URL | `postgresql://spacetime:spacetime@localhost:6432/spacetime` |
 
 ---
 
@@ -120,7 +120,7 @@ Create the Express + Socket.io server:
 
 - `server/.env`:
   ```
-  DATABASE_URL=postgresql://spacetime:spacetime@localhost:5433/spacetime
+  DATABASE_URL=postgresql://spacetime:spacetime@localhost:6432/spacetime
   PORT=3001
   ```
 
@@ -133,14 +133,14 @@ Create the Express + Socket.io server:
     out: './drizzle',
     dialect: 'postgresql',
     dbCredentials: {
-      url: process.env.DATABASE_URL || 'postgresql://spacetime:spacetime@localhost:5433/spacetime',
+      url: process.env.DATABASE_URL || 'postgresql://spacetime:spacetime@localhost:6432/spacetime',
     },
   });
   ```
 
 - `server/src/schema.ts` — Drizzle ORM table definitions for all features
 - `server/src/index.ts` — Express server with:
-  - CORS configured for `http://localhost:5174`
+  - CORS configured for `http://localhost:6273`
   - Socket.io with CORS
   - REST endpoints for rooms, messages, users
   - Socket.io events for real-time: typing, messages, presence, read receipts
@@ -186,7 +186,7 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
   }
   ```
 
-- `client/vite.config.ts` — port **5174** (NOT 5173 — that's SpacetimeDB), proxy `/api` and `/socket.io` to `http://localhost:3001`
+- `client/vite.config.ts` — port **6273** (NOT 6173 — that's SpacetimeDB), proxy `/api` and `/socket.io` to `http://localhost:6001`
   ```typescript
   import { defineConfig } from 'vite';
   import react from '@vitejs/plugin-react';
@@ -194,11 +194,11 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
   export default defineConfig({
     plugins: [react()],
     server: {
-      port: 5174,
+      port: 6273,
       proxy: {
-        '/api': 'http://localhost:3001',
+        '/api': 'http://localhost:6001',
         '/socket.io': {
-          target: 'http://localhost:3001',
+          target: 'http://localhost:6001',
           ws: true,
         },
       },
@@ -212,7 +212,7 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
 - `client/src/App.tsx` — Main component using `fetch('/api/...')` + Socket.io client
 - `client/src/styles.css` — Dark theme styling
 
-**The client connects to the server via the Vite proxy** — no hardcoded localhost:3001 in client code.
+**The client connects to the server via the Vite proxy** — no hardcoded localhost:6001 in client code.
 
 ---
 
@@ -238,21 +238,21 @@ Both must pass. If either fails:
 
 ```bash
 # Kill any existing servers
-npx kill-port 5174 2>/dev/null || true
+npx kill-port 6273 2>/dev/null || true
 npx kill-port 3001 2>/dev/null || true
 
 # Start the API server in background
 cd <server-dir> && npx tsx src/index.ts &
 
-# Wait for API server to be ready (poll http://localhost:3001 up to 30s)
+# Wait for API server to be ready (poll http://localhost:6001 up to 30s)
 
 # Start client dev server in background
 cd <client-dir> && npm run dev &
 ```
 
 Wait for both servers to be ready:
-- API server at `http://localhost:3001`
-- Client dev server at `http://localhost:5174`
+- API server at `http://localhost:6001`
+- Client dev server at `http://localhost:6273`
 
 ---
 
@@ -301,9 +301,9 @@ For context on what makes this backend different (this helps the benchmark compa
 
 | Service | Port | Notes |
 |---------|------|-------|
-| PostgreSQL (Docker) | 5433 | Database |
+| PostgreSQL (Docker) | 6432 | Database |
 | Express API server | 3001 | REST + Socket.io |
-| Vite dev server | **5174** | React client — NOT 5173 (that's SpacetimeDB) |
+| Vite dev server | **6273** | React client — NOT 6173 (that's SpacetimeDB) |
 
 ---
 

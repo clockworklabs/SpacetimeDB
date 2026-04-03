@@ -50,7 +50,7 @@ Why this structure? Avoids circular dependency issues between tables and reducer
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "kill-port": "npx kill-port 5173 2>nul || true",
+    "kill-port": "npx kill-port 6173 2>nul || true",
     "dev": "npm run kill-port && vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
@@ -78,7 +78,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,  // NEVER use 3000 — conflicts with SpacetimeDB
+    port: 6173,  // NEVER use 3000 — conflicts with SpacetimeDB
   },
 });
 ```
@@ -136,6 +136,6 @@ export const SPACETIMEDB_URI = 'ws://localhost:3000';
 | Service | Port | Notes |
 |---------|------|-------|
 | SpacetimeDB server | 3000 | WebSocket connections |
-| Vite dev server | 5173 | React client |
+| Vite dev server | 6173 | React client |
 
 **Never run Vite on port 3000** — it conflicts with SpacetimeDB.
