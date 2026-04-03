@@ -123,6 +123,9 @@ mod tests {
             None,
         )
         .run_to_completion();
-        assert_eq!(trace.as_slice(), &["a", "b", "a", "b"]);
+        assert_eq!(
+            trace.as_slice().iter().map(|event| event.event).collect::<Vec<_>>(),
+            vec!["a", "b", "a", "b"]
+        );
     }
 }

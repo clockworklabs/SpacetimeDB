@@ -8137,7 +8137,9 @@ version = "2.1.0"
 dependencies = [
  "anyhow",
  "pretty_assertions",
+ "proptest",
  "spacetimedb-datastore",
+ "spacetimedb-execution",
  "spacetimedb-lib 2.1.0",
  "spacetimedb-primitives 2.1.0",
  "spacetimedb-sats 2.1.0",
