@@ -1,10 +1,10 @@
 # Bug Report
 
-## Bug 1: Users always appear as "invisible" until they manually change status
+## Bug 1: No threading UI — Reply button missing
 
-**Feature:** Rich User Presence
+**Feature:** Message Threading
 
-**Description:** When a user joins a room, their status dot shows as invisible/grey for all other members. The status is not initialized to "online" on connect — it only reflects reality after the user manually selects a status from the selector.
+**Description:** There are no threading options visible anywhere in the UI. Hovering over messages does not reveal a "Reply" or "💬" button. Users have no way to reply to a message or open a thread panel.
 
-**Expected:** Users should default to "online" (green dot) when they connect. Their status should be visible to others immediately upon joining.
-**Actual:** All users show as invisible/grey until they explicitly change their status via the selector.
+**Expected:** A "Reply" button (or 💬 icon) appears on message hover, opening a thread panel showing the parent message and all replies, with an input field for replying.
+**Actual:** No reply button, no thread panel, no reply counts visible anywhere.
