@@ -1,0 +1,19 @@
+[package]
+name = "spacetimedb-dst"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Deterministic simulation testing utilities for SpacetimeDB crates"
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+spacetimedb-datastore = { workspace = true, features = ["test"] }
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-table.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true

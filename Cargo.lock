@@ -8132,6 +8132,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-dst"
+version = "2.1.0"
+dependencies = [
+ "anyhow",
+ "pretty_assertions",
+ "spacetimedb-datastore",
+ "spacetimedb-lib 2.1.0",
+ "spacetimedb-primitives 2.1.0",
+ "spacetimedb-sats 2.1.0",
+ "spacetimedb-schema",
+ "spacetimedb-table",
+]
+
+[[package]]
 name = "spacetimedb-durability"
 version = "2.1.0"
 dependencies = [
