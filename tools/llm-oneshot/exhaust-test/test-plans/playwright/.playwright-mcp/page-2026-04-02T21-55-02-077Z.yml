@@ -1,0 +1,38 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e12]: SpacetimeDB Chat
+    - generic [ref=e13]:
+      - generic [ref=e16]: Alice
+      - combobox [ref=e17]:
+        - option "Online" [selected]
+        - option "Away"
+        - option "Do Not Disturb"
+        - option "Invisible"
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Rooms
+        - button "+" [ref=e21] [cursor=pointer]
+      - generic [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: "# TestRoom"
+        - button "Join" [ref=e24]
+      - generic [ref=e25] [cursor=pointer]:
+        - generic [ref=e26]: "# TypingTest"
+        - button "Join" [ref=e27]
+    - generic [ref=e28]:
+      - generic [ref=e29]: Online Users
+      - generic [ref=e32]: Alice
+  - generic [ref=e34]:
+    - generic [ref=e35]: 💬
+    - generic [ref=e36]: Select a room to start chatting
+    - generic [ref=e37]: Create a room to get started
+  - generic [ref=e38]:
+    - generic [ref=e39]: All Users
+    - generic [ref=e40]:
+      - generic [ref=e43]: Alice
+      - generic [ref=e44]: Online · Last active 1m ago
+    - generic [ref=e45]:
+      - generic [ref=e48]: Alice
+      - generic [ref=e49]: Online · Last active just now
+    - generic [ref=e50]:
+      - generic [ref=e53]: Alice
+      - generic [ref=e54]: Online

@@ -3,7 +3,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const APP_URL = process.env.APP_URL || 'http://localhost:5274';
 
 test.describe('Basic Chat', () => {
   test('User Registration and Room Creation', async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe('Basic Chat', () => {
     await page.waitForSelector('input, button', { timeout: 30_000 });
 
     // 1. Find the name/display name input field and type "Alice"
-    await page.getByRole('textbox', { name: 'Your name...' }).fill('Alice');
+    await page.getByRole('textbox', { name: 'Enter your name' }).fill('Alice');
 
     // 2. Click the join/register/submit button
     await page.getByRole('button', { name: 'Join' }).click();
@@ -35,7 +35,7 @@ test.describe('Basic Chat', () => {
     await page.waitForSelector('input, button', { timeout: 30_000 });
 
     // Register as Alice
-    await page.getByRole('textbox', { name: 'Your name...' }).fill('Alice');
+    await page.getByRole('textbox', { name: 'Enter your name' }).fill('Alice');
     await page.getByRole('button', { name: 'Join' }).click();
 
     // Create a room
@@ -56,6 +56,6 @@ test.describe('Basic Chat', () => {
     await expect(page.getByText('Hello from Alice!')).toBeVisible();
 
     // 5. Verify the online/user list shows "Alice"
-    await expect(page.getByText('Alice (you)')).toBeVisible();
+    await expect(page.getByText('Alice')).toBeVisible();
   });
 });

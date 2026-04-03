@@ -77,7 +77,7 @@ elif [[ "$BACKEND" == "postgres" ]]; then
   SERVER_DIR="$APP_DIR/server"
   if [[ -f "$SERVER_DIR/.env" ]]; then
     DB_URL=$(grep DATABASE_URL "$SERVER_DIR/.env" | head -1 | cut -d= -f2-)
-    DB_NAME=$(echo "$DB_URL" | grep -oP '/([^/?]+)' | tail -1 | tr -d '/')
+    DB_NAME=$(echo "$DB_URL" | sed 's|.*/||; s|?.*||')
   fi
 
   # Drop all tables and recreate via Drizzle push

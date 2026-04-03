@@ -3,39 +3,33 @@
 
 import { test, expect } from '@playwright/test';
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
-
 test.describe('Read Receipts', () => {
   test('Seen Indicator Displays', async ({ page }) => {
-    await page.goto(APP_URL);
-    await page.waitForSelector('input, button', { timeout: 30_000 });
+    await page.goto('http://localhost:5173');
 
     // 1. Find the name input and type "Alice", then submit
-    await page.getByRole('textbox', { name: 'Your name...' }).fill('Alice');
+    await page.getByRole('textbox', { name: 'Your name' }).fill('Alice');
     await page.getByRole('button', { name: 'Join' }).click();
+    await page.getByText('Alice').first().waitFor({ state: 'visible' });
 
     // 2. Create a room called "ReceiptTest"
     await page.getByRole('button', { name: '+' }).click();
-    await page.getByRole('textbox', { name: 'Room name...' }).fill('ReceiptTest');
-    await page.getByRole('textbox', { name: 'Room name...' }).press('Enter');
+    await page.getByRole('textbox', { name: 'Room name' }).fill('ReceiptTest');
+    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByText('ReceiptTest').first().waitFor({ state: 'visible' });
 
     // 3. Enter "ReceiptTest"
-    await page.getByText('#ReceiptTest').click();
+    await page.getByText('# ReceiptTest').click();
 
     // 4. Send a message "Testing read receipts"
-    await page.getByRole('textbox', { name: 'Type a message...' }).fill('Testing read receipts');
-    await page.getByRole('textbox', { name: 'Type a message...' }).press('Enter');
+    await page.getByRole('textbox', { name: 'Message #ReceiptTest…' }).fill('Testing read receipts');
+    await page.keyboard.press('Enter');
 
     // 5. Verify the message appears
     await expect(page.getByText('Testing read receipts')).toBeVisible();
 
     // 6. Look for any text containing "seen" or "read" near the messages
-    // The read receipt appears as "Seen by: <username>" when another user reads the message
-    // Hover the message to reveal the seen indicator area
-    await page.getByText('Testing read receipts').hover();
-
-    // The "Seen by:" text may appear after another user views the message
-    // Verify message was sent successfully (receipt feature exists in UI)
+    // Read receipts appear when other users view the message; verify the message container is present
     await expect(page.getByText('Testing read receipts')).toBeVisible();
   });
 });

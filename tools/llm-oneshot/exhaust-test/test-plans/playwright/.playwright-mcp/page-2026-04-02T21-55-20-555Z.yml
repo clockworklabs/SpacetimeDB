@@ -1,0 +1,54 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e12]: SpacetimeDB Chat
+    - generic [ref=e13]:
+      - generic [ref=e16]: Alice
+      - combobox [ref=e17]:
+        - option "Online" [selected]
+        - option "Away"
+        - option "Do Not Disturb"
+        - option "Invisible"
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Rooms
+        - button "+" [ref=e21] [cursor=pointer]
+      - generic [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: "# TestRoom"
+        - button "Join" [ref=e24]
+      - generic [ref=e25] [cursor=pointer]:
+        - generic [ref=e26]: "# TypingTest"
+        - button "Join" [ref=e27]
+      - generic [ref=e59] [cursor=pointer]: "# ReceiptTest"
+    - generic [ref=e28]:
+      - generic [ref=e29]: Online Users
+      - generic [ref=e32]: Alice
+  - generic [ref=e33]:
+    - generic [ref=e34]:
+      - generic [ref=e60]: "# ReceiptTest"
+      - generic [ref=e35]:
+        - button "schedule messages" [ref=e61] [cursor=pointer]: Schedule
+        - button "Members" [ref=e62] [cursor=pointer]
+        - button "Leave" [ref=e63] [cursor=pointer]
+    - generic [ref=e66]: No messages yet — say something!
+    - generic [ref=e67]:
+      - generic [ref=e68]:
+        - generic [ref=e69]: "Disappear after:"
+        - combobox [ref=e70]:
+          - option "Never (normal)" [selected]
+          - option "30 seconds (expire)"
+          - option "1 minute (expire)"
+          - option "5 minutes (expire)"
+      - generic [ref=e71]:
+        - 'textbox "Message #ReceiptTest…" [ref=e72]'
+        - button "Send" [disabled] [ref=e73]
+  - generic [ref=e38]:
+    - generic [ref=e39]: All Users
+    - generic [ref=e40]:
+      - generic [ref=e43]: Alice
+      - generic [ref=e44]: Online · Last active 1m ago
+    - generic [ref=e45]:
+      - generic [ref=e48]: Alice
+      - generic [ref=e49]: Online · Last active just now
+    - generic [ref=e50]:
+      - generic [ref=e53]: Alice
+      - generic [ref=e54]: Online

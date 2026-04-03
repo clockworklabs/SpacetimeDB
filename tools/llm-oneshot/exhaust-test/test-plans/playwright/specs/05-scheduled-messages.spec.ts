@@ -3,7 +3,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const APP_URL = process.env.APP_URL || 'http://localhost:5274';
 
 test.describe('Scheduled Messages', () => {
   test('Schedule Message UI', async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe('Scheduled Messages', () => {
     await page.waitForSelector('input, button', { timeout: 30_000 });
 
     // 1. Find the name input and type "Alice", then submit
-    await page.getByRole('textbox', { name: 'Your name...' }).fill('Alice');
+    await page.getByRole('textbox', { name: 'Enter your name' }).fill('Alice');
     await page.getByRole('button', { name: 'Join' }).click();
 
     // 2. Create a room called "ScheduleTest" and enter it
@@ -28,11 +28,9 @@ test.describe('Scheduled Messages', () => {
     await scheduleCheckbox.click();
 
     // 5. Look for a time/date picker or duration input
-    // The schedule UI reveals a time input and a scheduled message textbox
     await expect(scheduleCheckbox).toBeChecked();
 
     // 6. Verify scheduling UI elements are present
-    // The schedule input (datetime) and the scheduled message textbox appear
     await expect(page.getByRole('textbox', { name: 'Type a message to schedule...' })).toBeVisible();
     await expect(page.getByRole('button', { name: '⏰' })).toBeVisible();
   });

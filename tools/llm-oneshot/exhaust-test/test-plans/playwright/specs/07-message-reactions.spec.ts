@@ -3,7 +3,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const APP_URL = process.env.APP_URL || 'http://localhost:5274';
 
 test.describe('Message Reactions', () => {
   test('Add Reaction to Message', async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe('Message Reactions', () => {
     await page.waitForSelector('input, button', { timeout: 30_000 });
 
     // 1. Find the name input and type "Alice", then submit
-    await page.getByRole('textbox', { name: 'Your name...' }).fill('Alice');
+    await page.getByRole('textbox', { name: 'Enter your name' }).fill('Alice');
     await page.getByRole('button', { name: 'Join' }).click();
 
     // 2. Create a room called "ReactionTest" and enter it
