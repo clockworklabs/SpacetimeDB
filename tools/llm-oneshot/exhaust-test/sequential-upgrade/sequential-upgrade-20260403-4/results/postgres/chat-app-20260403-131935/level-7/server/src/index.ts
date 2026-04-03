@@ -160,7 +160,6 @@ app.get('/api/rooms/:roomId/members', async (req, res) => {
     userId: schema.roomMembers.userId,
     role: schema.roomMembers.role,
     username: schema.users.username,
-    status: schema.users.status,
   })
     .from(schema.roomMembers)
     .innerJoin(schema.users, eq(schema.roomMembers.userId, schema.users.id))
@@ -692,7 +691,7 @@ io.on('connection', (socket) => {
 
 function broadcastOnlineUsers() {
   io.emit('online_users', Array.from(onlineUsers.entries()).map(([id, u]) => ({
-    id,
+    userId: id,
     username: u.username,
     status: u.status,
     lastActiveAt: u.lastActiveAt,

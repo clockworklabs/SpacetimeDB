@@ -12,7 +12,6 @@ interface RoomMember {
   userId: number;
   username: string;
   role: string;
-  status?: string;
 }
 
 interface Room {
@@ -272,15 +271,6 @@ function App() {
         if (res.ok) {
           const members: RoomMember[] = await res.json();
           setRoomMembers(members);
-          setUserPresence(prev => {
-            const next = { ...prev };
-            for (const m of members) {
-              if (m.status && !next[m.userId]) {
-                next[m.userId] = { status: m.status, lastActiveAt: new Date().toISOString() };
-              }
-            }
-            return next;
-          });
         }
       } catch {}
     }, 3000);
@@ -493,16 +483,6 @@ function App() {
     setMessages(msgs);
     setReadReceipts(receipts);
     setRoomMembers(membersData);
-    // Pre-populate userPresence from DB status so dots show correctly before socket events arrive
-    setUserPresence(prev => {
-      const next = { ...prev };
-      for (const m of membersData) {
-        if (m.status && !next[m.userId]) {
-          next[m.userId] = { status: m.status, lastActiveAt: new Date().toISOString() };
-        }
-      }
-      return next;
-    });
     // Group reactions by messageId
     const reactionsByMsg: ReactionMap = {};
     for (const r of reactionsData) {

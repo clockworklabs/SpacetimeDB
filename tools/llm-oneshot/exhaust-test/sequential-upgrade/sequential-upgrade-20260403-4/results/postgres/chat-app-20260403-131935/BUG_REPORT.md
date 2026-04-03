@@ -1,16 +1,10 @@
 # Bug Report
 
-## Bug 1: Room member list does not update in real-time (STILL NOT FIXED)
+## Bug 1: Users always appear as "invisible" until they manually change status
 
-**Feature:** Real-Time Permissions / Basic Chat
+**Feature:** Rich User Presence
 
-**Description:** This bug was attempted to be fixed but the problem persists. The room member list is NOT subscribing to live updates from the server. It only reflects the state at the time the user entered the room.
+**Description:** When a user joins a room, their status dot shows as invisible/grey for all other members. The status is not initialized to "online" on connect — it only reflects reality after the user manually selects a status from the selector.
 
-**Root cause to investigate:** The frontend is likely fetching room members once on room join (e.g. a single HTTP GET or one-time query) rather than subscribing to a real-time channel or polling for changes. The fix must ensure that when any user joins or leaves a room, ALL currently connected members in that room see the updated member list immediately without any navigation required.
-
-**Specific failure cases:**
-- A joins room, B joins room → A still only sees themselves in the member list
-- B leaves room → A still sees B in the member list
-- Only after A navigates away and back does the list update
-
-**Required fix:** Use WebSocket/SSE push or polling (e.g. every 2-3 seconds) to keep the member list live. The member list must reflect reality within a few seconds without any user action.
+**Expected:** Users should default to "online" (green dot) when they connect. Their status should be visible to others immediately upon joining.
+**Actual:** All users show as invisible/grey until they explicitly change their status via the selector.
