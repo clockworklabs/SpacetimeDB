@@ -15,5 +15,9 @@
   "vitePort": 6173,
   "expressPort": 6001,
   "pgDatabase": "spacetime",
-  "sessionId": "f583ee1c-f883-4496-bbf8-d5a9d0998700"
+  "sessionId": "f583ee1c-f883-4496-bbf8-d5a9d0998700",
+  "endedAt": "2026-04-03T19:28:34-0400",
+  "endedAtUtc": "2026-04-03T23:28:34Z",
+  "exitCode": 0,
+  "mode": "fix"
 }

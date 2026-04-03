@@ -175,3 +175,20 @@ The shared PostgreSQL database had tables from a prior run with a different sche
 **Server status:** API server verified at http://localhost:6001 (returns rooms list WITH status field), Client dev server at http://localhost:6273 (returns HTML).
 
 ---
+
+## Iteration 9 — Fix (2026-04-03)
+
+**Category:** Feature Broken
+
+**Bug: Reply count displays garbled value instead of integer count**
+- Root cause: PostgreSQL `COUNT(*)` returns `bigint`, which the `pg` driver serializes to a JSON string (e.g. `"1"` not `1`) to avoid JavaScript precision loss. The `sql<number>` TypeScript generic in Drizzle is annotation-only and does not cast at runtime. When the client's `new_reply` socket handler did `(m.replyCount || 0) + 1`, with `m.replyCount` being a string like `"1"`, JavaScript string concatenation produced `"11"`, `"111"`, etc. Different clients showed different garbled values because each started from the value fetched at their own load time.
+- Fix 1 (server): Added `::int` cast to the `COUNT(*)` subquery — `(SELECT COUNT(*) FROM messages r WHERE r.parent_message_id = ...)::int` — so PostgreSQL returns a 32-bit integer, which the driver serializes as a JSON number.
+- Fix 2 (client): Added defensive `parseInt(String(m.replyCount), 10)` normalization when setting messages from the API response, ensuring any future string leakage is coerced to a number before entering React state.
+- Files changed: `server/src/index.ts` (replyCount subquery), `client/src/App.tsx` (message load normalization)
+
+**Verification:** `GET /api/rooms/1/messages` now returns `"replyCount":1` (JSON number, no quotes).
+
+**Redeploy:** Express server restarted (old PID 577716 killed, new background `npm run dev`). Client rebuilt (`npm run build` — clean, 56 modules).
+**Server status:** API server verified at http://localhost:6001 (returns rooms list), Client dev server at http://localhost:6273 (HTTP 200).
+
+---
