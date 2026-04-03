@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
 import {
   getSharedRuntimeDefaults,
+  parseStdbCompression,
   type SpacetimeConnectorConfig,
+  type StdbCompression,
 } from '../config.ts';
 import { getSpacetimeCommittedTransfers } from '../core/spacetimeMetrics.ts';
 import { normalizeStdbUrl } from '../core/stdbUrl.ts';
@@ -74,13 +76,18 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
-async function runVerification(url: string, moduleName: string): Promise<void> {
+async function runVerification(
+  url: string,
+  moduleName: string,
+  compression: StdbCompression,
+): Promise<void> {
   const prevVerify = process.env.VERIFY;
   process.env.VERIFY = '1';
 
   const defaults = getSharedRuntimeDefaults();
   const config: SpacetimeConnectorConfig = {
     initialBalance: defaults.initialBalance,
+    stdbCompression: compression,
     stdbConfirmedReads: defaults.stdbConfirmedReads,
     stdbModule: moduleName,
     stdbUrl: url,
@@ -110,6 +117,7 @@ class DistributedCoordinator {
   private readonly resultsDir: string;
   private readonly stdbUrl: string;
   private readonly moduleName: string;
+  private readonly stdbCompression: StdbCompression;
 
   private readonly generators = new Map<string, GeneratorRecord>();
   private phase: CoordinatorPhase = 'idle';
@@ -128,6 +136,7 @@ class DistributedCoordinator {
     resultsDir: string;
     stdbUrl: string;
     moduleName: string;
+    stdbCompression: StdbCompression;
   }) {
     this.testName = opts.testName;
     this.connectorName = opts.connectorName;
@@ -138,6 +147,7 @@ class DistributedCoordinator {
     this.resultsDir = opts.resultsDir;
     this.stdbUrl = opts.stdbUrl;
     this.moduleName = opts.moduleName;
+    this.stdbCompression = opts.stdbCompression;
   }
 
   snapshot(): CoordinatorState {
@@ -326,7 +336,11 @@ class DistributedCoordinator {
 
       if (this.verifyAfterEpoch) {
         try {
-          await runVerification(this.stdbUrl, this.moduleName);
+          await runVerification(
+            this.stdbUrl,
+            this.moduleName,
+            this.stdbCompression,
+          );
           verification = 'passed';
         } catch (err) {
           verification = 'failed';
@@ -450,10 +464,15 @@ async function main(): Promise<void> {
     process.env.STDB_URL ?? 'ws://127.0.0.1:3000',
   );
   const stdbUrl = normalizeStdbUrl(rawStdbUrl);
+  const defaults = getSharedRuntimeDefaults();
   const moduleName = getStringFlag(
     flags,
     'stdb-module',
     process.env.STDB_MODULE ?? 'test-1',
+  );
+  const stdbCompression = parseStdbCompression(
+    getStringFlag(flags, 'stdb-compression', defaults.stdbCompression),
+    '--stdb-compression',
   );
   const initialIds = getStringListFlag(flags, 'generator-ids');
 
@@ -467,6 +486,7 @@ async function main(): Promise<void> {
     resultsDir,
     stdbUrl,
     moduleName,
+    stdbCompression,
   });
 
   const server = createServer(async (req, res) => {
@@ -530,7 +550,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl}`,
+    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl} compression=${stdbCompression}`,
   );
 }
 

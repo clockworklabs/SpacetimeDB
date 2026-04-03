@@ -31,6 +31,7 @@ The script will:
 - `--concurrency N` - Concurrent connections (default: 50)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
+- `--stdb-compression none|gzip` - SpacetimeDB client compression mode (default: none)
 - `--skip-prep` - Skip database seeding
 - `--no-animation` - Disable animated output
 
@@ -90,6 +91,7 @@ Copy `.env.example` to `.env` and adjust.
 - `STDB_URL` – WebSocket URL for SpacetimeDB
 - `STDB_MODULE` – module name to load (e.g. `test-1`)
 - `STDB_MODULE_PATH` – filesystem path to the module source (for local dev)
+- `STDB_COMPRESSION` – SpacetimeDB benchmark client compression (`none` or `gzip`)
 - `STDB_CONFIRMED_READS` – `1` = force confirmed reads on, `0` = force them off
 
 **Supabase:**
@@ -166,7 +168,7 @@ cd ..
 ### 1. Run a test
 
 ```bash
-npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list] [--stdb-compression none|gzip]
 ```
 
 Examples:
@@ -183,6 +185,9 @@ npm run bench -- test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
 npm run bench -- test-1 --alpha 2.0
+
+# Enable gzip for the SpacetimeDB benchmark client
+npm run bench -- test-1 --connectors spacetimedb --stdb-compression gzip
 
 # Only run selected connectors
 npm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
@@ -256,6 +261,7 @@ pnpm run bench-dist-coordinator -- \
   --verify 1 \
   --stdb-url ws://127.0.0.1:3000 \
   --stdb-module test-1 \
+  --stdb-compression none \
   --bind 127.0.0.1 \
   --port 8080
 ```
@@ -287,7 +293,8 @@ pnpm run bench-dist-generator -- \
   --open-parallelism 128 \
   --control-retries 3 \
   --stdb-url ws://127.0.0.1:3000 \
-  --stdb-module test-1
+  --stdb-module test-1 \
+  --stdb-compression none
 ```
 
 On **generator machine 2**:
@@ -306,7 +313,8 @@ pnpm run bench-dist-generator -- \
   --open-parallelism 128 \
   --control-retries 3 \
   --stdb-url ws://127.0.0.1:3000 \
-  --stdb-module test-1
+  --stdb-module test-1 \
+  --stdb-compression none
 ```
 
 Repeat that on as many generator machines as needed, adjusting `--id` and `--concurrency` for each process.
