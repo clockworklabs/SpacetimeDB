@@ -91,6 +91,7 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 - `--concurrency 50`: Number of concurrent client connections
 - `--alpha 0`: ~0% contention (uniform account distribution)
 - `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
+- `--stdb-compression none|gzip`: SpacetimeDB client compression mode (default: `none`)
 
 ### Hardware Configuration
 

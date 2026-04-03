@@ -4,6 +4,7 @@ import { hostname as getHostname } from 'node:os';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
 import {
   getSharedRuntimeDefaults,
+  parseStdbCompression,
   type SpacetimeConnectorConfig,
 } from '../config.ts';
 import type { ReducerConnector } from '../core/connectors.ts';
@@ -58,8 +59,13 @@ async function main(): Promise<void> {
     process.env.STDB_MODULE ?? 'test-1',
   );
   const defaults = getSharedRuntimeDefaults();
+  const stdbCompression = parseStdbCompression(
+    getStringFlag(flags, 'stdb-compression', defaults.stdbCompression),
+    '--stdb-compression',
+  );
   const connectorConfig: SpacetimeConnectorConfig = {
     initialBalance: defaults.initialBalance,
+    stdbCompression,
     stdbConfirmedReads: defaults.stdbConfirmedReads,
     stdbModule: moduleName,
     stdbUrl,
@@ -123,7 +129,7 @@ async function main(): Promise<void> {
     }, pollMs, controlRetries, () => !stopping);
 
     console.log(
-      `[generator ${id}] ready with ${session.openedConnections} connections to ${stdbUrl}/${moduleName}`,
+      `[generator ${id}] ready with ${session.openedConnections} connections to ${stdbUrl}/${moduleName} compression=${stdbCompression}`,
     );
 
     while (!stopping) {

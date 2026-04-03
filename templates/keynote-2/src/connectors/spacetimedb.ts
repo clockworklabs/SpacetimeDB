@@ -6,6 +6,7 @@ import type { SpacetimeConnectorConfig } from '../config.ts';
 export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector {
   const {
     initialBalance,
+    stdbCompression,
     stdbConfirmedReads,
     stdbModule: moduleName,
     stdbUrl: url,
@@ -33,6 +34,7 @@ export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector 
     const builder = Db.builder()
       .withUri(deriveWebsocketUrl(url))
       .withDatabaseName(moduleName)
+      .withCompression(stdbCompression)
       .withConfirmedReads(stdbConfirmedReads)
       .onConnect((ctx) => {
         console.log('[stdb] connected');
