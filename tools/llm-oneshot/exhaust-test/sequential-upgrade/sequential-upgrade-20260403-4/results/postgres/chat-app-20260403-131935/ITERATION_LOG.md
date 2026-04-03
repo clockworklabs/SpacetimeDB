@@ -135,6 +135,30 @@ The shared PostgreSQL database had tables from a prior run with a different sche
 
 ---
 
+## Iteration 8 — Fix (2026-04-03)
+
+**Category:** Feature Broken
+
+**Bug: No threading UI — Reply button missing**
+- Root cause: Message threading was never implemented. The `messages` table had no `parentMessageId` column, no thread reply endpoints existed on the server, and no reply button or thread panel existed in the client.
+- Fix 1 (schema): Added `parentMessageId: integer('parent_message_id')` to `messages` table. Run `drizzle-kit push` to apply.
+- Fix 2 (server): Modified `GET /api/rooms/:roomId/messages` to filter top-level messages only (`isNull(schema.messages.parentMessageId)`) and include a `replyCount` subquery.
+- Fix 3 (server): Added `GET /api/messages/:messageId/replies` endpoint returning all replies for a parent message.
+- Fix 4 (server): Added `POST /api/messages/:messageId/replies` endpoint that creates a reply (stored with `parentMessageId`) and emits `new_reply` socket event (not `new_message`).
+- Fix 5 (client): Added threading state (`threadOpenMessageId`, `threadParentMsg`, `threadReplies`, `threadReplyInput`, `threadOpenMessageIdRef`).
+- Fix 6 (client): Added `new_reply` socket handler that increments replyCount on parent message and appends to thread panel if open.
+- Fix 7 (client): Added `handleOpenThread` (fetches replies, opens panel) and `handleSendReply` functions.
+- Fix 8 (client): Added 💬 Reply button in message hover toolbar.
+- Fix 9 (client): Added reply count button below messages with replies.
+- Fix 10 (client): Added thread panel (right sidebar) showing parent message, all replies, and reply input.
+- Fix 11 (CSS): Added thread panel styles (`.thread-panel`, `.thread-parent-msg`, `.thread-replies-list`, `.reply-count-btn`, etc.).
+- Files changed: `server/src/schema.ts`, `server/src/index.ts`, `client/src/App.tsx`, `client/src/styles.css`
+
+**Redeploy:** Schema pushed (`drizzle-kit push` — clean). Express server restarted (new background process). Client rebuilt (`npm run build` — clean, 56 modules).
+**Server status:** API server verified at http://localhost:6001 (returns rooms list WITH replyCount), Client dev server at http://localhost:6273 (returns HTML). Reply endpoint verified: POST /api/messages/1/replies returns `{"id":36,...,"parentMessageId":1}`. GET /api/messages/1/replies returns reply. GET /api/rooms/1/messages shows `replyCount: "1"` for message 1.
+
+---
+
 ## Iteration 7 — Fix (2026-04-03)
 
 **Category:** Feature Broken

@@ -29,6 +29,8 @@ interface Message {
   createdAt: string;
   expiresAt?: string | null;
   editedAt?: string | null;
+  replyCount?: number;
+  parentMessageId?: number | null;
 }
 
 interface MessageEdit {
@@ -97,6 +99,17 @@ function App() {
   const [userPresence, setUserPresence] = useState<Record<number, { status: string; lastActiveAt: string }>>({});
   const [myStatus, setMyStatus] = useState<string>('online');
   const lastActivityRef = useRef<number>(Date.now());
+
+  // Threading state
+  const [threadOpenMessageId, setThreadOpenMessageIdState] = useState<number | null>(null);
+  const [threadParentMsg, setThreadParentMsg] = useState<Message | null>(null);
+  const [threadReplies, setThreadReplies] = useState<Message[]>([]);
+  const [threadReplyInput, setThreadReplyInput] = useState('');
+  const threadOpenMessageIdRef = useRef<number | null>(null);
+  const setThreadOpenMessageId = (id: number | null) => {
+    threadOpenMessageIdRef.current = id;
+    setThreadOpenMessageIdState(id);
+  };
 
   const setEditHistoryMessageId = (id: number | null) => {
     editHistoryMessageIdRef.current = id;
@@ -214,6 +227,22 @@ function App() {
           .then(r => r.json())
           .then((edits: MessageEdit[]) => setEditHistory(edits))
           .catch(() => {});
+      }
+    });
+
+    socket.on('new_reply', (reply: Message) => {
+      // Update reply count on parent message
+      setMessages(prev => prev.map(m =>
+        m.id === reply.parentMessageId
+          ? { ...m, replyCount: (m.replyCount || 0) + 1 }
+          : m
+      ));
+      // If thread panel is open for this parent, append the reply
+      if (threadOpenMessageIdRef.current === reply.parentMessageId) {
+        setThreadReplies(prev => {
+          if (prev.find(r => r.id === reply.id)) return prev;
+          return [...prev, reply];
+        });
       }
     });
 
@@ -486,7 +515,8 @@ function App() {
       fetch(`/api/rooms/${roomId}/reactions`),
       fetch(`/api/rooms/${roomId}/members`),
     ]);
-    const msgs: Message[] = await msgsRes.json();
+    const msgsRaw: Message[] = await msgsRes.json();
+    const msgs: Message[] = msgsRaw.map(m => ({ ...m, replyCount: m.replyCount != null ? parseInt(String(m.replyCount), 10) : 0 }));
     const receipts: ReadReceiptMap = await receiptsRes.json();
     const reactionsData: Reaction[] = await reactionsRes.json();
     const membersData: RoomMember[] = await membersRes.json();
@@ -725,6 +755,32 @@ function App() {
       const edits: MessageEdit[] = await res.json();
       setEditHistory(edits);
       setEditHistoryMessageId(messageId);
+    } catch {}
+  };
+
+  const handleOpenThread = async (msg: Message) => {
+    setThreadParentMsg(msg);
+    setThreadOpenMessageId(msg.id);
+    setThreadReplyInput('');
+    try {
+      const res = await fetch(`/api/messages/${msg.id}/replies`);
+      const replies: Message[] = await res.json();
+      setThreadReplies(replies);
+    } catch {
+      setThreadReplies([]);
+    }
+  };
+
+  const handleSendReply = async () => {
+    if (!currentUser || !threadOpenMessageId || !threadReplyInput.trim()) return;
+    const content = threadReplyInput.trim();
+    setThreadReplyInput('');
+    try {
+      await fetch(`/api/messages/${threadOpenMessageId}/replies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id, content }),
+      });
     } catch {}
   };
 
@@ -976,6 +1032,44 @@ function App() {
         </div>
       )}
 
+      {/* Thread panel */}
+      {threadOpenMessageId !== null && threadParentMsg && (
+        <div className="thread-panel">
+          <div className="thread-panel-header">
+            <span>Thread</span>
+            <button className="close-btn" onClick={() => setThreadOpenMessageId(null)}>✕</button>
+          </div>
+          <div className="thread-panel-body">
+            <div className="thread-parent-msg">
+              <div className="thread-parent-author">{threadParentMsg.username}</div>
+              <div className="thread-parent-content">{threadParentMsg.content}</div>
+            </div>
+            <div className="thread-replies-divider">{threadReplies.length} {threadReplies.length === 1 ? 'reply' : 'replies'}</div>
+            <div className="thread-replies-list">
+              {threadReplies.map(reply => (
+                <div key={reply.id} className="thread-reply-item">
+                  <div className="thread-reply-author">{reply.username}</div>
+                  <div className="thread-reply-content">{reply.content}</div>
+                  <div className="thread-reply-time">{new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="thread-reply-input">
+            <input
+              type="text"
+              placeholder="Reply..."
+              value={threadReplyInput}
+              onChange={e => setThreadReplyInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSendReply()}
+              maxLength={2000}
+              autoFocus
+            />
+            <button onClick={handleSendReply} disabled={!threadReplyInput.trim()}>Reply</button>
+          </div>
+        </div>
+      )}
+
       {/* Main area */}
       <main className="main-area">
         {!currentRoom ? (
@@ -1080,6 +1174,13 @@ function App() {
                                   {emoji}
                                 </button>
                               ))}
+                              <button
+                                className="emoji-option"
+                                onClick={() => handleOpenThread(msg)}
+                                title="Reply in thread"
+                              >
+                                💬
+                              </button>
                               {msg.userId === currentUser?.id && (
                                 <button
                                   className="emoji-option"
@@ -1090,6 +1191,14 @@ function App() {
                                 </button>
                               )}
                             </div>
+                          )}
+                          {(msg.replyCount ?? 0) > 0 && (
+                            <button
+                              className="reply-count-btn"
+                              onClick={() => handleOpenThread(msg)}
+                            >
+                              💬 {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
+                            </button>
                           )}
                           {receipt && <div className="read-receipt">{receipt}</div>}
                         </div>

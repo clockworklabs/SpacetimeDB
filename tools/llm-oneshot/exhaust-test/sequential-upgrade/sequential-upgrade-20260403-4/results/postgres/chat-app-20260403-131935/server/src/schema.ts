@@ -37,6 +37,7 @@ export const messages = pgTable('messages', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   expiresAt: timestamp('expires_at'),
   editedAt: timestamp('edited_at'),
+  parentMessageId: integer('parent_message_id'),
 });
 
 export const messageReads = pgTable('message_reads', {

@@ -262,16 +262,71 @@ app.get('/api/rooms/:roomId/messages', async (req, res) => {
     expiresAt: schema.messages.expiresAt,
     editedAt: schema.messages.editedAt,
     username: schema.users.username,
+    replyCount: sql<number>`(SELECT COUNT(*) FROM messages r WHERE r.parent_message_id = ${schema.messages.id})::int`.as('reply_count'),
   })
     .from(schema.messages)
     .innerJoin(schema.users, eq(schema.messages.userId, schema.users.id))
     .where(and(
       eq(schema.messages.roomId, roomId),
+      isNull(schema.messages.parentMessageId),
       sql`(${schema.messages.expiresAt} IS NULL OR ${schema.messages.expiresAt} > ${now})`
     ))
     .orderBy(schema.messages.createdAt)
     .limit(200);
   return res.json(msgs);
+});
+
+// Thread replies
+app.get('/api/messages/:messageId/replies', async (req, res) => {
+  const messageId = parseInt(req.params.messageId);
+  const now = new Date();
+  try {
+    const replies = await db.select({
+      id: schema.messages.id,
+      roomId: schema.messages.roomId,
+      userId: schema.messages.userId,
+      content: schema.messages.content,
+      createdAt: schema.messages.createdAt,
+      expiresAt: schema.messages.expiresAt,
+      editedAt: schema.messages.editedAt,
+      username: schema.users.username,
+      parentMessageId: schema.messages.parentMessageId,
+    })
+      .from(schema.messages)
+      .innerJoin(schema.users, eq(schema.messages.userId, schema.users.id))
+      .where(and(
+        eq(schema.messages.parentMessageId, messageId),
+        sql`(${schema.messages.expiresAt} IS NULL OR ${schema.messages.expiresAt} > ${now})`
+      ))
+      .orderBy(schema.messages.createdAt);
+    return res.json(replies);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch replies' });
+  }
+});
+
+app.post('/api/messages/:messageId/replies', async (req, res) => {
+  const parentMessageId = parseInt(req.params.messageId);
+  const { userId, content } = req.body as { userId?: number; content?: string };
+  if (!userId || !content || content.trim().length === 0) {
+    return res.status(400).json({ error: 'userId and content required' });
+  }
+  if (content.trim().length > 2000) {
+    return res.status(400).json({ error: 'Reply too long (max 2000 chars)' });
+  }
+  try {
+    const [parent] = await db.select().from(schema.messages).where(eq(schema.messages.id, parentMessageId));
+    if (!parent) return res.status(404).json({ error: 'Parent message not found' });
+    const [msg] = await db.insert(schema.messages)
+      .values({ roomId: parent.roomId, userId, content: content.trim(), parentMessageId })
+      .returning();
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId));
+    const fullMsg = { ...msg, username: user.username };
+    io.to(`room:${parent.roomId}`).emit('new_reply', { ...fullMsg, parentMessageId });
+    return res.json(fullMsg);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to post reply' });
+  }
 });
 
 app.post('/api/rooms/:roomId/messages', async (req, res) => {
