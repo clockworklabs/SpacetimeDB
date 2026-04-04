@@ -64,24 +64,3 @@
 **Files changed:** `client/src/App.tsx` (lines 21-23, 62-81)
 **Redeploy:** Client only (HMR — `tsc --noEmit` passes, dev server running on port 6173)
 
----
-
-## Iteration 4 — Fix (2026-04-04)
-
-**Category:** Feature Broken
-**What broke:** Message drafts not persisted across room switches or page refreshes.
-
-Two bugs:
-1. `useState(draftText)` only captures the initial value at component mount. The SpacetimeDB subscription loads asynchronously — when `messageDrafts` arrives from the server, `draftText` updates but `text` state never picked it up (no effect watching `draftText`).
-2. The cleanup `useEffect` cleared the debounced save timer (`draftSaveTimerRef`) without actually saving the current draft. If the user typed and switched rooms within 800ms, the pending draft was discarded.
-
-**What I fixed:**
-- Added `currentTextRef` (kept in sync with `text` via `useEffect`) to capture current text in cleanup closures.
-- Added `initialDraftAppliedRef` to track whether the initial draft for the current room has been applied yet.
-- Added a new `useEffect` watching `draftText`: when it first becomes non-empty (subscription loaded), applies it to `text` if not already done.
-- Modified the room-change `useEffect` to reset `initialDraftAppliedRef` so the new room's draft can be loaded.
-- Modified the cleanup `useEffect` to always call `conn?.reducers.saveDraft(...)` with `currentTextRef.current` immediately when leaving a room, in addition to clearing the pending timer.
-
-**Files changed:** `client/src/App.tsx` (~lines 787-870)
-**Redeploy:** Backend republished (no schema changes, safe re-publish), bindings regenerated, client build verified (`npm run build` succeeds), dev server running on port 6173 (HMR active)
-

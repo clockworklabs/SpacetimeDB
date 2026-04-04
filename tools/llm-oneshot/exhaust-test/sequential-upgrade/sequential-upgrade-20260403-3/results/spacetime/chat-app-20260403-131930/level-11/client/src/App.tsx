@@ -787,25 +787,11 @@ function RoomView({
   const [text, setText] = useState(draftText);
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevRoomIdRef = useRef<bigint>(room.id);
-  const currentTextRef = useRef(draftText);
-  const initialDraftAppliedRef = useRef(!!draftText);
-
-  // Keep currentTextRef in sync with text state for use in cleanup
-  useEffect(() => { currentTextRef.current = text; }, [text]);
-
-  // Apply draft when it first arrives — subscription may load after component mounts
-  useEffect(() => {
-    if (!initialDraftAppliedRef.current && draftText) {
-      initialDraftAppliedRef.current = true;
-      setText(draftText);
-    }
-  }, [draftText]);
 
   // When switching to a new room, load that room's draft
   useEffect(() => {
     if (room.id !== prevRoomIdRef.current) {
       prevRoomIdRef.current = room.id;
-      initialDraftAppliedRef.current = !!draftText;
       setText(draftText);
     }
   // Only run when roomId changes
@@ -874,8 +860,6 @@ function RoomView({
         isTypingRef.current = false;
       }
       if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-      // Always save current draft immediately when leaving a room
-      conn?.reducers.saveDraft({ roomId: room.id, text: currentTextRef.current });
     };
   }, [room.id, conn]);
 

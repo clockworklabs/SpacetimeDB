@@ -1,10 +1,15 @@
 # Bug Report
 
-## Bug 1: False "kicked" notification on room join
+## Bug 1: Message drafts not persisted — lost on room switch or page refresh
 
-**Feature:** Real-Time Permissions
+**Feature:** Draft Sync
 
-**Description:** When a user joins a room for the first time, the UI immediately shows a "kicked" notification or message, even though the user has not been kicked. This appears to be a false positive triggered by the join flow.
+**Description:** Typing a message and switching to another room does not save the draft. Switching back to the original room shows an empty input. Similarly, refreshing the page does not restore any draft text.
 
-**Expected:** No kicked notification when joining a room normally.
-**Actual:** "Kicked" message/notification appears immediately upon joining a room.
+**Expected:**
+- Typing in a room auto-saves the draft (no button needed)
+- Switching rooms and back restores the draft text in the input
+- Refreshing the page restores the draft text
+- Each room has its own independent draft
+
+**Actual:** Draft is lost immediately on room switch or page refresh. No draft persistence is implemented.
