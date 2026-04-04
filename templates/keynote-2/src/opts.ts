@@ -380,7 +380,7 @@ export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
     testName: args[0] ?? defaultBenchTestName,
     seconds: options.seconds ?? 1,
     concurrency:
-      contentionTests?.concurrency ?? options.concurrency ?? 10,
+      contentionTests?.concurrency ?? options.concurrency ?? 50,
     alpha: concurrencyTests?.alpha ?? options.alpha ?? 1.5,
     connectors: options.connectors ?? options.systems ?? null,
     contentionTests,
