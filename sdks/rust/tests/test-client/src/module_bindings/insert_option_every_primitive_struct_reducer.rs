@@ -63,6 +63,6 @@ impl insert_option_every_primitive_struct for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertOptionEveryPrimitiveStructArgs { s }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertOptionEveryPrimitiveStructArgs { s }, callback)
     }
 }

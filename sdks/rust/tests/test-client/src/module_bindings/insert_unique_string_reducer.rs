@@ -67,6 +67,6 @@ impl insert_unique_string for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertUniqueStringArgs { s, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertUniqueStringArgs { s, data }, callback)
     }
 }

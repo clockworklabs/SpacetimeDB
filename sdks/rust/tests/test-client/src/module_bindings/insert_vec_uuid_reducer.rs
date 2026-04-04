@@ -60,6 +60,7 @@ impl insert_vec_uuid for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecUuidArgs { u }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(InsertVecUuidArgs { u }, callback)
     }
 }

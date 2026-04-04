@@ -71,6 +71,6 @@ impl insert_unique_u_32_update_pk_u_32 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertUniqueU32UpdatePkU32Args { n, d_unique, d_pk }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertUniqueU32UpdatePkU32Args { n, d_unique, d_pk }, callback)
     }
 }

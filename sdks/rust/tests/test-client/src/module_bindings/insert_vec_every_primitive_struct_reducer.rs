@@ -63,6 +63,6 @@ impl insert_vec_every_primitive_struct for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertVecEveryPrimitiveStructArgs { s }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertVecEveryPrimitiveStructArgs { s }, callback)
     }
 }

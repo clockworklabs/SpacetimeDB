@@ -531,9 +531,17 @@ impl<'a> ModuleValidatorV10<'a> {
                     arg_name,
                 });
 
+        let ok_return_type_for_generate = self.core.validate_for_type_use(
+            || TypeLocation::ReducerReturn {
+                reducer_name: source_name.clone(),
+            },
+            &ok_return_type,
+        );
+
         let name_result = self.core.resolve_function_ident(source_name.clone());
 
-        let return_res: Result<_> = (ok_return_type.is_unit() && err_return_type.is_string())
+        let return_res: Result<_> = err_return_type
+            .is_string()
             .then_some((ok_return_type.clone(), err_return_type.clone()))
             .ok_or_else(move || {
                 ValidationError::InvalidReducerReturnType {
@@ -544,8 +552,14 @@ impl<'a> ModuleValidatorV10<'a> {
                 .into()
             });
 
-        let (name_result, accessor_name, params_for_generate, return_res) =
-            (name_result, accessor_name, params_for_generate, return_res).combine_errors()?;
+        let (name_result, accessor_name, params_for_generate, ok_return_type_for_generate, return_res) = (
+            name_result,
+            accessor_name,
+            params_for_generate,
+            ok_return_type_for_generate,
+            return_res,
+        )
+            .combine_errors()?;
         let (ok_return_type, err_return_type) = return_res;
         let reducer_name = ReducerName::new(name_result.clone());
 
@@ -560,6 +574,7 @@ impl<'a> ModuleValidatorV10<'a> {
             lifecycle: None, // V10 handles lifecycle separately
             visibility: visibility.into(),
             ok_return_type,
+            ok_return_type_for_generate,
             err_return_type,
         })
         .map(|reducer_def| (name_result, reducer_def))

@@ -61,6 +61,6 @@ impl insert_result_identity_string for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertResultIdentityStringArgs { r }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertResultIdentityStringArgs { r }, callback)
     }
 }

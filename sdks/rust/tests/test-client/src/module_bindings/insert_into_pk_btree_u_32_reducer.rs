@@ -70,6 +70,6 @@ impl insert_into_pk_btree_u_32 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertIntoPkBtreeU32Args { pk_u_32, bt_u_32 }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertIntoPkBtreeU32Args { pk_u_32, bt_u_32 }, callback)
     }
 }

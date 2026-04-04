@@ -467,6 +467,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+    pub fn call_reducer_with_return(&mut self, params: CallReducerParams) -> (ReducerCallResult, Option<Bytes>) {
+        let (res, return_value, trapped) = self.call_reducer_with_tx_and_return(None, params);
+        self.trapped = trapped;
+        (res, return_value)
+    }
+
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
@@ -542,6 +548,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
             self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+        })
+    }
+
+    fn call_reducer_with_tx_and_return(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+    ) -> (ReducerCallResult, Option<Bytes>, bool) {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common
+                .call_reducer_with_tx_and_return(tx, params, &mut self.instance)
         })
     }
 
@@ -811,6 +828,16 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, bool) {
+        let (res, _return_value, trapped) = self.call_reducer_with_tx_and_return(tx, params, inst);
+        (res, trapped)
+    }
+
+    pub(crate) fn call_reducer_with_tx_and_return<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+    ) -> (ReducerCallResult, Option<Bytes>, bool) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -956,7 +983,7 @@ impl InstanceCommon {
             execution_duration: total_duration,
         };
 
-        (res, trapped)
+        (res, event.reducer_return_value.clone(), trapped)
     }
 
     fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {

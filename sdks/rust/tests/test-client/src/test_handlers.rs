@@ -75,6 +75,7 @@ pub async fn dispatch(test: &str, db_name: &str) {
 
         "on-reducer" => exec_on_reducer(db_name).await,
         "fail-reducer" => exec_fail_reducer(db_name).await,
+        "reducer-return-values" => exec_reducer_return_values(db_name).await,
 
         "insert-vec" => exec_insert_vec(db_name).await,
         "insert-option-some" => exec_insert_option_some(db_name).await,
@@ -428,17 +429,17 @@ fn subscribe_these_then(
         .subscribe(queries);
 }
 
-fn assert_outcome_committed(reducer_name: &'static str, outcome: Result<Result<(), String>, InternalError>) {
+fn assert_outcome_committed<T>(reducer_name: &'static str, outcome: Result<Result<T, String>, InternalError>) {
     match outcome {
-        Ok(Ok(())) => (),
+        Ok(Ok(_)) => (),
         Ok(Err(msg)) => panic!("`{reducer_name}` reducer returned error: {msg}"),
         Err(internal_error) => panic!("`{reducer_name}` reducer panicked: {internal_error:?}"),
     }
 }
 
-fn reducer_callback_assert_committed(
+fn reducer_callback_assert_committed<T>(
     reducer_name: &'static str,
-) -> impl FnOnce(&ReducerEventContext, Result<Result<(), String>, InternalError>) + Send + 'static {
+) -> impl FnOnce(&ReducerEventContext, Result<Result<T, String>, InternalError>) + Send + 'static {
     move |_ctx, outcome| assert_outcome_committed(reducer_name, outcome)
 }
 
@@ -1010,7 +1011,7 @@ async fn exec_on_reducer(db_name: &str) {
             .insert_one_u_8_then(value, move |ctx, status| {
                 let run_checks = || {
                     match status {
-                        Ok(Ok(())) => {}
+                        Ok(Ok(_)) => {}
                         other => anyhow::bail!("Unexpected status: {other:?}"),
                     }
                     if !matches!(ctx.event.status, Status::Committed) {
@@ -1065,7 +1066,7 @@ async fn exec_fail_reducer(db_name: &str) {
             .insert_pk_u_8_then(key, initial_data, move |ctx, status| {
                 let run_checks = || {
                     match &status {
-                        Ok(Ok(())) => {}
+                        Ok(Ok(_)) => {}
                         other => anyhow::bail!("Expected success but got {other:?}"),
                     }
                     if !matches!(ctx.event.status, Status::Committed) {
@@ -1098,7 +1099,7 @@ async fn exec_fail_reducer(db_name: &str) {
                 ctx.reducers
                     .insert_pk_u_8_then(key, fail_data, move |ctx, status| {
                         let run_checks = || {
-                            if let Ok(Ok(())) = &status {
+                            if let Ok(Ok(_)) = &status {
                                 anyhow::bail!(
                                     "Expected reducer `insert_pk_u_8` to error or panic, but got a successful return"
                                 )
@@ -1135,6 +1136,41 @@ async fn exec_fail_reducer(db_name: &str) {
                         reducer_fail_result(run_checks());
                     })
                     .unwrap();
+            })
+            .unwrap();
+    });
+
+    test_counter.wait_for_all().await;
+}
+
+/// This tests that reducers can return values through the callback.
+async fn exec_reducer_return_values(db_name: &str) {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+    let reducer_result = test_counter.add_test("reducer-return-value");
+
+    let connection = connect(db_name, &test_counter).await;
+
+    subscribe_all_then(&connection, move |ctx| {
+        sub_applied_nothing_result(assert_all_tables_empty(ctx));
+
+        ctx.reducers
+            .return_sum_then(2, 3, move |ctx, status| {
+                let run_checks = || {
+                    let value = match status {
+                        Ok(Ok(value)) => value,
+                        other => anyhow::bail!("Unexpected status: {other:?}"),
+                    };
+                    if value != 5 {
+                        anyhow::bail!("Unexpected return value: expected 5 but found {value}");
+                    }
+                    if !matches!(ctx.event.status, Status::Committed) {
+                        anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
+                    }
+                    Ok(())
+                };
+
+                reducer_result(run_checks());
             })
             .unwrap();
     });
@@ -1960,8 +1996,8 @@ async fn exec_sorted_uuids_insert(db_name: &str) {
                     // Surely it should have some more assertions in it...
                     let run_checks = || {
                         match status {
-                            Ok(Ok(())) => (),
-                            _ => anyhow::bail!("Unexpected status: Expected Ok(Ok(())) but got {status:?}"),
+                            Ok(Ok(_)) => (),
+                            _ => anyhow::bail!("Unexpected status: Expected Ok(Ok(_)) but got {status:?}"),
                         }
                         if !matches!(ctx.event.reducer, Reducer::SortedUuidsInsert) {
                             anyhow::bail!(

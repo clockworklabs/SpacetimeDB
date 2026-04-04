@@ -67,6 +67,6 @@ impl insert_user for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertUserArgs { name, identity }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertUserArgs { name, identity }, callback)
     }
 }

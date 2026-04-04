@@ -61,6 +61,6 @@ impl delete_unique_i_16 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(DeleteUniqueI16Args { n }, callback)
+            .invoke_reducer_with_callback::<_, ()>(DeleteUniqueI16Args { n }, callback)
     }
 }

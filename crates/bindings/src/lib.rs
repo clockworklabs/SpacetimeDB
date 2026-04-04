@@ -12,6 +12,7 @@ mod client_visibility_filter;
 pub mod http;
 pub mod log_stopwatch;
 mod logger;
+pub mod remote_reducer;
 #[cfg(feature = "rand08")]
 mod rng;
 #[doc(hidden)]
@@ -56,7 +57,7 @@ pub use table::{
     UniqueColumn, UniqueColumnReadOnly, UniqueConstraintViolation,
 };
 
-pub type ReducerResult = core::result::Result<(), Box<str>>;
+pub type ReducerResult = core::result::Result<Option<Vec<u8>>, Box<str>>;
 
 pub type ProcedureResult = Vec<u8>;
 

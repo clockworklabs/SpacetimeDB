@@ -201,7 +201,7 @@ impl delete_large_table for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(
+        self.imp.invoke_reducer_with_callback::<_, ()>(
             DeleteLargeTableArgs {
                 a,
                 b,

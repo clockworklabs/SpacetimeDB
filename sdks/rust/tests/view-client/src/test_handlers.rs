@@ -143,11 +143,11 @@ fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error
     (result.take().unwrap())(res);
 }
 
-fn reducer_callback_assert_committed(
+fn reducer_callback_assert_committed<T>(
     reducer_name: &'static str,
-) -> impl FnOnce(&ReducerEventContext, Result<Result<(), String>, InternalError>) + Send + 'static {
+) -> impl FnOnce(&ReducerEventContext, Result<Result<T, String>, InternalError>) + Send + 'static {
     move |_ctx, outcome| match outcome {
-        Ok(Ok(())) => (),
+        Ok(Ok(_)) => (),
         Ok(Err(msg)) => panic!("`{reducer_name}` reducer returned error: {msg}"),
         Err(internal_error) => panic!("`{reducer_name}` reducer panicked: {internal_error:?}"),
     }

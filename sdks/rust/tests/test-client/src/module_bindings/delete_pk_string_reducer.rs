@@ -61,6 +61,6 @@ impl delete_pk_string for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(DeletePkStringArgs { s }, callback)
+            .invoke_reducer_with_callback::<_, ()>(DeletePkStringArgs { s }, callback)
     }
 }

@@ -57,6 +57,6 @@ impl insert_caller_vec_connection_id for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertCallerVecConnectionIdArgs {}, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertCallerVecConnectionIdArgs {}, callback)
     }
 }

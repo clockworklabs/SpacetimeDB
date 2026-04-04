@@ -60,6 +60,7 @@ impl insert_one_f_64 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertOneF64Args { f }, callback)
+        self.imp
+            .invoke_reducer_with_callback::<_, ()>(InsertOneF64Args { f }, callback)
     }
 }

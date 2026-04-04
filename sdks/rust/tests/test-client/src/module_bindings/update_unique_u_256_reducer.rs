@@ -67,6 +67,6 @@ impl update_unique_u_256 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdateUniqueU256Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdateUniqueU256Args { n, data }, callback)
     }
 }

@@ -15,6 +15,7 @@ use crate::host::wasm_common::*;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::string_from_utf8_lossy_owned;
+use bytes::Bytes;
 use futures_util::FutureExt;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
@@ -50,7 +51,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 4);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 5);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
@@ -485,8 +486,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_error_sink_code(code, error))
-            .map(|_| None);
+            .and_then(|code| handle_result_sink_code(code, error))
+            .map(|bytes| (!bytes.is_empty()).then_some(Bytes::from(bytes)));
 
         module_host_actor::ReducerExecuteResult { stats, call_result }
     }

@@ -67,6 +67,6 @@ impl update_unique_u_16 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(UpdateUniqueU16Args { n, data }, callback)
+            .invoke_reducer_with_callback::<_, ()>(UpdateUniqueU16Args { n, data }, callback)
     }
 }

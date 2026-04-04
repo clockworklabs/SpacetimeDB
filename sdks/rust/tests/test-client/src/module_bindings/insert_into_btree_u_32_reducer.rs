@@ -63,6 +63,6 @@ impl insert_into_btree_u_32 for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertIntoBtreeU32Args { rows }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertIntoBtreeU32Args { rows }, callback)
     }
 }

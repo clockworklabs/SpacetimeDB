@@ -61,6 +61,6 @@ impl insert_option_uuid for super::RemoteReducers {
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(InsertOptionUuidArgs { u }, callback)
+            .invoke_reducer_with_callback::<_, ()>(InsertOptionUuidArgs { u }, callback)
     }
 }
