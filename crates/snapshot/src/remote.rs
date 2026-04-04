@@ -244,6 +244,14 @@ pub struct SnapshotFetcher<P> {
 }
 
 impl<P: BlobProvider> SnapshotFetcher<P> {
+    fn read_object_error(&self, ty: ObjectType, cause: io::Error) -> SnapshotError {
+        SnapshotError::ReadObject {
+            ty,
+            source_repo: self.dir.0.clone(),
+            cause,
+        }
+    }
+
     pub fn create(
         provider: P,
         snapshots_dir: SnapshotsPath,
@@ -371,16 +379,22 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
     }
 
     async fn fetch_blob(&self, hash: blake3::Hash) -> Result<()> {
-        let Some(dst_path) = self
-            .object_file_path(ObjectType::Blob(BlobHash { data: *hash.as_bytes() }))
-            .await?
-        else {
+        let ty = ObjectType::Blob(BlobHash { data: *hash.as_bytes() });
+        let Some(dst_path) = self.object_file_path(ty).await? else {
             return Ok(());
         };
         atomically((!self.dry_run).then_some(dst_path), |out| async move {
             let mut out = BufWriter::new(out);
-            let mut src = self.provider.blob_reader(hash).await?;
-            let compressed = src.fill_buf().await?.starts_with(&ZSTD_MAGIC_BYTES);
+            let mut src = self
+                .provider
+                .blob_reader(hash)
+                .await
+                .map_err(|e| self.read_object_error(ty, e))?;
+            let compressed = src
+                .fill_buf()
+                .await
+                .map_err(|e| self.read_object_error(ty, e))?
+                .starts_with(&ZSTD_MAGIC_BYTES);
 
             // Consume the blob reader,
             // write its contents to `out`,
@@ -391,15 +405,17 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                 let mut writer = InspectWriter::new(&mut out, |chunk| {
                     hasher.update(chunk);
                 });
-                tokio::io::copy_buf(&mut src, &mut writer).await?;
-                writer.flush().await?;
+                tokio::io::copy_buf(&mut src, &mut writer)
+                    .await
+                    .map_err(|e| self.read_object_error(ty, e))?;
+                writer.flush().await.map_err(|e| self.read_object_error(ty, e))?;
 
                 hasher.hash()
             } else {
                 // If the input is compressed, send a copy of all received
                 // chunks to a separate task that decompresses the stream and
                 // computes the hash from the decompressed bytes.
-                let (mut zstd, tx) = zstd_reader()?;
+                let (mut zstd, tx) = zstd_reader().map_err(|e| self.read_object_error(ty, e))?;
                 let decompressor = tokio::spawn(async move {
                     tokio::io::copy_buf(&mut zstd, &mut hasher).await?;
                     Ok::<_, io::Error>(hasher.hash())
@@ -410,15 +426,17 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                     buf.extend_from_slice(chunk);
                     tx.send(buf.split().freeze()).ok();
                 });
-                tokio::io::copy(&mut src, &mut out).await?;
-                out.flush().await?;
+                tokio::io::copy(&mut src, &mut out)
+                    .await
+                    .map_err(|e| self.read_object_error(ty, e))?;
+                out.flush().await.map_err(|e| self.read_object_error(ty, e))?;
 
                 drop(tx);
-                decompressor.await.unwrap()?
+                decompressor.await.unwrap().map_err(|e| self.read_object_error(ty, e))?
             };
             if computed_hash != hash {
                 return Err(SnapshotError::HashMismatch {
-                    ty: ObjectType::Blob(BlobHash { data: *hash.as_bytes() }),
+                    ty,
                     expected: *hash.as_bytes(),
                     computed: *computed_hash.as_bytes(),
                     source_repo: self.dir.0.clone(),
@@ -434,13 +452,22 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
     }
 
     async fn fetch_page(&self, hash: blake3::Hash) -> Result<()> {
-        let Some(dst_path) = self.object_file_path(ObjectType::Page(hash)).await? else {
+        let ty = ObjectType::Page(hash);
+        let Some(dst_path) = self.object_file_path(ty).await? else {
             return Ok(());
         };
         atomically((!self.dry_run).then_some(dst_path), |out| async {
             let mut out = BufWriter::new(out);
-            let mut src = self.provider.blob_reader(hash).await?;
-            let compressed = src.fill_buf().await?.starts_with(&ZSTD_MAGIC_BYTES);
+            let mut src = self
+                .provider
+                .blob_reader(hash)
+                .await
+                .map_err(|e| self.read_object_error(ty, e))?;
+            let compressed = src
+                .fill_buf()
+                .await
+                .map_err(|e| self.read_object_error(ty, e))?
+                .starts_with(&ZSTD_MAGIC_BYTES);
 
             // To compute the page hash, we need to bsatn deserialize it.
             // As bsatn doesn't support streaming deserialization yet,
@@ -452,15 +479,17 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                 let mut writer = InspectWriter::new(&mut out, |chunk| {
                     page_buf.extend_from_slice(chunk);
                 });
-                tokio::io::copy_buf(&mut src, &mut writer).await?;
-                writer.flush().await?;
+                tokio::io::copy_buf(&mut src, &mut writer)
+                    .await
+                    .map_err(|e| self.read_object_error(ty, e))?;
+                writer.flush().await.map_err(|e| self.read_object_error(ty, e))?;
 
                 page_buf.split().freeze()
             } else {
                 // If the input is compressed, send all received chunks to a
                 // separate task that decompresses the stream and returns
                 // the uncompressed bytes.
-                let (mut zstd, tx) = zstd_reader()?;
+                let (mut zstd, tx) = zstd_reader().map_err(|e| self.read_object_error(ty, e))?;
                 let buf_pool = self.buf_pool.clone();
                 let decompressor = tokio::spawn(async move {
                     let mut page_buf = buf_pool.get();
@@ -473,11 +502,13 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                     buf.extend_from_slice(chunk);
                     tx.send(buf.split().freeze()).ok();
                 });
-                tokio::io::copy_buf(&mut src, &mut writer).await?;
-                writer.flush().await?;
+                tokio::io::copy_buf(&mut src, &mut writer)
+                    .await
+                    .map_err(|e| self.read_object_error(ty, e))?;
+                writer.flush().await.map_err(|e| self.read_object_error(ty, e))?;
 
                 drop(tx);
-                decompressor.await.unwrap()?
+                decompressor.await.unwrap().map_err(|e| self.read_object_error(ty, e))?
             };
 
             self.verify_page(hash, &page_bytes)?;

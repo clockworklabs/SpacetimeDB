@@ -30,6 +30,21 @@ const CONFIRMED_READS: bool = true;
 // Max inflight reducer calls imposed by the server.
 const MAX_INFLIGHT_REDUCERS: u64 = 16384;
 
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CliCompression {
+    None,
+    Gzip,
+}
+
+impl From<CliCompression> for Compression {
+    fn from(value: CliCompression) -> Self {
+        match value {
+            CliCompression::None => Compression::None,
+            CliCompression::Gzip => Compression::Gzip,
+        }
+    }
+}
+
 // When called from within an async context, return a handle to it (and no
 // `Runtime`), otherwise create a fresh `Runtime` and return it along with a
 // handle to it.
@@ -55,7 +70,7 @@ async fn init_conn(cli: &Common, handle: &Handle) -> (JoinHandle<()>, Recv, Send
     let server: &str = &cli.server;
     let uri = server.try_into().unwrap();
     let params = WsParams {
-        compression: Compression::None,
+        compression: cli.compression.into(),
         light: true,
         confirmed: cli.confirmed_reads.unwrap_or(CONFIRMED_READS).into(),
     };
@@ -260,6 +275,9 @@ struct Common {
 
     #[arg(short, long, default_value = MODULE)]
     module: String,
+
+    #[arg(long, value_enum, default_value_t = CliCompression::None)]
+    compression: CliCompression,
 
     #[arg(long)]
     confirmed_reads: Option<bool>,

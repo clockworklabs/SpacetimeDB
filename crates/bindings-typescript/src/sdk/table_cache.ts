@@ -66,6 +66,7 @@ export class TableCacheImpl<
   TableName extends TableNamesOf<RemoteModule>,
 > implements ClientTableCoreImplementable<RemoteModule, TableName>
 {
+  private readonly hasPrimaryKey: boolean;
   private rows: Map<
     ComparablePrimitive,
     [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
@@ -83,6 +84,9 @@ export class TableCacheImpl<
     this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
+    this.hasPrimaryKey = Object.values(this.tableDef.columns).some(
+      col => col.columnMetadata.isPrimaryKey === true
+    );
     // Build index views from the resolved runtime index metadata.
     //
     // We intentionally use `resolvedIndexes` rather than `indexes`:
@@ -281,11 +285,7 @@ export class TableCacheImpl<
       return pendingCallbacks;
     }
 
-    // TODO: performance
-    const hasPrimaryKey = Object.values(this.tableDef.columns).some(
-      col => col.columnMetadata.isPrimaryKey === true
-    );
-    if (hasPrimaryKey) {
+    if (this.hasPrimaryKey) {
       const insertMap = new Map<
         ComparablePrimitive,
         [
