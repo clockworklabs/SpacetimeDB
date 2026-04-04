@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer, boolean, primaryKey, unique } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, primaryKey, unique } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -11,7 +11,6 @@ export const users = pgTable('users', {
 export const rooms = pgTable('rooms', {
   id: serial('id').primaryKey(),
   name: text('name').notNull().unique(),
-  isPrivate: boolean('is_private').notNull().default(false),
   creatorId: integer('creator_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

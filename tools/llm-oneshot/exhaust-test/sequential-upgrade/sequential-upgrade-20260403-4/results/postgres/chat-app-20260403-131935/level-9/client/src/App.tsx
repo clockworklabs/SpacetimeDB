@@ -18,7 +18,6 @@ interface RoomMember {
 interface Room {
   id: number;
   name: string;
-  isPrivate: boolean;
 }
 
 interface Message {
@@ -63,13 +62,6 @@ interface ScheduledMessage {
   roomName: string;
 }
 
-interface PendingInvite {
-  inviteId: string;
-  roomId: number;
-  roomName: string;
-  inviterUsername: string;
-}
-
 function App() {
   const [connected, setConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -79,7 +71,6 @@ function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [currentRoomId, setCurrentRoomId] = useState<number | null>(null);
   const [newRoomName, setNewRoomName] = useState('');
-  const [newRoomIsPrivate, setNewRoomIsPrivate] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
@@ -124,10 +115,6 @@ function App() {
     editHistoryMessageIdRef.current = id;
     setEditHistoryMessageIdState(id);
   };
-
-  const [inviteUsername, setInviteUsername] = useState('');
-  const [inviteError, setInviteError] = useState('');
-  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
 
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -295,20 +282,6 @@ function App() {
       setRoomMembers(prev => prev.map(m => m.userId === data.userId ? { ...m, role: data.role } : m));
     });
 
-    socket.on('room_invite_received', (invite: PendingInvite) => {
-      setPendingInvites(prev => {
-        if (prev.find(i => i.inviteId === invite.inviteId)) return prev;
-        return [...prev, invite];
-      });
-    });
-
-    socket.on('room_invited', (room: Room) => {
-      setRooms(prev => {
-        if (prev.find(r => r.id === room.id)) return prev;
-        return [...prev, room];
-      });
-    });
-
     return () => {
       socket.disconnect();
     };
@@ -410,7 +383,7 @@ function App() {
   // ── Rooms ──────────────────────────────────────────────────────────────────
   const loadRooms = async (userId: number) => {
     const [roomsRes, unreadRes] = await Promise.all([
-      fetch(`/api/rooms?userId=${userId}`),
+      fetch('/api/rooms'),
       fetch(`/api/users/${userId}/unread`),
     ]);
     const roomsData: Room[] = await roomsRes.json();
@@ -490,11 +463,10 @@ function App() {
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newRoomName.trim(), userId: currentUser.id, isPrivate: newRoomIsPrivate }),
+        body: JSON.stringify({ name: newRoomName.trim(), userId: currentUser.id }),
       });
       if (res.ok) {
         setNewRoomName('');
-        setNewRoomIsPrivate(false);
         const room = await res.json();
         setJoinedRooms(prev => new Set([...prev, room.id]));
       }
@@ -628,52 +600,6 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminId: currentUser.id, targetUserId }),
     });
-  };
-
-  const handleInviteUser = async () => {
-    if (!currentUser || !currentRoomId || !inviteUsername.trim()) return;
-    setInviteError('');
-    try {
-      const res = await fetch(`/api/rooms/${currentRoomId}/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: currentUser.id, inviteeUsername: inviteUsername.trim() }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        setInviteError(err.error || 'Failed to invite');
-        return;
-      }
-      setInviteUsername('');
-    } catch {
-      setInviteError('Connection error');
-    }
-  };
-
-  const handleAcceptInvite = async (invite: PendingInvite) => {
-    if (!currentUser) return;
-    try {
-      const res = await fetch(`/api/invites/${invite.inviteId}/accept`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id }),
-      });
-      if (res.ok) {
-        setPendingInvites(prev => prev.filter(i => i.inviteId !== invite.inviteId));
-      }
-    } catch {}
-  };
-
-  const handleDeclineInvite = async (invite: PendingInvite) => {
-    if (!currentUser) return;
-    try {
-      await fetch(`/api/invites/${invite.inviteId}/decline`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id }),
-      });
-    } catch {}
-    setPendingInvites(prev => prev.filter(i => i.inviteId !== invite.inviteId));
   };
 
   const markRead = useCallback(async (userId: number, roomId: number, messageId: number) => {
@@ -977,29 +903,6 @@ function App() {
           </select>
         </div>
 
-        {pendingInvites.length > 0 && (
-          <div style={{ padding: '8px', borderBottom: '1px solid var(--border)' }}>
-            <div className="sidebar-section-title" style={{ marginBottom: '4px' }}>Room Invitations</div>
-            {pendingInvites.map(invite => (
-              <div key={invite.inviteId} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px', marginBottom: '6px' }}>
-                <div style={{ fontSize: '0.82rem', marginBottom: '6px' }}>
-                  <strong>{invite.inviterUsername}</strong> invited you to <strong>#{invite.roomName}</strong>
-                </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button
-                    onClick={() => handleAcceptInvite(invite)}
-                    style={{ flex: 1, fontSize: '0.75rem', padding: '4px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                  >Accept</button>
-                  <button
-                    onClick={() => handleDeclineInvite(invite)}
-                    style={{ flex: 1, fontSize: '0.75rem', padding: '4px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                  >Decline</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         <div className="sidebar-section">
           <div className="sidebar-section-title">Rooms</div>
         </div>
@@ -1024,7 +927,7 @@ function App() {
           ))}
         </div>
 
-        <div className="create-room-form" style={{ flexWrap: 'wrap' }}>
+        <div className="create-room-form">
           <input
             type="text"
             placeholder="New room..."
@@ -1033,15 +936,6 @@ function App() {
             onKeyDown={e => e.key === 'Enter' && handleCreateRoom()}
             maxLength={64}
           />
-          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input
-              type="checkbox"
-              checked={newRoomIsPrivate}
-              onChange={e => setNewRoomIsPrivate(e.target.checked)}
-              style={{ cursor: 'pointer' }}
-            />
-            Private
-          </label>
           <button onClick={handleCreateRoom}>+</button>
         </div>
 
@@ -1083,28 +977,6 @@ function App() {
                 )}
               </div>
             ))}
-            {isCurrentUserAdmin && currentRoom?.isPrivate && (
-              <div style={{ marginTop: '8px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Invite by username</div>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <input
-                    type="text"
-                    placeholder="Username..."
-                    value={inviteUsername}
-                    onChange={e => { setInviteUsername(e.target.value); setInviteError(''); }}
-                    onKeyDown={e => e.key === 'Enter' && handleInviteUser()}
-                    maxLength={32}
-                    style={{ flex: 1, fontSize: '0.75rem', padding: '3px 6px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '4px' }}
-                  />
-                  <button
-                    className="cancel-scheduled-btn"
-                    style={{ fontSize: '0.75rem', padding: '3px 7px' }}
-                    onClick={handleInviteUser}
-                  >Invite</button>
-                </div>
-                {inviteError && <div style={{ fontSize: '0.7rem', color: 'var(--danger)', marginTop: '2px' }}>{inviteError}</div>}
-              </div>
-            )}
           </div>
         )}
 

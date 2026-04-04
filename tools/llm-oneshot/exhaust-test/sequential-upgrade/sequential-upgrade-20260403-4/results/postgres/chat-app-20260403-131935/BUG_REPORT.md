@@ -1,12 +1,10 @@
 # Bug Report
 
-## Bug 1: Reply count displays garbled value instead of integer count
+## Bug 1: Invited users are auto-added to private rooms without Accept/Decline choice
 
-**Feature:** Message Threading
+**Feature:** Private Rooms
 
-**Description:** The reply count shown on parent messages is incorrect — it appears to be concatenating reply IDs or user identifiers as strings rather than displaying a simple integer count. For example, 3 replies shows as "0111" on one client and "21" on another. Each client shows a different garbled value.
+**Description:** When a user is invited to a private room, they are automatically added as a member with no notification and no choice. The spec requires that invited users receive a notification and are presented with "Accept" and "Decline" buttons.
 
-**Root cause to investigate:** The reply count is almost certainly being computed via string concatenation (e.g. `replyCount + newId`) instead of integer arithmetic (e.g. `replyCount + 1`). Check how `replyCount` or equivalent is updated in the frontend when a new reply arrives via WebSocket/SSE. Ensure the count is parsed as an integer before incrementing: `parseInt(count, 10) + 1`.
-
-**Expected:** Reply count shows a plain integer (e.g. "3 replies").
-**Actual:** Reply count shows a garbled concatenated string (e.g. "0111", "21") that varies per client.
+**Expected:** Invited user sees a notification containing the room name with "Accept" and "Decline" buttons. They are only added to the room if they accept.
+**Actual:** Invited user is silently and immediately added to the private room with no notification or consent prompt.

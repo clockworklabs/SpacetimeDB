@@ -28,9 +28,6 @@ const socketToUser = new Map<string, { userId: number; username: string }>();
 const onlineUsers = new Map<number, { username: string; socketId: string; status: string; lastActiveAt: Date }>();
 // roomId -> Map<userId, timeout>
 const typingTimers = new Map<number, Map<number, ReturnType<typeof setTimeout>>>();
-// Pending room invitations: inviteId -> invite info
-let _inviteCounter = 0;
-const pendingInvites = new Map<string, { inviteId: string; roomId: number; inviteeId: number; adminId: number; roomName: string; inviterUsername: string }>();
 
 // ── REST Routes ─────────────────────────────────────────────────────────────
 
@@ -93,18 +90,13 @@ app.put('/api/users/:userId/status', async (req, res) => {
 });
 
 // Rooms
-app.get('/api/rooms', async (req, res) => {
-  const userId = req.query.userId ? parseInt(req.query.userId as string) : null;
-  const allRooms = await db.select().from(schema.rooms).orderBy(schema.rooms.createdAt);
-  if (!userId) return res.json(allRooms.filter(r => !r.isPrivate));
-  const memberships = await db.select({ roomId: schema.roomMembers.roomId }).from(schema.roomMembers).where(eq(schema.roomMembers.userId, userId));
-  const memberRoomIds = new Set(memberships.map(m => m.roomId));
-  const visible = allRooms.filter(r => !r.isPrivate || memberRoomIds.has(r.id));
-  return res.json(visible);
+app.get('/api/rooms', async (_req, res) => {
+  const rooms = await db.select().from(schema.rooms).orderBy(schema.rooms.createdAt);
+  return res.json(rooms);
 });
 
 app.post('/api/rooms', async (req, res) => {
-  const { name, userId, isPrivate } = req.body as { name?: string; userId?: number; isPrivate?: boolean };
+  const { name, userId } = req.body as { name?: string; userId?: number };
   if (!name || name.trim().length < 1 || name.trim().length > 64) {
     return res.status(400).json({ error: 'Room name must be 1-64 characters' });
   }
@@ -112,18 +104,12 @@ app.post('/api/rooms', async (req, res) => {
   try {
     const existing = await db.select().from(schema.rooms).where(eq(schema.rooms.name, roomName));
     if (existing.length > 0) return res.json(existing[0]);
-    const [room] = await db.insert(schema.rooms).values({ name: roomName, isPrivate: !!isPrivate, ...(userId ? { creatorId: userId } : {}) }).returning();
+    const [room] = await db.insert(schema.rooms).values({ name: roomName, ...(userId ? { creatorId: userId } : {}) }).returning();
     // Auto-join creator as admin
     if (userId) {
       await db.insert(schema.roomMembers).values({ userId, roomId: room.id, role: 'admin' }).onConflictDoNothing();
     }
-    if (room.isPrivate) {
-      // Only notify the creator for private rooms
-      const creatorSocket = userId ? onlineUsers.get(userId) : null;
-      if (creatorSocket) io.to(creatorSocket.socketId).emit('room_created', room);
-    } else {
-      io.emit('room_created', room);
-    }
+    io.emit('room_created', room);
     return res.json(room);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create room' });
@@ -261,94 +247,6 @@ app.post('/api/rooms/:roomId/promote', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: 'Failed to promote user' });
   }
-});
-
-// Invite user to private room (sends pending invite with Accept/Decline)
-app.post('/api/rooms/:roomId/invite', async (req, res) => {
-  const roomId = parseInt(req.params.roomId);
-  const { adminId, inviteeUsername } = req.body as { adminId?: number; inviteeUsername?: string };
-  if (!adminId || !inviteeUsername) return res.status(400).json({ error: 'adminId and inviteeUsername required' });
-  try {
-    const [adminMember] = await db.select().from(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, adminId), eq(schema.roomMembers.roomId, roomId), eq(schema.roomMembers.role, 'admin')));
-    if (!adminMember) return res.status(403).json({ error: 'Not an admin' });
-
-    const [invitee] = await db.select().from(schema.users).where(eq(schema.users.username, inviteeUsername.trim()));
-    if (!invitee) return res.status(404).json({ error: 'User not found' });
-
-    // Check if already a member
-    const [existing] = await db.select().from(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, invitee.id), eq(schema.roomMembers.roomId, roomId)));
-    if (existing) return res.json({ ok: true, userId: invitee.id, username: invitee.username, alreadyMember: true });
-
-    const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, roomId));
-    if (!room) return res.status(404).json({ error: 'Room not found' });
-
-    const [inviter] = await db.select().from(schema.users).where(eq(schema.users.id, adminId));
-
-    // Create pending invite (do NOT add to room_members yet)
-    const inviteId = `inv-${++_inviteCounter}-${Date.now()}`;
-    pendingInvites.set(inviteId, {
-      inviteId,
-      roomId,
-      inviteeId: invitee.id,
-      adminId,
-      roomName: room.name,
-      inviterUsername: inviter?.username || 'someone',
-    });
-
-    // Notify the invited user — they must Accept or Decline
-    const inviteeSocket = onlineUsers.get(invitee.id);
-    if (inviteeSocket) {
-      io.to(inviteeSocket.socketId).emit('room_invite_received', {
-        inviteId,
-        roomId,
-        roomName: room.name,
-        inviterUsername: inviter?.username || 'someone',
-      });
-    }
-
-    return res.json({ ok: true, userId: invitee.id, username: invitee.username });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to invite user' });
-  }
-});
-
-// Accept a pending room invite
-app.post('/api/invites/:inviteId/accept', async (req, res) => {
-  const { inviteId } = req.params;
-  const { userId } = req.body as { userId?: number };
-  const invite = pendingInvites.get(inviteId);
-  if (!invite) return res.status(404).json({ error: 'Invite not found or already handled' });
-  if (userId !== invite.inviteeId) return res.status(403).json({ error: 'Not the invited user' });
-  try {
-    pendingInvites.delete(inviteId);
-    await db.insert(schema.roomMembers)
-      .values({ userId: invite.inviteeId, roomId: invite.roomId, role: 'member' })
-      .onConflictDoNothing();
-    const [invitee] = await db.select().from(schema.users).where(eq(schema.users.id, invite.inviteeId));
-    const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, invite.roomId));
-    io.to(`room:${invite.roomId}`).emit('member_added', { userId: invite.inviteeId, roomId: invite.roomId, role: 'member', username: invitee?.username });
-    // Tell the invitee to add the room to their list
-    const inviteeSocket = onlineUsers.get(invite.inviteeId);
-    if (inviteeSocket && room) {
-      io.to(inviteeSocket.socketId).emit('room_invited', room);
-    }
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to accept invite' });
-  }
-});
-
-// Decline a pending room invite
-app.post('/api/invites/:inviteId/decline', async (req, res) => {
-  const { inviteId } = req.params;
-  const { userId } = req.body as { userId?: number };
-  const invite = pendingInvites.get(inviteId);
-  if (!invite) return res.status(404).json({ error: 'Invite not found or already handled' });
-  if (userId !== invite.inviteeId) return res.status(403).json({ error: 'Not the invited user' });
-  pendingInvites.delete(inviteId);
-  return res.json({ ok: true });
 });
 
 // Messages
@@ -535,11 +433,7 @@ app.get('/api/users/:userId/unread', async (req, res) => {
     const lastReadId = lastRead[0]?.lastReadMessageId ?? 0;
     const [result] = await db.select({ count: count() })
       .from(schema.messages)
-      .where(and(
-        eq(schema.messages.roomId, roomId),
-        gt(schema.messages.id, lastReadId),
-        isNull(schema.messages.parentMessageId)
-      ));
+      .where(and(eq(schema.messages.roomId, roomId), gt(schema.messages.id, lastReadId)));
     unread[roomId] = Number(result.count);
   }
   return res.json(unread);
