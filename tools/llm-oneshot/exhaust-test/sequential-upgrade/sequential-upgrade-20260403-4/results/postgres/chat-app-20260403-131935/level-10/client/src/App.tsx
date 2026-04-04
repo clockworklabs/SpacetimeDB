@@ -85,7 +85,6 @@ function App() {
   const [messageInput, setMessageInput] = useState('');
 
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
-  const [knownUsers, setKnownUsers] = useState<Record<number, string>>({});
   const [typingUsers, setTypingUsers] = useState<Map<number, string>>(new Map());
   const [readReceipts, setReadReceipts] = useState<ReadReceiptMap>({});
   const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
@@ -158,12 +157,6 @@ function App() {
             next[u.id] = { status: u.status, lastActiveAt: u.lastActiveAt || new Date().toISOString() };
           }
         }
-        return next;
-      });
-      // Persist usernames so DM room names survive offline transitions
-      setKnownUsers(prev => {
-        const next = { ...prev };
-        for (const u of users) next[u.id] = u.username;
         return next;
       });
     });
@@ -322,9 +315,6 @@ function App() {
         if (prev.find(r => r.id === room.id)) return prev;
         return [...prev, room];
       });
-      // Subscribe to the room for real-time messages
-      socket.emit('join_room', room.id);
-      setJoinedRooms(prev => new Set([...prev, room.id]));
     });
 
     return () => {
@@ -439,25 +429,17 @@ function App() {
 
   // ── Rooms ──────────────────────────────────────────────────────────────────
   const loadRooms = async (userId: number) => {
-    const [roomsRes, unreadRes, activityRes, usersRes] = await Promise.all([
+    const [roomsRes, unreadRes, activityRes] = await Promise.all([
       fetch(`/api/rooms?userId=${userId}`),
       fetch(`/api/users/${userId}/unread`),
       fetch(`/api/rooms/activity`),
-      fetch(`/api/users`),
     ]);
     const roomsData: Room[] = await roomsRes.json();
     const unreadData: Record<number, number> = await unreadRes.json();
     const activityData: Record<number, { level: string; recentCount: number }> = await activityRes.json();
-    const allUsers: User[] = await usersRes.json();
     setRooms(roomsData);
     setUnreadCounts(unreadData);
     setRoomActivity(activityData);
-    // Seed knownUsers from all DB users so DM room names are always correct
-    setKnownUsers(prev => {
-      const next = { ...prev };
-      for (const u of allUsers) next[u.id] = u.username;
-      return next;
-    });
 
     // Track which rooms user is a member of
     const memberRes = await Promise.all(
@@ -669,19 +651,6 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminId: currentUser.id, targetUserId }),
     });
-  };
-
-  const handleStartDM = async (targetUserId: number) => {
-    if (!currentUser) return;
-    const res = await fetch('/api/dm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: currentUser.id, targetUserId }),
-    });
-    if (!res.ok) return;
-    const room = await res.json();
-    setRooms(prev => prev.some(r => r.id === room.id) ? prev : [...prev, room]);
-    setCurrentRoomId(room.id);
   };
 
   const handleInviteUser = async () => {
@@ -1072,7 +1041,7 @@ function App() {
                 className={`room-item ${currentRoomId === room.id ? 'active' : ''}`}
                 onClick={() => handleSelectRoom(room.id)}
               >
-                <span className="room-name">{room.name.startsWith('__dm_') && room.name.endsWith('__') ? (() => { const parts = room.name.slice(5, -2).split('_'); const ids = parts.map(Number); const otherId = ids.find(id => id !== currentUser?.id) ?? ids[0]; const other = onlineUsers.find(u => u.id === otherId); return `@ ${other?.username ?? knownUsers[otherId] ?? `User ${otherId}`}`; })() : `# ${room.name}`}</span>
+                <span className="room-name"># {room.name}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {activity?.level === 'hot' && (
                     <span className="activity-badge activity-hot" title={`${activity.recentCount} messages in last 5 min`}>🔥 Hot</span>
@@ -1183,20 +1152,12 @@ function App() {
             const lastActive = getLastActive(u.id);
             return (
               <div key={u.id} className="online-user" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span className="status-dot" style={{ background: getStatusColor(status) }} title={status} />
-                  <span style={{ flex: 1 }}>{u.username}</span>
+                  <span>{u.username}</span>
                   {status === 'dnd' && <span style={{ fontSize: '0.65rem', color: 'var(--danger)' }}>DND</span>}
                   {status === 'away' && <span style={{ fontSize: '0.65rem', color: '#f0c040' }}>Away</span>}
                   {status === 'invisible' && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Invisible</span>}
-                  {u.id !== currentUser?.id && (
-                    <button
-                      className="cancel-scheduled-btn"
-                      style={{ fontSize: '0.7rem', padding: '2px 5px' }}
-                      title={`DM ${u.username}`}
-                      onClick={() => handleStartDM(u.id)}
-                    >💬</button>
-                  )}
                 </div>
                 {lastActive && (
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', paddingLeft: '18px' }}>{lastActive}</span>
@@ -1283,7 +1244,7 @@ function App() {
         ) : (
           <>
             <div className="room-header">
-              <h3>{currentRoom.name.startsWith('__dm_') && currentRoom.name.endsWith('__') ? (() => { const parts = currentRoom.name.slice(5, -2).split('_'); const ids = parts.map(Number); const otherId = ids.find(id => id !== currentUser?.id) ?? ids[0]; const other = onlineUsers.find(u => u.id === otherId); return `@ ${other?.username ?? knownUsers[otherId] ?? `User ${otherId}`}`; })() : `# ${currentRoom.name}`}</h3>
+              <h3># {currentRoom.name}</h3>
               {isCurrentUserAdmin && (
                 <span style={{ fontSize: '0.75rem', background: 'var(--primary)', color: '#fff', borderRadius: '4px', padding: '2px 8px' }}>Admin</span>
               )}

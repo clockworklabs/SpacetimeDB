@@ -351,35 +351,6 @@ app.post('/api/invites/:inviteId/decline', async (req, res) => {
   return res.json({ ok: true });
 });
 
-// Direct Messages — create or find DM room between two users
-app.post('/api/dm', async (req, res) => {
-  const { userId, targetUserId } = req.body as { userId?: number; targetUserId?: number };
-  if (!userId || !targetUserId) return res.status(400).json({ error: 'userId and targetUserId required' });
-  if (userId === targetUserId) return res.status(400).json({ error: 'Cannot DM yourself' });
-  const [a, b] = [userId, targetUserId].sort((x, y) => x - y);
-  const dmName = `__dm_${a}_${b}__`;
-  try {
-    const existing = await db.select().from(schema.rooms).where(eq(schema.rooms.name, dmName));
-    if (existing.length > 0) {
-      // Ensure both users are members
-      await db.insert(schema.roomMembers).values({ userId, roomId: existing[0].id, role: 'member' }).onConflictDoNothing();
-      await db.insert(schema.roomMembers).values({ userId: targetUserId, roomId: existing[0].id, role: 'member' }).onConflictDoNothing();
-      return res.json(existing[0]);
-    }
-    const [room] = await db.insert(schema.rooms).values({ name: dmName, isPrivate: true, creatorId: userId }).returning();
-    await db.insert(schema.roomMembers).values({ userId, roomId: room.id, role: 'member' }).onConflictDoNothing();
-    await db.insert(schema.roomMembers).values({ userId: targetUserId, roomId: room.id, role: 'member' }).onConflictDoNothing();
-    // Notify both users
-    const userSocket = onlineUsers.get(userId);
-    const targetSocket = onlineUsers.get(targetUserId);
-    if (userSocket) io.to(userSocket.socketId).emit('room_invited', room);
-    if (targetSocket) io.to(targetSocket.socketId).emit('room_invited', room);
-    return res.json(room);
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to create DM' });
-  }
-});
-
 // Messages
 app.get('/api/rooms/:roomId/messages', async (req, res) => {
   const roomId = parseInt(req.params.roomId);
