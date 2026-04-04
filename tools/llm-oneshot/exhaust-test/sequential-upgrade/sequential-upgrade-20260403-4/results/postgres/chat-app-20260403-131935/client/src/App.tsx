@@ -165,6 +165,9 @@ function App() {
         ...prev,
         [data.userId]: { status: data.status, lastActiveAt: data.lastActiveAt },
       }));
+      if (currentUser && data.userId === currentUser.id) {
+        setMyStatus(data.status);
+      }
     });
 
     socket.on('room_created', (room: Room) => {
@@ -397,13 +400,25 @@ function App() {
         handleStatusChange('away');
       }
     }, 60000);
-    const resetActivity = () => { lastActivityRef.current = Date.now(); };
+    const resetActivity = () => {
+      lastActivityRef.current = Date.now();
+      if (myStatus === 'away') {
+        handleStatusChange('online');
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') resetActivity();
+    };
     window.addEventListener('mousemove', resetActivity);
     window.addEventListener('keydown', resetActivity);
+    window.addEventListener('click', resetActivity);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       clearInterval(interval);
       window.removeEventListener('mousemove', resetActivity);
       window.removeEventListener('keydown', resetActivity);
+      window.removeEventListener('click', resetActivity);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentUser, myStatus]);
 

@@ -1,0 +1,18 @@
+{
+  "backend": "spacetime",
+  "level": 1,
+  "variant": "sequential-upgrade",
+  "rules": "guided",
+  "runIndex": 0,
+  "sessionId": "38c022ce-87b8-779c-290d-7f00719e41c3",
+  "startedAt": "2026-04-04T01:50:21Z",
+  "endedAt": "2026-04-04T01:53:07Z",
+  "totalInputTokens": 16,
+  "totalOutputTokens": 5866,
+  "totalTokens": 5882,
+  "cacheReadTokens": 545083,
+  "cacheCreationTokens": 28231,
+  "totalCostUsd": 0.35742915,
+  "apiCalls": 14,
+  "totalDurationSec": 102.392
+}

@@ -258,3 +258,24 @@ The shared PostgreSQL database had tables from a prior run with a different sche
 **Server status:** API server verified at http://localhost:6001 (returns rooms list). Accept/decline endpoints return correct 404 for unknown inviteId. Client dev server at http://localhost:6273 (HTTP 200).
 
 ---
+
+## Iteration 13 — Fix (2026-04-03)
+
+**Category:** Feature Broken (2 bugs)
+
+**Bug 1: Auto-away does not restore to "online" on user activity/window focus**
+- Root cause: The `resetActivity` function only updated `lastActivityRef.current` but never called `handleStatusChange('online')` when the user returned from 'away'. There was also no `visibilitychange` listener (window focus/tab switch) to restore status on return.
+- Fix 1: Modified `resetActivity` to call `handleStatusChange('online')` when `myStatus === 'away'`, restoring status on any user activity (mousemove, keydown, click).
+- Fix 2: Added `visibilitychange` event listener — when `document.visibilityState === 'visible'`, `resetActivity()` is called so returning to the tab also restores status.
+- Fix 3: Added `click` event listener to activity detection (was missing alongside mousemove/keydown).
+- Files changed: `client/src/App.tsx` (resetActivity function + event listeners in auto-away useEffect)
+
+**Bug 2: Top status selector and bottom online list are out of sync**
+- Root cause: The `user_presence_update` socket handler only updated `userPresence` state but never updated `myStatus`. If the server emitted a presence update for the current user, the top selector (`myStatus`) remained stale while the bottom list (`userPresence[u.id]`) updated, causing divergence.
+- Fix: In the `user_presence_update` handler, added check — if `data.userId === currentUser.id`, also call `setMyStatus(data.status)` so both displays stay in sync.
+- Files changed: `client/src/App.tsx` (user_presence_update socket handler)
+
+**Redeploy:** Client only — Vite HMR picks up changes automatically. Express server unchanged.
+**Server status:** API server verified at http://localhost:6001 (returns rooms list), Client dev server at http://localhost:6273 (HTTP 200).
+
+---
