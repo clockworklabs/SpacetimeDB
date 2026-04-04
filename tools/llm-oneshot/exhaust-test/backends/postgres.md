@@ -142,8 +142,8 @@ Create the Express + Socket.io server:
 - `server/src/index.ts` — Express server with:
   - CORS configured for `http://localhost:6273`
   - Socket.io with CORS
-  - REST endpoints for rooms, messages, users
-  - Socket.io events for real-time: typing, messages, presence, read receipts
+  - REST endpoints for the app's resources (per the feature spec)
+  - Socket.io events for real-time updates (per the feature spec)
   - Database queries via Drizzle ORM
 
 Install and push schema:

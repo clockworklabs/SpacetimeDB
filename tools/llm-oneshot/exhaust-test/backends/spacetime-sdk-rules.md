@@ -13,12 +13,12 @@ import { ScheduleAt } from 'spacetimedb';        // for scheduled tables only
 `table(OPTIONS, COLUMNS)` — two arguments. The `name` field MUST be snake_case:
 
 ```typescript
-const user = table(
-  { name: 'user', public: true },
+const player = table(
+  { name: 'player', public: true },
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
-    online: t.bool(),
+    active: t.bool(),
   }
 );
 ```
@@ -84,13 +84,13 @@ export const doReset = spacetimedb.reducer((ctx) => { ... });
 ## DB Operations
 
 ```typescript
-ctx.db.user.insert({ id: 0n, name: 'Alice' });           // Insert (0n for autoInc)
-ctx.db.user.id.find(userId);                               // Find by PK → row | null
-ctx.db.user.identity.find(ctx.sender);                     // Find by unique column
-[...ctx.db.post.authorId.filter(authorId)];                // Filter → spread to Array
-[...ctx.db.user.iter()];                                   // All rows → Array
-ctx.db.user.id.update({ ...existing, name: newName });     // Update (spread + override)
-ctx.db.user.id.delete(userId);                             // Delete by PK
+ctx.db.player.insert({ id: 0n, name: 'Alice' });           // Insert (0n for autoInc)
+ctx.db.player.id.find(playerId);                           // Find by PK → row | null
+ctx.db.player.identity.find(ctx.sender);                   // Find by unique column
+[...ctx.db.item.authorId.filter(authorId)];                // Filter → spread to Array
+[...ctx.db.player.iter()];                                 // All rows → Array
+ctx.db.player.id.update({ ...existing, name: newName });   // Update (spread + override)
+ctx.db.player.id.delete(playerId);                         // Delete by PK
 ```
 
 Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
@@ -186,18 +186,18 @@ function App() {
     if (!conn || !isActive) return;
     conn.subscriptionBuilder()
       .onApplied(() => setSubscribed(true))
-      .subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
+      .subscribe(['SELECT * FROM entity', 'SELECT * FROM record']);
   }, [conn, isActive]);
 
   // Reactive data
-  const [users] = useTable(tables.user);
-  const [messages] = useTable(tables.message);
+  const [entities] = useTable(tables.entity);
+  const [records] = useTable(tables.record);
 
   // Call reducers with object syntax
-  conn?.reducers.sendMessage({ text: messageText });
+  conn?.reducers.addRecord({ data });
 
   // Compare identities
-  const isMe = msg.sender.toHexString() === myIdentity?.toHexString();
+  const isMe = row.owner.toHexString() === myIdentity?.toHexString();
 }
 ```
 
@@ -207,20 +207,20 @@ function App() {
 // schema.ts
 import { schema, table, t } from 'spacetimedb/server';
 
-const user = table({ name: 'user', public: true }, {
+const player = table({ name: 'player', public: true }, {
   identity: t.identity().primaryKey(),
   name: t.string(),
-  online: t.bool(),
+  active: t.bool(),
 });
 
-const message = table({ name: 'message', public: true }, {
+const scoreEntry = table({ name: 'scoreEntry', public: true }, {
   id: t.u64().primaryKey().autoInc(),
-  sender: t.identity(),
-  text: t.string(),
-  sentAt: t.timestamp(),
+  player: t.identity(),
+  points: t.u32(),
+  recordedAt: t.timestamp(),
 });
 
-const spacetimedb = schema({ user, message });
+const spacetimedb = schema({ player, scoreEntry });
 export default spacetimedb;
 ```
 
@@ -231,28 +231,28 @@ import { t, SenderError } from 'spacetimedb/server';
 export { default } from './schema';
 
 export const onConnect = spacetimedb.clientConnected((ctx) => {
-  const existing = ctx.db.user.identity.find(ctx.sender);
-  if (existing) ctx.db.user.identity.update({ ...existing, online: true });
+  const existing = ctx.db.player.identity.find(ctx.sender);
+  if (existing) ctx.db.player.identity.update({ ...existing, active: true });
 });
 
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
-  const existing = ctx.db.user.identity.find(ctx.sender);
-  if (existing) ctx.db.user.identity.update({ ...existing, online: false });
+  const existing = ctx.db.player.identity.find(ctx.sender);
+  if (existing) ctx.db.player.identity.update({ ...existing, active: false });
 });
 
 export const register = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    if (ctx.db.user.identity.find(ctx.sender)) throw new SenderError('already registered');
-    ctx.db.user.insert({ identity: ctx.sender, name, online: true });
+    if (ctx.db.player.identity.find(ctx.sender)) throw new SenderError('already registered');
+    ctx.db.player.insert({ identity: ctx.sender, name, active: true });
   }
 );
 
-export const sendMessage = spacetimedb.reducer(
-  { text: t.string() },
-  (ctx, { text }) => {
-    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('not registered');
-    ctx.db.message.insert({ id: 0n, sender: ctx.sender, text, sentAt: ctx.timestamp });
+export const submitScore = spacetimedb.reducer(
+  { points: t.u32() },
+  (ctx, { points }) => {
+    if (!ctx.db.player.identity.find(ctx.sender)) throw new SenderError('not registered');
+    ctx.db.scoreEntry.insert({ id: 0n, player: ctx.sender, points, recordedAt: ctx.timestamp });
   }
 );
 ```
