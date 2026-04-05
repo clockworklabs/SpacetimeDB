@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SpacetimeDB vs PostgreSQL — Benchmark Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d0e; color: #e6e9f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; background: linear-gradient(266deg, #4cf490 0%, #8a38f5 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { color: #6f7987; font-size: 13px; margin-bottom: 24px; }
+  .summary-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+  .stat { background: #141416; border: 1px solid #202126; border-radius: 8px; padding: 14px 18px; flex: 1; min-width: 140px; }
+  .stat-label { font-size: 11px; color: #6f7987; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .stat-row { display: flex; gap: 16px; }
+  .stat-val { font-size: 20px; font-weight: 700; }
+  .stat-val.stdb { color: #4cf490; }
+  .stat-val.pg { color: #336791; }
+  .stat-sub { font-size: 11px; color: #6f7987; margin-top: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 20px; }
+  .card { background: #141416; border: 1px solid #202126; border-radius: 10px; padding: 20px; }
+  .card h2 { font-size: 13px; font-weight: 600; color: #6f7987; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 240px; }
+  .legend { display: flex; gap: 16px; margin-bottom: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #e6e9f0; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .note { font-size: 11px; color: #6f7987; margin-top: 10px; font-style: italic; }
+  .full-width { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+
+<h1>SpacetimeDB vs PostgreSQL — AI App Generation Benchmark</h1>
+<p class="subtitle">Sequential upgrade · L1–L11 · 13 feature groups · Claude Sonnet 4.6 · Chat app</p>
+
+<div class="summary-bar">
+  <div class="stat">
+    <div class="stat-label">Total Cost</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb">$12.45</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg">$16.22</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Bugs</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb">5</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg">15</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Fix Sessions</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb">4</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg">15</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Final LOC (hand-written)</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb">2,881</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg">3,647</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Time</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb">49m</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg">70m</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Fix Success (1st attempt)</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb">100%</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg">53%</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4cf490"></div>SpacetimeDB</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#336791"></div>PostgreSQL</div>
+</div>
+
+<div class="grid">
+
+  <!-- Upgrade Cost per Level -->
+  <div class="card">
+    <h2>Upgrade Cost per Level ($)</h2>
+    <div class="chart-wrap"><canvas id="upgradeCost"></canvas></div>
+  </div>
+
+  <!-- Fix Cost per Level -->
+  <div class="card">
+    <h2>Fix Cost per Level ($)</h2>
+    <div class="chart-wrap"><canvas id="fixCost"></canvas></div>
+    <p class="note">Fix costs attributed to the level where the bug was introduced.</p>
+  </div>
+
+  <!-- Total Cost per Level (stacked) -->
+  <div class="card">
+    <h2>Total Cost per Level — Upgrade + Fix ($)</h2>
+    <div class="chart-wrap"><canvas id="totalCostPerLevel"></canvas></div>
+  </div>
+
+  <!-- Cumulative Cost -->
+  <div class="card">
+    <h2>Cumulative Cost over Levels ($)</h2>
+    <div class="chart-wrap"><canvas id="cumulativeCost"></canvas></div>
+  </div>
+
+  <!-- Bugs per Level -->
+  <div class="card">
+    <h2>Bugs Found per Level</h2>
+    <div class="chart-wrap"><canvas id="bugsPerLevel"></canvas></div>
+  </div>
+
+  <!-- Cumulative Bugs -->
+  <div class="card">
+    <h2>Cumulative Bugs over Levels</h2>
+    <div class="chart-wrap"><canvas id="cumulativeBugs"></canvas></div>
+  </div>
+
+  <!-- LOC over Levels (full width) -->
+  <div class="card full-width">
+    <h2>Lines of Code over Levels (hand-written, excl. generated bindings)</h2>
+    <div class="chart-wrap" style="height:280px"><canvas id="locOverLevels"></canvas></div>
+  </div>
+
+  <!-- Backend LOC only -->
+  <div class="card">
+    <h2>Backend LOC over Levels</h2>
+    <div class="chart-wrap"><canvas id="backendLoc"></canvas></div>
+  </div>
+
+  <!-- Frontend LOC only -->
+  <div class="card">
+    <h2>Frontend LOC over Levels</h2>
+    <div class="chart-wrap"><canvas id="frontendLoc"></canvas></div>
+  </div>
+
+  <!-- Upgrade Duration -->
+  <div class="card">
+    <h2>Upgrade Duration per Level (seconds)</h2>
+    <div class="chart-wrap"><canvas id="duration"></canvas></div>
+  </div>
+
+  <!-- Output Tokens -->
+  <div class="card">
+    <h2>Output Tokens per Upgrade</h2>
+    <div class="chart-wrap"><canvas id="outputTokens"></canvas></div>
+  </div>
+
+</div>
+
+<script>
+const LEVELS = ['L1','L2','L3','L4','L5','L6','L7','L8','L9','L10','L11'];
+const FEATURES = [
+  'Basic Chat + Typing + Read Receipts + Unread',
+  'Scheduled Messages','Ephemeral Messages','Message Reactions',
+  'Message Editing w/ History','Real-Time Permissions','Rich User Presence',
+  'Message Threading','Private Rooms + DMs','Room Activity Indicators','Draft Sync'
+];
+
+const STDB_COLOR = '#4cf490';
+const PG_COLOR   = '#336791';
+const STDB_ALPHA = '#4cf49033';
+const PG_ALPHA   = '#33679133';
+
+// ── RAW DATA ──────────────────────────────────────────────────────────────────
+
+const upgradeCostStdb = [1.37, 1.18, 1.29, 0.95, 0.06, 1.16, 0.80, 0.83, 1.77, 0.57, 1.00];
+const upgradeCostPg   = [1.03, 0.50, 0.66, 0.60, 0.64, 0.96, 0.90, 0.16, 0.51, 0.68, 0.86];
+
+// Fix costs attributed by timestamp to the level the bug was introduced
+const fixCostStdb = [0.17, 0, 0, 0, 0.84, 0.19, 0, 0, 0, 0, 0.27];
+const fixCostPg   = [0.62, 0, 0, 0, 0.26, 0.87, 0.99, 1.45, 4.53, 0, 0];
+
+const bugsStdb = [1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 1];
+const bugsPg   = [3, 0, 0, 0, 1, 2, 3, 2, 4, 0, 0];
+
+// LOC snapshots (hand-written only, excl. bindings)
+const stdbBackendLoc  = [1133, 1198, 1248, 1284, 1284, 1381, 1399, 1431, 1538, 1756, 1788];
+const stdbFrontendLoc = [1040, 1232, 1310, 1414, 1414, 1623, 1731, 1919, 2120, 2177, 2206];
+const stdbBindingsLoc = [524,  610,  633,  710,  710,  859,  882,  951,  1079, 1079, 1143];
+const pgBackendLoc    = [361,  458,  484,  562,  629,  733,  814,  815,  871,  1027, 1110];
+const pgFrontendLoc   = [1060, 1304, 1368, 1506, 1701, 1841, 1973, 1201, 2239, 2420, 2527];
+
+// Upgrade duration (seconds)
+const durationStdb = [366, 340, 339, 176, 19, 300, 172, 195, 347, 99, 205];
+const durationPg   = [300, 196, 150, 119, 138, 196, 172, 37, 141, 138, 166];
+
+// Output tokens per upgrade
+const tokensStdb = [24285, 23845, 21639, 10712, 1024, 16675, 11017, 9393, 22561, 6249, 10266];
+const tokensPg   = [23532, 8795, 9018, 7911, 9319, 14416, 9961, 1679, 6315, 7470, 9900];
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+
+function cumSum(arr) {
+  let s = 0;
+  return arr.map(v => parseFloat((s += v).toFixed(4)));
+}
+
+function add(a, b) { return a.map((v, i) => parseFloat((v + b[i]).toFixed(4))); }
+
+const totalStdb = add(upgradeCostStdb, fixCostStdb);
+const totalPg   = add(upgradeCostPg, fixCostPg);
+
+const stdbTotalLoc = stdbBackendLoc.map((v, i) => v + stdbFrontendLoc[i]);
+const pgTotalLoc   = pgBackendLoc.map((v, i) => v + pgFrontendLoc[i]);
+
+// ── CHART DEFAULTS ────────────────────────────────────────────────────────────
+
+Chart.defaults.color = '#6f7987';
+Chart.defaults.borderColor = '#202126';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+Chart.defaults.font.size = 11;
+
+const baseTooltip = {
+  backgroundColor: '#1a1a1e',
+  borderColor: '#202126',
+  borderWidth: 1,
+  titleColor: '#e6e9f0',
+  bodyColor: '#a0aab8',
+  padding: 10,
+  callbacks: {
+    title: (items) => `${LEVELS[items[0].dataIndex]} — ${FEATURES[items[0].dataIndex]}`
+  }
+};
+
+function lineDataset(label, data, color, fill = false) {
+  return {
+    label, data,
+    borderColor: color,
+    backgroundColor: fill ? color + '22' : 'transparent',
+    pointBackgroundColor: color,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+    borderWidth: 2,
+    tension: 0.3,
+    fill,
+  };
+}
+
+function barDataset(label, data, color) {
+  return {
+    label, data,
+    backgroundColor: color + 'cc',
+    borderColor: color,
+    borderWidth: 1,
+    borderRadius: 4,
+  };
+}
+
+const baseScales = {
+  x: { grid: { color: '#202126' } },
+  y: { grid: { color: '#202126' }, beginAtZero: true }
+};
+
+function makeLineChart(id, datasets, yLabel = '') {
+  new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels: LEVELS, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: baseTooltip },
+      scales: { ...baseScales, y: { ...baseScales.y, title: { display: !!yLabel, text: yLabel, color: '#6f7987' } } }
+    }
+  });
+}
+
+function makeBarChart(id, datasets, stacked = false, yLabel = '') {
+  new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: { labels: LEVELS, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: baseTooltip },
+      scales: {
+        x: { ...baseScales.x, stacked },
+        y: { ...baseScales.y, stacked, title: { display: !!yLabel, text: yLabel, color: '#6f7987' } }
+      }
+    }
+  });
+}
+
+// ── CHARTS ────────────────────────────────────────────────────────────────────
+
+makeLineChart('upgradeCost', [
+  lineDataset('SpacetimeDB', upgradeCostStdb, STDB_COLOR),
+  lineDataset('PostgreSQL',  upgradeCostPg,   PG_COLOR),
+], '$');
+
+makeBarChart('fixCost', [
+  barDataset('SpacetimeDB', fixCostStdb, STDB_COLOR),
+  barDataset('PostgreSQL',  fixCostPg,   PG_COLOR),
+], false, '$');
+
+// Stacked total cost
+makeBarChart('totalCostPerLevel', [
+  { ...barDataset('STDB Upgrade', upgradeCostStdb, STDB_COLOR), stack: 'stdb' },
+  { ...barDataset('STDB Fix',     fixCostStdb,     '#4cf49066'), stack: 'stdb', borderColor: '#4cf490' },
+  { ...barDataset('PG Upgrade',   upgradeCostPg,   PG_COLOR),   stack: 'pg' },
+  { ...barDataset('PG Fix',       fixCostPg,       '#33679166'), stack: 'pg',   borderColor: '#336791' },
+], true, '$');
+
+makeLineChart('cumulativeCost', [
+  lineDataset('SpacetimeDB', cumSum(totalStdb), STDB_COLOR, true),
+  lineDataset('PostgreSQL',  cumSum(totalPg),   PG_COLOR,   true),
+], '$');
+
+makeBarChart('bugsPerLevel', [
+  barDataset('SpacetimeDB', bugsStdb, STDB_COLOR),
+  barDataset('PostgreSQL',  bugsPg,   PG_COLOR),
+], false, 'bugs');
+
+makeLineChart('cumulativeBugs', [
+  lineDataset('SpacetimeDB', cumSum(bugsStdb), STDB_COLOR),
+  lineDataset('PostgreSQL',  cumSum(bugsPg),   PG_COLOR),
+], 'bugs');
+
+makeLineChart('locOverLevels', [
+  lineDataset('STDB Total (hand-written)', stdbTotalLoc, STDB_COLOR),
+  lineDataset('PG Total',                 pgTotalLoc,   PG_COLOR),
+  lineDataset('STDB incl. bindings', stdbBackendLoc.map((v,i) => v + stdbFrontendLoc[i] + stdbBindingsLoc[i]), '#4cf49055'),
+], 'LOC');
+
+makeLineChart('backendLoc', [
+  lineDataset('SpacetimeDB backend', stdbBackendLoc, STDB_COLOR),
+  lineDataset('PostgreSQL server',   pgBackendLoc,   PG_COLOR),
+], 'LOC');
+
+makeLineChart('frontendLoc', [
+  lineDataset('SpacetimeDB client', stdbFrontendLoc, STDB_COLOR),
+  lineDataset('PostgreSQL client',  pgFrontendLoc,   PG_COLOR),
+], 'LOC');
+
+makeBarChart('duration', [
+  barDataset('SpacetimeDB', durationStdb, STDB_COLOR),
+  barDataset('PostgreSQL',  durationPg,   PG_COLOR),
+], false, 'seconds');
+
+makeBarChart('outputTokens', [
+  barDataset('SpacetimeDB', tokensStdb, STDB_COLOR),
+  barDataset('PostgreSQL',  tokensPg,   PG_COLOR),
+], false, 'tokens');
+
+</script>
+</body>
+</html>

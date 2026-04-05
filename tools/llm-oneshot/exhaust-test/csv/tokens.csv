@@ -1,0 +1,8 @@
+metric,spacetime,postgres
+Fresh Input Tokens,352,605
+Fresh Output Tokens,179621,260728
+Cache Read Tokens,28336554,31731184
+Cache Creation Tokens,491496,743243
+Total API Calls,291,462
+Fresh Output Tokens / Feature,13817,20056
+API Calls / Feature,22.4,35.5

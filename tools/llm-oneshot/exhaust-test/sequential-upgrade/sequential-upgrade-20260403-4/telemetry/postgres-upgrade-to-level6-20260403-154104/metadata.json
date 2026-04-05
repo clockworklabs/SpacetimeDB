@@ -1,0 +1,23 @@
+{
+  "level": 6,
+  "backend": "spacetime",
+  "timestamp": "20260403-154104",
+  "startedAt": "2026-04-03T15:41:04-0400",
+  "startedAtUtc": "2026-04-03T19:41:04Z",
+  "runId": "postgres-upgrade-to-level6-20260403-154104",
+  "appDir": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\sequential-upgrade\\sequential-upgrade-20260403-4\\results\\postgres\\chat-app-20260403-131935",
+  "promptFile": "exhaust-prompt-0-06_permissions.md",
+  "phase": "upgrade",
+  "variant": "sequential-upgrade",
+  "rules": "standard",
+  "testMode": "none",
+  "runIndex": 0,
+  "vitePort": 6173,
+  "expressPort": 6001,
+  "pgDatabase": "spacetime",
+  "sessionId": "77a2c63f-1768-820e-4e5b-76d23118bf2b",
+  "endedAt": "2026-04-03T15:45:47-0400",
+  "endedAtUtc": "2026-04-03T19:45:47Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

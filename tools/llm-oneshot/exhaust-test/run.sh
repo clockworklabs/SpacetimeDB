@@ -290,6 +290,16 @@ else
   RESULTS_DIR="$RUN_BASE_DIR/results"
 fi
 
+# In fix/upgrade mode, detect backend from app directory structure so RUN_ID
+# and metadata.json use the correct label (not the default "spacetime").
+if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
+  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
+    BACKEND="spacetime"
+  elif [[ -d "$APP_DIR/server" ]]; then
+    BACKEND="postgres"
+  fi
+fi
+
 if [[ -n "$UPGRADE_MODE" ]]; then
   RUN_ID="$BACKEND-upgrade-to-level$LEVEL-$TIMESTAMP"
 elif [[ -n "$FIX_MODE" ]]; then

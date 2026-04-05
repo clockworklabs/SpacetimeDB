@@ -1,0 +1,132 @@
+{
+  "meta": {
+    "date": "2026-04-04",
+    "variant": "sequential-upgrade",
+    "model": "claude-sonnet-4-6",
+    "levels_completed": 11,
+    "feature_groups": 13
+  },
+
+  "cost": {
+    "spacetime": {
+      "upgrades": 10.99,
+      "fixes": 1.47,
+      "total": 12.46,
+      "per_feature_all_in": 0.96,
+      "per_feature_upgrades_only": 0.85,
+      "per_feature_fixes_only": 0.11,
+      "fix_pct_of_total": 11.8
+    },
+    "postgres": {
+      "upgrades": 7.50,
+      "fixes": 8.72,
+      "total": 16.22,
+      "per_feature_all_in": 1.25,
+      "per_feature_upgrades_only": 0.58,
+      "per_feature_fixes_only": 0.67,
+      "fix_pct_of_total": 53.8
+    }
+  },
+
+  "tokens": {
+    "spacetime": {
+      "fresh_input": 352,
+      "fresh_output": 179621,
+      "cache_read": 28336554,
+      "cache_creation": 491496,
+      "api_calls": 291,
+      "fresh_output_per_feature": 13817,
+      "api_calls_per_feature": 22.4
+    },
+    "postgres": {
+      "fresh_input": 605,
+      "fresh_output": 260728,
+      "cache_read": 31731184,
+      "cache_creation": 743243,
+      "api_calls": 462,
+      "fresh_output_per_feature": 20056,
+      "api_calls_per_feature": 35.5
+    }
+  },
+
+  "loc": {
+    "spacetime": {
+      "backend_handwritten": 659,
+      "frontend_handwritten": 2222,
+      "generated_bindings": 556,
+      "total_handwritten": 2881,
+      "per_feature": 221
+    },
+    "postgres": {
+      "backend_handwritten": 1120,
+      "frontend_handwritten": 2527,
+      "generated_bindings": 0,
+      "total_handwritten": 3647,
+      "per_feature": 281
+    }
+  },
+
+  "time_seconds": {
+    "spacetime": {
+      "l1_generation": 366,
+      "avg_upgrade": 266,
+      "avg_fix_session": 81,
+      "total": 2880
+    },
+    "postgres": {
+      "l1_generation": 300,
+      "avg_upgrade": 161,
+      "avg_fix_session": 297,
+      "total": 4620
+    }
+  },
+
+  "quality": {
+    "spacetime": {
+      "total_bugs": 5,
+      "bugs_per_feature": 0.38,
+      "zero_bug_levels": 7,
+      "total_levels": 11,
+      "zero_bug_rate_pct": 64,
+      "fix_sessions": 4,
+      "first_attempt_fix_success": 4,
+      "first_attempt_fix_rate_pct": 100,
+      "multi_attempt_fixes": 0,
+      "avg_fix_cost_per_bug": 0.29
+    },
+    "postgres": {
+      "total_bugs": 15,
+      "bugs_per_feature": 1.15,
+      "zero_bug_levels": 4,
+      "total_levels": 11,
+      "zero_bug_rate_pct": 36,
+      "fix_sessions": 15,
+      "first_attempt_fix_success": 8,
+      "first_attempt_fix_rate_pct": 53,
+      "multi_attempt_fixes": 7,
+      "avg_fix_cost_per_bug": 0.58
+    }
+  },
+
+  "bugs_by_level": [
+    { "level": 1,  "feature": "Basic Chat + Typing + Read Receipts + Unread", "spacetime": 1, "postgres": 3 },
+    { "level": 2,  "feature": "Scheduled Messages",                            "spacetime": 0, "postgres": 0 },
+    { "level": 3,  "feature": "Ephemeral Messages",                            "spacetime": 0, "postgres": 0 },
+    { "level": 4,  "feature": "Message Reactions",                             "spacetime": 0, "postgres": 0 },
+    { "level": 5,  "feature": "Message Editing with History",                  "spacetime": 2, "postgres": 1 },
+    { "level": 6,  "feature": "Real-Time Permissions",                         "spacetime": 1, "postgres": 2 },
+    { "level": 7,  "feature": "Rich User Presence",                            "spacetime": 0, "postgres": 3 },
+    { "level": 8,  "feature": "Message Threading",                             "spacetime": 0, "postgres": 2 },
+    { "level": 9,  "feature": "Private Rooms + DMs",                           "spacetime": 0, "postgres": 4 },
+    { "level": 10, "feature": "Room Activity Indicators",                      "spacetime": 0, "postgres": 0 },
+    { "level": 11, "feature": "Draft Sync",                                    "spacetime": 1, "postgres": 0 }
+  ],
+
+  "postgres_bug_categories": [
+    { "category": "Real-time state not updating",       "count": 4 },
+    { "category": "Missing UI element",                 "count": 4 },
+    { "category": "Data not persisted server-side",     "count": 3 },
+    { "category": "Logic error (wrong value/calc)",     "count": 2 },
+    { "category": "Race condition / stale reference",   "count": 2 }
+  ]
+}

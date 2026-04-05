@@ -1,0 +1,8 @@
+metric,spacetime,postgres
+Upgrades ($),10.99,7.50
+Fixes ($),1.47,8.72
+Total ($),12.46,16.22
+Cost / Feature - All In ($),0.96,1.25
+Cost / Feature - Upgrades Only ($),0.85,0.58
+Cost / Feature - Fixes Only ($),0.11,0.67
+Fix % of Total,11.8,53.8
