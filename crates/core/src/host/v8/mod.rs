@@ -58,7 +58,7 @@ use tokio::sync::{oneshot, Mutex as AsyncMutex, Notify};
 use tracing::Instrument;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope_with_context, ArrayBuffer, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
+    scope_with_context, ArrayBuffer, Context, Function, Global, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
     ResolveModuleCallback, ScriptOrigin, Value,
 };
 
@@ -1379,6 +1379,7 @@ async fn spawn_instance_worker(
         }
 
         // Setup the instance common.
+        let args = Global::new(scope, ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE));
         let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
@@ -1390,6 +1391,7 @@ async fn spawn_instance_worker(
             scope,
             replica_ctx,
             hooks: &hooks,
+            args: &args,
         };
         if let Some(heap_metrics) = heap_metrics.as_mut() {
             let _initial_heap_stats = sample_heap_stats(inst.scope, heap_metrics);
@@ -1648,6 +1650,7 @@ struct V8Instance<'a, 'scope, 'isolate> {
     scope: &'a mut PinScope<'scope, 'isolate>,
     replica_ctx: &'a Arc<ReplicaContext>,
     hooks: &'a HookFunctions<'scope>,
+    args: &'a Global<ArrayBuffer>,
 }
 
 macro_rules! with_call_scope {
@@ -1680,7 +1683,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
         with_call_scope!(self.scope, |scope, hooks| {
             common_call(scope, &hooks, budget, op, |scope, op| {
-                let reducer_args_buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+                let reducer_args_buf = Local::new(scope, self.args);
                 Ok(call_call_reducer(scope, &hooks, op, reducer_args_buf)?)
             })
         })
