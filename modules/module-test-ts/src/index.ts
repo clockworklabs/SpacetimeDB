@@ -22,7 +22,7 @@ type TestAlias = TestA;
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Rust: #[derive(SpacetimeType)] pub struct TestB { foo: String }
-const testB = t.object('TestB', {
+const testB = t.object('testB', {
   foo: t.string(),
 });
 type TestB = Infer<typeof testB>;
@@ -147,81 +147,90 @@ const playerLikeRow = t.row({
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA (tables + indexes + visibility)
 // ─────────────────────────────────────────────────────────────────────────────
-const spacetimedb = schema(
+const spacetimedb = schema({
   // person (public) with btree index on age
-  table(
+  person: table(
     {
-      name: 'person',
       public: true,
-      indexes: [{ name: 'age', algorithm: 'btree', columns: ['age'] }],
+      indexes: [{ accessor: "age", algorithm: 'btree', columns: ['age'] }],
     },
     personRow
   ),
 
   // test_a with index foo on x
-  table(
+  testATable: table(
     {
-      name: 'test_a',
-      indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
+      name: "test_a",
+      indexes: [{ accessor: "foo", algorithm: 'btree', columns: ['x'] }],
     },
     testA
   ),
 
   // test_d (public) with default(Some(DEFAULT_TEST_C)) option field
-  table({ name: 'test_d', public: true }, testDRow),
+  testD: table({ public: true }, testDRow),
 
   // test_e, default private, with primary key id auto_inc and btree index on name
-  table(
+  testE: table(
     {
       name: 'test_e',
       public: false,
-      indexes: [{ name: 'name', algorithm: 'btree', columns: ['name'] }],
+      indexes: [{ accessor:"name", algorithm: 'btree', columns: ['name'] }],
     },
     testERow
   ),
 
   // test_f (public) with Foobar field
-  table({ name: 'test_f', public: true }, testFRow),
+  testF: table({ public: true }, testFRow),
 
   // private_table (explicit private)
-  table({ name: 'private_table', public: false }, privateTableRow),
+  privateTable: table(
+    { name: 'private_table', public: false },
+    privateTableRow
+  ),
 
   // points (private) with multi-column btree index (x, y)
-  table(
+  points: table(
     {
       name: 'points',
       public: false,
       indexes: [
-        { name: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
+        { accessor: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
       ],
     },
     pointsRow
   ),
 
   // pk_multi_identity with multiple constraints
-  table({ name: 'pk_multi_identity' }, pkMultiIdentityRow),
+  pkMultiIdentity: table({ name: 'pk_multi_identity' }, pkMultiIdentityRow),
 
   // repeating_test_arg table with scheduled(repeating_test)
-  table(
-    { name: 'repeating_test_arg', scheduled: 'repeating_test' },
+  repeatingTestArg: table(
+    {
+      name: 'repeating_test_arg',
+      scheduled: (): any => repeatingTest
+    },
     repeatingTestArg
   ),
 
   // has_special_stuff with Identity and ConnectionId
-  table({ name: 'has_special_stuff' }, hasSpecialStuffRow),
+  hasSpecialStuff: table({ name: 'has_special_stuff' }, hasSpecialStuffRow),
 
   // Two tables with the same row type: player and logged_out_player
-  table({ name: 'player', public: true }, playerLikeRow),
-  table({ name: 'logged_out_player', public: true }, playerLikeRow),
-  table({ name: 'table_to_remove' }, { id: t.u32() })
-);
+  player: table({ name: 'player', public: true }, playerLikeRow),
+  loggedOutPlayer: table(
+    { name: 'logged_out_player', public: true },
+    playerLikeRow
+  ),
+  tableToRemove: table({ name: 'table_to_remove' }, { id: t.u32() }),
+});
+export default spacetimedb;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VIEWS
 // ─────────────────────────────────────────────────────────────────────────────
 
-spacetimedb.view(
-  { name: 'my_player', public: true },
+export const myPlayer = spacetimedb.view(
+  { public: true },
   playerLikeRow.optional(),
   // FIXME: this should not be necessary; change `OptionBuilder` to accept `null|undefined` for `none`
   ctx => ctx.db.player.identity.find(ctx.sender) ?? undefined
@@ -232,7 +241,7 @@ spacetimedb.view(
 // ─────────────────────────────────────────────────────────────────────────────
 
 // init
-spacetimedb.init(ctx => {
+export const init = spacetimedb.init(ctx => {
   ctx.db.repeatingTestArg.insert({
     prev_time: ctx.timestamp,
     scheduled_id: 0n, // u64 autoInc placeholder (engine will assign)
@@ -241,8 +250,7 @@ spacetimedb.init(ctx => {
 });
 
 // repeating_test
-spacetimedb.reducer(
-  'repeating_test',
+export const repeatingTest = spacetimedb.reducer(
   { arg: repeatingTestArg },
   (ctx, { arg }) => {
     const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
@@ -251,8 +259,7 @@ spacetimedb.reducer(
 );
 
 // add(name, age)
-spacetimedb.reducer(
-  'add',
+export const add = spacetimedb.reducer(
   { name: t.string(), age: t.u8() },
   (ctx, { name, age }) => {
     ctx.db.person.insert({ id: 0, name, age });
@@ -260,7 +267,7 @@ spacetimedb.reducer(
 );
 
 // say_hello()
-spacetimedb.reducer('say_hello', {}, ctx => {
+export const say_hello = spacetimedb.reducer(ctx => {
   for (const person of ctx.db.person.iter()) {
     console.info(`Hello, ${person.name}!`);
   }
@@ -268,23 +275,25 @@ spacetimedb.reducer('say_hello', {}, ctx => {
 });
 
 // list_over_age(age)
-spacetimedb.reducer('list_over_age', { age: t.u8() }, (ctx, { age }) => {
-  // Prefer an index-based scan if exposed by bindings; otherwise iterate.
-  for (const person of ctx.db.person.iter()) {
-    if (person.age >= age) {
-      console.info(`${person.name} has age ${person.age} >= ${age}`);
+export const listOverAge = spacetimedb.reducer(
+  { age: t.u8() },
+  (ctx, { age }) => {
+    // Prefer an index-based scan if exposed by bindings; otherwise iterate.
+    for (const person of ctx.db.person.iter()) {
+      if (person.age >= age) {
+        console.info(`${person.name} has age ${person.age} >= ${age}`);
+      }
     }
   }
-});
+);
 
 // log_module_identity()
-spacetimedb.reducer('log_module_identity', {}, ctx => {
+export const log_module_identity = spacetimedb.reducer(ctx => {
   console.info(`Module identity: ${ctx.identity}`);
 });
 
 // test(arg: TestAlias(TestA), arg2: TestB, arg3: TestC, arg4: TestF)
-spacetimedb.reducer(
-  'test',
+export const test = spacetimedb.reducer(
   { arg: testA, arg2: testB, arg3: testC, arg4: testF },
   (ctx, { arg, arg2, arg3, arg4 }) => {
     console.info('BEGIN');
@@ -303,28 +312,28 @@ spacetimedb.reducer(
 
     // Insert test_a rows
     for (let i = 0; i < 1000; i++) {
-      ctx.db.testA.insert({
+      ctx.db.testATable.insert({
         x: (i >>> 0) + arg.x,
         y: (i >>> 0) + arg.y,
         z: 'Yo',
       });
     }
 
-    const rowCountBefore = ctx.db.testA.count();
+    const rowCountBefore = ctx.db.testATable.count();
     console.info(`Row count before delete: ${rowCountBefore}`);
 
     // Delete rows by the indexed column `x` in [5,10)
     let numDeleted = 0;
     for (let x = 5; x < 10; x++) {
       // Prefer index deletion if available; fallback to filter+delete
-      for (const row of ctx.db.testA.iter()) {
+      for (const row of ctx.db.testATable.iter()) {
         if (row.x === x) {
-          if (ctx.db.testA.delete(row)) numDeleted++;
+          if (ctx.db.testATable.delete(row)) numDeleted++;
         }
       }
     }
 
-    const rowCountAfter = ctx.db.testA.count();
+    const rowCountAfter = ctx.db.testATable.count();
     if (Number(rowCountBefore) !== Number(rowCountAfter) + numDeleted) {
       console.error(
         `Started with ${rowCountBefore} rows, deleted ${numDeleted}, and wound up with ${rowCountAfter} rows... huh?`
@@ -341,7 +350,7 @@ spacetimedb.reducer(
 
     console.info(`Row count after delete: ${rowCountAfter}`);
 
-    const otherRowCount = ctx.db.testA.count();
+    const otherRowCount = ctx.db.testATable.count();
     console.info(`Row count filtered by condition: ${otherRowCount}`);
 
     console.info('MultiColumn');
@@ -366,22 +375,27 @@ spacetimedb.reducer(
 );
 
 // add_player(name) -> Result<(), String>
-spacetimedb.reducer('add_player', { name: t.string() }, (ctx, { name }) => {
-  const rec = { id: 0n as bigint, name };
-  const inserted = ctx.db.testE.insert(rec); // id autoInc => always creates a new one
-  // No-op re-upsert by id index if your bindings support it.
-  if (ctx.db.testE.id?.update) ctx.db.testE.id.update(inserted);
-});
+export const add_player = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const rec = { id: 0n as bigint, name };
+    const inserted = ctx.db.testE.insert(rec); // id autoInc => always creates a new one
+    // No-op re-upsert by id index if your bindings support it.
+    if (ctx.db.testE.id?.update) ctx.db.testE.id.update(inserted);
+  }
+);
 
 // delete_player(id) -> Result<(), String>
-spacetimedb.reducer('delete_player', { id: t.u64() }, (ctx, { id }) => {
-  const ok = ctx.db.testE.id.delete(id);
-  if (!ok) throw new Error(`No TestE row with id ${id}`);
-});
+export const delete_player = spacetimedb.reducer(
+  { id: t.u64() },
+  (ctx, { id }) => {
+    const ok = ctx.db.testE.id.delete(id);
+    if (!ok) throw new Error(`No TestE row with id ${id}`);
+  }
+);
 
 // delete_players_by_name(name) -> Result<(), String>
-spacetimedb.reducer(
-  'delete_players_by_name',
+export const delete_players_by_name = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
     let deleted = 0;
@@ -399,17 +413,20 @@ spacetimedb.reducer(
 );
 
 // client_connected hook
-spacetimedb.reducer('client_connected', {}, _ctx => {
+export const clientConnected = spacetimedb.clientConnected(_ctx => {
   // no-op
 });
 
 // add_private(name)
-spacetimedb.reducer('add_private', { name: t.string() }, (ctx, { name }) => {
-  ctx.db.privateTable.insert({ name });
-});
+export const add_private = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    ctx.db.privateTable.insert({ name });
+  }
+);
 
 // query_private()
-spacetimedb.reducer('query_private', {}, ctx => {
+export const query_private = spacetimedb.reducer(ctx => {
   for (const row of ctx.db.privateTable.iter()) {
     console.info(`Private, ${row.name}!`);
   }
@@ -418,7 +435,7 @@ spacetimedb.reducer('query_private', {}, ctx => {
 
 // test_btree_index_args
 // (In Rust this exists to type-check various index argument forms.)
-spacetimedb.reducer('test_btree_index_args', {}, ctx => {
+export const test_btree_index_args = spacetimedb.reducer(ctx => {
   const s = 'String';
   // Demonstrate scanning via iteration; prefer index access if bindings expose it.
   for (const row of ctx.db.testE.iter()) {
@@ -432,20 +449,22 @@ spacetimedb.reducer('test_btree_index_args', {}, ctx => {
 });
 
 // assert_caller_identity_is_module_identity
-spacetimedb.reducer('assert_caller_identity_is_module_identity', {}, ctx => {
-  const caller = ctx.sender;
-  const owner = ctx.identity;
-  if (String(caller) !== String(owner)) {
-    throw new Error(`Caller ${caller} is not the owner ${owner}`);
-  } else {
-    console.info(`Called by the owner ${owner}`);
+export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
+  ctx => {
+    const caller = ctx.sender;
+    const owner = ctx.identity;
+    if (String(caller) !== String(owner)) {
+      throw new Error(`Caller ${caller} is not the owner ${owner}`);
+    } else {
+      console.info(`Called by the owner ${owner}`);
+    }
   }
-});
+);
 
 // Hit SpacetimeDB's schema HTTP route and return its result as a string.
 //
 // This is a silly thing to do, but an effective test of the procedure HTTP API.
-spacetimedb.procedure('get_my_schema_via_http', t.string(), ctx => {
+export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   const module_identity = ctx.identity;
   try {
     const response = ctx.http.fetch(

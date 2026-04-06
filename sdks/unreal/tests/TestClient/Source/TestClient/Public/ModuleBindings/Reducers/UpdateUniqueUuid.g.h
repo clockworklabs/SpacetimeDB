@@ -18,7 +18,7 @@ struct TESTCLIENT_API FUpdateUniqueUuidArgs
     FSpacetimeDBUuid U;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FUpdateUniqueUuidArgs() = default;
 
@@ -52,7 +52,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FSpacetimeDBUuid U;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

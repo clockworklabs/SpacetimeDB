@@ -1,8 +1,8 @@
 use std::borrow::Cow;
-use std::env;
 use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{env, io};
 
 use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
@@ -11,8 +11,8 @@ use crate::auth::{
 use crate::routes::subscribe::generate_random_connection_id;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
-    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, NodeDelegate,
-    Unauthorized,
+    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
+    NodeDelegate, Unauthorized,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
@@ -20,9 +20,9 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
-use futures::StreamExt;
+use futures::TryStreamExt;
 use http::StatusCode;
-use log::info;
+use log::{info, warn};
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
@@ -37,6 +37,7 @@ use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
@@ -84,6 +85,7 @@ pub struct CallParams {
 }
 
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
+const MISDIRECTED: (StatusCode, &str) = (StatusCode::NOT_FOUND, "Database is not scheduled on this host");
 
 fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
     let status_code = match e {
@@ -96,6 +98,7 @@ fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String)
             log::debug!("Attempt to call non-existent reducer {reducer}");
             StatusCode::NOT_FOUND
         }
+        ReducerCallError::WorkerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         ReducerCallError::LifecycleReducer(lifecycle) => {
             log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
             StatusCode::BAD_REQUEST
@@ -182,8 +185,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     module
-        // We don't clear views or procedures after reducer calls
-        .call_identity_disconnected(caller_identity, connection_id, false)
+        .call_identity_disconnected(caller_identity, connection_id)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
@@ -222,19 +224,20 @@ fn assert_content_type_json(content_type: headers::ContentType) -> axum::respons
     }
 }
 
-fn reducer_outcome_response(owner_identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> (StatusCode, String) {
+fn reducer_outcome_response(
+    owner_identity: &Identity,
+    reducer: &str,
+    outcome: ReducerOutcome,
+) -> (StatusCode, Box<str>) {
     match outcome {
-        ReducerOutcome::Committed => (StatusCode::OK, "".to_owned()),
+        ReducerOutcome::Committed => (StatusCode::OK, "".into()),
         ReducerOutcome::Failed(errmsg) => {
             // TODO: different status code? this is what cloudflare uses, sorta
-            (StatusCode::from_u16(530).unwrap(), errmsg)
+            (StatusCode::from_u16(530).unwrap(), *errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
             log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
-            (
-                StatusCode::PAYMENT_REQUIRED,
-                "Module energy budget exhausted.".to_owned(),
-            )
+            (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
         }
     }
 }
@@ -283,11 +286,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
             NO_SUCH_DATABASE
         })?;
 
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let leader = worker_ctx.leader(database.id).await.map_err(log_and_500)?;
 
     Ok((leader, database))
 }
@@ -329,6 +328,8 @@ pub struct SchemaQueryParams {
 enum SchemaVersion {
     #[serde(rename = "9")]
     V9,
+    #[serde(rename = "10")]
+    V10,
 }
 
 pub async fn schema<S>(
@@ -340,12 +341,23 @@ pub async fn schema<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let (leader, _) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    // Wait for the module to finish loading rather than returning an immediate
+    // 500 error. The database may still be initializing (replaying the log,
+    // running init reducers, etc.).
+    let module = leader
+        .wait_for_module(std::time::Duration::from_secs(10))
+        .await
+        .map_err(log_and_500)?;
 
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
-            let raw = RawModuleDefV9::from(module_def.clone());
+            let raw = RawModuleDefV9::from(module_def.as_ref().clone());
+            axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
+        }
+        SchemaVersion::V10 => {
+            let raw = RawModuleDefV10::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };
@@ -430,49 +442,41 @@ where
         .authorize_action(auth.claims.identity, database.database_identity, Action::ViewModuleLogs)
         .await?;
 
-    let replica = worker_ctx
-        .get_leader_replica_by_database(database.id)
-        .await
-        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
-    let replica_id = replica.id;
+    fn log_err(database: Identity) -> impl Fn(&io::Error) {
+        move |e| warn!("error serving module logs for database {database}: {e:#}")
+    }
 
-    let logs_dir = worker_ctx.module_logs_dir(replica_id);
-    let lines = DatabaseLogger::read_latest(logs_dir, num_lines).await;
-
-    let body = if follow {
-        let leader = worker_ctx
-            .leader(database.id)
-            .await
-            .map_err(log_and_500)?
-            .ok_or(StatusCode::NOT_FOUND)?;
-        let log_rx = leader
-            .module()
-            .await
-            .map_err(log_and_500)?
-            .subscribe_to_logs()
-            .map_err(log_and_500)?;
-
-        let stream = tokio_stream::wrappers::BroadcastStream::new(log_rx).filter_map(move |x| {
-            std::future::ready(match x {
-                Ok(log) => Some(log),
-                Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)) => {
-                    log::trace!(
-                        "Skipped {} lines in log for module {}",
-                        skipped,
-                        database_identity.to_hex()
-                    );
-                    None
-                }
-            })
-        });
-
-        let stream = futures::stream::once(std::future::ready(lines.into()))
-            .chain(stream)
-            .map(Ok::<_, std::convert::Infallible>);
-
-        Body::from_stream(stream)
-    } else {
-        Body::from(lines)
+    let body = match worker_ctx.leader(database.id).await {
+        Ok(host) => {
+            let module = host.module().await.map_err(log_and_500)?;
+            let logs = module.database_logger().tail(num_lines, follow).await.map_err(|e| {
+                warn!("database={database_identity} unable to tail logs: {e:#}");
+                (StatusCode::SERVICE_UNAVAILABLE, "Logs are temporarily not available")
+            })?;
+            Body::from_stream(logs.inspect_err(log_err(database_identity)))
+        }
+        Err(e) if e.is_misdirected() => return Err(MISDIRECTED.into()),
+        // If this is the right node for the current or last-known leader,
+        // we may still be able to serve logs from disk,
+        // even if we can't get hold of a running [ModuleHost].
+        Err(e) => {
+            warn!("could not obtain leader host for module logs: {e:#}");
+            let Some(replica) = worker_ctx.get_leader_replica_by_database(database.id).await else {
+                return Err(MISDIRECTED.into());
+            };
+            let logs_dir = worker_ctx.module_logs_dir(replica.id);
+            if !logs_dir.0.try_exists().map_err(log_and_500)? {
+                // Probably an in-memory database.
+                // Logs may become available at a later time.
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Database is not running and doesn't have persistent logs",
+                )
+                    .into());
+            }
+            let logs = DatabaseLogger::read_latest_on_disk(logs_dir, num_lines);
+            Body::from_stream(logs.inspect_err(log_err(database_identity)))
+        }
     };
 
     Ok((
@@ -506,7 +510,7 @@ pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
     #[serde(default)]
-    pub confirmed: bool,
+    pub confirmed: Option<bool>,
 }
 
 pub async fn sql_direct<S>(
@@ -528,7 +532,8 @@ where
         .authorize_sql(caller_identity, database.database_identity)
         .await?;
 
-    host.exec_sql(auth, database, confirmed, sql).await
+    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+        .await
 }
 
 pub async fn sql<S>(
@@ -661,6 +666,8 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     host_type: HostType,
     parent: Option<NameOrIdentity>,
+    #[serde(alias = "org")]
+    organization: Option<NameOrIdentity>,
 }
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
@@ -673,6 +680,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         policy,
         host_type,
         parent,
+        organization,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -720,6 +728,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
     };
+    let maybe_org_identity = match organization.as_ref() {
+        None => None,
+        Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
+    };
 
     // Check that the replication factor looks somewhat sane.
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
@@ -732,19 +744,18 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .await
         .map_err(log_and_500)?;
     match existing.as_ref() {
-        // If not, check that the we caller is sufficiently authenticated.
         None => {
             allow_creation(&auth)?;
-            if let Some(parent) = maybe_parent_database_identity {
-                ctx.authorize_action(
-                    auth.claims.identity,
-                    database_identity,
-                    Action::CreateDatabase { parent: Some(parent) },
-                )
-                .await?;
-            }
+            ctx.authorize_action(
+                auth.claims.identity,
+                database_identity,
+                Action::CreateDatabase {
+                    parent: maybe_parent_database_identity,
+                    organization: maybe_org_identity,
+                },
+            )
+            .await?;
         }
-        // If yes, authorize via ctx.
         Some(database) => {
             ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
                 .await?;
@@ -778,6 +789,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 num_replicas,
                 host_type,
                 parent,
+                organization: maybe_org_identity,
             },
             schema_migration_policy,
         )
@@ -932,6 +944,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 num_replicas: None,
                 host_type,
                 parent: None,
+                organization: None,
             },
             style,
         )
@@ -944,6 +957,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             new_module_hash,
             breaks_client,
             plan,
+            major_version_upgrade,
         } => {
             info!(
                 "planned auto-migration of database {} from {} to {}",
@@ -960,12 +974,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
+                major_version_upgrade,
             }))
         }
-        MigratePlanResult::AutoMigrationError(e) => {
+        MigratePlanResult::AutoMigrationError {
+            error: e,
+            major_version_upgrade,
+        } => {
             info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
+                major_version_upgrade,
             }))
         }
     }
@@ -1089,7 +1108,12 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
+        if ctx
+            .lookup_database_identity(name.as_str())
+            .await
+            .map_err(log_and_500)?
+            .is_some()
+        {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

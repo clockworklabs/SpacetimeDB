@@ -14,10 +14,10 @@ struct TESTCLIENT_API FUpdateUniqueI8Args
     GENERATED_BODY()
 
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 N;
+    int8 N = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FUpdateUniqueI8Args() = default;
 
@@ -49,9 +49,9 @@ class TESTCLIENT_API UUpdateUniqueI8Reducer : public UReducerBase
 
 public:
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 N;
+    int8 N = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

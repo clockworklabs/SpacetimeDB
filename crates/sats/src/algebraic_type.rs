@@ -359,7 +359,7 @@ impl AlgebraicType {
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
-    pub fn simple_enum<'a>(var_names: impl Iterator<Item = &'a str>) -> Self {
+    pub fn simple_enum(var_names: impl Iterator<Item = &'static str>) -> Self {
         Self::sum(var_names.into_iter().map(SumTypeVariant::unit).collect::<Box<[_]>>())
     }
 

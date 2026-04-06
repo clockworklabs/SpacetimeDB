@@ -6,28 +6,12 @@ slug: /
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
 
-# Getting Started with SpacetimeDB
 
 ## Installation
 
 You can get started by first installing the `spacetime` CLI tool. The `spacetime` CLI tool makes it extremely easy to manage your databases and deployments.
 
 <InstallCardLink />
-
-## Running SpacetimeDB Locally
-
-To develop SpacetimeDB databases locally, you will need to run the Standalone version of the server.
-
-After installing the SpacetimeDB CLI, run the start command:
-
-```bash
-spacetime start
-```
-
-The server listens on port `3000` by default, customized via `--listen-addr`.
-
-💡 Standalone mode will run in the foreground.
-⚠️ SSL is not supported in standalone mode.
 
 ## Log in to SpacetimeDB
 
@@ -45,14 +29,29 @@ You are now ready to start developing SpacetimeDB modules. Choose your favorite 
 
 <QuickstartLinks />
 
+## Running SpacetimeDB Locally
+
+To develop SpacetimeDB databases locally, you will need to run the Standalone version of the server.
+
+After installing the SpacetimeDB CLI, run the start command:
+
+```bash
+spacetime start
+```
+
+The server listens on port `3000` by default, customized via `--listen-addr`.
+
+💡 Standalone mode will run in the foreground.
+⚠️ SSL is not supported in standalone mode.
+
 ## Next Steps: Learn SpacetimeDB
 
 After completing a quickstart guide, explore these core concepts to deepen your understanding:
 
 ### Core Concepts
 
-- **[Databases](/databases)** - Understand database lifecycle, publishing, and management
-- **[Tables](/tables)** - Define your data structure with tables, columns, and indexes
-- **[Functions](/functions)** - Write reducers, procedures, and views to implement your server logic
-- **[Subscriptions](/subscriptions)** - Enable real-time data synchronization with clients
-- **[Client SDKs](/sdks)** - Connect your client applications to SpacetimeDB
+- **[Databases](../../00200-core-concepts/00100-databases.md)** - Understand database lifecycle, publishing, and management
+- **[Tables](../../00200-core-concepts/00300-tables.md)** - Define your data structure with tables, columns, and indexes
+- **[Functions](../../00200-core-concepts/00200-functions.md)** - Write reducers, procedures, and views to implement your server logic
+- **[Subscriptions](../../00200-core-concepts/00400-subscriptions.md)** - Enable real-time data synchronization with clients
+- **[Client SDKs](../../00200-core-concepts/00600-clients.md)** - Connect your client applications to SpacetimeDB

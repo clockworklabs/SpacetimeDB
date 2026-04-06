@@ -2,8 +2,8 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "users")]
-    public partial struct Users
+    [Table(Accessor = "User")]
+    public partial struct User
     {
         [PrimaryKey] public int Id;
         public string Name;
@@ -11,8 +11,8 @@ public static partial class Module
         public bool Active;
     }
 
-    [Table(Name = "products")]
-    public partial struct Products
+    [Table(Accessor = "Product")]
+    public partial struct Product
     {
         [PrimaryKey] public int Id;
         public string Title;
@@ -20,8 +20,8 @@ public static partial class Module
         public bool InStock;
     }
 
-    [Table(Name = "notes")]
-    public partial struct Notes
+    [Table(Accessor = "Note")]
+    public partial struct Note
     {
         [PrimaryKey] public int Id;
         public string Body;

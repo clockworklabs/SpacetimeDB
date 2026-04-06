@@ -17,7 +17,11 @@ pub(crate) fn row_desc(schema: &ProductType, format: &Format) -> Arc<Vec<FieldIn
             .iter()
             .enumerate()
             .map(|(pos, ty)| {
-                let field_name = ty.name.clone().map(Into::into).unwrap_or_else(|| format!("col_{pos}"));
+                let field_name = ty
+                    .name
+                    .clone()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| format!("col_{pos}"));
                 let field_type = type_of(schema, ty);
                 FieldInfo::new(field_name, None, None, field_type, format.format_for(pos))
             })
@@ -26,7 +30,7 @@ pub(crate) fn row_desc(schema: &ProductType, format: &Format) -> Arc<Vec<FieldIn
 }
 
 pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
-    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name());
+    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name().map(|n| &**n));
     match &ty.algebraic_type {
         AlgebraicType::String => Type::VARCHAR,
         AlgebraicType::Bool => Type::BOOL,
@@ -53,7 +57,7 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             _ => Type::ANYARRAY,
         },
         AlgebraicType::Product(_) => match format {
-            PsqlPrintFmt::Hex => Type::BYTEA_ARRAY,
+            PsqlPrintFmt::Hex => Type::BYTEA,
             PsqlPrintFmt::Timestamp => Type::TIMESTAMP,
             PsqlPrintFmt::Duration => Type::INTERVAL,
             PsqlPrintFmt::Uuid => Type::UUID,
@@ -143,13 +147,12 @@ impl TypedWriter for PsqlFormatter<'_> {
         value: ValueWithType<AlgebraicValue>,
     ) -> Result<(), Self::Error> {
         // Is a simple enum?
-        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type {
-            if sum.is_simple_enum() {
-                if let Some(variant_name) = name {
-                    self.encoder.encode_field(&variant_name)?;
-                    return Ok(());
-                }
-            }
+        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type
+            && sum.is_simple_enum()
+            && let Some(variant_name) = name
+        {
+            self.encoder.encode_field(&variant_name)?;
+            return Ok(());
         }
 
         let PsqlChars { start, sep, end, quote } = ty.client.format_chars();
@@ -266,10 +269,7 @@ mod tests {
         assert_eq!(row, "\0\0\0\u{b}{\"Gray\": 1}\0\0\0\u{15}{\"some\": {\"Gray\": 2}}");
 
         // Now nested product
-        let product = AlgebraicType::product([
-            ProductTypeElement::new(AlgebraicType::Product(schema), Some("x".into())),
-            ProductTypeElement::new(AlgebraicType::String, Some("y".into())),
-        ]);
+        let product = AlgebraicType::product([("x", AlgebraicType::Product(schema)), ("y", AlgebraicType::String)]);
         let schema = ProductType::from([product.clone()]);
         let value = product![AlgebraicValue::product(vec![
             value.into(),

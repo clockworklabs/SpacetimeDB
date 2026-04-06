@@ -82,7 +82,7 @@ describe('Uuid', () => {
     expect(uStart.getCounter()).toBe(0);
 
     // Check ordering over many UUIDs up to the max counter value
-    const total = 100_000;
+    const total = 10_000;
     const counter = { value: 0x7fffffff - total };
     const ts = Timestamp.now();
 

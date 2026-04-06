@@ -1,8 +1,6 @@
-use std::borrow::Cow;
-
-use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
-
 use crate::de::Error;
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
+use std::borrow::Cow;
 
 /// Describe the visibility of the table
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -12,6 +10,9 @@ pub enum StAccess {
     /// Visible only to the owner
     Private,
 }
+
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for StAccess {}
 
 impl StAccess {
     pub fn as_str(&self) -> &'static str {

@@ -11,7 +11,7 @@ TYPES
     - Rectangle(Rect)
 
 TABLE
-- drawings
+- drawing
   - Struct: Drawing
   - Fields:
     - id: i32 (primary key)
@@ -19,5 +19,5 @@ TABLE
     - b: Shape
 
 REDUCERS
-- seed: insert exactly one row into drawings
+- seed: insert exactly one row into drawing
   - (id=1, a=Shape::Circle(10), b=Shape::Rectangle(Rect { width:4, height:6 }))

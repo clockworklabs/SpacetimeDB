@@ -5,7 +5,7 @@ class Views(Smoketest):
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -13,7 +13,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(0u64)
 }
@@ -41,12 +41,12 @@ class FailPublish(Smoketest):
     MODULE_CODE_BROKEN_NAMESPACE = """
 use spacetimedb::ViewContext;
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb::view(name = person, public)]
+#[spacetimedb::view(accessor = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<Person> {
     None
 }
@@ -62,7 +62,7 @@ pub enum ABC {
     C,
 }
 
-#[spacetimedb::view(name = person, public)]
+#[spacetimedb::view(accessor = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<ABC> {
     None
 }
@@ -93,8 +93,8 @@ class SqlViews(Smoketest):
 use spacetimedb::{AnonymousViewContext, ReducerContext, Table, ViewContext};
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
-#[spacetimedb::table(name = player_level)]
+#[spacetimedb::table(accessor = player_state)]
+#[spacetimedb::table(accessor = player_level)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -104,7 +104,7 @@ pub struct PlayerState {
 
 
 #[derive(Clone)]
-#[spacetimedb::table(name = player_info, index(name=age_level_index, btree(columns = [age, level])))]
+#[spacetimedb::table(accessor = player_info, index(accessor=age_level_index, btree(columns = [age, level])))]
 pub struct PlayerInfo {
     #[primary_key]
     id: u64,
@@ -117,35 +117,35 @@ pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
     ctx.db.player_level().insert(PlayerState { id, level });
 }
 
-#[spacetimedb::view(name = my_player_and_level, public)]
+#[spacetimedb::view(accessor = my_player_and_level, public)]
 pub fn my_player_and_level(ctx: &AnonymousViewContext) -> Option<PlayerState> {
     ctx.db.player_level().id().find(0)
 }
 
-#[spacetimedb::view(name = player_and_level, public)]
+#[spacetimedb::view(accessor = player_and_level, public)]
 pub fn player_and_level(ctx: &AnonymousViewContext) -> Vec<PlayerState> {
     ctx.db.player_level().level().filter(2u64).collect()
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     log::info!("player view called");
     ctx.db.player_state().id().find(42)
 }
 
-#[spacetimedb::view(name = player_none, public)]
+#[spacetimedb::view(accessor = player_none, public)]
 pub fn player_none(_ctx: &ViewContext) -> Option<PlayerState> {
     None
 }
 
-#[spacetimedb::view(name = player_vec, public)]
+#[spacetimedb::view(accessor = player_vec, public)]
 pub fn player_vec(ctx: &ViewContext) -> Vec<PlayerState> {
     let first = ctx.db.player_state().id().find(42).unwrap();
     let second = PlayerState { id: 7, level: 3 };
     vec![first, second]
 }
 
-#[spacetimedb::view(name = player_info_multi_index, public)]
+#[spacetimedb::view(accessor = player_info_multi_index, public)]
 pub fn player_info_view(ctx: &ViewContext) -> Option<PlayerInfo> {
 
     log::info!("player_info called");
@@ -359,14 +359,14 @@ class AutoMigrateViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -376,14 +376,14 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }
@@ -431,7 +431,7 @@ class AutoMigrateDropView(Smoketest):
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -439,7 +439,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -447,7 +447,7 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 
     MODULE_CODE_DROP_VIEW = """
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -466,7 +466,7 @@ pub struct PlayerState {
 class AutoMigrateAddView(Smoketest):
     MODULE_CODE = """
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -479,7 +479,7 @@ pub struct PlayerState {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -487,7 +487,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -504,14 +504,14 @@ class AutoMigrateViewsTrapped(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -521,14 +521,14 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
     panic!("This view is trapped")
 }
@@ -538,14 +538,14 @@ pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }
@@ -599,7 +599,7 @@ class SubscribeViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     identity: Identity,
@@ -607,14 +607,14 @@ pub struct PlayerState {
     name: String,
 }
 
-#[spacetimedb::view(name = my_player, public)]
+#[spacetimedb::view(accessor = my_player, public)]
 pub fn my_player(ctx: &ViewContext) -> Option<PlayerState> {
-    ctx.db.player_state().identity().find(ctx.sender)
+    ctx.db.player_state().identity().find(ctx.sender())
 }
 
 #[spacetimedb::reducer]
 pub fn insert_player(ctx: &ReducerContext, name: String) {
-    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender });
+    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender() });
 }
 """
 
@@ -669,7 +669,7 @@ class QueryView(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Query, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     identity: u8,
@@ -677,7 +677,7 @@ pub struct User {
     online: bool,
 }
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     identity: u8,
@@ -723,52 +723,47 @@ fn init(ctx: &ReducerContext) {
 
 }
 
-#[spacetimedb::view(name = online_users, public)]
-fn online_users(ctx: &ViewContext) -> Query<User> {
-    ctx.from.user().r#where(|c| c.online.eq(true)).build()
+#[spacetimedb::view(accessor = online_users, public)]
+fn online_users(ctx: &ViewContext) -> impl Query<User> {
+    ctx.from.user().r#where(|c| c.online.eq(true))
 }
 
-#[spacetimedb::view(name = online_users_age, public)]
-fn online_users_age(ctx: &ViewContext) -> Query<Person> {
+#[spacetimedb::view(accessor = online_users_age, public)]
+fn online_users_age(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from
         .user()
         .r#where(|u| u.online.eq(true))
         .right_semijoin(ctx.from.person(), |u, p| u.identity.eq(p.identity))
-        .build()
 }
 
-#[spacetimedb::view(name = offline_user_20_years_old, public)]
-fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
+#[spacetimedb::view(accessor = offline_user_20_years_old, public)]
+fn offline_user_in_twienties(ctx: &ViewContext) -> impl Query<User> {
     ctx.from
         .person()
         .filter(|p| p.age.eq(20))
         .right_semijoin(ctx.from.user(), |p, u| p.identity.eq(u.identity))
         .filter(|u| u.online.eq(false))
-        .build()
 }
 
-#[spacetimedb::view(name = users_whos_age_is_known, public)]
-fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
+#[spacetimedb::view(accessor = users_whos_age_is_known, public)]
+fn users_whos_age_is_known(ctx: &ViewContext) -> impl Query<User> {
     ctx.from
         .user()
         .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
-        .build()
 }
 
-#[spacetimedb::view(name = users_who_are_above_20_and_below_30, public)]
-fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> Query<Person> {
+#[spacetimedb::view(accessor = users_who_are_above_20_and_below_30, public)]
+fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from
         .person()
         .r#where(|p| p.age.gt(20).and(p.age.lt(30)))
-        .build()
 }
 
-#[spacetimedb::view(name = users_who_are_above_eq_20_and_below_eq_30, public)]
-fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> Query<Person> {
+#[spacetimedb::view(accessor = users_who_are_above_eq_20_and_below_eq_30, public)]
+fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> impl Query<Person> {
     ctx.from
         .person()
         .r#where(|p| p.age.gte(20).and(p.age.lte(30)))
-        .build()
 }
 """
 

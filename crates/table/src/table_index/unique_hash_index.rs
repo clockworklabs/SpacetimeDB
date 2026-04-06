@@ -1,0 +1,133 @@
+use super::unique_btree_index::UniquePointIter;
+use super::{Index, KeySize};
+use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
+use core::borrow::Borrow;
+use core::hash::Hash;
+use spacetimedb_data_structures::map::hash_map::Entry;
+use spacetimedb_sats::memory_usage::MemoryUsage;
+
+// Faster than ahash, so we use this explicitly.
+use foldhash::fast::RandomState;
+use hashbrown::HashMap;
+
+/// A "unique map" that relates a `K` to a `RowPointer`
+///
+/// (This is just a `HashMap<K, RowPointer>`) with a slightly modified interface.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct UniqueHashIndex<K: KeySize + Eq + Hash> {
+    /// The map is backed by a `HashMap` for relating a key to a value.
+    map: HashMap<K, RowPointer, RandomState>,
+    /// Storage for [`Index::num_key_bytes`].
+    num_key_bytes: K::MemoStorage,
+}
+
+impl<K: KeySize + Eq + Hash> Default for UniqueHashIndex<K> {
+    fn default() -> Self {
+        Self {
+            map: <_>::default(),
+            num_key_bytes: <_>::default(),
+        }
+    }
+}
+
+impl<K: KeySize + Eq + Hash + MemoryUsage> MemoryUsage for UniqueHashIndex<K> {
+    fn heap_usage(&self) -> usize {
+        let Self { map, num_key_bytes } = self;
+        map.heap_usage() + num_key_bytes.heap_usage()
+    }
+}
+
+impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
+    type Key = K;
+
+    fn clone_structure(&self) -> Self {
+        <_>::default()
+    }
+
+    fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
+        match self.map.entry(key) {
+            Entry::Vacant(e) => {
+                self.num_key_bytes.add_to_key_bytes(e.key());
+                e.insert(ptr);
+                Ok(())
+            }
+            Entry::Occupied(e) => Err(*e.into_mut()),
+        }
+    }
+
+    fn delete(&mut self, key: &Self::Key, ptr: RowPointer) -> bool {
+        self.delete(key, ptr)
+    }
+
+    fn clear(&mut self) {
+        self.map.clear();
+        self.num_key_bytes.reset_to_zero();
+    }
+
+    fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
+        let Some(found) = other
+            .map
+            .keys()
+            .find_map(|key| self.map.get(key).filter(|val| !ignore(val)))
+        else {
+            return Ok(());
+        };
+        Err(*found)
+    }
+
+    fn num_keys(&self) -> usize {
+        self.map.len()
+    }
+
+    fn num_key_bytes(&self) -> u64 {
+        self.num_key_bytes.get(self)
+    }
+
+    type PointIter<'a>
+        = UniquePointIter
+    where
+        Self: 'a;
+
+    fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
+        self.seek_point(point)
+    }
+}
+
+impl<K: KeySize + Eq + Hash> UniqueHashIndex<K> {
+    /// See [`Index::delete`].
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`HashMap::remove`].
+    pub fn delete<Q>(&mut self, key: &Q, _: RowPointer) -> bool
+    where
+        Q: ?Sized + KeySize + Hash + Eq,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        let ret = self.map.remove(key).is_some();
+        if ret {
+            self.num_key_bytes.sub_from_key_bytes(key);
+        }
+        ret
+    }
+
+    /// See [`Index::seek_point`].
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`HashMap::get`].
+    pub fn seek_point<Q: ?Sized + Eq + Hash>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
+    where
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        UniquePointIter::new(self.map.get(point).copied())
+    }
+}

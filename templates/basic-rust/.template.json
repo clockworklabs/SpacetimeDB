@@ -1,5 +1,0 @@
-{
-  "description": "A basic Rust client and server template with only stubs for code",
-  "client_lang": "rust",
-  "server_lang": "rust"
-}

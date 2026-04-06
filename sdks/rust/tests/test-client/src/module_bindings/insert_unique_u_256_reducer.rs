@@ -24,84 +24,49 @@ impl __sdk::InModule for InsertUniqueU256Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertUniqueU256CallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_unique_u256`.
+/// Extension trait for access to the reducer `insert_unique_u_256`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait insert_unique_u_256 {
-    /// Request that the remote module invoke the reducer `insert_unique_u256` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `insert_unique_u_256` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_unique_u_256`] callbacks.
-    fn insert_unique_u_256(&self, n: __sats::u256, data: i32) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_unique_u256`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_unique_u_256:insert_unique_u_256_then`] to run a callback after the reducer completes.
+    fn insert_unique_u_256(&self, n: __sats::u256, data: i32) -> __sdk::Result<()> {
+        self.insert_unique_u_256_then(n, data, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_unique_u_256` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertUniqueU256CallbackId`] can be passed to [`Self::remove_on_insert_unique_u_256`]
-    /// to cancel the callback.
-    fn on_insert_unique_u_256(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_unique_u_256_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &__sats::u256, &i32) + Send + 'static,
-    ) -> InsertUniqueU256CallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_unique_u_256`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_unique_u_256(&self, callback: InsertUniqueU256CallbackId);
+        n: __sats::u256,
+        data: i32,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_unique_u_256 for super::RemoteReducers {
-    fn insert_unique_u_256(&self, n: __sats::u256, data: i32) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_unique_u256", InsertUniqueU256Args { n, data })
-    }
-    fn on_insert_unique_u_256(
+    fn insert_unique_u_256_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &__sats::u256, &i32) + Send + 'static,
-    ) -> InsertUniqueU256CallbackId {
-        InsertUniqueU256CallbackId(self.imp.on_reducer(
-            "insert_unique_u256",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertUniqueU256 { n, data },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n, data)
-            }),
-        ))
-    }
-    fn remove_on_insert_unique_u_256(&self, callback: InsertUniqueU256CallbackId) {
-        self.imp.remove_on_reducer("insert_unique_u256", callback.0)
-    }
-}
+        n: __sats::u256,
+        data: i32,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_unique_u256`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_unique_u_256 {
-    /// Set the call-reducer flags for the reducer `insert_unique_u256` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_unique_u_256(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_unique_u_256 for super::SetReducerFlags {
-    fn insert_unique_u_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_u256", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp
+            .invoke_reducer_with_callback(InsertUniqueU256Args { n, data }, callback)
     }
 }

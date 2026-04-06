@@ -86,11 +86,27 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+    raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OneUnitStruct>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneUnitStruct>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneUnitStruct`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_unit_structQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneUnitStruct`.
+    fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct>;
+}
+
+impl one_unit_structQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct> {
+        __sdk::__query_builder::Table::new("one_unit_struct")
+    }
 }

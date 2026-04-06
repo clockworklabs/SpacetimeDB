@@ -15,10 +15,10 @@ struct TESTCLIENT_API FUpdateIndexedSimpleEnumArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    ESimpleEnumType A;
+    ESimpleEnumType A = ESimpleEnumType::Zero;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    ESimpleEnumType B;
+    ESimpleEnumType B = ESimpleEnumType::Zero;
 
     FUpdateIndexedSimpleEnumArgs() = default;
 
@@ -50,9 +50,9 @@ class TESTCLIENT_API UUpdateIndexedSimpleEnumReducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    ESimpleEnumType A;
+    ESimpleEnumType A = ESimpleEnumType::Zero;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    ESimpleEnumType B;
+    ESimpleEnumType B = ESimpleEnumType::Zero;
 
 };
 

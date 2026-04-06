@@ -15,3 +15,23 @@ pub struct PlayerAndLevel {
 impl __sdk::InModule for PlayerAndLevel {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PlayerAndLevel`.
+///
+/// Provides typed access to columns for query building.
+pub struct PlayerAndLevelCols {
+    pub entity_id: __sdk::__query_builder::Col<PlayerAndLevel, u64>,
+    pub identity: __sdk::__query_builder::Col<PlayerAndLevel, __sdk::Identity>,
+    pub level: __sdk::__query_builder::Col<PlayerAndLevel, u64>,
+}
+
+impl __sdk::__query_builder::HasCols for PlayerAndLevel {
+    type Cols = PlayerAndLevelCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PlayerAndLevelCols {
+            entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            identity: __sdk::__query_builder::Col::new(table_name, "identity"),
+            level: __sdk::__query_builder::Col::new(table_name, "level"),
+        }
+    }
+}

@@ -24,4 +24,24 @@ namespace SpacetimeDB.Types
 
         public readonly PkUuidHandle PkUuid;
     }
+
+    public sealed class PkUuidCols
+    {
+        public global::SpacetimeDB.Col<PkUuid, SpacetimeDB.Uuid> U { get; }
+        public global::SpacetimeDB.Col<PkUuid, byte> Data { get; }
+
+        public PkUuidCols(string tableName)
+        {
+            U = new global::SpacetimeDB.Col<PkUuid, SpacetimeDB.Uuid>(tableName, "u");
+            Data = new global::SpacetimeDB.Col<PkUuid, byte>(tableName, "data");
+        }
+    }
+
+    public sealed class PkUuidIxCols
+    {
+
+        public PkUuidIxCols(string tableName)
+        {
+        }
+    }
 }

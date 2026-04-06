@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in TypeScript that uses sum types in multiple table columns.
+
+TYPES
+- Rect
+  - width: number (i32)
+  - height: number (i32)
+- Shape (sum type / enum)
+  - circle: number (i32 radius)
+  - rectangle: Rect
+
+TABLE
+- drawing
+  - Fields:
+    - id: number (i32, primary key)
+    - a: Shape
+    - b: Shape
+
+REDUCERS
+- seed: insert one row with two Shape values:
+  - a: Shape.circle(10)
+  - b: Shape.rectangle({ width: 4, height: 6 })

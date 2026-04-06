@@ -1,5 +1,0 @@
-{
-  "description": "C# server/client implementing quickstart chat",
-  "client_lang": "csharp",
-  "server_lang": "csharp"
-}

@@ -6,6 +6,7 @@ use clap::Parser;
 
 mod cli;
 mod proxy;
+mod update_notice;
 
 fn main() -> anyhow::Result<ExitCode> {
     let mut args = std::env::args_os();

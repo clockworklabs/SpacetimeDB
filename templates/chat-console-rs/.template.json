@@ -1,0 +1,10 @@
+{
+  "description": "Rust server/client implementing quickstart chat",
+  "client_lang": "rust",
+  "server_lang": "rust",
+  "builtWith": [
+    "log.workspace",
+    "spacetimedb-sdk",
+    "spacetimedb"
+  ]
+}

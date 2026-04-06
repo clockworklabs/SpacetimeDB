@@ -1,21 +1,30 @@
 #![allow(clippy::too_many_arguments)]
 
+use super::wasmtime_module::{
+    call_view_export, decode_view_result_sink_code, CallViewAnonType, CallViewType, ViewResultSinkError,
+};
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
-use crate::host::wasm_common::module_host_actor::ExecutionTimings;
+use crate::host::wasm_common::module_host_actor::{
+    deserialize_view_rows, run_query_for_view, ExecutionTimings, ViewResult, ViewReturnData,
+};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
 use crate::subscription::module_subscription_manager::TransactionOffset;
-use anyhow::Context as _;
+use anyhow::{anyhow, Context as _};
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::Identifier;
 use std::future::Future;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
@@ -77,6 +86,15 @@ pub(super) struct WasmInstanceEnv {
     /// The database `InstanceEnv` associated to this instance.
     instance_env: InstanceEnv,
 
+    /// A validated `ModuleDef` for this instance used by procedures to refresh views.
+    module_def: Option<Arc<ModuleDef>>,
+
+    /// A cached `__call_view__` export used by procedures to refresh views.
+    call_view: Option<CallViewType>,
+
+    /// A cached `__call_view_anon__` export used by procedures to refresh views.
+    call_view_anon: Option<CallViewAnonType>,
+
     /// The `Mem` associated to this instance. At construction time,
     /// this is always `None`. The `Mem` instance is extracted from the
     /// instance exports, and after instantiation is complete, this will
@@ -129,6 +147,9 @@ impl WasmInstanceEnv {
     pub fn new(instance_env: InstanceEnv) -> Self {
         Self {
             instance_env,
+            module_def: None,
+            call_view: None,
+            call_view_anon: None,
             mem: None,
             bytes_sources: IntMap::default(),
             next_bytes_source_id: NonZeroU32::new(1).unwrap(),
@@ -186,6 +207,15 @@ impl WasmInstanceEnv {
         self.mem = Some(mem);
     }
 
+    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        self.module_def = Some(module_def)
+    }
+
+    pub fn set_call_view_exports(&mut self, call_view: Option<CallViewType>, call_view_anon: Option<CallViewAnonType>) {
+        self.call_view = call_view;
+        self.call_view_anon = call_view_anon;
+    }
+
     /// Returns a reference to the memory, assumed to be initialized.
     pub fn get_mem(&self) -> Mem {
         self.mem.expect("Initialized memory")
@@ -220,7 +250,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: &str,
+        name: Identifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -237,16 +267,10 @@ impl WasmInstanceEnv {
         (args, errors)
     }
 
-    /// Returns the name of the most recent reducer or procedure to be run in this environment.
-    pub fn funcall_name(&self) -> &str {
-        &self.instance_env.func_name
-    }
-
     /// Returns the name of the most recent reducer or procedure to be run in this environment,
     /// or `None` if no reducer or procedure is actively being invoked.
-    fn log_record_function(&self) -> Option<&str> {
-        let function = self.funcall_name();
-        (!function.is_empty()).then_some(function)
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.instance_env.log_record_function()
     }
 
     /// Returns the start time of the most recent reducer or procedure to be run in this environment.
@@ -1545,10 +1569,9 @@ impl WasmInstanceEnv {
     }
 
     /// Starts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// a mutable transaction lock is aquired.
+    /// blocking until a mutable transaction lock is acquired.
     ///
-    /// Upon resuming, returns `0` on success,
+    /// Returns `0` on success,
     /// enabling further calls that require a pending transaction,
     /// or an error code otherwise.
     ///
@@ -1562,38 +1585,23 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
-    pub fn procedure_start_mut_tx<'caller>(
-        caller: Caller<'caller, Self>,
-        (out,): (WasmPtr<u64>,),
-    ) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(
-            caller,
-            AbiCall::ProcedureStartMutTransaction,
-            move |mut caller| async move {
-                let (mem, env) = Self::mem_env(&mut caller);
-                let res = async {
-                    env.instance_env.start_mutable_tx()?.await;
-                    Ok(())
-                }
-                .await;
-                let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
-                let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
+    pub fn procedure_start_mut_tx<'caller>(caller: Caller<'caller, Self>, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureStartMutTransaction, |mut caller| {
+            let (mem, env) = Self::mem_env(&mut caller);
+            let res = env.instance_env.start_mutable_tx().map_err(WasmError::from);
+            let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+            let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
 
-                let result = res
-                    .map(|()| 0u16.into())
-                    .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err));
-
-                (caller, result)
-            },
-        )
+            res.map(|()| 0u16.into())
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err))
+        })
     }
 
     /// Commits a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been committed
+    /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    /// Once complete, it returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
@@ -1611,30 +1619,178 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(
-            caller,
-            AbiCall::ProcedureCommitMutTransaction,
-            |mut caller| async move {
-                let (_, env) = Self::mem_env(&mut caller);
+    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |caller| {
+            let res: Result<u32, WasmError> = (|| {
+                let tx = {
+                    let env = caller.data_mut();
+                    env.instance_env.take_mutable_tx_for_commit().map_err(WasmError::from)?
+                };
+                let tx = Self::refresh_views(caller, tx)?;
+                caller
+                    .data_mut()
+                    .instance_env
+                    .commit_procedure_tx(tx)
+                    .map_err(WasmError::from)?;
+                Ok(0u16.into())
+            })();
+            res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
+        })
+    }
 
-                let res = async {
-                    env.instance_env.commit_mutable_tx()?.await;
-                    Ok(0u16.into())
+    /// Refresh all views made stale by a procedure `tx`.
+    ///
+    /// This runs each pending view call in the same mutable transaction and writes the refreshed rows
+    /// into the corresponding backing view tables. If any step fails (missing metadata, view execution,
+    /// row decoding, SQL execution, or materialization), this method rolls back `tx` and returns an error.
+    ///
+    /// On success, it returns the same transaction handle so the caller can commit it.
+    fn refresh_views<'a>(caller: &mut Caller<'a, Self>, tx: MutTxId) -> Result<MutTxId, WasmError> {
+        let Some(module_def) = caller.data().module_def.clone() else {
+            caller.data_mut().instance_env.rollback_procedure_tx(tx);
+            return Err(WasmError::Wasm(anyhow!(
+                "module definition is unavailable while committing a procedure transaction"
+            )));
+        };
+
+        let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
+        let mut tx = Some(tx);
+        let mut tx_slot = caller.data().instance_env.tx.clone();
+
+        for view_call in views_for_refresh {
+            let res: anyhow::Result<()> = (|| {
+                let view_def = module_def
+                    .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
+                    .ok_or_else(|| anyhow!("view with fn_ptr `{}` not found", view_call.fn_ptr))?;
+
+                let current_tx = tx.take().expect("procedure tx missing during view refresh");
+                let (next_tx, call_result) =
+                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, &view_def.name));
+                tx = Some(next_tx);
+                let return_data = call_result?;
+
+                let typespace = module_def.typespace();
+                let row_product_type = typespace
+                    .resolve(view_def.product_type_ref)
+                    .resolve_refs()?
+                    .into_product()
+                    .map_err(|_| anyhow!("Error resolving row type for view"))?;
+
+                let rows = match ViewResult::from_return_data(return_data)? {
+                    ViewResult::Rows(bytes) => deserialize_view_rows(view_def.product_type_ref, bytes, typespace)
+                        .map_err(|err| anyhow!(err.to_string()))?,
+                    ViewResult::RawSql(query) => run_query_for_view(
+                        tx.as_mut().expect("procedure tx missing while running view query"),
+                        &query,
+                        &row_product_type,
+                        &view_call,
+                        *caller.data().instance_env.database_identity(),
+                    )?,
+                };
+
+                let stdb = caller.data().instance_env.relational_db().clone();
+                match view_call.sender {
+                    Some(sender) => stdb.materialize_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing authenticated view"),
+                        view_call.table_id,
+                        sender,
+                        rows,
+                    )?,
+                    None => stdb.materialize_anonymous_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing anonymous view"),
+                        view_call.table_id,
+                        rows,
+                    )?,
                 }
-                .await
-                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err));
 
-                (caller, res)
-            },
-        )
+                Ok(())
+            })();
+
+            if let Err(err) = res {
+                let tx = tx.expect("procedure tx missing while rolling back failed view refresh");
+                caller.data_mut().instance_env.rollback_procedure_tx(tx);
+                return Err(WasmError::Wasm(err));
+            }
+        }
+
+        Ok(tx.expect("procedure tx missing after view refresh"))
+    }
+
+    /// Execute a view and return its payload.
+    ///
+    /// This helper is used by [`Self::refresh_views`] while a procedure transaction is being committed.
+    /// It temporarily sets the active function type to the target view for dependency tracking,
+    /// invokes the cached typed view export, restores the previous function type, and decodes the
+    /// result sink into [`ViewReturnData`].
+    fn call_view<'a>(
+        caller: &mut Caller<'a, Self>,
+        view_call: &ViewCallInfo,
+        view_name: &Identifier,
+    ) -> anyhow::Result<ViewReturnData> {
+        // Preserve the procedure's result/error sink so this view does not overwrite it.
+        let previous_standard_sink = {
+            let env = caller.data_mut();
+            env.standard_bytes_sink.take()
+        };
+
+        let prev_func_type = caller
+            .data_mut()
+            .instance_env
+            .swap_func_type(FuncCallType::View(view_call.clone()));
+
+        let call_result = (|| -> anyhow::Result<i32> {
+            let (args_source, result_sink) = {
+                let env = caller.data_mut();
+                let args_source = env.create_bytes_source(bytes::Bytes::new())?;
+                let result_sink = env.setup_standard_bytes_sink();
+                (args_source, result_sink)
+            };
+
+            let (call_view, call_view_anon) = {
+                let env = caller.data();
+                (env.call_view.clone(), env.call_view_anon.clone())
+            };
+
+            let code = call_view_export(
+                &mut *caller,
+                call_view,
+                call_view_anon,
+                view_name,
+                view_call.fn_ptr.0,
+                view_call.sender,
+                args_source.0,
+                result_sink,
+            )?;
+
+            Ok(code)
+        })();
+
+        caller.data_mut().instance_env.swap_func_type(prev_func_type);
+
+        let result_bytes = {
+            let env = caller.data_mut();
+            // Restore the outer sink of the procedure before propagating any trap/user error from the call.
+            let result = env.take_standard_bytes_sink();
+            env.standard_bytes_sink = previous_standard_sink;
+            result
+        };
+        let code = call_result?;
+
+        decode_view_result_sink_code(code, result_bytes).map_err(|err| match err {
+            ViewResultSinkError::User(err) => anyhow!("view call failed: {err}"),
+            ViewResultSinkError::UnexpectedCode(code) => anyhow!(
+                "unexpected return code {code} from view call, expected 0, 2, or {failure}",
+                failure = HOST_CALL_FAILURE.get()
+            ),
+        })
     }
 
     /// Aborts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been rolled back.
+    /// blocking until the transaction has been aborted.
     ///
-    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    /// Returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
@@ -1652,11 +1808,10 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| async move {
+    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| {
             let (_, env) = Self::mem_env(&mut caller);
-            let ret = env.procedure_abort_mut_tx_inner();
-            (caller, ret)
+            env.procedure_abort_mut_tx_inner()
         })
     }
 
@@ -1680,18 +1835,27 @@ impl WasmInstanceEnv {
     /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
     /// suspending execution until the request is complete,
     /// then return its response details via a [`BytesSource`] written to `out[0]`
-    /// and its response body via a [`BytesSource`] written to `out[1]`.
+    /// and its response body via another [`BytesSource`] written to `out[1]`.
     ///
     /// `request_ptr[..request_len]` should store a BSATN-serialized [`spacetimedb_lib::http::Request`] object
     /// containing the details of the request to be performed.
     ///
-    /// `body_ptr[..body_len]` should store the body of the request to be performed;
+    /// `body_ptr[..body_len]` should store a byte array, which will be treated as the body of the request.
+    /// `body_ptr` should be non-null and within the bounds of linear memory even when `body_len` is 0.
     ///
-    /// If the request is successful, a [`BytesSource`] is written to `out`
-    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object.
+    /// If the request is successful, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object,
+    /// another [`BytesSource`] containing the bytes of the response body are written to `out[1]`,
+    /// and this function returns 0.
+    ///
     /// "Successful" in this context includes any connection which results in any HTTP status code,
     /// regardless of the specified meaning of that code.
     /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
+    ///
+    /// If the request fails, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded `String` describing the failure,
+    /// and this function returns `HTTP_ERROR`.
+    /// In this case, `out[1]` is not written.
     ///
     /// # Errors
     ///
@@ -1704,7 +1868,7 @@ impl WasmInstanceEnv {
     ///   In this case, `out` is not written.
     /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
     ///   In this case, a [`BytesSource`] is written to `out`
-    ///   containing a BSATN-encoded [`spacetimedb_lib::http::Error`] object.
+    ///   containing a BSATN-encoded [`String`].
     ///
     /// # Traps
     ///
@@ -1713,6 +1877,7 @@ impl WasmInstanceEnv {
     /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
     /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
     pub fn procedure_http_request<'caller>(
         caller: Caller<'caller, Self>,
         (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),

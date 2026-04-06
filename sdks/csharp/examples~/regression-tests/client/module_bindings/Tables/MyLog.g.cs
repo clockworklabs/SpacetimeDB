@@ -24,4 +24,22 @@ namespace SpacetimeDB.Types
 
         public readonly MyLogHandle MyLog;
     }
+
+    public sealed class MyLogCols
+    {
+        public global::SpacetimeDB.Col<MyLog, SpacetimeDB.Result<MyTable, string>> Msg { get; }
+
+        public MyLogCols(string tableName)
+        {
+            Msg = new global::SpacetimeDB.Col<MyLog, SpacetimeDB.Result<MyTable, string>>(tableName, "msg");
+        }
+    }
+
+    public sealed class MyLogIxCols
+    {
+
+        public MyLogIxCols(string tableName)
+        {
+        }
+    }
 }

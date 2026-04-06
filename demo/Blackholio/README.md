@@ -65,9 +65,10 @@ You should be prompted for a username and you should be able to move around, eat
 ```plaintext
 Blackholio/
 ├── client-unity/      # Unity client project
-├── server-rust/       # SpacetimeDB server module (Rust implementation)
+├── client-unreal/     # Unreal Engine client project
 ├── server-csharp/     # SpacetimeDB server module (C# implementation)
-├── docs/              # Tutorial documentation and images
+├── server-rust/       # SpacetimeDB server module (Rust implementation)
+├── DEVELOP.md         # Development guidelines
 └── README.md          # This file
 ```
 

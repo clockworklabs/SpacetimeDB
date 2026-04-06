@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in Rust that defines one table and a reducer that performs insert, update, and delete in one call.
 
 TABLE
-- users
+- user
   - Struct: User
   - Fields:
     - id: i32 (primary key)

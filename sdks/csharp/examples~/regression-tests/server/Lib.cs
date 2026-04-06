@@ -25,10 +25,7 @@ public partial class ReturnStruct
 }
 
 [SpacetimeDB.Type]
-public partial record ReturnEnum : SpacetimeDB.TaggedEnum<(
-    uint A,
-    string B
-    )>;
+public partial record ReturnEnum : SpacetimeDB.TaggedEnum<(uint A, string B)>;
 
 [SpacetimeDB.Type]
 public partial struct DbVector2
@@ -39,12 +36,25 @@ public partial struct DbVector2
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "my_table", Public = true)]
+    [SpacetimeDB.Table(Accessor = "my_table", Public = true)]
     public partial struct MyTable
     {
         public ReturnStruct Field;
     }
-    [SpacetimeDB.Table(Name = "example_data", Public = true)]
+
+    [SpacetimeDB.Table(Accessor = "where_test", Public = true)]
+    public partial struct WhereTest
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+
+        [SpacetimeDB.Index.BTree]
+        public uint Value;
+
+        public string Name;
+    }
+
+    [SpacetimeDB.Table(Accessor = "example_data", Public = true)]
     public partial struct ExampleData
     {
         [SpacetimeDB.PrimaryKey]
@@ -54,13 +64,13 @@ public static partial class Module
         public uint Indexed;
     }
 
-    [SpacetimeDB.Table(Name = "my_log", Public = true)]
+    [SpacetimeDB.Table(Accessor = "my_log", Public = true)]
     public partial struct MyLog
     {
         public Result<MyTable, string> msg;
     }
 
-    [SpacetimeDB.Table(Name = "player", Public = true)]
+    [SpacetimeDB.Table(Accessor = "player", Public = true)]
     public partial struct Player
     {
         [SpacetimeDB.PrimaryKey]
@@ -73,7 +83,20 @@ public static partial class Module
         public string Name;
     }
 
-    [SpacetimeDB.Table(Name = "player_level", Public = true)]
+    [SpacetimeDB.Table(Accessor = "account", Public = true)]
+    public partial class Account
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        [SpacetimeDB.Unique]
+        public Identity Identity;
+
+        public string Name = "";
+    }
+
+    [SpacetimeDB.Table(Accessor = "player_level", Public = true)]
     public partial struct PlayerLevel
     {
         [SpacetimeDB.Unique]
@@ -92,19 +115,35 @@ public static partial class Module
         public ulong Level;
     }
 
-    [SpacetimeDB.Table(Name = "User", Public = true)]
+    [SpacetimeDB.Table(Accessor = "user", Public = true)]
     public partial struct User
     {
         [SpacetimeDB.PrimaryKey]
         public Uuid Id;
 
+        [SpacetimeDB.Index.BTree]
         public string Name;
 
         [SpacetimeDB.Index.BTree]
         public bool IsAdmin;
+
+        [SpacetimeDB.Index.BTree]
+        public byte Age;
     }
 
-    [SpacetimeDB.Table(Name = "nullable_vec", Public = true)]
+    [SpacetimeDB.Table(Accessor = "score", Public = true)]
+    [SpacetimeDB.Index.BTree(
+        Accessor = "by_player_and_level",
+        Columns = new[] { "PlayerId", "Level" }
+    )]
+    public partial struct Score
+    {
+        public uint PlayerId;
+        public uint Level;
+        public long Points;
+    }
+
+    [SpacetimeDB.Table(Accessor = "nullable_vec", Public = true)]
     public partial struct NullableVec
     {
         [SpacetimeDB.PrimaryKey]
@@ -113,15 +152,76 @@ public static partial class Module
         public DbVector2? Pos;
     }
 
+    [SpacetimeDB.Table(Accessor = "null_string_nonnullable", Public = true)]
+    public partial struct NullStringNonNullable
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public string Name;
+    }
+
+    [SpacetimeDB.Table(Accessor = "null_string_nullable", Public = true)]
+    public partial struct NullStringNullable
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public string? Name;
+    }
+
+    [SpacetimeDB.Table(Accessor = "view_pk_player", Public = true)]
+    public partial struct ViewPkPlayer
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        public string Name;
+    }
+
+    [SpacetimeDB.Table(Accessor = "view_pk_membership", Public = true)]
+    public partial struct ViewPkMembership
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        [SpacetimeDB.Index.BTree]
+        public ulong PlayerId;
+    }
+
+    [SpacetimeDB.Table(Accessor = "view_pk_membership_secondary", Public = true)]
+    public partial struct ViewPkMembershipSecondary
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        [SpacetimeDB.Index.BTree]
+        public ulong PlayerId;
+    }
+
     // At-most-one row: return T?
-    [SpacetimeDB.View(Name = "my_player", Public = true)]
+    [SpacetimeDB.View(Accessor = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
-        return ctx.Db.player.Identity.Find(ctx.Sender) as Player?;
+        return ctx.Db.player.Identity.Find(ctx.Sender);
+    }
+
+    [SpacetimeDB.View(Accessor = "my_account", Public = true)]
+    public static Account? MyAccount(ViewContext ctx)
+    {
+        return ctx.Db.account.Identity.Find(ctx.Sender) as Account;
+    }
+
+    [SpacetimeDB.View(Accessor = "my_account_missing", Public = true)]
+    public static Account? MyAccountMissing(ViewContext ctx)
+    {
+        return null;
     }
 
     // Multiple rows: return a list
-    [SpacetimeDB.View(Name = "players_at_level_one", Public = true)]
+    [SpacetimeDB.View(Accessor = "players_at_level_one", Public = true)]
     public static List<PlayerAndLevel> PlayersAtLevelOne(AnonymousViewContext ctx)
     {
         var rows = new List<PlayerAndLevel>();
@@ -134,7 +234,7 @@ public static partial class Module
                     Id = p.Id,
                     Identity = p.Identity,
                     Name = p.Name,
-                    Level = player.Level
+                    Level = player.Level,
                 };
                 rows.Add(row);
             }
@@ -142,18 +242,115 @@ public static partial class Module
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "Admins", Public = true)]
+    [SpacetimeDB.View(Accessor = "Admins", Public = true)]
     public static List<User> Admins(AnonymousViewContext ctx)
     {
         var rows = new List<User>();
-        foreach (var user in ctx.Db.User.IsAdmin.Filter(true))
+        foreach (var user in ctx.Db.user.IsAdmin.Filter(true))
         {
             rows.Add(user);
         }
         return rows;
     }
 
-    [SpacetimeDB.View(Name = "nullable_vec_view", Public = true)]
+    [SpacetimeDB.View(Accessor = "users_named_alice", Public = true)]
+    public static List<User> UsersNamedAlice(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Name.Filter("Alice"))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "users_age_18_65", Public = true)]
+    public static List<User> UsersAge1865(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(18, 65)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "users_age_18_plus", Public = true)]
+    public static List<User> UsersAge18Plus(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(18, byte.MaxValue)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "users_age_under_18", Public = true)]
+    public static List<User> UsersAgeUnder18(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.user.Age.Filter(new Bound<byte>(byte.MinValue, 17)))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "scores_player_123", Public = true)]
+    public static List<Score> ScoresPlayer123(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (var score in ctx.Db.score.by_player_and_level.Filter(123u))
+        {
+            rows.Add(score);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "scores_player_123_range", Public = true)]
+    public static List<Score> ScoresPlayer123Range(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (
+            var score in ctx.Db.score.by_player_and_level.Filter((123u, new Bound<uint>(1u, 10u)))
+        )
+        {
+            rows.Add(score);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "scores_player_123_level5", Public = true)]
+    public static List<Score> ScoresPlayer123Level5(AnonymousViewContext ctx)
+    {
+        var rows = new List<Score>();
+        foreach (var score in ctx.Db.score.by_player_and_level.Filter((123u, 5u)))
+        {
+            rows.Add(score);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "where_test_view", Public = true)]
+    public static WhereTest? WhereTestView(ViewContext ctx)
+    {
+        return ctx.Db.where_test.Id.Find(2);
+    }
+
+    [SpacetimeDB.View(Accessor = "where_test_query", Public = true)]
+    public static IQuery<WhereTest> WhereTestQuery(ViewContext ctx)
+    {
+        return ctx.From.where_test().Where(cols => cols.Id.Eq(SqlLit.Int(2u)));
+    }
+
+    [SpacetimeDB.View(Accessor = "find_where_test", Public = true)]
+    public static WhereTest? FindWhereTest(AnonymousViewContext ctx)
+    {
+        return ctx.Db.where_test.Id.Find(3);
+    }
+
+    [SpacetimeDB.View(Accessor = "nullable_vec_view", Public = true)]
     public static List<NullableVec> NullableVecView(AnonymousViewContext ctx)
     {
         var rows = new List<NullableVec>();
@@ -168,6 +365,79 @@ public static partial class Module
             rows.Add(row2);
         }
         return rows;
+    }
+
+    [SpacetimeDB.View(Accessor = "all_view_pk_players", Public = true)]
+    public static IQuery<ViewPkPlayer> AllViewPkPlayers(ViewContext ctx)
+    {
+        return ctx.From.view_pk_player();
+    }
+
+    [SpacetimeDB.View(Accessor = "sender_view_pk_players_a", Public = true)]
+    public static IQuery<ViewPkPlayer> SenderViewPkPlayersA(ViewContext ctx)
+    {
+        return ctx
+            .From.view_pk_membership()
+            .RightSemijoin(
+                ctx.From.view_pk_player(),
+                (membership, player) => membership.PlayerId.Eq(player.Id)
+            );
+    }
+
+    [SpacetimeDB.View(Accessor = "sender_view_pk_players_b", Public = true)]
+    public static IQuery<ViewPkPlayer> SenderViewPkPlayersB(ViewContext ctx)
+    {
+        return ctx
+            .From.view_pk_membership_secondary()
+            .RightSemijoin(
+                ctx.From.view_pk_player(),
+                (membership, player) => membership.PlayerId.Eq(player.Id)
+            );
+    }
+
+    // IEnumerable<T> view support - manual list building with filtering
+    [SpacetimeDB.View(Accessor = "ienumerable_players_from_iter", Public = true)]
+    public static IEnumerable<Player> IEnumerablePlayersFromIter(AnonymousViewContext ctx)
+    {
+        var result = new List<Player>();
+        foreach (var playerLevel in ctx.Db.player_level.Level.Filter(1ul))
+        {
+            if (ctx.Db.player.Id.Find(playerLevel.PlayerId) is Player player)
+            {
+                result.Add(player);
+            }
+        }
+        return result;
+    }
+
+    // IEnumerable<T> view support - direct filter-to-list conversion
+    [SpacetimeDB.View(Accessor = "ienumerable_admins_from_filter", Public = true)]
+    public static IEnumerable<User> IEnumerableAdminsFromFilter(AnonymousViewContext ctx)
+    {
+        return ctx.Db.user.IsAdmin.Filter(true).ToList();
+    }
+
+    // IEnumerable<T> view support - complex logic with joins and custom objects
+    [SpacetimeDB.View(Accessor = "ienumerable_players_with_levels", Public = true)]
+    public static IEnumerable<PlayerAndLevel> IEnumerablePlayersWithLevels(AnonymousViewContext ctx)
+    {
+        var result = new List<PlayerAndLevel>();
+        foreach (var playerLevel in ctx.Db.player_level.Level.Filter(1ul))
+        {
+            if (ctx.Db.player.Id.Find(playerLevel.PlayerId) is Player player)
+            {
+                result.Add(
+                    new PlayerAndLevel
+                    {
+                        Id = player.Id,
+                        Identity = player.Identity,
+                        Name = player.Name,
+                        Level = playerLevel.Level,
+                    }
+                );
+            }
+        }
+        return result;
     }
 
     [SpacetimeDB.Reducer]
@@ -198,11 +468,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void SetNullableVec(ReducerContext ctx, uint id, bool hasPos, int x, int y)
     {
-        var row = new NullableVec
-        {
-            Id = id,
-            Pos = hasPos ? new DbVector2 { X = x, Y = y } : null
-        };
+        var row = new NullableVec { Id = id, Pos = hasPos ? new DbVector2 { X = x, Y = y } : null };
 
         if (ctx.Db.nullable_vec.Id.Find(id) is null)
         {
@@ -212,6 +478,81 @@ public static partial class Module
         {
             ctx.Db.nullable_vec.Id.Update(row);
         }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertEmptyStringIntoNonNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nonnullable.Insert(new NullStringNonNullable { Name = "" });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertNullStringIntoNonNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nonnullable.Insert(new NullStringNonNullable { Name = null! });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertNullStringIntoNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nullable.Insert(new NullStringNullable { Name = null });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertWhereTest(ReducerContext ctx, uint id, uint value, string name)
+    {
+        ctx.Db.where_test.Insert(
+            new WhereTest
+            {
+                Id = id,
+                Value = value,
+                Name = name,
+            }
+        );
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void UpdateWhereTest(ReducerContext ctx, uint id, uint value, string name)
+    {
+        if (ctx.Db.where_test.Id.Find(id) is null)
+        {
+            throw new Exception($"where_test id={id} missing");
+        }
+
+        ctx.Db.where_test.Id.Update(
+            new WhereTest
+            {
+                Id = id,
+                Value = value,
+                Name = name,
+            }
+        );
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertViewPkPlayer(ReducerContext ctx, ulong id, string name)
+    {
+        ctx.Db.view_pk_player.Insert(new ViewPkPlayer { Id = id, Name = name });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void UpdateViewPkPlayer(ReducerContext ctx, ulong id, string name)
+    {
+        ctx.Db.view_pk_player.Id.Update(new ViewPkPlayer { Id = id, Name = name });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertViewPkMembership(ReducerContext ctx, ulong id, ulong playerId)
+    {
+        ctx.Db.view_pk_membership.Insert(new ViewPkMembership { Id = id, PlayerId = playerId });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertViewPkMembershipSecondary(ReducerContext ctx, ulong id, ulong playerId)
+    {
+        ctx.Db.view_pk_membership_secondary.Insert(
+            new ViewPkMembershipSecondary { Id = id, PlayerId = playerId }
+        );
     }
 
     [Reducer(ReducerKind.ClientConnected)]
@@ -231,32 +572,105 @@ public static partial class Module
             ctx.Db.player_level.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
         }
 
+        if (ctx.Db.account.Identity.Find(ctx.Sender) is null)
+        {
+            ctx.Db.account.Insert(new Account { Identity = ctx.Sender, Name = "Account" });
+        }
+
         if (ctx.Db.nullable_vec.Id.Find(1) is null)
         {
-            ctx.Db.nullable_vec.Insert(new NullableVec
-            {
-                Id = 1,
-                Pos = new DbVector2 { X = 1, Y = 2 },
-            });
+            ctx.Db.nullable_vec.Insert(
+                new NullableVec
+                {
+                    Id = 1,
+                    Pos = new DbVector2 { X = 1, Y = 2 },
+                }
+            );
         }
 
         if (ctx.Db.nullable_vec.Id.Find(2) is null)
         {
-            ctx.Db.nullable_vec.Insert(new NullableVec
-            {
-                Id = 2,
-                Pos = null,
-            });
+            ctx.Db.nullable_vec.Insert(new NullableVec { Id = 2, Pos = null });
         }
 
-        foreach (var (Name, IsAdmin) in new List<(string Name, bool IsAdmin)>
-            {
-                ("Alice", true),
-                ("Bob", false),
-                ("Charlie", true)
-            })
+        if (ctx.Db.user.Count == 0)
         {
-            ctx.Db.User.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin });
+            foreach (
+                var (Name, IsAdmin, Age) in new List<(string Name, bool IsAdmin, byte Age)>
+                {
+                    ("Alice", true, (byte)30),
+                    ("Bob", false, (byte)16),
+                    ("Charlie", true, (byte)22),
+                }
+            )
+            {
+                ctx.Db.user.Insert(
+                    new User
+                    {
+                        Id = ctx.NewUuidV7(),
+                        Name = Name,
+                        IsAdmin = IsAdmin,
+                        Age = Age,
+                    }
+                );
+            }
+        }
+
+        if (ctx.Db.score.Count == 0)
+        {
+            foreach (
+                var (PlayerId, Level, Points) in new List<(uint PlayerId, uint Level, long Points)>
+                {
+                    (123u, 1u, 1_000),
+                    (123u, 5u, 5_000),
+                    (123u, 10u, 10_000),
+                    (999u, 2u, 2_500),
+                }
+            )
+            {
+                ctx.Db.score.Insert(
+                    new Score
+                    {
+                        PlayerId = PlayerId,
+                        Level = Level,
+                        Points = Points,
+                    }
+                );
+            }
+        }
+
+        if (ctx.Db.where_test.Id.Find(1) is null)
+        {
+            ctx.Db.where_test.Insert(
+                new WhereTest
+                {
+                    Id = 1,
+                    Value = 5,
+                    Name = "this_name_is_unimportant",
+                }
+            );
+        }
+        if (ctx.Db.where_test.Id.Find(2) is null)
+        {
+            ctx.Db.where_test.Insert(
+                new WhereTest
+                {
+                    Id = 2,
+                    Value = 15,
+                    Name = "this_name_will_get_updated",
+                }
+            );
+        }
+        if (ctx.Db.where_test.Id.Find(3) is null)
+        {
+            ctx.Db.where_test.Insert(
+                new WhereTest
+                {
+                    Id = 3,
+                    Value = 15,
+                    Name = "this_name_will_not_be_updated",
+                }
+            );
         }
     }
 
@@ -344,10 +758,7 @@ public static partial class Module
     {
         ctx.WithTx(tx =>
         {
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(a: 42, b: "magic"),
-            });
+            tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 42, b: "magic") });
             return new Unit();
         });
 
@@ -359,10 +770,7 @@ public static partial class Module
     {
         var outcome = ctx.TryWithTx<SpacetimeDB.Unit, InvalidOperationException>(tx =>
         {
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(a: 42, b: "magic")
-            });
+            tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 42, b: "magic") });
 
             throw new InvalidOperationException("rollback");
         });
@@ -378,10 +786,7 @@ public static partial class Module
         {
             var outcome = ctx.TryWithTx<SpacetimeDB.Unit, InvalidOperationException>(tx =>
             {
-                tx.Db.my_table.Insert(new MyTable
-                {
-                    Field = new ReturnStruct(a: 42, b: "magic")
-                });
+                tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 42, b: "magic") });
 
                 throw new InvalidOperationException("rollback");
             });
@@ -410,12 +815,19 @@ public static partial class Module
         });
     }
 
-    [SpacetimeDB.Table(Name = "retry_log", Public = true)]
+    [SpacetimeDB.Table(Accessor = "retry_log", Public = true)]
     public partial class RetryLog
     {
         [SpacetimeDB.PrimaryKey]
         public uint Id;
         public uint Attempts;
+    }
+
+    [SpacetimeDB.Table(Accessor = "test_event", Public = true, Event = true)]
+    public partial struct TestEvent
+    {
+        public string Name;
+        public ulong Value;
     }
 
     [SpacetimeDB.Procedure]
@@ -461,6 +873,15 @@ public static partial class Module
         Debug.Assert(outcome.IsSuccess, "Retry should have succeeded");
     }
 
+    [SpacetimeDB.Reducer]
+    public static void EmitTestEvent(ReducerContext ctx, string name, ulong value)
+    {
+        ctx.Db.test_event.Insert(new TestEvent { Name = name, Value = value });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void Noop(ReducerContext ctx) { }
+
     [SpacetimeDB.Procedure]
     public static void InsertWithTxPanic(ProcedureContext ctx)
     {
@@ -469,10 +890,9 @@ public static partial class Module
             ctx.WithTx<object>(tx =>
             {
                 // Insert a row
-                tx.Db.my_table.Insert(new MyTable
-                {
-                    Field = new ReturnStruct(a: 99, b: "panic-test")
-                });
+                tx.Db.my_table.Insert(
+                    new MyTable { Field = new ReturnStruct(a: 99, b: "panic-test") }
+                );
 
                 // Throw an exception to abort the transaction
                 throw new InvalidOperationException("panic abort");
@@ -500,10 +920,9 @@ public static partial class Module
             ctx.WithTx<object>(tx =>
             {
                 // Insert a row
-                tx.Db.my_table.Insert(new MyTable
-                {
-                    Field = new ReturnStruct(a: 123, b: "dangling")
-                });
+                tx.Db.my_table.Insert(
+                    new MyTable { Field = new ReturnStruct(a: 123, b: "dangling") }
+                );
 
                 // Simulate an unexpected system exception that might leave transaction in limbo
                 // This should trigger the transaction cleanup/auto-abort mechanisms
@@ -534,15 +953,14 @@ public static partial class Module
             var initialCount = tx.Db.my_table.Count;
 
             // Test 2: Insert data and verify it's visible within the same transaction
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(a: 200, b: "tx-test")
-            });
+            tx.Db.my_table.Insert(new MyTable { Field = new ReturnStruct(a: 200, b: "tx-test") });
 
             var countAfterInsert = tx.Db.my_table.Count;
             if (countAfterInsert != initialCount + 1)
             {
-                throw new InvalidOperationException($"Expected count {initialCount + 1}, got {countAfterInsert}");
+                throw new InvalidOperationException(
+                    $"Expected count {initialCount + 1}, got {countAfterInsert}"
+                );
             }
 
             // Test 3: Verify transaction context properties are accessible
@@ -551,7 +969,9 @@ public static partial class Module
 
             if (txSender.Equals(ctx.Sender) == false)
             {
-                throw new InvalidOperationException("Transaction sender should match procedure sender");
+                throw new InvalidOperationException(
+                    "Transaction sender should match procedure sender"
+                );
             }
 
             // Test 4: Return data from within transaction
@@ -566,7 +986,9 @@ public static partial class Module
                 var actualCount = tx.Db.my_table.Count;
                 if (actualCount == 0)
                 {
-                    throw new InvalidOperationException("Expected at least 1 MyTable row but found none - transaction may not have committed");
+                    throw new InvalidOperationException(
+                        "Expected at least 1 MyTable row but found none - transaction may not have committed"
+                    );
                 }
                 return 0;
             });
@@ -600,22 +1022,27 @@ public static partial class Module
             if (txSender.Equals(procSender) == false)
             {
                 throw new InvalidOperationException(
-                    $"Transaction sender {txSender} should match procedure sender {procSender}");
+                    $"Transaction sender {txSender} should match procedure sender {procSender}"
+                );
             }
 
             if (txConnectionId.Equals(procConnectionId) == false)
             {
                 throw new InvalidOperationException(
-                    $"Transaction connectionId {txConnectionId} should match procedure connectionId {procConnectionId}");
+                    $"Transaction connectionId {txConnectionId} should match procedure connectionId {procConnectionId}"
+                );
             }
 
             // Test 4: Insert data with authentication information
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(
-                    a: (uint)(txSender.GetHashCode() & 0xFF),
-                    b: $"auth:sender:{txSender}:conn:{txConnectionId}")
-            });
+            tx.Db.my_table.Insert(
+                new MyTable
+                {
+                    Field = new ReturnStruct(
+                        a: (uint)(txSender.GetHashCode() & 0xFF),
+                        b: $"auth:sender:{txSender}:conn:{txConnectionId}"
+                    ),
+                }
+            );
 
             // Test 5: Check JWT claims (if available)
             var jwtInfo = "no-jwt";
@@ -633,9 +1060,7 @@ public static partial class Module
                 jwtInfo = "jwt:unavailable";
             }
 
-            return new ReturnStruct(
-                a: (uint)(txSender.GetHashCode() & 0xFF),
-                b: jwtInfo);
+            return new ReturnStruct(a: (uint)(txSender.GetHashCode() & 0xFF), b: jwtInfo);
         });
 
         return result;
@@ -654,7 +1079,8 @@ public static partial class Module
             {
                 Field = new ReturnStruct(
                     a: 999, // Use a distinctive value to identify this test
-                    b: $"offset-test:{tx.Timestamp.MicrosecondsSinceUnixEpoch}")
+                    b: $"offset-test:{tx.Timestamp.MicrosecondsSinceUnixEpoch}"
+                ),
             };
 
             tx.Db.my_table.Insert(testData);
@@ -662,7 +1088,8 @@ public static partial class Module
             // Return data that can be used to correlate with subscription events
             return new ReturnStruct(
                 a: 999,
-                b: $"committed:{tx.Timestamp.MicrosecondsSinceUnixEpoch}");
+                b: $"committed:{tx.Timestamp.MicrosecondsSinceUnixEpoch}"
+            );
         });
 
         // At this point, the transaction should be committed and subscription events
@@ -672,7 +1099,11 @@ public static partial class Module
     }
 
     [SpacetimeDB.Procedure]
-    public static ReturnStruct DocumentationGapChecks(ProcedureContext ctx, uint inputValue, string inputText)
+    public static ReturnStruct DocumentationGapChecks(
+        ProcedureContext ctx,
+        uint inputValue,
+        string inputText
+    )
     {
         // This procedure tests various documentation gaps and edge cases
         // Test 1: Parameter handling - procedures can accept multiple parameters
@@ -695,25 +1126,27 @@ public static partial class Module
             if (count > 10)
             {
                 // Don't insert if too many rows
-                return new ReturnStruct(
-                    a: (uint)count,
-                    b: $"skipped:too-many-rows:{count}");
+                return new ReturnStruct(a: (uint)count, b: $"skipped:too-many-rows:{count}");
             }
 
             // Test 4: Complex data manipulation
             var processedValue = inputValue * 2 + (uint)inputText.Length;
 
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(
-                    a: processedValue,
-                    b: $"doc-gap:{inputText}:processed:{processedValue}")
-            });
+            tx.Db.my_table.Insert(
+                new MyTable
+                {
+                    Field = new ReturnStruct(
+                        a: processedValue,
+                        b: $"doc-gap:{inputText}:processed:{processedValue}"
+                    ),
+                }
+            );
 
             // Test 5: Return computed results
             return new ReturnStruct(
                 a: processedValue,
-                b: $"success:input:{inputText}:result:{processedValue}");
+                b: $"success:input:{inputText}:result:{processedValue}"
+            );
         });
 
         // Test 6: Post-transaction validation
