@@ -103,33 +103,33 @@ SpacetimeDB produces **21% less hand-written code** overall, with the backend be
 | L6 | Real-Time Permissions | 1 | 2 |
 | L7 | Rich User Presence | 0 | 3 |
 | L8 | Message Threading | 0 | 2 |
-| L9 | Private Rooms + DMs | 0 | 4 |
-| L10 | Room Activity Indicators | 0 | 0* |
+| L9 | Private Rooms + DMs | 0 | 7 |
+| L10 | Room Activity Indicators | 0 | 0 |
 | L11 | Draft Sync | 1 | 0 |
-| **Total** | | **5** | **15** |
+| **Total** | | **5** | **18** |
 
-*DM bugs from L9 surfaced at L10 grading — attributed to L9 above.
+*L9 count includes 3 DM bugs found during L10 grading (no DM button, DM name offline, DM room disappears offline) — attributed to L9 since all are L9 features.*
 
 ### Bug Summary
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Total bugs found | 5 | 15 |
-| Bugs per feature group | 0.38 | 1.15 |
-| Levels with zero bugs | 7 / 11 (64%) | 4 / 11 (36%) |
-| Fix sessions required | 4 | 15 |
-| First-attempt fix success | 4 / 4 (100%) | ~8 / 15 (53%) |
-| Multi-attempt fixes | 0 | 7 |
+| Total bugs found | 5 | 18 |
+| Bugs per feature group | 0.38 | 1.38 |
+| Levels with zero bugs | 7 / 11 (64%) | 5 / 11 (45%) |
+| Fix sessions required | 4 | 16 |
+| First-attempt fix success | 4 / 4 (100%) | 16 / 18 (89%) |
+| Multi-attempt fixes | 0 | 2 |
 
 ### Bug Categories (PostgreSQL)
 
 | Category | Count |
 |----------|-------|
-| Real-time state not updating | 4 |
-| Missing UI element | 4 |
+| Real-time state not updating | 5 |
+| Missing UI element | 5 |
 | Data not persisted server-side | 3 |
 | Logic error (wrong value/calculation) | 2 |
-| Race condition / stale reference | 2 |
+| Race condition / stale reference | 3 |
 
 Real-time state management was PostgreSQL's biggest weakness — requiring manual WebSocket event handling made it easy for the AI to miss subscription cases that SpacetimeDB handles automatically.
 
@@ -139,12 +139,12 @@ Real-time state management was PostgreSQL's biggest weakness — requiring manua
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Zero-bug generation rate | 64% | 36% |
-| First-attempt fix success rate | 100% | 53% |
+| Zero-bug generation rate | 64% | 45% |
+| First-attempt fix success rate | 100% | 89% |
 | Fix cost as % of total | 11.8% | 53.8% |
-| Avg fix cost per bug | $0.29 | $0.58 |
+| Avg fix cost per bug | $0.29 | $0.48 |
 | Time in fixes vs upgrades | 15% / 85% | 54% / 46% |
-| One stuck/abandoned fix session | 0 | 1 |
+| Multi-attempt bugs | 0 | 2 |
 
 ---
 
@@ -170,13 +170,13 @@ SpacetimeDB's declarative model (reducers + auto-subscriptions) produces signifi
 SpacetimeDB received 574 lines of guidelines vs PostgreSQL's 357. Despite more documentation overhead, SpacetimeDB had fewer bugs. Good in-context documentation guides the AI away from incorrect API usage — but the SpacetimeDB SDK reference contained chat-domain examples (user/message/sendMessage) that may have given L1 a head start. Future runs use a generalized leaderboard example to isolate the SDK-quality advantage from the domain-familiarity advantage.
 
 ### 3. First-attempt fix reliability is a stronger signal than bug count
-SpacetimeDB: 100% first-attempt fix success. PostgreSQL: 53%. A fix that requires multiple attempts indicates the AI is struggling to reason about the bug, not just code it — this compounds cost.
+SpacetimeDB: 100% first-attempt fix success. PostgreSQL: 89% (2 of 18 bugs required two fix sessions each). When a fix fails on the first try, it signals the AI is struggling to reason about the bug — which compounds cost and time.
 
 ### 4. LOC is a proxy for maintenance cost
 21% less hand-written code in SpacetimeDB means less surface area for bugs, smaller context windows for future upgrades, and lower ongoing maintenance burden.
 
 ### 5. Feature complexity is not uniform
-L9 (Private Rooms + DMs) was the most expensive feature to get right: $3.09 in fix costs for PostgreSQL alone. Features involving complex access control, persistent membership state, and DM-specific UX edge cases consistently trip up AI generation more than UI-heavy features.
+L9 (Private Rooms + DMs) was the most expensive feature to get right: $4.53 in fix costs for PostgreSQL across 7 distinct bugs spanning private room visibility, invite flows, DM creation, and DM offline state handling. Features involving complex access control, persistent membership state, and multi-user UX edge cases consistently trip up AI generation more than UI-heavy features.
 
 ### 6. Cache leveraging is the key to economic sequential builds
 28–31M cache tokens read across both backends at ~$0.30/1M = ~$9 in cache reads vs what would have been ~$140+ if every token were fresh. Sequential upgrade with prompt caching is highly cost-effective for iterative app development.
@@ -190,7 +190,7 @@ Based on observed cost curves (approximately linear per upgrade, fix costs trend
 | Metric | SpacetimeDB (est.) | PostgreSQL (est.) |
 |--------|-------------------|-------------------|
 | Total cost to L19 | ~$22–26 | ~$30–38 |
-| Total bugs to L19 | ~8–10 | ~22–28 |
+| Total bugs to L19 | ~8–10 | ~26–32 |
 | Total time to L19 | ~80–90m | ~120–150m |
 
 *Estimates. Actual results depend on complexity of L12–L19 features.*

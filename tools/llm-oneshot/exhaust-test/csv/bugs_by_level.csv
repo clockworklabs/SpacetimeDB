@@ -7,6 +7,6 @@ level,feature,spacetime,postgres
 6,Real-Time Permissions,1,2
 7,Rich User Presence,0,3
 8,Message Threading,0,2
-9,Private Rooms + DMs,0,4
+9,Private Rooms + DMs,0,7
 10,Room Activity Indicators,0,0
 11,Draft Sync,1,0

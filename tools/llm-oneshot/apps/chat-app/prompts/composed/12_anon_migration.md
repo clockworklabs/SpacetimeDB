@@ -1,4 +1,4 @@
-# Chat App - Full Features
+# Chat App - Anonymous to Registered Migration
 
 Create a **real-time chat app**.
 
