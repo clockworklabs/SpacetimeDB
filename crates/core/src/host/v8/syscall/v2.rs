@@ -487,10 +487,10 @@ fn reducer_args_to_value<'scope>(
     });
 
     let dv = if wrote {
-        // Fall back to allocating new buffers.
+        // Reuse the JS worker's argument buffer when the serialized reducer args fit.
         DataView::new(scope, buffer, 0, len)
     } else {
-        // Fall back to allocating new buffers.
+        // For oversized args, allocate a one-off buffer for just this call.
         make_dataview(scope, <Box<[u8]>>::from(reducer_args))
     };
 

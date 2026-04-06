@@ -7,7 +7,7 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    get_registered_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
@@ -58,7 +58,7 @@ use tokio::sync::{oneshot, Mutex as AsyncMutex, Notify};
 use tracing::Instrument;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope_with_context, ArrayBuffer, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
+    scope_with_context, ArrayBuffer, Context, Function, Global, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
     ResolveModuleCallback, ScriptOrigin, Value,
 };
 
@@ -112,6 +112,8 @@ impl V8Runtime {
 
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
 static NEXT_JS_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
+const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
+pub(crate) const V8_WORKER_KIND_INSTANCE_LANE: &str = "instance_lane";
 
 thread_local! {
     // Note, `on_module_thread` runs host closures on a single JS module thread.
@@ -146,6 +148,18 @@ impl Drop for EnteredJsModuleThread {
             );
             entered.set(false);
         });
+    }
+}
+
+#[derive(Copy, Clone)]
+enum JsWorkerKind {
+    InstanceLane,
+    Pooled,
+}
+
+impl JsWorkerKind {
+    const fn checks_heap(self) -> bool {
+        matches!(self, Self::InstanceLane)
     }
 }
 
@@ -227,6 +241,7 @@ impl V8RuntimeInner {
             load_balance_guard.clone(),
             core_pinner.clone(),
             heap_policy,
+            JsWorkerKind::InstanceLane,
             lane_queue.clone(),
         )
         .await?;
@@ -280,6 +295,7 @@ impl JsModule {
             load_balance_guard,
             core_pinner,
             heap_policy,
+            JsWorkerKind::Pooled,
             request_queue,
         )
         .await
@@ -363,11 +379,24 @@ impl JsInstanceEnv {
         self.instance_env.start_instant
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
-    /// This resets all of the state associated to a single reducer call,
+    /// Signal to this `WasmInstanceEnv` that a reducer/view/procedure call is over.
+    /// This resets all of the state associated to a single function call,
     /// and returns instrumentation records.
-    fn finish_reducer(&mut self) -> ExecutionTimings {
+    fn finish_funcall(&mut self) -> ExecutionTimings {
         let total_duration = self.reducer_start().elapsed();
+        let func_name = self.log_record_function().unwrap_or("<unknown>").to_owned();
+
+        let leftover_iters = self.iters.len();
+        if leftover_iters > 0 {
+            log::warn!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
+            self.iters.clear();
+        }
+
+        let leftover_timing_spans = self.timing_spans.len();
+        if leftover_timing_spans > 0 {
+            log::warn!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
+            self.timing_spans.clear();
+        }
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();
@@ -779,6 +808,34 @@ struct V8HeapMetrics {
     external_memory_bytes: IntGauge,
     native_contexts: IntGauge,
     detached_contexts: IntGauge,
+    last_observed: V8HeapSnapshot,
+}
+
+#[derive(Clone, Copy, Default)]
+struct V8HeapSnapshot {
+    total_heap_size_bytes: i64,
+    total_physical_size_bytes: i64,
+    used_global_handles_size_bytes: i64,
+    used_heap_size_bytes: i64,
+    heap_size_limit_bytes: i64,
+    external_memory_bytes: i64,
+    native_contexts: i64,
+    detached_contexts: i64,
+}
+
+impl V8HeapSnapshot {
+    fn from_stats(stats: &v8::HeapStatistics) -> Self {
+        Self {
+            total_heap_size_bytes: stats.total_heap_size() as i64,
+            total_physical_size_bytes: stats.total_physical_size() as i64,
+            used_global_handles_size_bytes: stats.used_global_handles_size() as i64,
+            used_heap_size_bytes: stats.used_heap_size() as i64,
+            heap_size_limit_bytes: stats.heap_size_limit() as i64,
+            external_memory_bytes: stats.external_memory() as i64,
+            native_contexts: stats.number_of_native_contexts() as i64,
+            detached_contexts: stats.number_of_detached_contexts() as i64,
+        }
+    }
 }
 
 impl V8HeapMetrics {
@@ -786,41 +843,87 @@ impl V8HeapMetrics {
         Self {
             total_heap_size_bytes: WORKER_METRICS
                 .v8_total_heap_size_bytes
-                .with_label_values(database_identity),
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
             total_physical_size_bytes: WORKER_METRICS
                 .v8_total_physical_size_bytes
-                .with_label_values(database_identity),
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
             used_global_handles_size_bytes: WORKER_METRICS
                 .v8_used_global_handles_size_bytes
-                .with_label_values(database_identity),
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
             used_heap_size_bytes: WORKER_METRICS
                 .v8_used_heap_size_bytes
-                .with_label_values(database_identity),
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
             heap_size_limit_bytes: WORKER_METRICS
                 .v8_heap_size_limit_bytes
-                .with_label_values(database_identity),
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
             external_memory_bytes: WORKER_METRICS
                 .v8_external_memory_bytes
-                .with_label_values(database_identity),
-            native_contexts: WORKER_METRICS.v8_native_contexts.with_label_values(database_identity),
-            detached_contexts: WORKER_METRICS.v8_detached_contexts.with_label_values(database_identity),
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            native_contexts: WORKER_METRICS
+                .v8_native_contexts
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            detached_contexts: WORKER_METRICS
+                .v8_detached_contexts
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            last_observed: V8HeapSnapshot::default(),
         }
     }
 
-    fn observe(&self, stats: &v8::HeapStatistics) {
-        self.total_heap_size_bytes.set(stats.total_heap_size() as i64);
-        self.total_physical_size_bytes.set(stats.total_physical_size() as i64);
-        self.used_global_handles_size_bytes
-            .set(stats.used_global_handles_size() as i64);
-        self.used_heap_size_bytes.set(stats.used_heap_size() as i64);
-        self.heap_size_limit_bytes.set(stats.heap_size_limit() as i64);
-        self.external_memory_bytes.set(stats.external_memory() as i64);
-        self.native_contexts.set(stats.number_of_native_contexts() as i64);
-        self.detached_contexts.set(stats.number_of_detached_contexts() as i64);
+    fn adjust_by(&self, delta: V8HeapSnapshot) {
+        adjust_gauge(&self.total_heap_size_bytes, delta.total_heap_size_bytes);
+        adjust_gauge(&self.total_physical_size_bytes, delta.total_physical_size_bytes);
+        adjust_gauge(
+            &self.used_global_handles_size_bytes,
+            delta.used_global_handles_size_bytes,
+        );
+        adjust_gauge(&self.used_heap_size_bytes, delta.used_heap_size_bytes);
+        adjust_gauge(&self.heap_size_limit_bytes, delta.heap_size_limit_bytes);
+        adjust_gauge(&self.external_memory_bytes, delta.external_memory_bytes);
+        adjust_gauge(&self.native_contexts, delta.native_contexts);
+        adjust_gauge(&self.detached_contexts, delta.detached_contexts);
+    }
+
+    fn observe(&mut self, stats: &v8::HeapStatistics) {
+        let next = V8HeapSnapshot::from_stats(stats);
+        self.adjust_by(V8HeapSnapshot {
+            total_heap_size_bytes: next.total_heap_size_bytes - self.last_observed.total_heap_size_bytes,
+            total_physical_size_bytes: next.total_physical_size_bytes - self.last_observed.total_physical_size_bytes,
+            used_global_handles_size_bytes: next.used_global_handles_size_bytes
+                - self.last_observed.used_global_handles_size_bytes,
+            used_heap_size_bytes: next.used_heap_size_bytes - self.last_observed.used_heap_size_bytes,
+            heap_size_limit_bytes: next.heap_size_limit_bytes - self.last_observed.heap_size_limit_bytes,
+            external_memory_bytes: next.external_memory_bytes - self.last_observed.external_memory_bytes,
+            native_contexts: next.native_contexts - self.last_observed.native_contexts,
+            detached_contexts: next.detached_contexts - self.last_observed.detached_contexts,
+        });
+        self.last_observed = next;
     }
 }
 
-fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &V8HeapMetrics) -> v8::HeapStatistics {
+impl Drop for V8HeapMetrics {
+    fn drop(&mut self) {
+        self.adjust_by(V8HeapSnapshot {
+            total_heap_size_bytes: -self.last_observed.total_heap_size_bytes,
+            total_physical_size_bytes: -self.last_observed.total_physical_size_bytes,
+            used_global_handles_size_bytes: -self.last_observed.used_global_handles_size_bytes,
+            used_heap_size_bytes: -self.last_observed.used_heap_size_bytes,
+            heap_size_limit_bytes: -self.last_observed.heap_size_limit_bytes,
+            external_memory_bytes: -self.last_observed.external_memory_bytes,
+            native_contexts: -self.last_observed.native_contexts,
+            detached_contexts: -self.last_observed.detached_contexts,
+        });
+    }
+}
+
+fn adjust_gauge(gauge: &IntGauge, delta: i64) {
+    if delta > 0 {
+        gauge.add(delta);
+    } else if delta < 0 {
+        gauge.sub(-delta);
+    }
+}
+
+fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
     let stats = scope.get_heap_statistics();
     metrics.observe(&stats);
     stats
@@ -842,7 +945,7 @@ fn heap_fraction_at_or_above(used: usize, limit: usize, fraction: f64) -> bool {
 /// we'll instantiate a new isolate to reclaim memory and avoid OOMing the current one.
 fn should_retire_worker_for_heap(
     scope: &mut PinScope<'_, '_>,
-    metrics: &V8HeapMetrics,
+    metrics: &mut V8HeapMetrics,
     config: V8HeapPolicyConfig,
 ) -> Option<(usize, usize)> {
     let stats = sample_heap_stats(scope, metrics);
@@ -1203,6 +1306,7 @@ async fn spawn_instance_worker(
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     mut core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
+    worker_kind: JsWorkerKind,
     request_queue: Arc<JsWorkerQueue>,
 ) -> anyhow::Result<(ModuleCommon, JsInstance)> {
     // This one-shot channel is used for initial startup error handling within the thread.
@@ -1224,7 +1328,11 @@ async fn spawn_instance_worker(
 
         let _entered = rt.enter();
 
-        // Create the isolate and scope.
+        // Create the isolate and enter one long-lived worker scope/context.
+        //
+        // This outer scope is intentionally reused for the life of the worker so the
+        // isolate and current context stay entered, but individual reducer/view/procedure
+        // calls should still create their own nested handle scopes for temporary locals.
         let mut isolate = new_isolate(heap_policy);
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
@@ -1271,23 +1379,23 @@ async fn spawn_instance_worker(
         }
 
         // Setup the instance common.
+        let args = Global::new(scope, ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE));
         let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-        let heap_metrics = V8HeapMetrics::new(&info.database_identity);
-
-        // Create a zero-initialized buffer for holding reducer args.
-        // Arguments needing more space will not use this.
-        const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096; // 1 page.
-        let reducer_args_buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+        let mut heap_metrics = worker_kind
+            .checks_heap()
+            .then(|| V8HeapMetrics::new(&info.database_identity));
 
         let mut inst = V8Instance {
             scope,
             replica_ctx,
             hooks: &hooks,
-            reducer_args_buf,
+            args: &args,
         };
-        let _initial_heap_stats = sample_heap_stats(inst.scope, &heap_metrics);
+        if let Some(heap_metrics) = heap_metrics.as_mut() {
+            let _initial_heap_stats = sample_heap_stats(inst.scope, heap_metrics);
+        }
 
         // Process requests to the worker.
         //
@@ -1410,7 +1518,7 @@ async fn spawn_instance_worker(
                 }
             }
 
-            if !should_exit {
+            if !should_exit && let Some(heap_metrics) = heap_metrics.as_mut() {
                 let request_check_due = heap_policy.heap_check_request_interval.is_some_and(|interval| {
                     requests_since_heap_check += 1;
                     requests_since_heap_check >= interval
@@ -1421,7 +1529,7 @@ async fn spawn_instance_worker(
                 if request_check_due || time_check_due {
                     requests_since_heap_check = 0;
                     last_heap_check_at = Instant::now();
-                    if let Some((used, limit)) = should_retire_worker_for_heap(inst.scope, &heap_metrics, heap_policy) {
+                    if let Some((used, limit)) = should_retire_worker_for_heap(inst.scope, heap_metrics, heap_policy) {
                         worker_state_in_thread.mark_trapped();
                         should_exit = true;
                         log::warn!(
@@ -1542,7 +1650,17 @@ struct V8Instance<'a, 'scope, 'isolate> {
     scope: &'a mut PinScope<'scope, 'isolate>,
     replica_ctx: &'a Arc<ReplicaContext>,
     hooks: &'a HookFunctions<'scope>,
-    reducer_args_buf: Local<'scope, ArrayBuffer>,
+    args: &'a Global<ArrayBuffer>,
+}
+
+macro_rules! with_call_scope {
+    ($scope:expr, |$call_scope:ident, $hooks:ident| $body:block) => {{
+        // Open a fresh HandleScope for this invocation so call-local V8 handles
+        // are released when the reducer/view/procedure returns.
+        v8::scope!(let $call_scope, $scope);
+        let $hooks = get_registered_hooks($call_scope).expect("module hooks should be registered before invoking JS");
+        $body
+    }};
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
@@ -1563,21 +1681,26 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
+        with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| {
+                let reducer_args_buf = Local::new(scope, self.args);
+                Ok(call_call_reducer(scope, &hooks, op, reducer_args_buf)?)
+            })
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            call_call_view(scope, self.hooks, op)
+        with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| call_call_view(scope, &hooks, op))
         })
     }
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            call_call_view_anon(scope, self.hooks, op)
+        with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| {
+                call_call_view_anon(scope, &hooks, op)
+            })
         })
     }
 
@@ -1590,8 +1713,10 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
-        let result = common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            call_call_procedure(scope, self.hooks, op)
+        let result = with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| {
+                call_call_procedure(scope, &hooks, op)
+            })
         })
         .map_result(|call_result| {
             call_result.map_err(|e| match e {
@@ -1608,7 +1733,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
 fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'_>,
+    hooks: &HookFunctions<'scope>,
     budget: FunctionBudget,
     op: O,
     call: F,
@@ -1624,7 +1749,12 @@ where
     // We'd like this tightly around `call`.
     env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
-    v8::tc_scope!(scope, scope);
+    // Wrap the call in `TryCatch`.
+    //
+    // `v8::tc_scope!` adds exception handling on top of the current scope; it
+    // does not create a new HandleScope. The fresh per-call HandleScope is
+    // opened by the caller before entering `common_call`.
+    v8::tc_scope!(let scope, scope);
     let call_result = call(scope, op).map_err(|mut e| {
         if let ErrorOrException::Exception(_) = e {
             // If we're terminating execution, don't try to check `instanceof`.
@@ -1653,7 +1783,7 @@ where
     });
 
     // Finish timings.
-    let timings = env_on_isolate_unwrap(scope).finish_reducer();
+    let timings = env_on_isolate_unwrap(scope).finish_funcall();
 
     // Derive energy stats.
     let energy = energy_from_elapsed(budget, timings.total_duration);
