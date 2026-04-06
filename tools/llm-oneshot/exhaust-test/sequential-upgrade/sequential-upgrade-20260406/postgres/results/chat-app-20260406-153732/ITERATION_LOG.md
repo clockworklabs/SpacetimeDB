@@ -19,3 +19,14 @@
 **Redeploy:** Server only
 
 **Server verified:** API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
+
+## Iteration 3 — Fix (20:15)
+
+**Category:** Feature Broken
+**What broke:** Unread message count badge not appearing in sidebar for rooms with new messages
+**Root cause:** Server emitted `message` events only to users in the active Socket.io room (`room:${roomId}`). When Bob navigated away, he left that room via `socket.leave`, so he never received the `message` event and the client-side unread count increment never fired.
+**What I fixed:** After broadcasting to active viewers via `io.to(`room:${roomId}`)`, query all DB room members and directly emit `message` to each connected member whose socket is NOT in the active room. This ensures non-viewing members still receive the event, triggering the unread badge increment in the client.
+**Files changed:** `server/src/index.ts` (send_message handler, ~lines 303-312)
+**Redeploy:** Server only
+
+**Server verified:** API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓

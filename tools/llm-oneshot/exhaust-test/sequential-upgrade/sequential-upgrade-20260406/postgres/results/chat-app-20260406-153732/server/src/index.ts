@@ -301,6 +301,18 @@ io.on('connection', (socket) => {
       };
 
       io.to(`room:${roomId}`).emit('message', fullMessage);
+
+      // Also notify members who are not actively viewing this room (for unread counts)
+      const activeSocketIds = io.sockets.adapter.rooms.get(`room:${roomId}`) ?? new Set<string>();
+      const members = await db.select().from(schema.roomMembers).where(eq(schema.roomMembers.roomId, roomId));
+      for (const member of members) {
+        if (member.userId === user.id) continue;
+        const memberSocketId = userSockets.get(member.userId);
+        if (memberSocketId && !activeSocketIds.has(memberSocketId)) {
+          io.to(memberSocketId).emit('message', fullMessage);
+        }
+      }
+
       stopTyping(user.id, user.name, roomId);
     }
   );
