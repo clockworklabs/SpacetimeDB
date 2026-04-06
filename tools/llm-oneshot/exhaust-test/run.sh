@@ -745,7 +745,11 @@ if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
 fi
 
 # --fork-session creates a new session branched from the prior one (keeps context)
-$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
+$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions \
+  --add-dir "$APP_DIR" \
+  --add-dir "$SCRIPT_DIR" \
+  --add-dir "$SCRIPT_DIR/../apps/chat-app/prompts" \
+  --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
 EXIT_CODE=$?
 
 echo ""
