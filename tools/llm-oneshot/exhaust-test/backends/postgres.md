@@ -121,7 +121,7 @@ Create the Express + Socket.io server:
 - `server/.env`:
   ```
   DATABASE_URL=postgresql://spacetime:spacetime@localhost:6432/spacetime
-  PORT=3001
+  PORT=6001
   ```
 
 - `server/drizzle.config.ts`:
@@ -239,7 +239,7 @@ Both must pass. If either fails:
 ```bash
 # Kill any existing servers
 npx kill-port 6273 2>/dev/null || true
-npx kill-port 3001 2>/dev/null || true
+npx kill-port 6001 2>/dev/null || true
 
 # Start the API server in background
 cd <server-dir> && npx tsx src/index.ts &
@@ -260,7 +260,7 @@ Wait for both servers to be ready:
 
 - If **server changed**: kill and restart the Express server
   ```bash
-  npx kill-port 3001 2>/dev/null || true
+  npx kill-port 6001 2>/dev/null || true
   cd <server-dir> && npx tsx src/index.ts &
   ```
 - If **schema changed**: push new schema before restarting
@@ -302,7 +302,7 @@ For context on what makes this backend different (this helps the benchmark compa
 | Service | Port | Notes |
 |---------|------|-------|
 | PostgreSQL (Docker) | 6432 | Database |
-| Express API server | 3001 | REST + Socket.io |
+| Express API server | 6001 | REST + Socket.io |
 | Vite dev server | **6273** | React client — NOT 6173 (that's SpacetimeDB) |
 
 ---

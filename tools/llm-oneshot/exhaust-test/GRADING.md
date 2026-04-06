@@ -9,7 +9,7 @@ This is the manual grading session. The app has already been generated and deplo
 You need TWO Chrome browser profiles so each user gets completely separate identity (localStorage, cookies, WebSocket connections).
 
 1. **Browser A (default profile):** Navigate to the app URL and register as "Alice"
-   - SpacetimeDB: `http://localhost:5173`
+   - SpacetimeDB: `http://localhost:6173`
    - PostgreSQL: `http://localhost:6273`
 
 2. **Switch to Browser B:** Use `switch_browser` to switch to the second Chrome profile

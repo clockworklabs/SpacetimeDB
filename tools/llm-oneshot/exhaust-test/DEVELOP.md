@@ -70,7 +70,7 @@ cd tools/llm-oneshot/exhaust-test
 This:
 1. Runs pre-flight checks (SpacetimeDB, Docker, OTel, prompts)
 2. Launches headless Claude Code with OTel telemetry enabled
-3. Generates backend + client code, builds, deploys (SpacetimeDB: localhost:5173, PostgreSQL: localhost:5174)
+3. Generates backend + client code, builds, deploys (SpacetimeDB: localhost:6173, PostgreSQL: localhost:6273)
 4. Parses telemetry → `COST_REPORT.md`
 5. Prints the app directory path
 
@@ -79,16 +79,16 @@ This:
 In this Claude Code session (or a new interactive one), say:
 
 ```
-Grade the app at sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
+Grade the app at sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
 ```
 
 Or use the helper script:
 ```bash
-./grade.sh sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
+./grade.sh sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
 ```
 
 The grading agent will:
-1. Open Chrome, navigate to the backend's port (5173 for SpacetimeDB, 5174 for PostgreSQL)
+1. Open Chrome, navigate to the backend's port (6173 for SpacetimeDB, 6273 for PostgreSQL)
 2. Test each feature using the test plans
 3. Score features 0-3
 4. If bugs found: write `BUG_REPORT.md` in the app directory
@@ -99,7 +99,7 @@ The grading agent will:
 If bugs were found:
 
 ```bash
-./run.sh --fix sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
+./run.sh --fix sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
 ```
 
 This:
@@ -111,7 +111,7 @@ This:
 
 Back in Claude Code:
 ```
-Re-grade the app at sequential-upgrade/sequential-upgrade-YYYYMMDD/results/spacetime/chat-app-<timestamp>
+Re-grade the app at sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
 ```
 
 Repeat Steps 3-4 until all features pass.
@@ -142,19 +142,24 @@ Repeat Steps 3-4 until all features pass.
 ### Per-run directory structure
 ```
 exhaust-test/<variant>/<variant>-YYYYMMDD/
-  BENCHMARK_REPORT.md     # Comparison report (written manually after all grading)
-  inputs/                 # Frozen snapshot of all inputs used for this run
-  results/
-    <backend>/chat-app-<timestamp>/
-      GRADING_RESULTS.md  # Per-feature scores (written by grade agent)
-      ITERATION_LOG.md    # Per-iteration progress log (both agents append)
-      BUG_REPORT.md       # Current bugs for fix agent to read (deleted when all pass)
-      backend/            # Generated SpacetimeDB or PostgreSQL backend
-      client/             # Generated React client
-  telemetry/
-    <backend>-level<N>-<timestamp>/
-      metadata.json       # Run parameters, timing, session ID
-      COST_REPORT.md      # Exact token counts per API call
+  METRICS_DATA.json       # Comparison metrics (generated after all grading)
+  METRICS_REPORT.md       # Human-readable benchmark report
+  <backend>/              # e.g. spacetime/ or postgres/
+    inputs/               # Frozen snapshot of all inputs used for this run
+    results/
+      chat-app-<timestamp>/
+        GRADING_RESULTS.md  # Per-feature scores (written by grade agent)
+        ITERATION_LOG.md    # Per-iteration progress log (both agents append)
+        BUG_REPORT.md       # Current bugs for fix agent to read (deleted when all pass)
+        backend/            # Generated SpacetimeDB backend (spacetime only)
+        server/             # Generated Express server (postgres only)
+        client/             # Generated React client
+    telemetry/
+      <backend>-level<N>-<timestamp>/
+        metadata.json       # Run parameters, timing, session ID
+        cost-summary.json   # Parsed token counts and total cost
+        COST_REPORT.md      # Per-call breakdown
+        raw-telemetry.jsonl # OTel records for this session
 ```
 
 ### Shared telemetry (OTel Collector output)
