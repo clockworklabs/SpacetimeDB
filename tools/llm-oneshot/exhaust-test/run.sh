@@ -263,11 +263,18 @@ VARIANT_DIR="$SCRIPT_DIR/$VARIANT"
 # For generate, create a new dated run directory.
 if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
   # Derive RUN_BASE_DIR from existing app directory structure:
-  #   <variant>/<variant>-DATE/results/<backend>/chat-app-*/
+  #   <variant>/<variant>-DATE/<backend>/results/chat-app-*/
   if [[ -n "$UPGRADE_MODE" ]]; then
     APP_DIR="$UPGRADE_APP_DIR"
   else
     APP_DIR="$FIX_APP_DIR"
+  fi
+  # Detect backend from app directory structure BEFORE deriving paths.
+  # Must happen here so $BACKEND is correct for TELEMETRY_DIR assignment below.
+  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
+    BACKEND="spacetime"
+  elif [[ -d "$APP_DIR/server" ]]; then
+    BACKEND="postgres"
   fi
   # Walk up from app dir: chat-app-* → results → <backend> → <variant>-DATE
   RUN_BASE_DIR="$(cd "$APP_DIR/../../.." 2>/dev/null && pwd)"
@@ -298,15 +305,7 @@ else
   RESULTS_DIR="$RUN_BASE_DIR/$BACKEND/results"
 fi
 
-# In fix/upgrade mode, detect backend from app directory structure so RUN_ID
-# and metadata.json use the correct label (not the default "spacetime").
-if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
-  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
-    BACKEND="spacetime"
-  elif [[ -d "$APP_DIR/server" ]]; then
-    BACKEND="postgres"
-  fi
-fi
+# Backend detection for fix/upgrade mode is done earlier (before TELEMETRY_DIR assignment).
 
 if [[ -n "$UPGRADE_MODE" ]]; then
   RUN_ID="$BACKEND-upgrade-to-level$LEVEL-$TIMESTAMP"

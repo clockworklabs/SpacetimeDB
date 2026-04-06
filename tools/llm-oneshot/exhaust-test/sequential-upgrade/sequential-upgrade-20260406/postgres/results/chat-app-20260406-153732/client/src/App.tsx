@@ -29,6 +29,16 @@ interface Message {
   readBy: ReadBy[];
 }
 
+interface ScheduledMessage {
+  id: number;
+  roomId: number;
+  userId: number;
+  content: string;
+  scheduledFor: string;
+  createdAt: string;
+  roomName: string;
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [nameInput, setNameInput] = useState('');
@@ -49,6 +59,13 @@ export default function App() {
 
   const [messageInput, setMessageInput] = useState('');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
+
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleContent, setScheduleContent] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [scheduleError, setScheduleError] = useState('');
+  const [showScheduledPanel, setShowScheduledPanel] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const activeRoomIdRef = useRef<number | null>(null);
@@ -146,6 +163,10 @@ export default function App() {
       });
     });
 
+    socket.on('scheduled_message_sent', ({ id }: { id: number }) => {
+      setScheduledMessages((prev) => prev.filter((s) => s.id !== id));
+    });
+
     return () => { socket.disconnect(); };
   }, []);
 
@@ -166,6 +187,11 @@ export default function App() {
     fetch('/api/users/online')
       .then((r) => r.json())
       .then(setOnlineUsers)
+      .catch(console.error);
+
+    fetch(`/api/scheduled-messages?userId=${currentUser.id}`)
+      .then((r) => r.json())
+      .then(setScheduledMessages)
       .catch(console.error);
   }, [currentUser]);
 
@@ -278,6 +304,50 @@ export default function App() {
       handleJoinRoom(room.id);
     } else {
       setActiveRoomId(room.id);
+    }
+  }
+
+  async function handleScheduleMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!activeRoomId || !currentUser) return;
+    const content = scheduleContent.trim();
+    if (!content) return setScheduleError('Message content required');
+    if (!scheduleTime) return setScheduleError('Schedule time required');
+
+    const scheduledFor = new Date(scheduleTime);
+    if (scheduledFor <= new Date()) return setScheduleError('Must be a future time');
+
+    setScheduleError('');
+    try {
+      const res = await fetch('/api/scheduled-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: activeRoomId, userId: currentUser.id, content, scheduledFor: scheduledFor.toISOString() }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setScheduleError(data.error ?? 'Failed to schedule message');
+
+      const activeRoom = rooms.find((r) => r.id === activeRoomId);
+      setScheduledMessages((prev) => [...prev, { ...data, roomName: activeRoom?.name ?? '' }]);
+      setScheduleContent('');
+      setScheduleTime('');
+      setShowScheduleModal(false);
+    } catch {
+      setScheduleError('Network error');
+    }
+  }
+
+  async function handleCancelScheduled(id: number) {
+    if (!currentUser) return;
+    try {
+      await fetch(`/api/scheduled-messages/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id }),
+      });
+      setScheduledMessages((prev) => prev.filter((s) => s.id !== id));
+    } catch {
+      console.error('Failed to cancel scheduled message');
     }
   }
 
@@ -456,6 +526,51 @@ export default function App() {
         </div>
       </aside>
 
+      {/* ── Schedule Modal ── */}
+      {showScheduleModal && activeRoomId && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowScheduleModal(false); }}>
+          <div className="modal">
+            <h2>Schedule Message</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+              in #{rooms.find((r) => r.id === activeRoomId)?.name}
+            </p>
+            <form onSubmit={handleScheduleMessage} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="form-field">
+                <label>Message</label>
+                <input
+                  className="text-input"
+                  type="text"
+                  placeholder="Type your message..."
+                  value={scheduleContent}
+                  onChange={(e) => setScheduleContent(e.target.value)}
+                  maxLength={2000}
+                  autoFocus
+                />
+              </div>
+              <div className="form-field">
+                <label>Send at</label>
+                <input
+                  className="text-input"
+                  type="datetime-local"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  min={(() => { const d = new Date(Date.now() + 60000); const p = (n: number) => n.toString().padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; })()}
+                />
+              </div>
+              {scheduleError && <span className="error-msg">{scheduleError}</span>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" type="submit" disabled={!scheduleContent.trim() || !scheduleTime}>
+                  Schedule
+                </button>
+                <button className="btn btn-ghost" type="button" onClick={() => { setShowScheduleModal(false); setScheduleError(''); }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ── Main Area ── */}
       <main className="main-area">
         {!connected && (
@@ -477,6 +592,13 @@ export default function App() {
             <div className="room-header">
               <span className="room-header-name"># {activeRoom.name}</span>
               <div className="room-header-actions">
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowScheduledPanel((p) => !p)}
+                  title="Scheduled messages"
+                >
+                  ⏰{scheduledMessages.length > 0 && <span className="unread-badge" style={{ marginLeft: 4 }}>{scheduledMessages.length}</span>}
+                </button>
                 {activeRoom.joined && (
                   <button
                     className="btn btn-ghost btn-sm"
@@ -571,6 +693,14 @@ export default function App() {
                 autoComplete="off"
               />
               <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                title="Schedule message"
+                onClick={() => { setShowScheduleModal(true); setScheduleError(''); }}
+              >
+                ⏰
+              </button>
+              <button
                 className="btn btn-primary"
                 type="submit"
                 disabled={!messageInput.trim()}
@@ -578,6 +708,38 @@ export default function App() {
                 Send
               </button>
             </form>
+
+            {/* Scheduled messages panel */}
+            {showScheduledPanel && (
+              <div className="scheduled-panel">
+                <div className="scheduled-panel-header">
+                  <span>Scheduled Messages</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowScheduledPanel(false)}>✕</button>
+                </div>
+                {scheduledMessages.length === 0 ? (
+                  <div style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: 13 }}>No scheduled messages</div>
+                ) : (
+                  scheduledMessages.map((s) => (
+                    <div key={s.id} className="scheduled-item">
+                      <div className="scheduled-item-meta">
+                        <span style={{ color: 'var(--accent)', fontSize: 12 }}>#{s.roomName}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                          {new Date(s.scheduledFor).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="scheduled-item-content">{s.content}</div>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: 'var(--danger)', fontSize: 11, marginTop: 4 }}
+                        onClick={() => handleCancelScheduled(s.id)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </>
         )}
       </main>

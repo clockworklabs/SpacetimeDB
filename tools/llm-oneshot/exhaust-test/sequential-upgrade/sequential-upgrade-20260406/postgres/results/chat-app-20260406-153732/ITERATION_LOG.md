@@ -30,3 +30,26 @@
 **Redeploy:** Server only
 
 **Server verified:** API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
+
+## Iteration 4 — Fix (21:00)
+
+**Category:** Runtime/Crash
+**What broke:** `GET /api/scheduled-messages?userId=2` returns 500; `POST /api/scheduled-messages` returns 500
+**Root cause:** The `scheduled_messages` table was not created in `exhaust-test-postgres-1`. The level-2 schema upgrade ran `drizzle-kit push` against the wrong container (`spacetime-web-postgres-1`), leaving `exhaust-test-postgres-1` without the table.
+**What I fixed:** Created the `scheduled_messages` table directly via `docker exec exhaust-test-postgres-1 psql`. Also confirmed that the client already enforces a 1-minute minimum scheduling window (`min={new Date(Date.now() + 60000)...}`), so Bug 2 was already resolved in the current code.
+**Files changed:** None (schema fix only via SQL)
+**Redeploy:** Both (killed and restarted both servers)
+
+**Server verified:** API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
+
+## Iteration 5 — Fix (20:58)
+
+**Category:** Runtime/Crash | Feature Broken
+**What broke:** `GET /api/scheduled-messages` returns 500; datetime-local min clamps to hours in the future in non-UTC timezones
+**Root cause (Bug 1):** The running Express server was a stale process started before the level-2 upgrade (which added `scheduledMessages` to the Drizzle schema). It was using old in-memory schema that had no `scheduledMessages` table reference, causing Drizzle to generate SQL with an unrecognized relation name even though the table existed in the DB.
+**Root cause (Bug 2):** `min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}` passes a UTC ISO string to `datetime-local`, which interprets the value as local time. In non-UTC timezones the minimum appears hours in the future.
+**What I fixed:** Restarted the Express server so it loads the current schema (Bug 1). Changed the min calculation to use local date components instead of `toISOString()` (Bug 2).
+**Files changed:** `client/src/App.tsx` (schedule modal min attribute)
+**Redeploy:** Server only (client Vite HMR handles client change)
+
+**Server verified:** `GET /api/scheduled-messages?userId=1` → `[]` ✓ · Client at http://localhost:6273 ✓
