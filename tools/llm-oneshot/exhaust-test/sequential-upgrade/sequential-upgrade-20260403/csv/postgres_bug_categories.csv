@@ -1,6 +1,0 @@
-category,count
-Real-time state not updating,5
-Missing UI element,5
-Data not persisted server-side,3
-Logic error (wrong value/calc),2
-Race condition / stale reference,3

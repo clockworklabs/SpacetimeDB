@@ -284,9 +284,14 @@ else
   # Dedup only triggers if THIS backend already has a subdirectory
   # (i.e. a second generate for the same backend on the same day).
   RUN_BASE_DIR="$VARIANT_DIR/$VARIANT-$DATE_STAMP"
-  if [[ -d "$RUN_BASE_DIR/$BACKEND" ]]; then
+  # Dedup: only increment if a COMPLETED run exists for this backend
+  # (has telemetry with cost data). Bare/abandoned stubs don't count.
+  _backend_has_completed_run() {
+    ls "$1/$BACKEND/telemetry/"*/cost-summary.json &>/dev/null 2>&1
+  }
+  if _backend_has_completed_run "$RUN_BASE_DIR"; then
     SEQ=2
-    while [[ -d "$RUN_BASE_DIR-$SEQ/$BACKEND" ]]; do ((SEQ++)); done
+    while _backend_has_completed_run "$RUN_BASE_DIR-$SEQ"; do ((SEQ++)); done
     RUN_BASE_DIR="$RUN_BASE_DIR-$SEQ"
   fi
   TELEMETRY_DIR="$RUN_BASE_DIR/$BACKEND/telemetry"

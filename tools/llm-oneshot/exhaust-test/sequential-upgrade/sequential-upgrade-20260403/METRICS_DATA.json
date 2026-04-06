@@ -30,22 +30,22 @@
 
   "tokens": {
     "spacetime": {
-      "fresh_input": 352,
+      "fresh_input": 382,
       "fresh_output": 179621,
-      "cache_read": 28336554,
+      "cache_read": 26336554,
       "cache_creation": 491496,
-      "api_calls": 291,
+      "api_calls": 370,
       "fresh_output_per_feature": 13817,
-      "api_calls_per_feature": 22.4
+      "api_calls_per_feature": 28.5
     },
     "postgres": {
-      "fresh_input": 605,
+      "fresh_input": 595,
       "fresh_output": 260728,
       "cache_read": 31731184,
       "cache_creation": 743243,
-      "api_calls": 462,
+      "api_calls": 561,
       "fresh_output_per_feature": 20056,
-      "api_calls_per_feature": 35.5
+      "api_calls_per_feature": 43.2
     }
   },
 
@@ -100,7 +100,7 @@
       "zero_bug_levels": 5,
       "total_levels": 11,
       "zero_bug_rate_pct": 45,
-      "fix_sessions": 16,
+      "fix_sessions": 15,
       "first_attempt_fix_success": 16,
       "first_attempt_fix_rate_pct": 89,
       "multi_attempt_fixes": 2,
@@ -118,8 +118,8 @@
       "postgres":  [0.62, 0, 0, 0, 0.26, 0.87, 0.99, 1.45, 4.53, 0, 0]
     },
     "loc_backend": {
-      "spacetime": [1133, 1198, 1248, 1284, 1284, 1381, 1399, 1431, 1538, 1756, 1788],
-      "postgres":  [361,  458,  484,  562,  629,  733,  814,  815,  871,  1027, 1110]
+      "spacetime": [609, 588, 615, 574, 574, 522, 517, 480, 459, 677, 645],
+      "postgres":  [361, 458, 484, 562, 629, 733, 814, 815, 871, 1027, 1110]
     },
     "loc_frontend": {
       "spacetime": [1040, 1232, 1310, 1414, 1414, 1623, 1731, 1919, 2120, 2177, 2206],

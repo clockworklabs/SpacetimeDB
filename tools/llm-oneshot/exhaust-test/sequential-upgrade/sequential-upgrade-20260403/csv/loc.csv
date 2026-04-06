@@ -1,6 +1,0 @@
-metric,spacetime,postgres
-Backend Hand-Written,659,1120
-Frontend Hand-Written,2222,2527
-Generated Bindings,556,0
-Total Hand-Written,2881,3647
-LOC / Feature Group,221,281

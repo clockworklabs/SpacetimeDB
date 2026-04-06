@@ -1,6 +1,0 @@
-metric,spacetime,postgres
-L1 Generation (s),366,300
-Avg Upgrade (s),266,161
-Avg Fix Session (s),81,297
-Total (s),2880,4620
-Total (min),48,77
