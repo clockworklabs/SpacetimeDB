@@ -697,6 +697,10 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     fi
   fi
 
+  # Prepend unique run ID to bust Anthropic's server-side prompt cache.
+  # Cache is keyed on content — a unique prefix guarantees a cold run every time.
+  sed -i "1s|^|<!-- run-id: $RUN_ID -->\n\n|" "$APP_DIR/CLAUDE.md"
+
   # Patch ports and database names in CLAUDE.md for parallel runs (run-index > 0)
   if [[ $RUN_INDEX -gt 0 ]]; then
     sed -i \
