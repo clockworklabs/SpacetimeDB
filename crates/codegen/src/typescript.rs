@@ -295,6 +295,12 @@ impl Lang for TypeScript {
             out,
             "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
         );
+        writeln!(out);
+        writeln!(out, "/** The procedures available in this remote SpacetimeDB module. */");
+        writeln!(
+            out,
+            "export const procedures = __convertToAccessorMap(proceduresSchema.procedures);"
+        );
 
         // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
         writeln!(out);
