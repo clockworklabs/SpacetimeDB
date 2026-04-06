@@ -149,9 +149,9 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
-      # build artifacts.
-      # It also seemed to improve performance a fair amount (11m -> 6m)
+      # In CI this uses cargo-nextest. Keep the libtest harness on a single thread per
+      # test process, and let .config/nextest.toml serialize only the shared TS/C#/C++
+      # smoketests while the Rust smoketests continue to run concurrently.
       - name: Run smoketests (Linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -169,7 +169,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          cargo ci smoketests -- --test-threads=1          
+          cargo ci smoketests -- --test-threads=1
 
       - name: Check for changes
         run: |

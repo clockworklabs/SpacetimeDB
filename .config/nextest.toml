@@ -1,0 +1,25 @@
+[test-groups]
+# These smoketests rebuild or reconfigure shared TS/C#/C++ toolchain artifacts.
+# Keep them mutually exclusive so the rest of the Rust smoketests can continue
+# to run under nextest's normal parallel execution.
+smoketests-toolchain = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(spacetimedb-smoketests) & test(/^smoketests::csharp_module::/)'
+test-group = 'smoketests-toolchain'
+
+[[profile.default.overrides]]
+filter = 'package(spacetimedb-smoketests) & test(/^smoketests::templates::/)'
+test-group = 'smoketests-toolchain'
+
+[[profile.default.overrides]]
+filter = 'package(spacetimedb-smoketests) & test(/^smoketests::change_host_type::/)'
+test-group = 'smoketests-toolchain'
+
+[[profile.default.overrides]]
+filter = 'package(spacetimedb-smoketests) & test(/^smoketests::quickstart::test_quickstart_(csharp|typescript|cpp)$/)'
+test-group = 'smoketests-toolchain'
+
+[[profile.default.overrides]]
+filter = 'package(spacetimedb-smoketests) & test(/^smoketests::views::test_(csharp|typescript)_/)'
+test-group = 'smoketests-toolchain'
