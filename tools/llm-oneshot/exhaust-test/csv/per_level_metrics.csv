@@ -1,0 +1,12 @@
+level,feature,upgrade_cost_stdb,upgrade_cost_pg,fix_cost_stdb,fix_cost_pg,total_cost_stdb,total_cost_pg,loc_backend_stdb,loc_backend_pg,loc_frontend_stdb,loc_frontend_pg,loc_bindings_stdb,loc_total_stdb,loc_total_pg,duration_seconds_stdb,duration_seconds_pg,output_tokens_stdb,output_tokens_pg,bugs_stdb,bugs_pg
+1,Basic Chat + Typing + Read Receipts + Unread,1.37,1.03,0.17,0.62,1.54,1.65,1133,361,1040,1060,524,2697,1421,366,300,24285,23532,1,3
+2,Scheduled Messages,1.18,0.50,0.00,0.00,1.18,0.50,1198,458,1232,1304,610,3040,1762,340,196,23845,8795,0,0
+3,Ephemeral Messages,1.29,0.66,0.00,0.00,1.29,0.66,1248,484,1310,1368,633,3191,1852,339,150,21639,9018,0,0
+4,Message Reactions,0.95,0.60,0.00,0.00,0.95,0.60,1284,562,1414,1506,710,3408,2068,176,119,10712,7911,0,0
+5,Message Editing with History,0.06,0.64,0.84,0.26,0.90,0.90,1284,629,1414,1701,710,3408,2330,19,138,1024,9319,2,1
+6,Real-Time Permissions,1.16,0.96,0.19,0.87,1.35,1.83,1381,733,1623,1841,859,3863,2574,300,196,16675,14416,1,2
+7,Rich User Presence,0.80,0.90,0.00,0.99,0.80,1.89,1399,814,1731,1973,882,4012,2787,172,172,11017,9961,0,3
+8,Message Threading,0.83,0.16,0.00,1.45,0.83,1.61,1431,815,1919,1201,951,4301,2016,195,37,9393,1679,0,2
+9,Private Rooms + DMs,1.77,0.51,0.00,4.53,1.77,5.04,1538,871,2120,2239,1079,4737,3110,347,141,22561,6315,0,7
+10,Room Activity Indicators,0.57,0.68,0.00,0.00,0.57,0.68,1756,1027,2177,2420,1079,5012,3447,99,138,6249,7470,0,0
+11,Draft Sync,1.00,0.86,0.27,0.00,1.27,0.86,1788,1110,2206,2527,1143,5137,3637,205,166,10266,9900,1,0

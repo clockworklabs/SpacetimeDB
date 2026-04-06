@@ -337,6 +337,10 @@ echo "  Telemetry: $RUN_DIR"
 echo ""
 
 # ─── Enable OpenTelemetry ────────────────────────────────────────────────────
+# Unset Claude Desktop host-management vars — they suppress OTEL telemetry when
+# run.sh is invoked from within a Claude Desktop agent session (Bash tool).
+unset CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST
+unset CLAUDE_CODE_ENTRYPOINT
 
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
 export OTEL_LOGS_EXPORTER=otlp
