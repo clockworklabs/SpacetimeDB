@@ -214,6 +214,8 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
 
 **The client connects to the server via the Vite proxy** — no hardcoded localhost:6001 in client code.
 
+**Critical:** Initialize the socket.io client without a hardcoded URL so it routes through the Vite proxy (e.g. `io()` or `io({ path: '/socket.io' })`). Hardcoding `http://localhost:6001` bypasses the proxy and breaks WebSocket upgrades.
+
 ---
 
 ## Phase 4: Verify
