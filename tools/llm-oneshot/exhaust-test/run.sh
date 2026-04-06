@@ -252,10 +252,11 @@ START_TIME=$(date +%Y-%m-%dT%H:%M:%S%z)
 START_TIME_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Variant-based directory structure:
-#   exhaust-test/<variant>/<variant>-YYYYMMDD/
-#     results/<backend>/chat-app-<timestamp>/
-#     telemetry/<run-id>/
-#     inputs/  (snapshot of all inputs)
+#   exhaust-test/<variant>/<variant>-YYYYMMDD/    ← shared comparison run
+#     <backend>/                                   ← per-backend (spacetime|postgres)
+#       results/chat-app-<timestamp>/
+#       telemetry/<run-id>/
+#       inputs/
 VARIANT_DIR="$SCRIPT_DIR/$VARIANT"
 
 # For upgrade/fix, reuse the existing RUN_BASE_DIR from the app's parent structure.
@@ -268,26 +269,28 @@ if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
   else
     APP_DIR="$FIX_APP_DIR"
   fi
-  # Walk up from app dir: chat-app-* → <backend> → results → <variant>-DATE
+  # Walk up from app dir: chat-app-* → results → <backend> → <variant>-DATE
   RUN_BASE_DIR="$(cd "$APP_DIR/../../.." 2>/dev/null && pwd)"
-  # Validate it looks like a run base dir (has results/ subdir)
-  if [[ ! -d "$RUN_BASE_DIR/results" ]]; then
+  # Validate it looks like a run base dir (has a backend subdirectory)
+  if [[ ! -d "$RUN_BASE_DIR/$BACKEND" ]]; then
     # Fallback: create new run base dir (legacy app dir not under variant structure)
     RUN_BASE_DIR="$VARIANT_DIR/$VARIANT-$DATE_STAMP"
   fi
-  TELEMETRY_DIR="$RUN_BASE_DIR/telemetry"
-  RESULTS_DIR="$RUN_BASE_DIR/results"
+  TELEMETRY_DIR="$RUN_BASE_DIR/$BACKEND/telemetry"
+  RESULTS_DIR="$RUN_BASE_DIR/$BACKEND/results"
 else
-  # Generate mode: create new dated run directory
+  # Generate mode: create/reuse a shared dated comparison run directory.
+  # Both backends (spacetime + postgres) share the same parent folder.
+  # Dedup only triggers if THIS backend already has a subdirectory
+  # (i.e. a second generate for the same backend on the same day).
   RUN_BASE_DIR="$VARIANT_DIR/$VARIANT-$DATE_STAMP"
-  # Handle duplicate dates (second run on same day)
-  if [[ -d "$RUN_BASE_DIR" ]]; then
+  if [[ -d "$RUN_BASE_DIR/$BACKEND" ]]; then
     SEQ=2
-    while [[ -d "$RUN_BASE_DIR-$SEQ" ]]; do ((SEQ++)); done
+    while [[ -d "$RUN_BASE_DIR-$SEQ/$BACKEND" ]]; do ((SEQ++)); done
     RUN_BASE_DIR="$RUN_BASE_DIR-$SEQ"
   fi
-  TELEMETRY_DIR="$RUN_BASE_DIR/telemetry"
-  RESULTS_DIR="$RUN_BASE_DIR/results"
+  TELEMETRY_DIR="$RUN_BASE_DIR/$BACKEND/telemetry"
+  RESULTS_DIR="$RUN_BASE_DIR/$BACKEND/results"
 fi
 
 # In fix/upgrade mode, detect backend from app directory structure so RUN_ID
@@ -306,7 +309,7 @@ elif [[ -n "$FIX_MODE" ]]; then
   RUN_ID="$BACKEND-fix-level$LEVEL-$TIMESTAMP"
 else
   RUN_ID="$BACKEND-level$LEVEL-$TIMESTAMP"
-  APP_DIR="$RESULTS_DIR/$BACKEND/chat-app-$TIMESTAMP"
+  APP_DIR="$RESULTS_DIR/chat-app-$TIMESTAMP"
   mkdir -p "$APP_DIR"
 fi
 
@@ -393,7 +396,7 @@ EOF
 # so each run is self-contained and reproducible even if the tooling changes.
 
 snapshot_inputs() {
-  local INPUTS_DIR="$RUN_BASE_DIR/inputs"
+  local INPUTS_DIR="$RUN_BASE_DIR/$BACKEND/inputs"
   if [[ -d "$INPUTS_DIR" ]]; then
     return  # already snapshotted (upgrade/fix into existing run)
   fi

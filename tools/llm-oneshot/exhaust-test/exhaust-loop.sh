@@ -134,7 +134,7 @@ if [[ "$VARIANT" == "one-shot" ]]; then
     --level "$LEVEL"
 
   # Find the app directory
-  APP_DIR=$(ls -dt "$SCRIPT_DIR/$VARIANT"/*"/results/$BACKEND"/chat-app-* 2>/dev/null | head -1)
+  APP_DIR=$(ls -dt "$SCRIPT_DIR/$VARIANT"/*"/$BACKEND/results"/chat-app-* 2>/dev/null | head -1)
   if [[ -z "$APP_DIR" || ! -d "$APP_DIR" ]]; then
     echo "$LOG_PREFIX ERROR: Could not find generated app directory"
     exit 1
@@ -172,7 +172,7 @@ else
     --run-index "$RUN_INDEX" \
     --level 1
 
-  APP_DIR=$(ls -dt "$SCRIPT_DIR/$VARIANT"/*"/results/$BACKEND"/chat-app-* 2>/dev/null | head -1)
+  APP_DIR=$(ls -dt "$SCRIPT_DIR/$VARIANT"/*"/$BACKEND/results"/chat-app-* 2>/dev/null | head -1)
   if [[ -z "$APP_DIR" || ! -d "$APP_DIR" ]]; then
     echo "$LOG_PREFIX ERROR: Could not find generated app directory"
     exit 1
