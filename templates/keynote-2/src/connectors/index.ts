@@ -23,6 +23,7 @@ const toSpacetimeConfig = (
   config: ConnectorRuntimeConfig,
 ): SpacetimeConnectorConfig => ({
   initialBalance: config.initialBalance,
+  stdbCompression: config.stdbCompression,
   stdbConfirmedReads: config.stdbConfirmedReads,
   stdbModule: config.stdbModule,
   stdbUrl: config.stdbUrl,
