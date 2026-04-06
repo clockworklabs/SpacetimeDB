@@ -100,7 +100,7 @@
       "zero_bug_levels": 5,
       "total_levels": 11,
       "zero_bug_rate_pct": 45,
-      "fix_sessions": 15,
+      "fix_sessions": 16,
       "first_attempt_fix_success": 16,
       "first_attempt_fix_rate_pct": 89,
       "multi_attempt_fixes": 2,

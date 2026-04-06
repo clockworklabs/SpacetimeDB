@@ -13,8 +13,8 @@ import { ScheduleAt } from 'spacetimedb';        // for scheduled tables only
 `table(OPTIONS, COLUMNS)` — two arguments. The `name` field MUST be snake_case:
 
 ```typescript
-const player = table(
-  { name: 'player', public: true },
+const entity = table(
+  { name: 'entity', public: true },
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
@@ -61,7 +61,7 @@ indexes: [{ accessor: 'by_cat_sev', algorithm: 'btree', columns: ['category', 's
 ## Schema Export
 
 ```typescript
-const spacetimedb = schema({ user, message });  // ONE object, not spread args
+const spacetimedb = schema({ entity, record });  // ONE object, not spread args
 export default spacetimedb;
 ```
 
@@ -70,10 +70,10 @@ export default spacetimedb;
 Export name becomes the reducer name:
 
 ```typescript
-export const createUser = spacetimedb.reducer(
+export const createEntity = spacetimedb.reducer(
   { name: t.string(), age: t.i32() },
   (ctx, { name, age }) => {
-    ctx.db.user.insert({ id: 0n, name, age, active: true });
+    ctx.db.entity.insert({ identity: ctx.sender, name, age, active: true });
   }
 );
 
@@ -84,13 +84,13 @@ export const doReset = spacetimedb.reducer((ctx) => { ... });
 ## DB Operations
 
 ```typescript
-ctx.db.player.insert({ id: 0n, name: 'Alice' });           // Insert (0n for autoInc)
-ctx.db.player.id.find(playerId);                           // Find by PK → row | null
-ctx.db.player.identity.find(ctx.sender);                   // Find by unique column
+ctx.db.entity.insert({ id: 0n, name: 'Sample' });          // Insert (0n for autoInc)
+ctx.db.entity.id.find(entityId);                           // Find by PK → row | null
+ctx.db.entity.identity.find(ctx.sender);                   // Find by unique column
 [...ctx.db.item.authorId.filter(authorId)];                // Filter → spread to Array
-[...ctx.db.player.iter()];                                 // All rows → Array
-ctx.db.player.id.update({ ...existing, name: newName });   // Update (spread + override)
-ctx.db.player.id.delete(playerId);                         // Delete by PK
+[...ctx.db.entity.iter()];                                 // All rows → Array
+ctx.db.entity.id.update({ ...existing, name: newName });   // Update (spread + override)
+ctx.db.entity.id.delete(entityId);                         // Delete by PK
 ```
 
 Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
@@ -207,20 +207,20 @@ function App() {
 // schema.ts
 import { schema, table, t } from 'spacetimedb/server';
 
-const player = table({ name: 'player', public: true }, {
+const entity = table({ name: 'entity', public: true }, {
   identity: t.identity().primaryKey(),
   name: t.string(),
   active: t.bool(),
 });
 
-const scoreEntry = table({ name: 'scoreEntry', public: true }, {
+const record = table({ name: 'record', public: true }, {
   id: t.u64().primaryKey().autoInc(),
-  player: t.identity(),
-  points: t.u32(),
-  recordedAt: t.timestamp(),
+  owner: t.identity(),
+  value: t.u32(),
+  createdAt: t.timestamp(),
 });
 
-const spacetimedb = schema({ player, scoreEntry });
+const spacetimedb = schema({ entity, record });
 export default spacetimedb;
 ```
 
@@ -231,28 +231,28 @@ import { t, SenderError } from 'spacetimedb/server';
 export { default } from './schema';
 
 export const onConnect = spacetimedb.clientConnected((ctx) => {
-  const existing = ctx.db.player.identity.find(ctx.sender);
-  if (existing) ctx.db.player.identity.update({ ...existing, active: true });
+  const existing = ctx.db.entity.identity.find(ctx.sender);
+  if (existing) ctx.db.entity.identity.update({ ...existing, active: true });
 });
 
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
-  const existing = ctx.db.player.identity.find(ctx.sender);
-  if (existing) ctx.db.player.identity.update({ ...existing, active: false });
+  const existing = ctx.db.entity.identity.find(ctx.sender);
+  if (existing) ctx.db.entity.identity.update({ ...existing, active: false });
 });
 
-export const register = spacetimedb.reducer(
+export const createEntity = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    if (ctx.db.player.identity.find(ctx.sender)) throw new SenderError('already registered');
-    ctx.db.player.insert({ identity: ctx.sender, name, active: true });
+    if (ctx.db.entity.identity.find(ctx.sender)) throw new SenderError('already exists');
+    ctx.db.entity.insert({ identity: ctx.sender, name, active: true });
   }
 );
 
-export const submitScore = spacetimedb.reducer(
-  { points: t.u32() },
-  (ctx, { points }) => {
-    if (!ctx.db.player.identity.find(ctx.sender)) throw new SenderError('not registered');
-    ctx.db.scoreEntry.insert({ id: 0n, player: ctx.sender, points, recordedAt: ctx.timestamp });
+export const addRecord = spacetimedb.reducer(
+  { value: t.u32() },
+  (ctx, { value }) => {
+    if (!ctx.db.entity.identity.find(ctx.sender)) throw new SenderError('not found');
+    ctx.db.record.insert({ id: 0n, owner: ctx.sender, value, createdAt: ctx.timestamp });
   }
 );
 ```

@@ -56,22 +56,22 @@ Both confounds have been corrected for future runs (SpacetimeDB examples general
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Fresh input tokens | 352 | 605 |
+| Fresh input tokens | 382 | 595 |
 | Fresh output tokens | 179,621 | 260,728 |
-| Cache read tokens | 28,336,554 | 31,731,184 |
+| Cache read tokens | 26,336,554 | 31,731,184 |
 | Cache creation tokens | 491,496 | 743,243 |
-| Total API calls | 291 | 462 |
+| Total API calls | 370 | 561 |
 
-**Cache leverage is enormous** — for every 1 fresh input token, ~80,000 cache tokens were read. This is what makes the sequential upgrade approach economical: prior context is cached and reused across sessions.
+**Cache leverage is enormous** — for every 1 fresh input token, ~69,000 cache tokens were read (SpacetimeDB) and ~53,000 (PostgreSQL). This is what makes the sequential upgrade approach economical: prior context is cached and reused across sessions.
 
 ### Tokens per Feature Group
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
 | Fresh output tokens / feature | ~13,817 | ~20,056 |
-| API calls / feature | 22.4 | 35.5 |
+| API calls / feature | 28.5 | 43.2 |
 
-PostgreSQL requires ~45% more API calls and ~45% more output tokens per feature, primarily due to fix iterations.
+PostgreSQL requires ~52% more API calls and ~45% more output tokens per feature, primarily due to fix iterations.
 
 ---
 
