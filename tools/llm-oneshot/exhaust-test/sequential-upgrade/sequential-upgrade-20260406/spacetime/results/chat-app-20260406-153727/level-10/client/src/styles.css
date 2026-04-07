@@ -149,18 +149,6 @@ body {
   text-align: center;
 }
 
-.draft-badge {
-  font-size: 11px;
-  opacity: 0.7;
-}
-
-.draft-restored-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 0 2px 4px;
-  font-style: italic;
-}
-
 .user-item {
   display: flex;
   align-items: center;

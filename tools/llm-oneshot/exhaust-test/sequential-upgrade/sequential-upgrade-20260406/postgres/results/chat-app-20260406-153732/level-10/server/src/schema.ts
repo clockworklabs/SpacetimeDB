@@ -88,12 +88,3 @@ export const roomInvitations = pgTable('room_invitations', {
   status: text('status').default('pending').notNull(), // 'pending' | 'accepted' | 'declined'
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
-
-export const drafts = pgTable('drafts', {
-  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  roomId: integer('room_id').notNull().references(() => rooms.id, { onDelete: 'cascade' }),
-  content: text('content').notNull().default(''),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (t) => [
-  primaryKey({ columns: [t.userId, t.roomId] }),
-]);

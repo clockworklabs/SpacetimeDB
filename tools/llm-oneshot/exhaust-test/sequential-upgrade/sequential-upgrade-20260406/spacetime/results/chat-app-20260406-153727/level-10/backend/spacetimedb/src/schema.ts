@@ -157,19 +157,7 @@ const roomInvitation = table(
   }
 );
 
-// Message drafts — persists per-user per-room draft text across sessions
-const draft = table(
-  { name: 'draft', public: true },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    roomId: t.u64().index('btree'),
-    userIdentity: t.identity().index('btree'),
-    text: t.string(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit, roomAdmin, bannedUser, roomInvitation, draft });
+const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit, roomAdmin, bannedUser, roomInvitation });
 export default spacetimedb;
 
 // Fires when a scheduled message is due — inserts it as a real message

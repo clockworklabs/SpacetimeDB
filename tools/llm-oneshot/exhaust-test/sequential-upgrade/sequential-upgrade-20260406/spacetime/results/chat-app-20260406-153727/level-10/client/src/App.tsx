@@ -80,7 +80,6 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAtBottomRef = useRef(true);
   const lastActivityRef = useRef<number>(Date.now());
   // Tracks whether the current user was a member of the selected room on the last render
@@ -110,7 +109,6 @@ export default function App() {
         'SELECT * FROM room_admin',
         'SELECT * FROM banned_user',
         'SELECT * FROM room_invitation',
-        'SELECT * FROM draft',
       ]);
   }, [conn, isActive]);
 
@@ -131,7 +129,6 @@ export default function App() {
   const [messageEdits] = useTable(tables.messageEdit);
   const [roomAdmins] = useTable(tables.roomAdmin);
   const [roomInvitations] = useTable(tables.roomInvitation);
-  const [drafts] = useTable(tables.draft);
 
   const myUser = myIdentity
     ? users.find((u) => u.identity.toHexString() === myIdentity.toHexString())
@@ -235,21 +232,6 @@ export default function App() {
 
     kickDetectRef.current.wasMember = currentlyIn;
   }, [roomMembers, selectedRoomId, myIdentity, rooms]);
-
-  // Load draft when switching rooms
-  useEffect(() => {
-    if (!myIdentity || !selectedRoomId) {
-      setMessageInput('');
-      return;
-    }
-    const myDraft = drafts.find(
-      (d) =>
-        d.roomId === selectedRoomId &&
-        d.userIdentity.toHexString() === myIdentity.toHexString()
-    );
-    setMessageInput(myDraft?.text ?? '');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoomId, myIdentity]);
 
   // Top-level messages for selected room (no parent), sorted by sentAt
   const roomMessages = messages
@@ -409,9 +391,6 @@ export default function App() {
       // Clear typing
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       conn.reducers.setTyping({ roomId: selectedRoomId, isTyping: false });
-      // Clear draft
-      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-      conn.reducers.saveDraft({ roomId: selectedRoomId, text: '' });
     } catch (e) {
       showError(String(e));
     }
@@ -420,18 +399,11 @@ export default function App() {
   const handleTyping = (value: string) => {
     setMessageInput(value);
     if (!conn || !selectedRoomId) return;
-    conn.reducers.setTyping({ roomId: selectedRoomId, isTyping: value.length > 0 });
+    conn.reducers.setTyping({ roomId: selectedRoomId, isTyping: true });
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    if (value.length > 0) {
-      typingTimerRef.current = setTimeout(() => {
-        conn.reducers.setTyping({ roomId: selectedRoomId!, isTyping: false });
-      }, 3000);
-    }
-    // Debounce draft saving (500ms)
-    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-    draftSaveTimerRef.current = setTimeout(() => {
-      conn.reducers.saveDraft({ roomId: selectedRoomId!, text: value });
-    }, 500);
+    typingTimerRef.current = setTimeout(() => {
+      conn.reducers.setTyping({ roomId: selectedRoomId!, isTyping: false });
+    }, 3000);
   };
 
   const handleScheduleMessage = () => {
@@ -582,17 +554,6 @@ export default function App() {
     ).length;
   };
 
-  // Check if there's a saved draft for a room
-  const hasDraft = (roomId: bigint): boolean => {
-    if (!myIdentity) return false;
-    return drafts.some(
-      (d) =>
-        d.roomId === roomId &&
-        d.userIdentity.toHexString() === myIdentity.toHexString() &&
-        d.text.length > 0
-    );
-  };
-
   // Read receipt display for a message
   const seenBy = (msgId: bigint): string[] => {
     if (!myIdentity) return [];
@@ -729,7 +690,6 @@ export default function App() {
           {publicRooms.map((room) => {
             const count = unreadCount(room.id);
             const activity = getRoomActivity(room.id);
-            const roomHasDraft = hasDraft(room.id);
             return (
               <div
                 key={String(room.id)}
@@ -742,7 +702,6 @@ export default function App() {
                 </span>
                 <div className="room-badges">
                   {activity && <span className={`activity-badge activity-${activity}`} title={activity === 'hot' ? 'Very active' : 'Recently active'}>{activity === 'hot' ? '🔥' : '⚡'}</span>}
-                  {roomHasDraft && selectedRoomId !== room.id && <span className="draft-badge" title="Draft saved">✏️</span>}
                   {count > 0 && <span className="unread-badge">{count}</span>}
                 </div>
               </div>
@@ -757,7 +716,6 @@ export default function App() {
             {privateRooms.map((room) => {
               const count = unreadCount(room.id);
               const activity = getRoomActivity(room.id);
-              const roomHasDraft = hasDraft(room.id);
               return (
                 <div
                   key={String(room.id)}
@@ -770,7 +728,6 @@ export default function App() {
                   </span>
                   <div className="room-badges">
                     {activity && <span className={`activity-badge activity-${activity}`} title={activity === 'hot' ? 'Very active' : 'Recently active'}>{activity === 'hot' ? '🔥' : '⚡'}</span>}
-                    {roomHasDraft && selectedRoomId !== room.id && <span className="draft-badge" title="Draft saved">✏️</span>}
                     {count > 0 && <span className="unread-badge">{count}</span>}
                   </div>
                 </div>
@@ -791,7 +748,6 @@ export default function App() {
             const count = unreadCount(room.id);
             const activity = getRoomActivity(room.id);
             const displayName = getDmDisplayName(room);
-            const roomHasDraft = hasDraft(room.id);
             return (
               <div
                 key={String(room.id)}
@@ -801,7 +757,6 @@ export default function App() {
                 <span className="room-name">{displayName}</span>
                 <div className="room-badges">
                   {activity && <span className={`activity-badge activity-${activity}`} title={activity === 'hot' ? 'Very active' : 'Recently active'}>{activity === 'hot' ? '🔥' : '⚡'}</span>}
-                  {roomHasDraft && selectedRoomId !== room.id && <span className="draft-badge" title="Draft saved">✏️</span>}
                   {count > 0 && <span className="unread-badge">{count}</span>}
                 </div>
               </div>
@@ -1136,9 +1091,6 @@ export default function App() {
             {/* Input */}
             {inSelectedRoom ? (
               <div className="input-bar">
-                {hasDraft(selectedRoomId!) && !messageInput && (
-                  <div className="draft-restored-hint">Draft restored</div>
-                )}
                 <div className="input-bar-row">
                   <textarea
                     className="message-input"

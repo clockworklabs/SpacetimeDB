@@ -1232,30 +1232,6 @@ setInterval(async () => {
   }
 }, 5000);
 
-// ─── Draft endpoints ──────────────────────────────────────────────────────────
-
-app.get('/api/drafts', async (req, res) => {
-  const userId = parseInt(req.query.userId as string);
-  if (!userId) return res.status(400).json({ error: 'userId required' });
-  const rows = await db.select().from(schema.drafts).where(eq(schema.drafts.userId, userId));
-  res.json(rows);
-});
-
-app.put('/api/drafts', async (req, res) => {
-  const { userId, roomId, content } = req.body as { userId: number; roomId: number; content: string };
-  if (!userId || !roomId) return res.status(400).json({ error: 'userId and roomId required' });
-  const now = new Date();
-  const [draft] = await db
-    .insert(schema.drafts)
-    .values({ userId, roomId, content: content ?? '', updatedAt: now })
-    .onConflictDoUpdate({
-      target: [schema.drafts.userId, schema.drafts.roomId],
-      set: { content: content ?? '', updatedAt: now },
-    })
-    .returning();
-  res.json(draft);
-});
-
 // ─── Socket.io ────────────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
@@ -1437,25 +1413,6 @@ io.on('connection', (socket) => {
     const user = connectedUsers.get(socket.id);
     if (!user) return;
     stopTyping(user.id, user.name, roomId);
-  });
-
-  socket.on('save_draft', async ({ roomId, content }: { roomId: number; content: string }) => {
-    const user = connectedUsers.get(socket.id);
-    if (!user) return;
-    const now = new Date();
-    const [draft] = await db
-      .insert(schema.drafts)
-      .values({ userId: user.id, roomId, content: content ?? '', updatedAt: now })
-      .onConflictDoUpdate({
-        target: [schema.drafts.userId, schema.drafts.roomId],
-        set: { content: content ?? '', updatedAt: now },
-      })
-      .returning();
-    // Broadcast to other sockets of the same user (multi-device sync)
-    const otherSocketId = userSockets.get(user.id);
-    if (otherSocketId && otherSocketId !== socket.id) {
-      io.to(otherSocketId).emit('draft_updated', { roomId, content: draft.content });
-    }
   });
 
   socket.on('mark_read', async ({ messageId }: { messageId: number }) => {

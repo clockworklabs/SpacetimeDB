@@ -128,10 +128,6 @@ export default function App() {
   const [historyMessageId, setHistoryMessageId] = useState<number | null>(null);
   const [editHistory, setEditHistory] = useState<EditHistoryEntry[]>([]);
 
-  // Drafts: roomId -> content
-  const [drafts, setDrafts] = useState<Map<number, string>>(new Map());
-  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Threading
   const [activeThreadParentId, setActiveThreadParentId] = useState<number | null>(null);
   const [threadParentMsg, setThreadParentMsg] = useState<Message | null>(null);
@@ -394,19 +390,6 @@ export default function App() {
       setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, activityLevel: level } : r));
     });
 
-    socket.on('draft_updated', ({ roomId, content }: { roomId: number; content: string }) => {
-      setDrafts((prev) => {
-        const next = new Map(prev);
-        if (content) next.set(roomId, content);
-        else next.delete(roomId);
-        return next;
-      });
-      // If currently viewing that room, update the input
-      if (activeRoomIdRef.current === roomId) {
-        setMessageInput(content);
-      }
-    });
-
     return () => { socket.disconnect(); };
   }, []);
 
@@ -451,18 +434,6 @@ export default function App() {
       .then((r) => r.json())
       .then((data: unknown) => setInvitations(Array.isArray(data) ? data : []))
       .catch(console.error);
-
-    fetch(`/api/drafts?userId=${currentUser.id}`)
-      .then((r) => r.json())
-      .then((data: unknown) => {
-        if (!Array.isArray(data)) return;
-        const map = new Map<number, string>();
-        for (const d of data as { roomId: number; content: string }[]) {
-          if (d.content) map.set(d.roomId, d.content);
-        }
-        setDrafts(map);
-      })
-      .catch(console.error);
   }, [currentUser]);
 
   // ── Join/leave socket room when active room changes ──────────────────────────
@@ -478,11 +449,6 @@ export default function App() {
     setRoomMembers([]);
     setShowMembersPanel(false);
     setMessagesLoading(true);
-    // Restore draft for this room
-    setDrafts((prev) => {
-      setMessageInput(prev.get(activeRoomId) ?? '');
-      return prev;
-    });
 
     const roomIdSnapshot = activeRoomId;
     fetch(`/api/rooms/${activeRoomId}/messages?userId=${user.id}`)
@@ -672,18 +638,12 @@ export default function App() {
     });
     setMessageInput('');
 
-    // Clear draft on send
-    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-    socketRef.current.emit('save_draft', { roomId: activeRoomId, content: '' });
-    setDrafts((prev) => { const next = new Map(prev); next.delete(activeRoomId); return next; });
-
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     socketRef.current.emit('typing_stop', { roomId: activeRoomId });
   }
 
   function handleMessageInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const value = e.target.value;
-    setMessageInput(value);
+    setMessageInput(e.target.value);
     if (!activeRoomId || !socketRef.current) return;
 
     socketRef.current.emit('typing_start', { roomId: activeRoomId });
@@ -692,18 +652,6 @@ export default function App() {
     typingTimeoutRef.current = setTimeout(() => {
       socketRef.current?.emit('typing_stop', { roomId: activeRoomId });
     }, 2000);
-
-    // Save draft (debounced)
-    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-    draftSaveTimerRef.current = setTimeout(() => {
-      socketRef.current?.emit('save_draft', { roomId: activeRoomId, content: value });
-      setDrafts((prev) => {
-        const next = new Map(prev);
-        if (value) next.set(activeRoomId, value);
-        else next.delete(activeRoomId);
-        return next;
-      });
-    }, 500);
   }
 
   function handleStartEdit(msg: Message) {
@@ -1074,9 +1022,6 @@ export default function App() {
                   {room.activityLevel === 'active' && (
                     <span className="activity-badge activity-active">● Active</span>
                   )}
-                  {drafts.has(room.id) && activeRoomId !== room.id && (
-                    <span title="Draft saved" style={{ fontSize: 11, color: 'var(--text-muted)' }}>✏️</span>
-                  )}
                   {room.unreadCount > 0 && (
                     <span className="unread-badge">{room.unreadCount}</span>
                   )}
@@ -1132,14 +1077,9 @@ export default function App() {
                     <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>@</span>
                     <span>{room.dmPartnerName ?? room.name}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {drafts.has(room.id) && activeRoomId !== room.id && (
-                      <span title="Draft saved" style={{ fontSize: 11, color: 'var(--text-muted)' }}>✏️</span>
-                    )}
-                    {room.unreadCount > 0 && (
-                      <span className="unread-badge">{room.unreadCount}</span>
-                    )}
-                  </div>
+                  {room.unreadCount > 0 && (
+                    <span className="unread-badge">{room.unreadCount}</span>
+                  )}
                 </div>
               ))}
             </div>

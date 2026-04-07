@@ -151,17 +151,3 @@ All four now pass the updated timestamp through to the `user_status` broadcast s
 **Redeploy:** Server only
 
 **Server verified:** `GET /api/rooms?userId=1` → array ✓ · API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
-
-## Upgrade — Level 11 (18:20)
-
-**Feature added:** Draft Sync
-**What changed:**
-- Added `drafts` table (user_id, room_id, content, updated_at) with composite PK
-- Added `GET /api/drafts?userId=X` and `PUT /api/drafts` REST endpoints
-- Added `save_draft` socket event (server-side): upserts draft and broadcasts `draft_updated` to other devices of the same user
-- Client: loads all drafts on login, restores draft on room switch, debounced save on input (500ms via socket), clears draft on send
-- Draft indicator (✏️) shown in room list for rooms with unsent drafts
-**Files changed:** `server/src/schema.ts`, `server/src/index.ts`, `client/src/App.tsx`
-**Redeploy:** Both
-
-**Server verified:** API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓

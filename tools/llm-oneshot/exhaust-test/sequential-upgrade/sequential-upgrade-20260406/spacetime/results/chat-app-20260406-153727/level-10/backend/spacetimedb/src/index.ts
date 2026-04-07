@@ -619,31 +619,3 @@ export const declineInvitation = spacetimedb.reducer(
     ctx.db.roomInvitation.id.delete(invitationId);
   }
 );
-
-// Save or clear a message draft for a room
-// If text is empty, the draft is deleted; otherwise it is upserted
-export const saveDraft = spacetimedb.reducer(
-  { roomId: t.u64(), text: t.string() },
-  (ctx, { roomId, text }) => {
-    if (!ctx.db.user.identity.find(ctx.sender)) return;
-    if (!ctx.db.room.id.find(roomId)) return;
-
-    let found: { id: bigint; roomId: bigint; userIdentity: { toHexString(): string }; text: string; updatedAt: { microsSinceUnixEpoch: bigint } } | undefined;
-    for (const d of [...ctx.db.draft.roomId.filter(roomId)]) {
-      if (d.userIdentity.toHexString() === ctx.sender.toHexString()) {
-        found = d;
-        break;
-      }
-    }
-
-    if (text.length === 0) {
-      if (found) ctx.db.draft.id.delete(found.id);
-    } else {
-      if (found) {
-        ctx.db.draft.id.update({ ...found, text, updatedAt: ctx.timestamp });
-      } else {
-        ctx.db.draft.insert({ id: 0n, roomId, userIdentity: ctx.sender, text, updatedAt: ctx.timestamp });
-      }
-    }
-  }
-);
