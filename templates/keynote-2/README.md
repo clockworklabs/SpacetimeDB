@@ -159,18 +159,11 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 
 PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
 
-### Rust client
-
-When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlnecked
-on our test TypeScript client. To get the absolute most out of the performance of SpacetimeDB we wrote a custom
-Rust client that allows us to send a much larger number of requests then we could otherwise. We didn't do this
-for the other backends/databases as they maxed out before the client.
-
 ## Systems Tested
 
 | System                            | Architecture                                            |
 | --------------------------------- | ------------------------------------------------------- |
-| SpacetimeDB                       | Integrated platform (Rust)                              |
+| SpacetimeDB                       | Integrated platform.                                    |
 | SQLite + Node HTTP + Drizzle      | Node.js HTTP server → Drizzle ORM → SQLite              |
 | Bun + Drizzle + Postgres          | Bun HTTP server → Drizzle ORM → PostgreSQL              |
 | Postgres + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → PostgreSQL          |
