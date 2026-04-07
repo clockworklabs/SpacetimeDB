@@ -1,6 +1,6 @@
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
+import { ScheduleAt, Timestamp } from 'spacetimedb';
 export { default } from './schema';
 export { sendScheduledMessage, deleteExpiredMessage } from './schema';
 
@@ -171,7 +171,7 @@ export const sendEphemeralMessage = spacetimedb.reducer(
       senderIdentity: ctx.sender,
       text: trimmed,
       sentAt: ctx.timestamp,
-      expiresAt: { microsSinceUnixEpoch: expiryMicros },
+      expiresAt: new Timestamp(expiryMicros),
     });
 
     // Update sender's read receipt

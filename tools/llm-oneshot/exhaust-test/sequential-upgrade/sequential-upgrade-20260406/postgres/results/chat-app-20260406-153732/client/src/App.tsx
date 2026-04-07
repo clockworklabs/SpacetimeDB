@@ -194,7 +194,7 @@ export default function App() {
     // Fetch rooms and online users
     fetch(`/api/rooms?userId=${currentUser.id}`)
       .then((r) => r.json())
-      .then(setRooms)
+      .then((data: unknown) => setRooms(Array.isArray(data) ? data : []))
       .catch(console.error);
 
     fetch('/api/users/online')
@@ -222,8 +222,8 @@ export default function App() {
 
     fetch(`/api/rooms/${activeRoomId}/messages?userId=${user.id}`)
       .then((r) => r.json())
-      .then((msgs: Message[]) => {
-        setMessages(msgs);
+      .then((msgs: unknown) => {
+        setMessages(Array.isArray(msgs) ? msgs : []);
         setRooms((prev) => prev.map((r) => r.id === activeRoomId ? { ...r, unreadCount: 0 } : r));
         scrollToBottom(false);
       })

@@ -53,3 +53,14 @@
 **Redeploy:** Server only (client Vite HMR handles client change)
 
 **Server verified:** `GET /api/scheduled-messages?userId=1` → `[]` ✓ · Client at http://localhost:6273 ✓
+
+## Iteration 6 — Fix (22:00)
+
+**Category:** Runtime/Crash
+**What broke:** `GET /api/rooms` → 400 Bad Request; `GET /api/rooms/:id/messages` → 500 Internal Server Error; `TypeError: messages is not iterable` crash in App.tsx
+**Root cause:** The L3 upgrade added an `expiresAt` column to the `messages` table in `schema.ts`, but `drizzle-kit push` was never run against the correct DB (`exhaust-test-postgres-1` at port 6432). The column was added to `spacetime-web-postgres-1` (wrong container) but not to the app's actual DB, causing all queries that referenced `messages.expires_at` to fail with `column messages.expires_at does not exist`.
+**What I fixed:** Added the missing `expires_at` column directly via `ALTER TABLE messages ADD COLUMN expires_at timestamp` on `exhaust-test-postgres-1`. Also added defensive `Array.isArray()` guards in the client for both the rooms fetch and messages fetch so non-array error responses never crash the render loop.
+**Files changed:** `client/src/App.tsx` (rooms fetch + messages fetch guards)
+**Redeploy:** Server only (restarted Express; Vite HMR for client)
+
+**Server verified:** `GET /api/rooms?userId=1` → array ✓ · `GET /api/rooms/1/messages?userId=1` → array ✓ · Client at http://localhost:6273 ✓
