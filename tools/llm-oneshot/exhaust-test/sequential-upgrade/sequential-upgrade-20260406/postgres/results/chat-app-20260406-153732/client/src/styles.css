@@ -146,6 +146,25 @@ body {
   flex-shrink: 0;
 }
 
+.activity-badge {
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.activity-hot {
+  background: var(--warning);
+  color: #1a1a2e;
+}
+
+.activity-active {
+  background: var(--success);
+  color: #1a1a2e;
+}
+
 .user-item {
   display: flex;
   align-items: center;

@@ -588,21 +588,6 @@ export default function App() {
       .filter((e) => e.messageId === msgId)
       .sort((a, b) => Number(a.editedAt.microsSinceUnixEpoch - b.editedAt.microsSinceUnixEpoch));
 
-  // Room activity: 'hot' = 3+ messages in last 2 min, 'active' = 1+ in last 5 min
-  const getRoomActivity = (roomId: bigint): 'hot' | 'active' | null => {
-    const nowMicros = BigInt(Date.now()) * 1000n;
-    const twoMinMicros = 2n * 60n * 1_000_000n;
-    const fiveMinMicros = 5n * 60n * 1_000_000n;
-    const recent = messages.filter(
-      (m) => m.roomId === roomId && m.parentMessageId == null &&
-        m.sentAt.microsSinceUnixEpoch >= nowMicros - fiveMinMicros
-    );
-    const hot = recent.filter((m) => m.sentAt.microsSinceUnixEpoch >= nowMicros - twoMinMicros).length;
-    if (hot >= 3) return 'hot';
-    if (recent.length >= 1) return 'active';
-    return null;
-  };
-
   if (!isActive || !subscribed) {
     return (
       <div className="app">
@@ -689,7 +674,6 @@ export default function App() {
           )}
           {publicRooms.map((room) => {
             const count = unreadCount(room.id);
-            const activity = getRoomActivity(room.id);
             return (
               <div
                 key={String(room.id)}
@@ -700,10 +684,7 @@ export default function App() {
                   <span className="room-hash">#</span>
                   {room.name}
                 </span>
-                <div className="room-badges">
-                  {activity && <span className={`activity-badge activity-${activity}`} title={activity === 'hot' ? 'Very active' : 'Recently active'}>{activity === 'hot' ? '🔥' : '⚡'}</span>}
-                  {count > 0 && <span className="unread-badge">{count}</span>}
-                </div>
+                {count > 0 && <span className="unread-badge">{count}</span>}
               </div>
             );
           })}
@@ -715,7 +696,6 @@ export default function App() {
             <div className="sidebar-section-label">Private Rooms</div>
             {privateRooms.map((room) => {
               const count = unreadCount(room.id);
-              const activity = getRoomActivity(room.id);
               return (
                 <div
                   key={String(room.id)}
@@ -726,10 +706,7 @@ export default function App() {
                     <span className="room-hash">🔒</span>
                     {room.name}
                   </span>
-                  <div className="room-badges">
-                    {activity && <span className={`activity-badge activity-${activity}`} title={activity === 'hot' ? 'Very active' : 'Recently active'}>{activity === 'hot' ? '🔥' : '⚡'}</span>}
-                    {count > 0 && <span className="unread-badge">{count}</span>}
-                  </div>
+                  {count > 0 && <span className="unread-badge">{count}</span>}
                 </div>
               );
             })}
@@ -746,7 +723,6 @@ export default function App() {
           )}
           {dmRooms.map((room) => {
             const count = unreadCount(room.id);
-            const activity = getRoomActivity(room.id);
             const displayName = getDmDisplayName(room);
             return (
               <div
@@ -755,10 +731,7 @@ export default function App() {
                 onClick={() => setSelectedRoomId(room.id)}
               >
                 <span className="room-name">{displayName}</span>
-                <div className="room-badges">
-                  {activity && <span className={`activity-badge activity-${activity}`} title={activity === 'hot' ? 'Very active' : 'Recently active'}>{activity === 'hot' ? '🔥' : '⚡'}</span>}
-                  {count > 0 && <span className="unread-badge">{count}</span>}
-                </div>
+                {count > 0 && <span className="unread-badge">{count}</span>}
               </div>
             );
           })}

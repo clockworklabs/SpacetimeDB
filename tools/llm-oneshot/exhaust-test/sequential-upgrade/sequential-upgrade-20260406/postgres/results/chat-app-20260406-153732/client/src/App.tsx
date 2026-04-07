@@ -19,6 +19,7 @@ interface Room {
   dmPartnerName?: string | null;
   unreadCount: number;
   joined: boolean;
+  activityLevel?: 'hot' | 'active' | null;
 }
 
 interface Invitation {
@@ -385,6 +386,10 @@ export default function App() {
       });
     });
 
+    socket.on('room_activity_update', ({ roomId, level }: { roomId: number; level: 'hot' | 'active' | null }) => {
+      setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, activityLevel: level } : r));
+    });
+
     return () => { socket.disconnect(); };
   }, []);
 
@@ -397,9 +402,17 @@ export default function App() {
     socket.emit('register', { userId: currentUser.id, userName: currentUser.name });
 
     // Fetch rooms and online users
-    fetch(`/api/rooms?userId=${currentUser.id}`)
-      .then((r) => r.json())
-      .then((data: unknown) => setRooms(Array.isArray(data) ? data : []))
+    Promise.all([
+      fetch(`/api/rooms?userId=${currentUser.id}`).then((r) => r.json()),
+      fetch('/api/rooms/activity').then((r) => r.json()),
+    ])
+      .then(([roomsData, activityData]: [unknown, Record<string, 'hot' | 'active'>]) => {
+        if (!Array.isArray(roomsData)) return;
+        setRooms(roomsData.map((room: Room) => ({
+          ...room,
+          activityLevel: activityData[room.id] ?? null,
+        })));
+      })
       .catch(console.error);
 
     fetch('/api/users/online')
@@ -1002,9 +1015,17 @@ export default function App() {
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 2 }}>+join</span>
                   )}
                 </div>
-                {room.unreadCount > 0 && (
-                  <span className="unread-badge">{room.unreadCount}</span>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {room.activityLevel === 'hot' && (
+                    <span className="activity-badge activity-hot">🔥 Hot</span>
+                  )}
+                  {room.activityLevel === 'active' && (
+                    <span className="activity-badge activity-active">● Active</span>
+                  )}
+                  {room.unreadCount > 0 && (
+                    <span className="unread-badge">{room.unreadCount}</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

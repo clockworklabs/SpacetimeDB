@@ -29,6 +29,28 @@ const db = drizzle(pool, { schema });
 // In-memory typing state: roomId -> Map<userId, { timer, userName }>
 const typingState = new Map<number, Map<number, { timer: NodeJS.Timeout; userName: string }>>();
 
+// Activity tracking: roomId -> array of recent message timestamps (ms)
+const roomActivity = new Map<number, number[]>();
+const ACTIVITY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const HOT_THRESHOLD = 5; // 5+ messages in window = hot
+
+function computeActivityLevel(roomId: number): 'hot' | 'active' | null {
+  const now = Date.now();
+  const recent = (roomActivity.get(roomId) ?? []).filter((t) => now - t < ACTIVITY_WINDOW_MS);
+  roomActivity.set(roomId, recent);
+  if (recent.length >= HOT_THRESHOLD) return 'hot';
+  if (recent.length >= 1) return 'active';
+  return null;
+}
+
+function recordRoomMessage(roomId: number) {
+  const timestamps = roomActivity.get(roomId) ?? [];
+  timestamps.push(Date.now());
+  roomActivity.set(roomId, timestamps);
+  const level = computeActivityLevel(roomId);
+  io.emit('room_activity_update', { roomId, level });
+}
+
 // Socket to user mapping
 const connectedUsers = new Map<string, { id: number; name: string }>();
 const userSockets = new Map<number, string>();
@@ -183,6 +205,19 @@ app.get('/api/rooms', async (req, res) => {
     console.error(e);
     res.status(500).json({ error: 'Failed to get rooms' });
   }
+});
+
+// Get activity levels for all rooms
+app.get('/api/rooms/activity', (_req, res) => {
+  const now = Date.now();
+  const result: Record<number, 'hot' | 'active'> = {};
+  roomActivity.forEach((timestamps, roomId) => {
+    const recent = timestamps.filter((t) => now - t < ACTIVITY_WINDOW_MS);
+    roomActivity.set(roomId, recent);
+    if (recent.length >= HOT_THRESHOLD) result[roomId] = 'hot';
+    else if (recent.length >= 1) result[roomId] = 'active';
+  });
+  res.json(result);
 });
 
 // Create room
@@ -1323,6 +1358,8 @@ io.on('connection', (socket) => {
         }
 
         stopTyping(user.id, user.name, roomId);
+        // Track room activity for activity indicators
+        recordRoomMessage(roomId);
       }
     }
   );

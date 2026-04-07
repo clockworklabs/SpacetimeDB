@@ -115,29 +115,6 @@ body {
   font-size: 13px;
 }
 
-.room-badges {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.activity-badge {
-  font-size: 11px;
-  padding: 1px 4px;
-  border-radius: 999px;
-  line-height: 1.4;
-}
-
-.activity-badge.activity-hot {
-  background: rgba(255, 76, 76, 0.15);
-  border: 1px solid rgba(255, 76, 76, 0.35);
-}
-
-.activity-badge.activity-active {
-  background: rgba(2, 190, 250, 0.12);
-  border: 1px solid rgba(2, 190, 250, 0.3);
-}
-
 .unread-badge {
   background: var(--primary);
   color: #000;
