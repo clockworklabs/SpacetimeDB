@@ -38,12 +38,6 @@ interface Message {
   reactions: Reaction[];
 }
 
-interface RoomMember {
-  userId: number;
-  name: string;
-  isAdmin: boolean;
-}
-
 interface EditHistoryEntry {
   id: number;
   messageId: number;
@@ -91,10 +85,6 @@ export default function App() {
   const [scheduleError, setScheduleError] = useState('');
   const [showScheduledPanel, setShowScheduledPanel] = useState(false);
 
-  const [roomMembers, setRoomMembers] = useState<RoomMember[]>([]);
-  const [showMembersPanel, setShowMembersPanel] = useState(false);
-  const [kickedNotice, setKickedNotice] = useState<string | null>(null);
-
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [editInput, setEditInput] = useState('');
   const [historyMessageId, setHistoryMessageId] = useState<number | null>(null);
@@ -132,14 +122,7 @@ export default function App() {
     const socket = io();
     socketRef.current = socket;
 
-    socket.on('connect', () => {
-      setConnected(true);
-      // Re-register and re-join on reconnect (socket.io auto-reconnects with a new socket ID)
-      const user = currentUserRef.current;
-      const roomId = activeRoomIdRef.current;
-      if (user) socket.emit('register', { userId: user.id, userName: user.name });
-      if (roomId) socket.emit('join_room', { roomId });
-    });
+    socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
 
     socket.on('message', (msg: Message) => {
@@ -239,42 +222,6 @@ export default function App() {
       );
     });
 
-    socket.on('kicked_from_room', ({ roomId }: { roomId: number }) => {
-      // Direct notification to the kicked user — always redirect away
-      setKickedNotice('You have been kicked from this room.');
-      setActiveRoomId(null);
-      setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, joined: false } : r));
-    });
-
-    socket.on('user_kicked', ({ userId, roomId }: { userId: number; roomId: number }) => {
-      const user = currentUserRef.current;
-      if (user && user.id === userId) {
-        // Fallback for kicked user in case direct emit was missed
-        const wasActive = activeRoomIdRef.current === roomId;
-        setActiveRoomId((prev) => (prev === roomId ? null : prev));
-        if (wasActive) setKickedNotice('You have been kicked from this room.');
-        setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, joined: false } : r));
-      }
-      setRoomMembers((prev) => prev.filter((m) => m.userId !== userId));
-    });
-
-    socket.on('user_promoted', ({ userId }: { userId: number }) => {
-      setRoomMembers((prev) =>
-        prev.map((m) => m.userId === userId ? { ...m, isAdmin: true } : m)
-      );
-    });
-
-    socket.on('member_joined', ({ userId, name, isAdmin }: { userId: number; name: string; isAdmin: boolean }) => {
-      setRoomMembers((prev) => {
-        if (prev.some((m) => m.userId === userId)) return prev;
-        return [...prev, { userId, name, isAdmin }];
-      });
-    });
-
-    socket.on('member_left', ({ userId }: { userId: number }) => {
-      setRoomMembers((prev) => prev.filter((m) => m.userId !== userId));
-    });
-
     return () => { socket.disconnect(); };
   }, []);
 
@@ -313,25 +260,13 @@ export default function App() {
     socket.emit('join_room', { roomId: activeRoomId });
     setMessages([]);
     setTypingUsers(new Map());
-    setRoomMembers([]);
-    setShowMembersPanel(false);
     setMessagesLoading(true);
 
-    const roomIdSnapshot = activeRoomId;
     fetch(`/api/rooms/${activeRoomId}/messages?userId=${user.id}`)
-      .then((r) => {
-        if (r.status === 403) {
-          setActiveRoomId(null);
-          setRooms((prev) => prev.map((rm) => rm.id === roomIdSnapshot ? { ...rm, joined: false } : rm));
-          setKickedNotice('You are banned from this room.');
-          return null;
-        }
-        return r.json();
-      })
+      .then((r) => r.json())
       .then((msgs: unknown) => {
-        if (msgs === null) return;
         setMessages(Array.isArray(msgs) ? msgs : []);
-        setRooms((prev) => prev.map((r) => r.id === roomIdSnapshot ? { ...r, unreadCount: 0 } : r));
+        setRooms((prev) => prev.map((r) => r.id === activeRoomId ? { ...r, unreadCount: 0 } : r));
         scrollToBottom(false);
       })
       .catch(console.error)
@@ -399,18 +334,11 @@ export default function App() {
 
   async function handleJoinRoom(roomId: number) {
     if (!currentUser) return;
-    const res = await fetch(`/api/rooms/${roomId}/join`, {
+    await fetch(`/api/rooms/${roomId}/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: currentUser.id }),
     });
-    if (!res.ok) {
-      if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        setKickedNotice((data as { error?: string }).error ?? 'You are banned from this room.');
-      }
-      return;
-    }
     setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, joined: true } : r));
     setActiveRoomId(roomId);
   }
@@ -427,7 +355,6 @@ export default function App() {
   }
 
   function handleSelectRoom(room: Room) {
-    setKickedNotice(null);
     if (!room.joined) {
       handleJoinRoom(room.id);
     } else {
@@ -543,44 +470,6 @@ export default function App() {
     }
   }
 
-  async function handleOpenMembersPanel() {
-    if (!activeRoomId) return;
-    try {
-      const res = await fetch(`/api/rooms/${activeRoomId}/members`);
-      const data = await res.json();
-      setRoomMembers(Array.isArray(data) ? data : []);
-    } catch {
-      console.error('Failed to fetch members');
-    }
-    setShowMembersPanel(true);
-  }
-
-  async function handleKickUser(targetUserId: number) {
-    if (!currentUser || !activeRoomId) return;
-    try {
-      await fetch(`/api/rooms/${activeRoomId}/kick`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: currentUser.id, targetUserId }),
-      });
-    } catch {
-      console.error('Failed to kick user');
-    }
-  }
-
-  async function handlePromoteUser(targetUserId: number) {
-    if (!currentUser || !activeRoomId) return;
-    try {
-      await fetch(`/api/rooms/${activeRoomId}/promote`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: currentUser.id, targetUserId }),
-      });
-    } catch {
-      console.error('Failed to promote user');
-    }
-  }
-
   async function handleShowHistory(messageId: number) {
     try {
       const res = await fetch(`/api/messages/${messageId}/history`);
@@ -632,7 +521,6 @@ export default function App() {
   }
 
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
-  const currentUserIsAdmin = roomMembers.find((m) => m.userId === currentUser.id)?.isAdmin ?? false;
   const typingList = Array.from(typingUsers.values()).filter((n) => n !== currentUser.name);
 
   let typingText = '';
@@ -832,11 +720,7 @@ export default function App() {
         {!activeRoom ? (
           <div className="empty-state">
             <h2>PostgreSQL Chat</h2>
-            {kickedNotice ? (
-              <p style={{ color: 'var(--danger)' }}>{kickedNotice}</p>
-            ) : (
-              <p>Select a room from the sidebar to start chatting,<br />or create a new one.</p>
-            )}
+            <p>Select a room from the sidebar to start chatting,<br />or create a new one.</p>
             {rooms.length === 0 && (
               <button className="btn btn-primary" onClick={() => setShowCreateRoom(true)}>
                 Create a Room
@@ -848,12 +732,6 @@ export default function App() {
             <div className="room-header">
               <span className="room-header-name"># {activeRoom.name}</span>
               <div className="room-header-actions">
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={handleOpenMembersPanel}
-                >
-                  Members
-                </button>
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() => setShowScheduledPanel((p) => !p)}
@@ -1067,46 +945,6 @@ export default function App() {
                 Send
               </button>
             </form>
-
-            {/* Members panel */}
-            {showMembersPanel && (
-              <div className="scheduled-panel">
-                <div className="scheduled-panel-header">
-                  <span>Members</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setShowMembersPanel(false)}>✕</button>
-                </div>
-                {roomMembers.length === 0 ? (
-                  <div style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: 13 }}>No members</div>
-                ) : (
-                  roomMembers.map((member) => (
-                    <div key={member.userId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
-                      <span style={{ flex: 1, fontSize: 13 }}>{member.name}</span>
-                      {member.isAdmin && (
-                        <span style={{ fontSize: 10, background: 'var(--primary)', color: '#fff', padding: '2px 6px', borderRadius: 4 }}>Admin</span>
-                      )}
-                      {currentUserIsAdmin && member.userId !== currentUser.id && !member.isAdmin && (
-                        <>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 11, color: 'var(--danger)' }}
-                            onClick={() => handleKickUser(member.userId)}
-                          >
-                            Kick
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 11 }}
-                            onClick={() => handlePromoteUser(member.userId)}
-                          >
-                            Promote
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
 
             {/* Scheduled messages panel */}
             {showScheduledPanel && (

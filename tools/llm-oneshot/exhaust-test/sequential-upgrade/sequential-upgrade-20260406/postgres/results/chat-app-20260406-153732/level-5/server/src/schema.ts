@@ -17,16 +17,7 @@ export const rooms = pgTable('rooms', {
 export const roomMembers = pgTable('room_members', {
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   roomId: integer('room_id').notNull().references(() => rooms.id, { onDelete: 'cascade' }),
-  isAdmin: boolean('is_admin').default(false).notNull(),
   joinedAt: timestamp('joined_at').defaultNow().notNull(),
-}, (t) => [
-  primaryKey({ columns: [t.userId, t.roomId] }),
-]);
-
-export const bannedUsers = pgTable('banned_users', {
-  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  roomId: integer('room_id').notNull().references(() => rooms.id, { onDelete: 'cascade' }),
-  bannedAt: timestamp('banned_at').defaultNow().notNull(),
 }, (t) => [
   primaryKey({ columns: [t.userId, t.roomId] }),
 ]);

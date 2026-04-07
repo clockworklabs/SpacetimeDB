@@ -1,22 +1,24 @@
-# Bug Report
+# Bug Report — L6 Permissions (PostgreSQL)
 
-## Bug 1: Entering a room crashes the app — messages is not iterable
+## Bug 1: Member panel not updating in real-time when users join/leave rooms
 
-**Feature:** Regression — basic chat broken
-**Severity:** Critical
+When a user joins or leaves a room, the member/user panel does not update in real-time for other connected clients. A page refresh is required to see the current member list.
 
-**Steps to reproduce:**
-1. Open the app, register a user
-2. Click on any room
-3. Observed errors:
-   - `GET /api/rooms` → 400 Bad Request
-   - `GET /api/rooms/4/messages?userId=2` → 500 Internal Server Error
-   - `TypeError: messages is not iterable` crash in App.tsx line 444
+**Expected:** Member list updates instantly via Socket.io events for all connected clients in the room.
 
-**Root cause (likely):** The L3 upgrade modified the `/api/rooms` or `/api/rooms/:id/messages` endpoint response format. The client expects an array but is receiving an error object or non-array response. Also the rooms endpoint is returning 400.
+## Bug 2: Kicked members can still fully use the room (STILL NOT FIXED after 2 attempts)
 
-**Fix required:**
-- Fix `GET /api/rooms` to return 200 with array (check if new query params are required)
-- Fix `GET /api/rooms/:id/messages` to return 200 with array
-- Ensure `messages` state is always initialized as an array, never null/undefined
-- Restart and verify both endpoints return arrays before closing
+After being kicked, the user:
+- Can click back into the room from the room list
+- Can view all messages
+- Can send new messages to the room
+- Only symptom: they don't appear in the members panel
+
+Two previous fix attempts have not resolved this. The root cause is that the server has no "banned/kicked" state — kicking only removes the room membership row, but the join endpoint re-creates it when the user navigates back to the room.
+
+**Required fix:**
+1. Add a `room_bans` table (or a `banned` column on room memberships) to persistently track kicked users
+2. The `POST /api/rooms/:id/join` endpoint must check the ban list and return 403 if the user is banned
+3. `GET /api/rooms/:id/messages` and `POST /api/rooms/:id/messages` must also check ban status and return 403
+4. Emit a Socket.io `kicked_from_room` event to the kicked user's socket so the client navigates away immediately
+5. The client must handle the `kicked_from_room` event and remove the room from the UI / deselect it

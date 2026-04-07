@@ -123,10 +123,9 @@ app.post('/api/rooms', async (req, res) => {
       .returning();
 
     if (userId) {
-      // Creator becomes admin
       await db
         .insert(schema.roomMembers)
-        .values({ userId, roomId: room.id, isAdmin: true })
+        .values({ userId, roomId: room.id })
         .onConflictDoNothing();
     }
 
@@ -147,124 +146,13 @@ app.post('/api/rooms/:id/join', async (req, res) => {
   const { userId } = req.body as { userId: number };
 
   try {
-    // Check if user is banned
-    const [banned] = await db
-      .select()
-      .from(schema.bannedUsers)
-      .where(and(eq(schema.bannedUsers.userId, userId), eq(schema.bannedUsers.roomId, roomId)));
-    if (banned) return res.status(403).json({ error: 'You are banned from this room' });
-
     await db
       .insert(schema.roomMembers)
       .values({ userId, roomId })
       .onConflictDoNothing();
-
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId));
-    if (user) {
-      io.to(`room:${roomId}`).emit('member_joined', { userId, name: user.name, isAdmin: false, roomId });
-    }
-
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'Failed to join room' });
-  }
-});
-
-// Get room members
-app.get('/api/rooms/:id/members', async (req, res) => {
-  const roomId = parseInt(req.params.id);
-  try {
-    const members = await db
-      .select({
-        userId: schema.roomMembers.userId,
-        isAdmin: schema.roomMembers.isAdmin,
-        name: schema.users.name,
-      })
-      .from(schema.roomMembers)
-      .innerJoin(schema.users, eq(schema.roomMembers.userId, schema.users.id))
-      .where(eq(schema.roomMembers.roomId, roomId));
-    res.json(members);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to get members' });
-  }
-});
-
-// Kick user from room (admin only)
-app.post('/api/rooms/:id/kick', async (req, res) => {
-  const roomId = parseInt(req.params.id);
-  const { adminId, targetUserId } = req.body as { adminId: number; targetUserId: number };
-
-  try {
-    // Verify requester is admin
-    const [adminMember] = await db
-      .select()
-      .from(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, adminId), eq(schema.roomMembers.roomId, roomId)));
-    if (!adminMember?.isAdmin) return res.status(403).json({ error: 'Only admins can kick users' });
-
-    // Cannot kick another admin
-    const [targetMember] = await db
-      .select()
-      .from(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, targetUserId), eq(schema.roomMembers.roomId, roomId)));
-    if (targetMember?.isAdmin) return res.status(403).json({ error: 'Cannot kick an admin' });
-
-    // Remove from room and ban
-    await db
-      .delete(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, targetUserId), eq(schema.roomMembers.roomId, roomId)));
-    await db
-      .insert(schema.bannedUsers)
-      .values({ userId: targetUserId, roomId })
-      .onConflictDoNothing();
-
-    // Notify the room (for other members to update their panel)
-    io.to(`room:${roomId}`).emit('user_kicked', { userId: targetUserId, roomId });
-
-    // Emit directly to the kicked user's socket so they are redirected
-    // even if their socket is not (yet) in the socket room
-    const kickedSocketId = userSockets.get(targetUserId);
-    if (kickedSocketId) {
-      const kickedSocket = io.sockets.sockets.get(kickedSocketId);
-      if (kickedSocket) {
-        kickedSocket.emit('kicked_from_room', { roomId });
-        kickedSocket.leave(`room:${roomId}`);
-      }
-    }
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to kick user' });
-  }
-});
-
-// Promote user to admin (admin only)
-app.post('/api/rooms/:id/promote', async (req, res) => {
-  const roomId = parseInt(req.params.id);
-  const { adminId, targetUserId } = req.body as { adminId: number; targetUserId: number };
-
-  try {
-    // Verify requester is admin
-    const [adminMember] = await db
-      .select()
-      .from(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, adminId), eq(schema.roomMembers.roomId, roomId)));
-    if (!adminMember?.isAdmin) return res.status(403).json({ error: 'Only admins can promote users' });
-
-    // Promote target
-    await db
-      .update(schema.roomMembers)
-      .set({ isAdmin: true })
-      .where(and(eq(schema.roomMembers.userId, targetUserId), eq(schema.roomMembers.roomId, roomId)));
-
-    io.to(`room:${roomId}`).emit('user_promoted', { userId: targetUserId, roomId });
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to promote user' });
   }
 });
 
@@ -279,9 +167,6 @@ app.post('/api/rooms/:id/leave', async (req, res) => {
       .where(
         and(eq(schema.roomMembers.userId, userId), eq(schema.roomMembers.roomId, roomId))
       );
-
-    io.to(`room:${roomId}`).emit('member_left', { userId, roomId });
-
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'Failed to leave room' });
@@ -294,21 +179,6 @@ app.get('/api/rooms/:id/messages', async (req, res) => {
   const userId = parseInt(req.query.userId as string);
 
   try {
-    // Verify user is a member and not banned
-    if (userId) {
-      const [banned] = await db
-        .select()
-        .from(schema.bannedUsers)
-        .where(and(eq(schema.bannedUsers.userId, userId), eq(schema.bannedUsers.roomId, roomId)));
-      if (banned) return res.status(403).json({ error: 'You are banned from this room' });
-
-      const [membership] = await db
-        .select()
-        .from(schema.roomMembers)
-        .where(and(eq(schema.roomMembers.userId, userId), eq(schema.roomMembers.roomId, roomId)));
-      if (!membership) return res.status(403).json({ error: 'You are not a member of this room' });
-    }
-
     const msgs = await db
       .select({
         id: schema.messages.id,
@@ -761,20 +631,6 @@ io.on('connection', (socket) => {
       lastMessageTime.set(user.id, now);
 
       if (!content?.trim() || content.trim().length > 2000) return;
-
-      // Check if user is banned from this room
-      const [banned] = await db
-        .select()
-        .from(schema.bannedUsers)
-        .where(and(eq(schema.bannedUsers.userId, user.id), eq(schema.bannedUsers.roomId, roomId)));
-      if (banned) return;
-
-      // Check if user is a member of this room
-      const [membership] = await db
-        .select()
-        .from(schema.roomMembers)
-        .where(and(eq(schema.roomMembers.userId, user.id), eq(schema.roomMembers.roomId, roomId)));
-      if (!membership) return;
 
       const expiresAt = expiresInMs && expiresInMs > 0 ? new Date(Date.now() + expiresInMs) : null;
 

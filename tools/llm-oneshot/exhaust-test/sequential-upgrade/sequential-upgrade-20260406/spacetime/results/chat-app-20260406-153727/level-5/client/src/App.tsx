@@ -29,7 +29,6 @@ export default function App() {
   const [showNameModal, setShowNameModal] = useState(false);
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showMembersPanel, setShowMembersPanel] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [roomInput, setRoomInput] = useState('');
   const [messageInput, setMessageInput] = useState('');
@@ -50,8 +49,6 @@ export default function App() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAtBottomRef = useRef(true);
-  // Tracks whether the current user was a member of the selected room on the last render
-  const kickDetectRef = useRef<{ roomId: bigint | null; wasMember: boolean }>({ roomId: null, wasMember: false });
 
   // Save token
   useEffect(() => {
@@ -74,8 +71,6 @@ export default function App() {
         'SELECT * FROM scheduled_message',
         'SELECT * FROM message_reaction',
         'SELECT * FROM message_edit',
-        'SELECT * FROM room_admin',
-        'SELECT * FROM banned_user',
       ]);
   }, [conn, isActive]);
 
@@ -85,6 +80,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // Check if user has a name
   const [users] = useTable(tables.user);
   const [rooms] = useTable(tables.room);
   const [roomMembers] = useTable(tables.roomMember);
@@ -94,7 +90,6 @@ export default function App() {
   const [scheduledMessages] = useTable(tables.scheduledMessage);
   const [messageReactions] = useTable(tables.messageReaction);
   const [messageEdits] = useTable(tables.messageEdit);
-  const [roomAdmins] = useTable(tables.roomAdmin);
 
   const myUser = myIdentity
     ? users.find((u) => u.identity.toHexString() === myIdentity.toHexString())
@@ -119,44 +114,6 @@ export default function App() {
     },
     [roomMembers, myIdentity]
   );
-
-  // Kick detection: detect when the current user is removed from their selected room by an admin
-  useEffect(() => {
-    if (!myIdentity) return;
-
-    if (kickDetectRef.current.roomId !== selectedRoomId) {
-      // Room selection changed — reset tracking
-      kickDetectRef.current = {
-        roomId: selectedRoomId,
-        wasMember: selectedRoomId
-          ? roomMembers.some(
-              (m) =>
-                m.roomId === selectedRoomId &&
-                m.userIdentity.toHexString() === myIdentity.toHexString()
-            )
-          : false,
-      };
-      return;
-    }
-
-    if (!selectedRoomId) return;
-
-    const currentlyIn = roomMembers.some(
-      (m) =>
-        m.roomId === selectedRoomId &&
-        m.userIdentity.toHexString() === myIdentity.toHexString()
-    );
-
-    if (kickDetectRef.current.wasMember && !currentlyIn) {
-      const kickedRoom = rooms.find((r) => r.id === selectedRoomId);
-      setError(`You have been kicked from #${kickedRoom?.name ?? 'the room'}`);
-      setTimeout(() => setError(null), 5000);
-      setSelectedRoomId(null);
-      setShowMembersPanel(false);
-    }
-
-    kickDetectRef.current.wasMember = currentlyIn;
-  }, [roomMembers, selectedRoomId, myIdentity, rooms]);
 
   // Messages for selected room, sorted by sentAt
   const roomMessages = messages
@@ -338,41 +295,6 @@ export default function App() {
     }
   };
 
-  // Permissions helpers
-  const isAdminOfRoom = useCallback(
-    (roomId: bigint, identity: { toHexString(): string }): boolean => {
-      if (roomAdmins.some((a) => a.roomId === roomId && a.userIdentity.toHexString() === identity.toHexString())) {
-        return true;
-      }
-      // Fallback: room creator is always admin (for rooms created before this feature)
-      const room = rooms.find((r) => r.id === roomId);
-      return room?.createdBy.toHexString() === identity.toHexString();
-    },
-    [roomAdmins, rooms]
-  );
-
-  const handleKickUser = (roomId: bigint, target: { toHexString(): string }) => {
-    if (!conn) return;
-    const targetUser = users.find((u) => u.identity.toHexString() === target.toHexString());
-    if (!targetUser) return;
-    try {
-      conn.reducers.kickUser({ roomId, target: targetUser.identity });
-    } catch (e) {
-      showError(String(e));
-    }
-  };
-
-  const handlePromoteUser = (roomId: bigint, target: { toHexString(): string }) => {
-    if (!conn) return;
-    const targetUser = users.find((u) => u.identity.toHexString() === target.toHexString());
-    if (!targetUser) return;
-    try {
-      conn.reducers.promoteUser({ roomId, target: targetUser.identity });
-    } catch (e) {
-      showError(String(e));
-    }
-  };
-
   // Typing users in selected room (excluding me)
   const typingUsers = selectedRoomId
     ? typingIndicators
@@ -449,9 +371,6 @@ export default function App() {
 
   const selectedRoom = selectedRoomId ? rooms.find((r) => r.id === selectedRoomId) : null;
   const inSelectedRoom = selectedRoomId ? isMember(selectedRoomId) : false;
-  const amAdminOfSelectedRoom = selectedRoomId && myIdentity
-    ? isAdminOfRoom(selectedRoomId, myIdentity)
-    : false;
 
   // Sort rooms by name
   const sortedRooms = [...rooms].sort((a, b) => a.name.localeCompare(b.name));
@@ -540,13 +459,6 @@ export default function App() {
               <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>
                 {selectedRoomMembers.length} members
               </span>
-              <button
-                className="members-btn"
-                onClick={() => setShowMembersPanel(true)}
-                title="Manage members"
-              >
-                Members
-              </button>
               {inSelectedRoom ? (
                 <button className="join-leave-btn leave" onClick={() => handleLeaveRoom(selectedRoom.id)}>
                   Leave
@@ -801,60 +713,6 @@ export default function App() {
           </>
         )}
       </div>
-
-      {/* Members panel */}
-      {showMembersPanel && selectedRoom && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setShowMembersPanel(false); }}>
-          <div className="modal members-modal">
-            <div className="modal-title">
-              Members — #{selectedRoom.name}
-            </div>
-            <div className="members-list">
-              {selectedRoomMembers.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No members.</div>
-              ) : (
-                selectedRoomMembers.map((member) => {
-                  if (!member) return null;
-                  const isThisUserAdmin = selectedRoomId ? isAdminOfRoom(selectedRoomId, member.identity) : false;
-                  const isMe = myIdentity && member.identity.toHexString() === myIdentity.toHexString();
-                  return (
-                    <div key={member.identity.toHexString()} className="member-row">
-                      <span
-                        className="status-dot"
-                        style={{ background: member.online ? 'var(--success)' : 'var(--text-muted)' }}
-                      />
-                      <span className="member-name">{member.name}</span>
-                      {isThisUserAdmin && (
-                        <span className="admin-badge">Admin</span>
-                      )}
-                      {isMe && <span style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 4 }}>(you)</span>}
-                      {amAdminOfSelectedRoom && !isMe && !isThisUserAdmin && selectedRoomId !== null && (
-                        <>
-                          <button
-                            className="member-action-btn kick-btn"
-                            onClick={() => handleKickUser(selectedRoomId, member.identity)}
-                          >
-                            Kick
-                          </button>
-                          <button
-                            className="member-action-btn promote-btn"
-                            onClick={() => handlePromoteUser(selectedRoomId, member.identity)}
-                          >
-                            Promote
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            <div className="modal-actions">
-              <button className="btn-primary" onClick={() => setShowMembersPanel(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Set name modal */}
       {showNameModal && (

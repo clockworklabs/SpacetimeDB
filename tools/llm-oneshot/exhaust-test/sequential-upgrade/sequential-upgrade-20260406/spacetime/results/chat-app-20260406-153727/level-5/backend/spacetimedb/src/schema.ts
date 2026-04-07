@@ -121,27 +121,7 @@ const messageEdit = table(
   }
 );
 
-// Room admins — tracks which users have admin privileges in each room
-const roomAdmin = table(
-  { name: 'room_admin', public: true },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    roomId: t.u64().index('btree'),
-    userIdentity: t.identity().index('btree'),
-  }
-);
-
-// Banned users — tracks users banned from rooms (prevents rejoin after kick)
-const bannedUser = table(
-  { name: 'banned_user', public: true },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    roomId: t.u64().index('btree'),
-    userIdentity: t.identity().index('btree'),
-  }
-);
-
-const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit, roomAdmin, bannedUser });
+const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit });
 export default spacetimedb;
 
 // Fires when a scheduled message is due — inserts it as a real message

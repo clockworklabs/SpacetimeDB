@@ -54,9 +54,8 @@ export const createRoom = spacetimedb.reducer(
     if (existing) throw new SenderError('Room already exists');
 
     const roomId = ctx.db.room.insert({ id: 0n, name: trimmed, createdBy: ctx.sender, createdAt: ctx.timestamp }).id;
-    // Auto-join and auto-admin the creator
+    // Auto-join the creator
     ctx.db.roomMember.insert({ id: 0n, roomId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
-    ctx.db.roomAdmin.insert({ id: 0n, roomId, userIdentity: ctx.sender });
   }
 );
 
@@ -66,13 +65,6 @@ export const joinRoom = spacetimedb.reducer(
   (ctx, { roomId }) => {
     if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Set your name first');
     if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
-
-    // Check if banned
-    for (const b of [...ctx.db.bannedUser.roomId.filter(roomId)]) {
-      if (b.userIdentity.toHexString() === ctx.sender.toHexString()) {
-        throw new SenderError('You are banned from this room');
-      }
-    }
 
     // Check if already a member
     for (const m of [...ctx.db.roomMember.roomId.filter(roomId)]) {
@@ -333,95 +325,6 @@ export const cancelScheduledMessage = spacetimedb.reducer(
       throw new SenderError('Not your scheduled message');
     }
     ctx.db.scheduledMessage.scheduledId.delete(scheduledId);
-  }
-);
-
-// Kick a user from a room (removes them and bans from rejoining)
-export const kickUser = spacetimedb.reducer(
-  { roomId: t.u64(), target: t.identity() },
-  (ctx, { roomId, target }) => {
-    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
-
-    // Check caller is admin (check roomAdmin table or is room creator)
-    let callerIsAdmin = false;
-    for (const a of [...ctx.db.roomAdmin.roomId.filter(roomId)]) {
-      if (a.userIdentity.toHexString() === ctx.sender.toHexString()) { callerIsAdmin = true; break; }
-    }
-    if (!callerIsAdmin) {
-      const room = ctx.db.room.id.find(roomId);
-      if (room && room.createdBy.toHexString() === ctx.sender.toHexString()) callerIsAdmin = true;
-    }
-    if (!callerIsAdmin) throw new SenderError('Not authorized');
-
-    // Cannot kick an admin
-    let targetIsAdmin = false;
-    for (const a of [...ctx.db.roomAdmin.roomId.filter(roomId)]) {
-      if (a.userIdentity.toHexString() === target.toHexString()) { targetIsAdmin = true; break; }
-    }
-    if (!targetIsAdmin) {
-      const room = ctx.db.room.id.find(roomId);
-      if (room && room.createdBy.toHexString() === target.toHexString()) targetIsAdmin = true;
-    }
-    if (targetIsAdmin) throw new SenderError('Cannot kick an admin');
-
-    // Remove from room membership
-    for (const m of [...ctx.db.roomMember.roomId.filter(roomId)]) {
-      if (m.userIdentity.toHexString() === target.toHexString()) {
-        ctx.db.roomMember.id.delete(m.id);
-        break;
-      }
-    }
-
-    // Clear typing indicators
-    for (const ti of [...ctx.db.typingIndicator.roomId.filter(roomId)]) {
-      if (ti.userIdentity.toHexString() === target.toHexString()) {
-        ctx.db.typingIndicator.id.delete(ti.id);
-      }
-    }
-
-    // Add to banned list (prevent rejoin)
-    let alreadyBanned = false;
-    for (const b of [...ctx.db.bannedUser.roomId.filter(roomId)]) {
-      if (b.userIdentity.toHexString() === target.toHexString()) { alreadyBanned = true; break; }
-    }
-    if (!alreadyBanned) {
-      ctx.db.bannedUser.insert({ id: 0n, roomId, userIdentity: target });
-    }
-  }
-);
-
-// Promote a room member to admin
-export const promoteUser = spacetimedb.reducer(
-  { roomId: t.u64(), target: t.identity() },
-  (ctx, { roomId, target }) => {
-    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
-
-    // Check caller is admin
-    let callerIsAdmin = false;
-    for (const a of [...ctx.db.roomAdmin.roomId.filter(roomId)]) {
-      if (a.userIdentity.toHexString() === ctx.sender.toHexString()) { callerIsAdmin = true; break; }
-    }
-    if (!callerIsAdmin) {
-      const room = ctx.db.room.id.find(roomId);
-      if (room && room.createdBy.toHexString() === ctx.sender.toHexString()) callerIsAdmin = true;
-    }
-    if (!callerIsAdmin) throw new SenderError('Not authorized');
-
-    // Target must be a member
-    let isMember = false;
-    for (const m of [...ctx.db.roomMember.roomId.filter(roomId)]) {
-      if (m.userIdentity.toHexString() === target.toHexString()) { isMember = true; break; }
-    }
-    if (!isMember) throw new SenderError('User is not a member of this room');
-
-    // Promote if not already admin
-    let alreadyAdmin = false;
-    for (const a of [...ctx.db.roomAdmin.roomId.filter(roomId)]) {
-      if (a.userIdentity.toHexString() === target.toHexString()) { alreadyAdmin = true; break; }
-    }
-    if (!alreadyAdmin) {
-      ctx.db.roomAdmin.insert({ id: 0n, roomId, userIdentity: target });
-    }
   }
 );
 
