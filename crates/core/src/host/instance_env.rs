@@ -1,4 +1,4 @@
-use super::idc_runtime::IdcSender;
+use super::idc_actor::IdcActorSender;
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
@@ -41,8 +41,8 @@ use std::vec::IntoIter;
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
-    /// Sender to notify the IDC runtime of new outbox rows.
-    pub idc_sender: IdcSender,
+    /// Sender to notify the IDC actor of new outbox rows.
+    pub idc_sender: IdcActorSender,
     pub tx: TxSlot,
     /// The timestamp the current function began running.
     pub start_time: Timestamp,
@@ -227,7 +227,7 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcSender) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcActorSender) -> Self {
         Self {
             replica_ctx,
             scheduler,
@@ -433,7 +433,7 @@ impl InstanceEnv {
     }
 
     /// Enqueue an outbox row into ST_OUTBOUND_MSG atomically within the current transaction,
-    /// and notify the IDC runtime so it delivers without waiting for the next poll cycle.
+    /// and notify the IDC actor so it delivers without waiting for the next poll cycle.
     ///
     /// Outbox tables follow the naming convention `__outbox_<reducer>` and have:
     ///   - Col 0: auto-inc primary key (u64) — stored as `row_id` in ST_OUTBOUND_MSG.
@@ -468,7 +468,7 @@ impl InstanceEnv {
 
         tx.insert_st_outbound_msg(table_id.0, row_id).map_err(DBError::from)?;
 
-        // Wake the IDC runtime immediately so it doesn't wait for the next poll cycle.
+        // Wake the IDC actor immediately so it doesn't wait for the next poll cycle.
         let _ = self.idc_sender.send(());
 
         Ok(())
@@ -1416,7 +1416,7 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        let (_, idc_sender) = crate::host::idc_runtime::IdcRuntime::open();
+        let (_, idc_sender) = crate::host::idc_actor::IdcActor::open();
         Ok((
             InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
             runtime,

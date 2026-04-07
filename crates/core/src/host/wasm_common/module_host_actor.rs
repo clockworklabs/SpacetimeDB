@@ -472,6 +472,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+    pub fn call_reducer_delete_outbound_on_success(&mut self, params: CallReducerParams, msg_id: u64) -> ReducerCallResult {
+        let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common
+                .call_reducer_with_tx_and_success_action(None, params, &mut self.instance, |tx| {
+                    tx.delete_outbound_msg(msg_id).map_err(anyhow::Error::from)
+                })
+        });
+        self.trapped = trapped;
+        res
+    }
+
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
@@ -816,6 +827,19 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, bool) {
+        self.call_reducer_with_tx_and_success_action(tx, params, inst, |_tx| Ok(()))
+    }
+
+    pub(crate) fn call_reducer_with_tx_and_success_action<I: WasmInstance, F>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+        on_success: F,
+    ) -> (ReducerCallResult, bool)
+    where
+        F: FnOnce(&mut MutTxId) -> anyhow::Result<()>,
+    {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -871,6 +895,7 @@ impl InstanceCommon {
                         outcome,
                         energy_used: EnergyQuanta::ZERO,
                         execution_duration: Duration::ZERO,
+                        tx_offset: None,
                     },
                     false,
                 );
@@ -935,7 +960,10 @@ impl InstanceCommon {
                     ),
                     None => Ok(()),
                 };
-                let res = lifecycle_res.and(dedup_res);
+                let res = lifecycle_res
+                    .map_err(anyhow::Error::from)
+                    .and(dedup_res.map_err(anyhow::Error::from))
+                    .and_then(|_| on_success(&mut tx));
                 match res {
                     Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
@@ -993,7 +1021,9 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
+        let committed = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
+        let tx_offset = committed.tx_offset;
+        let event = committed.event;
 
         // For IDC (database-to-database) calls: if the reducer failed with a user error,
         // record the failure in st_inbound_msg in a separate tx (since the reducer tx
@@ -1019,6 +1049,7 @@ impl InstanceCommon {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,
             execution_duration: total_duration,
+            tx_offset: Some(tx_offset),
         };
 
         (res, trapped)

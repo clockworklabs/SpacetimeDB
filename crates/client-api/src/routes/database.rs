@@ -287,7 +287,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
         .await
         .map_err(client_connected_error_to_response)?;
 
-    let result = module
+    let mut result = module
         .call_reducer_from_database(
             caller_identity,
             Some(connection_id),
@@ -301,6 +301,14 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
         )
         .await;
 
+    if let Ok(rcr) = result.as_mut()
+        && let Some(tx_offset) = rcr.tx_offset.as_mut()
+        && let Some(mut durable_offset) = module.durable_tx_offset()
+    {
+        let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+        durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+    }
+
     module
         .call_identity_disconnected(caller_identity, connection_id)
         .await
@@ -311,7 +319,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
             let (status, body) = match rcr.outcome {
                 ReducerOutcome::Committed => (StatusCode::OK, "".into()),
                 ReducerOutcome::Deduplicated => (StatusCode::OK, "deduplicated".into()),
-                // 422 = reducer ran but returned Err; IDC runtime uses this to distinguish
+                // 422 = reducer ran but returned Err; the IDC actor uses this to distinguish
                 // reducer failures from transport errors (which it retries).
                 ReducerOutcome::Failed(errmsg) => (StatusCode::UNPROCESSABLE_ENTITY, *errmsg),
                 ReducerOutcome::BudgetExceeded => {
