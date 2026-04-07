@@ -33,6 +33,8 @@ const typingState = new Map<number, Map<number, { timer: NodeJS.Timeout; userNam
 const roomActivity = new Map<number, number[]>();
 const ACTIVITY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const HOT_THRESHOLD = 5; // 5+ messages in window = hot
+// Track last emitted level per room to detect changes
+const lastEmittedActivityLevel = new Map<number, 'hot' | 'active' | null>();
 
 function computeActivityLevel(roomId: number): 'hot' | 'active' | null {
   const now = Date.now();
@@ -48,8 +50,21 @@ function recordRoomMessage(roomId: number) {
   timestamps.push(Date.now());
   roomActivity.set(roomId, timestamps);
   const level = computeActivityLevel(roomId);
+  lastEmittedActivityLevel.set(roomId, level);
   io.emit('room_activity_update', { roomId, level });
 }
+
+// Background job: periodically recalculate activity levels so badges reset when rooms go quiet
+setInterval(() => {
+  for (const roomId of roomActivity.keys()) {
+    const newLevel = computeActivityLevel(roomId);
+    const prev = lastEmittedActivityLevel.get(roomId) ?? null;
+    if (newLevel !== prev) {
+      lastEmittedActivityLevel.set(roomId, newLevel);
+      io.emit('room_activity_update', { roomId, level: newLevel });
+    }
+  }
+}, 30000); // check every 30 seconds
 
 // Socket to user mapping
 const connectedUsers = new Map<string, { id: number; name: string }>();
@@ -1342,6 +1357,17 @@ io.on('connection', (socket) => {
         );
         const replyCount = parseInt(countResult.rows[0]?.count ?? '1');
         io.to(`room:${roomId}`).emit('reply_count_updated', { messageId: parentMessageId, replyCount });
+
+        // Notify members not currently viewing this room so their unread badge updates
+        const activeSocketIds = io.sockets.adapter.rooms.get(`room:${roomId}`) ?? new Set<string>();
+        const members = await db.select().from(schema.roomMembers).where(eq(schema.roomMembers.roomId, roomId));
+        for (const member of members) {
+          if (member.userId === user.id) continue;
+          const memberSocketId = userSockets.get(member.userId);
+          if (memberSocketId && !activeSocketIds.has(memberSocketId)) {
+            io.to(memberSocketId).emit('message', fullMessage);
+          }
+        }
       } else {
         // Top-level message: emit to room
         io.to(`room:${roomId}`).emit('message', fullMessage);

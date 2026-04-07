@@ -1,11 +1,13 @@
-# Bug Report — L7 Presence (PostgreSQL)
+# Bug Report — L10 Activity Indicators + L8 Threading (PostgreSQL)
 
-## Bug 1: "Last active" timestamp is always wrong
+## Bug 1: Activity indicators do not reset in real-time
 
-When a user sets their status to invisible/offline, the "Last active X minutes ago" display shows a wildly inaccurate time — e.g. "15 minutes ago" immediately after the user was just active seconds ago.
+When a room becomes inactive (no new messages), the activity badge (e.g. "Hot", "Active") does not update for connected clients until they refresh the page.
 
-**Root cause (likely):** The `last_active_at` timestamp on the user record is not being updated when the user is active (e.g. on connection, message send, or status change). It may be set only at registration time, or defaulting to a stale value.
+**Expected:** Activity level should decrease/reset automatically in real-time as rooms become less active, without requiring a page refresh. This likely requires a server-side timer or scheduled job that recalculates activity levels and emits a Socket.io event to update connected clients.
 
-**Required fix:**
-- Update the user's `last_active_at` timestamp to the current server time whenever the user performs any action (connects, sends a message, changes status, etc.)
-- Ensure the "Last active X ago" display computes the diff against the actual current time, not a stale value
+## Bug 2: Thread unread badge does not update in real-time
+
+When a new message is posted in a thread, the unread message badge on the room does not update in real-time for other connected users. The badge only reflects thread messages after a page refresh.
+
+**Expected:** Thread replies should be counted toward the room's unread badge and the count should update via Socket.io in real-time, the same way top-level messages do. When a thread reply is sent, emit the same unread count update event that regular messages trigger.

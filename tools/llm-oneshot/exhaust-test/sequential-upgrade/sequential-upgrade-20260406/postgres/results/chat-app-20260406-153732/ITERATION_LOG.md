@@ -136,3 +136,18 @@ All four now pass the updated timestamp through to the `user_status` broadcast s
 **Redeploy:** Server only
 
 **Server verified:** `GET /api/users` → users with updated lastSeen ✓ · API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
+
+## Iteration 6 — Fix (16:10)
+
+**Category:** Feature Broken
+**What broke:** (1) Activity badges (Hot/Active) did not reset when rooms went quiet — required page refresh. (2) Thread replies did not increment the room's unread badge for non-viewing members — required page refresh.
+**Root cause:**
+- Bug 1: `recordRoomMessage` emitted `room_activity_update` on new messages only. No periodic job re-evaluated room activity, so once a room was marked "hot" or "active", the badge never decayed back to null until the next message arrived and triggered `computeActivityLevel`.
+- Bug 2: The `send_message` handler only notified non-viewing members with a `message` event for top-level messages. Thread replies skipped that notification block entirely, so `unreadCount` on the client never incremented for users not viewing the room.
+**What I fixed:**
+- Bug 1: Added a `setInterval` (30s) that iterates all tracked rooms, recomputes the activity level, and emits `room_activity_update` if the level changed from the last emitted value. Added `lastEmittedActivityLevel` map to track previous values.
+- Bug 2: After emitting `thread_reply` and `reply_count_updated`, added the same non-viewing-member notification loop as top-level messages: queries room members, finds those whose socket is not in `room:${roomId}`, and emits `message` to each. The existing client `message` handler increments `unreadCount` for messages in non-active rooms.
+**Files changed:** `server/src/index.ts` (activity tracking block ~lines 33-66; send_message handler thread-reply branch ~lines 1349-1371)
+**Redeploy:** Server only
+
+**Server verified:** `GET /api/rooms?userId=1` → array ✓ · API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
