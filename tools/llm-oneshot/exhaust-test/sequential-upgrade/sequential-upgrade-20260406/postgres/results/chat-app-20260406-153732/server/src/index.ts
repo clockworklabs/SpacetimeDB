@@ -186,6 +186,7 @@ app.get('/api/rooms/:id/messages', async (req, res) => {
         userId: schema.messages.userId,
         content: schema.messages.content,
         expiresAt: schema.messages.expiresAt,
+        editedAt: schema.messages.editedAt,
         createdAt: schema.messages.createdAt,
         userName: schema.users.name,
       })
@@ -272,6 +273,69 @@ app.get('/api/rooms/:id/messages', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Failed to get messages' });
+  }
+});
+
+// ─── Message Editing ──────────────────────────────────────────────────────────
+
+// Edit a message (owner only)
+app.patch('/api/messages/:id', async (req, res) => {
+  const messageId = parseInt(req.params.id);
+  const { userId, content } = req.body as { userId?: number; content?: string };
+
+  if (!userId || !content?.trim()) {
+    return res.status(400).json({ error: 'userId and content required' });
+  }
+  if (content.trim().length > 2000) {
+    return res.status(400).json({ error: 'Content too long' });
+  }
+
+  try {
+    const [message] = await db.select().from(schema.messages).where(eq(schema.messages.id, messageId));
+    if (!message) return res.status(404).json({ error: 'Message not found' });
+    if (message.userId !== userId) return res.status(403).json({ error: 'Cannot edit another user\'s message' });
+
+    // Save current content to edit history
+    await db.insert(schema.messageEdits).values({ messageId, content: message.content });
+
+    // Update message
+    const [updated] = await db
+      .update(schema.messages)
+      .set({ content: content.trim(), editedAt: new Date() })
+      .where(eq(schema.messages.id, messageId))
+      .returning();
+
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId));
+
+    const payload = {
+      messageId,
+      content: updated.content,
+      editedAt: updated.editedAt,
+      userName: user?.name ?? '',
+    };
+    io.to(`room:${message.roomId}`).emit('message_edited', payload);
+
+    res.json({ ok: true, ...payload });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to edit message' });
+  }
+});
+
+// Get edit history for a message
+app.get('/api/messages/:id/history', async (req, res) => {
+  const messageId = parseInt(req.params.id);
+
+  try {
+    const history = await db
+      .select()
+      .from(schema.messageEdits)
+      .where(eq(schema.messageEdits.messageId, messageId))
+      .orderBy(schema.messageEdits.editedAt);
+    res.json(history);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to get edit history' });
   }
 });
 
@@ -477,6 +541,7 @@ setInterval(async () => {
         userName: user.name,
         readBy: [] as { userId: number; userName: string }[],
         reactions: [] as { emoji: string; userId: number; userName: string }[],
+        editedAt: null as Date | null,
       };
 
       io.to(`room:${scheduled.roomId}`).emit('message', fullMessage);
@@ -579,6 +644,7 @@ io.on('connection', (socket) => {
         userName: user.name,
         readBy: [] as { userId: number; userName: string }[],
         reactions: [] as { emoji: string; userId: number; userName: string }[],
+        editedAt: null as Date | null,
       };
 
       io.to(`room:${roomId}`).emit('message', fullMessage);

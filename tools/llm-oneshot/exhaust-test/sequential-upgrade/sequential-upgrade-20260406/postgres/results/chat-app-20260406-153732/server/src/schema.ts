@@ -28,6 +28,7 @@ export const messages = pgTable('messages', {
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   content: text('content').notNull(),
   expiresAt: timestamp('expires_at'),
+  editedAt: timestamp('edited_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -58,3 +59,10 @@ export const messageReactions = pgTable('message_reactions', {
 }, (t) => [
   primaryKey({ columns: [t.userId, t.messageId, t.emoji] }),
 ]);
+
+export const messageEdits = pgTable('message_edits', {
+  id: serial('id').primaryKey(),
+  messageId: integer('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  editedAt: timestamp('edited_at').defaultNow().notNull(),
+});

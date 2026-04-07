@@ -40,6 +40,11 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [hoveredReaction, setHoveredReaction] = useState<{ msgId: bigint; emoji: string } | null>(null);
 
+  // Edit state
+  const [editingMessageId, setEditingMessageId] = useState<bigint | null>(null);
+  const [editText, setEditText] = useState('');
+  const [historyMessageId, setHistoryMessageId] = useState<bigint | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -65,6 +70,7 @@ export default function App() {
         'SELECT * FROM read_receipt',
         'SELECT * FROM scheduled_message',
         'SELECT * FROM message_reaction',
+        'SELECT * FROM message_edit',
       ]);
   }, [conn, isActive]);
 
@@ -83,6 +89,7 @@ export default function App() {
   const [readReceipts] = useTable(tables.readReceipt);
   const [scheduledMessages] = useTable(tables.scheduledMessage);
   const [messageReactions] = useTable(tables.messageReaction);
+  const [messageEdits] = useTable(tables.messageEdit);
 
   const myUser = myIdentity
     ? users.find((u) => u.identity.toHexString() === myIdentity.toHexString())
@@ -254,6 +261,27 @@ export default function App() {
     }
   };
 
+  const handleStartEdit = (msgId: bigint, currentText: string) => {
+    setEditingMessageId(msgId);
+    setEditText(currentText);
+  };
+
+  const handleSaveEdit = () => {
+    if (!conn || !editingMessageId || !editText.trim()) return;
+    try {
+      conn.reducers.editMessage({ messageId: editingMessageId, newText: editText.trim() });
+      setEditingMessageId(null);
+      setEditText('');
+    } catch (e) {
+      showError(String(e));
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditText('');
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -324,6 +352,12 @@ export default function App() {
   // Online users
   const onlineUsers = users.filter((u) => u.online);
 
+  // Edit history for a message
+  const getEditHistory = (msgId: bigint) =>
+    messageEdits
+      .filter((e) => e.messageId === msgId)
+      .sort((a, b) => Number(a.editedAt.microsSinceUnixEpoch - b.editedAt.microsSinceUnixEpoch));
+
   if (!isActive || !subscribed) {
     return (
       <div className="app">
@@ -348,6 +382,9 @@ export default function App() {
         .map((m) => users.find((u) => u.identity.toHexString() === m.userIdentity.toHexString()))
         .filter(Boolean)
     : [];
+
+  const historyMsg = historyMessageId ? messages.find((m) => m.id === historyMessageId) : null;
+  const historyEdits = historyMessageId ? getEditHistory(historyMessageId) : [];
 
   return (
     <div className="app">
@@ -466,6 +503,9 @@ export default function App() {
                     ? Math.max(0, Math.floor((Number(expiresAt!.microsSinceUnixEpoch / 1000n) - now) / 1000))
                     : null;
 
+                  const isEdited = msg.editedAt !== null && msg.editedAt !== undefined;
+                  const isEditing = editingMessageId === msg.id;
+
                   // Reactions for this message
                   const EMOJIS = ['👍', '❤️', '😂', '😮', '😢'];
                   const msgReactions = messageReactions.filter((r) => r.messageId === msg.id);
@@ -497,7 +537,50 @@ export default function App() {
                           ⏳ expires {formatCountdown(remainingSecs!)}
                         </span>
                       )}
-                      <div className={`message-text${isEphemeral ? ' ephemeral-message' : ''}`}>{msg.text}</div>
+
+                      {/* Message text or inline edit form */}
+                      {isEditing ? (
+                        <div className="edit-form">
+                          <textarea
+                            className="edit-input"
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveEdit(); }
+                              if (e.key === 'Escape') handleCancelEdit();
+                            }}
+                            autoFocus
+                            maxLength={2000}
+                          />
+                          <div className="edit-form-actions">
+                            <button className="btn-secondary" onClick={handleCancelEdit}>Cancel</button>
+                            <button className="btn-primary" onClick={handleSaveEdit} disabled={!editText.trim()}>Save</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`message-text${isEphemeral ? ' ephemeral-message' : ''}`}>
+                          {msg.text}
+                          {isEdited && (
+                            <span
+                              className="edited-indicator"
+                              onClick={() => setHistoryMessageId(msg.id)}
+                              title="View edit history"
+                            >
+                              (edited)
+                            </span>
+                          )}
+                          {isMe && inSelectedRoom && !isEphemeral && (
+                            <button
+                              className="edit-btn"
+                              onClick={() => handleStartEdit(msg.id, msg.text)}
+                              title="Edit message"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       {/* Reactions */}
                       <div className="message-reactions">
                         {reactionGroups.map((g) => (
@@ -711,6 +794,33 @@ export default function App() {
               >
                 Schedule
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit history modal */}
+      {historyMessageId !== null && historyMsg && (
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setHistoryMessageId(null); }}>
+          <div className="modal">
+            <div className="modal-title">Edit History</div>
+            <div className="history-list">
+              {historyEdits.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No history available.</div>
+              ) : (
+                historyEdits.map((edit) => (
+                  <div key={String(edit.id)} className="history-item">
+                    <div className="history-item-text">{edit.previousText}</div>
+                    <div className="history-item-time">{formatTime(tsToDate(edit.editedAt))} · {tsToDate(edit.editedAt).toLocaleDateString()}</div>
+                  </div>
+                ))
+              )}
+              <div className="history-item history-item-current">
+                <div className="history-item-text">{historyMsg.text} <span style={{ color: 'var(--primary)', fontSize: 11 }}>(current)</span></div>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn-primary" onClick={() => setHistoryMessageId(null)}>Close</button>
             </div>
           </div>
         </div>

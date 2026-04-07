@@ -117,7 +117,7 @@ export const sendMessage = spacetimedb.reducer(
     if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
     if (trimmed.length > 2000) throw new SenderError('Message too long (max 2000 chars)');
 
-    const msg = ctx.db.message.insert({ id: 0n, roomId, senderIdentity: ctx.sender, text: trimmed, sentAt: ctx.timestamp, expiresAt: null });
+    const msg = ctx.db.message.insert({ id: 0n, roomId, senderIdentity: ctx.sender, text: trimmed, sentAt: ctx.timestamp, expiresAt: null, editedAt: null });
 
     // Update sender's read receipt to this message
     let found: { id: bigint; roomId: bigint; userIdentity: { toHexString(): string }; lastReadMessageId: bigint; updatedAt: { microsSinceUnixEpoch: bigint } } | undefined;
@@ -172,6 +172,7 @@ export const sendEphemeralMessage = spacetimedb.reducer(
       text: trimmed,
       sentAt: ctx.timestamp,
       expiresAt: new Timestamp(expiryMicros),
+      editedAt: null,
     });
 
     // Update sender's read receipt
@@ -201,6 +202,29 @@ export const sendEphemeralMessage = spacetimedb.reducer(
       scheduledAt: ScheduleAt.time(expiryMicros),
       messageId: msg.id,
     });
+  }
+);
+
+// Edit a message and save previous version to history
+export const editMessage = spacetimedb.reducer(
+  { messageId: t.u64(), newText: t.string() },
+  (ctx, { messageId, newText }) => {
+    const msg = ctx.db.message.id.find(messageId);
+    if (!msg) throw new SenderError('Message not found');
+    if (msg.senderIdentity.toHexString() !== ctx.sender.toHexString()) {
+      throw new SenderError('Can only edit your own messages');
+    }
+
+    const trimmed = newText.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 2000) throw new SenderError('Message too long (max 2000 chars)');
+    if (trimmed === msg.text) return; // No change
+
+    // Save previous version to history
+    ctx.db.messageEdit.insert({ id: 0n, messageId, previousText: msg.text, editedAt: ctx.timestamp });
+
+    // Update the message
+    ctx.db.message.id.update({ ...msg, text: trimmed, editedAt: ctx.timestamp });
   }
 );
 

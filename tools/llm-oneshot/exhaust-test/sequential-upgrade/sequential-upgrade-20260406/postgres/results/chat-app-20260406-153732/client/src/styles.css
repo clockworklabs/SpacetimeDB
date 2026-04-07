@@ -762,3 +762,24 @@ body {
   border-color: var(--primary);
   color: var(--accent);
 }
+
+.edited-badge {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  font-style: italic;
+}
+
+.edited-badge:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.edit-form {
+  padding: 4px 0;
+}
+
+.edit-input {
+  width: 100%;
+  font-size: 14px;
+}

@@ -43,6 +43,7 @@ const message = table(
     text: t.string(),
     sentAt: t.timestamp(),
     expiresAt: t.option(t.timestamp()),
+    editedAt: t.option(t.timestamp()),
   }
 );
 
@@ -109,7 +110,18 @@ const messageReaction = table(
   }
 );
 
-const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction });
+// Message edit history — stores previous versions of edited messages
+const messageEdit = table(
+  { name: 'message_edit', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    messageId: t.u64().index('btree'),
+    previousText: t.string(),
+    editedAt: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit });
 export default spacetimedb;
 
 // Fires when a scheduled message is due — inserts it as a real message
@@ -123,6 +135,7 @@ export const sendScheduledMessage = spacetimedb.reducer(
       text: timer.text,
       sentAt: ctx.timestamp,
       expiresAt: null,
+      editedAt: null,
     });
 
     // Update read receipt for the original sender

@@ -1,0 +1,23 @@
+{
+  "level": 5,
+  "backend": "postgres",
+  "timestamp": "20260407-093746",
+  "startedAt": "2026-04-07T09:37:46-0400",
+  "startedAtUtc": "2026-04-07T13:37:46Z",
+  "runId": "postgres-upgrade-to-level5-20260407-093746",
+  "appDir": "sequential-upgrade\\sequential-upgrade-20260406\\postgres\\results\\chat-app-20260406-153732",
+  "promptFile": "exhaust-prompt-0-05_edit_history.md",
+  "phase": "upgrade",
+  "variant": "sequential-upgrade",
+  "rules": "guided",
+  "testMode": "none",
+  "runIndex": 0,
+  "vitePort": 6173,
+  "expressPort": 6001,
+  "pgDatabase": "spacetime",
+  "sessionId": "a228e72f-627f-41dd-a11c-4aaad3efe6a9",
+  "endedAt": "2026-04-07T09:43:18-0400",
+  "endedAtUtc": "2026-04-07T13:43:18Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

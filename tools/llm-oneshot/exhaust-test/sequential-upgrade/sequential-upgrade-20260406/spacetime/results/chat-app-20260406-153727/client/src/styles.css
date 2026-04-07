@@ -747,3 +747,102 @@ body {
 .reaction-add-emoji:hover {
   background: var(--border);
 }
+
+/* Message editing */
+.message-text {
+  position: relative;
+}
+
+.message-text:hover .edit-btn {
+  opacity: 1;
+}
+
+.edit-btn {
+  opacity: 0;
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+  vertical-align: middle;
+}
+
+.edit-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.edited-indicator {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-style: italic;
+}
+
+.edited-indicator:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.edit-form {
+  margin: 4px 0;
+}
+
+.edit-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  padding: 6px 10px;
+  resize: vertical;
+  min-height: 36px;
+  font-family: inherit;
+  outline: none;
+}
+
+.edit-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  justify-content: flex-end;
+}
+
+/* Edit history modal */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.history-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.history-item-current {
+  border-color: var(--primary);
+}
+
+.history-item-text {
+  color: var(--text);
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.history-item-time {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 4px;
+}

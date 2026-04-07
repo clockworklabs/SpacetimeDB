@@ -32,9 +32,17 @@ interface Message {
   userName: string;
   content: string;
   expiresAt?: string | null;
+  editedAt?: string | null;
   createdAt: string;
   readBy: ReadBy[];
   reactions: Reaction[];
+}
+
+interface EditHistoryEntry {
+  id: number;
+  messageId: number;
+  content: string;
+  editedAt: string;
 }
 
 interface ScheduledMessage {
@@ -76,6 +84,11 @@ export default function App() {
   const [scheduleTime, setScheduleTime] = useState('');
   const [scheduleError, setScheduleError] = useState('');
   const [showScheduledPanel, setShowScheduledPanel] = useState(false);
+
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [editInput, setEditInput] = useState('');
+  const [historyMessageId, setHistoryMessageId] = useState<number | null>(null);
+  const [editHistory, setEditHistory] = useState<EditHistoryEntry[]>([]);
 
   const socketRef = useRef<Socket | null>(null);
   const activeRoomIdRef = useRef<number | null>(null);
@@ -200,6 +213,12 @@ export default function App() {
             return { ...m, reactions: m.reactions.filter((r) => !(r.userId === userId && r.emoji === emoji)) };
           }
         })
+      );
+    });
+
+    socket.on('message_edited', ({ messageId, content, editedAt }: { messageId: number; content: string; editedAt: string }) => {
+      setMessages((prev) =>
+        prev.map((m) => m.id === messageId ? { ...m, content, editedAt } : m)
       );
     });
 
@@ -428,6 +447,40 @@ export default function App() {
     }, 2000);
   }
 
+  function handleStartEdit(msg: Message) {
+    setEditingMessageId(msg.id);
+    setEditInput(msg.content);
+  }
+
+  async function handleSaveEdit(e: React.FormEvent, messageId: number) {
+    e.preventDefault();
+    const content = editInput.trim();
+    if (!content || !currentUser) return;
+
+    try {
+      await fetch(`/api/messages/${messageId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id, content }),
+      });
+      setEditingMessageId(null);
+      setEditInput('');
+    } catch {
+      console.error('Failed to edit message');
+    }
+  }
+
+  async function handleShowHistory(messageId: number) {
+    try {
+      const res = await fetch(`/api/messages/${messageId}/history`);
+      const data = await res.json();
+      setEditHistory(Array.isArray(data) ? data : []);
+      setHistoryMessageId(messageId);
+    } catch {
+      console.error('Failed to get edit history');
+    }
+  }
+
   function handleScroll() {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -634,6 +687,30 @@ export default function App() {
         </div>
       )}
 
+      {/* ── Edit History Modal ── */}
+      {historyMessageId !== null && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setHistoryMessageId(null); }}>
+          <div className="modal">
+            <h2>Edit History</h2>
+            {editHistory.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No edit history available.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {editHistory.map((entry) => (
+                  <div key={entry.id} style={{ background: 'var(--surface)', padding: '8px 12px', borderRadius: 6, fontSize: 13 }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 4 }}>
+                      {new Date(entry.editedAt).toLocaleString()}
+                    </div>
+                    <div style={{ color: 'var(--text)' }}>{entry.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => setHistoryMessageId(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
       {/* ── Main Area ── */}
       <main className="main-area">
         {!connected && (
@@ -719,9 +796,39 @@ export default function App() {
                         }
                         return (
                           <div key={msg.id} className="message-wrapper">
+                            {editingMessageId === msg.id ? (
+                              <form
+                                className="edit-form"
+                                onSubmit={(e) => handleSaveEdit(e, msg.id)}
+                                onKeyDown={(e) => { if (e.key === 'Escape') { setEditingMessageId(null); setEditInput(''); } }}
+                              >
+                                <input
+                                  className="text-input edit-input"
+                                  type="text"
+                                  value={editInput}
+                                  onChange={(e) => setEditInput(e.target.value)}
+                                  maxLength={2000}
+                                  autoFocus
+                                />
+                                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                  <button className="btn btn-primary btn-sm" type="submit" disabled={!editInput.trim()}>Save</button>
+                                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setEditingMessageId(null); setEditInput(''); }}>Cancel</button>
+                                </div>
+                              </form>
+                            ) : (
                             <div className={`message-row ${isOwn ? 'own' : ''}`}>
                               <div className="message-content">
                                 {msg.content}
+                                {msg.editedAt && (
+                                  <span
+                                    className="edited-badge"
+                                    title="Click to see edit history"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => handleShowHistory(msg.id)}
+                                  >
+                                    (edited)
+                                  </span>
+                                )}
                                 {msg.expiresAt && (
                                   <span className="ephemeral-badge" title="This message will disappear">
                                     ⏳ {formatCountdown(msg.expiresAt)}
@@ -729,6 +836,15 @@ export default function App() {
                                 )}
                               </div>
                               <div className="message-actions">
+                                {isOwn && (
+                                  <button
+                                    className="reaction-btn"
+                                    onClick={() => handleStartEdit(msg)}
+                                    title="Edit message"
+                                  >
+                                    Edit
+                                  </button>
+                                )}
                                 {(['👍', '❤️', '😂', '😮', '😢'] as const).map((emoji) => (
                                   <button
                                     key={emoji}
@@ -741,6 +857,7 @@ export default function App() {
                                 ))}
                               </div>
                             </div>
+                            )}
                             {reactionGroups.length > 0 && (
                               <div className="reaction-row">
                                 {reactionGroups.map((g) => (
