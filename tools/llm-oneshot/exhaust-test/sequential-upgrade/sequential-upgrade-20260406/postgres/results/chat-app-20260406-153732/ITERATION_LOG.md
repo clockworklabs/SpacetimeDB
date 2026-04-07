@@ -120,3 +120,19 @@
 **Redeploy:** Both
 
 **Server verified:** `POST /api/rooms/5/join` with banned userId=2 → 403 ✓ · API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
+
+## Iteration 5 — Fix (12:15)
+
+**Category:** Feature Broken
+**What broke:** "Last active X ago" showed a stale/inaccurate time immediately after a user set their status to invisible/offline. E.g. "15 minutes ago" right after the user was just active.
+**Root cause:** `lastSeen` was only updated in the DB on disconnect. On connect (register socket event), status change (both REST `/api/status` and socket `set_status`), and message send, `lastSeen` was never updated. So invisible users showed the `lastSeen` from their last disconnect session.
+**What I fixed:** Updated `lastSeen` to `new Date()` in:
+- REST `PUT /api/users/:id/status` handler
+- Socket `register` event handler
+- Socket `set_status` event handler
+- Socket `send_message` handler (before inserting the message)
+All four now pass the updated timestamp through to the `user_status` broadcast so clients immediately reflect the correct "last active" time.
+**Files changed:** `server/src/index.ts` (register handler, set_status socket handler, REST status handler, send_message handler)
+**Redeploy:** Server only
+
+**Server verified:** `GET /api/users` → users with updated lastSeen ✓ · API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓

@@ -6,8 +6,7 @@ const user = table(
   {
     identity: t.identity().primaryKey(),
     name: t.string(),
-    status: t.string(), // 'online' | 'away' | 'dnd' | 'invisible' | 'offline'
-    lastActiveAt: t.option(t.timestamp()),
+    online: t.bool(),
     createdAt: t.timestamp(),
   }
 );

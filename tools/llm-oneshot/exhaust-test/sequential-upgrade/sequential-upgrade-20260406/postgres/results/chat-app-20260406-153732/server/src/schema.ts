@@ -4,6 +4,7 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   name: text('name').notNull().unique(),
   online: boolean('online').default(false).notNull(),
+  status: text('status').default('offline').notNull(), // 'online' | 'away' | 'dnd' | 'invisible' | 'offline'
   lastSeen: timestamp('last_seen').defaultNow().notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

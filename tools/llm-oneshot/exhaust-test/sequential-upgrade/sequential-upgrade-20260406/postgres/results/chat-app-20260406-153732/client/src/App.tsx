@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+type UserStatus = 'online' | 'away' | 'dnd' | 'invisible' | 'offline';
+
 interface User {
   id: number;
   name: string;
   online: boolean;
+  status?: UserStatus;
+  lastSeen?: string;
 }
 
 interface Room {
@@ -100,6 +104,13 @@ export default function App() {
   const [historyMessageId, setHistoryMessageId] = useState<number | null>(null);
   const [editHistory, setEditHistory] = useState<EditHistoryEntry[]>([]);
 
+  // Rich presence
+  const [myStatus, setMyStatus] = useState<UserStatus>('online');
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  // Whether the current auto-away was set automatically (not manually)
+  const autoAwayRef = useRef(false);
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const socketRef = useRef<Socket | null>(null);
   const activeRoomIdRef = useRef<number | null>(null);
   const currentUserRef = useRef<User | null>(null);
@@ -116,6 +127,43 @@ export default function App() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Auto-away after 5 minutes of inactivity
+  useEffect(() => {
+    if (!currentUser || !socketRef.current) return;
+
+    const INACTIVITY_MS = 5 * 60 * 1000;
+
+    function resetInactivityTimer() {
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      // If we went away automatically, come back online on activity
+      if (autoAwayRef.current) {
+        autoAwayRef.current = false;
+        setMyStatus('online');
+        socketRef.current?.emit('set_status', { status: 'online' });
+      }
+      inactivityTimerRef.current = setTimeout(() => {
+        // Only auto-away if currently online
+        setMyStatus((prev) => {
+          if (prev === 'online') {
+            autoAwayRef.current = true;
+            socketRef.current?.emit('set_status', { status: 'away' });
+            return 'away';
+          }
+          return prev;
+        });
+      }, INACTIVITY_MS);
+    }
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach((e) => window.addEventListener(e, resetInactivityTimer, { passive: true }));
+    resetInactivityTimer();
+
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, resetInactivityTimer));
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    };
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
@@ -189,17 +237,25 @@ export default function App() {
       );
     });
 
-    socket.on('user_status', ({ userId, online, name }: { userId: number; online: boolean; name: string }) => {
+    socket.on('user_status', ({ userId, online, name, status, lastSeen }: { userId: number; online: boolean; name: string; status?: UserStatus; lastSeen?: string }) => {
+      const effectiveStatus: UserStatus = status ?? (online ? 'online' : 'offline');
       setOnlineUsers((prev) => {
         if (online) {
           if (prev.some((u) => u.id === userId)) {
-            return prev.map((u) => u.id === userId ? { ...u, online: true } : u);
+            return prev.map((u) => u.id === userId ? { ...u, online: true, status: effectiveStatus } : u);
           }
-          return [...prev, { id: userId, name, online: true }];
+          return [...prev, { id: userId, name, online: true, status: effectiveStatus }];
         } else {
           return prev.filter((u) => u.id !== userId);
         }
       });
+      setAllUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? { ...u, online, status: effectiveStatus, lastSeen: lastSeen ?? u.lastSeen }
+            : u
+        )
+      );
     });
 
     socket.on('room_created', (room: Room) => {
@@ -300,6 +356,11 @@ export default function App() {
     fetch(`/api/scheduled-messages?userId=${currentUser.id}`)
       .then((r) => r.json())
       .then(setScheduledMessages)
+      .catch(console.error);
+
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data: unknown) => setAllUsers(Array.isArray(data) ? data : []))
       .catch(console.error);
   }, [currentUser]);
 
@@ -599,6 +660,44 @@ export default function App() {
     setIsScrolledUp(!atBottom);
   }
 
+  function handleSetStatus(status: UserStatus) {
+    if (!socketRef.current) return;
+    autoAwayRef.current = false; // manual change — don't auto-restore
+    setMyStatus(status);
+    socketRef.current.emit('set_status', { status });
+  }
+
+  function formatLastSeen(lastSeen?: string): string {
+    if (!lastSeen) return 'a while ago';
+    const diff = Date.now() - new Date(lastSeen).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  const statusColor = (status?: UserStatus) => {
+    switch (status) {
+      case 'online': return 'var(--success)';
+      case 'away': return 'var(--warning)';
+      case 'dnd': return 'var(--danger)';
+      default: return 'var(--text-muted)';
+    }
+  };
+
+  const statusLabel = (status?: UserStatus) => {
+    switch (status) {
+      case 'online': return 'Online';
+      case 'away': return 'Away';
+      case 'dnd': return 'Do Not Disturb';
+      case 'invisible': return 'Invisible';
+      default: return 'Offline';
+    }
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   // Name modal
@@ -735,22 +834,63 @@ export default function App() {
           )}
 
           <div className="sidebar-section" style={{ borderTop: '1px solid var(--border)', marginTop: 4 }}>
-            <div className="sidebar-section-title">Online ({onlineUsers.length})</div>
-            {onlineUsers.map((u) => (
-              <div key={u.id} className="user-item">
-                <span className="status-dot online" />
-                <span style={{ color: u.id === currentUser.id ? 'var(--accent)' : 'var(--text-muted)' }}>
-                  {u.name}{u.id === currentUser.id ? ' (you)' : ''}
-                </span>
-              </div>
-            ))}
+            <div className="sidebar-section-title">Presence</div>
+            {allUsers.length === 0 && onlineUsers.length === 0 ? (
+              <div style={{ padding: '8px 16px', fontSize: 13, color: 'var(--text-muted)' }}>No users yet</div>
+            ) : (() => {
+                const merged = new Map<number, User>();
+                for (const u of allUsers) merged.set(u.id, u);
+                for (const u of onlineUsers) {
+                  if (!merged.has(u.id)) merged.set(u.id, u);
+                  else merged.set(u.id, { ...merged.get(u.id)!, online: u.online, status: u.status ?? merged.get(u.id)!.status });
+                }
+                const order: Record<string, number> = { online: 0, away: 1, dnd: 2, invisible: 3, offline: 4 };
+                const sorted = Array.from(merged.values()).sort((a, b) => {
+                  const sa = a.id === currentUser.id ? myStatus : (a.status ?? 'offline');
+                  const sb = b.id === currentUser.id ? myStatus : (b.status ?? 'offline');
+                  return (order[sa] ?? 4) - (order[sb] ?? 4);
+                });
+                return sorted.map((u) => {
+                  const isMe = u.id === currentUser.id;
+                  const effectiveStatus: UserStatus = isMe ? myStatus : (u.status ?? (u.online ? 'online' : 'offline'));
+                  const isOffline = effectiveStatus === 'offline' || effectiveStatus === 'invisible';
+                  return (
+                    <div key={u.id} className="user-item" style={{ flexDirection: 'column', alignItems: 'flex-start', padding: '6px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor(effectiveStatus), flexShrink: 0 }} />
+                        <span style={{ fontSize: 13, color: isMe ? 'var(--accent)' : 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {u.name}{isMe ? ' (you)' : ''}
+                        </span>
+                      </div>
+                      {isOffline && u.lastSeen && !isMe && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', paddingLeft: 14 }}>
+                          Active {formatLastSeen(u.lastSeen)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()
+            }
           </div>
         </div>
 
-        <div className="sidebar-user-info">
-          <span className="status-dot online" />
-          <span className="user-name">{currentUser.name}</span>
-          {!connected && <span style={{ fontSize: 11, color: 'var(--warning)', marginLeft: 'auto' }}>●</span>}
+        <div className="sidebar-user-info" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6, padding: '10px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor(myStatus), flexShrink: 0 }} />
+            <span className="user-name" style={{ flex: 1 }}>{currentUser.name}</span>
+            {!connected && <span style={{ fontSize: 11, color: 'var(--warning)' }}>●</span>}
+          </div>
+          <select
+            style={{ fontSize: 11, background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', width: '100%', cursor: 'pointer' }}
+            value={myStatus}
+            onChange={(e) => handleSetStatus(e.target.value as UserStatus)}
+          >
+            <option value="online">● Online</option>
+            <option value="away">● Away</option>
+            <option value="dnd">● Do Not Disturb</option>
+            <option value="invisible">● Invisible</option>
+          </select>
         </div>
       </aside>
 

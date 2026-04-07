@@ -59,13 +59,68 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Get online users
+// Get online users (excludes invisible)
 app.get('/api/users/online', async (_req, res) => {
   try {
     const users = await db.select().from(schema.users).where(eq(schema.users.online, true));
-    res.json(users);
+    // Filter out invisible users from the public online list
+    res.json(users.filter((u) => u.status !== 'invisible'));
   } catch {
     res.status(500).json({ error: 'Failed to get online users' });
+  }
+});
+
+// Get all users for presence list
+app.get('/api/users', async (_req, res) => {
+  try {
+    const users = await db
+      .select({
+        id: schema.users.id,
+        name: schema.users.name,
+        online: schema.users.online,
+        status: schema.users.status,
+        lastSeen: schema.users.lastSeen,
+      })
+      .from(schema.users)
+      .orderBy(schema.users.name);
+    res.json(users);
+  } catch {
+    res.status(500).json({ error: 'Failed to get users' });
+  }
+});
+
+// Update user status via REST
+app.patch('/api/users/:id/status', async (req, res) => {
+  const userId = parseInt(req.params.id);
+  const { status } = req.body as { status?: string };
+  const VALID_STATUSES = ['online', 'away', 'dnd', 'invisible'];
+  if (!status || !VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  try {
+    const now = new Date();
+    const [user] = await db
+      .update(schema.users)
+      .set({ status, lastSeen: now })
+      .where(eq(schema.users.id, userId))
+      .returning();
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Broadcast: invisible users appear offline to others
+    const broadcastStatus = status === 'invisible' ? 'offline' : status;
+    io.emit('user_status', {
+      userId,
+      name: user.name,
+      online: broadcastStatus !== 'offline',
+      status: broadcastStatus,
+      lastSeen: now,
+    });
+
+    res.json({ ok: true, status });
+  } catch {
+    res.status(500).json({ error: 'Failed to update status' });
   }
 });
 
@@ -732,10 +787,36 @@ io.on('connection', (socket) => {
 
     await db
       .update(schema.users)
-      .set({ online: true })
+      .set({ online: true, status: 'online', lastSeen: new Date() })
       .where(eq(schema.users.id, userId));
 
-    io.emit('user_status', { userId, online: true, name: userName });
+    io.emit('user_status', { userId, online: true, name: userName, status: 'online' });
+  });
+
+  socket.on('set_status', async ({ status }: { status: string }) => {
+    const user = connectedUsers.get(socket.id);
+    if (!user) return;
+    const VALID_STATUSES = ['online', 'away', 'dnd', 'invisible'];
+    if (!VALID_STATUSES.includes(status)) return;
+
+    const statusNow = new Date();
+    const [updated] = await db
+      .update(schema.users)
+      .set({ status, lastSeen: statusNow })
+      .where(eq(schema.users.id, user.id))
+      .returning();
+
+    if (!updated) return;
+
+    // Invisible users appear offline to others
+    const broadcastStatus = status === 'invisible' ? 'offline' : status;
+    io.emit('user_status', {
+      userId: user.id,
+      name: user.name,
+      online: broadcastStatus !== 'offline',
+      status: broadcastStatus,
+      lastSeen: statusNow,
+    });
   });
 
   socket.on('join_room', ({ roomId }: { roomId: number }) => {
@@ -777,6 +858,9 @@ io.on('connection', (socket) => {
       if (!membership) return;
 
       const expiresAt = expiresInMs && expiresInMs > 0 ? new Date(Date.now() + expiresInMs) : null;
+
+      // Update lastSeen on activity
+      await db.update(schema.users).set({ lastSeen: new Date() }).where(eq(schema.users.id, user.id));
 
       const [message] = await db
         .insert(schema.messages)
@@ -865,12 +949,13 @@ io.on('connection', (socket) => {
       connectedUsers.delete(socket.id);
       userSockets.delete(user.id);
 
+      const now = new Date();
       await db
         .update(schema.users)
-        .set({ online: false, lastSeen: new Date() })
+        .set({ online: false, status: 'offline', lastSeen: now })
         .where(eq(schema.users.id, user.id));
 
-      io.emit('user_status', { userId: user.id, online: false, name: user.name });
+      io.emit('user_status', { userId: user.id, online: false, name: user.name, status: 'offline', lastSeen: now });
 
       // Clear all typing for this user
       typingState.forEach((roomTyping, roomId) => {

@@ -8,16 +8,14 @@ export { sendScheduledMessage, deleteExpiredMessage } from './schema';
 export const onConnect = spacetimedb.clientConnected((ctx) => {
   const existing = ctx.db.user.identity.find(ctx.sender);
   if (existing) {
-    // Restore to online unless user explicitly set invisible
-    const newStatus = existing.status === 'invisible' ? 'invisible' : 'online';
-    ctx.db.user.identity.update({ ...existing, status: newStatus, lastActiveAt: null });
+    ctx.db.user.identity.update({ ...existing, online: true });
   }
 });
 
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   const existing = ctx.db.user.identity.find(ctx.sender);
   if (existing) {
-    ctx.db.user.identity.update({ ...existing, status: 'offline', lastActiveAt: ctx.timestamp });
+    ctx.db.user.identity.update({ ...existing, online: false });
     // Clear typing indicators for this user
     for (const ti of [...ctx.db.typingIndicator.userIdentity.filter(ctx.sender)]) {
       ctx.db.typingIndicator.id.delete(ti.id);
@@ -37,21 +35,8 @@ export const setName = spacetimedb.reducer(
     if (existing) {
       ctx.db.user.identity.update({ ...existing, name: trimmed });
     } else {
-      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, status: 'online', lastActiveAt: null, createdAt: ctx.timestamp });
+      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, online: true, createdAt: ctx.timestamp });
     }
-  }
-);
-
-// Set user presence status
-export const setStatus = spacetimedb.reducer(
-  { status: t.string() },
-  (ctx, { status }) => {
-    const valid = ['online', 'away', 'dnd', 'invisible'];
-    if (!valid.includes(status)) throw new SenderError('Invalid status');
-
-    const existing = ctx.db.user.identity.find(ctx.sender);
-    if (!existing) throw new SenderError('User not found');
-    ctx.db.user.identity.update({ ...existing, status, lastActiveAt: ctx.timestamp });
   }
 );
 

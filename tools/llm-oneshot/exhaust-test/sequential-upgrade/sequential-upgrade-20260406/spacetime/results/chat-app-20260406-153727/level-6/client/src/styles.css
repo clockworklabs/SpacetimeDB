@@ -942,24 +942,3 @@ body {
 .promote-btn:hover {
   background: rgba(2, 190, 250, 0.2);
 }
-
-/* Status selector */
-.sidebar-status-row {
-  padding: 4px 12px 8px;
-}
-
-.status-select {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 12px;
-  padding: 4px 8px;
-  cursor: pointer;
-  outline: none;
-}
-
-.status-select:focus {
-  border-color: var(--primary);
-}

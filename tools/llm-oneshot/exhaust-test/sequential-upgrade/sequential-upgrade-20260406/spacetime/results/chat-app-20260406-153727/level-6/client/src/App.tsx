@@ -20,28 +20,6 @@ function formatCountdown(secs: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-function statusColor(status: string): string {
-  switch (status) {
-    case 'online': return 'var(--success)';
-    case 'away': return 'var(--warning)';
-    case 'dnd': return 'var(--danger)';
-    default: return 'var(--text-muted)'; // invisible, offline
-  }
-}
-
-function formatLastActive(ts: { microsSinceUnixEpoch: bigint } | null | undefined, now: number): string {
-  if (!ts) return 'Last active unknown';
-  const ms = Number(ts.microsSinceUnixEpoch / 1000n);
-  const diffMs = now - ms;
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return 'Last active just now';
-  if (diffMins < 60) return `Last active ${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `Last active ${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `Last active ${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-}
-
 export default function App() {
   const { isActive, identity: myIdentity, token, getConnection } = useSpacetimeDB();
   const conn = getConnection() as DbConn;
@@ -72,7 +50,6 @@ export default function App() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAtBottomRef = useRef(true);
-  const lastActivityRef = useRef<number>(Date.now());
   // Tracks whether the current user was a member of the selected room on the last render
   const kickDetectRef = useRef<{ roomId: bigint | null; wasMember: boolean }>({ roomId: null, wasMember: false });
 
@@ -129,35 +106,6 @@ export default function App() {
       setShowNameModal(true);
     }
   }, [isActive, subscribed, myUser]);
-
-  // Auto-away: track activity and set status to away after 5 minutes of inactivity
-  useEffect(() => {
-    if (!conn || !isActive) return;
-    const myStatus = myUser?.status;
-
-    const updateActivity = () => {
-      lastActivityRef.current = Date.now();
-      if (myStatus === 'away') {
-        conn.reducers.setStatus({ status: 'online' });
-      }
-    };
-
-    window.addEventListener('mousemove', updateActivity);
-    window.addEventListener('keydown', updateActivity);
-
-    const inactivityCheck = setInterval(() => {
-      const idleSecs = (Date.now() - lastActivityRef.current) / 1000;
-      if (idleSecs > 300 && myStatus === 'online') {
-        conn.reducers.setStatus({ status: 'away' });
-      }
-    }, 30000);
-
-    return () => {
-      window.removeEventListener('mousemove', updateActivity);
-      window.removeEventListener('keydown', updateActivity);
-      clearInterval(inactivityCheck);
-    };
-  }, [conn, isActive, myUser?.status]);
 
   // Membership helpers
   const isMember = useCallback(
@@ -425,15 +373,6 @@ export default function App() {
     }
   };
 
-  const handleSetStatus = (status: string) => {
-    if (!conn) return;
-    try {
-      conn.reducers.setStatus({ status });
-    } catch (e) {
-      showError(String(e));
-    }
-  };
-
   // Typing users in selected room (excluding me)
   const typingUsers = selectedRoomId
     ? typingIndicators
@@ -488,8 +427,8 @@ export default function App() {
       })
     : [];
 
-  // Online users: show all users who are connected (not offline), excluding invisible (they appear offline)
-  const onlineUsers = users.filter((u) => u.status !== 'offline' && u.status !== 'invisible');
+  // Online users
+  const onlineUsers = users.filter((u) => u.online);
 
   // Edit history for a message
   const getEditHistory = (msgId: bigint) =>
@@ -570,39 +509,21 @@ export default function App() {
           <div className="sidebar-section-label">Online — {onlineUsers.length}</div>
           {onlineUsers.map((u) => (
             <div key={u.identity.toHexString()} className="user-item">
-              <span className="status-dot" style={{ background: statusColor(u.status) }} title={u.status} />
-              <span style={{ flex: 1 }}>{u.name}</span>
+              <span className="status-dot online" />
+              {u.name}
               {myIdentity && u.identity.toHexString() === myIdentity.toHexString() && (
-                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(you)</span>
-              )}
-              {u.status !== 'online' && u.lastActiveAt && (
-                <span style={{ color: 'var(--text-muted)', fontSize: 10, display: 'block', paddingLeft: 16 }}>
-                  {formatLastActive(u.lastActiveAt, now)}
-                </span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}> (you)</span>
               )}
             </div>
           ))}
         </div>
 
         <div className="sidebar-user">
-          <span className="status-dot" style={{ background: statusColor(myUser?.status ?? 'offline') }} />
+          <span className="status-dot online" />
           <span className="sidebar-user-name">{myUser?.name ?? '...'}</span>
           <button className="sidebar-user-edit" onClick={() => { setNameInput(myUser?.name ?? ''); setShowNameModal(true); }}>
             Edit
           </button>
-        </div>
-        <div className="sidebar-status-row">
-          <select
-            className="status-select"
-            value={myUser?.status ?? 'online'}
-            onChange={(e) => handleSetStatus(e.target.value)}
-            title="Set your status"
-          >
-            <option value="online">Online</option>
-            <option value="away">Away</option>
-            <option value="dnd">Do Not Disturb</option>
-            <option value="invisible">Invisible</option>
-          </select>
         </div>
       </div>
 
@@ -900,8 +821,7 @@ export default function App() {
                     <div key={member.identity.toHexString()} className="member-row">
                       <span
                         className="status-dot"
-                        style={{ background: statusColor(member.status) }}
-                        title={member.status}
+                        style={{ background: member.online ? 'var(--success)' : 'var(--text-muted)' }}
                       />
                       <span className="member-name">{member.name}</span>
                       {isThisUserAdmin && (
