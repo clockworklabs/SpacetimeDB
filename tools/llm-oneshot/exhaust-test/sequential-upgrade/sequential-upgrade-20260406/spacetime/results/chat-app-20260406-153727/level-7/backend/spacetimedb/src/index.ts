@@ -140,7 +140,7 @@ export const sendMessage = spacetimedb.reducer(
     if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
     if (trimmed.length > 2000) throw new SenderError('Message too long (max 2000 chars)');
 
-    const msg = ctx.db.message.insert({ id: 0n, roomId, senderIdentity: ctx.sender, text: trimmed, sentAt: ctx.timestamp, expiresAt: null, editedAt: null, parentMessageId: null });
+    const msg = ctx.db.message.insert({ id: 0n, roomId, senderIdentity: ctx.sender, text: trimmed, sentAt: ctx.timestamp, expiresAt: null, editedAt: null });
 
     // Update sender's read receipt to this message
     let found: { id: bigint; roomId: bigint; userIdentity: { toHexString(): string }; lastReadMessageId: bigint; updatedAt: { microsSinceUnixEpoch: bigint } } | undefined;
@@ -196,7 +196,6 @@ export const sendEphemeralMessage = spacetimedb.reducer(
       sentAt: ctx.timestamp,
       expiresAt: new Timestamp(expiryMicros),
       editedAt: null,
-      parentMessageId: null,
     });
 
     // Update sender's read receipt
@@ -438,44 +437,6 @@ export const promoteUser = spacetimedb.reducer(
     if (!alreadyAdmin) {
       ctx.db.roomAdmin.insert({ id: 0n, roomId, userIdentity: target });
     }
-  }
-);
-
-// Reply to a message, creating a thread
-export const replyToMessage = spacetimedb.reducer(
-  { parentMessageId: t.u64(), text: t.string() },
-  (ctx, { parentMessageId, text }) => {
-    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Set your name first');
-    const parentMsg = ctx.db.message.id.find(parentMessageId);
-    if (!parentMsg) throw new SenderError('Parent message not found');
-
-    const roomId = parentMsg.roomId;
-    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
-
-    // Verify membership
-    let isMember = false;
-    for (const m of [...ctx.db.roomMember.roomId.filter(roomId)]) {
-      if (m.userIdentity.toHexString() === ctx.sender.toHexString()) {
-        isMember = true;
-        break;
-      }
-    }
-    if (!isMember) throw new SenderError('Not a member of this room');
-
-    const trimmed = text.trim();
-    if (trimmed.length === 0) throw new SenderError('Reply cannot be empty');
-    if (trimmed.length > 2000) throw new SenderError('Reply too long (max 2000 chars)');
-
-    ctx.db.message.insert({
-      id: 0n,
-      roomId,
-      senderIdentity: ctx.sender,
-      text: trimmed,
-      sentAt: ctx.timestamp,
-      expiresAt: null,
-      editedAt: null,
-      parentMessageId,
-    });
   }
 );
 

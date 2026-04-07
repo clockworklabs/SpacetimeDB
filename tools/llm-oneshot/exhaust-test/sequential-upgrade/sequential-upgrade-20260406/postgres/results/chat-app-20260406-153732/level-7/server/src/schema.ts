@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer, boolean, primaryKey, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean, primaryKey } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -39,7 +39,6 @@ export const messages = pgTable('messages', {
   content: text('content').notNull(),
   expiresAt: timestamp('expires_at'),
   editedAt: timestamp('edited_at'),
-  parentMessageId: integer('parent_message_id').references((): AnyPgColumn => messages.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

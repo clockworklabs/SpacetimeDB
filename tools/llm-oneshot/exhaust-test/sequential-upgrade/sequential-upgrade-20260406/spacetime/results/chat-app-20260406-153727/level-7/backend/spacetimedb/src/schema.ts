@@ -45,7 +45,6 @@ const message = table(
     sentAt: t.timestamp(),
     expiresAt: t.option(t.timestamp()),
     editedAt: t.option(t.timestamp()),
-    parentMessageId: t.option(t.u64()),
   }
 );
 
@@ -158,7 +157,6 @@ export const sendScheduledMessage = spacetimedb.reducer(
       sentAt: ctx.timestamp,
       expiresAt: null,
       editedAt: null,
-      parentMessageId: null,
     });
 
     // Update read receipt for the original sender

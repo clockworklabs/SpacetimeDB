@@ -68,11 +68,6 @@ export default function App() {
   const [editText, setEditText] = useState('');
   const [historyMessageId, setHistoryMessageId] = useState<bigint | null>(null);
 
-  // Thread state
-  const [threadParentId, setThreadParentId] = useState<bigint | null>(null);
-  const [threadReplyInput, setThreadReplyInput] = useState('');
-  const threadMessagesEndRef = useRef<HTMLDivElement>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -215,25 +210,12 @@ export default function App() {
     kickDetectRef.current.wasMember = currentlyIn;
   }, [roomMembers, selectedRoomId, myIdentity, rooms]);
 
-  // Top-level messages for selected room (no parent), sorted by sentAt
+  // Messages for selected room, sorted by sentAt
   const roomMessages = messages
-    .filter((m) => m.roomId === selectedRoomId && (m.parentMessageId === null || m.parentMessageId === undefined))
+    .filter((m) => m.roomId === selectedRoomId)
     .sort((a, b) =>
       Number(a.sentAt.microsSinceUnixEpoch - b.sentAt.microsSinceUnixEpoch)
     );
-
-  // Thread replies for the open thread
-  const threadReplies = threadParentId
-    ? messages
-        .filter((m) => m.parentMessageId === threadParentId)
-        .sort((a, b) => Number(a.sentAt.microsSinceUnixEpoch - b.sentAt.microsSinceUnixEpoch))
-    : [];
-
-  // Auto-scroll thread panel when new replies arrive
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    threadMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [threadReplies.length]);
 
   // Auto scroll
   useEffect(() => {
@@ -393,16 +375,6 @@ export default function App() {
   const handleCancelEdit = () => {
     setEditingMessageId(null);
     setEditText('');
-  };
-
-  const handleSendReply = () => {
-    if (!conn || !threadParentId || !threadReplyInput.trim()) return;
-    try {
-      conn.reducers.replyToMessage({ parentMessageId: threadParentId, text: threadReplyInput.trim() });
-      setThreadReplyInput('');
-    } catch (e) {
-      showError(String(e));
-    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -701,17 +673,6 @@ export default function App() {
                   const isEdited = msg.editedAt !== null && msg.editedAt !== undefined;
                   const isEditing = editingMessageId === msg.id;
 
-                  // Thread replies count
-                  const replyCount = messages.filter((m) => m.parentMessageId === msg.id).length;
-                  const firstReply = replyCount > 0
-                    ? messages
-                        .filter((m) => m.parentMessageId === msg.id)
-                        .sort((a, b) => Number(a.sentAt.microsSinceUnixEpoch - b.sentAt.microsSinceUnixEpoch))[0]
-                    : null;
-                  const firstReplySender = firstReply
-                    ? users.find((u) => u.identity.toHexString() === firstReply.senderIdentity.toHexString())?.name ?? 'Unknown'
-                    : null;
-
                   // Reactions for this message
                   const EMOJIS = ['👍', '❤️', '😂', '😮', '😢'];
                   const msgReactions = messageReactions.filter((r) => r.messageId === msg.id);
@@ -821,33 +782,6 @@ export default function App() {
                       {isLastInGroup && seen.length > 0 && (
                         <div className="message-read-by">Seen by {seen.join(', ')}</div>
                       )}
-
-                      {/* Thread reply count / preview + Reply button */}
-                      <div className="thread-row">
-                        {replyCount > 0 && (
-                          <button
-                            className="thread-preview-btn"
-                            onClick={() => setThreadParentId(msg.id)}
-                            title="View thread"
-                          >
-                            <span className="thread-count">{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
-                            {firstReplySender && firstReply && (
-                              <span className="thread-preview">
-                                {firstReplySender}: {firstReply.text.length > 60 ? firstReply.text.slice(0, 60) + '…' : firstReply.text}
-                              </span>
-                            )}
-                          </button>
-                        )}
-                        {inSelectedRoom && (
-                          <button
-                            className="reply-btn"
-                            onClick={() => setThreadParentId(msg.id)}
-                            title="Reply in thread"
-                          >
-                            Reply
-                          </button>
-                        )}
-                      </div>
                     </div>
                   );
                 })
@@ -1086,73 +1020,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Thread panel */}
-      {threadParentId !== null && (() => {
-        const parentMsg = messages.find((m) => m.id === threadParentId);
-        const parentSender = parentMsg
-          ? users.find((u) => u.identity.toHexString() === parentMsg.senderIdentity.toHexString())
-          : null;
-        return (
-          <div className="thread-panel">
-            <div className="thread-panel-header">
-              <span className="thread-panel-title">Thread</span>
-              <button className="thread-panel-close" onClick={() => { setThreadParentId(null); setThreadReplyInput(''); }}>✕</button>
-            </div>
-            {/* Parent message */}
-            {parentMsg && (
-              <div className="thread-parent-msg">
-                <div className="message-header">
-                  <span className="message-sender">{parentSender?.name ?? 'Unknown'}</span>
-                  <span className="message-time">{formatTime(tsToDate(parentMsg.sentAt))}</span>
-                </div>
-                <div className="message-text">{parentMsg.text}</div>
-              </div>
-            )}
-            <div className="thread-divider">{threadReplies.length} {threadReplies.length === 1 ? 'reply' : 'replies'}</div>
-            {/* Replies */}
-            <div className="thread-replies">
-              {threadReplies.length === 0 ? (
-                <div className="thread-empty">No replies yet. Start the conversation!</div>
-              ) : (
-                threadReplies.map((reply) => {
-                  const replySender = users.find((u) => u.identity.toHexString() === reply.senderIdentity.toHexString());
-                  const isMyReply = myIdentity && reply.senderIdentity.toHexString() === myIdentity.toHexString();
-                  return (
-                    <div key={String(reply.id)} className="thread-reply-item">
-                      <div className="message-header">
-                        <span className={`message-sender${isMyReply ? ' is-me' : ''}`}>{replySender?.name ?? 'Unknown'}</span>
-                        <span className="message-time">{formatTime(tsToDate(reply.sentAt))}</span>
-                      </div>
-                      <div className="message-text">{reply.text}</div>
-                    </div>
-                  );
-                })
-              )}
-              <div ref={threadMessagesEndRef} />
-            </div>
-            {/* Reply input */}
-            {inSelectedRoom && (
-              <div className="thread-input-area">
-                <textarea
-                  className="message-input"
-                  placeholder="Reply in thread..."
-                  value={threadReplyInput}
-                  onChange={(e) => setThreadReplyInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(); }
-                    if (e.key === 'Escape') { setThreadParentId(null); setThreadReplyInput(''); }
-                  }}
-                  rows={2}
-                />
-                <button className="send-btn" onClick={handleSendReply} disabled={!threadReplyInput.trim()}>
-                  Reply
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })()}
 
       {/* Edit history modal */}
       {historyMessageId !== null && historyMsg && (

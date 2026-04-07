@@ -4,7 +4,7 @@ import { Server } from 'socket.io';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema.js';
-import { eq, and, inArray, lte, gt, isNotNull, isNull, or, count as drizzleCount } from 'drizzle-orm';
+import { eq, and, inArray, lte, gt, isNotNull, isNull, or } from 'drizzle-orm';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
@@ -372,7 +372,6 @@ app.get('/api/rooms/:id/messages', async (req, res) => {
         content: schema.messages.content,
         expiresAt: schema.messages.expiresAt,
         editedAt: schema.messages.editedAt,
-        parentMessageId: schema.messages.parentMessageId,
         createdAt: schema.messages.createdAt,
         userName: schema.users.name,
       })
@@ -381,24 +380,11 @@ app.get('/api/rooms/:id/messages', async (req, res) => {
       .where(
         and(
           eq(schema.messages.roomId, roomId),
-          isNull(schema.messages.parentMessageId),
           or(isNull(schema.messages.expiresAt), gt(schema.messages.expiresAt, new Date()))
         )
       )
       .orderBy(schema.messages.createdAt)
       .limit(200);
-
-    // Get reply counts for top-level messages
-    let replyCountByMessage: Record<number, number> = {};
-    if (msgs.length > 0) {
-      const replyCounts = await pool.query<{ parent_message_id: number; count: string }>(
-        `SELECT parent_message_id, COUNT(*)::int as count FROM messages WHERE room_id = $1 AND parent_message_id IS NOT NULL GROUP BY parent_message_id`,
-        [roomId]
-      );
-      for (const row of replyCounts.rows) {
-        replyCountByMessage[row.parent_message_id] = parseInt(row.count);
-      }
-    }
 
     // Get read receipts for these messages
     let receiptsByMessage: Record<number, { userId: number; userName: string }[]> = {};
@@ -443,7 +429,6 @@ app.get('/api/rooms/:id/messages', async (req, res) => {
       ...m,
       readBy: (receiptsByMessage[m.id] ?? []).filter((r) => r.userId !== m.userId),
       reactions: reactionsByMessage[m.id] ?? [],
-      replyCount: replyCountByMessage[m.id] ?? 0,
     }));
 
     // Mark all messages as read for this user and broadcast
@@ -473,97 +458,6 @@ app.get('/api/rooms/:id/messages', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Failed to get messages' });
-  }
-});
-
-// ─── Message Threading ────────────────────────────────────────────────────────
-
-// Get thread (parent message + all replies)
-app.get('/api/messages/:id/thread', async (req, res) => {
-  const parentMessageId = parseInt(req.params.id);
-  const userId = parseInt(req.query.userId as string);
-
-  try {
-    // Get parent message
-    const [parentRaw] = await db
-      .select({
-        id: schema.messages.id,
-        roomId: schema.messages.roomId,
-        userId: schema.messages.userId,
-        content: schema.messages.content,
-        expiresAt: schema.messages.expiresAt,
-        editedAt: schema.messages.editedAt,
-        parentMessageId: schema.messages.parentMessageId,
-        createdAt: schema.messages.createdAt,
-        userName: schema.users.name,
-      })
-      .from(schema.messages)
-      .innerJoin(schema.users, eq(schema.messages.userId, schema.users.id))
-      .where(eq(schema.messages.id, parentMessageId));
-
-    if (!parentRaw) return res.status(404).json({ error: 'Message not found' });
-
-    // Get replies
-    const replies = await db
-      .select({
-        id: schema.messages.id,
-        roomId: schema.messages.roomId,
-        userId: schema.messages.userId,
-        content: schema.messages.content,
-        expiresAt: schema.messages.expiresAt,
-        editedAt: schema.messages.editedAt,
-        parentMessageId: schema.messages.parentMessageId,
-        createdAt: schema.messages.createdAt,
-        userName: schema.users.name,
-      })
-      .from(schema.messages)
-      .innerJoin(schema.users, eq(schema.messages.userId, schema.users.id))
-      .where(eq(schema.messages.parentMessageId, parentMessageId))
-      .orderBy(schema.messages.createdAt)
-      .limit(200);
-
-    // Get reactions for replies
-    let reactionsByMessage: Record<number, { emoji: string; userId: number; userName: string }[]> = {};
-    if (replies.length > 0) {
-      const reactions = await db
-        .select({
-          messageId: schema.messageReactions.messageId,
-          userId: schema.messageReactions.userId,
-          emoji: schema.messageReactions.emoji,
-          userName: schema.users.name,
-        })
-        .from(schema.messageReactions)
-        .innerJoin(schema.users, eq(schema.messageReactions.userId, schema.users.id))
-        .where(inArray(schema.messageReactions.messageId, replies.map((r) => r.id)));
-      for (const r of reactions) {
-        if (!reactionsByMessage[r.messageId]) reactionsByMessage[r.messageId] = [];
-        reactionsByMessage[r.messageId].push({ emoji: r.emoji, userId: r.userId, userName: r.userName });
-      }
-    }
-
-    const replyCount = replies.length;
-    const parent = { ...parentRaw, readBy: [], reactions: [], replyCount };
-    const replyMessages = replies.map((r) => ({
-      ...r,
-      readBy: [],
-      reactions: reactionsByMessage[r.id] ?? [],
-      replyCount: 0,
-    }));
-
-    // Mark replies as read for the requesting user
-    if (userId && replies.length > 0) {
-      for (const reply of replies) {
-        await db
-          .insert(schema.readReceipts)
-          .values({ userId, messageId: reply.id })
-          .onConflictDoNothing();
-      }
-    }
-
-    res.json({ parent, replies: replyMessages });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to get thread' });
   }
 });
 
@@ -935,17 +829,9 @@ io.on('connection', (socket) => {
     if (user) stopTyping(user.id, user.name, roomId);
   });
 
-  socket.on('join_thread', ({ parentMessageId }: { parentMessageId: number }) => {
-    socket.join(`thread:${parentMessageId}`);
-  });
-
-  socket.on('leave_thread', ({ parentMessageId }: { parentMessageId: number }) => {
-    socket.leave(`thread:${parentMessageId}`);
-  });
-
   socket.on(
     'send_message',
-    async ({ roomId, content, expiresInMs, parentMessageId }: { roomId: number; content: string; expiresInMs?: number; parentMessageId?: number }) => {
+    async ({ roomId, content, expiresInMs }: { roomId: number; content: string; expiresInMs?: number }) => {
       const user = connectedUsers.get(socket.id);
       if (!user) return;
 
@@ -978,13 +864,7 @@ io.on('connection', (socket) => {
 
       const [message] = await db
         .insert(schema.messages)
-        .values({
-          roomId,
-          userId: user.id,
-          content: content.trim(),
-          ...(expiresAt ? { expiresAt } : {}),
-          ...(parentMessageId ? { parentMessageId } : {}),
-        })
+        .values({ roomId, userId: user.id, content: content.trim(), ...(expiresAt ? { expiresAt } : {}) })
         .returning();
 
       const fullMessage = {
@@ -993,37 +873,22 @@ io.on('connection', (socket) => {
         readBy: [] as { userId: number; userName: string }[],
         reactions: [] as { emoji: string; userId: number; userName: string }[],
         editedAt: null as Date | null,
-        replyCount: 0,
       };
 
-      if (parentMessageId) {
-        // Thread reply: emit to thread room subscribers
-        io.to(`thread:${parentMessageId}`).emit('thread_reply', fullMessage);
+      io.to(`room:${roomId}`).emit('message', fullMessage);
 
-        // Count total replies and notify main room to update reply count badge
-        const countResult = await pool.query<{ count: string }>(
-          'SELECT COUNT(*)::int as count FROM messages WHERE parent_message_id = $1',
-          [parentMessageId]
-        );
-        const replyCount = parseInt(countResult.rows[0]?.count ?? '1');
-        io.to(`room:${roomId}`).emit('reply_count_updated', { messageId: parentMessageId, replyCount });
-      } else {
-        // Top-level message: emit to room
-        io.to(`room:${roomId}`).emit('message', fullMessage);
-
-        // Also notify members who are not actively viewing this room (for unread counts)
-        const activeSocketIds = io.sockets.adapter.rooms.get(`room:${roomId}`) ?? new Set<string>();
-        const members = await db.select().from(schema.roomMembers).where(eq(schema.roomMembers.roomId, roomId));
-        for (const member of members) {
-          if (member.userId === user.id) continue;
-          const memberSocketId = userSockets.get(member.userId);
-          if (memberSocketId && !activeSocketIds.has(memberSocketId)) {
-            io.to(memberSocketId).emit('message', fullMessage);
-          }
+      // Also notify members who are not actively viewing this room (for unread counts)
+      const activeSocketIds = io.sockets.adapter.rooms.get(`room:${roomId}`) ?? new Set<string>();
+      const members = await db.select().from(schema.roomMembers).where(eq(schema.roomMembers.roomId, roomId));
+      for (const member of members) {
+        if (member.userId === user.id) continue;
+        const memberSocketId = userSockets.get(member.userId);
+        if (memberSocketId && !activeSocketIds.has(memberSocketId)) {
+          io.to(memberSocketId).emit('message', fullMessage);
         }
-
-        stopTyping(user.id, user.name, roomId);
       }
+
+      stopTyping(user.id, user.name, roomId);
     }
   );
 

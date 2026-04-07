@@ -37,11 +37,9 @@ interface Message {
   content: string;
   expiresAt?: string | null;
   editedAt?: string | null;
-  parentMessageId?: number | null;
   createdAt: string;
   readBy: ReadBy[];
   reactions: Reaction[];
-  replyCount?: number;
 }
 
 interface RoomMember {
@@ -105,15 +103,6 @@ export default function App() {
   const [editInput, setEditInput] = useState('');
   const [historyMessageId, setHistoryMessageId] = useState<number | null>(null);
   const [editHistory, setEditHistory] = useState<EditHistoryEntry[]>([]);
-
-  // Threading
-  const [activeThreadParentId, setActiveThreadParentId] = useState<number | null>(null);
-  const [threadParentMsg, setThreadParentMsg] = useState<Message | null>(null);
-  const [threadMessages, setThreadMessages] = useState<Message[]>([]);
-  const [threadInput, setThreadInput] = useState('');
-  const [threadLoading, setThreadLoading] = useState(false);
-  const activeThreadParentIdRef = useRef<number | null>(null);
-  useEffect(() => { activeThreadParentIdRef.current = activeThreadParentId; }, [activeThreadParentId]);
 
   // Rich presence
   const [myStatus, setMyStatus] = useState<UserStatus>('online');
@@ -340,21 +329,6 @@ export default function App() {
 
     socket.on('member_left', ({ userId }: { userId: number }) => {
       setRoomMembers((prev) => prev.filter((m) => m.userId !== userId));
-    });
-
-    socket.on('thread_reply', (msg: Message) => {
-      if (activeThreadParentIdRef.current === msg.parentMessageId) {
-        setThreadMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-      }
-    });
-
-    socket.on('reply_count_updated', ({ messageId, replyCount }: { messageId: number; replyCount: number }) => {
-      setMessages((prev) =>
-        prev.map((m) => m.id === messageId ? { ...m, replyCount } : m)
-      );
     });
 
     return () => { socket.disconnect(); };
@@ -677,54 +651,6 @@ export default function App() {
     } catch {
       console.error('Failed to get edit history');
     }
-  }
-
-  async function handleOpenThread(messageId: number) {
-    if (!currentUser) return;
-    // Leave previous thread room
-    if (activeThreadParentId !== null && socketRef.current) {
-      socketRef.current.emit('leave_thread', { parentMessageId: activeThreadParentId });
-    }
-    setActiveThreadParentId(messageId);
-    setThreadMessages([]);
-    setThreadInput('');
-    setThreadLoading(true);
-    try {
-      const res = await fetch(`/api/messages/${messageId}/thread?userId=${currentUser.id}`);
-      if (!res.ok) return;
-      const data = await res.json() as { parent: Message; replies: Message[] };
-      setThreadParentMsg(data.parent);
-      setThreadMessages(data.replies);
-    } catch {
-      console.error('Failed to load thread');
-    } finally {
-      setThreadLoading(false);
-    }
-    if (socketRef.current) {
-      socketRef.current.emit('join_thread', { parentMessageId: messageId });
-    }
-  }
-
-  function handleCloseThread() {
-    if (activeThreadParentId !== null && socketRef.current) {
-      socketRef.current.emit('leave_thread', { parentMessageId: activeThreadParentId });
-    }
-    setActiveThreadParentId(null);
-    setThreadParentMsg(null);
-    setThreadMessages([]);
-    setThreadInput('');
-  }
-
-  function handleSendThreadReply(e: React.FormEvent) {
-    e.preventDefault();
-    const content = threadInput.trim();
-    if (!content || !activeThreadParentId || !socketRef.current || !threadParentMsg) return;
-    socketRef.current.emit('send_message', {
-      roomId: threadParentMsg.roomId,
-      content,
-      parentMessageId: activeThreadParentId,
-    });
-    setThreadInput('');
   }
 
   function handleScroll() {
@@ -1172,13 +1098,6 @@ export default function App() {
                                 )}
                               </div>
                               <div className="message-actions">
-                                <button
-                                  className="reaction-btn"
-                                  onClick={() => handleOpenThread(msg.id)}
-                                  title="Reply in thread"
-                                >
-                                  Reply
-                                </button>
                                 {isOwn && (
                                   <button
                                     className="reaction-btn"
@@ -1214,16 +1133,6 @@ export default function App() {
                                   </button>
                                 ))}
                               </div>
-                            )}
-                            {(msg.replyCount ?? 0) > 0 && (
-                              <button
-                                className="reaction-count"
-                                style={{ marginTop: 4, fontSize: 12 }}
-                                onClick={() => handleOpenThread(msg.id)}
-                                title="View thread"
-                              >
-                                💬 {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
-                              </button>
                             )}
                             {msg.readBy.length > 0 && (
                               <div className="read-receipts">
@@ -1335,66 +1244,6 @@ export default function App() {
                       )}
                     </div>
                   ))
-                )}
-              </div>
-            )}
-
-            {/* Thread panel */}
-            {activeThreadParentId !== null && (
-              <div className="scheduled-panel" style={{ width: 360, display: 'flex', flexDirection: 'column', maxHeight: '80vh' }}>
-                <div className="scheduled-panel-header">
-                  <span>Thread</span>
-                  <button className="btn btn-ghost btn-sm" onClick={handleCloseThread}>✕</button>
-                </div>
-                {threadLoading ? (
-                  <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: 13 }}>Loading thread…</div>
-                ) : (
-                  <>
-                    {threadParentMsg && (
-                      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 }}>{threadParentMsg.userName}</div>
-                        <div style={{ fontSize: 13, color: 'var(--text)' }}>{threadParentMsg.content}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                          {threadMessages.length} {threadMessages.length === 1 ? 'reply' : 'replies'}
-                        </div>
-                      </div>
-                    )}
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-                      {threadMessages.length === 0 ? (
-                        <div style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: 13 }}>No replies yet. Start the conversation!</div>
-                      ) : (
-                        threadMessages.map((msg) => (
-                          <div key={msg.id} style={{ padding: '6px 16px', borderBottom: '1px solid var(--border)' }}>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 2 }}>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: msg.userId === currentUser.id ? 'var(--warning)' : 'var(--accent)' }}>
-                                {msg.userName}
-                              </span>
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatTime(msg.createdAt)}</span>
-                            </div>
-                            <div style={{ fontSize: 13, color: 'var(--text)' }}>
-                              {msg.content}
-                              {msg.editedAt && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>(edited)</span>}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <form onSubmit={handleSendThreadReply} style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 6 }}>
-                      <input
-                        className="message-input"
-                        style={{ flex: 1, fontSize: 13, padding: '6px 10px' }}
-                        type="text"
-                        placeholder="Reply in thread…"
-                        value={threadInput}
-                        onChange={(e) => setThreadInput(e.target.value)}
-                        maxLength={2000}
-                        autoComplete="off"
-                      />
-                      <button className="btn btn-primary btn-sm" type="submit" disabled={!threadInput.trim()}>
-                        Reply
-                      </button>
-                    </form>
-                  </>
                 )}
               </div>
             )}
