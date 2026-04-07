@@ -52,10 +52,6 @@ export default function App() {
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showMembersPanel, setShowMembersPanel] = useState(false);
-  const [showInvitationsPanel, setShowInvitationsPanel] = useState(false);
-  const [showInviteUserModal, setShowInviteUserModal] = useState(false);
-  const [inviteUserSearch, setInviteUserSearch] = useState('');
-  const [isPrivateRoom, setIsPrivateRoom] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [roomInput, setRoomInput] = useState('');
   const [messageInput, setMessageInput] = useState('');
@@ -108,7 +104,6 @@ export default function App() {
         'SELECT * FROM message_edit',
         'SELECT * FROM room_admin',
         'SELECT * FROM banned_user',
-        'SELECT * FROM room_invitation',
       ]);
   }, [conn, isActive]);
 
@@ -128,7 +123,6 @@ export default function App() {
   const [messageReactions] = useTable(tables.messageReaction);
   const [messageEdits] = useTable(tables.messageEdit);
   const [roomAdmins] = useTable(tables.roomAdmin);
-  const [roomInvitations] = useTable(tables.roomInvitation);
 
   const myUser = myIdentity
     ? users.find((u) => u.identity.toHexString() === myIdentity.toHexString())
@@ -169,18 +163,6 @@ export default function App() {
       clearInterval(inactivityCheck);
     };
   }, [conn, isActive, myUser?.status]);
-
-  // Auto-select newly created DM room
-  const prevDmCountRef = useRef(0);
-  useEffect(() => {
-    if (!myIdentity) return;
-    const myDms = rooms.filter((r) => r.isDm && roomMembers.some((m) => m.roomId === r.id && m.userIdentity.toHexString() === myIdentity.toHexString()));
-    if (myDms.length > prevDmCountRef.current && prevDmCountRef.current > 0) {
-      const newest = myDms[myDms.length - 1];
-      if (newest) setSelectedRoomId(newest.id);
-    }
-    prevDmCountRef.current = myDms.length;
-  }, [rooms, roomMembers, myIdentity]);
 
   // Membership helpers
   const isMember = useCallback(
@@ -303,54 +285,9 @@ export default function App() {
   const handleCreateRoom = () => {
     if (!conn || !roomInput.trim()) return;
     try {
-      conn.reducers.createRoom({ name: roomInput.trim(), isPrivate: isPrivateRoom });
+      conn.reducers.createRoom({ name: roomInput.trim() });
       setShowCreateRoomModal(false);
       setRoomInput('');
-      setIsPrivateRoom(false);
-    } catch (e) {
-      showError(String(e));
-    }
-  };
-
-  const handleAcceptInvitation = (invitationId: bigint) => {
-    if (!conn) return;
-    try {
-      conn.reducers.acceptInvitation({ invitationId });
-    } catch (e) {
-      showError(String(e));
-    }
-  };
-
-  const handleDeclineInvitation = (invitationId: bigint) => {
-    if (!conn) return;
-    try {
-      conn.reducers.declineInvitation({ invitationId });
-    } catch (e) {
-      showError(String(e));
-    }
-  };
-
-  const handleInviteUser = (targetIdentity: { toHexString(): string }) => {
-    if (!conn || !selectedRoomId) return;
-    const targetUser = users.find((u) => u.identity.toHexString() === targetIdentity.toHexString());
-    if (!targetUser) return;
-    try {
-      conn.reducers.inviteUser({ roomId: selectedRoomId, targetIdentity: targetUser.identity });
-      setShowInviteUserModal(false);
-      setInviteUserSearch('');
-    } catch (e) {
-      showError(String(e));
-    }
-  };
-
-  const handleCreateDm = (targetIdentity: { toHexString(): string }) => {
-    if (!conn) return;
-    const targetUser = users.find((u) => u.identity.toHexString() === targetIdentity.toHexString());
-    if (!targetUser) return;
-    try {
-      conn.reducers.createDm({ targetIdentity: targetUser.identity });
-      // After creating DM, find it in the rooms list and select it
-      // The room will appear reactively via useTable
     } catch (e) {
       showError(String(e));
     }
@@ -605,24 +542,8 @@ export default function App() {
     ? isAdminOfRoom(selectedRoomId, myIdentity)
     : false;
 
-  // Separate rooms by type — DMs and private rooms only shown if member
-  const publicRooms = [...rooms].filter((r) => !r.isPrivate && !r.isDm).sort((a, b) => a.name.localeCompare(b.name));
-  const privateRooms = [...rooms].filter((r) => r.isPrivate && !r.isDm && isMember(r.id)).sort((a, b) => a.name.localeCompare(b.name));
-  const dmRooms = [...rooms].filter((r) => r.isDm && isMember(r.id));
-
-  // Get the display name for a DM (the other user's name)
-  const getDmDisplayName = (room: { id: bigint; isDm: boolean }): string => {
-    if (!myIdentity) return 'DM';
-    const members = roomMembers.filter((m) => m.roomId === room.id);
-    const other = members.find((m) => m.userIdentity.toHexString() !== myIdentity.toHexString());
-    if (!other) return 'DM';
-    return users.find((u) => u.identity.toHexString() === other.userIdentity.toHexString())?.name ?? 'DM';
-  };
-
-  // Invitations for current user
-  const myInvitations = myIdentity
-    ? roomInvitations.filter((inv) => inv.inviteeIdentity.toHexString() === myIdentity.toHexString())
-    : [];
+  // Sort rooms by name
+  const sortedRooms = [...rooms].sort((a, b) => a.name.localeCompare(b.name));
 
   // Members of selected room
   const selectedRoomMembers = selectedRoomId
@@ -643,23 +564,6 @@ export default function App() {
           <div className="sidebar-title">SpacetimeDB Chat</div>
         </div>
 
-        {/* Invitations badge */}
-        {myInvitations.length > 0 && (
-          <div
-            className="sidebar-section"
-            style={{ borderBottom: '1px solid var(--border)', paddingBottom: 4 }}
-          >
-            <button
-              className="room-item"
-              style={{ width: '100%', textAlign: 'left', color: 'var(--accent)', fontWeight: 600 }}
-              onClick={() => setShowInvitationsPanel(true)}
-            >
-              Invitations <span className="unread-badge">{myInvitations.length}</span>
-            </button>
-          </div>
-        )}
-
-        {/* Public rooms */}
         <div className="sidebar-section" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
           <div className="sidebar-section-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             Rooms
@@ -667,12 +571,12 @@ export default function App() {
               +
             </button>
           </div>
-          {publicRooms.length === 0 && (
+          {sortedRooms.length === 0 && (
             <div style={{ padding: '8px 16px', fontSize: 13, color: 'var(--text-muted)' }}>
               No rooms yet
             </div>
           )}
-          {publicRooms.map((room) => {
+          {sortedRooms.map((room) => {
             const count = unreadCount(room.id);
             return (
               <div
@@ -690,81 +594,22 @@ export default function App() {
           })}
         </div>
 
-        {/* Private rooms */}
-        {privateRooms.length > 0 && (
-          <div className="sidebar-section" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-            <div className="sidebar-section-label">Private Rooms</div>
-            {privateRooms.map((room) => {
-              const count = unreadCount(room.id);
-              return (
-                <div
-                  key={String(room.id)}
-                  className={`room-item${selectedRoomId === room.id ? ' active' : ''}`}
-                  onClick={() => setSelectedRoomId(room.id)}
-                >
-                  <span className="room-name">
-                    <span className="room-hash">🔒</span>
-                    {room.name}
-                  </span>
-                  {count > 0 && <span className="unread-badge">{count}</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Direct messages */}
-        <div className="sidebar-section" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-          <div className="sidebar-section-label">Direct Messages</div>
-          {dmRooms.length === 0 && (
-            <div style={{ padding: '4px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
-              Click a user to start a DM
-            </div>
-          )}
-          {dmRooms.map((room) => {
-            const count = unreadCount(room.id);
-            const displayName = getDmDisplayName(room);
-            return (
-              <div
-                key={String(room.id)}
-                className={`room-item${selectedRoomId === room.id ? ' active' : ''}`}
-                onClick={() => setSelectedRoomId(room.id)}
-              >
-                <span className="room-name">{displayName}</span>
-                {count > 0 && <span className="unread-badge">{count}</span>}
-              </div>
-            );
-          })}
-        </div>
-
         <div className="sidebar-section">
           <div className="sidebar-section-label">Online — {onlineUsers.length}</div>
-          {onlineUsers.map((u) => {
-            const isMe = myIdentity && u.identity.toHexString() === myIdentity.toHexString();
-            return (
-              <div key={u.identity.toHexString()} className="user-item">
-                <span className="status-dot" style={{ background: statusColor(u.status) }} title={u.status} />
-                <span style={{ flex: 1 }}>{u.name}</span>
-                {isMe && (
-                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(you)</span>
-                )}
-                {!isMe && (
-                  <button
-                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', padding: '0 2px' }}
-                    onClick={() => handleCreateDm(u.identity)}
-                    title={`Message ${u.name}`}
-                  >
-                    DM
-                  </button>
-                )}
-                {u.status !== 'online' && u.lastActiveAt && (
-                  <span style={{ color: 'var(--text-muted)', fontSize: 10, display: 'block', paddingLeft: 16 }}>
-                    {formatLastActive(u.lastActiveAt, now)}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          {onlineUsers.map((u) => (
+            <div key={u.identity.toHexString()} className="user-item">
+              <span className="status-dot" style={{ background: statusColor(u.status) }} title={u.status} />
+              <span style={{ flex: 1 }}>{u.name}</span>
+              {myIdentity && u.identity.toHexString() === myIdentity.toHexString() && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(you)</span>
+              )}
+              {u.status !== 'online' && u.lastActiveAt && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 10, display: 'block', paddingLeft: 16 }}>
+                  {formatLastActive(u.lastActiveAt, now)}
+                </span>
+              )}
+            </div>
+          ))}
         </div>
 
         <div className="sidebar-user">
@@ -797,45 +642,26 @@ export default function App() {
           <>
             {/* Room header */}
             <div className="room-header">
-              <span className="room-header-hash">
-                {selectedRoom.isDm ? '' : selectedRoom.isPrivate ? '🔒' : '#'}
-              </span>
-              <span className="room-header-name">
-                {selectedRoom.isDm ? getDmDisplayName(selectedRoom) : selectedRoom.name}
-              </span>
+              <span className="room-header-hash">#</span>
+              <span className="room-header-name">{selectedRoom.name}</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>
                 {selectedRoomMembers.length} members
               </span>
-              {!selectedRoom.isDm && (
-                <button
-                  className="members-btn"
-                  onClick={() => setShowMembersPanel(true)}
-                  title="Manage members"
-                >
-                  Members
-                </button>
-              )}
-              {selectedRoom.isPrivate && amAdminOfSelectedRoom && !selectedRoom.isDm && (
-                <button
-                  className="members-btn"
-                  onClick={() => setShowInviteUserModal(true)}
-                  title="Invite user"
-                >
-                  Invite
-                </button>
-              )}
+              <button
+                className="members-btn"
+                onClick={() => setShowMembersPanel(true)}
+                title="Manage members"
+              >
+                Members
+              </button>
               {inSelectedRoom ? (
-                !selectedRoom.isDm && (
-                  <button className="join-leave-btn leave" onClick={() => handleLeaveRoom(selectedRoom.id)}>
-                    Leave
-                  </button>
-                )
+                <button className="join-leave-btn leave" onClick={() => handleLeaveRoom(selectedRoom.id)}>
+                  Leave
+                </button>
               ) : (
-                !selectedRoom.isPrivate && (
-                  <button className="join-leave-btn" onClick={() => handleJoinRoom(selectedRoom.id)}>
-                    Join
-                  </button>
-                )
+                <button className="join-leave-btn" onClick={() => handleJoinRoom(selectedRoom.id)}>
+                  Join
+                </button>
               )}
             </div>
 
@@ -1204,7 +1030,7 @@ export default function App() {
 
       {/* Create room modal */}
       {showCreateRoomModal && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) { setShowCreateRoomModal(false); setIsPrivateRoom(false); } }}>
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setShowCreateRoomModal(false); }}>
           <div className="modal">
             <div className="modal-title">Create a room</div>
             <input
@@ -1212,20 +1038,12 @@ export default function App() {
               placeholder="Room name"
               value={roomInput}
               onChange={(e) => setRoomInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateRoom(); if (e.key === 'Escape') { setShowCreateRoomModal(false); setIsPrivateRoom(false); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateRoom(); if (e.key === 'Escape') setShowCreateRoomModal(false); }}
               autoFocus
               maxLength={64}
             />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--text)', fontSize: 14, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={isPrivateRoom}
-                onChange={(e) => setIsPrivateRoom(e.target.checked)}
-              />
-              Private room (invite-only, not visible to others)
-            </label>
             <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => { setShowCreateRoomModal(false); setIsPrivateRoom(false); }}>Cancel</button>
+              <button className="btn-secondary" onClick={() => setShowCreateRoomModal(false)}>Cancel</button>
               <button className="btn-primary" onClick={handleCreateRoom} disabled={!roomInput.trim()}>
                 Create
               </button>
@@ -1358,77 +1176,6 @@ export default function App() {
             </div>
             <div className="modal-actions">
               <button className="btn-primary" onClick={() => setHistoryMessageId(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Invitations panel */}
-      {showInvitationsPanel && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setShowInvitationsPanel(false); }}>
-          <div className="modal">
-            <div className="modal-title">Pending Invitations</div>
-            {myInvitations.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>No pending invitations.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {myInvitations.map((inv) => {
-                  const invRoom = rooms.find((r) => r.id === inv.roomId);
-                  const inviter = users.find((u) => u.identity.toHexString() === inv.inviterIdentity.toHexString());
-                  return (
-                    <div key={String(inv.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600 }}>🔒 {invRoom?.name ?? 'Unknown Room'}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Invited by {inviter?.name ?? 'Unknown'}</div>
-                      </div>
-                      <button className="btn-primary" style={{ padding: '4px 12px', fontSize: 13 }} onClick={() => handleAcceptInvitation(inv.id)}>Accept</button>
-                      <button className="btn-secondary" style={{ padding: '4px 12px', fontSize: 13 }} onClick={() => handleDeclineInvitation(inv.id)}>Decline</button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="modal-actions">
-              <button className="btn-primary" onClick={() => setShowInvitationsPanel(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Invite user modal */}
-      {showInviteUserModal && selectedRoom && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) { setShowInviteUserModal(false); setInviteUserSearch(''); } }}>
-          <div className="modal">
-            <div className="modal-title">Invite to 🔒 {selectedRoom.name}</div>
-            <input
-              className="modal-input"
-              placeholder="Search by name..."
-              value={inviteUserSearch}
-              onChange={(e) => setInviteUserSearch(e.target.value)}
-              autoFocus
-            />
-            <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {users
-                .filter((u) => {
-                  if (!myIdentity) return false;
-                  if (u.identity.toHexString() === myIdentity.toHexString()) return false;
-                  // Exclude existing members
-                  if (selectedRoomId && roomMembers.some((m) => m.roomId === selectedRoomId && m.userIdentity.toHexString() === u.identity.toHexString())) return false;
-                  // Exclude already invited
-                  if (selectedRoomId && roomInvitations.some((inv) => inv.roomId === selectedRoomId && inv.inviteeIdentity.toHexString() === u.identity.toHexString())) return false;
-                  if (inviteUserSearch && !u.name.toLowerCase().includes(inviteUserSearch.toLowerCase())) return false;
-                  return true;
-                })
-                .map((u) => (
-                  <div key={u.identity.toHexString()} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span className="status-dot" style={{ background: statusColor(u.status) }} />
-                    <span style={{ flex: 1 }}>{u.name}</span>
-                    <button className="btn-primary" style={{ padding: '4px 12px', fontSize: 13 }} onClick={() => handleInviteUser(u.identity)}>Invite</button>
-                  </div>
-                ))}
-            </div>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => { setShowInviteUserModal(false); setInviteUserSearch(''); }}>Close</button>
             </div>
           </div>
         </div>

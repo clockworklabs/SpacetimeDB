@@ -20,8 +20,6 @@ const room = table(
     name: t.string().unique(),
     createdBy: t.identity(),
     createdAt: t.timestamp(),
-    isPrivate: t.bool(),
-    isDm: t.bool(),
   }
 );
 
@@ -145,19 +143,7 @@ const bannedUser = table(
   }
 );
 
-// Room invitations — invites to private rooms
-const roomInvitation = table(
-  { name: 'room_invitation', public: true },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    roomId: t.u64().index('btree'),
-    inviterIdentity: t.identity(),
-    inviteeIdentity: t.identity().index('btree'),
-    createdAt: t.timestamp(),
-  }
-);
-
-const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit, roomAdmin, bannedUser, roomInvitation });
+const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit, roomAdmin, bannedUser });
 export default spacetimedb;
 
 // Fires when a scheduled message is due — inserts it as a real message

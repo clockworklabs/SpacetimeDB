@@ -124,41 +124,18 @@ app.patch('/api/users/:id/status', async (req, res) => {
   }
 });
 
-// List rooms with unread counts (only public rooms + private rooms user is a member of)
+// List rooms with unread counts
 app.get('/api/rooms', async (req, res) => {
   const userId = parseInt(req.query.userId as string);
   if (!userId) return res.status(400).json({ error: 'userId required' });
 
   try {
+    const rooms = await db.select().from(schema.rooms).orderBy(schema.rooms.name);
     const memberships = await db
       .select()
       .from(schema.roomMembers)
       .where(eq(schema.roomMembers.userId, userId));
-    const joinedRoomIds = memberships.map((m) => m.roomId);
-    const joinedRooms = new Set(joinedRoomIds);
-
-    // Fetch only rooms the user is allowed to see: public OR member of private
-    const rooms = joinedRoomIds.length > 0
-      ? await db.select().from(schema.rooms)
-          .where(or(eq(schema.rooms.isPrivate, false), inArray(schema.rooms.id, joinedRoomIds)))
-          .orderBy(schema.rooms.name)
-      : await db.select().from(schema.rooms)
-          .where(eq(schema.rooms.isPrivate, false))
-          .orderBy(schema.rooms.name);
-
-    // For DM rooms, get partner name
-    const dmPartnerNames: Record<number, string> = {};
-    const dmRoomIds = rooms.filter(r => r.isDm).map(r => r.id);
-    if (dmRoomIds.length > 0) {
-      const allDmMembers = await db
-        .select({ roomId: schema.roomMembers.roomId, userId: schema.roomMembers.userId, name: schema.users.name })
-        .from(schema.roomMembers)
-        .innerJoin(schema.users, eq(schema.roomMembers.userId, schema.users.id))
-        .where(inArray(schema.roomMembers.roomId, dmRoomIds));
-      for (const m of allDmMembers) {
-        if (m.userId !== userId) dmPartnerNames[m.roomId] = m.name;
-      }
-    }
+    const joinedRooms = new Set(memberships.map((m) => m.roomId));
 
     const roomsWithCounts = await Promise.all(
       rooms.map(async (room) => {
@@ -173,7 +150,6 @@ app.get('/api/rooms', async (req, res) => {
           ...room,
           unreadCount: parseInt(result.rows[0]?.count ?? '0'),
           joined: joinedRooms.has(room.id),
-          dmPartnerName: dmPartnerNames[room.id] ?? null,
         };
       })
     );
@@ -187,7 +163,7 @@ app.get('/api/rooms', async (req, res) => {
 
 // Create room
 app.post('/api/rooms', async (req, res) => {
-  const { name, userId, isPrivate } = req.body as { name?: string; userId?: number; isPrivate?: boolean };
+  const { name, userId } = req.body as { name?: string; userId?: number };
   if (!name || name.trim().length === 0) {
     return res.status(400).json({ error: 'Room name required' });
   }
@@ -198,7 +174,7 @@ app.post('/api/rooms', async (req, res) => {
   try {
     const [room] = await db
       .insert(schema.rooms)
-      .values({ name: name.trim(), isPrivate: isPrivate ?? false })
+      .values({ name: name.trim() })
       .returning();
 
     if (userId) {
@@ -209,17 +185,8 @@ app.post('/api/rooms', async (req, res) => {
         .onConflictDoNothing();
     }
 
-    const roomWithMeta = { ...room, unreadCount: 0, joined: userId ? true : false, dmPartnerName: null };
-    if (!room.isPrivate) {
-      // Only broadcast public rooms to all
-      io.emit('room_created', roomWithMeta);
-    } else if (userId) {
-      // Private room: only notify creator
-      const creatorSocketId = userSockets.get(userId);
-      if (creatorSocketId) {
-        io.to(creatorSocketId).emit('room_created', roomWithMeta);
-      }
-    }
+    const roomWithMeta = { ...room, unreadCount: 0, joined: userId ? true : false };
+    io.emit('room_created', roomWithMeta);
     res.json(roomWithMeta);
   } catch (e: unknown) {
     if ((e as { code?: string }).code === '23505') {
@@ -373,273 +340,6 @@ app.post('/api/rooms/:id/leave', async (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'Failed to leave room' });
-  }
-});
-
-// Invite a user to a private room (admin only)
-app.post('/api/rooms/:id/invite', async (req, res) => {
-  const roomId = parseInt(req.params.id);
-  const { adminId, inviteeName } = req.body as { adminId: number; inviteeName: string };
-
-  if (!inviteeName?.trim()) return res.status(400).json({ error: 'inviteeName required' });
-
-  try {
-    // Verify requester is admin
-    const [adminMember] = await db
-      .select()
-      .from(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, adminId), eq(schema.roomMembers.roomId, roomId)));
-    if (!adminMember?.isAdmin) return res.status(403).json({ error: 'Only admins can invite users' });
-
-    // Find invitee by name
-    const [invitee] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.name, inviteeName.trim()));
-    if (!invitee) return res.status(404).json({ error: 'User not found' });
-
-    // Check if already a member
-    const [existing] = await db
-      .select()
-      .from(schema.roomMembers)
-      .where(and(eq(schema.roomMembers.userId, invitee.id), eq(schema.roomMembers.roomId, roomId)));
-    if (existing) return res.status(400).json({ error: 'User is already a member' });
-
-    // Check if already banned
-    const [banned] = await db
-      .select()
-      .from(schema.bannedUsers)
-      .where(and(eq(schema.bannedUsers.userId, invitee.id), eq(schema.bannedUsers.roomId, roomId)));
-    if (banned) return res.status(400).json({ error: 'User is banned from this room' });
-
-    // Check if pending invitation already exists
-    const [pendingInv] = await db
-      .select()
-      .from(schema.roomInvitations)
-      .where(and(
-        eq(schema.roomInvitations.roomId, roomId),
-        eq(schema.roomInvitations.inviteeId, invitee.id),
-        eq(schema.roomInvitations.status, 'pending')
-      ));
-    if (pendingInv) return res.status(400).json({ error: 'Invitation already pending' });
-
-    const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, roomId));
-    const [inviter] = await db.select().from(schema.users).where(eq(schema.users.id, adminId));
-
-    const [invitation] = await db
-      .insert(schema.roomInvitations)
-      .values({ roomId, inviterId: adminId, inviteeId: invitee.id })
-      .returning();
-
-    // Notify invitee via socket
-    const inviteeSocketId = userSockets.get(invitee.id);
-    if (inviteeSocketId) {
-      io.to(inviteeSocketId).emit('invitation_received', {
-        id: invitation.id,
-        roomId,
-        roomName: room?.name ?? '',
-        inviterName: inviter?.name ?? '',
-        createdAt: invitation.createdAt,
-      });
-    }
-
-    res.json({ ok: true, invitation });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to invite user' });
-  }
-});
-
-// Get pending invitations for a user
-app.get('/api/invitations', async (req, res) => {
-  const userId = parseInt(req.query.userId as string);
-  if (!userId) return res.status(400).json({ error: 'userId required' });
-
-  try {
-    const invitations = await pool.query<{
-      id: number; room_id: number; room_name: string;
-      inviter_id: number; inviter_name: string; created_at: Date;
-    }>(
-      `SELECT ri.id, ri.room_id, r.name as room_name, ri.inviter_id, u.name as inviter_name, ri.created_at
-       FROM room_invitations ri
-       JOIN rooms r ON r.id = ri.room_id
-       JOIN users u ON u.id = ri.inviter_id
-       WHERE ri.invitee_id = $1 AND ri.status = 'pending'
-       ORDER BY ri.created_at DESC`,
-      [userId]
-    );
-    res.json(invitations.rows.map(r => ({
-      id: r.id, roomId: r.room_id, roomName: r.room_name,
-      inviterId: r.inviter_id, inviterName: r.inviter_name, createdAt: r.created_at,
-    })));
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to get invitations' });
-  }
-});
-
-// Accept an invitation
-app.post('/api/invitations/:id/accept', async (req, res) => {
-  const invitationId = parseInt(req.params.id);
-  const { userId } = req.body as { userId: number };
-
-  try {
-    const [invitation] = await db
-      .update(schema.roomInvitations)
-      .set({ status: 'accepted' })
-      .where(and(
-        eq(schema.roomInvitations.id, invitationId),
-        eq(schema.roomInvitations.inviteeId, userId),
-        eq(schema.roomInvitations.status, 'pending')
-      ))
-      .returning();
-
-    if (!invitation) return res.status(404).json({ error: 'Invitation not found' });
-
-    // Add user to room
-    await db
-      .insert(schema.roomMembers)
-      .values({ userId, roomId: invitation.roomId })
-      .onConflictDoNothing();
-
-    const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, invitation.roomId));
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId));
-
-    // Notify room members
-    io.to(`room:${invitation.roomId}`).emit('member_joined', {
-      userId, name: user?.name ?? '', isAdmin: false, roomId: invitation.roomId,
-    });
-
-    // Get DM partner name if DM
-    let dmPartnerName: string | null = null;
-    if (room?.isDm) {
-      const members = await db
-        .select({ userId: schema.roomMembers.userId, name: schema.users.name })
-        .from(schema.roomMembers)
-        .innerJoin(schema.users, eq(schema.roomMembers.userId, schema.users.id))
-        .where(eq(schema.roomMembers.roomId, invitation.roomId));
-      const partner = members.find(m => m.userId !== userId);
-      dmPartnerName = partner?.name ?? null;
-    }
-
-    // Send room info to the new member
-    const roomWithMeta = {
-      ...room,
-      unreadCount: 0,
-      joined: true,
-      dmPartnerName,
-    };
-    const userSocketId = userSockets.get(userId);
-    if (userSocketId) {
-      io.to(userSocketId).emit('room_created', roomWithMeta);
-    }
-
-    res.json({ ok: true, room: roomWithMeta });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to accept invitation' });
-  }
-});
-
-// Decline an invitation
-app.post('/api/invitations/:id/decline', async (req, res) => {
-  const invitationId = parseInt(req.params.id);
-  const { userId } = req.body as { userId: number };
-
-  try {
-    const [invitation] = await db
-      .update(schema.roomInvitations)
-      .set({ status: 'declined' })
-      .where(and(
-        eq(schema.roomInvitations.id, invitationId),
-        eq(schema.roomInvitations.inviteeId, userId),
-        eq(schema.roomInvitations.status, 'pending')
-      ))
-      .returning();
-
-    if (!invitation) return res.status(404).json({ error: 'Invitation not found' });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to decline invitation' });
-  }
-});
-
-// Create or get DM room between two users
-app.post('/api/dm', async (req, res) => {
-  const { userId, partnerId } = req.body as { userId: number; partnerId: number };
-  if (!userId || !partnerId || userId === partnerId) {
-    return res.status(400).json({ error: 'userId and partnerId required and must be different' });
-  }
-
-  try {
-    const [partner] = await db.select().from(schema.users).where(eq(schema.users.id, partnerId));
-    if (!partner) return res.status(404).json({ error: 'Partner not found' });
-
-    // Check if DM room already exists between these two users
-    const existing = await pool.query<{ id: number }>(
-      `SELECT r.id FROM rooms r
-       WHERE r.is_dm = true
-       AND (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id AND rm.user_id IN ($1, $2)) = 2
-       AND (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) = 2
-       LIMIT 1`,
-      [userId, partnerId]
-    );
-
-    if (existing.rows.length > 0) {
-      const roomId = existing.rows[0].id;
-      const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, roomId));
-      const roomWithMeta = { ...room, unreadCount: 0, joined: true, dmPartnerName: partner.name };
-
-      // Ensure both users are still members
-      await db.insert(schema.roomMembers).values({ userId, roomId }).onConflictDoNothing();
-      await db.insert(schema.roomMembers).values({ userId: partnerId, roomId }).onConflictDoNothing();
-
-      return res.json(roomWithMeta);
-    }
-
-    // Create DM room
-    const dmName = `dm:${Math.min(userId, partnerId)}-${Math.max(userId, partnerId)}`;
-    const [room] = await db
-      .insert(schema.rooms)
-      .values({ name: dmName, isPrivate: true, isDm: true })
-      .returning();
-
-    await db.insert(schema.roomMembers).values({ userId, roomId: room.id }).onConflictDoNothing();
-    await db.insert(schema.roomMembers).values({ userId: partnerId, roomId: room.id }).onConflictDoNothing();
-
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId));
-
-    const roomForUser = { ...room, unreadCount: 0, joined: true, dmPartnerName: partner.name };
-    const roomForPartner = { ...room, unreadCount: 0, joined: true, dmPartnerName: user?.name ?? '' };
-
-    // Notify requester
-    const userSocketId = userSockets.get(userId);
-    if (userSocketId) io.to(userSocketId).emit('room_created', roomForUser);
-
-    // Notify partner
-    const partnerSocketId = userSockets.get(partnerId);
-    if (partnerSocketId) io.to(partnerSocketId).emit('room_created', roomForPartner);
-
-    res.json(roomForUser);
-  } catch (e: unknown) {
-    if ((e as { code?: string }).code === '23505') {
-      // Race condition: DM already exists, retry lookup
-      const existing = await pool.query<{ id: number }>(
-        `SELECT r.id FROM rooms r
-         WHERE r.is_dm = true
-         AND (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id AND rm.user_id IN ($1, $2)) = 2
-         LIMIT 1`,
-        [userId, partnerId]
-      );
-      if (existing.rows.length > 0) {
-        const [room] = await db.select().from(schema.rooms).where(eq(schema.rooms.id, existing.rows[0].id));
-        const [partner] = await db.select().from(schema.users).where(eq(schema.users.id, partnerId));
-        return res.json({ ...room, unreadCount: 0, joined: true, dmPartnerName: partner?.name ?? '' });
-      }
-    }
-    console.error(e);
-    res.status(500).json({ error: 'Failed to create DM' });
   }
 });
 

@@ -14,20 +14,8 @@ interface User {
 interface Room {
   id: number;
   name: string;
-  isPrivate: boolean;
-  isDm: boolean;
-  dmPartnerName?: string | null;
   unreadCount: number;
   joined: boolean;
-}
-
-interface Invitation {
-  id: number;
-  roomId: number;
-  roomName: string;
-  inviterId: number;
-  inviterName: string;
-  createdAt: string;
 }
 
 interface ReadBy {
@@ -95,16 +83,7 @@ export default function App() {
 
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
-  const [newRoomPrivate, setNewRoomPrivate] = useState(false);
   const [roomError, setRoomError] = useState('');
-
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [showInvitationsPanel, setShowInvitationsPanel] = useState(false);
-
-  const [showInviteUserModal, setShowInviteUserModal] = useState(false);
-  const [inviteUsername, setInviteUsername] = useState('');
-  const [inviteError, setInviteError] = useState('');
-  const [inviteSuccess, setInviteSuccess] = useState('');
 
   const [messageInput, setMessageInput] = useState('');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -378,13 +357,6 @@ export default function App() {
       );
     });
 
-    socket.on('invitation_received', (inv: Invitation) => {
-      setInvitations((prev) => {
-        if (prev.some((i) => i.id === inv.id)) return prev;
-        return [inv, ...prev];
-      });
-    });
-
     return () => { socket.disconnect(); };
   }, []);
 
@@ -415,11 +387,6 @@ export default function App() {
     fetch('/api/users')
       .then((r) => r.json())
       .then((data: unknown) => setAllUsers(Array.isArray(data) ? data : []))
-      .catch(console.error);
-
-    fetch(`/api/invitations?userId=${currentUser.id}`)
-      .then((r) => r.json())
-      .then((data: unknown) => setInvitations(Array.isArray(data) ? data : []))
       .catch(console.error);
   }, [currentUser]);
 
@@ -501,7 +468,7 @@ export default function App() {
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, userId: currentUser.id, isPrivate: newRoomPrivate }),
+        body: JSON.stringify({ name, userId: currentUser.id }),
       });
       const data = await res.json();
       if (!res.ok) return setRoomError(data.error ?? 'Failed to create room');
@@ -510,7 +477,6 @@ export default function App() {
         return [...prev, data];
       });
       setNewRoomName('');
-      setNewRoomPrivate(false);
       setShowCreateRoom(false);
       setActiveRoomId(data.id);
     } catch {
@@ -549,7 +515,7 @@ export default function App() {
 
   function handleSelectRoom(room: Room) {
     setKickedNotice(null);
-    if (!room.joined && !room.isPrivate) {
+    if (!room.joined) {
       handleJoinRoom(room.id);
     } else {
       setActiveRoomId(room.id);
@@ -775,87 +741,6 @@ export default function App() {
     socketRef.current.emit('set_status', { status });
   }
 
-  async function handleAcceptInvitation(invitationId: number) {
-    if (!currentUser) return;
-    try {
-      const res = await fetch(`/api/invitations/${invitationId}/accept`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id }),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      setInvitations((prev) => prev.filter((i) => i.id !== invitationId));
-      // Add room to list if returned
-      if (data.room) {
-        setRooms((prev) => {
-          if (prev.some((r) => r.id === data.room.id)) return prev;
-          return [...prev, data.room];
-        });
-        setActiveRoomId(data.room.id);
-      }
-    } catch {
-      console.error('Failed to accept invitation');
-    }
-  }
-
-  async function handleDeclineInvitation(invitationId: number) {
-    if (!currentUser) return;
-    try {
-      await fetch(`/api/invitations/${invitationId}/decline`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id }),
-      });
-      setInvitations((prev) => prev.filter((i) => i.id !== invitationId));
-    } catch {
-      console.error('Failed to decline invitation');
-    }
-  }
-
-  async function handleInviteUser(e: React.FormEvent) {
-    e.preventDefault();
-    if (!currentUser || !activeRoomId) return;
-    const name = inviteUsername.trim();
-    if (!name) return setInviteError('Username required');
-
-    setInviteError('');
-    setInviteSuccess('');
-    try {
-      const res = await fetch(`/api/rooms/${activeRoomId}/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: currentUser.id, inviteeName: name }),
-      });
-      const data = await res.json();
-      if (!res.ok) return setInviteError(data.error ?? 'Failed to invite user');
-      setInviteSuccess(`Invited ${name} successfully`);
-      setInviteUsername('');
-    } catch {
-      setInviteError('Network error');
-    }
-  }
-
-  async function handleOpenDM(partnerId: number) {
-    if (!currentUser) return;
-    try {
-      const res = await fetch('/api/dm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, partnerId }),
-      });
-      if (!res.ok) return;
-      const room = await res.json();
-      setRooms((prev) => {
-        if (prev.some((r) => r.id === room.id)) return prev;
-        return [...prev, room];
-      });
-      setActiveRoomId(room.id);
-    } catch {
-      console.error('Failed to open DM');
-    }
-  }
-
   function formatLastSeen(lastSeen?: string): string {
     if (!lastSeen) return 'a while ago';
     const diff = Date.now() - new Date(lastSeen).getTime();
@@ -971,32 +856,20 @@ export default function App() {
 
         <div className="sidebar-scrollable">
           <div className="sidebar-section">
-            <div className="sidebar-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Rooms</span>
-              {invitations.length > 0 && (
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ fontSize: 11, padding: '1px 6px', color: 'var(--warning)' }}
-                  onClick={() => setShowInvitationsPanel((p) => !p)}
-                  title="Pending invitations"
-                >
-                  🔔 {invitations.length}
-                </button>
-              )}
-            </div>
-            {rooms.filter(r => !r.isDm).length === 0 && (
+            <div className="sidebar-section-title">Rooms</div>
+            {rooms.length === 0 && (
               <div style={{ padding: '8px 16px', fontSize: 13, color: 'var(--text-muted)' }}>
                 No rooms yet
               </div>
             )}
-            {rooms.filter(r => !r.isDm).map((room) => (
+            {rooms.map((room) => (
               <div
                 key={room.id}
                 className={`room-item ${activeRoomId === room.id ? 'active' : ''}`}
                 onClick={() => handleSelectRoom(room)}
               >
                 <div className="room-item-name">
-                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{room.isPrivate ? '🔒' : '#'}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>#</span>
                   <span>{room.name}</span>
                   {!room.joined && (
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 2 }}>+join</span>
@@ -1018,20 +891,12 @@ export default function App() {
                 onChange={(e) => setNewRoomName(e.target.value)}
                 maxLength={50}
                 autoFocus
-                onKeyDown={(e) => { if (e.key === 'Escape') { setShowCreateRoom(false); setRoomError(''); setNewRoomPrivate(false); } }}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setShowCreateRoom(false); setRoomError(''); } }}
               />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 0' }}>
-                <input
-                  type="checkbox"
-                  checked={newRoomPrivate}
-                  onChange={(e) => setNewRoomPrivate(e.target.checked)}
-                />
-                Private (invite-only)
-              </label>
               {roomError && <span className="error-msg">{roomError}</span>}
               <div className="create-room-form-actions">
                 <button className="btn btn-primary btn-sm" type="submit">Create</button>
-                <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setShowCreateRoom(false); setRoomError(''); setNewRoomPrivate(false); }}>Cancel</button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setShowCreateRoom(false); setRoomError(''); }}>Cancel</button>
               </div>
             </form>
           ) : (
@@ -1039,28 +904,6 @@ export default function App() {
               <button className="btn btn-ghost btn-sm" onClick={() => setShowCreateRoom(true)}>
                 + New Room
               </button>
-            </div>
-          )}
-
-          {/* Direct Messages section */}
-          {rooms.filter(r => r.isDm).length > 0 && (
-            <div className="sidebar-section" style={{ borderTop: '1px solid var(--border)', marginTop: 4 }}>
-              <div className="sidebar-section-title">Direct Messages</div>
-              {rooms.filter(r => r.isDm).map((room) => (
-                <div
-                  key={room.id}
-                  className={`room-item ${activeRoomId === room.id ? 'active' : ''}`}
-                  onClick={() => setActiveRoomId(room.id)}
-                >
-                  <div className="room-item-name">
-                    <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>@</span>
-                    <span>{room.dmPartnerName ?? room.name}</span>
-                  </div>
-                  {room.unreadCount > 0 && (
-                    <span className="unread-badge">{room.unreadCount}</span>
-                  )}
-                </div>
-              ))}
             </div>
           )}
 
@@ -1092,16 +935,6 @@ export default function App() {
                         <span style={{ fontSize: 13, color: isMe ? 'var(--accent)' : 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {u.name}{isMe ? ' (you)' : ''}
                         </span>
-                        {!isMe && (
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 10, padding: '1px 5px', flexShrink: 0 }}
-                            onClick={() => handleOpenDM(u.id)}
-                            title={`Message ${u.name}`}
-                          >
-                            DM
-                          </button>
-                        )}
                       </div>
                       {isOffline && u.lastSeen && !isMe && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', paddingLeft: 14 }}>
@@ -1134,66 +967,6 @@ export default function App() {
           </select>
         </div>
       </aside>
-
-      {/* ── Invitations Panel ── */}
-      {showInvitationsPanel && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowInvitationsPanel(false); }}>
-          <div className="modal">
-            <h2>Pending Invitations</h2>
-            {invitations.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No pending invitations</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {invitations.map((inv) => (
-                  <div key={inv.id} style={{ background: 'var(--surface)', padding: '10px 12px', borderRadius: 6, fontSize: 13 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 2 }}>#{inv.roomName}</div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>
-                      Invited by {inv.inviterName}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-primary btn-sm" onClick={() => handleAcceptInvitation(inv.id)}>Accept</button>
-                      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleDeclineInvitation(inv.id)}>Decline</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => setShowInvitationsPanel(false)}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Invite User Modal ── */}
-      {showInviteUserModal && activeRoomId && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setShowInviteUserModal(false); setInviteError(''); setInviteSuccess(''); setInviteUsername(''); } }}>
-          <div className="modal">
-            <h2>Invite User</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-              Invite someone to #{rooms.find((r) => r.id === activeRoomId)?.name}
-            </p>
-            <form onSubmit={handleInviteUser} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="form-field">
-                <label>Username</label>
-                <input
-                  className="text-input"
-                  type="text"
-                  placeholder="Enter exact username..."
-                  value={inviteUsername}
-                  onChange={(e) => setInviteUsername(e.target.value)}
-                  maxLength={30}
-                  autoFocus
-                />
-                {inviteError && <span className="error-msg">{inviteError}</span>}
-                {inviteSuccess && <span style={{ color: 'var(--success)', fontSize: 12 }}>{inviteSuccess}</span>}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" type="submit" disabled={!inviteUsername.trim()}>Invite</button>
-                <button className="btn btn-ghost" type="button" onClick={() => { setShowInviteUserModal(false); setInviteError(''); setInviteSuccess(''); setInviteUsername(''); }}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ── Schedule Modal ── */}
       {showScheduleModal && activeRoomId && (
@@ -1287,9 +1060,7 @@ export default function App() {
         ) : (
           <>
             <div className="room-header">
-              <span className="room-header-name">
-                {activeRoom.isDm ? `@ ${activeRoom.dmPartnerName ?? activeRoom.name}` : `${activeRoom.isPrivate ? '🔒 ' : '# '}${activeRoom.name}`}
-              </span>
+              <span className="room-header-name"># {activeRoom.name}</span>
               <div className="room-header-actions">
                 <button
                   className="btn btn-ghost btn-sm"
@@ -1494,7 +1265,7 @@ export default function App() {
               <input
                 className="message-input"
                 type="text"
-                placeholder={`${activeRoom.isDm ? `Message ${activeRoom.dmPartnerName ?? activeRoom.name}` : `Message #${activeRoom.name}`}${ephemeralDuration > 0 ? ' (ephemeral)' : ''}`}
+                placeholder={`Message #${activeRoom.name}${ephemeralDuration > 0 ? ' (ephemeral)' : ''}`}
                 value={messageInput}
                 onChange={handleMessageInput}
                 maxLength={2000}
@@ -1533,19 +1304,7 @@ export default function App() {
               <div className="scheduled-panel">
                 <div className="scheduled-panel-header">
                   <span>Members</span>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {currentUserIsAdmin && activeRoom?.isPrivate && (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11 }}
-                        onClick={() => { setShowInviteUserModal(true); setInviteError(''); setInviteSuccess(''); }}
-                        title="Invite user"
-                      >
-                        + Invite
-                      </button>
-                    )}
-                    <button className="btn btn-ghost btn-sm" onClick={() => setShowMembersPanel(false)}>✕</button>
-                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowMembersPanel(false)}>✕</button>
                 </div>
                 {roomMembers.length === 0 ? (
                   <div style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: 13 }}>No members</div>

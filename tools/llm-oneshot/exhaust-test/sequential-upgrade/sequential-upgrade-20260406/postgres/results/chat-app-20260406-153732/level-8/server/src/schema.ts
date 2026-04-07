@@ -12,8 +12,6 @@ export const users = pgTable('users', {
 export const rooms = pgTable('rooms', {
   id: serial('id').primaryKey(),
   name: text('name').notNull().unique(),
-  isPrivate: boolean('is_private').default(false).notNull(),
-  isDm: boolean('is_dm').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -78,13 +76,4 @@ export const messageEdits = pgTable('message_edits', {
   messageId: integer('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
   content: text('content').notNull(),
   editedAt: timestamp('edited_at').defaultNow().notNull(),
-});
-
-export const roomInvitations = pgTable('room_invitations', {
-  id: serial('id').primaryKey(),
-  roomId: integer('room_id').notNull().references(() => rooms.id, { onDelete: 'cascade' }),
-  inviterId: integer('inviter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  inviteeId: integer('invitee_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  status: text('status').default('pending').notNull(), // 'pending' | 'accepted' | 'declined'
-  createdAt: timestamp('created_at').defaultNow().notNull(),
 });

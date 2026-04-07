@@ -57,8 +57,8 @@ export const setStatus = spacetimedb.reducer(
 
 // Create a room
 export const createRoom = spacetimedb.reducer(
-  { name: t.string(), isPrivate: t.bool() },
-  (ctx, { name, isPrivate }) => {
+  { name: t.string() },
+  (ctx, { name }) => {
     if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Set your name first');
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new SenderError('Room name cannot be empty');
@@ -68,21 +68,19 @@ export const createRoom = spacetimedb.reducer(
     const existing = ctx.db.room.name.find(trimmed);
     if (existing) throw new SenderError('Room already exists');
 
-    const roomId = ctx.db.room.insert({ id: 0n, name: trimmed, createdBy: ctx.sender, createdAt: ctx.timestamp, isPrivate, isDm: false }).id;
+    const roomId = ctx.db.room.insert({ id: 0n, name: trimmed, createdBy: ctx.sender, createdAt: ctx.timestamp }).id;
     // Auto-join and auto-admin the creator
     ctx.db.roomMember.insert({ id: 0n, roomId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
     ctx.db.roomAdmin.insert({ id: 0n, roomId, userIdentity: ctx.sender });
   }
 );
 
-// Join a room (public only — private rooms require invitation via acceptInvitation)
+// Join a room
 export const joinRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Set your name first');
-    const room = ctx.db.room.id.find(roomId);
-    if (!room) throw new SenderError('Room not found');
-    if (room.isPrivate) throw new SenderError('This is a private room. You must be invited.');
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
 
     // Check if banned
     for (const b of [...ctx.db.bannedUser.roomId.filter(roomId)]) {
@@ -507,115 +505,5 @@ export const toggleReaction = spacetimedb.reducer(
       // Add reaction
       ctx.db.messageReaction.insert({ id: 0n, messageId, userIdentity: ctx.sender, emoji });
     }
-  }
-);
-
-// Create or open a direct message conversation with another user
-export const createDm = spacetimedb.reducer(
-  { targetIdentity: t.identity() },
-  (ctx, { targetIdentity }) => {
-    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Set your name first');
-    if (!ctx.db.user.identity.find(targetIdentity)) throw new SenderError('Target user not found');
-    if (ctx.sender.toHexString() === targetIdentity.toHexString()) throw new SenderError('Cannot DM yourself');
-
-    // Deterministic room name — always sorted alphabetically so both users get the same name
-    const a = ctx.sender.toHexString();
-    const b = targetIdentity.toHexString();
-    const [first, second] = a < b ? [a, b] : [b, a];
-    const dmName = `__dm__${first}_${second}`;
-
-    // Check if DM room already exists
-    const existing = ctx.db.room.name.find(dmName);
-    if (existing) {
-      // Ensure caller is a member (e.g., re-opening after leave)
-      let isMember = false;
-      for (const m of [...ctx.db.roomMember.roomId.filter(existing.id)]) {
-        if (m.userIdentity.toHexString() === ctx.sender.toHexString()) { isMember = true; break; }
-      }
-      if (!isMember) {
-        ctx.db.roomMember.insert({ id: 0n, roomId: existing.id, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
-      }
-      return;
-    }
-
-    // Create the DM room
-    const roomId = ctx.db.room.insert({
-      id: 0n,
-      name: dmName,
-      createdBy: ctx.sender,
-      createdAt: ctx.timestamp,
-      isPrivate: true,
-      isDm: true,
-    }).id;
-
-    ctx.db.roomMember.insert({ id: 0n, roomId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
-    ctx.db.roomMember.insert({ id: 0n, roomId, userIdentity: targetIdentity, joinedAt: ctx.timestamp });
-  }
-);
-
-// Invite a user to a private room (admin only)
-export const inviteUser = spacetimedb.reducer(
-  { roomId: t.u64(), targetIdentity: t.identity() },
-  (ctx, { roomId, targetIdentity }) => {
-    const room = ctx.db.room.id.find(roomId);
-    if (!room) throw new SenderError('Room not found');
-    if (!room.isPrivate) throw new SenderError('Only private rooms support invitations');
-
-    // Must be admin
-    let callerIsAdmin = false;
-    for (const a of [...ctx.db.roomAdmin.roomId.filter(roomId)]) {
-      if (a.userIdentity.toHexString() === ctx.sender.toHexString()) { callerIsAdmin = true; break; }
-    }
-    if (!callerIsAdmin) {
-      if (room.createdBy.toHexString() === ctx.sender.toHexString()) callerIsAdmin = true;
-    }
-    if (!callerIsAdmin) throw new SenderError('Not authorized');
-
-    if (!ctx.db.user.identity.find(targetIdentity)) throw new SenderError('User not found');
-
-    // Check not already a member
-    for (const m of [...ctx.db.roomMember.roomId.filter(roomId)]) {
-      if (m.userIdentity.toHexString() === targetIdentity.toHexString()) {
-        throw new SenderError('User is already a member');
-      }
-    }
-
-    // Check not already invited
-    for (const inv of [...ctx.db.roomInvitation.inviteeIdentity.filter(targetIdentity)]) {
-      if (inv.roomId === roomId) throw new SenderError('User already has a pending invitation');
-    }
-
-    ctx.db.roomInvitation.insert({ id: 0n, roomId, inviterIdentity: ctx.sender, inviteeIdentity: targetIdentity, createdAt: ctx.timestamp });
-  }
-);
-
-// Accept a room invitation — adds caller to the room
-export const acceptInvitation = spacetimedb.reducer(
-  { invitationId: t.u64() },
-  (ctx, { invitationId }) => {
-    const inv = ctx.db.roomInvitation.id.find(invitationId);
-    if (!inv) throw new SenderError('Invitation not found');
-    if (inv.inviteeIdentity.toHexString() !== ctx.sender.toHexString()) {
-      throw new SenderError('Not your invitation');
-    }
-
-    const room = ctx.db.room.id.find(inv.roomId);
-    if (!room) throw new SenderError('Room no longer exists');
-
-    ctx.db.roomMember.insert({ id: 0n, roomId: inv.roomId, userIdentity: ctx.sender, joinedAt: ctx.timestamp });
-    ctx.db.roomInvitation.id.delete(invitationId);
-  }
-);
-
-// Decline a room invitation
-export const declineInvitation = spacetimedb.reducer(
-  { invitationId: t.u64() },
-  (ctx, { invitationId }) => {
-    const inv = ctx.db.roomInvitation.id.find(invitationId);
-    if (!inv) throw new SenderError('Invitation not found');
-    if (inv.inviteeIdentity.toHexString() !== ctx.sender.toHexString()) {
-      throw new SenderError('Not your invitation');
-    }
-    ctx.db.roomInvitation.id.delete(invitationId);
   }
 );
