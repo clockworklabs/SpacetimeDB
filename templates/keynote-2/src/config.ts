@@ -1,7 +1,6 @@
 export const validConnectors = [
   'convex',
   'spacetimedb',
-  'spacetimedbRustClient',
   'bun',
   'postgres_rpc',
   'cockroach_rpc',
