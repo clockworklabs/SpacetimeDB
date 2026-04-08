@@ -228,8 +228,8 @@ pub struct CallFromDatabaseParams {
 /// Both fields are mandatory; a missing field results in a 400 Bad Request.
 #[derive(Deserialize)]
 pub struct CallFromDatabaseQuery {
-    /// Hex-encoded [`Identity`] of the sending database.
-    sender_identity: String,
+    /// [`Identity`] of the sending database, parsed from a hex query string.
+    sender_identity: Identity,
     /// The inter-database message ID from the sender's st_outbound_msg.
     /// Used for at-most-once delivery via `st_inbound_msg`.
     msg_id: u64,
@@ -268,13 +268,6 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
     }
 
     let caller_identity = auth.claims.identity;
-
-    let sender_identity = Identity::from_hex(&sender_identity).map_err(|_| {
-        (
-            StatusCode::BAD_REQUEST,
-            "Invalid sender_identity: expected hex-encoded identity",
-        )
-    })?;
 
     let args = FunctionArgs::Bsatn(body);
     let connection_id = generate_random_connection_id();
