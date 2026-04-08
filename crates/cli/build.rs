@@ -56,10 +56,8 @@ fn get_manifest_dir() -> PathBuf {
 //   * `get_templates_json` - returns contents of the JSON file with the list of templates
 //   * `get_template_files` - returns a HashMap with templates contents based on the
 //                            templates list at templates/templates-list.json
-//   * `get_ai_rules_base` - returns base AI rules for all languages
-//   * `get_ai_rules_typescript` - returns TypeScript-specific AI rules
-//   * `get_ai_rules_rust` - returns Rust-specific AI rules
-//   * `get_ai_rules_csharp` - returns C#-specific AI rules
+//   * `get_skill` - returns the content of a skill file by name
+//   * `get_all_skill_names` - returns all available skill names
 fn generate_template_files() {
     let manifest_dir = get_manifest_dir();
     let repo_root = get_repo_root();
@@ -111,64 +109,32 @@ fn generate_template_files() {
     let ts_bindings_version =
         extract_ts_bindings_version(&ts_bindings_package).expect("Failed to read TypeScript bindings version");
 
-    // Embed AI rules files from docs/static/ai-rules/
-    let ai_rules_dir = repo_root.join("docs/static/ai-rules");
+    // Embed skill files from skills/*/SKILL.md
+    let skills_dir = repo_root.join("skills");
+    let skill_names = discover_skill_names(&skills_dir);
 
-    // Base rules (all languages)
-    let base_rules_path = ai_rules_dir.join("spacetimedb.mdc");
-    if base_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_base() -> &'static str {\n");
+    generated_code.push_str("pub fn get_skill(name: &str) -> Option<&'static str> {\n");
+    generated_code.push_str("    match name {\n");
+    for skill_name in &skill_names {
+        let skill_path = skills_dir.join(skill_name).join("SKILL.md");
         generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            base_rules_path.to_str().unwrap().replace('\\', "\\\\")
+            "        \"{}\" => Some(include_str!(\"{}\")),\n",
+            skill_name,
+            skill_path.to_str().unwrap().replace('\\', "\\\\")
         ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", base_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb.mdc\" file.");
+        println!("cargo:rerun-if-changed={}", skill_path.display());
     }
+    generated_code.push_str("        _ => None,\n");
+    generated_code.push_str("    }\n");
+    generated_code.push_str("}\n\n");
 
-    // TypeScript-specific rules
-    let ts_rules_path = ai_rules_dir.join("spacetimedb-typescript.mdc");
-    if ts_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_typescript() -> &'static str {\n");
-        generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            ts_rules_path.to_str().unwrap().replace('\\', "\\\\")
-        ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", ts_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb-typescript.mdc\" file.");
+    generated_code.push_str("pub fn get_all_skill_names() -> &'static [&'static str] {\n");
+    generated_code.push_str("    &[\n");
+    for skill_name in &skill_names {
+        generated_code.push_str(&format!("        \"{}\",\n", skill_name));
     }
-
-    // Rust-specific rules
-    let rust_rules_path = ai_rules_dir.join("spacetimedb-rust.mdc");
-    if rust_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_rust() -> &'static str {\n");
-        generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            rust_rules_path.to_str().unwrap().replace('\\', "\\\\")
-        ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", rust_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb-rust.mdc\" file.");
-    }
-
-    // C#-specific rules
-    let csharp_rules_path = ai_rules_dir.join("spacetimedb-csharp.mdc");
-    if csharp_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_csharp() -> &'static str {\n");
-        generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            csharp_rules_path.to_str().unwrap().replace('\\', "\\\\")
-        ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", csharp_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb-csharp.mdc\" file.");
-    }
+    generated_code.push_str("    ]\n");
+    generated_code.push_str("}\n\n");
 
     // Expose workspace metadata so `spacetime init` can rewrite template manifests without hardcoding versions.
     generated_code.push_str("pub fn get_workspace_edition() -> &'static str {\n");
@@ -618,4 +584,32 @@ fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
 
     let mut file = fs::File::create(dst)?;
     file.write_all(&src_bytes)
+}
+
+/// Discover skill directories under skills/. Each directory containing a SKILL.md
+/// file is considered a skill. Returns sorted skill names.
+fn discover_skill_names(skills_dir: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+
+    let entries = match fs::read_dir(skills_dir) {
+        Ok(entries) => entries,
+        Err(_) => {
+            panic!(
+                "Could not read skills directory at {}. Ensure skills/ exists at the repo root.",
+                skills_dir.display()
+            );
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.join("SKILL.md").exists() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                names.push(name.to_string());
+            }
+        }
+    }
+
+    names.sort();
+    names
 }

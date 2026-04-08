@@ -105,16 +105,19 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 - [SQL Reference](/reference/sql) - SQL query syntax
 - [HTTP API](/http/database) - REST API reference
 
-### AI Assistant Rules
+### AI Assistant Skills
 
-**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific rules files. These contain critical information about hallucinated APIs, common mistakes, and correct patterns:
+**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific skill files. These contain critical information about correct SDK patterns and common mistakes:
 
-| Language | Rules |
-|----------|-------|
-| All Languages | [spacetimedb.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb.mdc) |
-| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-typescript.mdc) |
-| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-rust.mdc) |
-| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-csharp.mdc) |
+| Skill | Description |
+|-------|-------------|
+| [concepts](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/concepts/SKILL.md) | Core SpacetimeDB architecture and concepts |
+| [cli](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/cli/SKILL.md) | CLI reference |
+| [rust-server](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/rust-server/SKILL.md) | Rust server module SDK |
+| [typescript-server](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/typescript-server/SKILL.md) | TypeScript server module SDK |
+| [typescript-client](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/typescript-client/SKILL.md) | TypeScript/React client SDK |
+| [csharp-server](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/csharp-server/SKILL.md) | C# server module SDK |
+| [unity](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/unity/SKILL.md) | Unity client integration |
 ## Basic Project Workflow
 
 Getting started with SpacetimeDB involves a few key steps:

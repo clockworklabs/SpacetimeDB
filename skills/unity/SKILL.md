@@ -1,44 +1,20 @@
 ---
-name: spacetimedb-unity
+name: unity
 description: Integrate SpacetimeDB with Unity game projects. Use when building Unity clients with MonoBehaviour lifecycle, FrameTick, and PlayerPrefs token persistence.
 license: Apache-2.0
 metadata:
   author: clockworklabs
   version: "2.0"
+  role: client
+  language: csharp
+  cursor_globs: "**/*.cs"
+  cursor_always_apply: false
   tested_with: "SpacetimeDB 2.0, Unity 2022.3+"
 ---
 
 # SpacetimeDB Unity Integration
 
-This skill covers Unity-specific patterns for connecting to SpacetimeDB. For server-side module development and general C# SDK usage, see the `spacetimedb-csharp` skill.
-
----
-
-## HALLUCINATED APIs — DO NOT USE
-
-```csharp
-// WRONG — these do not exist in Unity SDK
-SpacetimeDBClient.instance.Connect(...);    // Use DbConnection.Builder()
-SpacetimeDBClient.instance.Subscribe(...);  // Use conn.SubscriptionBuilder()
-NetworkManager.RegisterReducer(...);        // SpacetimeDB is not a Unity networking plugin
-
-// WRONG — old 1.0 patterns
-.WithModuleName("my-db")                    // Use .WithDatabaseName() (2.0)
-ScheduleAt.Time(futureTime)                 // Use new ScheduleAt.Time(futureTime)
-```
-
----
-
-## Common Mistakes
-
-| Wrong | Right | Error |
-|-------|-------|-------|
-| Not calling `FrameTick()` | `conn?.FrameTick()` in `Update()` | No callbacks fire |
-| Accessing `conn.Db` from background thread | Copy data in callback, use on main thread | Data races / crashes |
-| Forgetting `DontDestroyOnLoad` | Add to manager `Awake()` | Connection lost on scene load |
-| Connecting in `Update()` | Connect in `Start()` or on user action | Reconnects every frame |
-| Not saving auth token | `PlayerPrefs.SetString(...)` in `OnConnect` | New identity every session |
-| Missing generated bindings | Run `spacetime generate --lang csharp` | Compile errors |
+This skill covers Unity-specific patterns for connecting to SpacetimeDB. For server-side module development, see the `csharp-server` skill.
 
 ---
 
@@ -140,44 +116,9 @@ public class SpacetimeManager : MonoBehaviour
 
 ## FrameTick — Critical
 
-**`FrameTick()` must be called every frame in `Update()`.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it:
-- No callbacks fire (OnInsert, OnUpdate, OnDelete, reducer callbacks)
-- The client appears frozen
-
-```csharp
-void Update()
-{
-    Connection?.FrameTick();
-}
-```
+**`FrameTick()` must be called every frame in `Update()`.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it, no callbacks fire and the client appears frozen. See the `Update()` method in the SpacetimeManager above.
 
 **Thread safety**: `FrameTick()` processes messages on the calling thread (the main thread in Unity). Do NOT call it from a background thread. Do NOT access `conn.Db` from background threads.
-
----
-
-## Subscribing to Tables
-
-Subscribe in the `OnConnected` callback:
-
-```csharp
-private void OnConnected(DbConnection conn, Identity identity, string authToken)
-{
-    // ...save token...
-
-    // Development: subscribe to all
-    conn.SubscriptionBuilder()
-        .OnApplied(OnSubscriptionApplied)
-        .SubscribeToAllTables();
-
-    // Production: subscribe to specific tables
-    conn.SubscriptionBuilder()
-        .OnApplied(OnSubscriptionApplied)
-        .Subscribe(new[] {
-            "SELECT * FROM player",
-            "SELECT * FROM game_state"
-        });
-}
-```
 
 ---
 
@@ -279,14 +220,3 @@ The SpacetimeDB SDK uses code generation. If you encounter issues with IL2CPP bu
 ### Token Persistence
 Token save/load via `PlayerPrefs` is demonstrated in the SpacetimeManager singleton above. If the token is stale or invalid, the server issues a new identity and token in the `OnConnect` callback.
 
----
-
-## Commands
-
-```bash
-spacetime start
-spacetime publish <module-name> --module-path <backend-dir>
-spacetime publish <module-name> --clear-database -y --module-path <backend-dir>
-spacetime generate --lang csharp --out-dir Assets/SpacetimeDB/module_bindings --module-path <backend-dir>
-spacetime logs <module-name>
-```
