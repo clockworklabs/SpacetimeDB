@@ -108,16 +108,7 @@ public abstract record TypeUse(string Name, string BSATNName)
                             ? new EnumUse(type, typeInfo)
                             : new ValueUse(type, typeInfo)
                     )
-                    // Use SumTypeUse only for types with [SpacetimeDB.Type] attribute (codegen generates static helpers for these).
-                    : (
-                        named.BaseType?.OriginalDefinition.ToString()
-                            == "SpacetimeDB.TaggedEnum<Variants>"
-                        && named
-                            .GetAttributes()
-                            .Any(a => a.AttributeClass?.ToString() == "SpacetimeDB.TypeAttribute")
-                            ? new SumTypeUse(type, typeInfo)
-                            : new ReferenceUse(type, typeInfo)
-                    ),
+                    : new ReferenceUse(type, typeInfo),
             },
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
@@ -280,32 +271,10 @@ public record ReferenceUse(string Type, string TypeInfo) : TypeUse(Type, TypeInf
         string inVar2,
         string outVar,
         int level = 0
-    ) =>
-        // object.Equals avoids virtual dispatch which causes vtable computation issues in NativeAOT-LLVM.
-        $"var {outVar} = object.Equals({inVar1}, {inVar2});";
+    ) => $"var {outVar} = {inVar1} == null ? {inVar2} == null : {inVar1}.Equals({inVar2});";
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar} == null ? 0 : {inVar}.GetHashCode();";
-}
-
-/// <summary>Sum type use that calls static helpers to avoid NativeAOT-LLVM vtable issues.</summary>
-public record SumTypeUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
-{
-    // Strip nullable suffix from type name for static method calls
-    private string NonNullableType => Type.TrimEnd('?');
-
-    public override string EqualsStatement(
-        string inVar1,
-        string inVar2,
-        string outVar,
-        int level = 0
-    ) =>
-        // Use the static EqualsStatic helper to avoid virtual dispatch
-        $"var {outVar} = {NonNullableType}.EqualsStatic({inVar1}, {inVar2});";
-
-    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
-        // Use the static GetHashCodeStatic helper to avoid virtual dispatch
-        $"var {outVar} = {NonNullableType}.GetHashCodeStatic({inVar});";
 }
 
 /// <summary>
@@ -760,137 +729,54 @@ public abstract record BaseTypeDeclaration<M>
             """
         );
 
-        // Sum types use EqualityComparer<T>.Default which causes NativeAOT-LLVM vtable issues.
-        if (Kind is TypeKind.Sum)
-        {
-            var staticHashCodeBody = string.Join(
-                "\n",
-                bsatnDecls.Select(member =>
-                {
-                    var hashName = $"___hash{member.Name}";
-                    return $"""
-                            case {member.Identifier}(var inner):
-                                {member.Type.GetHashCodeStatement("inner", hashName)}
-                                return {hashName};
-                    """;
-                })
-            );
-
-            var equalsBody = string.Join(
-                "\n",
-                bsatnDecls.Select(member =>
-                {
-                    var eqName = $"___eq{member.Name}";
-                    return $"""
-                            case {member.Identifier}(var inner) when that is {member.Identifier}(var thatInner):
-                                {member.Type.EqualsStatement("inner", "thatInner", eqName)}
-                                return {eqName};
-                    """;
-                })
-            );
-
-            extensions.Contents.Append(
-                $$"""
-
-                    public virtual bool Equals({{FullName}}? that)
-                    {
-                        if (((object?)that) == null) { return false; }
-                        switch (this) {
-                        {{equalsBody}}
-                            default:
-                                return false;
-                        }
-                    }
-
-                    // Static helpers to avoid virtual dispatch which causes vtable computation issues in NativeAOT-LLVM.
-                    public static int GetHashCodeStatic({{FullName}}? value)
-                    {
-                        if (((object?)value) == null) { return 0; }
-                        switch (value) {
-                        {{staticHashCodeBody}}
-                            default:
-                                return 0;
-                        }
-                    }
-
-                    public static bool EqualsStatic({{FullName}}? a, {{FullName}}? b)
-                    {
-                        if (((object?)a) == null) { return ((object?)b) == null; }
-                        if (((object?)b) == null) { return false; }
-                        switch (a) {
-                        {{equalsBody.Replace("that is", "b is").Replace("thatInner", "bInner")}}
-                            default:
-                                return false;
-                        }
-                    }
-                """
-            );
-        }
-        else if (!Scope.IsRecord)
+        if (!Scope.IsRecord)
         {
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-
-            // Generate equality using EqualsStatement from each TypeUse.
-            // This avoids EqualityComparer<T>.Default which allocates and causes issues with NativeAOT-LLVM.
-            // The pattern mirrors GetHashCode generation - use statements, not expressions.
-            var declEqName = (MemberDeclaration decl) => $"___eq{decl.Name}";
-            var equalsStatements = string.Join(
-                "\n        ",
-                bsatnDecls.Select(decl =>
-                    decl.Type.EqualsStatement(
-                        $"this.{decl.Identifier}",
-                        $"that.{decl.Identifier}",
-                        declEqName(decl)
-                    )
-                )
-            );
-            var equalsReturn = JoinOrValue(
-                " && ",
-                bsatnDecls.Select(declEqName),
-                "true" // if there are no members, the types are equal
-            );
+            var declEqualsName = (MemberDeclaration decl) => $"___eq{decl.Name}";
 
             extensions.Contents.Append(
                 $$"""
 
-                #nullable enable
-                    public bool Equals({{fullNameMaybeRef}} that)
-                    {
-                        {{(
-                    Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        "
-                )}}
-                        {{equalsStatements}}
-                        return {{equalsReturn}};
-                    }
+            #nullable enable
+                public bool Equals({{fullNameMaybeRef}} that)
+                {
+                    {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
+                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqualsName(decl))))}}
+                    return {{JoinOrValue(
+                        " &&\n        ",
+                        bsatnDecls.Select(declEqualsName),
+                        "true" // if there are no elements, the structs are equal :)
+                    )}};
+                }
 
-                    public override bool Equals(object? that) {
-                        if (that == null) {
-                            return false;
-                        }
-                        var that_ = that as {{FullName}}{{(Scope.IsStruct ? "?" : "")}};
-                        if (((object?)that_) == null) {
-                            return false;
-                        }
-                        return Equals(that_);
+                public override bool Equals(object? that) {
+                    if (that == null) {
+                        return false;
                     }
+                    var that_ = that as {{FullName}}{{(Scope.IsStruct ? "?" : "")}};
+                    if (((object?)that_) == null) {
+                        return false;
+                    }
+                    return Equals(that_);
+                }
 
-                    public static bool operator == ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
-                        if (((object?)this_) == null || ((object?)that) == null) {
-                            return object.Equals(this_, that);
-                        }
-                        return this_.Equals(that);
+                public static bool operator == ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
+                    if (((object?)this_) == null || ((object?)that) == null) {
+                        return object.Equals(this_, that);
                     }
+                    return this_.Equals(that);
+                }
 
-                    public static bool operator != ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
-                        if (((object?)this_) == null || ((object?)that) == null) {
-                            return !object.Equals(this_, that);
-                        }
-                        return !this_.Equals(that);
+                public static bool operator != ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {
+                    if (((object?)this_) == null || ((object?)that) == null) {
+                        return !object.Equals(this_, that);
                     }
-                #nullable restore
-                """
+                    return !this_.Equals(that);
+                }
+            #nullable restore
+            """
             );
         }
 
