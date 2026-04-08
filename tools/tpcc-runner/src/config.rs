@@ -464,6 +464,8 @@ mod tests {
             load_parallelism: Some(1),
             batch_size: Some(0),
             reset: Some(true),
+            warehouse_id_offset: None,
+            skip_items: None,
         };
 
         let err = args.resolve(&FileConfig::default()).unwrap_err().to_string();
@@ -479,6 +481,8 @@ mod tests {
             load_parallelism: Some(1),
             batch_size: None,
             reset: Some(true),
+            warehouse_id_offset: None,
+            skip_items: None,
         };
 
         let config = args.resolve(&FileConfig::default()).unwrap();

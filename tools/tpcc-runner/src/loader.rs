@@ -29,22 +29,44 @@ pub async fn run(config: LoadConfig) -> Result<()> {
         let thread_name = format!("tpcc-load-{worker_idx}");
         let handle = thread::Builder::new()
             .name(thread_name.clone())
-            .spawn(move || -> Result<()> {
+            .spawn(move || -> Vec<DatabaseRunFailure> {
+                let mut failures = Vec::new();
                 for database_number in chunk {
-                    run_one_database(&config, database_number, &topology)?;
+                    if let Err(error) = run_one_database(&config, database_number, &topology) {
+                        let database_name = topology.database_name(database_number);
+                        let database_identity = topology.identity_for_database_number(database_number).ok();
+                        failures.push(DatabaseRunFailure {
+                            database_number,
+                            database_name,
+                            database_identity,
+                            error: format!("{error:#}"),
+                        });
+                    }
                 }
-                Ok(())
+                failures
             })
             .with_context(|| format!("failed to spawn {thread_name}"))?;
         handles.push(handle);
     }
 
+    let mut failures = Vec::new();
     for handle in handles {
         match handle.join() {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) => return Err(err),
+            Ok(worker_failures) => failures.extend(worker_failures),
             Err(_) => anyhow::bail!("loader worker thread panicked"),
         }
+    }
+
+    if !failures.is_empty() {
+        for failure in &failures {
+            log::error!(
+                "tpcc load failed for {} (database {}): {}",
+                failure.database_name,
+                failure.database_number,
+                failure.error
+            );
+        }
+        anyhow::bail!(format_failure_report(&config, &failures));
     }
 
     log::info!("tpcc load finished");
@@ -58,6 +80,50 @@ fn database_number_chunks(num_databases: u32, parallelism: usize) -> Vec<Vec<u32
         .chunks(chunk_size)
         .map(|chunk| chunk.to_vec())
         .collect()
+}
+
+struct DatabaseRunFailure {
+    database_number: u32,
+    database_name: String,
+    database_identity: Option<spacetimedb_sdk::Identity>,
+    error: String,
+}
+
+fn format_failure_report(config: &LoadConfig, failures: &[DatabaseRunFailure]) -> String {
+    let mut message = String::from("tpcc load failed for one or more databases.");
+    message.push_str("\nFailed databases:");
+
+    for failure in failures {
+        if let Some(identity) = failure.database_identity {
+            message.push_str(&format!(
+                "\n- {} (database_number={}, identity={}): {}",
+                failure.database_name, failure.database_number, identity, failure.error
+            ));
+        } else {
+            message.push_str(&format!(
+                "\n- {} (database_number={}): {}",
+                failure.database_name, failure.database_number, failure.error
+            ));
+        }
+    }
+
+    message.push_str("\nRetry only the failed databases with:");
+    for failure in failures {
+        message.push_str(&format!(
+            "\ncargo run -p spacetimedb-cli -- call -s {} {} resume_tpcc_load",
+            config.connection.uri, failure.database_name
+        ));
+    }
+
+    message.push_str("\nIf you need to discard partial progress for a failed database and start that shard over:");
+    for failure in failures {
+        message.push_str(&format!(
+            "\ncargo run -p spacetimedb-cli -- call -s {} {} restart_tpcc_load",
+            config.connection.uri, failure.database_name
+        ));
+    }
+
+    message
 }
 
 macro_rules! time {
@@ -75,6 +141,7 @@ macro_rules! time {
 
 fn run_one_database(config: &LoadConfig, database_number: u32, topology: &DatabaseTopology) -> Result<()> {
     time!("run_one_database" {
+        let database_name = topology.database_name(database_number);
         let database_identity = topology.identity_for_database_number(database_number)?;
         log::info!(
             "starting tpcc load into {} / {} with {} warehouse(s)",
@@ -85,6 +152,7 @@ fn run_one_database(config: &LoadConfig, database_number: u32, topology: &Databa
 
         let mut client = ModuleClient::connect(&config.connection, database_identity)?;
         client.subscribe_load_state()?;
+        fail_if_partial_load_detected(config, &database_name, &client)?;
 
         time!("reset" {
             if config.reset {
@@ -114,6 +182,38 @@ fn run_one_database(config: &LoadConfig, database_number: u32, topology: &Databa
         log::info!("tpcc load for database {database_identity} finished");
        Ok(())
     })
+}
+
+fn fail_if_partial_load_detected(config: &LoadConfig, database_name: &str, client: &ModuleClient) -> Result<()> {
+    let Some(state) = client.load_state() else {
+        return Ok(());
+    };
+
+    if state.status == TpccLoadStatus::Complete {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "detected existing partial tpcc load state for {database_name}: \
+status={:?} phase={:?} chunks_completed={} rows_inserted={} next=({},{},{},{}) last_error={:?}\n\
+Resume this shard with:\n\
+cargo run -p spacetimedb-cli -- call -s {} {} resume_tpcc_load\n\
+Or discard partial progress and restart just this shard with:\n\
+cargo run -p spacetimedb-cli -- call -s {} {} restart_tpcc_load",
+        state.status,
+        state.phase,
+        state.chunks_completed,
+        state.rows_inserted,
+        state.next_warehouse_id,
+        state.next_district_id,
+        state.next_item_id,
+        state.next_order_id,
+        state.last_error,
+        config.connection.uri,
+        database_name,
+        config.connection.uri,
+        database_name
+    )
 }
 
 fn build_load_request(

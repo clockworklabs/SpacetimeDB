@@ -277,9 +277,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
                 }
             }
             Err(err) => {
-                log::error!(
-                    "terminal task error: {err:#}",
-                );
+                log::error!("terminal task error: {err:#}",);
             }
         }
 
