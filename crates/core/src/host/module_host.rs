@@ -627,7 +627,7 @@ pub struct CallReducerParams {
     /// If set, enables at-most-once delivery semantics for database-to-database calls.
     ///
     /// The tuple is `(sender_database_identity, sender_msg_id)`.
-    /// Before running the reducer, `st_inbound_msg_id` is consulted:
+    /// Before running the reducer, `st_inbound_msg` is consulted:
     /// if `sender_msg_id` ≤ the stored last-delivered msg_id for the sender,
     /// the call is a duplicate and returns [`ReducerCallError::Deduplicated`].
     /// Otherwise the reducer runs, and the stored msg_id is updated atomically
@@ -1670,7 +1670,7 @@ impl ModuleHost {
     /// Variant of [`Self::call_reducer`] for database-to-database calls.
     ///
     /// Behaves identically to `call_reducer`, except that it enforces at-most-once
-    /// delivery using the `st_inbound_msg_id` dedup index.
+    /// delivery using the `st_inbound_msg` dedup index.
     /// Before invoking the reducer, the receiver checks whether
     /// `sender_msg_id` ≤ the last delivered msg_id for `sender_database_identity`.
     /// If so, the call is a duplicate and [`ReducerOutcome::Deduplicated`] is returned

@@ -1,22 +1,23 @@
 /// Inter-Database Communication (IDC) Runtime
 ///
 /// Background tokio task that:
-/// 1. Loads Pending entries from `st_msg_id` on startup.
+/// 1. Loads undelivered entries from `st_outbound_msg` on startup, resolving delivery data from outbox tables.
 /// 2. Accepts immediate notifications via an mpsc channel when new outbox rows are inserted.
 /// 3. Delivers each message in msg_id order via HTTP POST to
 ///    `http://localhost:80/v1/database/{target_db}/call-from-database/{reducer}?sender_identity=<hex>&msg_id=<n>`
 /// 4. On transport errors (network, 5xx, 4xx except 422/402): retries infinitely with exponential
 ///    backoff, blocking only the affected target database (other targets continue unaffected).
-/// 5. On reducer errors (HTTP 422) or budget exceeded (HTTP 402): records the result, marks DONE,
-///    and calls the configured `on_result_reducer` on the local database (if any).
+/// 5. On reducer errors (HTTP 422) or budget exceeded (HTTP 402): calls the configured
+///    `on_result_reducer` (read from the outbox table's schema) and deletes the st_outbound_msg row.
 /// 6. Enforces sequential delivery per target database: msg N+1 is only delivered after N is done.
 use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::WeakModuleHost;
 use crate::host::FunctionArgs;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::system_tables::{StMsgIdRow, ST_MSG_ID_ID};
+use spacetimedb_datastore::system_tables::{StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{AlgebraicValue, Identity};
+use spacetimedb_primitives::{ColId, TableId};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -55,12 +56,7 @@ pub struct IdcRuntimeStarter {
 
 impl IdcRuntimeStarter {
     /// Spawn the IDC runtime background task.
-    pub fn start(
-        self,
-        db: Arc<RelationalDB>,
-        config: IdcRuntimeConfig,
-        module_host: WeakModuleHost,
-    ) -> IdcRuntime {
+    pub fn start(self, db: Arc<RelationalDB>, config: IdcRuntimeConfig, module_host: WeakModuleHost) -> IdcRuntime {
         let abort = tokio::spawn(run_idc_loop(db, config, module_host, self.rx)).abort_handle();
         IdcRuntime { _abort: abort }
     }
@@ -77,9 +73,22 @@ impl IdcRuntime {
     }
 }
 
+/// All data needed to deliver a single outbound message, resolved from the outbox table.
+#[derive(Clone)]
+struct PendingMessage {
+    msg_id: u64,
+    outbox_table_id: TableId,
+    row_id: u64,
+    target_db_identity: Identity,
+    target_reducer: String,
+    args_bsatn: Vec<u8>,
+    /// From the outbox table's `TableSchema::on_result_reducer`.
+    on_result_reducer: Option<String>,
+}
+
 /// Per-target-database delivery state.
 struct TargetState {
-    queue: VecDeque<StMsgIdRow>,
+    queue: VecDeque<PendingMessage>,
     /// When `Some`, this target is in backoff and should not be retried until this instant.
     blocked_until: Option<Instant>,
     /// Current backoff duration for this target (doubles on each transport error).
@@ -149,16 +158,16 @@ async fn run_idc_loop(
                 if !state.is_ready() {
                     continue;
                 }
-                let Some(row) = state.queue.front().cloned() else {
+                let Some(msg) = state.queue.front().cloned() else {
                     continue;
                 };
-                let outcome = attempt_delivery(&client, &config, &row).await;
+                let outcome = attempt_delivery(&client, &config, &msg).await;
                 match outcome {
                     DeliveryOutcome::TransportError(reason) => {
                         log::warn!(
                             "idc_runtime: transport error delivering msg_id={} to {}: {reason}",
-                            row.msg_id,
-                            hex::encode(Identity::from(row.target_db_identity).to_byte_array()),
+                            msg.msg_id,
+                            hex::encode(msg.target_db_identity.to_byte_array()),
                         );
                         state.record_transport_error();
                         // Do NOT pop the front — keep retrying this message for this target.
@@ -168,7 +177,7 @@ async fn run_idc_loop(
                         state.record_success();
                         any_delivered = true;
                         let (result_status, result_payload) = outcome_to_result(&outcome);
-                        finalize_message(&db, &module_host, &row, result_status, result_payload).await;
+                        finalize_message(&db, &module_host, &msg, result_status, result_payload).await;
                     }
                 }
             }
@@ -198,35 +207,35 @@ async fn run_idc_loop(
 
 /// Decode the delivery outcome into `(result_status, result_payload)` for recording.
 fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, String) {
-    use spacetimedb_datastore::system_tables::st_inbound_msg_id_result_status;
+    use spacetimedb_datastore::system_tables::st_inbound_msg_result_status;
     match outcome {
-        DeliveryOutcome::Success => (st_inbound_msg_id_result_status::SUCCESS, String::new()),
-        DeliveryOutcome::ReducerError(msg) => (st_inbound_msg_id_result_status::REDUCER_ERROR, msg.clone()),
+        DeliveryOutcome::Success => (st_inbound_msg_result_status::SUCCESS, String::new()),
+        DeliveryOutcome::ReducerError(msg) => (st_inbound_msg_result_status::REDUCER_ERROR, msg.clone()),
         DeliveryOutcome::BudgetExceeded => (
-            st_inbound_msg_id_result_status::REDUCER_ERROR,
+            st_inbound_msg_result_status::REDUCER_ERROR,
             "budget exceeded".to_string(),
         ),
         DeliveryOutcome::TransportError(_) => unreachable!("transport errors never finalize"),
     }
 }
 
-/// Finalize a delivered message: call the on_result reducer (if any), then delete from ST_MSG_ID.
+/// Finalize a delivered message: call the on_result reducer (if any), then delete from ST_OUTBOUND_MSG.
 async fn finalize_message(
     db: &RelationalDB,
     module_host: &WeakModuleHost,
-    row: &StMsgIdRow,
+    msg: &PendingMessage,
     _result_status: u8,
     result_payload: String,
 ) {
     // Call the on_result reducer if configured.
-    if !row.on_result_reducer.is_empty() {
+    if let Some(on_result_reducer) = &msg.on_result_reducer {
         let Some(host) = module_host.upgrade() else {
             log::warn!(
                 "idc_runtime: module host gone, cannot call on_result reducer '{}' for msg_id={}",
-                row.on_result_reducer,
-                row.msg_id,
+                on_result_reducer,
+                msg.msg_id,
             );
-            delete_message(db, row.msg_id);
+            delete_message(db, msg.msg_id);
             return;
         };
 
@@ -237,9 +246,9 @@ async fn finalize_message(
             Err(e) => {
                 log::error!(
                     "idc_runtime: failed to encode on_result args for msg_id={}: {e}",
-                    row.msg_id
+                    msg.msg_id
                 );
-                delete_message(db, row.msg_id);
+                delete_message(db, msg.msg_id);
                 return;
             }
         };
@@ -252,7 +261,7 @@ async fn finalize_message(
                 None, // no client sender
                 None, // no request_id
                 None, // no timer
-                &row.on_result_reducer,
+                on_result_reducer,
                 FunctionArgs::Bsatn(bytes::Bytes::from(args_bytes)),
             )
             .await;
@@ -261,50 +270,124 @@ async fn finalize_message(
             Ok(_) => {
                 log::debug!(
                     "idc_runtime: on_result reducer '{}' called for msg_id={}",
-                    row.on_result_reducer,
-                    row.msg_id,
+                    on_result_reducer,
+                    msg.msg_id,
                 );
             }
             Err(e) => {
                 log::error!(
                     "idc_runtime: on_result reducer '{}' failed for msg_id={}: {e:?}",
-                    row.on_result_reducer,
-                    row.msg_id,
+                    on_result_reducer,
+                    msg.msg_id,
                 );
             }
         }
     }
 
     // Delete the row regardless of whether on_result succeeded or failed.
-    delete_message(db, row.msg_id);
+    delete_message(db, msg.msg_id);
 }
 
-/// Load all messages from ST_MSG_ID into the per-target queues.
+/// Load all messages from ST_OUTBOUND_MSG into the per-target queues, resolving delivery data
+/// from the corresponding outbox table rows.
 ///
-/// A row's presence in the table means it has not yet been processed.
-/// Messages that are already in a target's queue (by msg_id) are not re-added.
+/// A row's presence in ST_OUTBOUND_MSG means it has not yet been processed.
+/// Messages already in a target's queue (by msg_id) are not re-added.
 fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, TargetState>) {
     let tx = db.begin_tx(Workload::Internal);
-    let rows: Vec<StMsgIdRow> = db
-        .iter(&tx, ST_MSG_ID_ID)
-        .map(|iter| iter.filter_map(|row_ref| StMsgIdRow::try_from(row_ref).ok()).collect())
+
+    let st_outbound_msg_rows: Vec<StOutboundMsgRow> = db
+        .iter(&tx, ST_OUTBOUND_MSG_ID)
+        .map(|iter| {
+            iter.filter_map(|row_ref| StOutboundMsgRow::try_from(row_ref).ok())
+                .collect()
+        })
         .unwrap_or_else(|e| {
-            log::error!("idc_runtime: failed to read pending messages: {e}");
+            log::error!("idc_runtime: failed to read st_outbound_msg: {e}");
             Vec::new()
         });
+
+    let mut pending: Vec<PendingMessage> = Vec::with_capacity(st_outbound_msg_rows.len());
+
+    for st_row in st_outbound_msg_rows {
+        let outbox_table_id = TableId(st_row.outbox_table_id);
+
+        // Read the outbox table schema for reducer name and on_result_reducer.
+        let schema = match db.schema_for_table(&tx, outbox_table_id) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!(
+                    "idc_runtime: cannot find schema for outbox table {:?} (msg_id={}): {e}",
+                    outbox_table_id,
+                    st_row.msg_id,
+                );
+                continue;
+            }
+        };
+
+        let table_name = schema.table_name.to_string();
+        let target_reducer = table_name.strip_prefix("__outbox_").unwrap_or(&table_name).to_string();
+        let on_result_reducer = schema.on_result_reducer.clone();
+
+        // Look up the outbox row by its auto-inc PK (col 0) to get target identity and args.
+        let outbox_row = db
+            .iter_by_col_eq(&tx, outbox_table_id, ColId(0), &AlgebraicValue::U64(st_row.row_id))
+            .ok()
+            .and_then(|mut iter| iter.next());
+
+        let Some(outbox_row_ref) = outbox_row else {
+            log::error!(
+                "idc_runtime: outbox row not found in table {:?} for row_id={} (msg_id={})",
+                outbox_table_id,
+                st_row.row_id,
+                st_row.msg_id,
+            );
+            continue;
+        };
+
+        let pv = outbox_row_ref.to_product_value();
+
+        // Col 1: target_db_identity (Identity stored as U256).
+        let target_db_identity = match pv.elements.get(1) {
+            Some(AlgebraicValue::U256(u)) => Identity::from_u256(**u),
+            other => {
+                log::error!(
+                    "idc_runtime: outbox row col 1 expected U256 (Identity), got {other:?} (msg_id={})",
+                    st_row.msg_id,
+                );
+                continue;
+            }
+        };
+
+        // Cols 2+: args for the remote reducer.
+        let args_bsatn = pv.elements[2..].iter().fold(Vec::new(), |mut acc, elem| {
+            spacetimedb_sats::bsatn::to_writer(&mut acc, elem)
+                .expect("writing outbox row args to BSATN should never fail");
+            acc
+        });
+
+        pending.push(PendingMessage {
+            msg_id: st_row.msg_id,
+            outbox_table_id,
+            row_id: st_row.row_id,
+            target_db_identity,
+            target_reducer,
+            args_bsatn,
+            on_result_reducer,
+        });
+    }
+
     drop(tx);
 
     // Sort by msg_id ascending so delivery order is preserved.
-    let mut sorted = rows;
-    sorted.sort_by_key(|r| r.msg_id);
+    pending.sort_by_key(|m| m.msg_id);
 
-    for row in sorted {
-        let target_id = Identity::from(row.target_db_identity);
-        let state = targets.entry(target_id).or_insert_with(TargetState::new);
+    for msg in pending {
+        let state = targets.entry(msg.target_db_identity).or_insert_with(TargetState::new);
         // Only add if not already in the queue (avoid duplicates after reload).
-        let already_queued = state.queue.iter().any(|r| r.msg_id == row.msg_id);
+        let already_queued = state.queue.iter().any(|m| m.msg_id == msg.msg_id);
         if !already_queued {
-            state.queue.push_back(row);
+            state.queue.push_back(msg);
         }
     }
 }
@@ -313,21 +396,20 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
 async fn attempt_delivery(
     client: &reqwest::Client,
     config: &IdcRuntimeConfig,
-    row: &StMsgIdRow,
+    msg: &PendingMessage,
 ) -> DeliveryOutcome {
-    let target_identity = Identity::from(row.target_db_identity);
-    let target_db_hex = hex::encode(target_identity.to_byte_array());
+    let target_db_hex = hex::encode(msg.target_db_identity.to_byte_array());
     let sender_hex = hex::encode(config.sender_identity.to_byte_array());
 
     let url = format!(
         "http://localhost:{IDC_HTTP_PORT}/v1/database/{target_db_hex}/call-from-database/{}?sender_identity={sender_hex}&msg_id={}",
-        row.target_reducer, row.msg_id,
+        msg.target_reducer, msg.msg_id,
     );
 
     let result = client
         .post(&url)
         .header("Content-Type", "application/octet-stream")
-        .body(row.args_bsatn.clone())
+        .body(msg.args_bsatn.clone())
         .send()
         .await;
 
@@ -353,10 +435,10 @@ async fn attempt_delivery(
     }
 }
 
-/// Delete a message from ST_MSG_ID within a new transaction.
+/// Delete a message from ST_OUTBOUND_MSG within a new transaction.
 fn delete_message(db: &RelationalDB, msg_id: u64) {
     let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-    if let Err(e) = tx.delete_msg_id(msg_id) {
+    if let Err(e) = tx.delete_outbound_msg(msg_id) {
         log::error!("idc_runtime: failed to delete msg_id={msg_id}: {e}");
         let _ = db.rollback_mut_tx(tx);
         return;

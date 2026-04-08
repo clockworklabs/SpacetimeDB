@@ -12,14 +12,14 @@ use crate::{
     execution_context::ExecutionContext,
     locking_tx_datastore::{
         mut_tx::ViewReadSets,
-        state_view::{iter_st_column_for_table, ScanOrIndex},
+        state_view::{iter_st_column_for_table, ApplyFilter, EqOnColumn, RangeOnColumn, ScanOrIndex},
         IterByColRangeTx,
     },
     system_tables::{
         is_built_in_meta_row, system_tables, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow,
         StFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewRow, SystemTable,
         ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
-        ST_CONSTRAINT_NAME, ST_INBOUND_MSG_ID_ID, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID,
+        ST_CONSTRAINT_NAME, ST_INBOUND_MSG_ID, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID,
         ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX,
         ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
         ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
@@ -30,9 +30,10 @@ use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
         ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX,
-        ST_INBOUND_MSG_ID_IDX, ST_MSG_ID_ID, ST_MSG_ID_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX,
-        ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INBOUND_MSG_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX,
+        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_IDX, ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID,
+        ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID,
+        ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
@@ -51,7 +52,8 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
-    table::{InsertError, RowRef, Table, TableAndIndex, TableScanIter},
+    table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
+    table_index::IndexSeekRangeResult,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -219,12 +221,12 @@ impl StateView for CommittedState {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        let iter = self
-            .get_index_by_cols(table_id, &cols)
-            .map(|i| i.seek_range_via_algebraic_value(&range));
-        match iter {
+        match self.index_seek_range(table_id, &cols, &range) {
             Some(Ok(iter)) => Ok(ScanOrIndex::Index(iter)),
-            None | Some(Err(_)) => Ok(ScanOrIndex::scan_range(cols, range, self.iter(table_id)?)),
+            None | Some(Err(_)) => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+                RangeOnColumn { cols, range },
+                self.iter(table_id)?,
+            ))),
         }
     }
 
@@ -235,12 +237,12 @@ impl StateView for CommittedState {
         val: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
         let cols = cols.into();
-        let iter = self
-            .get_index_by_cols(table_id, &cols)
-            .map(|i| i.seek_point_via_algebraic_value(val));
-        match iter {
+        match self.index_seek_point(table_id, &cols, val) {
             Some(iter) => Ok(ScanOrIndex::Index(iter)),
-            None => Ok(ScanOrIndex::scan_eq(cols, val, self.iter(table_id)?)),
+            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+                EqOnColumn { cols, val },
+                self.iter(table_id)?,
+            ))),
         }
     }
 
@@ -476,8 +478,8 @@ impl CommittedState {
         self.create_table(ST_TABLE_ACCESSOR_ID, schemas[ST_TABLE_ACCESSOR_IDX].clone());
         self.create_table(ST_INDEX_ACCESSOR_ID, schemas[ST_INDEX_ACCESSOR_IDX].clone());
         self.create_table(ST_COLUMN_ACCESSOR_ID, schemas[ST_COLUMN_ACCESSOR_IDX].clone());
-        self.create_table(ST_INBOUND_MSG_ID_ID, schemas[ST_INBOUND_MSG_ID_IDX].clone());
-        self.create_table(ST_MSG_ID_ID, schemas[ST_MSG_ID_IDX].clone());
+        self.create_table(ST_INBOUND_MSG_ID, schemas[ST_INBOUND_MSG_IDX].clone());
+        self.create_table(ST_OUTBOUND_MSG_ID, schemas[ST_OUTBOUND_MSG_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -964,11 +966,45 @@ impl CommittedState {
         Some(self.get_table(table_id)?.scan_rows(&self.blob_store))
     }
 
-    /// Returns an index for `table_id` on `cols`, if any.
-    pub(super) fn get_index_by_cols(&self, table_id: TableId, cols: &ColList) -> Option<TableAndIndex<'_>> {
+    /// When there's an index on `cols`,
+    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
+    /// that match the specified `range` in the indexed column.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`
+    /// when `range` is a point.
+    /// When there is no index this returns `None`.
+    pub(super) fn index_seek_range<'a>(
+        &'a self,
+        table_id: TableId,
+        cols: &ColList,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek_range(range))
+    }
+
+    /// When there's an index on `cols`,
+    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
+    /// that equal `value` in the indexed column.
+    ///
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`.
+    /// When there is no index this returns `None`.
+    pub(super) fn index_seek_point<'a>(
+        &'a self,
+        table_id: TableId,
+        cols: &ColList,
+        value: &AlgebraicValue,
+    ) -> Option<IndexScanPointIter<'a>> {
+        self.tables
+            .get(&table_id)?
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek_point(value))
     }
 
     /// Returns the table associated with the given `index_id`, if any.
