@@ -6,6 +6,7 @@ use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
+use spacetimedb_schema::schema::ConstraintSchema;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{TableDef, ViewDef};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
@@ -141,6 +142,19 @@ fn auto_migrate_database(
 
     for step in plan.steps {
         match step {
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name) => {
+                let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
+
+                if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
+                    anyhow::bail!(
+                        "Cannot remove table `{table_name}`: table contains data. \
+                         Clear the table's rows (e.g. via a reducer) before removing it from your schema."
+                    );
+                }
+
+                log!(logger, "Dropping table `{table_name}`");
+                stdb.drop_table(tx, table_id)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name) => {
                 let table_def: &TableDef = plan.new.expect_lookup(table_name);
 
@@ -219,6 +233,24 @@ fn auto_migrate_database(
                     table_def.name
                 );
                 stdb.drop_constraint(tx, constraint_schema.constraint_id)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddConstraint(constraint_name) => {
+                let table_def = plan.new.stored_in_table_def(constraint_name).unwrap();
+                let constraint_def = &table_def.constraints[constraint_name];
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+                let constraint_schema = ConstraintSchema::from_module_def(
+                    plan.new,
+                    constraint_def,
+                    table_id,
+                    spacetimedb_primitives::ConstraintId::SENTINEL,
+                );
+                log!(
+                    logger,
+                    "Adding constraint `{}` on table `{}`",
+                    constraint_name,
+                    table_def.name
+                );
+                stdb.create_constraint(tx, constraint_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
@@ -403,6 +435,87 @@ mod test {
             [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
         );
 
+        Ok(())
+    }
+
+    fn empty_module() -> ModuleDef {
+        RawModuleDefV9Builder::new()
+            .finish()
+            .try_into()
+            .expect("empty module should be valid")
+    }
+
+    fn single_table_module() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type("droppable", [("id", U64)], true)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn remove_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "removing a table should disconnect clients"
+        );
+        assert!(stdb.table_id_from_name_mut(&tx, "droppable")?.is_none());
+        // drop_table records a TableRemoved schema change for the subscription system.
+        assert_eq!(
+            tx.pending_schema_changes().len(),
+            1,
+            "dropping a table should leave exactly one pending schema change: {:?}",
+            tx.pending_schema_changes()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn remove_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "droppable")?
+            .expect("table should exist");
+        insert(&stdb, &mut tx, table_id, &product![42u64])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
+        let err = result.err().expect("removing a non-empty table should fail");
+        assert!(
+            err.to_string().contains("table contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
         Ok(())
     }
 }

@@ -91,6 +91,38 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
 }
 
 impl<K: KeySize + Ord> UniqueBTreeIndex<K> {
+    /// Construct a `UniqueBTreeIndex` from a `BTreeMap<K, RowPointer>`.
+    ///
+    /// Each entry is inserted via [`Index::insert`] so that `num_key_bytes`
+    /// is correctly maintained regardless of `K::MemoStorage`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the map contains duplicate keys (should never happen
+    /// since the caller verified uniqueness).
+    pub fn from_non_unique(map: BTreeMap<K, RowPointer>) -> Self {
+        let mut result = Self::default();
+        for (key, ptr) in map {
+            result
+                .insert(key, ptr)
+                .expect("duplicate key in supposedly unique map");
+        }
+        result
+    }
+
+    /// Convert this unique index back into a non-unique `BTreeIndex`.
+    ///
+    /// This is lossless: each key maps to exactly one `RowPointer`,
+    /// which becomes a single-entry `SameKeyEntry` in the `BTreeIndex`.
+    pub fn into_non_unique(self) -> super::btree_index::BTreeIndex<K> {
+        let mut mm = super::btree_index::BTreeIndex::default();
+        for (key, ptr) in self.map {
+            // BTreeIndex::insert always succeeds.
+            let _ = <super::btree_index::BTreeIndex<K> as Index>::insert(&mut mm, key, ptr);
+        }
+        mm
+    }
+
     /// See [`Index::delete`].
     ///
     /// This version has relaxed bounds
