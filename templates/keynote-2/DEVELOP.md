@@ -256,7 +256,6 @@ cd templates/keynote-2
 pnpm run bench-dist-coordinator -- \
   --test test-1 \
   --connector spacetimedb \
-  --warmup-seconds 15 \
   --window-seconds 30 \
   --verify 1 \
   --stdb-url ws://127.0.0.1:3000 \
@@ -268,9 +267,10 @@ pnpm run bench-dist-coordinator -- \
 
 Notes:
 
-- `--warmup-seconds` is the unmeasured warmup period. Generators submit requests during warmup, but those transactions are excluded from TPS.
+- Before measurement begins, the coordinator waits for every participating generator to start its epoch and acknowledge that it is running.
 - `--window-seconds` is the measured interval.
 - `--verify 1` preserves the existing benchmark semantics by running one verification pass centrally after the epoch completes.
+- If a generator never acknowledges start, the coordinator fails the epoch after `--start-ack-timeout-seconds` seconds. The default is `60`.
 - The coordinator derives the HTTP metrics endpoint from `--stdb-url` by switching to `http://` or `https://` and appending `/v1/metrics`.
 - For a real multi-machine run, change `--bind 127.0.0.1` to `--bind 0.0.0.0` so remote generators can reach the coordinator.
 - For a real multi-machine run, set `--stdb-url` to the server machine's reachable address.
@@ -367,8 +367,8 @@ The result contains:
 #### Operational notes
 
 - Start the coordinator before the generators.
-- Generators begin submitting requests when the coordinator enters `warmup`, not when the measured window begins.
-- Throughput is measured only from the committed transaction counter delta recorded after warmup, so warmup transactions are excluded.
+- Generators begin submitting requests when the coordinator enters `starting`.
+- Throughput is measured only from the committed transaction counter delta recorded after all participating generators have acknowledged start, so startup traffic is excluded.
 - For this distributed TypeScript mode, each connection runs closed-loop with one request at a time. There is no pipelining in this flow.
 - Late generators are allowed to register and become ready while an epoch is already running, but they only participate in the next epoch.
 - The coordinator does not use heartbeats. It includes generators that most recently reported `ready`.

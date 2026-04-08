@@ -29,6 +29,7 @@ import type {
   RegisterRequest,
   StartEpochRequest,
   StartEpochResponse,
+  StartedRequest,
   StoppedRequest,
 } from './protocol.ts';
 import { isoNow, sleep, writeJsonFile } from './util.ts';
@@ -47,6 +48,7 @@ type ActiveEpoch = {
   label: string | null;
   participantIds: string[];
   participantConnections: number;
+  startedAcks: Set<string>;
   stopAcks: Set<string>;
 };
 
@@ -110,7 +112,7 @@ async function runVerification(
 class DistributedCoordinator {
   private readonly testName: string;
   private readonly connectorName: string;
-  private readonly warmupMs: number;
+  private readonly startAckTimeoutMs: number;
   private readonly windowMs: number;
   private readonly verifyAfterEpoch: boolean;
   private readonly stopAckTimeoutMs: number;
@@ -129,7 +131,7 @@ class DistributedCoordinator {
   constructor(opts: {
     testName: string;
     connectorName: string;
-    warmupMs: number;
+    startAckTimeoutMs: number;
     windowMs: number;
     verifyAfterEpoch: boolean;
     stopAckTimeoutMs: number;
@@ -140,7 +142,7 @@ class DistributedCoordinator {
   }) {
     this.testName = opts.testName;
     this.connectorName = opts.connectorName;
-    this.warmupMs = opts.warmupMs;
+    this.startAckTimeoutMs = opts.startAckTimeoutMs;
     this.windowMs = opts.windowMs;
     this.verifyAfterEpoch = opts.verifyAfterEpoch;
     this.stopAckTimeoutMs = opts.stopAckTimeoutMs;
@@ -191,6 +193,24 @@ class DistributedCoordinator {
     generator.openedConnections = body.openedConnections;
     generator.localState = 'ready';
     generator.activeEpoch = null;
+    return this.snapshot();
+  }
+
+  started(body: StartedRequest): CoordinatorState {
+    const generator = this.requireGenerator(body.id);
+    if (!this.currentEpoch || body.epoch !== this.currentEpoch.epoch) {
+      throw new Error(
+        `Generator "${body.id}" acknowledged unexpected epoch ${body.epoch}`,
+      );
+    }
+    if (generator.activeEpoch !== body.epoch) {
+      throw new Error(
+        `Generator "${body.id}" is not assigned to epoch ${body.epoch}`,
+      );
+    }
+
+    generator.localState = 'running';
+    this.currentEpoch.startedAcks.add(body.id);
     return this.snapshot();
   }
 
@@ -252,18 +272,19 @@ class DistributedCoordinator {
         (sum, generator) => sum + generator.openedConnections,
         0,
       ),
+      startedAcks: new Set<string>(),
       stopAcks: new Set<string>(),
     };
 
     for (const participantId of activeEpoch.participantIds) {
       const generator = this.generators.get(participantId);
       if (!generator) continue;
-      generator.localState = 'running';
+      generator.localState = 'starting';
       generator.activeEpoch = activeEpoch.epoch;
     }
 
     this.currentEpoch = activeEpoch;
-    this.phase = 'warmup';
+    this.phase = 'starting';
     this.epochTask = this.runEpoch(activeEpoch)
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
@@ -297,9 +318,14 @@ class DistributedCoordinator {
 
     try {
       console.log(
-        `[coordinator] epoch ${activeEpoch.epoch} warmup for ${(this.warmupMs / 1000).toFixed(1)}s`,
+        `[coordinator] epoch ${activeEpoch.epoch} waiting for start acknowledgements from ${activeEpoch.participantIds.length} generators`,
       );
-      await sleep(this.warmupMs);
+      const pendingStarts = await this.waitForStarts(activeEpoch);
+      if (pendingStarts.length > 0) {
+        throw new Error(
+          `Missing start acknowledgements from: ${pendingStarts.join(', ')}`,
+        );
+      }
 
       const before = await getSpacetimeCommittedTransfers(this.stdbUrl);
       if (before == null) {
@@ -379,7 +405,6 @@ class DistributedCoordinator {
       label: activeEpoch.label,
       test: this.testName,
       connector: this.connectorName,
-      warmupSeconds: this.warmupMs / 1000,
       windowSeconds: this.windowMs / 1000,
       actualWindowSeconds,
       participantIds: activeEpoch.participantIds,
@@ -403,6 +428,25 @@ class DistributedCoordinator {
     const outPath = join(this.resultsDir, fileName);
     await writeJsonFile(outPath, result);
     console.log(`[coordinator] wrote epoch ${result.epoch} result to ${outPath}`);
+  }
+
+  private async waitForStarts(activeEpoch: ActiveEpoch): Promise<string[]> {
+    const deadline = Date.now() + this.startAckTimeoutMs;
+
+    while (Date.now() < deadline) {
+      if (activeEpoch.startedAcks.size >= activeEpoch.participantIds.length) {
+        return [];
+      }
+      await sleep(250);
+    }
+
+    const pending = activeEpoch.participantIds.filter(
+      (id) => !activeEpoch.startedAcks.has(id),
+    );
+    console.warn(
+      `[coordinator] start acknowledgements timed out for epoch ${activeEpoch.epoch}: ${pending.join(', ')}`,
+    );
+    return pending;
   }
 
   private async waitForStops(activeEpoch: ActiveEpoch): Promise<string[]> {
@@ -450,7 +494,11 @@ async function main(): Promise<void> {
     new URL('../../runs/distributed/', import.meta.url),
   );
   const resultsDir = getStringFlag(flags, 'results-dir', defaultResultsDir);
-  const warmupSeconds = getNumberFlag(flags, 'warmup-seconds', 15);
+  const startAckTimeoutSeconds = getNumberFlag(
+    flags,
+    'start-ack-timeout-seconds',
+    60,
+  );
   const windowSeconds = getNumberFlag(flags, 'window-seconds', 60);
   const stopAckTimeoutSeconds = getNumberFlag(
     flags,
@@ -479,7 +527,7 @@ async function main(): Promise<void> {
   const coordinator = new DistributedCoordinator({
     testName,
     connectorName,
-    warmupMs: warmupSeconds * 1000,
+    startAckTimeoutMs: startAckTimeoutSeconds * 1000,
     windowMs: windowSeconds * 1000,
     verifyAfterEpoch,
     stopAckTimeoutMs: stopAckTimeoutSeconds * 1000,
@@ -517,6 +565,12 @@ async function main(): Promise<void> {
         return;
       }
 
+      if (method === 'POST' && path === '/started') {
+        const body = await readJsonBody<StartedRequest>(req);
+        json(res, 200, coordinator.started(body));
+        return;
+      }
+
       if (method === 'POST' && path === '/stopped') {
         const body = await readJsonBody<StoppedRequest>(req);
         json(res, 200, coordinator.stopped(body));
@@ -550,7 +604,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl} compression=${stdbCompression}`,
+    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} start_ack_timeout=${startAckTimeoutSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl} compression=${stdbCompression}`,
   );
 }
 
