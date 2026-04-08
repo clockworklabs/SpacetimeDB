@@ -230,8 +230,8 @@ pub struct CallFromDatabaseParams {
 pub struct CallFromDatabaseQuery {
     /// Hex-encoded [`Identity`] of the sending database.
     sender_identity: String,
-    /// The inter-database message ID from the sender's st_msg_id.
-    /// Used for at-most-once delivery via `st_inbound_msg_id`.
+    /// The inter-database message ID from the sender's st_outbound_msg.
+    /// Used for at-most-once delivery via `st_inbound_msg`.
     msg_id: u64,
 }
 
@@ -241,9 +241,9 @@ pub struct CallFromDatabaseQuery {
 ///
 /// Required query params:
 /// - `sender_identity` — hex-encoded identity of the sending database.
-/// - `msg_id`          — the inter-database message ID from the sender's st_msg_id.
+/// - `msg_id`          — the inter-database message ID from the sender's st_outbound_msg.
 ///
-/// Before invoking the reducer, the receiver checks `st_inbound_msg_id`.
+/// Before invoking the reducer, the receiver checks `st_inbound_msg`.
 /// If the incoming `msg_id` is ≤ the last delivered msg_id for `sender_identity`,
 /// the call is a duplicate and 200 OK is returned immediately without running the reducer.
 /// Otherwise the reducer is invoked, the dedup index is updated atomically in the same
@@ -269,8 +269,12 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
 
     let caller_identity = auth.claims.identity;
 
-    let sender_identity = Identity::from_hex(&sender_identity)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid sender_identity: expected hex-encoded identity"))?;
+    let sender_identity = Identity::from_hex(&sender_identity).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "Invalid sender_identity: expected hex-encoded identity",
+        )
+    })?;
 
     let args = FunctionArgs::Bsatn(body);
     let connection_id = generate_random_connection_id();
