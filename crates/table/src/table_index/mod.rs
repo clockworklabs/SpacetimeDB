@@ -98,6 +98,227 @@ impl Iterator for TableIndexPointIter<'_> {
     }
 }
 
+/// An iterator over all rows in a [`TypedIndex`].
+///
+/// See module docs for info about specialization.
+#[derive(derive_more::From)]
+enum TypedIndexIter<'a> {
+    // All the non-unique btree index iterators.
+    BTreeBool(<BTreeIndex<bool> as Index>::Iter<'a>),
+    BTreeU8(<BTreeIndex<u8> as Index>::Iter<'a>),
+    BTreeSumTag(<BTreeIndex<SumTag> as Index>::Iter<'a>),
+    BTreeI8(<BTreeIndex<i8> as Index>::Iter<'a>),
+    BTreeU16(<BTreeIndex<u16> as Index>::Iter<'a>),
+    BTreeI16(<BTreeIndex<i16> as Index>::Iter<'a>),
+    BTreeU32(<BTreeIndex<u32> as Index>::Iter<'a>),
+    BTreeI32(<BTreeIndex<i32> as Index>::Iter<'a>),
+    BTreeU64(<BTreeIndex<u64> as Index>::Iter<'a>),
+    BTreeI64(<BTreeIndex<i64> as Index>::Iter<'a>),
+    BTreeU128(<BTreeIndex<u128> as Index>::Iter<'a>),
+    BTreeI128(<BTreeIndex<i128> as Index>::Iter<'a>),
+    BTreeU256(<BTreeIndex<u256> as Index>::Iter<'a>),
+    BTreeI256(<BTreeIndex<i256> as Index>::Iter<'a>),
+    BTreeF32(<BTreeIndex<F32> as Index>::Iter<'a>),
+    BTreeF64(<BTreeIndex<F64> as Index>::Iter<'a>),
+    BTreeString(<BTreeIndex<Box<str>> as Index>::Iter<'a>),
+    BTreeAV(<BTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+    BTreeBytesKey8(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>> as Index>::Iter<'a>),
+    BTreeBytesKey16(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>> as Index>::Iter<'a>),
+    BTreeBytesKey32(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>> as Index>::Iter<'a>),
+    BTreeBytesKey64(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>> as Index>::Iter<'a>),
+    BTreeBytesKey128(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>> as Index>::Iter<'a>),
+
+    // All the unique btree index iterators.
+    UniqueBTreeBool(<UniqueBTreeIndex<bool> as Index>::Iter<'a>),
+    UniqueBTreeU8(<UniqueBTreeIndex<u8> as Index>::Iter<'a>),
+    UniqueBTreeSumTag(<UniqueBTreeIndex<SumTag> as Index>::Iter<'a>),
+    UniqueBTreeI8(<UniqueBTreeIndex<i8> as Index>::Iter<'a>),
+    UniqueBTreeU16(<UniqueBTreeIndex<u16> as Index>::Iter<'a>),
+    UniqueBTreeI16(<UniqueBTreeIndex<i16> as Index>::Iter<'a>),
+    UniqueBTreeU32(<UniqueBTreeIndex<u32> as Index>::Iter<'a>),
+    UniqueBTreeI32(<UniqueBTreeIndex<i32> as Index>::Iter<'a>),
+    UniqueBTreeU64(<UniqueBTreeIndex<u64> as Index>::Iter<'a>),
+    UniqueBTreeI64(<UniqueBTreeIndex<i64> as Index>::Iter<'a>),
+    UniqueBTreeU128(<UniqueBTreeIndex<u128> as Index>::Iter<'a>),
+    UniqueBTreeI128(<UniqueBTreeIndex<i128> as Index>::Iter<'a>),
+    UniqueBTreeU256(<UniqueBTreeIndex<u256> as Index>::Iter<'a>),
+    UniqueBTreeI256(<UniqueBTreeIndex<i256> as Index>::Iter<'a>),
+    UniqueBTreeF32(<UniqueBTreeIndex<F32> as Index>::Iter<'a>),
+    UniqueBTreeF64(<UniqueBTreeIndex<F64> as Index>::Iter<'a>),
+    UniqueBTreeString(<UniqueBTreeIndex<Box<str>> as Index>::Iter<'a>),
+    UniqueBTreeAV(<UniqueBTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+    UniqueBTreeBytesKey8(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>> as Index>::Iter<'a>),
+    UniqueBTreeBytesKey16(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>> as Index>::Iter<'a>),
+    UniqueBTreeBytesKey32(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>> as Index>::Iter<'a>),
+    UniqueBTreeBytesKey64(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>> as Index>::Iter<'a>),
+    UniqueBTreeBytesKey128(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>> as Index>::Iter<'a>),
+
+    // All the non-unique hash index iterators.
+    HashBool(<HashIndex<bool> as Index>::Iter<'a>),
+    HashU8(<HashIndex<u8> as Index>::Iter<'a>),
+    HashSumTag(<HashIndex<SumTag> as Index>::Iter<'a>),
+    HashI8(<HashIndex<i8> as Index>::Iter<'a>),
+    HashU16(<HashIndex<u16> as Index>::Iter<'a>),
+    HashI16(<HashIndex<i16> as Index>::Iter<'a>),
+    HashU32(<HashIndex<u32> as Index>::Iter<'a>),
+    HashI32(<HashIndex<i32> as Index>::Iter<'a>),
+    HashU64(<HashIndex<u64> as Index>::Iter<'a>),
+    HashI64(<HashIndex<i64> as Index>::Iter<'a>),
+    HashU128(<HashIndex<u128> as Index>::Iter<'a>),
+    HashI128(<HashIndex<i128> as Index>::Iter<'a>),
+    HashU256(<HashIndex<u256> as Index>::Iter<'a>),
+    HashI256(<HashIndex<i256> as Index>::Iter<'a>),
+    HashF32(<HashIndex<F32> as Index>::Iter<'a>),
+    HashF64(<HashIndex<F64> as Index>::Iter<'a>),
+    HashString(<HashIndex<Box<str>> as Index>::Iter<'a>),
+    HashAV(<HashIndex<AlgebraicValue> as Index>::Iter<'a>),
+    HashBytesKey8(<HashIndex<BytesKey<BYTES_KEY_SIZE_8_H>> as Index>::Iter<'a>),
+    HashBytesKey24(<HashIndex<BytesKey<BYTES_KEY_SIZE_24_H>> as Index>::Iter<'a>),
+    HashBytesKey56(<HashIndex<BytesKey<BYTES_KEY_SIZE_56_H>> as Index>::Iter<'a>),
+    HashBytesKey120(<HashIndex<BytesKey<BYTES_KEY_SIZE_120_H>> as Index>::Iter<'a>),
+
+    // All the unique hash index iterators.
+    UniqueHashBool(<UniqueHashIndex<bool> as Index>::Iter<'a>),
+    UniqueHashU8(<UniqueHashIndex<u8> as Index>::Iter<'a>),
+    UniqueHashSumTag(<UniqueHashIndex<SumTag> as Index>::Iter<'a>),
+    UniqueHashI8(<UniqueHashIndex<i8> as Index>::Iter<'a>),
+    UniqueHashU16(<UniqueHashIndex<u16> as Index>::Iter<'a>),
+    UniqueHashI16(<UniqueHashIndex<i16> as Index>::Iter<'a>),
+    UniqueHashU32(<UniqueHashIndex<u32> as Index>::Iter<'a>),
+    UniqueHashI32(<UniqueHashIndex<i32> as Index>::Iter<'a>),
+    UniqueHashU64(<UniqueHashIndex<u64> as Index>::Iter<'a>),
+    UniqueHashI64(<UniqueHashIndex<i64> as Index>::Iter<'a>),
+    UniqueHashU128(<UniqueHashIndex<u128> as Index>::Iter<'a>),
+    UniqueHashI128(<UniqueHashIndex<i128> as Index>::Iter<'a>),
+    UniqueHashU256(<UniqueHashIndex<u256> as Index>::Iter<'a>),
+    UniqueHashI256(<UniqueHashIndex<i256> as Index>::Iter<'a>),
+    UniqueHashF32(<UniqueHashIndex<F32> as Index>::Iter<'a>),
+    UniqueHashF64(<UniqueHashIndex<F64> as Index>::Iter<'a>),
+    UniqueHashString(<UniqueHashIndex<Box<str>> as Index>::Iter<'a>),
+    UniqueHashAV(<UniqueHashIndex<AlgebraicValue> as Index>::Iter<'a>),
+    UniqueHashBytesKey8(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_8_H>> as Index>::Iter<'a>),
+    UniqueHashBytesKey24(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_24_H>> as Index>::Iter<'a>),
+    UniqueHashBytesKey56(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_56_H>> as Index>::Iter<'a>),
+    UniqueHashBytesKey120(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_120_H>> as Index>::Iter<'a>),
+
+    // All the direct index iterators.
+    UniqueDirect(UniqueDirectIndexRangeIter<'a>),
+    UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
+}
+
+impl Iterator for TypedIndexIter<'_> {
+    type Item = RowPointer;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::BTreeBool(this) => this.next(),
+            Self::BTreeU8(this) => this.next(),
+            Self::BTreeSumTag(this) => this.next(),
+            Self::BTreeI8(this) => this.next(),
+            Self::BTreeU16(this) => this.next(),
+            Self::BTreeI16(this) => this.next(),
+            Self::BTreeU32(this) => this.next(),
+            Self::BTreeI32(this) => this.next(),
+            Self::BTreeU64(this) => this.next(),
+            Self::BTreeI64(this) => this.next(),
+            Self::BTreeU128(this) => this.next(),
+            Self::BTreeI128(this) => this.next(),
+            Self::BTreeU256(this) => this.next(),
+            Self::BTreeI256(this) => this.next(),
+            Self::BTreeF32(this) => this.next(),
+            Self::BTreeF64(this) => this.next(),
+            Self::BTreeString(this) => this.next(),
+            Self::BTreeAV(this) => this.next(),
+            Self::BTreeBytesKey8(this) => this.next(),
+            Self::BTreeBytesKey16(this) => this.next(),
+            Self::BTreeBytesKey32(this) => this.next(),
+            Self::BTreeBytesKey64(this) => this.next(),
+            Self::BTreeBytesKey128(this) => this.next(),
+            Self::UniqueBTreeBool(this) => this.next(),
+            Self::UniqueBTreeU8(this) => this.next(),
+            Self::UniqueBTreeSumTag(this) => this.next(),
+            Self::UniqueBTreeI8(this) => this.next(),
+            Self::UniqueBTreeU16(this) => this.next(),
+            Self::UniqueBTreeI16(this) => this.next(),
+            Self::UniqueBTreeU32(this) => this.next(),
+            Self::UniqueBTreeI32(this) => this.next(),
+            Self::UniqueBTreeU64(this) => this.next(),
+            Self::UniqueBTreeI64(this) => this.next(),
+            Self::UniqueBTreeU128(this) => this.next(),
+            Self::UniqueBTreeI128(this) => this.next(),
+            Self::UniqueBTreeU256(this) => this.next(),
+            Self::UniqueBTreeI256(this) => this.next(),
+            Self::UniqueBTreeF32(this) => this.next(),
+            Self::UniqueBTreeF64(this) => this.next(),
+            Self::UniqueBTreeString(this) => this.next(),
+            Self::UniqueBTreeAV(this) => this.next(),
+            Self::UniqueBTreeBytesKey8(this) => this.next(),
+            Self::UniqueBTreeBytesKey16(this) => this.next(),
+            Self::UniqueBTreeBytesKey32(this) => this.next(),
+            Self::UniqueBTreeBytesKey64(this) => this.next(),
+            Self::UniqueBTreeBytesKey128(this) => this.next(),
+            Self::HashBool(this) => this.next(),
+            Self::HashU8(this) => this.next(),
+            Self::HashSumTag(this) => this.next(),
+            Self::HashI8(this) => this.next(),
+            Self::HashU16(this) => this.next(),
+            Self::HashI16(this) => this.next(),
+            Self::HashU32(this) => this.next(),
+            Self::HashI32(this) => this.next(),
+            Self::HashU64(this) => this.next(),
+            Self::HashI64(this) => this.next(),
+            Self::HashU128(this) => this.next(),
+            Self::HashI128(this) => this.next(),
+            Self::HashU256(this) => this.next(),
+            Self::HashI256(this) => this.next(),
+            Self::HashF32(this) => this.next(),
+            Self::HashF64(this) => this.next(),
+            Self::HashString(this) => this.next(),
+            Self::HashAV(this) => this.next(),
+            Self::HashBytesKey8(this) => this.next(),
+            Self::HashBytesKey24(this) => this.next(),
+            Self::HashBytesKey56(this) => this.next(),
+            Self::HashBytesKey120(this) => this.next(),
+            Self::UniqueHashBool(this) => this.next(),
+            Self::UniqueHashU8(this) => this.next(),
+            Self::UniqueHashSumTag(this) => this.next(),
+            Self::UniqueHashI8(this) => this.next(),
+            Self::UniqueHashU16(this) => this.next(),
+            Self::UniqueHashI16(this) => this.next(),
+            Self::UniqueHashU32(this) => this.next(),
+            Self::UniqueHashI32(this) => this.next(),
+            Self::UniqueHashU64(this) => this.next(),
+            Self::UniqueHashI64(this) => this.next(),
+            Self::UniqueHashU128(this) => this.next(),
+            Self::UniqueHashI128(this) => this.next(),
+            Self::UniqueHashU256(this) => this.next(),
+            Self::UniqueHashI256(this) => this.next(),
+            Self::UniqueHashF32(this) => this.next(),
+            Self::UniqueHashF64(this) => this.next(),
+            Self::UniqueHashString(this) => this.next(),
+            Self::UniqueHashAV(this) => this.next(),
+            Self::UniqueHashBytesKey8(this) => this.next(),
+            Self::UniqueHashBytesKey24(this) => this.next(),
+            Self::UniqueHashBytesKey56(this) => this.next(),
+            Self::UniqueHashBytesKey120(this) => this.next(),
+            Self::UniqueDirect(this) => this.next(),
+            Self::UniqueDirectU8(this) => this.next(),
+        }
+    }
+}
+
+/// An iterator over all rows in a [`TableIndex`].
+pub struct TableIndexIter<'a> {
+    iter: TypedIndexIter<'a>,
+}
+
+impl Iterator for TableIndexIter<'_> {
+    type Item = RowPointer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
 /// A ranged iterator over a [`TypedIndex`], with a specialized key type.
 ///
 /// See module docs for info about specialization.
@@ -1390,6 +1611,11 @@ impl TypedIndex {
     }
 
     #[inline]
+    fn iter(&self) -> TypedIndexIter<'_> {
+        same_for_all_types!(self, this => this.iter().into())
+    }
+
+    #[inline]
     fn seek_range<'a>(
         &self,
         range: &impl RangeBounds<TypedIndexKey<'a>>,
@@ -1896,6 +2122,17 @@ impl TableIndex {
     pub fn seek_point(&self, key: &IndexKey<'_>) -> TableIndexPointIter<'_> {
         let iter = self.idx.seek_point(&key.key);
         TableIndexPointIter { iter }
+    }
+
+    /// Returns an iterator that yields all the `RowPointer`s in the index.
+    ///
+    /// The order in which the rows are yielded
+    /// depends on the underlying index algorithm.
+    /// For example, while btree and direct indices yield in key-sorted order,
+    /// hash indices provide a non-deterministic order.
+    /// As such, it's best not to rely on the order at all.
+    pub fn iter(&self) -> TableIndexIter<'_> {
+        TableIndexIter { iter: self.idx.iter() }
     }
 
     /// Returns an iterator over the [TableIndex],

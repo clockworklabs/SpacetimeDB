@@ -2536,8 +2536,7 @@ pub(crate) mod test {
         let index = table.get_index_by_id(index_id).unwrap();
 
         index
-            .seek_range(&(..))
-            .unwrap()
+            .iter()
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
                 let key = row_ref.project(&index.indexed_columns).unwrap();
