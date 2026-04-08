@@ -134,6 +134,7 @@ pub trait TableInternal: Sized {
     const SEQUENCES: &'static [u16];
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
     const IS_EVENT: bool = false;
+    const OUTBOX: Option<OutboxDesc<'static>> = None;
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
@@ -159,6 +160,14 @@ pub enum IndexAlgo<'a> {
 pub struct ScheduleDesc<'a> {
     pub reducer_or_procedure_name: &'a str,
     pub scheduled_at_column: u16,
+}
+
+/// Describes the outbox configuration of a table, for inter-database communication.
+pub struct OutboxDesc<'a> {
+    /// The name of the remote reducer to invoke on the target database.
+    pub remote_reducer_name: &'a str,
+    /// The local reducer to call with the delivery result, if any.
+    pub on_result_reducer_name: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]

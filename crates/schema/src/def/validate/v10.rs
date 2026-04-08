@@ -188,6 +188,9 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         })
         .unwrap_or_else(|| Ok(Vec::new()));
 
+    // Collect raw outbox definitions from the Outboxes section for post-validation attachment.
+    let raw_outboxes: Vec<RawOutboxDefV10> = def.outboxes().map(|v| v.to_vec()).unwrap_or_default();
+
     // Validate lifecycle reducers - they reference reducers by name
     let lifecycle_validations = reducers
         .as_ref()
@@ -241,6 +244,9 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
+
+                // Attach outbox definitions to their respective tables
+                attach_outboxes_to_tables(&mut tables, raw_outboxes)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
@@ -510,6 +516,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_access,
             is_event,
             accessor_name: identifier(raw_table_name)?,
+            outbox: None, // V10 attaches outbox defs from the Outboxes section; handled in validate().
         })
     }
 
@@ -825,6 +832,76 @@ fn attach_schedules_to_tables(
         }
 
         table.schedule = Some(schedule);
+    }
+
+    Ok(())
+}
+
+/// Attach outbox definitions from the `Outboxes` section to their respective tables.
+///
+/// Also validates outbox table structure:
+/// - Col 0: `u64` with `#[primary_key] #[auto_inc]`
+/// - Col 1: `Identity` stored as U256
+/// - At least 2 columns total
+fn attach_outboxes_to_tables(
+    tables: &mut HashMap<Identifier, TableDef>,
+    raw_outboxes: Vec<RawOutboxDefV10>,
+) -> Result<()> {
+    use spacetimedb_sats::AlgebraicType;
+
+    for raw in raw_outboxes {
+        let table_ident = identifier(raw.table_name.clone())?;
+
+        // Find the table by its accessor_name (source_name in the wire format).
+        let table = tables
+            .values_mut()
+            .find(|t| *t.accessor_name == *table_ident)
+            .ok_or_else(|| ValidationError::OutboxTableNotFound {
+                table_name: raw.table_name.clone(),
+            })?;
+
+        if table.outbox.is_some() {
+            return Err(ValidationError::DuplicateOutbox {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        // Validate col count.
+        if table.columns.len() < 2 {
+            return Err(ValidationError::OutboxTooFewColumns {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        // Validate col 0: must be u64 (auto_inc + PK is enforced by the macro; we just check the type).
+        let col0_ty = &table.columns[0].ty;
+        if *col0_ty != AlgebraicType::U64 {
+            return Err(ValidationError::OutboxInvalidIdColumn {
+                table: table.name.clone(),
+                found: col0_ty.clone().into(),
+            }
+            .into());
+        }
+
+        // Validate col 1: must be U256 (Identity wire representation).
+        let col1_ty = &table.columns[1].ty;
+        if *col1_ty != AlgebraicType::U256 {
+            return Err(ValidationError::OutboxInvalidTargetColumn {
+                table: table.name.clone(),
+                found: col1_ty.clone().into(),
+            }
+            .into());
+        }
+
+        let remote_reducer = identifier(raw.remote_reducer)?;
+        let on_result_reducer = raw.on_result_reducer.map(identifier).transpose()?;
+
+        table.outbox = Some(crate::def::OutboxDef {
+            remote_reducer,
+            on_result_reducer,
+        });
     }
 
     Ok(())

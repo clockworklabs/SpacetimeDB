@@ -89,6 +89,13 @@ pub enum RawModuleDefV10Section {
 
     /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
+
+    /// Outbox table definitions.
+    ///
+    /// Each entry marks a table as an outbox table for inter-database communication,
+    /// specifying the remote reducer to call and optionally a local callback reducer.
+    /// New variant — old modules simply omit this section; old servers skip it.
+    Outboxes(Vec<RawOutboxDefV10>),
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -262,6 +269,31 @@ pub struct RawColumnDefaultValueV10 {
     /// A BSATN-encoded [`AlgebraicValue`] valid at the column's type.
     /// (We cannot use `AlgebraicValue` directly as it isn't `SpacetimeType`.)
     pub value: Box<[u8]>,
+}
+
+/// Marks a table as an outbox table for inter-database communication.
+///
+/// The table must have:
+/// - Col 0: `u64` with `#[primary_key] #[auto_inc]` — the row ID stored in `st_outbound_msg`.
+/// - Col 1: `Identity` (encoded as U256) — the target database identity.
+/// - Remaining cols: arguments forwarded verbatim to the remote reducer.
+///
+/// The `remote_reducer` is the name of the reducer to call on the target database.
+/// If `on_result_reducer` is set, that local reducer is called when delivery completes,
+/// with signature `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<(), String>)`.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawOutboxDefV10 {
+    /// The `source_name` of the outbox table (as given in `accessor = ...`).
+    pub table_name: RawIdentifier,
+
+    /// The name of the reducer to call on the target database.
+    pub remote_reducer: RawIdentifier,
+
+    /// The name of the local reducer to call with the delivery result.
+    /// If `None`, no callback is made after delivery.
+    pub on_result_reducer: Option<RawIdentifier>,
 }
 
 /// A reducer definition.
@@ -584,6 +616,14 @@ impl RawModuleDefV10 {
             .expect("Tables section must exist for tests")
     }
 
+    /// Get the outboxes section, if present.
+    pub fn outboxes(&self) -> Option<&Vec<RawOutboxDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Outboxes(outboxes) => Some(outboxes),
+            _ => None,
+        })
+    }
+
     // Get the row-level security section, if present.
     pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -782,6 +822,24 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
             _ => unreachable!("Just ensured RowLevelSecurity section exists"),
+        }
+    }
+
+    /// Get mutable access to the outboxes section, creating it if missing.
+    fn outboxes_mut(&mut self) -> &mut Vec<RawOutboxDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::Outboxes(_)))
+            .unwrap_or_else(|| {
+                self.module.sections.push(RawModuleDefV10Section::Outboxes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::Outboxes(outboxes) => outboxes,
+            _ => unreachable!("Just ensured Outboxes section exists"),
         }
     }
 
@@ -1037,6 +1095,24 @@ impl RawModuleDefV10Builder {
             table_name: table.into(),
             schedule_at_col: column.into(),
             function_name: function.into(),
+        });
+    }
+
+    /// Register an outbox table for inter-database communication.
+    ///
+    /// `table_name` is the `source_name` of the table (i.e. `accessor =` value).
+    /// `remote_reducer` is the reducer to call on the target database.
+    /// `on_result_reducer` is an optional local reducer called with the delivery result.
+    pub fn add_outbox(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        remote_reducer: impl Into<RawIdentifier>,
+        on_result_reducer: Option<impl Into<RawIdentifier>>,
+    ) {
+        self.outboxes_mut().push(RawOutboxDefV10 {
+            table_name: table_name.into(),
+            remote_reducer: remote_reducer.into(),
+            on_result_reducer: on_result_reducer.map(Into::into),
         });
     }
 

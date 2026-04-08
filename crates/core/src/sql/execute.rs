@@ -340,6 +340,7 @@ pub(crate) mod tests {
                 None,
                 false,
                 None,
+                None,
             ),
         )?;
         let schema = db.schema_for_table_mut(tx, table_id)?;
