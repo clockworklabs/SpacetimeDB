@@ -1,4 +1,4 @@
-/// Inter-Database Communication (IDC) Runtime
+/// Inter-Database Communication (IDC) Actor
 ///
 /// Background tokio task that:
 /// 1. Loads undelivered entries from `st_outbound_msg` on startup, resolving delivery data from outbox tables.
@@ -29,47 +29,47 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// How long to wait before polling again when there is no work.
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
-/// A sender that notifies the IDC runtime of a new outbox row.
+/// A sender that notifies the IDC actor of a new outbox row.
 ///
-/// Sending `()` wakes the runtime to deliver pending messages immediately
+/// Sending `()` wakes the actor to deliver pending messages immediately
 /// rather than waiting for the next poll cycle.
-pub type IdcSender = mpsc::UnboundedSender<()>;
+pub type IdcActorSender = mpsc::UnboundedSender<()>;
 
-/// The identity of this (sender) database, set when the IDC runtime is started.
-pub struct IdcRuntimeConfig {
+/// The identity of this (sender) database, set when the IDC actor is started.
+pub struct IdcActorConfig {
     pub sender_identity: Identity,
 }
 
-/// A handle that, when dropped, stops the IDC runtime background task.
-pub struct IdcRuntime {
+/// A handle that, when dropped, stops the IDC actor background task.
+pub struct IdcActor {
     _abort: tokio::task::AbortHandle,
 }
 
-/// Holds the receiver side of the notification channel until the runtime is started.
+/// Holds the receiver side of the notification channel until the actor is started.
 ///
 /// Mirrors the `SchedulerStarter` pattern: create the channel before the module is
-/// loaded (so the sender can be stored in `InstanceEnv`), then call [`IdcRuntimeStarter::start`]
+/// loaded (so the sender can be stored in `InstanceEnv`), then call [`IdcActorStarter::start`]
 /// once the DB is ready.
-pub struct IdcRuntimeStarter {
+pub struct IdcActorStarter {
     rx: mpsc::UnboundedReceiver<()>,
 }
 
-impl IdcRuntimeStarter {
-    /// Spawn the IDC runtime background task.
-    pub fn start(self, db: Arc<RelationalDB>, config: IdcRuntimeConfig, module_host: WeakModuleHost) -> IdcRuntime {
+impl IdcActorStarter {
+    /// Spawn the IDC actor background task.
+    pub fn start(self, db: Arc<RelationalDB>, config: IdcActorConfig, module_host: WeakModuleHost) -> IdcActor {
         let abort = tokio::spawn(run_idc_loop(db, config, module_host, self.rx)).abort_handle();
-        IdcRuntime { _abort: abort }
+        IdcActor { _abort: abort }
     }
 }
 
-impl IdcRuntime {
+impl IdcActor {
     /// Open the IDC channel, returning a starter and a sender.
     ///
     /// Store the sender in `ModuleCreationContext` so it reaches `InstanceEnv`.
-    /// After the module is ready, call [`IdcRuntimeStarter::start`] to spawn the loop.
-    pub fn open() -> (IdcRuntimeStarter, IdcSender) {
+    /// After the module is ready, call [`IdcActorStarter::start`] to spawn the loop.
+    pub fn open() -> (IdcActorStarter, IdcActorSender) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (IdcRuntimeStarter { rx }, tx)
+        (IdcActorStarter { rx }, tx)
     }
 }
 
@@ -77,7 +77,11 @@ impl IdcRuntime {
 #[derive(Clone)]
 struct PendingMessage {
     msg_id: u64,
+    /// Stored for future use (e.g. deleting the outbox row after delivery).
+    #[allow(dead_code)]
     outbox_table_id: TableId,
+    /// Stored for future use (e.g. deleting the outbox row after delivery).
+    #[allow(dead_code)]
     row_id: u64,
     target_db_identity: Identity,
     target_reducer: String,
@@ -134,10 +138,10 @@ enum DeliveryOutcome {
     TransportError(String),
 }
 
-/// Main IDC loop: maintain per-target queues and deliver messages.
+/// Main IDC actor loop: maintain per-target queues and deliver messages.
 async fn run_idc_loop(
     db: Arc<RelationalDB>,
-    config: IdcRuntimeConfig,
+    config: IdcActorConfig,
     module_host: WeakModuleHost,
     mut notify_rx: mpsc::UnboundedReceiver<()>,
 ) {
@@ -165,7 +169,7 @@ async fn run_idc_loop(
                 match outcome {
                     DeliveryOutcome::TransportError(reason) => {
                         log::warn!(
-                            "idc_runtime: transport error delivering msg_id={} to {}: {reason}",
+                            "idc_actor: transport error delivering msg_id={} to {}: {reason}",
                             msg.msg_id,
                             hex::encode(msg.target_db_identity.to_byte_array()),
                         );
@@ -220,6 +224,9 @@ fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, String) {
 }
 
 /// Finalize a delivered message: call the on_result reducer (if any), then delete from ST_OUTBOUND_MSG.
+///
+/// On the happy path, `on_result_reducer` success and deletion of `st_outbound_msg`
+/// are committed atomically in the same reducer transaction.
 async fn finalize_message(
     db: &RelationalDB,
     module_host: &WeakModuleHost,
@@ -231,7 +238,7 @@ async fn finalize_message(
     if let Some(on_result_reducer) = &msg.on_result_reducer {
         let Some(host) = module_host.upgrade() else {
             log::warn!(
-                "idc_runtime: module host gone, cannot call on_result reducer '{}' for msg_id={}",
+                "idc_actor: module host gone, cannot call on_result reducer '{}' for msg_id={}",
                 on_result_reducer,
                 msg.msg_id,
             );
@@ -245,7 +252,7 @@ async fn finalize_message(
             Ok(b) => b,
             Err(e) => {
                 log::error!(
-                    "idc_runtime: failed to encode on_result args for msg_id={}: {e}",
+                    "idc_actor: failed to encode on_result args for msg_id={}: {e}",
                     msg.msg_id
                 );
                 delete_message(db, msg.msg_id);
@@ -255,7 +262,7 @@ async fn finalize_message(
 
         let caller_identity = Identity::ZERO; // system call
         let result = host
-            .call_reducer(
+            .call_reducer_delete_outbound_on_success(
                 caller_identity,
                 None, // no connection_id
                 None, // no client sender
@@ -263,20 +270,22 @@ async fn finalize_message(
                 None, // no timer
                 on_result_reducer,
                 FunctionArgs::Bsatn(bytes::Bytes::from(args_bytes)),
+                msg.msg_id,
             )
             .await;
 
         match result {
             Ok(_) => {
                 log::debug!(
-                    "idc_runtime: on_result reducer '{}' called for msg_id={}",
+                    "idc_actor: on_result reducer '{}' called for msg_id={}",
                     on_result_reducer,
                     msg.msg_id,
                 );
+                return;
             }
             Err(e) => {
                 log::error!(
-                    "idc_runtime: on_result reducer '{}' failed for msg_id={}: {e:?}",
+                    "idc_actor: on_result reducer '{}' failed for msg_id={}: {e:?}",
                     on_result_reducer,
                     msg.msg_id,
                 );
@@ -303,7 +312,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
                 .collect()
         })
         .unwrap_or_else(|e| {
-            log::error!("idc_runtime: failed to read st_outbound_msg: {e}");
+            log::error!("idc_actor: failed to read st_outbound_msg: {e}");
             Vec::new()
         });
 
@@ -317,7 +326,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
             Ok(s) => s,
             Err(e) => {
                 log::error!(
-                    "idc_runtime: cannot find schema for outbox table {:?} (msg_id={}): {e}",
+                    "idc_actor: cannot find schema for outbox table {:?} (msg_id={}): {e}",
                     outbox_table_id,
                     st_row.msg_id,
                 );
@@ -325,9 +334,19 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
             }
         };
 
-        let table_name = schema.table_name.to_string();
-        let target_reducer = table_name.strip_prefix("__outbox_").unwrap_or(&table_name).to_string();
-        let on_result_reducer = schema.on_result_reducer.clone();
+        let outbox_schema = match schema.outbox.as_ref() {
+            Some(o) => o,
+            None => {
+                log::error!(
+                    "idc_actor: table {:?} (msg_id={}) is not an outbox table",
+                    schema.table_name,
+                    st_row.msg_id,
+                );
+                continue;
+            }
+        };
+        let target_reducer = outbox_schema.remote_reducer.to_string();
+        let on_result_reducer = outbox_schema.on_result_reducer.as_ref().map(|id| id.to_string());
 
         // Look up the outbox row by its auto-inc PK (col 0) to get target identity and args.
         let outbox_row = db
@@ -337,7 +356,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
 
         let Some(outbox_row_ref) = outbox_row else {
             log::error!(
-                "idc_runtime: outbox row not found in table {:?} for row_id={} (msg_id={})",
+                "idc_actor: outbox row not found in table {:?} for row_id={} (msg_id={})",
                 outbox_table_id,
                 st_row.row_id,
                 st_row.msg_id,
@@ -352,7 +371,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
             Some(AlgebraicValue::U256(u)) => Identity::from_u256(**u),
             other => {
                 log::error!(
-                    "idc_runtime: outbox row col 1 expected U256 (Identity), got {other:?} (msg_id={})",
+                    "idc_actor: outbox row col 1 expected U256 (Identity), got {other:?} (msg_id={})",
                     st_row.msg_id,
                 );
                 continue;
@@ -395,7 +414,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
 /// Attempt a single HTTP delivery of a message.
 async fn attempt_delivery(
     client: &reqwest::Client,
-    config: &IdcRuntimeConfig,
+    config: &IdcActorConfig,
     msg: &PendingMessage,
 ) -> DeliveryOutcome {
     let target_db_hex = hex::encode(msg.target_db_identity.to_byte_array());
@@ -439,11 +458,11 @@ async fn attempt_delivery(
 fn delete_message(db: &RelationalDB, msg_id: u64) {
     let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     if let Err(e) = tx.delete_outbound_msg(msg_id) {
-        log::error!("idc_runtime: failed to delete msg_id={msg_id}: {e}");
+        log::error!("idc_actor: failed to delete msg_id={msg_id}: {e}");
         let _ = db.rollback_mut_tx(tx);
         return;
     }
     if let Err(e) = db.commit_tx(tx) {
-        log::error!("idc_runtime: failed to commit delete for msg_id={msg_id}: {e}");
+        log::error!("idc_actor: failed to commit delete for msg_id={msg_id}: {e}");
     }
 }

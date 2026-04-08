@@ -1617,6 +1617,43 @@ impl ModuleHost {
         .await?
     }
 
+    async fn call_reducer_delete_outbound_on_success_inner(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_id: ReducerId,
+        reducer_def: &ReducerDef,
+        args: FunctionArgs,
+        msg_id: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+        let call_reducer_params = CallReducerParams {
+            timestamp: Timestamp::now(),
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_id,
+            args,
+            dedup_sender: None,
+        };
+
+        self.call(
+            &reducer_def.name,
+            (call_reducer_params, msg_id),
+            async |(p, msg_id), inst| Ok(inst.call_reducer_delete_outbound_on_success(p, msg_id)),
+            async |(p, msg_id), inst| inst.call_reducer_delete_outbound_on_success(p, msg_id).await,
+        )
+        .await?
+    }
+
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
@@ -1650,6 +1687,58 @@ impl ModuleHost {
                 reducer_id,
                 reducer_def,
                 args,
+            )
+            .await
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+
+        res
+    }
+
+    pub async fn call_reducer_delete_outbound_on_success(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        msg_id: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let res = async {
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+
+            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
+
+            self.call_reducer_delete_outbound_on_success_inner(
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                reducer_def,
+                args,
+                msg_id,
             )
             .await
         }
