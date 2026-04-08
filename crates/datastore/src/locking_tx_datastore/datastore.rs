@@ -292,6 +292,7 @@ impl Locking {
         repo: &SnapshotRepository,
     ) -> Result<Option<(TxOffset, SnapshotDirPath)>> {
         let mut committed_state = committed_state.write();
+        let lock_acquired_time = Instant::now();
         let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
             return Ok(None);
         };
@@ -304,6 +305,14 @@ impl Locking {
 
         let (tables, blob_store) = committed_state.persistent_tables_and_blob_store();
         let snapshot_dir = repo.create_snapshot(tables, blob_store, tx_offset)?;
+        drop(committed_state);
+        let lock_dropped_time = Instant::now();
+        log::info!(
+            "Finished capturing snapshot of database {:?} at TX offset {}. DB lock held for {:?}.",
+            repo.database_identity(),
+            tx_offset,
+            lock_dropped_time.duration_since(lock_acquired_time),
+        );
 
         Ok(Some((tx_offset, snapshot_dir)))
     }
