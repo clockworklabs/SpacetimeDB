@@ -5,7 +5,7 @@
 use super::unique_i_16_type::UniqueI16;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `unique_i16`.
+/// Table handle for the table `unique_i_16`.
 ///
 /// Obtain a handle from the [`UniqueI16TableAccess::unique_i_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_i_16()`.
@@ -19,19 +19,19 @@ pub struct UniqueI16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `unique_i16`.
+/// Extension trait for access to the table `unique_i_16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueI16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueI16TableHandle`], which mediates access to the table `unique_i16`.
+    /// Obtain a [`UniqueI16TableHandle`], which mediates access to the table `unique_i_16`.
     fn unique_i_16(&self) -> UniqueI16TableHandle<'_>;
 }
 
 impl UniqueI16TableAccess for super::RemoteTables {
     fn unique_i_16(&self) -> UniqueI16TableHandle<'_> {
         UniqueI16TableHandle {
-            imp: self.imp.get_table::<UniqueI16>("unique_i16"),
+            imp: self.imp.get_table::<UniqueI16>("unique_i_16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -78,24 +78,7 @@ impl<'ctx> __sdk::Table for UniqueI16TableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueI16>("unique_i16");
-    _table.add_unique_constraint::<i16>("n", |row| &row.n);
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<UniqueI16>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueI16>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
-}
-
-/// Access to the `n` unique index on the table `unique_i16`,
+/// Access to the `n` unique index on the table `unique_i_16`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueI16NUnique::find`] method.
 ///
@@ -108,7 +91,7 @@ pub struct UniqueI16NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueI16TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `unique_i16`.
+    /// Get a handle on the `n` unique index on the table `unique_i_16`.
     pub fn n(&self) -> UniqueI16NUnique<'ctx> {
         UniqueI16NUnique {
             imp: self.imp.get_unique_constraint::<i16>("n"),
@@ -125,18 +108,33 @@ impl<'ctx> UniqueI16NUnique<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueI16>("unique_i_16");
+    _table.add_unique_constraint::<i16>("n", |row| &row.n);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<UniqueI16>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueI16>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for query builder access to the table `UniqueI16`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait unique_i16QueryTableAccess {
+pub trait unique_i_16QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueI16`.
-    fn unique_i16(&self) -> __sdk::__query_builder::Table<UniqueI16>;
+    fn unique_i_16(&self) -> __sdk::__query_builder::Table<UniqueI16>;
 }
 
-impl unique_i16QueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_i16(&self) -> __sdk::__query_builder::Table<UniqueI16> {
-        __sdk::__query_builder::Table::new("unique_i16")
+impl unique_i_16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_i_16(&self) -> __sdk::__query_builder::Table<UniqueI16> {
+        __sdk::__query_builder::Table::new("unique_i_16")
     }
 }

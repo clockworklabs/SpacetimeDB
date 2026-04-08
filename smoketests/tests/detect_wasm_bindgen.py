@@ -20,7 +20,7 @@ extern "C" {
     def test_detect_wasm_bindgen(self):
         """Ensure that spacetime build properly catches wasm_bindgen imports"""
 
-        output = self.spacetime("build", "--project-path", self.project_path, full_output=True, check=False)
+        output = self.spacetime("build", "--module-path", self.project_path, full_output=True, check=False)
         self.assertTrue(output.returncode)
         self.assertIn("wasm-bindgen detected", output.stderr)
 
@@ -39,6 +39,6 @@ pub fn test(_ctx: &ReducerContext) {
     def test_detect_getrandom(self):
         """Ensure that spacetime build properly catches getrandom"""
 
-        output = self.spacetime("build", "--project-path", self.project_path, full_output=True, check=False)
+        output = self.spacetime("build", "--module-path", self.project_path, full_output=True, check=False)
         self.assertTrue(output.returncode)
         self.assertIn("getrandom usage detected", output.stderr)

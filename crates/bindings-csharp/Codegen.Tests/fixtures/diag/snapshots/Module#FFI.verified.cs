@@ -105,10 +105,7 @@ namespace SpacetimeDB
 
     public readonly struct TestDefaultFieldValuesCols
     {
-        public readonly global::SpacetimeDB.NullableCol<
-            global::TestDefaultFieldValues,
-            int
-        > UniqueField;
+        public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, int> UniqueField;
         public readonly global::SpacetimeDB.Col<
             global::TestDefaultFieldValues,
             string
@@ -127,14 +124,14 @@ namespace SpacetimeDB
         public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, float> DefaultF32;
         public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, double> DefaultF64;
         public readonly global::SpacetimeDB.Col<global::TestDefaultFieldValues, MyEnum> DefaultEnum;
-        public readonly global::SpacetimeDB.NullableCol<
+        public readonly global::SpacetimeDB.Col<
             global::TestDefaultFieldValues,
             MyStruct
         > DefaultNull;
 
         internal TestDefaultFieldValuesCols(string tableName)
         {
-            UniqueField = new global::SpacetimeDB.NullableCol<global::TestDefaultFieldValues, int>(
+            UniqueField = new global::SpacetimeDB.Col<global::TestDefaultFieldValues, int>(
                 tableName,
                 "UniqueField"
             );
@@ -198,10 +195,10 @@ namespace SpacetimeDB
                 tableName,
                 "DefaultEnum"
             );
-            DefaultNull = new global::SpacetimeDB.NullableCol<
-                global::TestDefaultFieldValues,
-                MyStruct
-            >(tableName, "DefaultNull");
+            DefaultNull = new global::SpacetimeDB.Col<global::TestDefaultFieldValues, MyStruct>(
+                tableName,
+                "DefaultNull"
+            );
         }
     }
 
@@ -251,6 +248,10 @@ namespace SpacetimeDB
     public readonly struct TestIndexIssuesCols
     {
         public readonly global::SpacetimeDB.Col<global::TestIndexIssues, int> SelfIndexingColumn;
+        public readonly global::SpacetimeDB.Col<
+            global::TestIndexIssues,
+            int
+        > SecondaryIndexingColumn;
 
         internal TestIndexIssuesCols(string tableName)
         {
@@ -258,18 +259,30 @@ namespace SpacetimeDB
                 tableName,
                 "SelfIndexingColumn"
             );
+            SecondaryIndexingColumn = new global::SpacetimeDB.Col<global::TestIndexIssues, int>(
+                tableName,
+                "SecondaryIndexingColumn"
+            );
         }
     }
 
     public readonly struct TestIndexIssuesIxCols
     {
         public readonly global::SpacetimeDB.IxCol<global::TestIndexIssues, int> SelfIndexingColumn;
+        public readonly global::SpacetimeDB.IxCol<
+            global::TestIndexIssues,
+            int
+        > SecondaryIndexingColumn;
 
         internal TestIndexIssuesIxCols(string tableName)
         {
             SelfIndexingColumn = new global::SpacetimeDB.IxCol<global::TestIndexIssues, int>(
                 tableName,
                 "SelfIndexingColumn"
+            );
+            SecondaryIndexingColumn = new global::SpacetimeDB.IxCol<global::TestIndexIssues, int>(
+                tableName,
+                "SecondaryIndexingColumn"
             );
         }
     }
@@ -583,10 +596,7 @@ namespace SpacetimeDB
 
     public readonly struct TestUniqueNotEquatableCols
     {
-        public readonly global::SpacetimeDB.NullableCol<
-            global::TestUniqueNotEquatable,
-            int
-        > UniqueField;
+        public readonly global::SpacetimeDB.Col<global::TestUniqueNotEquatable, int> UniqueField;
         public readonly global::SpacetimeDB.Col<
             global::TestUniqueNotEquatable,
             TestEnumWithExplicitValues
@@ -594,7 +604,7 @@ namespace SpacetimeDB
 
         internal TestUniqueNotEquatableCols(string tableName)
         {
-            UniqueField = new global::SpacetimeDB.NullableCol<global::TestUniqueNotEquatable, int>(
+            UniqueField = new global::SpacetimeDB.Col<global::TestUniqueNotEquatable, int>(
                 tableName,
                 "UniqueField"
             );
@@ -863,17 +873,17 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(Player),
+                SourceName: nameof(Player),
                 ProductTypeRef: (uint)new global::Player.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "Player_Identity_idx_btree",
                         AccessorName: "Identity",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
@@ -886,11 +896,20 @@ namespace SpacetimeDB.Internal.TableHandles
                     >.MakeUniqueConstraint(0)
                 ],
                 Sequences: [],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoCount();
 
@@ -913,8 +932,6 @@ namespace SpacetimeDB.Internal.TableHandles
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
-
-            public global::Player Update(global::Player row) => DoUpdate(row);
         }
 
         public IdentityUniqueIndex Identity => new();
@@ -944,18 +961,18 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestAutoIncNotInteger),
+                SourceName: nameof(TestAutoIncNotInteger),
                 ProductTypeRef: (uint)
                     new global::TestAutoIncNotInteger.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "TestAutoIncNotInteger_IdentityField_idx_btree",
                         AccessorName: "IdentityField",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
                     )
@@ -978,11 +995,20 @@ namespace SpacetimeDB.Internal.TableHandles
                         global::TestAutoIncNotInteger
                     >.MakeSequence(1)
                 ],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
@@ -1022,9 +1048,6 @@ namespace SpacetimeDB.Internal.TableHandles
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
-
-            public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
-                DoUpdate(row);
         }
 
         public IdentityFieldUniqueIndex IdentityField => new();
@@ -1044,18 +1067,18 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestDefaultFieldValues),
+                SourceName: nameof(TestDefaultFieldValues),
                 ProductTypeRef: (uint)
                     new global::TestDefaultFieldValues.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "TestDefaultFieldValues_UniqueField_idx_btree",
                         AccessorName: "UniqueField",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
@@ -1068,11 +1091,20 @@ namespace SpacetimeDB.Internal.TableHandles
                     >.MakeUniqueConstraint(0)
                 ],
                 Sequences: [],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDefaultFieldValues,
@@ -1112,22 +1144,31 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestDuplicateTableName),
+                SourceName: nameof(TestDuplicateTableName),
                 ProductTypeRef: (uint)
                     new global::TestDuplicateTableName.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [],
                 Indexes: [],
                 Constraints: [],
                 Sequences: [],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
@@ -1164,44 +1205,63 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestIndexIssues),
+                SourceName: nameof(TestIndexIssues),
                 ProductTypeRef: (uint)
                     new global::TestIndexIssues.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "TestIndexIssues__idx_btree",
                         AccessorName: "TestIndexWithoutColumns",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
                     ),
                     new(
-                        Name: null,
+                        SourceName: "TestIndexIssues__idx_btree",
                         AccessorName: "TestIndexWithEmptyColumns",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
                     ),
                     new(
-                        Name: null,
+                        SourceName: "TestIndexIssues__idx_btree",
                         AccessorName: "TestUnknownColumns",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
                     ),
                     new(
-                        Name: null,
+                        SourceName: "TestIndexIssues_SelfIndexingColumn_idx_btree",
+                        AccessorName: "SelfIndexingColumn",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        SourceName: "TestIndexIssues_SecondaryIndexingColumn_idx_btree",
+                        AccessorName: "SecondaryIndexingColumn",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    ),
+                    new(
+                        SourceName: "TestIndexIssues_SelfIndexingColumn_idx_btree",
                         AccessorName: "TestUnexpectedColumns",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
                 ],
                 Constraints: [],
                 Sequences: [],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
@@ -1246,6 +1306,82 @@ namespace SpacetimeDB.Internal.TableHandles
             ) { }
 
         public TestUnknownColumnsIndex TestUnknownColumns => new();
+
+        public sealed class SelfIndexingColumnIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues_SelfIndexingColumn_idx_btree"
+            )
+        {
+            public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public ulong Delete(int SelfIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SelfIndexingColumn
+            ) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public ulong Delete(global::SpacetimeDB.Bound<int> SelfIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+        }
+
+        public SelfIndexingColumnIndex SelfIndexingColumn => new();
+
+        public sealed class SecondaryIndexingColumnIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues_SecondaryIndexingColumn_idx_btree"
+            )
+        {
+            public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public ulong Delete(int SecondaryIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SecondaryIndexingColumn
+            ) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public ulong Delete(global::SpacetimeDB.Bound<int> SecondaryIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+        }
+
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new();
 
         public sealed class TestUnexpectedColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
@@ -1300,22 +1436,31 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestScheduleWithMissingScheduleAtField),
+                SourceName: nameof(TestScheduleWithMissingScheduleAtField),
                 ProductTypeRef: (uint)
                     new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [],
                 Indexes: [],
                 Constraints: [],
                 Sequences: [],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
@@ -1355,25 +1500,35 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestScheduleWithoutPrimaryKey),
+                SourceName: nameof(TestScheduleWithoutPrimaryKey),
                 ProductTypeRef: (uint)
                     new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [],
                 Indexes: [],
                 Constraints: [],
                 Sequences: [],
-                Schedule: global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutPrimaryKey,
-                    global::TestScheduleIssues
-                >.MakeSchedule("DummyScheduledReducer", 3),
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutPrimaryKey,
+                global::TestScheduleIssues
+            >.MakeSchedule("DummyScheduledReducer", 3);
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
@@ -1413,18 +1568,18 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestScheduleWithoutScheduleAt),
+                SourceName: nameof(TestScheduleWithoutScheduleAt),
                 ProductTypeRef: (uint)
                     new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [1],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree",
                         AccessorName: "IdCorrectType",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
                     )
@@ -1437,11 +1592,20 @@ namespace SpacetimeDB.Internal.TableHandles
                     >.MakeUniqueConstraint(1)
                 ],
                 Sequences: [],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
@@ -1503,18 +1667,18 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestScheduleWithWrongPrimaryKeyType),
+                SourceName: nameof(TestScheduleWithWrongPrimaryKeyType),
                 ProductTypeRef: (uint)
                     new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [0],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree",
                         AccessorName: "IdWrongType",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     )
@@ -1527,14 +1691,24 @@ namespace SpacetimeDB.Internal.TableHandles
                     >.MakeUniqueConstraint(0)
                 ],
                 Sequences: [],
-                Schedule: global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongPrimaryKeyType,
-                    global::TestScheduleIssues
-                >.MakeSchedule("DummyScheduledReducer", 3),
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues
+            >.MakeSchedule("DummyScheduledReducer", 3);
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
@@ -1596,18 +1770,18 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestScheduleWithWrongScheduleAtType),
+                SourceName: nameof(TestScheduleWithWrongScheduleAtType),
                 ProductTypeRef: (uint)
                     new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [1],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree",
                         AccessorName: "IdCorrectType",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
                     )
@@ -1620,14 +1794,24 @@ namespace SpacetimeDB.Internal.TableHandles
                     >.MakeUniqueConstraint(1)
                 ],
                 Sequences: [],
-                Schedule: global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongScheduleAtType,
-                    global::TestScheduleIssues
-                >.MakeSchedule("DummyScheduledReducer", 2),
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues
+            >.MakeSchedule("DummyScheduledReducer", 2);
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
@@ -1689,23 +1873,23 @@ namespace SpacetimeDB.Internal.TableHandles
             return row;
         }
 
-        public static SpacetimeDB.Internal.RawTableDefV9 MakeTableDesc(
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                Name: nameof(TestUniqueNotEquatable),
+                SourceName: nameof(TestUniqueNotEquatable),
                 ProductTypeRef: (uint)
                     new global::TestUniqueNotEquatable.BSATN().GetAlgebraicType(registrar).Ref_,
                 PrimaryKey: [1],
                 Indexes:
                 [
                     new(
-                        Name: null,
+                        SourceName: "TestUniqueNotEquatable_UniqueField_idx_btree",
                         AccessorName: "UniqueField",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     ),
                     new(
-                        Name: null,
+                        SourceName: "TestUniqueNotEquatable_PrimaryKeyField_idx_btree",
                         AccessorName: "PrimaryKeyField",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
                     )
@@ -1722,11 +1906,20 @@ namespace SpacetimeDB.Internal.TableHandles
                     >.MakeUniqueConstraint(1)
                 ],
                 Sequences: [],
-                Schedule: null,
                 TableType: SpacetimeDB.Internal.TableType.User,
-                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
             );
 
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
@@ -1776,14 +1969,66 @@ namespace SpacetimeDB.Internal.TableHandles
     }
 }
 
-sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_def_ienumerable_return_from_filterViewDispatcher
+    : global::SpacetimeDB.Internal.IView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_no_context",
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_ienumerable_return_from_filter",
             Index: 0,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<
+                TestScheduleIssues,
+                TestScheduleIssues.BSATN
+            >().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefIEnumerableReturnFromFilter(
+                (SpacetimeDB.ViewContext)ctx
+            );
+            var listSerializer = new SpacetimeDB.BSATN.List<
+                TestScheduleIssues,
+                TestScheduleIssues.BSATN
+            >();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_def_ienumerable_return_from_filter': " + e
+            );
+            throw;
+        }
+    }
+}
+
+sealed class view_def_ienumerable_return_from_iterViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_ienumerable_return_from_iter",
+            Index: 1,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -1799,72 +2044,34 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
     {
         try
         {
-            var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var returnValue = Module.ViewDefIEnumerableReturnFromIter((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_context': " + e);
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_def_ienumerable_return_from_iter': " + e
+            );
             throw;
         }
     }
 }
 
-sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_no_public",
-            Index: 1,
-            IsPublic: false,
-            IsAnonymous: false,
-            Params: [],
-            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
-                registrar
-            )
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewDefNoPublic((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
-            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
-            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_public': " + e);
-            throw;
-        }
-    }
-}
-
-sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal.IView
-{
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_wrong_context",
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_no_context",
             Index: 2,
             IsPublic: true,
             IsAnonymous: false,
@@ -1881,14 +2088,99 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
     {
         try
         {
-            var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_context': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_no_public",
+            Index: 3,
+            IsPublic: false,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefNoPublic((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_public': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_wrong_context",
+            Index: 4,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -1901,12 +2193,12 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
 
 sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.IView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_wrong_return",
-            Index: 3,
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_wrong_return",
+            Index: 5,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -1940,12 +2232,12 @@ sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.
 
 sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_no_delete",
-            Index: 4,
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_no_delete",
+            Index: 6,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -1985,12 +2277,12 @@ sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
 
 sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_no_insert",
-            Index: 5,
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_no_insert",
+            Index: 7,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2030,11 +2322,11 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
 
 sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_index_no_mutation",
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_index_no_mutation",
             Index: 0,
             IsPublic: true,
             IsAnonymous: true,
@@ -2075,11 +2367,11 @@ sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Inte
 
 sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_no_anon_identity",
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_no_anon_identity",
             Index: 1,
             IsPublic: true,
             IsAnonymous: true,
@@ -2120,11 +2412,11 @@ sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Inter
 
 sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_no_iter",
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_no_iter",
             Index: 2,
             IsPublic: true,
             IsAnonymous: true,
@@ -2166,11 +2458,11 @@ sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnon
 sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
     : global::SpacetimeDB.Internal.IAnonymousView
 {
-    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+    public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "view_def_returns_not_a_spacetime_type",
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_def_returns_not_a_spacetime_type",
             Index: 3,
             IsPublic: true,
             IsAnonymous: true,
@@ -2222,6 +2514,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal PlayerReadOnly()
             : base("Player") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdentityIndex
@@ -2247,6 +2545,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestAutoIncNotIntegerReadOnly()
             : base("TestAutoIncNotInteger") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdentityFieldIndex
@@ -2272,6 +2576,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestDefaultFieldValuesReadOnly()
             : base("TestDefaultFieldValues") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2281,6 +2591,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestDuplicateTableNameReadOnly()
             : base("TestDuplicateTableName") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2290,6 +2606,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestIndexIssuesReadOnly()
             : base("TestIndexIssues") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class TestIndexWithoutColumnsIndex
@@ -2318,6 +2640,56 @@ namespace SpacetimeDB.Internal.ViewHandles
         }
 
         public TestUnknownColumnsIndex TestUnknownColumns => new();
+
+        public sealed class SelfIndexingColumnIndex
+            : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
+        {
+            internal SelfIndexingColumnIndex()
+                : base("TestIndexIssues_SelfIndexingColumn_idx_btree") { }
+
+            public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SelfIndexingColumn
+            ) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+        }
+
+        public SelfIndexingColumnIndex SelfIndexingColumn => new();
+
+        public sealed class SecondaryIndexingColumnIndex
+            : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
+        {
+            internal SecondaryIndexingColumnIndex()
+                : base("TestIndexIssues_SecondaryIndexingColumn_idx_btree") { }
+
+            public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(
+                global::SpacetimeDB.Bound<int> SecondaryIndexingColumn
+            ) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SecondaryIndexingColumn
+                    )
+                );
+        }
+
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new();
 
         public sealed class TestUnexpectedColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
@@ -2351,6 +2723,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithMissingScheduleAtFieldReadOnly()
             : base("TestScheduleWithMissingScheduleAtField") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2360,6 +2738,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithoutPrimaryKeyReadOnly()
             : base("TestScheduleWithoutPrimaryKey") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2369,6 +2753,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithoutScheduleAtReadOnly()
             : base("TestScheduleWithoutScheduleAt") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdCorrectTypeIndex
@@ -2394,6 +2784,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithWrongPrimaryKeyTypeReadOnly()
             : base("TestScheduleWithWrongPrimaryKeyType") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdWrongTypeIndex
@@ -2419,6 +2815,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithWrongScheduleAtTypeReadOnly()
             : base("TestScheduleWithWrongScheduleAtType") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdCorrectTypeIndex
@@ -2444,6 +2846,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestUniqueNotEquatableReadOnly()
             : base("TestUniqueNotEquatable") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class PrimaryKeyFieldIndex
@@ -2497,9 +2905,18 @@ static class ModuleRegistration
 {
     class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(__ReducerWithReservedPrefix), [], null);
+        ) =>
+            new(
+                SourceName: nameof(__ReducerWithReservedPrefix),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2511,14 +2928,18 @@ static class ModuleRegistration
     {
         private static readonly TestScheduleIssues.BSATN tableRW = new();
 
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                nameof(DummyScheduledReducer),
-                [new("table", tableRW.GetAlgebraicType(registrar))],
-                null
+                SourceName: nameof(DummyScheduledReducer),
+                Params: [new("table", tableRW.GetAlgebraicType(registrar))],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2531,9 +2952,18 @@ static class ModuleRegistration
 
     class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(OnReducerWithReservedPrefix), [], null);
+        ) =>
+            new(
+                SourceName: nameof(OnReducerWithReservedPrefix),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2543,9 +2973,18 @@ static class ModuleRegistration
 
     class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(TestDuplicateReducerKind1), [], SpacetimeDB.Internal.Lifecycle.Init);
+        ) =>
+            new(
+                SourceName: nameof(TestDuplicateReducerKind1),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2555,9 +2994,18 @@ static class ModuleRegistration
 
     class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(TestDuplicateReducerKind2), [], SpacetimeDB.Internal.Lifecycle.Init);
+        ) =>
+            new(
+                SourceName: nameof(TestDuplicateReducerKind2),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2567,9 +3015,18 @@ static class ModuleRegistration
 
     class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(TestDuplicateReducerName), [], null);
+        ) =>
+            new(
+                SourceName: nameof(TestDuplicateReducerName),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2579,9 +3036,18 @@ static class ModuleRegistration
 
     class TestReducerReturnType : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(TestReducerReturnType), [], null);
+        ) =>
+            new(
+                SourceName: nameof(TestReducerReturnType),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2591,9 +3057,18 @@ static class ModuleRegistration
 
     class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(TestReducerWithoutContext), [], null);
+        ) =>
+            new(
+                SourceName: nameof(TestReducerWithoutContext),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -2637,6 +3112,11 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
+        SpacetimeDB.Internal.Module.RegisterExplicitIndexName(
+            "TestIndexIssues_SecondaryIndexingColumn_idx_btree",
+            "TestCanonicalNameWithoutAccessor"
+        );
+
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 
@@ -2652,6 +3132,8 @@ static class ModuleRegistration
         // IMPORTANT: The order in which we register views matters.
         // It must correspond to the order in which we call `GenerateDispatcherClass`.
         // See the comment on `GenerateDispatcherClass` for more explanation.
+        SpacetimeDB.Internal.Module.RegisterView<view_def_ienumerable_return_from_filterViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_def_ienumerable_return_from_iterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_no_contextViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_no_publicViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_wrong_contextViewDispatcher>();

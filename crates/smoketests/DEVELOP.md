@@ -77,7 +77,7 @@ use spacetimedb_smoketests::Smoketest;
 const MODULE_CODE: &str = r#"
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = example, public)]
+#[spacetimedb::table(accessor = example, public)]
 pub struct Example { value: u64 }
 
 #[spacetimedb::reducer]

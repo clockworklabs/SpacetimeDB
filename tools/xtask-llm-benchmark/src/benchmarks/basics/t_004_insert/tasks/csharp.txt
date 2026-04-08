@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines one table and a reducer that inserts a row.
+Write a SpacetimeDB backend module in C# that defines one table and a reducer that inserts a row.
 
 TABLE
 - User

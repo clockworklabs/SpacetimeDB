@@ -1,6 +1,6 @@
 use spacetimedb::{log, ReducerContext};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -8,7 +8,7 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb::table(name = pets)]
+#[spacetimedb::table(accessor = pets)]
 pub struct Pet {
     species: String,
 }

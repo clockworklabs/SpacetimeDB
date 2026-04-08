@@ -1,6 +1,6 @@
-use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
+use spacetimedb::{duration, log, ReducerContext, Table, Timestamp};
 
-#[spacetimedb::table(name = scheduled_message, public, scheduled(my_repeating_reducer))]
+#[spacetimedb::table(accessor = scheduled_message, public, scheduled(my_repeating_reducer))]
 pub struct ScheduledMessage {
     #[primary_key]
     #[auto_inc]
@@ -20,5 +20,9 @@ fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn my_repeating_reducer(ctx: &ReducerContext, arg: ScheduledMessage) {
-    log::info!("Invoked: ts={:?}, delta={:?}", ctx.timestamp, ctx.timestamp.duration_since(arg.prev));
+    log::info!(
+        "Invoked: ts={:?}, delta={:?}",
+        ctx.timestamp,
+        ctx.timestamp.duration_since(arg.prev)
+    );
 }

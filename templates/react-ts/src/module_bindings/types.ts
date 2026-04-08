@@ -3,9 +3,14 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from 'spacetimedb';
+import {
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from 'spacetimedb';
 
-// Import all non-reducer types
-import Person from './person_type';
-
+export const Person = __t.object('Person', {
+  name: __t.string(),
+});
 export type Person = __Infer<typeof Person>;

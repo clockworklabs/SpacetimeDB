@@ -20,6 +20,8 @@ namespace SpacetimeDB.Types
             internal WhereTestQueryHandle(DbConnection conn) : base(conn)
             {
             }
+
+            protected override object GetPrimaryKey(WhereTest row) => row.Id;
         }
 
         public readonly WhereTestQueryHandle WhereTestQuery;
@@ -33,17 +35,19 @@ namespace SpacetimeDB.Types
 
         public WhereTestQueryCols(string tableName)
         {
-            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Id");
-            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "Value");
-            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "Name");
+            Id = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "id");
+            Value = new global::SpacetimeDB.Col<WhereTest, uint>(tableName, "value");
+            Name = new global::SpacetimeDB.Col<WhereTest, string>(tableName, "name");
         }
     }
 
     public sealed class WhereTestQueryIxCols
     {
+        public global::SpacetimeDB.IxCol<WhereTest, uint> Id { get; }
 
         public WhereTestQueryIxCols(string tableName)
         {
+            Id = new global::SpacetimeDB.IxCol<WhereTest, uint>(tableName, "id");
         }
     }
 }

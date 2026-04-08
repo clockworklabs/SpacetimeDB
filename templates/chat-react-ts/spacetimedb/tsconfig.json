@@ -4,14 +4,14 @@
     "module": "ESNext",
 
     "strict": true,
-    "declaration": true,
+    "declaration": false,
     "emitDeclarationOnly": false,
     "noEmit": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "allowImportingTsExtensions": true,
     "noImplicitAny": true,
-    "moduleResolution": "Bundler",
+    "moduleResolution": "bundler",
     "isolatedDeclarations": false,
 
     // This library is ESM-only, do not import commonjs modules

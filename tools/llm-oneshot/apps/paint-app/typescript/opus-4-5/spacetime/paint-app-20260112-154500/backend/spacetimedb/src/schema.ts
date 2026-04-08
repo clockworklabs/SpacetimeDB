@@ -4,7 +4,7 @@ import { schema, table, t } from 'spacetimedb/server';
 // USER & PRESENCE
 // ============================================================================
 
-export const User = table(
+export const user = table(
   {
     name: 'user',
     public: true,

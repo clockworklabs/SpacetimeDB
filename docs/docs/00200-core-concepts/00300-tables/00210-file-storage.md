@@ -5,6 +5,7 @@ slug: /tables/file-storage
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB can store binary data directly in table columns, making it suitable for files, images, and other blobs that need to participate in transactions and subscriptions.
@@ -29,9 +30,10 @@ const userAvatar = table(
   }
 );
 
-const spacetimedb = schema(userAvatar);
+const spacetimedb = schema({ userAvatar });
+export default spacetimedb;
 
-spacetimedb.reducer('upload_avatar', {
+export const upload_avatar = spacetimedb.reducer({
   userId: t.u64(),
   mimeType: t.string(),
   data: t.array(t.u8()),
@@ -57,7 +59,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "UserAvatar", Public = true)]
+    [SpacetimeDB.Table(Accessor = "UserAvatar", Public = true)]
     public partial struct UserAvatar
     {
         [SpacetimeDB.PrimaryKey]
@@ -91,7 +93,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = user_avatar, public)]
+#[spacetimedb::table(accessor = user_avatar, public)]
 pub struct UserAvatar {
     #[primary_key]
     user_id: u64,
@@ -122,6 +124,8 @@ pub fn upload_avatar(
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 struct UserAvatar {
@@ -196,10 +200,11 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
+export default spacetimedb;
 
 // Called after uploading file to external storage
-spacetimedb.reducer('register_document', {
+export const register_document = spacetimedb.reducer({
   filename: t.string(),
   mimeType: t.string(),
   sizeBytes: t.u64(),
@@ -225,7 +230,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -269,7 +274,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ReducerContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -366,7 +371,7 @@ This pattern keeps large files out of SpacetimeDB while maintaining metadata in 
 
 ### Example: Uploading to S3 from a Procedure
 
-[Procedures](/functions/procedures) can make HTTP requests, enabling direct uploads to external storage services like S3. This example shows uploading a file to S3 and storing the metadata in SpacetimeDB:
+[Procedures](../00200-functions/00400-procedures.md) can make HTTP requests, enabling direct uploads to external storage services like S3. This example shows uploading a file to S3 and storing the metadata in SpacetimeDB:
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -385,11 +390,11 @@ const document = table(
   }
 );
 
-const spacetimedb = schema(document);
+const spacetimedb = schema({ document });
+export default spacetimedb;
 
 // Upload file to S3 and register in database
-spacetimedb.procedure(
-  'upload_to_s3',
+export const upload_to_s3 = spacetimedb.procedure(
   {
     filename: t.string(),
     contentType: t.string(),
@@ -443,7 +448,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]
@@ -517,7 +522,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{Identity, ProcedureContext, Timestamp, Table};
 
-#[spacetimedb::table(name = document, public)]
+#[spacetimedb::table(accessor = document, public)]
 pub struct Document {
     #[primary_key]
     #[auto_inc]
@@ -601,8 +606,7 @@ For larger files, generate a pre-signed URL and let the client upload directly:
 
 ```typescript
 // Procedure returns a pre-signed URL for client-side upload
-spacetimedb.procedure(
-  'get_upload_url',
+export const get_upload_url = spacetimedb.procedure(
   { filename: t.string(), contentType: t.string() },
   t.object('UploadInfo', { uploadUrl: t.string(), s3Key: t.string() }),
   (ctx, { filename, contentType }) => {
@@ -616,7 +620,7 @@ spacetimedb.procedure(
 );
 
 // Client uploads directly to S3 using the pre-signed URL, then calls:
-spacetimedb.reducer('confirm_upload', { filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
+export const confirm_upload = spacetimedb.reducer({ filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
   ctx.db.document.insert({
     id: 0n,
     ownerId: ctx.sender,
@@ -763,7 +767,7 @@ using SpacetimeDB;
 
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "Image", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Image", Public = true)]
     public partial struct Image
     {
         [SpacetimeDB.PrimaryKey]
@@ -786,7 +790,7 @@ public partial class Module
 ```rust
 use spacetimedb::{Identity, Timestamp};
 
-#[spacetimedb::table(name = image, public)]
+#[spacetimedb::table(accessor = image, public)]
 pub struct Image {
     #[primary_key]
     #[auto_inc]

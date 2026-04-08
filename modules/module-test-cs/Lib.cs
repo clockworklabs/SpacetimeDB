@@ -10,7 +10,7 @@ using TestAlias = TestA;
 // TABLE DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-[Table(Name = "person", Public = true)]
+[Table(Accessor = "person", Public = true)]
 public partial struct Person
 {
     [PrimaryKey]
@@ -22,11 +22,11 @@ public partial struct Person
     public byte age;
 }
 
-[Table(Name = "test_a")]
+[Table(Accessor = "test_a")]
 public partial struct TestA
 {
     // The index on column "x" is given the name "foo".
-    [Index.BTree(Name = "foo")]
+    [Index.BTree(Accessor = "foo")]
     public uint x;
     public uint y;
     public string z;
@@ -48,14 +48,14 @@ public enum TestC
     Bar
 }
 
-[Table(Name = "test_d", Public = true)]
+[Table(Accessor = "test_d", Public = true)]
 public partial struct TestD
 {
     // In Rust this was an Option<TestC>; in C# we use a nullable enum.
     public TestC? test_c;
 }
 
-[Table(Name = "test_e")]
+[Table(Accessor = "test_e")]
 public partial struct TestE
 {
     [PrimaryKey]
@@ -82,7 +82,7 @@ public partial record Foobar : TaggedEnum<(Baz Baz, Bar Bar, uint Har)>
 {
 }
 
-[Table(Name = "test_f", Public = true)]
+[Table(Accessor = "test_f", Public = true)]
 public partial struct TestFoobar
 {
     public Foobar field;
@@ -109,29 +109,29 @@ public partial record TestF : TaggedEnum<(TestFFoo Foo, TestFBar Bar, TestFBaz B
 
 // FIXME: Table named "private" doesn't compile in C#
 // When you fix me, uncomment the code in module-test
-// [Table(Name = "private", Public = true)]
+// [Table(Accessor = "private", Public = true)]
 // public partial struct TypeNamedPrivateIsNotTheProblem
 // {
 //     public string name;
 // }
 
 // A table marked as private.
-[Table(Name = "private_table", Public = false)]
+[Table(Accessor = "private_table", Public = false)]
 public partial struct PrivateTable
 {
     public string name;
 }
 
 // A table with a multi‑column index.
-[Table(Name = "points", Public = false)]
-[Index.BTree(Name = "multi_column_index", Columns = new[] { "x", "y" })]
+[Table(Accessor = "points", Public = false)]
+[Index.BTree(Accessor = "multi_column_index", Columns = new[] { "x", "y" })]
 public partial struct Point
 {
     public long x;
     public long y;
 }
 
-[Table(Name = "pk_multi_identity")]
+[Table(Accessor = "pk_multi_identity")]
 public partial struct PkMultiIdentity
 {
     [PrimaryKey]
@@ -141,7 +141,7 @@ public partial struct PkMultiIdentity
     public uint other;
 }
 
-[Table(Name = "repeating_test_arg", Scheduled = nameof(Module.repeating_test), ScheduledAt = nameof(scheduled_at))]
+[Table(Accessor = "repeating_test_arg", Scheduled = nameof(Module.repeating_test), ScheduledAt = nameof(scheduled_at))]
 public partial struct RepeatingTestArg
 {
     [PrimaryKey]
@@ -151,7 +151,7 @@ public partial struct RepeatingTestArg
     public Timestamp prev_time;
 }
 
-[Table(Name = "has_special_stuff")]
+[Table(Accessor = "has_special_stuff")]
 public partial struct HasSpecialStuff
 {
     public Identity identity;
@@ -159,8 +159,8 @@ public partial struct HasSpecialStuff
 }
 
 // Two tables using the same row type.
-[Table(Name = "player", Public = true)]
-[Table(Name = "logged_out_player", Public = true)]
+[Table(Accessor = "player", Public = true)]
+[Table(Accessor = "logged_out_player", Public = true)]
 public partial struct Player
 {
     public Player()
@@ -178,7 +178,7 @@ public partial struct Player
     public string name;
 }
 
-[Table(Name = "table_to_remove")]
+[Table(Accessor = "table_to_remove")]
 public partial struct TableToRemove
 {
     public uint id;
@@ -216,7 +216,7 @@ static partial class Module
     // VIEWS
     // ─────────────────────────────────────────────────────────────────────────────
 
-    [View(Name = "my_player", Public = true)]
+    [View(Accessor = "my_player", Public = true)]
     public static Player? my_player(ViewContext ctx)
     {
         return (Player?)ctx.Db.player.identity.Find(ctx.Sender);

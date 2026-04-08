@@ -1,8 +1,10 @@
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration, SpacetimeType, Uuid};
+use spacetimedb::{
+    ConnectionId, Identity, Query, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, Uuid, ViewContext,
+};
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = t_ints)]
+#[spacetimedb::table(accessor = t_ints)]
 pub struct TInts {
     i8: i8,
     i16: i16,
@@ -12,13 +14,13 @@ pub struct TInts {
     i256: i256,
 }
 
-#[spacetimedb::table(name = t_ints_tuple)]
+#[spacetimedb::table(accessor = t_ints_tuple)]
 pub struct TIntsTuple {
     tuple: TInts,
 }
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = t_uints)]
+#[spacetimedb::table(accessor = t_uints)]
 pub struct TUints {
     u8: u8,
     u16: u16,
@@ -28,13 +30,13 @@ pub struct TUints {
     u256: u256,
 }
 
-#[spacetimedb::table(name = t_uints_tuple)]
+#[spacetimedb::table(accessor = t_uints_tuple)]
 pub struct TUintsTuple {
     tuple: TUints,
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(name = t_others)]
+#[spacetimedb::table(accessor = t_others)]
 pub struct TOthers {
     bool: bool,
     f32: f32,
@@ -44,13 +46,13 @@ pub struct TOthers {
     identity: Identity,
     connection_id: ConnectionId,
     timestamp: Timestamp,
-    duration:  TimeDuration,
+    duration: TimeDuration,
     uuid: Uuid,
 }
 
-#[spacetimedb::table(name = t_others_tuple)]
+#[spacetimedb::table(accessor = t_others_tuple)]
 pub struct TOthersTuple {
-    tuple: TOthers
+    tuple: TOthers,
 }
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
@@ -60,14 +62,14 @@ pub enum Action {
 }
 
 #[derive(Clone)]
-#[spacetimedb::table(name = t_enums)]
+#[spacetimedb::table(accessor = t_enums)]
 pub struct TEnums {
     bool_opt: Option<bool>,
     bool_result: Result<bool, String>,
     action: Action,
 }
 
-#[spacetimedb::table(name = t_enums_tuple)]
+#[spacetimedb::table(accessor = t_enums_tuple)]
 pub struct TEnumsTuple {
     tuple: TEnums,
 }
@@ -101,7 +103,7 @@ pub fn test(ctx: &ReducerContext) {
         f32: 594806.58906,
         f64: -3454353.345389043278459,
         str: "This is spacetimedb".to_string(),
-        bytes: vec!(1, 2, 3, 4, 5, 6, 7),
+        bytes: vec![1, 2, 3, 4, 5, 6, 7],
         identity: Identity::ONE,
         connection_id: ConnectionId::ZERO,
         timestamp: Timestamp::UNIX_EPOCH,
@@ -119,4 +121,24 @@ pub fn test(ctx: &ReducerContext) {
 
     ctx.db.t_enums().insert(tuple.clone());
     ctx.db.t_enums_tuple().insert(TEnumsTuple { tuple });
+}
+
+#[spacetimedb::table(accessor = accessor_table, name = "canonical_table", public)]
+pub struct AccessorRow {
+    #[primary_key]
+    id: u32,
+    accessor_value1: u32,
+}
+
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    ctx.db.accessor_table().insert(AccessorRow {
+        id: 1,
+        accessor_value1: 7,
+    });
+}
+
+#[spacetimedb::view(accessor = accessor_filtered, name = "canonical_filtered", public)]
+fn accessor_filtered(ctx: &ViewContext) -> impl Query<AccessorRow> {
+    ctx.from.accessor_table().r#where(|r| r.accessor_value1.eq(7))
 }

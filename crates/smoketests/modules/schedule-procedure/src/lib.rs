@@ -1,12 +1,17 @@
-use spacetimedb::{duration, log, ProcedureContext, ReducerContext, Table, Timestamp};
+use spacetimedb::{duration, log, ProcedureContext, Query, ReducerContext, Table, Timestamp, ViewContext};
 
-#[spacetimedb::table(name = scheduled_table, public, scheduled(my_procedure, at = sched_at))]
+#[spacetimedb::table(accessor = scheduled_table, public, scheduled(my_procedure, at = sched_at))]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
     sched_at: spacetimedb::ScheduleAt,
     prev: Timestamp,
+}
+
+#[spacetimedb::view(accessor = scheduled_view, public)]
+fn scheduled_view(ctx: &ViewContext) -> impl Query<ScheduledTable> {
+    ctx.from.scheduled_table().build()
 }
 
 #[spacetimedb::reducer]

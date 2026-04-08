@@ -24,7 +24,7 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 // set all the settings you need, be sure your Uri and Module Name are correct
 const connBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
-  .withModuleName('simple-stdb-react-hooks-example')
+  .withDatabaseName('simple-stdb-react-hooks-example')
   .withToken(localStorage.getItem('stdbToken') || '')
   .onConnect(onConnect)
   .onConnectError(onConnectError)

@@ -5,9 +5,13 @@ import {
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
-import type RawModuleDefV10Section from './autogen/raw_module_def_v_10_section_type';
-import type RawModuleDefV10 from './autogen/raw_module_def_v_10_type';
-import type RawScopedTypeNameV10 from './autogen/raw_scoped_type_name_v_10_type';
+import type {
+  CaseConversionPolicy,
+  RawModuleDefV10,
+  RawModuleDefV10Section,
+  RawScopedTypeNameV10,
+  RawTableDefV10,
+} from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
@@ -27,87 +31,140 @@ import {
   type RowObj,
   type VariantsObj,
 } from './type_builders';
-import type { CamelCase } from './type_util';
-import { toCamelCase } from './util';
+import type { Values } from './type_util';
 
-export type TableNamesOf<S extends UntypedSchemaDef> =
-  S['tables'][number]['name'];
+export type TableNamesOf<S extends UntypedSchemaDef> = Values<
+  S['tables']
+>['accessorName'];
 
 /**
  * An untyped representation of the database schema.
  */
 export type UntypedSchemaDef = {
-  tables: readonly UntypedTableDef[];
+  tables: Record<string, UntypedTableDef>;
 };
 
 /**
  * Helper type to convert an array of TableSchema into a schema definition
  */
-export interface TablesToSchema<T extends readonly UntypedTableSchema[]>
+export interface TablesToSchema<T extends Record<string, UntypedTableSchema>>
   extends UntypedSchemaDef {
   tables: {
-    readonly [i in keyof T]: TableToSchema<T[i]>;
+    readonly [AccName in keyof T & string]: TableToSchema<AccName, T[AccName]>;
   };
 }
 
-export interface TableToSchema<T extends UntypedTableSchema>
-  extends UntypedTableDef {
-  name: T['tableName'];
-  accessorName: CamelCase<T['tableName']>;
+export interface TableToSchema<
+  AccName extends string,
+  T extends UntypedTableSchema,
+> extends UntypedTableDef {
+  accessorName: AccName;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
+  // Declarative user-provided table-level indexes.
   indexes: T['idxs'];
+  // Resolved runtime index metadata used by runtime consumers (e.g. TableCache).
+  resolvedIndexes: readonly UntypedIndex<keyof T['rowType']['row'] & string>[];
   constraints: T['constraints'];
 }
 
-export function tablesToSchema<const T extends readonly UntypedTableSchema[]>(
-  ctx: ModuleContext,
-  tables: T
-): TablesToSchema<T> {
+export function tablesToSchema<
+  const T extends Record<string, UntypedTableSchema>,
+>(ctx: ModuleContext, tables: T): TablesToSchema<T> {
+  // `TablesToSchema<T>['tables']` is intentionally readonly in the public type,
+  // but we need a mutable builder while materializing it from entries.
+  type MutableTableDefs = {
+    -readonly [AccName in keyof TablesToSchema<T>['tables']]: TablesToSchema<T>['tables'][AccName];
+  };
+  const tableDefs = Object.create(null) as MutableTableDefs;
+  for (const [accName, schema] of Object.entries(tables) as [
+    keyof T & string,
+    T[keyof T & string],
+  ][]) {
+    tableDefs[accName] = tableToSchema(
+      accName,
+      schema,
+      schema.tableDef(ctx, accName)
+    ) as TablesToSchema<T>['tables'][typeof accName];
+  }
+
   return {
-    tables: tables.map(schema =>
-      tableToSchema(ctx, schema)
-    ) as TablesToSchema<T>['tables'],
+    tables: tableDefs as TablesToSchema<T>['tables'],
   };
 }
 
-function tableToSchema<T extends UntypedTableSchema>(
-  ctx: ModuleContext,
-  schema: T
-): TableToSchema<T> {
+export function tableToSchema<
+  AccName extends string,
+  const T extends UntypedTableSchema,
+>(
+  accName: AccName,
+  schema: T,
+  tableDef: RawTableDefV10
+): TableToSchema<AccName, T> {
   const getColName = (i: number) =>
     schema.rowType.algebraicType.value.elements[i].name;
-  const tableDef = schema.tableDef(ctx);
 
   type AllowedCol = keyof T['rowType']['row'] & string;
+  // Build fully-resolved runtime index metadata from the host-facing RawTableDef.
+  // This is intentionally separate from `schema.idxs`, which keeps the original
+  // user-declared `IndexOpts` shape for type-level inference.
+  const resolvedIndexes: UntypedIndex<AllowedCol>[] = tableDef.indexes.map(
+    idx => {
+      const accessorName = idx.accessorName;
+      if (typeof accessorName !== 'string' || accessorName.length === 0) {
+        throw new TypeError(
+          `Index '${idx.sourceName ?? '<unknown>'}' on table '${tableDef.sourceName}' is missing accessor name`
+        );
+      }
+
+      const columnIds =
+        idx.algorithm.tag === 'Direct'
+          ? [idx.algorithm.value]
+          : idx.algorithm.value;
+
+      const unique = tableDef.constraints.some(
+        c =>
+          c.data.tag === 'Unique' &&
+          c.data.value.columns.every(col => columnIds.includes(col))
+      );
+
+      const algorithm = (
+        {
+          BTree: 'btree',
+          Hash: 'hash',
+          Direct: 'direct',
+        } as const
+      )[idx.algorithm.tag];
+
+      return {
+        name: accessorName,
+        unique,
+        algorithm,
+        columns: columnIds.map(getColName) as AllowedCol[],
+      };
+    }
+  );
+
   return {
-    name: schema.tableName,
-    accessorName: toCamelCase(schema.tableName as T['tableName']),
+    // For client,`schama.tableName` will always be there as canonical name.
+    // For module, if explicit name is not provided via `name`, accessor name will
+    // be used, it is stored as alias in database, hence works in query builder.
+    sourceName: schema.tableName || accName,
+    accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
+    // Keep declarative indexes in their original shape for type-level consumers.
+    indexes: schema.idxs,
     constraints: tableDef.constraints.map(c => ({
       name: c.sourceName,
       constraint: 'unique',
       columns: c.data.value.columns.map(getColName) as [string],
     })),
-    // TODO: horrible horrible horrible. we smuggle this `Array<UntypedIndex>`
-    // by casting it to an `Array<IndexOpts>` as `TableToSchema` expects.
-    // This is then used in `TableCacheImpl.constructor` and who knows where else.
-    // We should stop lying about our types.
-    indexes: tableDef.indexes.map((idx): UntypedIndex<AllowedCol> => {
-      const columnIds =
-        idx.algorithm.tag === 'Direct'
-          ? [idx.algorithm.value]
-          : idx.algorithm.value;
-      return {
-        name: idx.accessorName!,
-        unique: tableDef.constraints.some(c =>
-          c.data.value.columns.every(col => columnIds.includes(col))
-        ),
-        algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
-        columns: columnIds.map(getColName),
-      };
-    }) as T['idxs'],
+    // Expose resolved runtime indexes separately so runtime users don't have to
+    // reinterpret `indexes` with unsafe casts.
+    resolvedIndexes,
+    tableDef,
+    ...(tableDef.isEvent ? { isEvent: true } : {}),
   };
 }
 
@@ -117,12 +174,10 @@ type CompoundTypeCache = Map<
 >;
 
 export type ModuleDef = {
-  [S in Infer<typeof RawModuleDefV10Section> as Uncapitalize<
-    S['tag']
-  >]: S['value'];
+  [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
 };
 
-type Section = Infer<typeof RawModuleDefV10Section>;
+type Section = RawModuleDefV10Section;
 
 export class ModuleContext {
   #compoundTypes: CompoundTypeCache = new Map();
@@ -140,13 +195,17 @@ export class ModuleContext {
     procedures: [],
     views: [],
     lifeCycleReducers: [],
+    caseConversionPolicy: { tag: 'SnakeCase' },
+    explicitNames: {
+      entries: [],
+    },
   };
 
   get moduleDef(): ModuleDef {
     return this.#moduleDef;
   }
 
-  rawModuleDefV10(): Infer<typeof RawModuleDefV10> {
+  rawModuleDefV10(): RawModuleDefV10 {
     const sections: Section[] = [];
 
     const push = <T extends Section>(s: T | undefined) => {
@@ -174,7 +233,27 @@ export class ModuleContext {
         value: module.rowLevelSecurity,
       }
     );
+    push(
+      module.explicitNames && {
+        tag: 'ExplicitNames',
+        value: module.explicitNames,
+      }
+    );
+    push(
+      module.caseConversionPolicy && {
+        tag: 'CaseConversionPolicy',
+        value: module.caseConversionPolicy,
+      }
+    );
     return { sections };
+  }
+
+  /**
+   * Set the case conversion policy for this module.
+   * Called by the settings mechanism.
+   */
+  setCaseConversionPolicy(policy: CaseConversionPolicy) {
+    this.#moduleDef.caseConversionPolicy = policy;
   }
 
   get typespace() {
@@ -314,7 +393,7 @@ function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
   );
 }
 
-export function splitName(name: string): Infer<typeof RawScopedTypeNameV10> {
+export function splitName(name: string): RawScopedTypeNameV10 {
   const scope = name.split('.');
   return { sourceName: scope.pop()!, scope };
 }

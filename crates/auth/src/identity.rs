@@ -115,12 +115,12 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
 
         let computed_identity = Identity::from_claims(&self.issuer, &self.subject);
         // If an identity is provided, it must match the computed identity.
-        if let Some(token_identity) = self.identity {
-            if token_identity != computed_identity {
-                return Err(anyhow::anyhow!(
+        if let Some(token_identity) = self.identity
+            && token_identity != computed_identity
+        {
+            return Err(anyhow::anyhow!(
                     "Identity mismatch: token identity {token_identity:?} does not match computed identity {computed_identity:?}",
                 ));
-            }
         }
 
         Ok(SpacetimeIdentityClaims {

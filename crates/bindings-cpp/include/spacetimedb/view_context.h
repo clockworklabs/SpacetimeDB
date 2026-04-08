@@ -25,7 +25,7 @@ namespace SpacetimeDB {
  * SPACETIMEDB_VIEW(std::vector<Item>, get_my_items, Public, ViewContext ctx) {
  *     std::vector<Item> my_items;
  *     // Filter by caller's identity using indexed field
- *     for (const auto& item : ctx.db[item_owner].filter(ctx.sender)) {
+ *     for (const auto& item : ctx.db[item_owner].filter(ctx.sender())) {
  *         my_items.push_back(item);
  *     }
  *     return Ok(my_items);
@@ -33,9 +33,11 @@ namespace SpacetimeDB {
  * @endcode
  */
 struct ViewContext {
+private:
     // Caller's identity - who invoked this view
-    Identity sender;
-    
+    Identity sender_;
+
+public:
     // Read-only database access - no mutations allowed
     ReadOnlyDatabaseContext db;
     
@@ -43,7 +45,9 @@ struct ViewContext {
     ViewContext() = default;
     
     explicit ViewContext(Identity s)
-        : sender(s) {}
+        : sender_(s) {}
+
+    Identity sender() const { return sender_; }
 };
 
 /**

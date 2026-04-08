@@ -24,11 +24,11 @@ UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithUriBase(const FString& I
 }
 
 
-UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithModuleNameBase(const FString& InName)
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithDatabaseNameBase(const FString& InName)
 {
 	if (InName.IsEmpty())
 	{
-		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("WithModuleNameBase called with empty module name, not allowd"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("WithDatabaseNameBase called with empty module name, not allowd"));
 	}
 	ModuleName = InName;
 	return this;

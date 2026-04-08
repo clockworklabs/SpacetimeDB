@@ -5,6 +5,7 @@ slug: /tables/access-permissions
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 SpacetimeDB controls data access through table visibility and context-based permissions. Tables can be public or private, and different execution contexts (reducers, views, clients) have different levels of access.
@@ -44,7 +45,7 @@ const player = table(
 
 ```csharp
 // Private table (default) - only accessible from server-side code
-[SpacetimeDB.Table(Name = "InternalConfig")]
+[SpacetimeDB.Table(Accessor = "InternalConfig")]
 public partial struct InternalConfig
 {
     [SpacetimeDB.PrimaryKey]
@@ -53,7 +54,7 @@ public partial struct InternalConfig
 }
 
 // Public table - clients can subscribe and query
-[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -69,7 +70,7 @@ public partial struct Player
 
 ```rust
 // Private table (default) - only accessible from server-side code
-#[spacetimedb::table(name = internal_config)]
+#[spacetimedb::table(accessor = internal_config)]
 pub struct InternalConfig {
     #[primary_key]
     key: String,
@@ -77,7 +78,7 @@ pub struct InternalConfig {
 }
 
 // Public table - clients can subscribe and query
-#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -89,6 +90,8 @@ pub struct Player {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 // Private table (default) - only accessible from server-side code
@@ -133,7 +136,7 @@ Reducers receive a `ReducerContext` which provides full read-write access to all
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('example', {}, (ctx) => {
+export const example = spacetimedb.reducer({}, (ctx) => {
   // Insert
   ctx.db.user.insert({ id: 0, name: 'Alice', email: 'alice@example.com' });
 
@@ -188,6 +191,8 @@ public static void Example(ReducerContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::reducer]
 fn example(ctx: &ReducerContext) -> Result<(), String> {
     // Insert
@@ -256,7 +261,7 @@ Procedures receive a `ProcedureContext` and can access tables through transactio
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.string() }, t.unit(), (ctx, { userId, newName }) => {
+export const updateUserProcedure = spacetimedb.procedure({ userId: t.u64(), newName: t.string() }, t.unit(), (ctx, { userId, newName }) => {
   // Must explicitly open a transaction
   ctx.withTx(ctx => {
     // Full read-write access within the transaction
@@ -339,17 +344,17 @@ SPACETIMEDB_PROCEDURE(Unit, update_user_procedure, ProcedureContext ctx, uint64_
 </TabItem>
 </Tabs>
 
-See the [Procedures documentation](/functions/procedures) for more details on using procedures, including making HTTP requests to external services.
+See the [Procedures documentation](../00200-functions/00400-procedures.md) for more details on using procedures, including making HTTP requests to external services.
 
 ## Views - Read-Only Access
 
-[Views](/functions/views) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query and iterate tables, but cannot insert, update, or delete rows.
+[Views](../00200-functions/00500-views.md) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query and iterate tables, but cannot insert, update, or delete rows.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.view(
+export const findUsersByName = spacetimedb.view(
   { name: 'findUsersByName', public: true },
   t.array(user.rowType),
   (ctx) => {
@@ -365,7 +370,7 @@ spacetimedb.view(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.View(Name = "FindUsersByName", Public = true)]
+[SpacetimeDB.View(Accessor = "FindUsersByName", Public = true)]
 public static List<User> FindUsersByName(ViewContext ctx)
 {
     // Can read and filter
@@ -380,7 +385,7 @@ public static List<User> FindUsersByName(ViewContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::view(name = find_users_by_name, public)]
+#[spacetimedb::view(accessor = find_users_by_name, public)]
 fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
     // Can read and filter
     ctx.db.user().name().filter("Alice").collect()
@@ -404,14 +409,14 @@ SPACETIMEDB_VIEW(std::vector<User>, find_users_by_name, Public, ViewContext ctx)
 </TabItem>
 </Tabs>
 
-See the [Views documentation](/functions/views) for more details on defining and querying views.
+See the [Views documentation](../00200-functions/00500-views.md) for more details on defining and querying views.
 
 ## Using Views for Fine-Grained Access Control
 
 While table visibility controls whether clients can access a table at all, views provide fine-grained control over which rows and columns clients can see. Views can read from private tables and expose only the data appropriate for each client.
 
 :::note
-Views can only access table data through indexed lookups, not by scanning all rows. This restriction ensures views remain performant. See the [Views documentation](/functions/views) for details.
+Views can only access table data through indexed lookups, not by scanning all rows. This restriction ensures views remain performant. See the [Views documentation](../00200-functions/00500-views.md) for details.
 :::
 
 ### Filtering Rows by Caller
@@ -436,10 +441,11 @@ const message = table(
   }
 );
 
-const spacetimedb = schema(message);
+const spacetimedb = schema({ message });
+export default spacetimedb;
 
 // Public view that only returns messages the caller can see
-spacetimedb.view(
+export const my_messages = spacetimedb.view(
   { name: 'my_messages', public: true },
   t.array(message.rowType),
   (ctx) => {
@@ -460,7 +466,7 @@ using SpacetimeDB;
 public partial class Module 
 {
     // Private table containing all messages
-    [SpacetimeDB.Table(Name = "Message")]  // Private by default
+    [SpacetimeDB.Table(Accessor = "Message")]  // Private by default
     public partial struct Message
     {
         [SpacetimeDB.PrimaryKey]
@@ -475,7 +481,7 @@ public partial class Module
     }
 
     // Public view that only returns messages the caller can see
-    [SpacetimeDB.View(Name = "MyMessages", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyMessages", Public = true)]
     public static List<Message> MyMessages(ViewContext ctx)
     {
         // Look up messages by index where caller is sender or recipient
@@ -495,7 +501,7 @@ public partial class Module
 use spacetimedb::{Identity, Timestamp, ViewContext};
 
 // Private table containing all messages
-#[spacetimedb::table(name = message)]  // Private by default
+#[spacetimedb::table(accessor = message)]  // Private by default
 pub struct Message {
     #[primary_key]
     #[auto_inc]
@@ -509,7 +515,7 @@ pub struct Message {
 }
 
 // Public view that only returns messages the caller can see
-#[spacetimedb::view(name = my_messages, public)]
+#[spacetimedb::view(accessor = my_messages, public)]
 fn my_messages(ctx: &ViewContext) -> Vec<Message> {
     // Look up messages by index where caller is sender or recipient
     let sent: Vec<_> = ctx.db.message().sender().filter(&ctx.sender()).collect();
@@ -537,8 +543,8 @@ FIELD_Index(message, recipient)
 // Public view that only returns messages the caller can see
 SPACETIMEDB_VIEW(std::vector<Message>, my_messages, Public, ViewContext ctx) {
     // Look up messages by index where caller is sender or recipient
-    auto sent = ctx.db[message_sender].filter(ctx.sender).collect();
-    auto received = ctx.db[message_recipient].filter(ctx.sender).collect();
+    auto sent = ctx.db[message_sender].filter(ctx.sender()).collect();
+    auto received = ctx.db[message_recipient].filter(ctx.sender()).collect();
     
     // Combine both vectors
     sent.insert(sent.end(), received.begin(), received.end());
@@ -575,7 +581,8 @@ const userAccount = table(
   }
 );
 
-const spacetimedb = schema(userAccount);
+const spacetimedb = schema({ userAccount });
+export default spacetimedb;
 
 // Public type without sensitive columns
 const publicUserProfile = t.row('PublicUserProfile', {
@@ -585,7 +592,7 @@ const publicUserProfile = t.row('PublicUserProfile', {
 });
 
 // Public view that returns the caller's profile without sensitive data
-spacetimedb.view(
+export const my_profile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(publicUserProfile),
   (ctx) => {
@@ -611,7 +618,7 @@ using SpacetimeDB;
 public partial class Module
 {
     // Private table with sensitive data
-    [SpacetimeDB.Table(Name = "UserAccount")]  // Private by default
+    [SpacetimeDB.Table(Accessor = "UserAccount")]  // Private by default
     public partial struct UserAccount
     {
         [SpacetimeDB.PrimaryKey]
@@ -636,7 +643,7 @@ public partial class Module
     }
 
     // Public view that returns the caller's profile without sensitive data
-    [SpacetimeDB.View(Name = "MyProfile", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyProfile", Public = true)]
     public static PublicUserProfile? MyProfile(ViewContext ctx)
     {
         // Look up the caller's account by their identity (unique index)
@@ -662,7 +669,7 @@ public partial class Module
 use spacetimedb::{SpacetimeType, ViewContext, Timestamp, Identity};
 
 // Private table with sensitive data
-#[spacetimedb::table(name = user_account)]  // Private by default
+#[spacetimedb::table(accessor = user_account)]  // Private by default
 pub struct UserAccount {
     #[primary_key]
     #[auto_inc]
@@ -685,7 +692,7 @@ pub struct PublicUserProfile {
 }
 
 // Public view that returns the caller's profile without sensitive data
-#[spacetimedb::view(name = my_profile, public)]
+#[spacetimedb::view(accessor = my_profile, public)]
 fn my_profile(ctx: &ViewContext) -> Option<PublicUserProfile> {
     // Look up the caller's account by their identity (unique index)
     let user = ctx.db.user_account().identity().find(&ctx.sender())?;
@@ -727,7 +734,7 @@ SPACETIMEDB_STRUCT(PublicUserProfile, id, username, created_at)
 // Public view that returns the caller's profile without sensitive data
 SPACETIMEDB_VIEW(std::optional<PublicUserProfile>, my_profile, Public, ViewContext ctx) {
     // Look up the caller's account by their identity (unique index)
-    auto user_opt = ctx.db[user_account_identity].find(ctx.sender);
+    auto user_opt = ctx.db[user_account_identity].find(ctx.sender());
     if (!user_opt.has_value()) {
         return std::nullopt;
     }
@@ -769,7 +776,8 @@ const employee = table(
   }
 );
 
-const spacetimedb = schema(employee);
+const spacetimedb = schema({ employee });
+export default spacetimedb;
 
 // Public type for colleagues (no salary)
 const colleague = t.row('Colleague', {
@@ -779,7 +787,7 @@ const colleague = t.row('Colleague', {
 });
 
 // View that returns colleagues in the caller's department, without salary info
-spacetimedb.view(
+export const my_colleagues = spacetimedb.view(
   { name: 'my_colleagues', public: true },
   t.array(colleague),
   (ctx) => {
@@ -807,7 +815,7 @@ using SpacetimeDB;
 public partial class Module
 {
     // Private table with all employee data
-    [SpacetimeDB.Table(Name = "Employee")]
+    [SpacetimeDB.Table(Accessor = "Employee")]
     public partial struct Employee
     {
         [SpacetimeDB.PrimaryKey]
@@ -830,7 +838,7 @@ public partial class Module
     }
 
     // View that returns colleagues in the caller's department, without salary info
-    [SpacetimeDB.View(Name = "MyColleagues", Public = true)]
+    [SpacetimeDB.View(Accessor = "MyColleagues", Public = true)]
     public static List<Colleague> MyColleagues(ViewContext ctx)
     {
         // Find the caller's employee record by identity (unique index)
@@ -860,7 +868,7 @@ public partial class Module
 use spacetimedb::{SpacetimeType, Identity, ViewContext};
 
 // Private table with all employee data
-#[spacetimedb::table(name = employee)]
+#[spacetimedb::table(accessor = employee)]
 pub struct Employee {
     #[primary_key]
     id: u64,
@@ -881,7 +889,7 @@ pub struct Colleague {
 }
 
 // View that returns colleagues in the caller's department, without salary info
-#[spacetimedb::view(name = my_colleagues, public)]
+#[spacetimedb::view(accessor = my_colleagues, public)]
 fn my_colleagues(ctx: &ViewContext) -> Vec<Colleague> {
     // Find the caller's employee record by identity (unique index)
     let Some(me) = ctx.db.employee().identity().find(&ctx.sender()) else {
@@ -929,7 +937,7 @@ SPACETIMEDB_STRUCT(Colleague, id, name, department)
 // View that returns colleagues in the caller's department, without salary info
 SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx) {
     // Find the caller's employee record by identity (unique index)
-    auto me_opt = ctx.db[employee_identity].find(ctx.sender);
+    auto me_opt = ctx.db[employee_identity].find(ctx.sender());
     if (!me_opt.has_value()) {
         return std::vector<Colleague>();
     }
@@ -951,4 +959,4 @@ SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx)
 
 ## Client Access - Read-Only Access
 
-Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](/subscriptions) for details on client-side table access.
+Clients connect to databases and can access public tables and views through subscriptions and queries. They cannot access private tables directly. See the [Subscriptions documentation](../00400-subscriptions.md) for details on client-side table access.

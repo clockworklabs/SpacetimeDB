@@ -10,12 +10,12 @@
 //! - Observe the presence of one row with the client's `Identity`.
 use spacetimedb::{Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = connected, public)]
+#[spacetimedb::table(accessor = connected, public)]
 pub struct Connected {
     identity: Identity,
 }
 
-#[spacetimedb::table(name = disconnected, public)]
+#[spacetimedb::table(accessor = disconnected, public)]
 pub struct Disconnected {
     identity: Identity,
 }

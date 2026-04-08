@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void InsertResult(SpacetimeDB.Result<SpacetimeDB.Types.MyTable, string> msg)
         {
-            conn.InternalCallReducer(new Reducer.InsertResult(msg), this.SetCallReducerFlags.InsertResultFlags);
+            conn.InternalCallReducer(new Reducer.InsertResult(msg));
         }
 
         public bool InvokeInsertResult(ReducerEventContext ctx, Reducer.InsertResult args)
@@ -61,13 +61,7 @@ namespace SpacetimeDB.Types
                 this.Msg = default!;
             }
 
-            string IReducerArgs.ReducerName => "InsertResult";
+            string IReducerArgs.ReducerName => "insert_result";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags InsertResultFlags;
-        public void InsertResult(CallReducerFlags flags) => InsertResultFlags = flags;
     }
 }

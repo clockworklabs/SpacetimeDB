@@ -6,7 +6,7 @@ import { Timestamp, ScheduleAt } from 'spacetimedb';
 // ============================================================================
 
 // User table - stores user identity and profile
-export const User = table(
+export const user = table(
   {
     name: 'user',
     public: true,

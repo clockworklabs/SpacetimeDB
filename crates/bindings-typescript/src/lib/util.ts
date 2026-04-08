@@ -1,19 +1,10 @@
+import type { AlgebraicType } from './algebraic_type';
+import type { Typespace } from './autogen/types';
 import BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
+import type { ParamsObj } from './reducers';
+import type { ColumnBuilder, TypeBuilder } from './type_builders';
 import type { CamelCase, SnakeCase } from './type_util';
-
-/**
- * Converts a string to PascalCase (UpperCamelCase).
- * @param str The string to convert
- * @returns The converted string
- */
-export function toPascalCase(s: string): string {
-  const str = s.replace(/([-_][a-z])/gi, $1 => {
-    return $1.toUpperCase().replace('-', '').replace('_', '');
-  });
-
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
 
 export function deepEqual(obj1: any, obj2: any): boolean {
   // If both are strictly equal (covers primitives and reference equality), return true
@@ -106,14 +97,25 @@ export function u256ToHexString(data: bigint): string {
 }
 
 /**
+ * Converts a string to PascalCase (UpperCamelCase).
+ * @param str The string to convert
+ * @returns The converted string
+ */
+export function toPascalCase(s: string): string {
+  const str = toCamelCase(s);
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
  * Type safe conversion from a string like "some_identifier-name" to "someIdentifierName".
  * @param str The string to convert
  * @returns The converted string
  */
-export function toCamelCase<T extends string>(str: T): CamelCase<T> {
-  return str
+export function toCamelCase<T extends string>(s: T): CamelCase<T> {
+  const str = s
     .replace(/[-_]+/g, '_') // collapse runs to a single separator (no backtracking issue)
-    .replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
+    .replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase());
+  return (str.charAt(0).toLowerCase() + str.slice(1)) as CamelCase<T>;
 }
 
 /** Type safe conversion from a string like "some_Identifier-name" to "some_identifier_name".
@@ -127,15 +129,7 @@ export function toSnakeCase<T extends string>(str: T): SnakeCase<T> {
     .toLowerCase() as SnakeCase<T>;
 }
 
-import type { AlgebraicType } from './algebraic_type';
-import type Typespace from './autogen/typespace_type';
-import type { ColumnBuilder, Infer, TypeBuilder } from './type_builders';
-import type { ParamsObj } from './reducers';
-
-export function bsatnBaseSize(
-  typespace: Infer<typeof Typespace>,
-  ty: AlgebraicType
-): number {
+export function bsatnBaseSize(typespace: Typespace, ty: AlgebraicType): number {
   const assumedArrayLength = 4;
   while (ty.tag === 'Ref') ty = typespace.types[ty.value];
   if (ty.tag === 'Product') {

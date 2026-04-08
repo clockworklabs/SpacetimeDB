@@ -116,14 +116,14 @@ spacetime start
 ### 2. Publish the module
 
 ```bash
-spacetime publish chat-app --clear-database -y --project-path backend/spacetimedb
+spacetime publish chat-app --clear-database -y --module-path backend/spacetimedb
 ```
 
 ### 3. Generate client bindings
 
 ```bash
 mkdir -p client/src/module_bindings
-spacetime generate --lang typescript --out-dir client/src/module_bindings --project-path backend/spacetimedb
+spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
 ```
 
 ### 4. Install client dependencies and run

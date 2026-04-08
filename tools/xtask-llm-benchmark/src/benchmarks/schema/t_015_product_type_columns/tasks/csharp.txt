@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines product types and uses them as columns in a table.
+Write a SpacetimeDB backend module in C# that defines product types and uses them as columns in a table.
 
 TYPES
 - Struct: Address

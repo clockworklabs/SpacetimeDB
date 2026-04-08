@@ -1,4 +1,4 @@
-use crate::{bsatn, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
+use crate::{bsatn, rt::ExplicitNames, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
 use core::borrow::Borrow;
 use core::convert::Infallible;
 use core::fmt;
@@ -17,17 +17,16 @@ pub use spacetimedb_primitives::{ColId, IndexId};
 ///
 /// To get a `TableHandle`
 // TODO: should we rename this `TableHandle`? Documenting this, I think that's much clearer.
-pub trait Table: TableInternal {
+pub trait Table: TableInternal + ExplicitNames {
     /// The type of rows stored in this table.
     type Row: SpacetimeType + Serialize + DeserializeOwned + Sized + 'static;
 
-    /// Returns the number of rows of this table.
+    /// Returns the number of rows in this table.
     ///
-    /// This takes into account modifications by the current transaction,
-    /// even though those modifications have not yet been committed or broadcast to clients.
-    /// This applies generally to insertions, deletions, updates, and iteration as well.
+    /// This reads datastore metadata, so it runs in constant time.
+    /// It also takes into account modifications by the current transaction.
     fn count(&self) -> u64 {
-        sys::datastore_table_row_count(Self::table_id()).expect("datastore_table_row_count() call failed")
+        count::<Self>()
     }
 
     /// Iterate over all rows of the table.
@@ -120,6 +119,12 @@ pub trait Table: TableInternal {
 }
 
 #[doc(hidden)]
+#[inline]
+pub fn count<Tbl: Table>() -> u64 {
+    sys::datastore_table_row_count(Tbl::table_id()).expect("datastore_table_row_count() call failed")
+}
+
+#[doc(hidden)]
 pub trait TableInternal: Sized {
     const TABLE_NAME: &'static str;
     const TABLE_ACCESS: TableAccess = TableAccess::Private;
@@ -128,6 +133,7 @@ pub trait TableInternal: Sized {
     const PRIMARY_KEY: Option<u16> = None;
     const SEQUENCES: &'static [u16];
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
+    const IS_EVENT: bool = false;
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
@@ -138,6 +144,7 @@ pub trait TableInternal: Sized {
 /// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
+    pub source_name: &'a str,
     pub accessor_name: &'a str,
     pub algo: IndexAlgo<'a>,
 }
@@ -274,6 +281,11 @@ pub trait Column {
     fn get_field(row: &<Self::Table as Table>::Row) -> &Self::ColType;
 }
 
+/// A marker trait for columns that are the primary key of their table.
+///
+/// This is used to restrict [`UniqueColumn::update`] to only work on primary key columns.
+pub trait PrimaryKey {}
+
 /// A handle to a unique index on a column.
 /// Available for `#[unique]` and `#[primary_key]` columns.
 ///
@@ -286,7 +298,7 @@ pub trait Column {
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, UniqueColumn, ReducerContext, DbContext};
 ///
-/// #[table(name = user)]
+/// #[table(accessor = user)]
 /// struct User {
 ///     #[primary_key]
 ///     id: u32,
@@ -358,13 +370,21 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`, and
     /// then inserts the `new_row`.
     ///
-    /// Returns the new row as actually inserted, with  computed values substituted for any auto-inc placeholders.
+    /// Returns the new row as actually inserted, with computed values substituted for any auto-inc placeholders.
+    ///
+    /// This method can only be called on primary key columns, not any unique column.
+    /// This prevents confusion regarding what constitutes a row update vs. a delete+insert.
+    /// To perform this operation for a non-primary unique column, call
+    /// `.delete(key)` followed by `.insert(row)`.
     ///
     /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
-    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
+    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row
+    where
+        Col: PrimaryKey,
+    {
         let buf = IterBuf::take();
         update::<Tbl>(Col::index_id(), new_row, buf)
     }
@@ -484,8 +504,8 @@ pub trait IndexIsPointed: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user,
-///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+/// #[table(accessor = user,
+///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
 /// struct User {
 ///     id: u32,
 ///     name: String,
@@ -505,7 +525,7 @@ pub trait IndexIsPointed: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user)]
+/// #[table(accessor = user)]
 /// struct User {
 ///     id: u32,
 ///     username: String,
@@ -539,8 +559,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, PointIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -562,7 +582,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// }
     /// # }
     /// ```
-    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row> + use<P, K, Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
@@ -581,8 +601,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, PointIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, hash(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -650,7 +670,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndexReadOnly<Tbl, IndexTy
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
-    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row> + use<P, K, Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
@@ -724,8 +744,8 @@ pub trait IndexIsRanged: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user,
-///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+/// #[table(accessor = user,
+///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
 /// struct User {
 ///     id: u32,
 ///     name: String,
@@ -745,7 +765,7 @@ pub trait IndexIsRanged: Index {}
 /// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
-/// #[table(name = user)]
+/// #[table(accessor = user)]
 /// struct User {
 ///     id: u32,
 ///     username: String,
@@ -781,8 +801,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, RangedIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -842,7 +862,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
     /// > ```
     /// <!-- TODO: check if that error is up to date! -->
-    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
@@ -863,8 +883,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{table, ReducerContext, RangedIndex};
     ///
-    /// #[table(name = user,
-    ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
+    /// #[table(accessor = user,
+    ///     index(accessor = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
     ///     id: u32,
     ///     name: String,
@@ -983,7 +1003,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx>
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
-    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {

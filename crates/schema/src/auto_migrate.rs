@@ -416,6 +416,9 @@ pub enum AutoMigrateError {
         type2: TableType,
     },
 
+    #[error("Changing the event flag of table {table} requires a manual migration")]
+    ChangeTableEventFlag { table: Identifier },
+
     #[error(
         "Changing the accessor name on index {index} from {old_accessor:?} to {new_accessor:?} requires a manual migration"
     )]
@@ -650,6 +653,14 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         }
         .into())
     };
+    let event_ok: Result<()> = if old.is_event == new.is_event {
+        Ok(())
+    } else {
+        Err(AutoMigrateError::ChangeTableEventFlag {
+            table: old.name.clone(),
+        }
+        .into())
+    };
     if old.table_access != new.table_access {
         plan.steps.push(AutoMigrateStep::ChangeAccess(key));
     }
@@ -725,7 +736,8 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     })
     .collect_all_errors::<ProductMonoid<Any, Any>>();
 
-    let ((), ProductMonoid(Any(row_type_changed), Any(columns_added))) = (type_ok, columns_ok).combine_errors()?;
+    let ((), (), ProductMonoid(Any(row_type_changed), Any(columns_added))) =
+        (type_ok, event_ok, columns_ok).combine_errors()?;
 
     // If we're adding a column, we'll rewrite the whole table.
     // That makes any `ChangeColumns` moot, so we can skip it.
@@ -2329,5 +2341,62 @@ mod tests {
         });
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
+    }
+
+    fn create_v10_module_def(build_module: impl Fn(&mut v10::RawModuleDefV10Builder)) -> ModuleDef {
+        let mut builder = v10::RawModuleDefV10Builder::new();
+        build_module(&mut builder);
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn test_change_event_flag_rejected() {
+        // non-event → event
+        let old = create_v10_module_def(|builder| {
+            builder
+                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+        });
+        let new = create_v10_module_def(|builder| {
+            builder
+                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_event(true)
+                .finish();
+        });
+
+        let result = ponder_auto_migrate(&old, &new);
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
+        );
+
+        // event → non-event (reverse direction)
+        let result = ponder_auto_migrate(&new, &old);
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
+        );
+    }
+
+    #[test]
+    fn test_same_event_flag_accepted() {
+        // Both event → no error
+        let old = create_v10_module_def(|builder| {
+            builder
+                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_event(true)
+                .finish();
+        });
+        let new = create_v10_module_def(|builder| {
+            builder
+                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_event(true)
+                .finish();
+        });
+
+        ponder_auto_migrate(&old, &new).expect("same event flag should succeed");
     }
 }

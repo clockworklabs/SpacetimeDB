@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void SendMessage(string text)
         {
-            conn.InternalCallReducer(new Reducer.SendMessage(text), this.SetCallReducerFlags.SendMessageFlags);
+            conn.InternalCallReducer(new Reducer.SendMessage(text));
         }
 
         public bool InvokeSendMessage(ReducerEventContext ctx, Reducer.SendMessage args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "SendMessage";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SendMessageFlags;
-        public void SendMessage(CallReducerFlags flags) => SendMessageFlags = flags;
     }
 }

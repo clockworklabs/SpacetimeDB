@@ -46,7 +46,7 @@ apps/chat-app/
 Use the timestamped folder name as the module name:
 ```bash
 # Folder: chat-app-20260106-183045
-spacetime publish chat-app-20260106-183045 --project-path backend/spacetimedb
+spacetime publish chat-app-20260106-183045 --module-path backend/spacetimedb
 ```
 
 ---
@@ -205,7 +205,7 @@ After publishing backend, generate bindings:
 ```bash
 spacetime generate --lang typescript \
   --out-dir client/src/module_bindings \
-  --project-path backend/spacetimedb
+  --module-path backend/spacetimedb
 ```
 
 **CRITICAL:** Generate bindings BEFORE writing client code. See `deployment.mdc` for full workflow.

@@ -8,10 +8,11 @@ import { Identity } from 'spacetimedb';
 const HOST =
   process.env.NEXT_PUBLIC_SPACETIMEDB_HOST ?? 'wss://maincloud.spacetimedb.com';
 const DB_NAME = process.env.NEXT_PUBLIC_SPACETIMEDB_DB_NAME ?? 'nextjs-ts';
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
 const onConnect = (_conn: DbConnection, identity: Identity, token: string) => {
   if (typeof window !== 'undefined') {
-    localStorage.setItem('auth_token', token);
+    localStorage.setItem(TOKEN_KEY, token);
   }
   console.log(
     'Connected to SpacetimeDB with identity:',
@@ -32,10 +33,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     () =>
       DbConnection.builder()
         .withUri(HOST)
-        .withModuleName(DB_NAME)
+        .withDatabaseName(DB_NAME)
         .withToken(
           typeof window !== 'undefined'
-            ? localStorage.getItem('auth_token') || undefined
+            ? localStorage.getItem(TOKEN_KEY) || undefined
             : undefined
         )
         .onConnect(onConnect)

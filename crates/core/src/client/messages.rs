@@ -2,16 +2,14 @@ use super::{ClientConfig, DataMessage, Protocol};
 use crate::client::consume_each_list::ConsumeEachBuffer;
 use crate::host::module_host::{EventStatus, ModuleEvent, ProcedureCallError};
 use crate::host::{ArgsTuple, ProcedureCallResult};
-use crate::messages::websocket as ws;
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
-use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
-    SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
-};
+use spacetimedb_client_api_messages::websocket::common::{self as ws_common, RowListLen as _};
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
+use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
@@ -30,8 +28,10 @@ pub trait ToProtocol {
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded;
 }
 
-pub type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
-pub(super) type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
+pub type SwitchedServerMessage =
+    ws_v1::FormatSwitch<ws_v1::ServerMessage<ws_v1::BsatnFormat>, ws_v1::ServerMessage<ws_v1::JsonFormat>>;
+pub(super) type SwitchedDbUpdate =
+    ws_v1::FormatSwitch<ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>, ws_v1::DatabaseUpdate<ws_v1::JsonFormat>>;
 
 /// The initial size of a `serialize` buffer.
 /// Currently 4k to align with the linux page size
@@ -47,7 +47,8 @@ pub struct SerializeBuffer {
 impl SerializeBuffer {
     pub fn new(config: ClientConfig) -> Self {
         let uncompressed_capacity = SERIALIZE_BUFFER_INIT_CAP;
-        let compressed_capacity = if config.compression == Compression::None || config.protocol == Protocol::Text {
+        let compressed_capacity = if config.compression == ws_v1::Compression::None || config.protocol == Protocol::Text
+        {
             0
         } else {
             SERIALIZE_BUFFER_INIT_CAP
@@ -131,7 +132,7 @@ impl InUseSerializeBuffer {
     }
 }
 
-/// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
+/// Serialize `msg` into a [`DataMessage`] containing a [`ws_v1::ServerMessage`].
 ///
 /// If `protocol` is [`Protocol::Binary`],
 /// the message will be conditionally compressed by this method according to `compression`.
@@ -142,7 +143,7 @@ pub fn serialize(
     config: ClientConfig,
 ) -> (InUseSerializeBuffer, DataMessage) {
     match msg.to_protocol(config.protocol) {
-        FormatSwitch::Json(msg) => {
+        ws_v1::FormatSwitch::Json(msg) => {
             let out: BytesMutWriter<'_> = (&mut buffer.uncompressed).writer();
             serde_json::to_writer(out, &SerializeWrapper::new(msg))
                 .expect("should be able to json encode a `ServerMessage`");
@@ -153,9 +154,9 @@ pub fn serialize(
             let msg_json = unsafe { ByteString::from_bytes_unchecked(out) };
             (in_use, msg_json.into())
         }
-        FormatSwitch::Bsatn(msg) => {
+        ws_v1::FormatSwitch::Bsatn(msg) => {
             // First write the tag so that we avoid shifting the entire message at the end.
-            let srv_msg = buffer.write_with_tag(SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
+            let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
                 bsatn::to_writer(w.into_inner(), &msg).unwrap()
             });
 
@@ -165,19 +166,50 @@ pub fn serialize(
 
             // Conditionally compress the message.
             let (in_use, msg_bytes) = match decide_compression(srv_msg.len(), config.compression) {
-                Compression::None => buffer.uncompressed(),
-                Compression::Brotli => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress),
-                Compression::Gzip => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+                ws_v1::Compression::None => buffer.uncompressed(),
+                ws_v1::Compression::Brotli => {
+                    buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
+                }
+                ws_v1::Compression::Gzip => {
+                    buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress)
+                }
             };
             (in_use, msg_bytes.into())
         }
     }
 }
 
+/// Serialize `msg` into a [`DataMessage`] containing a [`ws_v2::ServerMessage`].
+///
+/// This mirrors the v1 framing by prepending the compression tag and applying
+/// conditional compression when configured.
+pub fn serialize_v2(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    mut buffer: SerializeBuffer,
+    msg: ws_v2::ServerMessage,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
+        bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
+    });
+
+    // At this point, we no longer have a use for `msg`,
+    // so try to reclaim its buffers.
+    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
+
+    match decide_compression(srv_msg.len(), compression) {
+        ws_v1::Compression::None => buffer.uncompressed(),
+        ws_v1::Compression::Brotli => {
+            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
+        }
+        ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+    }
+}
+
 #[derive(Debug, From)]
 pub enum SerializableMessage {
-    QueryBinary(OneOffQueryResponseMessage<BsatnFormat>),
-    QueryText(OneOffQueryResponseMessage<JsonFormat>),
+    QueryBinary(OneOffQueryResponseMessage<ws_v1::BsatnFormat>),
+    QueryText(OneOffQueryResponseMessage<ws_v1::JsonFormat>),
     Identity(IdentityTokenMessage),
     Subscribe(SubscriptionUpdateMessage),
     Subscription(SubscriptionMessage),
@@ -230,14 +262,87 @@ impl ToProtocol for SerializableMessage {
     }
 }
 
-pub type IdentityTokenMessage = ws::IdentityToken;
+#[derive(Debug, derive_more::From)]
+pub enum OutboundMessage {
+    V1(SerializableMessage),
+    V2(ws_v2::ServerMessage),
+}
+
+impl OutboundMessage {
+    pub fn num_rows(&self) -> Option<usize> {
+        match self {
+            Self::V1(message) => message.num_rows(),
+            Self::V2(message) => v2_message_num_rows(message),
+        }
+    }
+
+    pub fn workload(&self) -> Option<WorkloadType> {
+        match self {
+            Self::V1(message) => message.workload(),
+            Self::V2(message) => match message {
+                ws_v2::ServerMessage::InitialConnection(_) => None,
+                ws_v2::ServerMessage::SubscribeApplied(_) => Some(WorkloadType::Subscribe),
+                ws_v2::ServerMessage::UnsubscribeApplied(_) => Some(WorkloadType::Unsubscribe),
+                ws_v2::ServerMessage::SubscriptionError(_) => None,
+                ws_v2::ServerMessage::TransactionUpdate(_) => Some(WorkloadType::Update),
+                ws_v2::ServerMessage::OneOffQueryResult(_) => Some(WorkloadType::Sql),
+                ws_v2::ServerMessage::ReducerResult(_) => Some(WorkloadType::Reducer),
+                ws_v2::ServerMessage::ProcedureResult(_) => Some(WorkloadType::Procedure),
+            },
+        }
+    }
+}
+
+fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
+    match message {
+        ws_v2::ServerMessage::InitialConnection(_) => None,
+        ws_v2::ServerMessage::SubscribeApplied(message) => Some(count_query_rows(&message.rows)),
+        ws_v2::ServerMessage::UnsubscribeApplied(message) => {
+            Some(message.rows.as_ref().map(count_query_rows).unwrap_or_default())
+        }
+        ws_v2::ServerMessage::SubscriptionError(_) => None,
+        ws_v2::ServerMessage::TransactionUpdate(message) => Some(count_transaction_update(message)),
+        ws_v2::ServerMessage::OneOffQueryResult(message) => match &message.result {
+            Ok(rows) => Some(count_query_rows(rows)),
+            Err(_) => None,
+        },
+        ws_v2::ServerMessage::ReducerResult(message) => match &message.result {
+            ws_v2::ReducerOutcome::Ok(ok) => Some(count_transaction_update(&ok.transaction_update)),
+            ws_v2::ReducerOutcome::OkEmpty => Some(0),
+            ws_v2::ReducerOutcome::Err(_) | ws_v2::ReducerOutcome::InternalError(_) => None,
+        },
+        ws_v2::ServerMessage::ProcedureResult(_) => None,
+    }
+}
+
+fn count_query_rows(rows: &ws_v2::QueryRows) -> usize {
+    rows.tables.iter().map(|table| table.rows.len()).sum()
+}
+
+fn count_transaction_update(update: &ws_v2::TransactionUpdate) -> usize {
+    update
+        .query_sets
+        .iter()
+        .flat_map(|qs| qs.tables.iter())
+        .map(|table| table.rows.iter().map(count_table_update_rows).sum::<usize>())
+        .sum()
+}
+
+fn count_table_update_rows(rows: &ws_v2::TableUpdateRows) -> usize {
+    match rows {
+        ws_v2::TableUpdateRows::PersistentTable(rows) => rows.inserts.len() + rows.deletes.len(),
+        ws_v2::TableUpdateRows::EventTable(rows) => rows.events.len(),
+    }
+}
+
+pub type IdentityTokenMessage = ws_v1::IdentityToken;
 
 impl ToProtocol for IdentityTokenMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         match protocol {
-            Protocol::Text => FormatSwitch::Json(ws::ServerMessage::IdentityToken(self)),
-            Protocol::Binary => FormatSwitch::Bsatn(ws::ServerMessage::IdentityToken(self)),
+            Protocol::Text => ws_v1::FormatSwitch::Json(ws_v1::ServerMessage::IdentityToken(self)),
+            Protocol::Binary => ws_v1::FormatSwitch::Bsatn(ws_v1::ServerMessage::IdentityToken(self)),
         }
     }
 }
@@ -259,35 +364,40 @@ impl TransactionUpdateMessage {
 impl ToProtocol for TransactionUpdateMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
-        fn convert<F: WebsocketFormat>(
+        fn convert<F: ws_v1::WebsocketFormat>(
             event: Option<Arc<ModuleEvent>>,
             request_id: u32,
-            update: ws::DatabaseUpdate<F>,
+            update: ws_v1::DatabaseUpdate<F>,
             conv_args: impl FnOnce(&ArgsTuple) -> F::Single,
-        ) -> ws::ServerMessage<F> {
+        ) -> ws_v1::ServerMessage<F> {
             let Some(event) = event else {
-                return ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { request_id, update });
+                return ws_v1::ServerMessage::TransactionUpdateLight(ws_v1::TransactionUpdateLight {
+                    request_id,
+                    update,
+                });
             };
 
             let status = match &event.status {
-                EventStatus::Committed(_) => ws::UpdateStatus::Committed(update),
-                EventStatus::Failed(errmsg) => ws::UpdateStatus::Failed(errmsg.clone().into()),
-                EventStatus::OutOfEnergy => ws::UpdateStatus::OutOfEnergy,
+                EventStatus::Committed(_) => ws_v1::UpdateStatus::Committed(update),
+                EventStatus::FailedUser(errmsg) | EventStatus::FailedInternal(errmsg) => {
+                    ws_v1::UpdateStatus::Failed(errmsg.clone().into())
+                }
+                EventStatus::OutOfEnergy => ws_v1::UpdateStatus::OutOfEnergy,
             };
 
             let args = conv_args(&event.function_call.args);
 
-            let tx_update = ws::TransactionUpdate {
+            let tx_update = ws_v1::TransactionUpdate {
                 timestamp: event.timestamp,
                 status,
                 caller_identity: event.caller_identity,
-                reducer_call: ws::ReducerCallInfo {
+                reducer_call: ws_v1::ReducerCallInfo {
                     reducer_name: event
                         .function_call
                         .reducer
-                        .as_ref()
-                        .map(|r| (&**r).into())
-                        .unwrap_or_default(),
+                        .clone()
+                        .map(Into::into)
+                        .unwrap_or_else(|| "".into()),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id,
@@ -297,7 +407,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 caller_connection_id: event.caller_connection_id.unwrap_or(ConnectionId::ZERO),
             };
 
-            ws::ServerMessage::TransactionUpdate(tx_update)
+            ws_v1::ServerMessage::TransactionUpdate(tx_update)
         }
 
         let TransactionUpdateMessage { event, database_update } = self;
@@ -305,11 +415,13 @@ impl ToProtocol for TransactionUpdateMessage {
         protocol.assert_matches_format_switch(&update);
         let request_id = database_update.request_id.unwrap_or(0);
         match update {
-            FormatSwitch::Bsatn(update) => FormatSwitch::Bsatn(convert(event, request_id, update, |args| {
-                Vec::from(args.get_bsatn().clone()).into()
-            })),
-            FormatSwitch::Json(update) => {
-                FormatSwitch::Json(convert(event, request_id, update, |args| args.get_json().clone()))
+            ws_v1::FormatSwitch::Bsatn(update) => {
+                ws_v1::FormatSwitch::Bsatn(convert(event, request_id, update, |args| {
+                    Vec::from(args.get_bsatn().clone()).into()
+                }))
+            }
+            ws_v1::FormatSwitch::Json(update) => {
+                ws_v1::FormatSwitch::Json(convert(event, request_id, update, |args| args.get_json().clone()))
             }
         }
     }
@@ -326,8 +438,8 @@ impl SubscriptionUpdateMessage {
     pub(crate) fn default_for_protocol(protocol: Protocol, request_id: Option<RequestId>) -> Self {
         Self {
             database_update: match protocol {
-                Protocol::Text => FormatSwitch::Json(<_>::default()),
-                Protocol::Binary => FormatSwitch::Bsatn(<_>::default()),
+                Protocol::Text => ws_v1::FormatSwitch::Json(<_>::default()),
+                Protocol::Binary => ws_v1::FormatSwitch::Bsatn(<_>::default()),
             },
             request_id,
             timer: None,
@@ -344,8 +456,8 @@ impl SubscriptionUpdateMessage {
 
     fn num_rows(&self) -> usize {
         match &self.database_update {
-            FormatSwitch::Bsatn(x) => x.num_rows(),
-            FormatSwitch::Json(x) => x.num_rows(),
+            ws_v1::FormatSwitch::Bsatn(x) => x.num_rows(),
+            ws_v1::FormatSwitch::Json(x) => x.num_rows(),
         }
     }
 }
@@ -358,15 +470,15 @@ impl ToProtocol for SubscriptionUpdateMessage {
 
         protocol.assert_matches_format_switch(&self.database_update);
         match self.database_update {
-            FormatSwitch::Bsatn(database_update) => {
-                FormatSwitch::Bsatn(ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
+            ws_v1::FormatSwitch::Bsatn(database_update) => {
+                ws_v1::FormatSwitch::Bsatn(ws_v1::ServerMessage::InitialSubscription(ws_v1::InitialSubscription {
                     database_update,
                     request_id,
                     total_host_execution_duration,
                 }))
             }
-            FormatSwitch::Json(database_update) => {
-                FormatSwitch::Json(ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
+            ws_v1::FormatSwitch::Json(database_update) => {
+                ws_v1::FormatSwitch::Json(ws_v1::ServerMessage::InitialSubscription(ws_v1::InitialSubscription {
                     database_update,
                     request_id,
                     total_host_execution_duration,
@@ -378,14 +490,14 @@ impl ToProtocol for SubscriptionUpdateMessage {
 
 #[derive(Debug, Clone)]
 pub struct SubscriptionData {
-    pub data: FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>,
+    pub data: ws_v1::FormatSwitch<ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>, ws_v1::DatabaseUpdate<ws_v1::JsonFormat>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SubscriptionRows {
     pub table_id: TableId,
     pub table_name: TableName,
-    pub table_rows: FormatSwitch<ws::TableUpdate<BsatnFormat>, ws::TableUpdate<JsonFormat>>,
+    pub table_rows: ws_v1::FormatSwitch<ws_v1::TableUpdate<ws_v1::BsatnFormat>, ws_v1::TableUpdate<ws_v1::JsonFormat>>,
 }
 
 #[derive(Debug, Clone)]
@@ -407,21 +519,21 @@ pub enum SubscriptionResult {
 pub struct SubscriptionMessage {
     pub timer: Option<Instant>,
     pub request_id: Option<RequestId>,
-    pub query_id: Option<ws::QueryId>,
+    pub query_id: Option<ws_v1::QueryId>,
     pub result: SubscriptionResult,
 }
 
 fn num_rows_in(rows: &SubscriptionRows) -> usize {
     match &rows.table_rows {
-        FormatSwitch::Bsatn(x) => x.num_rows(),
-        FormatSwitch::Json(x) => x.num_rows(),
+        ws_v1::FormatSwitch::Bsatn(x) => x.num_rows(),
+        ws_v1::FormatSwitch::Json(x) => x.num_rows(),
     }
 }
 
 fn subscription_data_rows(rows: &SubscriptionData) -> usize {
     match &rows.data {
-        FormatSwitch::Bsatn(x) => x.num_rows(),
-        FormatSwitch::Json(x) => x.num_rows(),
+        ws_v1::FormatSwitch::Bsatn(x) => x.num_rows(),
+        ws_v1::FormatSwitch::Json(x) => x.num_rows(),
     }
 }
 
@@ -441,34 +553,34 @@ impl ToProtocol for SubscriptionMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         let request_id = self.request_id.unwrap_or(0);
-        let query_id = self.query_id.unwrap_or(ws::QueryId::new(0));
+        let query_id = self.query_id.unwrap_or(ws_v1::QueryId::new(0));
         let total_host_execution_duration_micros = self.timer.map_or(0, |t| t.elapsed().as_micros() as u64);
 
         match self.result {
             SubscriptionResult::Subscribe(result) => {
                 protocol.assert_matches_format_switch(&result.table_rows);
                 match result.table_rows {
-                    FormatSwitch::Bsatn(table_rows) => FormatSwitch::Bsatn(
-                        ws::SubscribeApplied {
+                    ws_v1::FormatSwitch::Bsatn(table_rows) => ws_v1::FormatSwitch::Bsatn(
+                        ws_v1::SubscribeApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
-                            rows: ws::SubscribeRows {
+                            rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }
                         .into(),
                     ),
-                    FormatSwitch::Json(table_rows) => FormatSwitch::Json(
-                        ws::SubscribeApplied {
+                    ws_v1::FormatSwitch::Json(table_rows) => ws_v1::FormatSwitch::Json(
+                        ws_v1::SubscribeApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
-                            rows: ws::SubscribeRows {
+                            rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }
@@ -479,27 +591,27 @@ impl ToProtocol for SubscriptionMessage {
             SubscriptionResult::Unsubscribe(result) => {
                 protocol.assert_matches_format_switch(&result.table_rows);
                 match result.table_rows {
-                    FormatSwitch::Bsatn(table_rows) => FormatSwitch::Bsatn(
-                        ws::UnsubscribeApplied {
+                    ws_v1::FormatSwitch::Bsatn(table_rows) => ws_v1::FormatSwitch::Bsatn(
+                        ws_v1::UnsubscribeApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
-                            rows: ws::SubscribeRows {
+                            rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }
                         .into(),
                     ),
-                    FormatSwitch::Json(table_rows) => FormatSwitch::Json(
-                        ws::UnsubscribeApplied {
+                    ws_v1::FormatSwitch::Json(table_rows) => ws_v1::FormatSwitch::Json(
+                        ws_v1::UnsubscribeApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
-                            rows: ws::SubscribeRows {
+                            rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.to_boxed_str(),
+                                table_name: result.table_name.into(),
                                 table_rows,
                             },
                         }
@@ -508,7 +620,7 @@ impl ToProtocol for SubscriptionMessage {
                 }
             }
             SubscriptionResult::Error(error) => {
-                let msg = ws::SubscriptionError {
+                let msg = ws_v1::SubscriptionError {
                     total_host_execution_duration_micros,
                     request_id: self.request_id,           // Pass Option through
                     query_id: self.query_id.map(|x| x.id), // Pass Option through
@@ -516,15 +628,15 @@ impl ToProtocol for SubscriptionMessage {
                     error: error.message,
                 };
                 match protocol {
-                    Protocol::Binary => FormatSwitch::Bsatn(msg.into()),
-                    Protocol::Text => FormatSwitch::Json(msg.into()),
+                    Protocol::Binary => ws_v1::FormatSwitch::Bsatn(msg.into()),
+                    Protocol::Text => ws_v1::FormatSwitch::Json(msg.into()),
                 }
             }
             SubscriptionResult::SubscribeMulti(result) => {
                 protocol.assert_matches_format_switch(&result.data);
                 match result.data {
-                    FormatSwitch::Bsatn(data) => FormatSwitch::Bsatn(
-                        ws::SubscribeMultiApplied {
+                    ws_v1::FormatSwitch::Bsatn(data) => ws_v1::FormatSwitch::Bsatn(
+                        ws_v1::SubscribeMultiApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
@@ -532,8 +644,8 @@ impl ToProtocol for SubscriptionMessage {
                         }
                         .into(),
                     ),
-                    FormatSwitch::Json(data) => FormatSwitch::Json(
-                        ws::SubscribeMultiApplied {
+                    ws_v1::FormatSwitch::Json(data) => ws_v1::FormatSwitch::Json(
+                        ws_v1::SubscribeMultiApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
@@ -546,8 +658,8 @@ impl ToProtocol for SubscriptionMessage {
             SubscriptionResult::UnsubscribeMulti(result) => {
                 protocol.assert_matches_format_switch(&result.data);
                 match result.data {
-                    FormatSwitch::Bsatn(data) => FormatSwitch::Bsatn(
-                        ws::UnsubscribeMultiApplied {
+                    ws_v1::FormatSwitch::Bsatn(data) => ws_v1::FormatSwitch::Bsatn(
+                        ws_v1::UnsubscribeMultiApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
@@ -555,8 +667,8 @@ impl ToProtocol for SubscriptionMessage {
                         }
                         .into(),
                     ),
-                    FormatSwitch::Json(data) => FormatSwitch::Json(
-                        ws::UnsubscribeMultiApplied {
+                    ws_v1::FormatSwitch::Json(data) => ws_v1::FormatSwitch::Json(
+                        ws_v1::UnsubscribeMultiApplied {
                             total_host_execution_duration_micros,
                             request_id,
                             query_id,
@@ -571,36 +683,36 @@ impl ToProtocol for SubscriptionMessage {
 }
 
 #[derive(Debug)]
-pub struct OneOffQueryResponseMessage<F: WebsocketFormat> {
+pub struct OneOffQueryResponseMessage<F: ws_v1::WebsocketFormat> {
     pub message_id: Vec<u8>,
     pub error: Option<String>,
-    pub results: Vec<OneOffTable<F>>,
+    pub results: Vec<ws_v1::OneOffTable<F>>,
     pub total_host_execution_duration: TimeDuration,
 }
 
-impl<F: WebsocketFormat> OneOffQueryResponseMessage<F> {
+impl<F: ws_v1::WebsocketFormat> OneOffQueryResponseMessage<F> {
     fn num_rows(&self) -> usize {
         self.results.iter().map(|table| table.rows.len()).sum()
     }
 }
 
-impl ToProtocol for OneOffQueryResponseMessage<BsatnFormat> {
+impl ToProtocol for OneOffQueryResponseMessage<ws_v1::BsatnFormat> {
     type Encoded = SwitchedServerMessage;
 
     fn to_protocol(self, _: Protocol) -> Self::Encoded {
-        FormatSwitch::Bsatn(convert(self))
+        ws_v1::FormatSwitch::Bsatn(convert(self))
     }
 }
 
-impl ToProtocol for OneOffQueryResponseMessage<JsonFormat> {
+impl ToProtocol for OneOffQueryResponseMessage<ws_v1::JsonFormat> {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, _: Protocol) -> Self::Encoded {
-        FormatSwitch::Json(convert(self))
+        ws_v1::FormatSwitch::Json(convert(self))
     }
 }
 
-fn convert<F: WebsocketFormat>(msg: OneOffQueryResponseMessage<F>) -> ws::ServerMessage<F> {
-    ws::ServerMessage::OneOffQueryResponse(ws::OneOffQueryResponse {
+fn convert<F: ws_v1::WebsocketFormat>(msg: OneOffQueryResponseMessage<F>) -> ws_v1::ServerMessage<F> {
+    ws_v1::ServerMessage::OneOffQueryResponse(ws_v1::OneOffQueryResponse {
         message_id: msg.message_id.into(),
         error: msg.error.map(Into::into),
         tables: msg.results.into_boxed_slice(),
@@ -663,10 +775,10 @@ impl ToProtocol for ProcedureResultMessage {
     type Encoded = SwitchedServerMessage;
 
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
-        fn convert<F: WebsocketFormat>(
+        fn convert<F: ws_v1::WebsocketFormat>(
             msg: ProcedureResultMessage,
             serialize_value: impl Fn(AlgebraicValue) -> F::Single,
-        ) -> ws::ServerMessage<F> {
+        ) -> ws_v1::ServerMessage<F> {
             let ProcedureResultMessage {
                 status,
                 timestamp,
@@ -674,11 +786,11 @@ impl ToProtocol for ProcedureResultMessage {
                 request_id,
             } = msg;
             let status = match status {
-                ProcedureStatus::InternalError(msg) => ws::ProcedureStatus::InternalError(msg),
-                ProcedureStatus::OutOfEnergy => ws::ProcedureStatus::OutOfEnergy,
-                ProcedureStatus::Returned(val) => ws::ProcedureStatus::Returned(serialize_value(val)),
+                ProcedureStatus::InternalError(msg) => ws_v1::ProcedureStatus::InternalError(msg),
+                ProcedureStatus::OutOfEnergy => ws_v1::ProcedureStatus::OutOfEnergy,
+                ProcedureStatus::Returned(val) => ws_v1::ProcedureStatus::Returned(serialize_value(val)),
             };
-            ws::ServerMessage::ProcedureResult(ws::ProcedureResult {
+            ws_v1::ServerMessage::ProcedureResult(ws_v1::ProcedureResult {
                 status,
                 timestamp,
                 total_host_execution_duration,
@@ -689,12 +801,12 @@ impl ToProtocol for ProcedureResultMessage {
         // Note that procedure returns are sent only to the caller, not broadcast to all subscribers,
         // so we don't have to bother with memoizing the serialization the way we do for reducer args.
         match protocol {
-            Protocol::Binary => FormatSwitch::Bsatn(convert(self, |val| {
+            Protocol::Binary => ws_v1::FormatSwitch::Bsatn(convert(self, |val| {
                 bsatn::to_vec(&val)
                     .expect("Procedure return value failed to serialize to BSATN")
                     .into()
             })),
-            Protocol::Text => FormatSwitch::Json(convert(self, |val| {
+            Protocol::Text => ws_v1::FormatSwitch::Json(convert(self, |val| {
                 serde_json::to_string(&SerializeWrapper(val))
                     .expect("Procedure return value failed to serialize to JSON")
                     .into()

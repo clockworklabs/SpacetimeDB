@@ -3,75 +3,286 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from '../../lib/type_builders';
+import {
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
 
-// Import all non-reducer types
-import BsatnRowList from './bsatn_row_list_type';
-import CallProcedure from './call_procedure_type';
-import CallReducer from './call_reducer_type';
-import ClientMessage from './client_message_type';
-import CompressableQueryUpdate from './compressable_query_update_type';
-import DatabaseUpdate from './database_update_type';
-import EnergyQuanta from './energy_quanta_type';
-import IdentityToken from './identity_token_type';
-import InitialSubscription from './initial_subscription_type';
-import OneOffQuery from './one_off_query_type';
-import OneOffQueryResponse from './one_off_query_response_type';
-import OneOffTable from './one_off_table_type';
-import ProcedureResult from './procedure_result_type';
-import ProcedureStatus from './procedure_status_type';
-import QueryId from './query_id_type';
-import QueryUpdate from './query_update_type';
-import ReducerCallInfo from './reducer_call_info_type';
-import RowSizeHint from './row_size_hint_type';
-import ServerMessage from './server_message_type';
-import Subscribe from './subscribe_type';
-import SubscribeApplied from './subscribe_applied_type';
-import SubscribeMulti from './subscribe_multi_type';
-import SubscribeMultiApplied from './subscribe_multi_applied_type';
-import SubscribeRows from './subscribe_rows_type';
-import SubscribeSingle from './subscribe_single_type';
-import SubscriptionError from './subscription_error_type';
-import TableUpdate from './table_update_type';
-import TransactionUpdate from './transaction_update_type';
-import TransactionUpdateLight from './transaction_update_light_type';
-import Unsubscribe from './unsubscribe_type';
-import UnsubscribeApplied from './unsubscribe_applied_type';
-import UnsubscribeMulti from './unsubscribe_multi_type';
-import UnsubscribeMultiApplied from './unsubscribe_multi_applied_type';
-import UpdateStatus from './update_status_type';
-
+export const BsatnRowList = __t.object('BsatnRowList', {
+  get sizeHint() {
+    return RowSizeHint;
+  },
+  rowsData: __t.byteArray(),
+});
 export type BsatnRowList = __Infer<typeof BsatnRowList>;
+
+export const CallProcedure = __t.object('CallProcedure', {
+  requestId: __t.u32(),
+  flags: __t.u8(),
+  procedure: __t.string(),
+  args: __t.byteArray(),
+});
 export type CallProcedure = __Infer<typeof CallProcedure>;
+
+export const CallReducer = __t.object('CallReducer', {
+  requestId: __t.u32(),
+  flags: __t.u8(),
+  reducer: __t.string(),
+  args: __t.byteArray(),
+});
 export type CallReducer = __Infer<typeof CallReducer>;
+
+// The tagged union or sum type for the algebraic type `ClientMessage`.
+export const ClientMessage = __t.enum('ClientMessage', {
+  get Subscribe() {
+    return Subscribe;
+  },
+  get Unsubscribe() {
+    return Unsubscribe;
+  },
+  get OneOffQuery() {
+    return OneOffQuery;
+  },
+  get CallReducer() {
+    return CallReducer;
+  },
+  get CallProcedure() {
+    return CallProcedure;
+  },
+});
 export type ClientMessage = __Infer<typeof ClientMessage>;
-export type CompressableQueryUpdate = __Infer<typeof CompressableQueryUpdate>;
-export type DatabaseUpdate = __Infer<typeof DatabaseUpdate>;
-export type EnergyQuanta = __Infer<typeof EnergyQuanta>;
-export type IdentityToken = __Infer<typeof IdentityToken>;
-export type InitialSubscription = __Infer<typeof InitialSubscription>;
+
+export const EventTableRows = __t.object('EventTableRows', {
+  get events() {
+    return BsatnRowList;
+  },
+});
+export type EventTableRows = __Infer<typeof EventTableRows>;
+
+export const InitialConnection = __t.object('InitialConnection', {
+  identity: __t.identity(),
+  connectionId: __t.connectionId(),
+  token: __t.string(),
+});
+export type InitialConnection = __Infer<typeof InitialConnection>;
+
+export const OneOffQuery = __t.object('OneOffQuery', {
+  requestId: __t.u32(),
+  queryString: __t.string(),
+});
 export type OneOffQuery = __Infer<typeof OneOffQuery>;
-export type OneOffQueryResponse = __Infer<typeof OneOffQueryResponse>;
-export type OneOffTable = __Infer<typeof OneOffTable>;
+
+export const OneOffQueryResult = __t.object('OneOffQueryResult', {
+  requestId: __t.u32(),
+  get result() {
+    return __t.result(QueryRows, __t.string());
+  },
+});
+export type OneOffQueryResult = __Infer<typeof OneOffQueryResult>;
+
+export const PersistentTableRows = __t.object('PersistentTableRows', {
+  get inserts() {
+    return BsatnRowList;
+  },
+  get deletes() {
+    return BsatnRowList;
+  },
+});
+export type PersistentTableRows = __Infer<typeof PersistentTableRows>;
+
+export const ProcedureResult = __t.object('ProcedureResult', {
+  get status() {
+    return ProcedureStatus;
+  },
+  timestamp: __t.timestamp(),
+  totalHostExecutionDuration: __t.timeDuration(),
+  requestId: __t.u32(),
+});
 export type ProcedureResult = __Infer<typeof ProcedureResult>;
+
+// The tagged union or sum type for the algebraic type `ProcedureStatus`.
+export const ProcedureStatus = __t.enum('ProcedureStatus', {
+  Returned: __t.byteArray(),
+  InternalError: __t.string(),
+});
 export type ProcedureStatus = __Infer<typeof ProcedureStatus>;
-export type QueryId = __Infer<typeof QueryId>;
-export type QueryUpdate = __Infer<typeof QueryUpdate>;
-export type ReducerCallInfo = __Infer<typeof ReducerCallInfo>;
+
+export const QueryRows = __t.object('QueryRows', {
+  get tables() {
+    return __t.array(SingleTableRows);
+  },
+});
+export type QueryRows = __Infer<typeof QueryRows>;
+
+export const QuerySetId = __t.object('QuerySetId', {
+  id: __t.u32(),
+});
+export type QuerySetId = __Infer<typeof QuerySetId>;
+
+export const QuerySetUpdate = __t.object('QuerySetUpdate', {
+  get querySetId() {
+    return QuerySetId;
+  },
+  get tables() {
+    return __t.array(TableUpdate);
+  },
+});
+export type QuerySetUpdate = __Infer<typeof QuerySetUpdate>;
+
+export const ReducerOk = __t.object('ReducerOk', {
+  retValue: __t.byteArray(),
+  get transactionUpdate() {
+    return TransactionUpdate;
+  },
+});
+export type ReducerOk = __Infer<typeof ReducerOk>;
+
+// The tagged union or sum type for the algebraic type `ReducerOutcome`.
+export const ReducerOutcome = __t.enum('ReducerOutcome', {
+  get Ok() {
+    return ReducerOk;
+  },
+  OkEmpty: __t.unit(),
+  Err: __t.byteArray(),
+  InternalError: __t.string(),
+});
+export type ReducerOutcome = __Infer<typeof ReducerOutcome>;
+
+export const ReducerResult = __t.object('ReducerResult', {
+  requestId: __t.u32(),
+  timestamp: __t.timestamp(),
+  get result() {
+    return ReducerOutcome;
+  },
+});
+export type ReducerResult = __Infer<typeof ReducerResult>;
+
+// The tagged union or sum type for the algebraic type `RowSizeHint`.
+export const RowSizeHint = __t.enum('RowSizeHint', {
+  FixedSize: __t.u16(),
+  RowOffsets: __t.array(__t.u64()),
+});
 export type RowSizeHint = __Infer<typeof RowSizeHint>;
+
+// The tagged union or sum type for the algebraic type `ServerMessage`.
+export const ServerMessage = __t.enum('ServerMessage', {
+  get InitialConnection() {
+    return InitialConnection;
+  },
+  get SubscribeApplied() {
+    return SubscribeApplied;
+  },
+  get UnsubscribeApplied() {
+    return UnsubscribeApplied;
+  },
+  get SubscriptionError() {
+    return SubscriptionError;
+  },
+  get TransactionUpdate() {
+    return TransactionUpdate;
+  },
+  get OneOffQueryResult() {
+    return OneOffQueryResult;
+  },
+  get ReducerResult() {
+    return ReducerResult;
+  },
+  get ProcedureResult() {
+    return ProcedureResult;
+  },
+});
 export type ServerMessage = __Infer<typeof ServerMessage>;
+
+export const SingleTableRows = __t.object('SingleTableRows', {
+  table: __t.string(),
+  get rows() {
+    return BsatnRowList;
+  },
+});
+export type SingleTableRows = __Infer<typeof SingleTableRows>;
+
+export const Subscribe = __t.object('Subscribe', {
+  requestId: __t.u32(),
+  get querySetId() {
+    return QuerySetId;
+  },
+  queryStrings: __t.array(__t.string()),
+});
 export type Subscribe = __Infer<typeof Subscribe>;
+
+export const SubscribeApplied = __t.object('SubscribeApplied', {
+  requestId: __t.u32(),
+  get querySetId() {
+    return QuerySetId;
+  },
+  get rows() {
+    return QueryRows;
+  },
+});
 export type SubscribeApplied = __Infer<typeof SubscribeApplied>;
-export type SubscribeMulti = __Infer<typeof SubscribeMulti>;
-export type SubscribeMultiApplied = __Infer<typeof SubscribeMultiApplied>;
-export type SubscribeRows = __Infer<typeof SubscribeRows>;
-export type SubscribeSingle = __Infer<typeof SubscribeSingle>;
+
+export const SubscriptionError = __t.object('SubscriptionError', {
+  requestId: __t.option(__t.u32()),
+  get querySetId() {
+    return QuerySetId;
+  },
+  error: __t.string(),
+});
 export type SubscriptionError = __Infer<typeof SubscriptionError>;
+
+export const TableUpdate = __t.object('TableUpdate', {
+  tableName: __t.string(),
+  get rows() {
+    return __t.array(TableUpdateRows);
+  },
+});
 export type TableUpdate = __Infer<typeof TableUpdate>;
+
+// The tagged union or sum type for the algebraic type `TableUpdateRows`.
+export const TableUpdateRows = __t.enum('TableUpdateRows', {
+  get PersistentTable() {
+    return PersistentTableRows;
+  },
+  get EventTable() {
+    return EventTableRows;
+  },
+});
+export type TableUpdateRows = __Infer<typeof TableUpdateRows>;
+
+export const TransactionUpdate = __t.object('TransactionUpdate', {
+  get querySets() {
+    return __t.array(QuerySetUpdate);
+  },
+});
 export type TransactionUpdate = __Infer<typeof TransactionUpdate>;
-export type TransactionUpdateLight = __Infer<typeof TransactionUpdateLight>;
+
+export const Unsubscribe = __t.object('Unsubscribe', {
+  requestId: __t.u32(),
+  get querySetId() {
+    return QuerySetId;
+  },
+  get flags() {
+    return UnsubscribeFlags;
+  },
+});
 export type Unsubscribe = __Infer<typeof Unsubscribe>;
+
+export const UnsubscribeApplied = __t.object('UnsubscribeApplied', {
+  requestId: __t.u32(),
+  get querySetId() {
+    return QuerySetId;
+  },
+  get rows() {
+    return __t.option(QueryRows);
+  },
+});
 export type UnsubscribeApplied = __Infer<typeof UnsubscribeApplied>;
-export type UnsubscribeMulti = __Infer<typeof UnsubscribeMulti>;
-export type UnsubscribeMultiApplied = __Infer<typeof UnsubscribeMultiApplied>;
-export type UpdateStatus = __Infer<typeof UpdateStatus>;
+
+// The tagged union or sum type for the algebraic type `UnsubscribeFlags`.
+export const UnsubscribeFlags = __t.enum('UnsubscribeFlags', {
+  Default: __t.unit(),
+  SendDroppedRows: __t.unit(),
+});
+export type UnsubscribeFlags = __Infer<typeof UnsubscribeFlags>;

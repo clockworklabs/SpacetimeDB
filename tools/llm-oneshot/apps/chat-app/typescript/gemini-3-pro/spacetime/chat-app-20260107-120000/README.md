@@ -64,7 +64,7 @@ spacetime start
 
 ```bash
 cd backend/spacetimedb
-spacetime publish chat-app --clear-database -y --project-path .
+spacetime publish chat-app --clear-database -y --module-path .
 ```
 
 ### 3. Install dependencies

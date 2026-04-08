@@ -1,6 +1,6 @@
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]

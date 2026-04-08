@@ -5,6 +5,7 @@ slug: /functions/reducers/reducer-context
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Every reducer receives a special context parameter as its first argument. This context provides read-write access to the database, information about the caller, and additional utilities like random number generation.
@@ -29,9 +30,10 @@ const user = table(
   }
 );
 
-const spacetimedb = schema(user);
+const spacetimedb = schema({ user });
+export default spacetimedb;
 
-spacetimedb.reducer('create_user', { name: t.string() }, (ctx, { name }) => {
+export const create_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.user.insert({ id: 0n, name });
 });
 ```
@@ -61,13 +63,23 @@ public static partial class Module
 }
 ```
 
+:::note C# table accessors
+Table accessors use PascalCase: `ctx.Db.User`, `ctx.Db.Player`. The codegen derives these from table names.
+:::
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-```rust
-use spacetimedb::{table, reducer, ReducerContext};
+:::warning Required for Reducers
+Every reducer that uses `ctx.db.*.insert()`, `.iter()`, `.get_by_id()`, etc. **must** include `Table` in its imports:
+`use spacetimedb::{..., Table};`
+Without it you get: `no method named 'insert' found`.
+:::
 
-#[table(name = user)]
+```rust
+use spacetimedb::{table, reducer, ReducerContext, Table};
+
+#[table(accessor = user)]
 pub struct User {
     #[primary_key]
     #[auto_inc]
@@ -83,6 +95,8 @@ fn create_user(ctx: &ReducerContext, name: String) {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 
 ```cpp
 #include <spacetimedb.h>
@@ -128,9 +142,10 @@ const player = table(
   }
 );
 
-const spacetimedb = schema(player);
+const spacetimedb = schema({ player });
+export default spacetimedb;
 
-spacetimedb.reducer('update_score', { newScore: t.u32() }, (ctx, { newScore }) => {
+export const update_score = spacetimedb.reducer({ newScore: t.u32() }, (ctx, { newScore }) => {
   // Get the caller's identity
   const caller = ctx.sender;
   
@@ -182,9 +197,9 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{table, reducer, ReducerContext, Identity};
+use spacetimedb::{table, reducer, ReducerContext, Identity, Table};
 
-#[table(name = player)]
+#[table(accessor = player)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
@@ -223,7 +238,7 @@ FIELD_PrimaryKey(player, identity);
 
 SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint32_t new_score) {
     // Get the caller's identity
-    auto caller = ctx.sender;
+    auto caller = ctx.sender();
     
     // Find and update their player record
     if (auto player = ctx.db[player_identity].find(caller)) {
@@ -254,14 +269,14 @@ The timestamp indicates when the reducer was invoked. This value is consistent t
 The context provides access to a random number generator that is deterministic and reproducible. This ensures that reducer execution is consistent across all nodes in a distributed system.
 
 :::warning
-Never use external random number generators (like `Math.random()` in TypeScript or `Random` in C# without using the context). These are non-deterministic and will cause different nodes to produce different results, breaking consensus.
+Never use external random number generators (like `Random` in C# without using the context). These are non-deterministic and will cause different nodes to produce different results, breaking consensus.
 :::
 
 ## Module Identity
 
 The context provides access to the module's own identity, which is useful for distinguishing between user-initiated and system-initiated reducer calls.
 
-This is particularly important for [scheduled reducers](/functions/reducers) that should only be invoked by the system, not by external clients.
+This is particularly important for [scheduled reducers](./00300-reducers.md) that should only be invoked by the system, not by external clients.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -270,7 +285,7 @@ This is particularly important for [scheduled reducers](/functions/reducers) tha
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
 const scheduledTask = table(
-  { name: 'scheduled_task', scheduled: 'send_reminder' },
+  { name: 'scheduled_task', scheduled: (): any => send_reminder },
   {
     taskId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -278,9 +293,10 @@ const scheduledTask = table(
   }
 );
 
-const spacetimedb = schema(scheduledTask);
+const spacetimedb = schema({ scheduledTask });
+export default spacetimedb;
 
-spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg }) => {
+export const send_reminder = spacetimedb.reducer({ arg: scheduledTask.rowType }, (ctx, { arg }) => {
   // Only allow the scheduler (module identity) to call this
   if (ctx.sender != ctx.identity) {
     throw new SenderError('This reducer can only be called by the scheduler');
@@ -298,7 +314,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "ScheduledTask", Scheduled = nameof(SendReminder))]
+    [SpacetimeDB.Table(Accessor = "ScheduledTask", Scheduled = nameof(SendReminder))]
     public partial struct ScheduledTask
     {
         [SpacetimeDB.PrimaryKey]
@@ -328,7 +344,7 @@ public static partial class Module
 ```rust
 use spacetimedb::{table, reducer, ReducerContext, ScheduleAt};
 
-#[table(name = scheduled_task, scheduled(send_reminder))]
+#[table(accessor = scheduled_task, scheduled(send_reminder))]
 pub struct ScheduledTask {
     #[primary_key]
     #[auto_inc]
@@ -369,7 +385,7 @@ SPACETIMEDB_SCHEDULE(scheduled_task, 1, send_reminder);
 
 SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
     // Only allow the scheduler (module identity) to call this
-    if (ctx.sender != ctx.identity()) {
+    if (ctx.sender() != ctx.identity()) {
         return Err("This reducer can only be called by the scheduler");
     }
     
@@ -393,10 +409,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
 | `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
 | `connectionId` | `ConnectionId \| undefined`| Connection ID of the caller, if available       |
 | `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
-
-:::note
-TypeScript uses `Math.random()` for random number generation, which is automatically seeded deterministically by SpacetimeDB.
-:::
+| `random`       | `Random`                   | Random number generator (deterministic, seeded by SpacetimeDB) |
 </TabItem>
 <TabItem value="csharp" label="C#">
 

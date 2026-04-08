@@ -1,7 +1,7 @@
 import { schema, table, t } from 'spacetimedb/server';
 
 // User table - stores user information and online status
-export const User = table(
+export const user = table(
   {
     name: 'user',
     public: true,

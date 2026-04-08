@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
 #include "ModuleBindings/Optionals/SpacetimeDbSdkOptionalUInt32.g.h"
+#include "ModuleBindings/Types/QuerySetIdType.g.h"
 #include "SubscriptionErrorType.g.generated.h"
 
 USTRUCT(BlueprintType)
@@ -12,24 +13,18 @@ struct SPACETIMEDBSDK_API FSubscriptionErrorType
 {
     GENERATED_BODY()
 
-    // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 TotalHostExecutionDurationMicros = 0;
-
     // NOTE: FSpacetimeDbSdkOptionalUInt32 field not exposed to Blueprint due to non-blueprintable elements
     FSpacetimeDbSdkOptionalUInt32 RequestId;
 
-    // NOTE: FSpacetimeDbSdkOptionalUInt32 field not exposed to Blueprint due to non-blueprintable elements
-    FSpacetimeDbSdkOptionalUInt32 QueryId;
-
-    // NOTE: FSpacetimeDbSdkOptionalUInt32 field not exposed to Blueprint due to non-blueprintable elements
-    FSpacetimeDbSdkOptionalUInt32 TableId;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    FQuerySetIdType QuerySetId;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString Error;
 
     FORCEINLINE bool operator==(const FSubscriptionErrorType& Other) const
     {
-        return TotalHostExecutionDurationMicros == Other.TotalHostExecutionDurationMicros && RequestId == Other.RequestId && QueryId == Other.QueryId && TableId == Other.TableId && Error == Other.Error;
+        return RequestId == Other.RequestId && QuerySetId == Other.QuerySetId && Error == Other.Error;
     }
 
     FORCEINLINE bool operator!=(const FSubscriptionErrorType& Other) const
@@ -46,10 +41,8 @@ struct SPACETIMEDBSDK_API FSubscriptionErrorType
  */
 FORCEINLINE uint32 GetTypeHash(const FSubscriptionErrorType& SubscriptionErrorType)
 {
-    uint32 Hash = GetTypeHash(SubscriptionErrorType.TotalHostExecutionDurationMicros);
-    Hash = HashCombine(Hash, GetTypeHash(SubscriptionErrorType.RequestId));
-    Hash = HashCombine(Hash, GetTypeHash(SubscriptionErrorType.QueryId));
-    Hash = HashCombine(Hash, GetTypeHash(SubscriptionErrorType.TableId));
+    uint32 Hash = GetTypeHash(SubscriptionErrorType.RequestId);
+    Hash = HashCombine(Hash, GetTypeHash(SubscriptionErrorType.QuerySetId));
     Hash = HashCombine(Hash, GetTypeHash(SubscriptionErrorType.Error));
     return Hash;
 }
@@ -58,5 +51,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FSubscriptionErrorType);
 
-    UE_SPACETIMEDB_STRUCT(FSubscriptionErrorType, TotalHostExecutionDurationMicros, RequestId, QueryId, TableId, Error);
+    UE_SPACETIMEDB_STRUCT(FSubscriptionErrorType, RequestId, QuerySetId, Error);
 }

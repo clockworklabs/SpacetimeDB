@@ -2,23 +2,23 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "User")]
+    [Table(Accessor = "User")]
     public partial struct User
     {
         [PrimaryKey] public int UserId;
         public string Name;
     }
 
-    [Table(Name = "Group")]
+    [Table(Accessor = "Group")]
     public partial struct Group
     {
         [PrimaryKey] public int GroupId;
         public string Title;
     }
 
-    [Table(Name = "Membership")]
-    [SpacetimeDB.Index.BTree(Name = "by_user",  Columns = new[] { nameof(UserId) })]
-    [SpacetimeDB.Index.BTree(Name = "by_group", Columns = new[] { nameof(GroupId) })]
+    [Table(Accessor = "Membership")]
+    [SpacetimeDB.Index.BTree(Accessor = "by_user",  Columns = new[] { nameof(UserId) })]
+    [SpacetimeDB.Index.BTree(Accessor = "by_group", Columns = new[] { nameof(GroupId) })]
     public partial struct Membership
     {
         [PrimaryKey] public int Id;

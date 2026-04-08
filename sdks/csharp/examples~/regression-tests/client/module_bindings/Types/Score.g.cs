@@ -13,11 +13,11 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class Score
     {
-        [DataMember(Name = "PlayerId")]
+        [DataMember(Name = "player_id")]
         public uint PlayerId;
-        [DataMember(Name = "Level")]
+        [DataMember(Name = "level")]
         public uint Level;
-        [DataMember(Name = "Points")]
+        [DataMember(Name = "points")]
         public long Points;
 
         public Score(

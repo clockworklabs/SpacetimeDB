@@ -58,7 +58,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class TxContextCapabilitiesArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "TxContextCapabilities";
+            string IProcedureArgs.ProcedureName => "tx_context_capabilities";
         }
 
     }

@@ -4,6 +4,7 @@ slug: /how-to/reject-client-connections
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 # Reject Client Connections
 
@@ -67,6 +68,8 @@ Regardless of the client type, from the rust server's perspective, the client wi
 `ERROR: : The client connection was rejected. With our current code logic, all clients will be rejected.`
 </TabItem>
 <TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
 In C++, if we return an error during the `client_connected` reducer, the client will be disconnected.
 
 Here is a simple example where the server module returns an error for all incoming client connections.
