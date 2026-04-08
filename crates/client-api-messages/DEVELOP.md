@@ -19,3 +19,12 @@ spacetime generate -p spacetimedb-cli --lang <SDK lang> \
   --out-dir <sdk WebSocket schema bindings dir> \
   --module-def ws_schema_v2.json
 ```
+
+For the v3 WebSocket transport schema:
+
+```sh
+cargo run --example get_ws_schema_v3 > ws_schema_v3.json
+spacetime generate -p spacetimedb-cli --lang <SDK lang> \
+  --out-dir <sdk WebSocket schema bindings dir> \
+  --module-def ws_schema_v3.json
+```
