@@ -7,7 +7,7 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    get_registered_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
@@ -1653,16 +1653,6 @@ struct V8Instance<'a, 'scope, 'isolate> {
     args: &'a Global<ArrayBuffer>,
 }
 
-macro_rules! with_call_scope {
-    ($scope:expr, |$call_scope:ident, $hooks:ident| $body:block) => {{
-        // Open a fresh HandleScope for this invocation so call-local V8 handles
-        // are released when the reducer/view/procedure returns.
-        v8::scope!(let $call_scope, $scope);
-        let $hooks = get_registered_hooks($call_scope).expect("module hooks should be registered before invoking JS");
-        $body
-    }};
-}
-
 impl WasmInstance for V8Instance<'_, '_, '_> {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
         extract_description(self.scope, self.hooks, self.replica_ctx)
@@ -1681,26 +1671,22 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| {
-                let reducer_args_buf = Local::new(scope, self.args);
-                Ok(call_call_reducer(scope, &hooks, op, reducer_args_buf)?)
-            })
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
+            let reducer_args_buf = Local::new(scope, self.args);
+            Ok(call_call_reducer(scope, self.hooks, op, reducer_args_buf)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| call_call_view(scope, &hooks, op))
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
+            call_call_view(scope, self.hooks, op)
         })
     }
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| {
-                call_call_view_anon(scope, &hooks, op)
-            })
+        common_call(self.scope, self.hooks, budget, op, |scope, op| {
+            call_call_view_anon(scope, self.hooks, op)
         })
     }
 
@@ -1713,10 +1699,8 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
-        let result = with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| {
-                call_call_procedure(scope, &hooks, op)
-            })
+        let result = common_call(self.scope, self.hooks, budget, op, |scope, op| {
+            call_call_procedure(scope, self.hooks, op)
         })
         .map_result(|call_result| {
             call_result.map_err(|e| match e {
@@ -1733,15 +1717,19 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
 fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'scope>,
+    hooks: &HookFunctions<'_>,
     budget: FunctionBudget,
     op: O,
     call: F,
 ) -> ExecutionResult<R, ExecutionError>
 where
     O: InstanceOp,
-    F: FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
+    F: FnOnce(&mut PinTryCatch<'_, '_, '_, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
 {
+    // Open a fresh HandleScope for this invocation so call-local V8 handles
+    // are released when the reducer/view/procedure returns.
+    v8::scope!(let scope, scope);
+
     // TODO(v8): Start the budget timeout and long-running logger.
     let env = env_on_isolate_unwrap(scope);
 
