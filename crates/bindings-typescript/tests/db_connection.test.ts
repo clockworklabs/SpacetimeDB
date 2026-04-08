@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
+  BinaryReader,
   BinaryWriter,
   ConnectionId,
   Identity,
@@ -8,8 +9,13 @@ import {
   Timestamp,
   type Infer,
 } from '../src';
+import { ClientFrame } from '../src/sdk/client_api/v3';
 import { ServerMessage } from '../src/sdk/client_api/types';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
+import {
+  V2_WS_PROTOCOL,
+  V3_WS_PROTOCOL,
+} from '../src/sdk/websocket_protocols';
 import { DbConnection } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
 import {
@@ -192,6 +198,69 @@ describe('DbConnection', () => {
     await onConnectPromise.promise;
 
     expect(called).toBeTruthy();
+  });
+
+  test('batches same-tick reducer calls when v3 is negotiated', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+
+    void client.reducers.createPlayer({
+      name: 'Player One',
+      location: { x: 1, y: 2 },
+    });
+    void client.reducers.createPlayer({
+      name: 'Player Two',
+      location: { x: 3, y: 4 },
+    });
+
+    await Promise.resolve();
+
+    expect(wsAdapter.protocol).toEqual(V3_WS_PROTOCOL);
+    expect(wsAdapter.messageQueue).toHaveLength(1);
+    expect(wsAdapter.outgoingMessages).toHaveLength(2);
+
+    const outboundFrame = ClientFrame.deserialize(
+      new BinaryReader(wsAdapter.messageQueue[0])
+    );
+    expect(outboundFrame.tag).toEqual('Batch');
+    if (outboundFrame.tag === 'Batch') {
+      expect(outboundFrame.value).toHaveLength(2);
+    }
+  });
+
+  test('falls back to v2 and does not batch reducer calls when v3 is unavailable', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    wsAdapter.supportedProtocols = [V2_WS_PROTOCOL];
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+
+    void client.reducers.createPlayer({
+      name: 'Player One',
+      location: { x: 1, y: 2 },
+    });
+    void client.reducers.createPlayer({
+      name: 'Player Two',
+      location: { x: 3, y: 4 },
+    });
+
+    await Promise.resolve();
+
+    expect(wsAdapter.protocol).toEqual(V2_WS_PROTOCOL);
+    expect(wsAdapter.messageQueue).toHaveLength(2);
+    expect(wsAdapter.outgoingMessages).toHaveLength(2);
   });
 
   test('disconnects when SubscriptionError has no requestId', async () => {
@@ -750,6 +819,7 @@ describe('DbConnection', () => {
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .build();
     await client['wsPromise'];
+    wsAdapter.acceptConnection();
     const user1 = { identity: bobIdentity, username: 'bob' };
     const user2 = {
       identity: sallyIdentity,
