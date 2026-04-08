@@ -1,5 +1,5 @@
 #!/bin/bash
-# Exhaust Test — Grade & Test Loop
+# Sequential Upgrade — Grade & Test Loop
 #
 # Tests a deployed app via Chrome MCP, writes bug reports for the fix agent.
 # This runs INTERACTIVELY in Claude Code (not headless) because it needs Chrome MCP.
@@ -45,7 +45,7 @@ else
   exit 1
 fi
 
-echo "=== Exhaust Test: Grade ==="
+echo "=== Sequential Upgrade: Grade ==="
 echo "  App dir: $APP_DIR_NATIVE"
 echo ""
 echo "This launches an INTERACTIVE Claude Code session with Chrome MCP."
@@ -67,7 +67,7 @@ echo "  Backend:  $GRADE_BACKEND (port $VITE_PORT)"
 
 # Interactive mode — no --print, no --dangerously-skip-permissions
 cd "$SCRIPT_DIR"
-$CLAUDE_CMD -p "Grade the exhaust test app at: $APP_DIR_NATIVE
+$CLAUDE_CMD -p "Grade the sequential upgrade app at: $APP_DIR_NATIVE
 
 Backend: $GRADE_BACKEND
 

@@ -1,5 +1,5 @@
 #!/bin/bash -l
-# Exhaust Test Launcher — Phase 1: Generate & Deploy
+# Sequential Upgrade Launcher — Phase 1: Generate & Deploy
 #
 # Runs code generation and deployment in headless Claude Code with OTel tracking.
 # After this completes, run grade.sh to do browser testing and grading interactively.
@@ -235,7 +235,7 @@ fi
 
 # Strip UI contracts from prompt if not using Playwright testing
 if [[ "$TEST_MODE" != "playwright" ]]; then
-  STRIPPED_PROMPT="/tmp/exhaust-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
+  STRIPPED_PROMPT="/tmp/seq-upgrade-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
   # Remove **UI contract:** blocks (from the line through the next blank line or next ###)
   sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
   PROMPT_FILE="$STRIPPED_PROMPT"
@@ -331,7 +331,7 @@ else
   SCRIPT_DIR_NATIVE="$SCRIPT_DIR"
 fi
 
-echo "=== Exhaust Test: ${MODE_LABEL^} ==="
+echo "=== Sequential Upgrade: ${MODE_LABEL^} ==="
 echo "  Variant:   $VARIANT"
 echo "  Rules:     $RULES"
 echo "  Level:     $LEVEL"
@@ -456,7 +456,7 @@ if [[ -n "$FIX_MODE" ]]; then
     exit 1
   fi
 
-  echo "=== Exhaust Test: Fix Iteration ==="
+  echo "=== Sequential Upgrade: Fix Iteration ==="
   echo "  App dir: $APP_DIR_NATIVE"
   echo "  Bug report: $APP_DIR_NATIVE/BUG_REPORT.md"
   echo ""
@@ -471,7 +471,7 @@ if [[ -n "$FIX_MODE" ]]; then
   fi
 
   PROMPT=$(cat <<PROMPT_EOF
-Fix the bugs in the exhaust test app.
+Fix the bugs in the sequential upgrade app.
 
 **App directory:** $APP_DIR_NATIVE
 **Backend:** $FIX_BACKEND
@@ -549,7 +549,7 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
 
   PREV_LEVEL=$((LEVEL - 1))
 
-  echo "=== Exhaust Test: Upgrade to Level $LEVEL ==="
+  echo "=== Sequential Upgrade: Upgrade to Level $LEVEL ==="
   echo "  App dir: $APP_DIR_NATIVE"
   echo "  Backend: $UPGRADE_BACKEND"
   echo "  From level: $PREV_LEVEL → $LEVEL"
@@ -611,7 +611,7 @@ else
   FEATURE_CONTENT=$(cat "$PROMPT_FILE" 2>/dev/null || echo "")
 
   PROMPT=$(cat <<PROMPT_EOF
-Run the exhaust test benchmark — GENERATE AND DEPLOY ONLY.
+Run the sequential upgrade benchmark — GENERATE AND DEPLOY ONLY.
 
 **Configuration:**
 - Level: $LEVEL

@@ -1,4 +1,4 @@
-# Infrastructure for the exhaust test benchmark.
+# Infrastructure for the sequential upgrade benchmark.
 # Run: docker compose -f docker-compose.otel.yaml up -d
 
 services:

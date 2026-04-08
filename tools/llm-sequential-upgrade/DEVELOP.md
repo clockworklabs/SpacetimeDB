@@ -1,4 +1,4 @@
-# Exhaust Test — Developer Guide
+# Sequential Upgrade — Developer Guide
 
 How to set up, run, and interpret the LLM cost-to-done benchmark.
 

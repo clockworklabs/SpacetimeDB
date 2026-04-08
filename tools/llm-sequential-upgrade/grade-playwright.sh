@@ -1,5 +1,5 @@
 #!/bin/bash
-# Exhaust Test — Playwright Grading
+# Sequential Upgrade — Playwright Grading
 #
 # Runs deterministic Playwright tests against a deployed app and generates
 # GRADING_RESULTS.md. This is an alternative to the Chrome MCP grading agent.
@@ -58,7 +58,7 @@ fi
 
 APP_URL="http://localhost:$VITE_PORT"
 
-echo "=== Exhaust Test: Playwright Grade ==="
+echo "=== Sequential Upgrade: Playwright Grade ==="
 echo "  App dir:  $APP_DIR"
 echo "  Backend:  $GRADE_BACKEND (port $VITE_PORT)"
 echo "  URL:      $APP_URL"

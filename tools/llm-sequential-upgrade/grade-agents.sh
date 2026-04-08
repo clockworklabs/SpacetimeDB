@@ -1,5 +1,5 @@
 #!/bin/bash
-# Exhaust Test — Playwright Agents Grading
+# Sequential Upgrade — Playwright Agents Grading
 #
 # Uses Playwright's AI-powered agents to grade a deployed app.
 # The Generator agent discovers UI elements from the live DOM,
@@ -58,7 +58,7 @@ fi
 
 APP_URL="http://localhost:$VITE_PORT"
 
-echo "=== Exhaust Test: Playwright Agents Grade ==="
+echo "=== Sequential Upgrade: Playwright Agents Grade ==="
 echo "  App dir:  $APP_DIR"
 echo "  Backend:  $GRADE_BACKEND (port $VITE_PORT)"
 echo "  URL:      $APP_URL"

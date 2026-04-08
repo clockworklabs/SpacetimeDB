@@ -1,4 +1,4 @@
-# Exhaust Test: LLM Cost-to-Done Benchmark
+# Sequential Upgrade: LLM Cost-to-Done Benchmark
 
 You are running an automated benchmark that measures the **total cost to build a fully working chat app** — comparing SpacetimeDB vs PostgreSQL.
 
@@ -8,7 +8,7 @@ Your job is to **generate, build, deploy, and fix** the app. Grading happens in 
 
 ## Path Convention
 
-All file paths are **relative to the `llm-sequential-upgrade/` directory** unless stated otherwise. `../` means going up to `tools/llm-oneshot/`.
+All file paths are **relative to the `llm-sequential-upgrade/` directory** unless stated otherwise. `../` means going up to `tools/`.
 
 Examples:
 - `backends/spacetime.md` → `llm-sequential-upgrade/backends/spacetime.md`

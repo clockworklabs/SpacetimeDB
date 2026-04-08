@@ -1,5 +1,5 @@
 #!/bin/bash
-# Exhaust Test — Parallel Benchmark Launcher
+# Sequential Upgrade — Parallel Benchmark Launcher
 #
 # Runs multiple test instances in parallel for statistical significance.
 # Each instance gets isolated ports via --run-index.
@@ -48,7 +48,7 @@ NUM_BACKENDS=${#BACKENDS[@]}
 TOTAL_INSTANCES=$((NUM_RUNS * NUM_BACKENDS))
 
 echo "═══════════════════════════════════════════════════"
-echo "  Exhaust Test Benchmark"
+echo "  Sequential Upgrade Benchmark"
 echo "═══════════════════════════════════════════════════"
 echo "  Variant:   $VARIANT"
 echo "  Rules:     $RULES"
