@@ -15,13 +15,14 @@ use crate::{
     NodeDelegate, Unauthorized,
 };
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query, Request, State};
 use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::TryStreamExt;
 use http::StatusCode;
+use http_body_util::BodyExt;
 use log::{info, warn};
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
@@ -39,6 +40,7 @@ use spacetimedb_client_api_messages::name::{
 };
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::http as st_http;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
@@ -216,12 +218,155 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
 }
 
+#[derive(Deserialize)]
+pub struct HttpRouteRootParams {
+    name_or_identity: NameOrIdentity,
+}
+
+#[derive(Deserialize)]
+pub struct HttpRouteParams {
+    name_or_identity: NameOrIdentity,
+    path: String,
+}
+
+pub async fn handle_http_route_root<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Path(HttpRouteRootParams { name_or_identity }): Path<HttpRouteRootParams>,
+    request: Request,
+) -> axum::response::Result<impl IntoResponse> {
+    handle_http_route_impl(worker_ctx, name_or_identity, None, request).await
+}
+
+pub async fn handle_http_route<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Path(HttpRouteParams { name_or_identity, path }): Path<HttpRouteParams>,
+    request: Request,
+) -> axum::response::Result<impl IntoResponse> {
+    handle_http_route_impl(worker_ctx, name_or_identity, Some(path), request).await
+}
+
+/// Error response body for unknown user-defined HTTP route.
+const NO_SUCH_ROUTE: &str = "Database has not registered a handler for this route";
+
+async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
+    worker_ctx: S,
+    name_or_identity: NameOrIdentity,
+    path: Option<String>,
+    request: Request,
+) -> axum::response::Result<impl IntoResponse> {
+    let handler_path = match path.as_deref() {
+        Some("") | None => "/".to_string(),
+        Some(path) => format!("/{path}"),
+    };
+
+    let (parts, body) = request.into_parts();
+    let st_method = http_method_to_st(&parts.method);
+
+    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let module_def = &module.info().module_def;
+
+    let Some((handler_id, _handler_def, _route_def)) = module_def.match_http_route(&st_method, &handler_path) else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
+
+    let body = body.collect().await.map_err(log_and_500)?.to_bytes();
+    let request = st_http::RequestAndBody {
+        request: st_http::Request {
+            method: st_method.clone(),
+            headers: headers_to_st(parts.headers),
+            timeout: None,
+            uri: parts.uri.to_string(),
+            version: http_version_to_st(parts.version),
+        },
+        body,
+    };
+
+    let response = match module.call_http_handler(handler_id, request).await {
+        Ok(response) => response,
+        Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchHandler) => {
+            return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());
+        }
+        // TODO(v8-http-handlers): Remove.
+        Err(spacetimedb::host::module_host::HttpHandlerCallError::UnsupportedHostType) => {
+            return Err((
+                StatusCode::NOT_IMPLEMENTED,
+                "HTTP handlers are not supported for this module",
+            )
+                .into());
+        }
+        Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchModule(_)) => {
+            return Err(NO_SUCH_DATABASE.into());
+        }
+        Err(spacetimedb::host::module_host::HttpHandlerCallError::InternalError(err)) => {
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, err).into());
+        }
+    };
+
+    let response = response_from_st(response)?;
+    Ok(response.into_response())
+}
+
 fn assert_content_type_json(content_type: headers::ContentType) -> axum::response::Result<()> {
     if content_type != headers::ContentType::json() {
         Err(axum::extract::rejection::MissingJsonContentType::default().into())
     } else {
         Ok(())
     }
+}
+
+fn http_method_to_st(method: &http::Method) -> st_http::Method {
+    match *method {
+        http::Method::GET => st_http::Method::Get,
+        http::Method::HEAD => st_http::Method::Head,
+        http::Method::POST => st_http::Method::Post,
+        http::Method::PUT => st_http::Method::Put,
+        http::Method::DELETE => st_http::Method::Delete,
+        http::Method::CONNECT => st_http::Method::Connect,
+        http::Method::OPTIONS => st_http::Method::Options,
+        http::Method::TRACE => st_http::Method::Trace,
+        http::Method::PATCH => st_http::Method::Patch,
+        _ => st_http::Method::Extension(method.to_string()),
+    }
+}
+
+fn http_version_to_st(version: http::Version) -> st_http::Version {
+    match version {
+        http::Version::HTTP_09 => st_http::Version::Http09,
+        http::Version::HTTP_10 => st_http::Version::Http10,
+        http::Version::HTTP_11 => st_http::Version::Http11,
+        http::Version::HTTP_2 => st_http::Version::Http2,
+        http::Version::HTTP_3 => st_http::Version::Http3,
+        _ => unreachable!("unknown HTTP version: {version:?}"),
+    }
+}
+
+fn headers_to_st(headers: http::HeaderMap) -> st_http::Headers {
+    headers
+        .into_iter()
+        .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+        .collect()
+}
+
+fn response_from_st(response: st_http::ResponseAndBody) -> axum::response::Result<http::Response<Body>> {
+    let st_http::ResponseAndBody { response, body } = response;
+    let st_http::Response { headers, version, code } = response;
+
+    let mut response = http::Response::new(Body::from(body));
+    *response.version_mut() = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    *response.status_mut() = http::StatusCode::from_u16(code).map_err(log_and_500)?;
+    for (name, value) in headers.into_iter() {
+        let name = http::HeaderName::from_bytes(name.as_bytes()).map_err(log_and_500)?;
+        let value = http::HeaderValue::from_bytes(&value).map_err(log_and_500)?;
+        response.headers_mut().append(name, value);
+    }
+
+    Ok(response)
 }
 
 fn reducer_outcome_response(
@@ -1235,6 +1380,8 @@ where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     pub fn into_router(self, ctx: S) -> axum::Router<S> {
+        use axum::routing::any;
+
         let db_router = axum::Router::<S>::new()
             .route("/", self.db_put)
             .route("/", self.db_get)
@@ -1252,9 +1399,311 @@ where
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset);
 
+        let authed_router = axum::Router::new()
+            .nest("/:name_or_identity", db_router)
+            .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>));
+
+        // NOTE: HTTP route handlers are intentionally unauthenticated so they can accept
+        // webhooks and other requests from outside the SpacetimeDB auth ecosystem.
+        // This route must bypass `anon_auth_middleware` entirely so invalid/missing
+        // Authorization headers do not trigger early rejection or attach SpacetimeAuth.
+        // Keep these routes merged separately from the authenticated database router.
+        let http_route_router = axum::Router::<S>::new()
+            .route("/:name_or_identity/route", any(handle_http_route_root::<S>))
+            .route("/:name_or_identity/route/*path", any(handle_http_route::<S>));
+
         axum::Router::new()
             .route("/", self.root_post)
-            .nest("/:name_or_identity", db_router)
-            .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
+            .merge(authed_router)
+            .merge(http_route_router)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::JwtAuthProvider;
+    use crate::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
+    use crate::{
+        Action, Authorization, ControlStateReadAccess, ControlStateWriteAccess, MaybeMisdirected, Unauthorized,
+    };
+    use async_trait::async_trait;
+    use axum::body::Body;
+    use http::Request;
+    use spacetimedb::auth::identity::{JwtError, JwtErrorKind, SpacetimeIdentityClaims};
+    use spacetimedb::auth::token_validation::{TokenSigner, TokenValidationError, TokenValidator};
+    use spacetimedb::client::ClientActorIndex;
+    use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+    use spacetimedb::identity::AuthCtx;
+    use spacetimedb::messages::control_db::{Database, Node, Replica};
+    use spacetimedb_client_api_messages::name::{
+        DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
+    };
+    use spacetimedb_paths::server::ModuleLogsDir;
+    use spacetimedb_paths::FromPathUnchecked;
+    use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+    use tower::util::ServiceExt;
+    #[derive(Clone, Default)]
+    struct DummyValidator;
+
+    #[async_trait]
+    impl TokenValidator for DummyValidator {
+        async fn validate_token(&self, _token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+            Err(TokenValidationError::Other(anyhow::anyhow!("unused")))
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyJwtProvider {
+        validator: DummyValidator,
+    }
+
+    impl TokenSigner for DummyJwtProvider {
+        fn sign<T: serde::Serialize>(&self, _claims: &T) -> Result<String, JwtError> {
+            Err(JwtError::from(JwtErrorKind::InvalidSignature))
+        }
+    }
+
+    impl JwtAuthProvider for DummyJwtProvider {
+        type TV = DummyValidator;
+
+        fn validator(&self) -> &Self::TV {
+            &self.validator
+        }
+
+        fn local_issuer(&self) -> &str {
+            "test"
+        }
+
+        fn public_key_bytes(&self) -> &[u8] {
+            b""
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyState {
+        jwt: DummyJwtProvider,
+        client_actor_index: std::sync::Arc<ClientActorIndex>,
+        module_logs_dir: ModuleLogsDir,
+    }
+
+    impl DummyState {
+        fn new() -> Self {
+            Self {
+                jwt: DummyJwtProvider {
+                    validator: DummyValidator,
+                },
+                client_actor_index: std::sync::Arc::new(ClientActorIndex::new()),
+                module_logs_dir: ModuleLogsDir::from_path_unchecked(std::env::temp_dir()),
+            }
+        }
+    }
+
+    impl HasWebSocketOptions for DummyState {
+        fn websocket_options(&self) -> WebSocketOptions {
+            WebSocketOptions::default()
+        }
+    }
+
+    #[async_trait]
+    impl NodeDelegate for DummyState {
+        type GetLeaderHostError = DummyLeaderError;
+
+        fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
+            Vec::new()
+        }
+
+        fn client_actor_index(&self) -> &ClientActorIndex {
+            self.client_actor_index.as_ref()
+        }
+
+        type JwtAuthProviderT = DummyJwtProvider;
+        fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
+            &self.jwt
+        }
+
+        async fn leader(&self, _database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
+            Err(DummyLeaderError)
+        }
+
+        fn module_logs_dir(&self, _replica_id: u64) -> ModuleLogsDir {
+            self.module_logs_dir.clone()
+        }
+    }
+
+    #[derive(Debug)]
+    struct DummyLeaderError;
+
+    impl MaybeMisdirected for DummyLeaderError {
+        fn is_misdirected(&self) -> bool {
+            false
+        }
+    }
+
+    impl std::fmt::Display for DummyLeaderError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("dummy leader error")
+        }
+    }
+
+    impl From<DummyLeaderError> for ErrorResponse {
+        fn from(_: DummyLeaderError) -> Self {
+            (StatusCode::INTERNAL_SERVER_ERROR, "dummy leader error").into()
+        }
+    }
+
+    #[async_trait]
+    impl ControlStateReadAccess for DummyState {
+        async fn get_node_id(&self) -> Option<u64> {
+            None
+        }
+        async fn get_node_by_id(&self, _node_id: u64) -> anyhow::Result<Option<Node>> {
+            Ok(None)
+        }
+        async fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
+            Ok(Vec::new())
+        }
+        async fn get_database_by_id(&self, _id: u64) -> anyhow::Result<Option<Database>> {
+            Ok(None)
+        }
+        async fn get_database_by_identity(&self, _database_identity: &Identity) -> anyhow::Result<Option<Database>> {
+            Ok(None)
+        }
+        async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+            Ok(Vec::new())
+        }
+        async fn get_replica_by_id(&self, _id: u64) -> anyhow::Result<Option<Replica>> {
+            Ok(None)
+        }
+        async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+            Ok(Vec::new())
+        }
+        async fn get_leader_replica_by_database(&self, _database_id: u64) -> Option<Replica> {
+            None
+        }
+        async fn get_energy_balance(&self, _identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+            Ok(None)
+        }
+        async fn lookup_database_identity(&self, _domain: &str) -> anyhow::Result<Option<Identity>> {
+            Ok(None)
+        }
+        async fn reverse_lookup(&self, _database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+            Ok(Vec::new())
+        }
+        async fn lookup_namespace_owner(&self, _name: &str) -> anyhow::Result<Option<Identity>> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl ControlStateWriteAccess for DummyState {
+        async fn publish_database(
+            &self,
+            _publisher: &Identity,
+            _spec: DatabaseDef,
+            _policy: MigrationPolicy,
+        ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn migrate_plan(
+            &self,
+            _spec: DatabaseDef,
+            _style: PrettyPrintStyle,
+        ) -> anyhow::Result<MigratePlanResult> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn delete_database(
+            &self,
+            _caller_identity: &Identity,
+            _database_identity: &Identity,
+        ) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn reset_database(&self, _caller_identity: &Identity, _spec: DatabaseResetDef) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn add_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn withdraw_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn register_tld(&self, _identity: &Identity, _tld: Tld) -> anyhow::Result<RegisterTldResult> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn create_dns_record(
+            &self,
+            _owner_identity: &Identity,
+            _domain: &DomainName,
+            _database_identity: &Identity,
+        ) -> anyhow::Result<InsertDomainResult> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn replace_dns_records(
+            &self,
+            _database_identity: &Identity,
+            _owner_identity: &Identity,
+            _domain_names: &[DomainName],
+        ) -> anyhow::Result<SetDomainsResult> {
+            Err(anyhow::anyhow!("unused"))
+        }
+    }
+
+    impl Authorization for DummyState {
+        fn authorize_action(
+            &self,
+            _subject: Identity,
+            _database: Identity,
+            _action: Action,
+        ) -> impl std::future::Future<Output = Result<(), Unauthorized>> + Send {
+            async { Err(Unauthorized::InternalError(anyhow::anyhow!("unused"))) }
+        }
+
+        fn authorize_sql(
+            &self,
+            _subject: Identity,
+            _database: Identity,
+        ) -> impl std::future::Future<Output = Result<AuthCtx, Unauthorized>> + Send {
+            async { Err(Unauthorized::InternalError(anyhow::anyhow!("unused"))) }
+        }
+    }
+
+    /// Tests that requests to user-defined routes under `/database/:name-or-identity/routes`
+    /// bypass the usual SpacetimeDB auth middleware,
+    /// and accept requests with `Authorization` headers that SpacetimeDB would treat as malformed.
+    ///
+    /// This behavior is necessary to allow HTTP handlers to accept requests from non-SpacetimeDB-ecosystem clients,
+    /// e.g. for the purposes of handling webhooks.
+    #[tokio::test]
+    async fn http_route_bypasses_auth_middleware() {
+        let state = DummyState::new();
+        let app = DatabaseRoutes::<DummyState>::default()
+            .into_router(state.clone())
+            .with_state(state);
+
+        let request = Request::builder()
+            .method(http::Method::POST)
+            .uri("/not-a-database/route/health")
+            .header(http::header::AUTHORIZATION, "Bearer not-a-jwt")
+            .body(Body::from("payload"))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        // We'll get this error message out of the stack:
+        // - `find_module_and_database`
+        // - `find_leader_and_database`
+        // - `name_or_identity.resolve(worker_ctx)` -> `NameOrIdentity::resolve`
+        assert_eq!(body, "`not-a-database` not found");
     }
 }

@@ -16,6 +16,7 @@ spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true
 
 base64.workspace = true
+http-body-util.workspace = true
 tokio = { version = "1.2", features = ["full"] }
 lazy_static = "1.4.0"
 log = "0.4.4"
@@ -60,6 +61,7 @@ thiserror.workspace = true
 jemalloc_pprof.workspace = true
 
 [dev-dependencies]
+ tower = "0.5"
 jsonwebtoken.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
 proptest.workspace = true

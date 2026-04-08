@@ -2,7 +2,9 @@
 
 use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
-use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
+use crate::{
+    http, sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext,
+};
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
     CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
@@ -22,7 +24,7 @@ use std::sync::{Mutex, OnceLock};
 pub use sys::raw::{BytesSink, BytesSource};
 
 #[cfg(feature = "unstable")]
-use crate::{ProcedureContext, ProcedureResult};
+use crate::{HandlerContext, ProcedureContext, ProcedureResult};
 
 pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
@@ -286,6 +288,36 @@ pub trait ProcedureArg {
 }
 #[cfg(feature = "unstable")]
 impl<T: SpacetimeType> ProcedureArg for T {}
+
+#[cfg(feature = "unstable")]
+#[diagnostic::on_unimplemented(
+    message = "the first argument of an HTTP handler must be `&mut HandlerContext`",
+    label = "first argument must be `&mut HandlerContext`"
+)]
+pub trait HttpHandlerContextArg {
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+#[cfg(feature = "unstable")]
+impl HttpHandlerContextArg for &mut HandlerContext {}
+
+#[cfg(feature = "unstable")]
+#[diagnostic::on_unimplemented(message = "the second argument of an HTTP handler must be `spacetimedb::http::Request`")]
+pub trait HttpHandlerRequestArg {
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+#[cfg(feature = "unstable")]
+impl HttpHandlerRequestArg for crate::http::Request {}
+
+#[cfg(feature = "unstable")]
+#[diagnostic::on_unimplemented(message = "HTTP handlers must return `spacetimedb::http::Response`")]
+pub trait HttpHandlerReturn {
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+#[cfg(feature = "unstable")]
+impl HttpHandlerReturn for crate::http::Response {}
 
 #[diagnostic::on_unimplemented(
     message = "The first parameter of a `#[view]` must be `&ViewContext` or `&AnonymousViewContext`"
@@ -832,6 +864,26 @@ where
     })
 }
 
+#[cfg(feature = "unstable")]
+pub fn register_http_handler(name: &'static str, handler: HttpHandlerFn) {
+    register_describer(move |module| {
+        module.inner.add_http_handler(name);
+        module.http_handlers.push(handler);
+    })
+}
+
+#[cfg(feature = "unstable")]
+pub fn register_http_router(build: fn() -> crate::http::Router) {
+    register_describer(move |module| {
+        let router = build();
+        for route in router.into_routes() {
+            module
+                .inner
+                .add_http_route(route.handler.name(), route.method, route.path);
+        }
+    })
+}
+
 /// Registers a describer for the anonymous view `I` with arguments `A` and return type `Vec<T>`.
 pub fn register_anonymous_view<'a, A, I, T>(_: impl AnonymousView<'a, A, T>)
 where
@@ -884,6 +936,9 @@ pub struct ModuleBuilder {
     /// The procedures of the module.
     #[cfg(feature = "unstable")]
     procedures: Vec<ProcedureFn>,
+    /// The HTTP handlers of the module.
+    #[cfg(feature = "unstable")]
+    http_handlers: Vec<HttpHandlerFn>,
     /// The client specific views of the module.
     views: Vec<ViewFn>,
     /// The anonymous views of the module.
@@ -902,6 +957,11 @@ static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 pub type ProcedureFn = fn(&mut ProcedureContext, &[u8]) -> ProcedureResult;
 #[cfg(feature = "unstable")]
 static PROCEDURES: OnceLock<Vec<ProcedureFn>> = OnceLock::new();
+
+#[cfg(feature = "unstable")]
+pub type HttpHandlerFn = fn(&mut HandlerContext, crate::http::Request) -> crate::http::Response;
+#[cfg(feature = "unstable")]
+static HTTP_HANDLERS: OnceLock<Vec<HttpHandlerFn>> = OnceLock::new();
 
 /// A view function takes in `(ViewContext, Args)` and returns a Vec of bytes.
 pub type ViewFn = fn(ViewContext, &[u8]) -> Vec<u8>;
@@ -943,6 +1003,8 @@ extern "C" fn __describe_module__(description: BytesSink) {
     REDUCERS.set(module.reducers).ok().unwrap();
     #[cfg(feature = "unstable")]
     PROCEDURES.set(module.procedures).ok().unwrap();
+    #[cfg(feature = "unstable")]
+    HTTP_HANDLERS.set(module.http_handlers).ok().unwrap();
     VIEWS.set(module.views).ok().unwrap();
     ANONYMOUS_VIEWS.set(module.views_anon).ok().unwrap();
 
@@ -1113,6 +1175,25 @@ extern "C" fn __call_procedure__(
     write_to_sink(result_sink, &res);
 
     // Return 0 for no error. Procedures always either trap or return 0.
+    0
+}
+
+/// Called by the host to execute an HTTP handler.
+#[cfg(feature = "unstable")]
+#[unsafe(no_mangle)]
+extern "C" fn __call_http_handler__(id: usize, timestamp: u64, request: BytesSource, result_sink: BytesSink) -> i16 {
+    let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
+    let mut ctx = HandlerContext::new(timestamp);
+
+    let handlers = HTTP_HANDLERS.get().unwrap();
+    let request = read_bytes_source_as::<spacetimedb_lib::http::RequestAndBody>(request);
+    let request = http::request_from_wire(request);
+
+    let response = handlers[id](&mut ctx, request);
+    let response = http::response_into_wire(response);
+    let bytes = bsatn::to_vec(&response).expect("failed to serialize http response");
+    write_to_sink(result_sink, &bytes);
+
     0
 }
 

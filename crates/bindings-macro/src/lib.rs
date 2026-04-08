@@ -8,6 +8,7 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod http;
 mod procedure;
 
 #[proc_macro_attribute]
@@ -15,6 +16,24 @@ pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
         let args = procedure::ProcedureArgs::parse(args)?;
         procedure::procedure_impl(args, original_function)
+    })
+}
+
+#[proc_macro_attribute]
+pub fn http_handler(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| {
+        let item_ts: TokenStream = item.into();
+        let original_function: ItemFn = syn::parse2(item_ts)?;
+        http::handler_impl(args.into(), &original_function)
+    })
+}
+
+#[proc_macro_attribute]
+pub fn http_router(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| {
+        let item_ts: TokenStream = item.into();
+        let original_function: ItemFn = syn::parse2(item_ts)?;
+        http::router_impl(args.into(), &original_function)
     })
 }
 mod reducer;
