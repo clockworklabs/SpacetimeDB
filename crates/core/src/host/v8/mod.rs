@@ -468,6 +468,20 @@ impl JsInstance {
             .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
     }
 
+    pub async fn call_reducer_delete_outbound_on_success(
+        &self,
+        params: CallReducerParams,
+        msg_id: u64,
+    ) -> ReducerCallResult {
+        self.send_request(|reply_tx| JsWorkerRequest::CallReducerDeleteOutboundOnSuccess {
+            reply_tx,
+            params,
+            msg_id,
+        })
+        .await
+        .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
+    }
+
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.send_request(JsWorkerRequest::ClearAllClients)
             .await
@@ -571,6 +585,12 @@ enum JsWorkerRequest {
     CallReducer {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
+    },
+    /// See [`JsInstance::call_reducer_delete_outbound_on_success`].
+    CallReducerDeleteOutboundOnSuccess {
+        reply_tx: JsReplyTx<ReducerCallResult>,
+        params: CallReducerParams,
+        msg_id: u64,
     },
     /// See [`JsInstance::call_view`].
     CallView {
@@ -888,6 +908,23 @@ impl JsInstanceLane {
         .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
     }
 
+    pub async fn call_reducer_delete_outbound_on_success(
+        &self,
+        params: CallReducerParams,
+        msg_id: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.run_once("call_reducer", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallReducerDeleteOutboundOnSuccess {
+                reply_tx,
+                params,
+                msg_id,
+            })
+            .await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
+    }
+
     /// Clear all instance-lane client state exactly once.
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.run_once("clear_all_clients", |inst: JsInstance| async move {
@@ -1147,6 +1184,17 @@ async fn spawn_instance_worker(
                 }
                 JsWorkerRequest::CallReducer { reply_tx, params } => {
                     let (res, trapped) = call_reducer(None, params);
+                    worker_trapped.store(trapped, Ordering::Relaxed);
+                    send_worker_reply("call_reducer", reply_tx, res, trapped);
+                    should_exit = trapped;
+                }
+                JsWorkerRequest::CallReducerDeleteOutboundOnSuccess { reply_tx, params, msg_id } => {
+                    let (res, trapped) = instance_common.call_reducer_with_tx_and_success_action(
+                        None,
+                        params,
+                        &mut inst,
+                        |tx| tx.delete_outbound_msg(msg_id).map_err(anyhow::Error::from),
+                    );
                     worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_reducer", reply_tx, res, trapped);
                     should_exit = trapped;

@@ -1,4 +1,4 @@
-use super::idc_runtime::IdcSender;
+use super::idc_actor::IdcActorSender;
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
@@ -18,7 +18,7 @@ use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
@@ -41,8 +41,8 @@ use std::vec::IntoIter;
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
-    /// Sender to notify the IDC runtime of new outbox rows.
-    pub idc_sender: IdcSender,
+    /// Sender to notify the IDC actor of new outbox rows.
+    pub idc_sender: IdcActorSender,
     pub tx: TxSlot,
     /// The timestamp the current function began running.
     pub start_time: Timestamp,
@@ -227,7 +227,7 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcSender) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcActorSender) -> Self {
         Self {
             replica_ctx,
             scheduler,
@@ -433,7 +433,7 @@ impl InstanceEnv {
     }
 
     /// Enqueue an outbox row into ST_OUTBOUND_MSG atomically within the current transaction,
-    /// and notify the IDC runtime so it delivers without waiting for the next poll cycle.
+    /// and notify the IDC actor so it delivers without waiting for the next poll cycle.
     ///
     /// Outbox tables follow the naming convention `__outbox_<reducer>` and have:
     ///   - Col 0: auto-inc primary key (u64) — stored as `row_id` in ST_OUTBOUND_MSG.
@@ -468,7 +468,7 @@ impl InstanceEnv {
 
         tx.insert_st_outbound_msg(table_id.0, row_id).map_err(DBError::from)?;
 
-        // Wake the IDC runtime immediately so it doesn't wait for the next poll cycle.
+        // Wake the IDC actor immediately so it doesn't wait for the next poll cycle.
         let _ = self.idc_sender.send(());
 
         Ok(())
@@ -539,9 +539,12 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
-        let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
-        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+        let rows_to_delete = match iter {
+            IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+            IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+        };
 
         Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
     }
@@ -703,19 +706,22 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Open index iterator
-        let (table_id, lower, upper, iter) =
+        let (table_id, iter) =
             self.relational_db()
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
         // Scan the index and serialize rows to BSATN.
-        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+        let (point, (chunks, rows_scanned, bytes_scanned)) = match iter {
+            IndexScanPointOrRange::Point(point, iter) => (Some(point), ChunkedWriter::collect_iter(pool, iter)),
+            IndexScanPointOrRange::Range(iter) => (None, ChunkedWriter::collect_iter(pool, iter)),
+        };
 
         // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.index_seeks += 1;
         tx.metrics.bytes_scanned += bytes_scanned;
         tx.metrics.rows_scanned += rows_scanned;
 
-        tx.record_index_scan_range(&self.func_type, table_id, index_id, lower, upper);
+        tx.record_index_scan_range(&self.func_type, table_id, index_id, point);
 
         Ok(chunks)
     }
@@ -1410,7 +1416,7 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        let (_, idc_sender) = crate::host::idc_runtime::IdcRuntime::open();
+        let (_, idc_sender) = crate::host::idc_actor::IdcActor::open();
         Ok((
             InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
             runtime,

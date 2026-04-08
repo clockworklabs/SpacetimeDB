@@ -1,4 +1,4 @@
-use super::idc_runtime::{IdcRuntime, IdcRuntimeConfig, IdcRuntimeStarter, IdcSender};
+use super::idc_actor::{IdcActor, IdcActorConfig, IdcActorSender, IdcActorStarter};
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
@@ -133,11 +133,12 @@ impl HostRuntimes {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
     pub energy_used: EnergyQuanta,
     pub execution_duration: Duration,
+    pub tx_offset: Option<TransactionOffset>,
 }
 
 impl ReducerCallResult {
@@ -710,7 +711,7 @@ async fn make_module_host(
     runtimes: Arc<HostRuntimes>,
     replica_ctx: Arc<ReplicaContext>,
     scheduler: Scheduler,
-    idc_sender: IdcSender,
+    idc_sender: IdcActorSender,
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
@@ -764,7 +765,7 @@ struct LaunchedModule {
     module_host: ModuleHost,
     scheduler: Scheduler,
     scheduler_starter: SchedulerStarter,
-    idc_starter: IdcRuntimeStarter,
+    idc_starter: IdcActorStarter,
 }
 
 struct ModuleLauncher<F> {
@@ -801,7 +802,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         .await
         .map(Arc::new)?;
         let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
-        let (idc_starter, idc_sender) = IdcRuntime::open();
+        let (idc_starter, idc_sender) = IdcActor::open();
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
             replica_ctx.clone(),
@@ -889,9 +890,9 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
-    /// IDC runtime: delivers outbound inter-database messages from `st_outbound_msg`.
+    /// IDC actor: delivers outbound inter-database messages from `st_outbound_msg`.
     /// Stopped when [`Host`] is dropped.
-    _idc_runtime: IdcRuntime,
+    _idc_actor: IdcActor,
 }
 
 impl Host {
@@ -1112,9 +1113,9 @@ impl Host {
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone());
 
-        let idc_runtime = idc_starter.start(
+        let idc_actor = idc_starter.start(
             replica_ctx.relational_db().clone(),
-            IdcRuntimeConfig {
+            IdcActorConfig {
                 sender_identity: replica_ctx.database_identity,
             },
             module_host.downgrade(),
@@ -1129,7 +1130,7 @@ impl Host {
             disk_metrics_recorder_task,
             tx_metrics_recorder_task,
             view_cleanup_task,
-            _idc_runtime: idc_runtime,
+            _idc_actor: idc_actor,
         })
     }
 
@@ -1202,7 +1203,7 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
-        let (_idc_starter, idc_sender) = IdcRuntime::open();
+        let (_idc_starter, idc_sender) = IdcActor::open();
 
         let (program, module) = make_module_host(
             runtimes,
