@@ -12,7 +12,7 @@ All file paths are **relative to the `llm-sequential-upgrade/` directory** unles
 
 Examples:
 - `backends/spacetime.md` → `llm-sequential-upgrade/backends/spacetime.md`
-- `../apps/chat-app/prompts/composed/01_basic.md` → `tools/llm-oneshot/apps/chat-app/prompts/composed/01_basic.md`
+- `../llm-oneshot/apps/chat-app/prompts/composed/01_basic.md` → `tools/llm-oneshot/apps/chat-app/prompts/composed/01_basic.md`
 
 ---
 
@@ -33,8 +33,8 @@ Depending on the mode passed in the launch prompt:
 ## Anti-Contamination
 
 Do NOT read any files under:
-- `../apps/chat-app/typescript/` (graded reference implementations)
-- `../apps/chat-app/staging/`
+- `../llm-oneshot/apps/chat-app/typescript/` (graded reference implementations)
+- `../llm-oneshot/apps/chat-app/staging/`
 - Any other AI-generated app code in this workspace
 
 Only read files you created, the backend instructions, and the feature prompts.
@@ -44,8 +44,8 @@ Only read files you created, the backend instructions, and the feature prompts.
 ## Generate / Upgrade
 
 1. Read `backends/<backend>.md` for pre-flight checks, phases, and deploy steps
-2. Read the language setup: `../apps/chat-app/prompts/language/typescript-<backend>.md`
-3. Read the feature prompt: `../apps/chat-app/prompts/composed/<NN>_<name>.md`
+2. Read the language setup: `../llm-oneshot/apps/chat-app/prompts/language/typescript-<backend>.md`
+3. Read the feature prompt: `../llm-oneshot/apps/chat-app/prompts/composed/<NN>_<name>.md`
 4. Follow the phases in the backend file (generate backend → bindings → client → verify → deploy)
 5. Output `DEPLOY_COMPLETE` when the dev server is confirmed running
 

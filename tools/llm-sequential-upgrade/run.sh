@@ -223,7 +223,7 @@ else
   exit 1
 fi
 
-COMPOSED_PROMPT="$SCRIPT_DIR/../apps/chat-app/prompts/composed/$(printf '%02d' "$LEVEL")_"*".md"
+COMPOSED_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/composed/$(printf '%02d' "$LEVEL")_"*".md"
 # shellcheck disable=SC2086
 if ls $COMPOSED_PROMPT &>/dev/null; then
   PROMPT_FILE=$(ls $COMPOSED_PROMPT 2>/dev/null | head -1)
@@ -425,7 +425,7 @@ snapshot_inputs() {
   cp "$SCRIPT_DIR/test-plans/"*.md "$INPUTS_DIR/test-plans/" 2>/dev/null || true
 
   # Prompts (only relevant language file, all composed levels)
-  local PROMPTS_SRC="$SCRIPT_DIR/../apps/chat-app/prompts"
+  local PROMPTS_SRC="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts"
   cp "$PROMPTS_SRC/composed/"*.md "$INPUTS_DIR/prompts/composed/" 2>/dev/null || true
   cp "$PROMPTS_SRC/language/typescript-$BACKEND.md" "$INPUTS_DIR/prompts/language/" 2>/dev/null || true
 
@@ -541,10 +541,10 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
   # Resolve prompt file path
   if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     PROMPT_FILE_NATIVE=$(cygpath -w "$PROMPT_FILE")
-    LANG_PROMPT_NATIVE=$(cygpath -w "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md")
+    LANG_PROMPT_NATIVE=$(cygpath -w "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md")
   else
     PROMPT_FILE_NATIVE="$PROMPT_FILE"
-    LANG_PROMPT_NATIVE="$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md"
+    LANG_PROMPT_NATIVE="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md"
   fi
 
   PREV_LEVEL=$((LEVEL - 1))
@@ -557,7 +557,7 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
   echo ""
 
   # Read language and feature files to inline into the prompt
-  LANG_CONTENT=$(cat "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md" 2>/dev/null || echo "")
+  LANG_CONTENT=$(cat "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md" 2>/dev/null || echo "")
   FEATURE_CONTENT=$(cat "$PROMPT_FILE" 2>/dev/null || echo "")
 
   PROMPT=$(cat <<PROMPT_EOF
@@ -600,14 +600,14 @@ else
   # Resolve absolute paths for prompt references
   if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     PROMPT_FILE_NATIVE=$(cygpath -w "$PROMPT_FILE")
-    LANG_PROMPT_NATIVE=$(cygpath -w "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$BACKEND.md")
+    LANG_PROMPT_NATIVE=$(cygpath -w "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/language/typescript-$BACKEND.md")
   else
     PROMPT_FILE_NATIVE="$PROMPT_FILE"
-    LANG_PROMPT_NATIVE="$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$BACKEND.md"
+    LANG_PROMPT_NATIVE="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/language/typescript-$BACKEND.md"
   fi
 
   # Read language and feature files to inline into the prompt
-  LANG_CONTENT=$(cat "$SCRIPT_DIR/../apps/chat-app/prompts/language/typescript-$BACKEND.md" 2>/dev/null || echo "")
+  LANG_CONTENT=$(cat "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/language/typescript-$BACKEND.md" 2>/dev/null || echo "")
   FEATURE_CONTENT=$(cat "$PROMPT_FILE" 2>/dev/null || echo "")
 
   PROMPT=$(cat <<PROMPT_EOF
@@ -763,7 +763,7 @@ fi
 $CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions \
   --add-dir "$APP_DIR" \
   --add-dir "$SCRIPT_DIR" \
-  --add-dir "$SCRIPT_DIR/../apps/chat-app/prompts" \
+  --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts" \
   --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
 EXIT_CODE=$?
 
@@ -842,7 +842,7 @@ if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=
     echo "    Grade the app at $APP_DIR_NATIVE at level $LEVEL"
     echo ""
     NEXT_LEVEL=$((LEVEL + 1))
-    NEXT_PROMPT="$SCRIPT_DIR/../apps/chat-app/prompts/composed/$(printf '%02d' "$NEXT_LEVEL")_"*".md"
+    NEXT_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/composed/$(printf '%02d' "$NEXT_LEVEL")_"*".md"
     if ls $NEXT_PROMPT &>/dev/null 2>&1; then
       echo "  To continue upgrading after grading:"
       echo "    ./run.sh --upgrade $APP_DIR --level $NEXT_LEVEL"

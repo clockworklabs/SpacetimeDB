@@ -192,7 +192,7 @@ else
 
   # Step 2: Upgrade through remaining levels
   for current_level in $(seq 2 "$LEVEL"); do
-    PROMPT_EXISTS=$(ls "$SCRIPT_DIR/../apps/chat-app/prompts/composed/$(printf '%02d' "$current_level")_"*.md 2>/dev/null | head -1)
+    PROMPT_EXISTS=$(ls "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/composed/$(printf '%02d' "$current_level")_"*.md 2>/dev/null | head -1)
     if [[ -z "$PROMPT_EXISTS" ]]; then
       echo "$LOG_PREFIX No prompt for level $current_level — stopping"
       break
