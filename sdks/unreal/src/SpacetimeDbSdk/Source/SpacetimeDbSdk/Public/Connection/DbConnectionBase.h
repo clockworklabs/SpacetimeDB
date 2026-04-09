@@ -132,6 +132,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
 	bool IsActive() const;
 
+	/** Returns the websocket transport currently in use for this connection. */
+	ESpacetimeDBWsProtocol GetActiveWebSocketProtocol() const
+	{
+		return WebSocket ? WebSocket->GetActiveProtocol() : ESpacetimeDBWsProtocol::V2;
+	}
+
 	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
 	void FrameTick();
 
