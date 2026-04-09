@@ -339,7 +339,11 @@ fn build_remote_warehouses(request: &TpccLoadConfigRequest) -> Vec<RemoteWarehou
         }
         let database_ident =
             request.database_identities[usize::try_from(other_database_number).expect("u32 fits usize")];
-        for w_id in warehouse_range(other_database_number, request.warehouses_per_database, request.warehouse_id_offset) {
+        for w_id in warehouse_range(
+            other_database_number,
+            request.warehouses_per_database,
+            request.warehouse_id_offset,
+        ) {
             rows.push(RemoteWarehouse {
                 w_id,
                 remote_database_home: database_ident,
@@ -430,7 +434,11 @@ fn load_item_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoad
     };
     Ok(ChunkAdvance {
         phase: next_phase,
-        next_warehouse_id: warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset),
+        next_warehouse_id: warehouse_start(
+            config.database_number,
+            config.warehouses_per_database,
+            config.warehouse_id_offset,
+        ),
         next_district_id: 1,
         next_item_id: if chunk_end == ITEMS { 1 } else { chunk_end + 1 },
         next_order_id: 1,
@@ -445,8 +453,17 @@ fn load_warehouse_district_chunk(
     job: &TpccLoadJob,
 ) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_warehouses_district_chunk");
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
-    if job.next_warehouse_id < warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset)
+    let end_warehouse = warehouse_end(
+        config.database_number,
+        config.warehouses_per_database,
+        config.warehouse_id_offset,
+    );
+    if job.next_warehouse_id
+        < warehouse_start(
+            config.database_number,
+            config.warehouses_per_database,
+            config.warehouse_id_offset,
+        )
         || job.next_warehouse_id > end_warehouse
     {
         return Err(format!("invalid warehouse cursor {}", job.next_warehouse_id));
@@ -468,7 +485,11 @@ fn load_warehouse_district_chunk(
             TpccLoadPhase::WarehousesDistricts
         },
         next_warehouse_id: if job.next_warehouse_id == end_warehouse {
-            warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset)
+            warehouse_start(
+                config.database_number,
+                config.warehouses_per_database,
+                config.warehouse_id_offset,
+            )
         } else {
             job.next_warehouse_id + 1
         },
@@ -482,8 +503,16 @@ fn load_warehouse_district_chunk(
 
 fn load_stock_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_stock_chunk");
-    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
+    let start_warehouse = warehouse_start(
+        config.database_number,
+        config.warehouses_per_database,
+        config.warehouse_id_offset,
+    );
+    let end_warehouse = warehouse_end(
+        config.database_number,
+        config.warehouses_per_database,
+        config.warehouse_id_offset,
+    );
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
         return Err(format!("invalid stock warehouse cursor {}", job.next_warehouse_id));
     }
@@ -523,8 +552,16 @@ fn load_customer_history_chunk(
     job: &TpccLoadJob,
 ) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_customer_history_chunk");
-    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
+    let start_warehouse = warehouse_start(
+        config.database_number,
+        config.warehouses_per_database,
+        config.warehouse_id_offset,
+    );
+    let end_warehouse = warehouse_end(
+        config.database_number,
+        config.warehouses_per_database,
+        config.warehouse_id_offset,
+    );
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
         return Err(format!("invalid customer warehouse cursor {}", job.next_warehouse_id));
     }
@@ -573,8 +610,16 @@ fn load_customer_history_chunk(
 
 fn load_order_chunk(ctx: &ReducerContext, config: &TpccLoadConfig, job: &TpccLoadJob) -> Result<ChunkAdvance, String> {
     let _timer = LogStopwatch::new("load_order_chunk");
-    let start_warehouse = warehouse_start(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
-    let end_warehouse = warehouse_end(config.database_number, config.warehouses_per_database, config.warehouse_id_offset);
+    let start_warehouse = warehouse_start(
+        config.database_number,
+        config.warehouses_per_database,
+        config.warehouse_id_offset,
+    );
+    let end_warehouse = warehouse_end(
+        config.database_number,
+        config.warehouses_per_database,
+        config.warehouse_id_offset,
+    );
     if job.next_warehouse_id < start_warehouse || job.next_warehouse_id > end_warehouse {
         return Err(format!("invalid order warehouse cursor {}", job.next_warehouse_id));
     }
@@ -866,11 +911,7 @@ fn customer_permutation(config: &TpccLoadConfig, warehouse_id: WarehouseId, dist
     permutation
 }
 
-fn warehouse_range(
-    database_number: u32,
-    warehouses_per_database: u32,
-    offset: u32,
-) -> std::ops::Range<WarehouseId> {
+fn warehouse_range(database_number: u32, warehouses_per_database: u32, offset: u32) -> std::ops::Range<WarehouseId> {
     let start = warehouse_start(database_number, warehouses_per_database, offset);
     let end = start + warehouses_per_database;
     start..end

@@ -474,6 +474,12 @@ metrics_group!(
         #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
         pub snapshot_creation_time_inner: HistogramVec,
 
+        #[name = spacetime_snapshot_db_lock_time_sec]
+        #[help = "The time (in seconds) the database lock was held while creating a snapshot"]
+        #[labels(db: Identity)]
+        #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_db_lock_time: HistogramVec,
+
         #[name = spacetime_snapshot_compression_time_total_sec]
         #[help = "The time (in seconds) it took to do a compression pass on the snapshot repository, including scheduling overhead"]
         #[labels(db: Identity)]

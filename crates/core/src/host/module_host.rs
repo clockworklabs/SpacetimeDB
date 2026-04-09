@@ -1840,7 +1840,9 @@ impl ModuleHost {
         supplied_prepare_id: Option<String>,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
         if tx_id.is_none() {
-            log::error!("prepare_reducer called without tx_id: caller_identity={caller_identity}, reducer_name={reducer_name}");
+            log::error!(
+                "prepare_reducer called without tx_id: caller_identity={caller_identity}, reducer_name={reducer_name}"
+            );
         }
         let tx_id = tx_id.ok_or(ReducerCallError::NoSuchReducer)?;
 
@@ -1876,9 +1878,8 @@ impl ModuleHost {
         // the prefix is namespaced correctly even when called from the HTTP prepare handler.
         let coordinator_identity = coordinator_identity_override.unwrap_or(caller_identity);
         let prepare_id = supplied_prepare_id.unwrap_or_else(|| generate_prepare_id(tx_id, coordinator_identity));
-        let prepare_tx_id = Self::tx_id_from_prepare_id(&prepare_id).ok_or_else(|| {
-            ReducerCallError::InvalidPrepareId(format!("prepare_id '{prepare_id}' is not parseable"))
-        })?;
+        let prepare_tx_id = Self::tx_id_from_prepare_id(&prepare_id)
+            .ok_or_else(|| ReducerCallError::InvalidPrepareId(format!("prepare_id '{prepare_id}' is not parseable")))?;
         if prepare_tx_id != tx_id {
             return Err(ReducerCallError::InvalidPrepareId(format!(
                 "prepare_id '{prepare_id}' encodes tx_id {prepare_tx_id}, expected {tx_id}"
@@ -1897,36 +1898,36 @@ impl ModuleHost {
             },
         );
         //if let Some(tx_id) = tx_id {
-            let session = self.replica_ctx().global_tx_manager.ensure_session(
-                tx_id,
-                super::global_tx::GlobalTxRole::Participant,
-                tx_id.creator_db,
-            );
-            session.set_state(super::global_tx::GlobalTxState::Preparing);
-            self.replica_ctx()
-                .global_tx_manager
-                .set_prepare_mapping(tx_id, prepare_id.clone());
-            let global_tx_lock_guard = match self.acquire_global_tx_slot(tx_id).await {
-                Ok(guard) => guard,
-                Err(outcome) => {
-                    self.prepared_txs.remove(&prepare_id);
-                    self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
-                    self.replica_ctx()
-                        .global_tx_manager
-                        .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
-                    self.replica_ctx().global_tx_manager.release(&tx_id);
-                    self.replica_ctx().global_tx_manager.remove_session(&tx_id);
-                    return Ok((
-                        String::new(),
-                        ReducerCallResult {
-                            outcome,
-                            energy_used: EnergyQuanta::ZERO,
-                            execution_duration: Default::default(),
-                        },
-                        None,
-                    ));
-                }
-            };
+        let session = self.replica_ctx().global_tx_manager.ensure_session(
+            tx_id,
+            super::global_tx::GlobalTxRole::Participant,
+            tx_id.creator_db,
+        );
+        session.set_state(super::global_tx::GlobalTxState::Preparing);
+        self.replica_ctx()
+            .global_tx_manager
+            .set_prepare_mapping(tx_id, prepare_id.clone());
+        let global_tx_lock_guard = match self.acquire_global_tx_slot(tx_id).await {
+            Ok(guard) => guard,
+            Err(outcome) => {
+                self.prepared_txs.remove(&prepare_id);
+                self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
+                self.replica_ctx()
+                    .global_tx_manager
+                    .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
+                self.replica_ctx().global_tx_manager.release(&tx_id);
+                self.replica_ctx().global_tx_manager.remove_session(&tx_id);
+                return Ok((
+                    String::new(),
+                    ReducerCallResult {
+                        outcome,
+                        energy_used: EnergyQuanta::ZERO,
+                        execution_duration: Default::default(),
+                    },
+                    None,
+                ));
+            }
+        };
         //}
 
         // Spawn a background task that runs the reducer and holds the write lock
@@ -1962,20 +1963,20 @@ impl ModuleHost {
             Ok((result, return_value)) => {
                 if matches!(result.outcome, ReducerOutcome::Committed) {
                     //if let Some(tx_id) = tx_id {
-                        self.replica_ctx()
-                            .global_tx_manager
-                            .mark_state(&tx_id, super::global_tx::GlobalTxState::Prepared);
+                    self.replica_ctx()
+                        .global_tx_manager
+                        .mark_state(&tx_id, super::global_tx::GlobalTxState::Prepared);
                     // }
                     Ok((prepare_id, result, return_value))
                 } else {
                     // Reducer failed — remove the entry we registered (no hold in progress).
                     self.prepared_txs.remove(&prepare_id);
                     // if let Some(tx_id) = tx_id {
-                        self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
-                        self.replica_ctx()
-                            .global_tx_manager
-                            .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
-                        self.replica_ctx().global_tx_manager.remove_session(&tx_id);
+                    self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
+                    self.replica_ctx()
+                        .global_tx_manager
+                        .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
+                    self.replica_ctx().global_tx_manager.remove_session(&tx_id);
                     // }
                     Ok((String::new(), result, return_value))
                 }
@@ -2100,7 +2101,10 @@ impl ModuleHost {
         Ok(())
     }
 
-    async fn acquire_global_tx_slot(&self, tx_id: GlobalTxId) -> Result<super::global_tx::GlobalTxLockGuard, ReducerOutcome> {
+    async fn acquire_global_tx_slot(
+        &self,
+        tx_id: GlobalTxId,
+    ) -> Result<super::global_tx::GlobalTxLockGuard, ReducerOutcome> {
         let manager = self.replica_ctx().global_tx_manager.clone();
         let local_db = self.replica_ctx().database.database_identity;
         let role = if tx_id.creator_db == local_db {

@@ -197,18 +197,45 @@ fn test_2pc_committed_data_survives_restart() {
     let (db_a_identity, db_b_identity, db_c_identity) = setup_three_banks(&mut test, pid, "dur");
 
     // Successful 2PC: transfer 30 from both B and C to A.
-    test.call("transfer_funds", &[&db_b_identity, &db_c_identity, "alice", "alice", "30"])
-        .expect("transfer_funds failed");
+    test.call(
+        "transfer_funds",
+        &[&db_b_identity, &db_c_identity, "alice", "alice", "30"],
+    )
+    .expect("transfer_funds failed");
 
-    assert_eq!(alice_balance(&test, &db_a_identity), 160, "A should have 160 before restart");
-    assert_eq!(alice_balance(&test, &db_b_identity), 70, "B should have 70 before restart");
-    assert_eq!(alice_balance(&test, &db_c_identity), 70, "C should have 70 before restart");
+    assert_eq!(
+        alice_balance(&test, &db_a_identity),
+        160,
+        "A should have 160 before restart"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_b_identity),
+        70,
+        "B should have 70 before restart"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_c_identity),
+        70,
+        "C should have 70 before restart"
+    );
 
     test.restart_server();
 
-    assert_eq!(alice_balance(&test, &db_a_identity), 160, "A's committed data should survive restart");
-    assert_eq!(alice_balance(&test, &db_b_identity), 70, "B's committed data should survive restart");
-    assert_eq!(alice_balance(&test, &db_c_identity), 70, "C's committed data should survive restart");
+    assert_eq!(
+        alice_balance(&test, &db_a_identity),
+        160,
+        "A's committed data should survive restart"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_b_identity),
+        70,
+        "B's committed data should survive restart"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_c_identity),
+        70,
+        "C's committed data should survive restart"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,17 +250,44 @@ fn test_2pc_aborted_state_survives_restart() {
     let (db_a_identity, db_b_identity, db_c_identity) = setup_three_banks(&mut test, pid, "abort-dur");
 
     // Transfer 110 from each — both only have 100, so B's debit panics → abort.
-    let _ = test.call("transfer_funds", &[&db_b_identity, &db_c_identity, "alice", "alice", "110"]);
+    let _ = test.call(
+        "transfer_funds",
+        &[&db_b_identity, &db_c_identity, "alice", "alice", "110"],
+    );
 
-    assert_eq!(alice_balance(&test, &db_a_identity), 100, "A should still be 100 after abort");
-    assert_eq!(alice_balance(&test, &db_b_identity), 100, "B should still be 100 after abort");
-    assert_eq!(alice_balance(&test, &db_c_identity), 100, "C should still be 100 after abort");
+    assert_eq!(
+        alice_balance(&test, &db_a_identity),
+        100,
+        "A should still be 100 after abort"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_b_identity),
+        100,
+        "B should still be 100 after abort"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_c_identity),
+        100,
+        "C should still be 100 after abort"
+    );
 
     test.restart_server();
 
-    assert_eq!(alice_balance(&test, &db_a_identity), 100, "A's aborted rollback should survive restart");
-    assert_eq!(alice_balance(&test, &db_b_identity), 100, "B's aborted rollback should survive restart");
-    assert_eq!(alice_balance(&test, &db_c_identity), 100, "C's aborted rollback should survive restart");
+    assert_eq!(
+        alice_balance(&test, &db_a_identity),
+        100,
+        "A's aborted rollback should survive restart"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_b_identity),
+        100,
+        "B's aborted rollback should survive restart"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_c_identity),
+        100,
+        "C's aborted rollback should survive restart"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -352,8 +406,16 @@ fn test_2pc_coordinator_recovery() {
     std::thread::sleep(Duration::from_secs(5));
 
     assert_eq!(alice_balance(&test, &db_a_identity), 160, "A should remain committed");
-    assert_eq!(alice_balance(&test, &db_b_identity), 70, "B should have committed via coordinator recovery");
-    assert_eq!(alice_balance(&test, &db_c_identity), 70, "C should have committed via coordinator recovery");
+    assert_eq!(
+        alice_balance(&test, &db_b_identity),
+        70,
+        "B should have committed via coordinator recovery"
+    );
+    assert_eq!(
+        alice_balance(&test, &db_c_identity),
+        70,
+        "C should have committed via coordinator recovery"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

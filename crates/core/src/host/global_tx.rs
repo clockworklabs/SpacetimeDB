@@ -599,7 +599,11 @@ impl GlobalTxManager {
                 self.notify_next_waiter_locked(state);
             }
         } else {
-            log::warn!("Trying to remove non-existent waiter with wait_id {}, current_owner: {:?}", wait_id, state.owner);
+            log::warn!(
+                "Trying to remove non-existent waiter with wait_id {}, current_owner: {:?}",
+                wait_id,
+                state.owner
+            );
         }
     }
 

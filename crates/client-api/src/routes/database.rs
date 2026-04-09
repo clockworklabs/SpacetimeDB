@@ -28,12 +28,12 @@ use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
-use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
+use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,

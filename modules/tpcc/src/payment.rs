@@ -1,5 +1,7 @@
 use crate::{
-    Customer, CustomerSelector, District, History, MAX_C_DATA_LEN, Warehouse, customer, district, find_district, find_warehouse, history, remote::{call_remote_reducer, remote_warehouse_home, simulate_remote_call}, resolve_customer, warehouse
+    customer, district, find_district, find_warehouse, history,
+    remote::{call_remote_reducer, remote_warehouse_home, simulate_remote_call},
+    resolve_customer, warehouse, Customer, CustomerSelector, District, History, Warehouse, MAX_C_DATA_LEN,
 };
 use spacetimedb::{
     log_stopwatch::LogStopwatch, procedure, reducer, Identity, ProcedureContext, ReducerContext, SpacetimeType, Table,

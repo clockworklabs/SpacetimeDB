@@ -144,6 +144,7 @@ impl SnapshotWorker {
 struct SnapshotMetrics {
     snapshot_timing_total: Histogram,
     snapshot_timing_inner: Histogram,
+    snapshot_db_lock_time: Histogram,
 }
 
 impl SnapshotMetrics {
@@ -151,6 +152,7 @@ impl SnapshotMetrics {
         Self {
             snapshot_timing_total: WORKER_METRICS.snapshot_creation_time_total.with_label_values(&db),
             snapshot_timing_inner: WORKER_METRICS.snapshot_creation_time_inner.with_label_values(&db),
+            snapshot_db_lock_time: WORKER_METRICS.snapshot_db_lock_time.with_label_values(&db),
         }
     }
 }
@@ -218,17 +220,23 @@ impl SnapshotWorkerActor {
         let inner_timer = self.metrics.snapshot_timing_inner.clone();
 
         let snapshot_repo = self.snapshot_repo.clone();
+        let snapshot_db_lock_time = self.metrics.snapshot_db_lock_time.clone();
 
         let database_identity = self.snapshot_repo.database_identity();
 
         let maybe_offset = asyncify(move || {
             let _timer = inner_timer.start_timer();
-            Locking::take_snapshot_internal(&state, &snapshot_repo)
+            let maybe_snapshot: Option<(TxOffset, _, Duration)> =
+                Locking::take_snapshot_internal(&state, &snapshot_repo)?;
+            if let Some((_, _, lock_held_duration)) = maybe_snapshot.as_ref() {
+                snapshot_db_lock_time.observe(lock_held_duration.as_secs_f64());
+            }
+            anyhow::Ok(maybe_snapshot)
         })
         .await
         .with_context(|| format!("error capturing snapshot of database {}", database_identity))?;
         maybe_offset
-            .map(|(offset, _path)| offset)
+            .map(|(offset, _path, _lock_held_duration)| offset)
             .inspect(|snapshot_offset| {
                 let elapsed = Duration::from_secs_f64(timer.stop_and_record());
                 info!(

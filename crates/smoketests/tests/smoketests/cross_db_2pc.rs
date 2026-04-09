@@ -125,13 +125,16 @@ fn test_cross_db_2pc_happy_path() {
     let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
     // Publish participants first, then coordinator.
-    test.publish_module_named(&db_b_name, false).expect("failed to publish bank B");
+    test.publish_module_named(&db_b_name, false)
+        .expect("failed to publish bank B");
     let db_b_identity = test.database_identity.clone().expect("bank B identity not set");
 
-    test.publish_module_named(&db_c_name, false).expect("failed to publish bank C");
+    test.publish_module_named(&db_c_name, false)
+        .expect("failed to publish bank C");
     let db_c_identity = test.database_identity.clone().expect("bank C identity not set");
 
-    test.publish_module_named(&db_a_name, false).expect("failed to publish bank A");
+    test.publish_module_named(&db_a_name, false)
+        .expect("failed to publish bank A");
     let db_a_identity = test.database_identity.clone().expect("bank A identity not set");
 
     // Call transfer_funds; the return value is A's new alice balance.
@@ -167,13 +170,16 @@ fn test_cross_db_2pc_abort_insufficient_funds() {
 
     let mut test = Smoketest::builder().module_code(MODULE_CODE).autopublish(false).build();
 
-    test.publish_module_named(&db_b_name, false).expect("failed to publish bank B");
+    test.publish_module_named(&db_b_name, false)
+        .expect("failed to publish bank B");
     let db_b_identity = test.database_identity.clone().expect("bank B identity not set");
 
-    test.publish_module_named(&db_c_name, false).expect("failed to publish bank C");
+    test.publish_module_named(&db_c_name, false)
+        .expect("failed to publish bank C");
     let db_c_identity = test.database_identity.clone().expect("bank C identity not set");
 
-    test.publish_module_named(&db_a_name, false).expect("failed to publish bank A");
+    test.publish_module_named(&db_a_name, false)
+        .expect("failed to publish bank A");
     let db_a_identity = test.database_identity.clone().expect("bank A identity not set");
 
     // Transfer 110 from each — both only have 100, so B's debit panics → 2PC aborts all.
@@ -184,10 +190,25 @@ fn test_cross_db_2pc_abort_insufficient_funds() {
             &format!("[\"{db_b_identity}\", \"{db_c_identity}\", \"alice\", \"alice\", 110]"),
         )
         .expect("api_call failed");
-    assert!(!resp.is_success(), "Expected transfer_funds to fail due to insufficient funds");
+    assert!(
+        !resp.is_success(),
+        "Expected transfer_funds to fail due to insufficient funds"
+    );
 
     // All three accounts must still be at 100.
-    assert_eq!(call_balance(&test, &db_a_identity, "alice"), 100, "A alice should still be 100");
-    assert_eq!(call_balance(&test, &db_b_identity, "alice"), 100, "B alice should still be 100");
-    assert_eq!(call_balance(&test, &db_c_identity, "alice"), 100, "C alice should still be 100");
+    assert_eq!(
+        call_balance(&test, &db_a_identity, "alice"),
+        100,
+        "A alice should still be 100"
+    );
+    assert_eq!(
+        call_balance(&test, &db_b_identity, "alice"),
+        100,
+        "B alice should still be 100"
+    );
+    assert_eq!(
+        call_balance(&test, &db_c_identity, "alice"),
+        100,
+        "C alice should still be 100"
+    );
 }

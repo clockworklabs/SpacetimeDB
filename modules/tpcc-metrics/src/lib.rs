@@ -40,9 +40,7 @@ fn clear_tables(ctx: &ReducerContext) {
     }
 
     for row in ctx.db.txn_bucket().iter() {
-        ctx.db.txn_bucket()
-            .bucket_start_ms()
-            .delete(row.bucket_start_ms);
+        ctx.db.txn_bucket().bucket_start_ms().delete(row.bucket_start_ms);
     }
 }
 
@@ -84,18 +82,13 @@ pub fn record_txn(ctx: &ReducerContext, latency_ms: u16) {
 
 #[reducer]
 pub fn record_txn_bucket(ctx: &ReducerContext) {
-    let current_time_ms = ctx
-        .timestamp
-        .to_duration_since_unix_epoch()
-        .unwrap()
-        .as_millis() as u64;
+    let current_time_ms = ctx.timestamp.to_duration_since_unix_epoch().unwrap().as_millis() as u64;
     let Some(state) = ctx.db.state().id().find(0) else {
         return;
     };
 
     let bucket_offset_ms = current_time_ms.saturating_sub(state.run_start_ms);
-    let bucket_start_ms =
-        state.run_start_ms + ((bucket_offset_ms / BUCKET_SIZE_MS) * BUCKET_SIZE_MS);
+    let bucket_start_ms = state.run_start_ms + ((bucket_offset_ms / BUCKET_SIZE_MS) * BUCKET_SIZE_MS);
 
     if let Some(bucket) = ctx.db.txn_bucket().bucket_start_ms().find(bucket_start_ms) {
         ctx.db.txn_bucket().bucket_start_ms().update(TxnBucket {
@@ -106,6 +99,29 @@ pub fn record_txn_bucket(ctx: &ReducerContext) {
         ctx.db.txn_bucket().insert(TxnBucket {
             bucket_start_ms,
             count: 1,
+        });
+    }
+}
+
+#[reducer]
+pub fn record_txn_bucket_2(ctx: &ReducerContext, count: u64) {
+    let current_time_ms = ctx.timestamp.to_duration_since_unix_epoch().unwrap().as_millis() as u64;
+    let Some(state) = ctx.db.state().id().find(0) else {
+        return;
+    };
+
+    let bucket_offset_ms = current_time_ms.saturating_sub(state.run_start_ms);
+    let bucket_start_ms = state.run_start_ms + ((bucket_offset_ms / BUCKET_SIZE_MS) * BUCKET_SIZE_MS);
+
+    if let Some(bucket) = ctx.db.txn_bucket().bucket_start_ms().find(bucket_start_ms) {
+        ctx.db.txn_bucket().bucket_start_ms().update(TxnBucket {
+            count: bucket.count.saturating_add(count),
+            ..bucket
+        });
+    } else {
+        ctx.db.txn_bucket().insert(TxnBucket {
+            bucket_start_ms,
+            count: count,
         });
     }
 }
