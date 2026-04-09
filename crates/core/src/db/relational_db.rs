@@ -121,7 +121,7 @@ pub struct RelationalDB {
 // NOTE: Replicas must agree on the snapshot frequency. By making them consult
 // this value, later introduction of dynamic configuration will allow the
 // compiler to find external dependencies.
-pub const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
+pub const SNAPSHOT_FREQUENCY: u64 = 50_000_000;
 const GENERIC_DURABILITY_REORDER_WINDOW_SIZE: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 
 impl std::fmt::Debug for RelationalDB {
