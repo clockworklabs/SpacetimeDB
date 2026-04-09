@@ -12,6 +12,7 @@ anyhow.workspace = true
 axum.workspace = true
 clap.workspace = true
 env_logger.workspace = true
+indicatif.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 rand.workspace = true

@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -20,21 +22,26 @@ pub async fn run(config: LoadConfig) -> Result<()> {
     );
 
     let topology = DatabaseTopology::for_load(&config).await?;
+    let progress = Arc::new(LoadProgress::new());
     let chunks = database_number_chunks(config.num_databases, config.load_parallelism);
     let mut handles = Vec::with_capacity(chunks.len());
 
     for (worker_idx, chunk) in chunks.into_iter().enumerate() {
         let config = config.clone();
         let topology = topology.clone();
+        let progress = Arc::clone(&progress);
         let thread_name = format!("tpcc-load-{worker_idx}");
         let handle = thread::Builder::new()
             .name(thread_name.clone())
             .spawn(move || -> Vec<DatabaseRunFailure> {
                 let mut failures = Vec::new();
                 for database_number in chunk {
-                    if let Err(error) = run_one_database(&config, database_number, &topology) {
+                    let database_name = topology.database_name(database_number);
+                    let progress_bar = progress.add_database(&database_name);
+                    if let Err(error) = run_one_database(&config, database_number, &topology, &progress_bar) {
                         let database_name = topology.database_name(database_number);
                         let database_identity = topology.identity_for_database_number(database_number).ok();
+                        progress_bar.abandon_with_message(format!("{database_name} failed"));
                         failures.push(DatabaseRunFailure {
                             database_number,
                             database_name,
@@ -89,6 +96,31 @@ struct DatabaseRunFailure {
     error: String,
 }
 
+struct LoadProgress {
+    multi: MultiProgress,
+    style: ProgressStyle,
+}
+
+impl LoadProgress {
+    fn new() -> Self {
+        let style = ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .expect("progress template should be valid")
+            .tick_strings(&["-", "\\", "|", "/"]);
+        Self {
+            multi: MultiProgress::new(),
+            style,
+        }
+    }
+
+    fn add_database(&self, database_name: &str) -> ProgressBar {
+        let progress = self.multi.add(ProgressBar::new_spinner());
+        progress.set_style(self.style.clone());
+        progress.enable_steady_tick(Duration::from_millis(120));
+        progress.set_message(format!("{database_name}: connecting"));
+        progress
+    }
+}
+
 fn format_failure_report(config: &LoadConfig, failures: &[DatabaseRunFailure]) -> String {
     let mut message = String::from("tpcc load failed for one or more databases.");
     message.push_str("\nFailed databases:");
@@ -130,32 +162,37 @@ macro_rules! time {
     ($span_name:literal { $($body:tt)*}) => {{
         #[allow(clippy::redundant_closure_call)]
         let before = std::time::Instant::now();
-        log::info!("Span {} starting at {:?}", $span_name, before);
+        log::debug!("Span {} starting at {:?}", $span_name, before);
         let run = || -> anyhow::Result<_> { Ok({ $($body)* }) };
         let res = run();
         let elapsed = before.elapsed();
-        log::info!("Span {} ended after {:?}", $span_name, elapsed);
+        log::debug!("Span {} ended after {:?}", $span_name, elapsed);
         res?
     }}
 }
 
-fn run_one_database(config: &LoadConfig, database_number: u32, topology: &DatabaseTopology) -> Result<()> {
+fn run_one_database(
+    config: &LoadConfig,
+    database_number: u32,
+    topology: &DatabaseTopology,
+    progress: &ProgressBar,
+) -> Result<()> {
     time!("run_one_database" {
         let database_name = topology.database_name(database_number);
         let database_identity = topology.identity_for_database_number(database_number)?;
-        log::info!(
-            "starting tpcc load into {} / {} with {} warehouse(s)",
-            config.connection.uri,
-            database_identity,
-            config.warehouses_per_database
-        );
+        progress.set_message(format!(
+            "{database_name}: connecting to {} with {} warehouse(s)",
+            database_identity, config.warehouses_per_database
+        ));
 
         let mut client = ModuleClient::connect(&config.connection, database_identity)?;
+        progress.set_message(format!("{database_name}: subscribing to load state"));
         client.subscribe_load_state()?;
         fail_if_partial_load_detected(config, &database_name, &client)?;
 
         time!("reset" {
             if config.reset {
+                progress.set_message(format!("{database_name}: resetting existing data"));
                 client.reset_tpcc().context("failed to reset tpcc data")?;
             }
         });
@@ -163,22 +200,26 @@ fn run_one_database(config: &LoadConfig, database_number: u32, topology: &Databa
         let request = time!("build_load_request" {
             build_load_request(config, database_number, topology)?
         });
+        progress.set_message(format!("{database_name}: configuring load"));
         time!("configure_tpcc_load" {client
                                      .configure_tpcc_load(request)
                                      .context("failed to configure tpcc load")})?;
 
+        progress.set_message(format!("{database_name}: starting load"));
         time!("start_tpcc_load" {
             client.start_tpcc_load().context("failed to start tpcc load")?
         });
 
         time!("wait_for_load_completion" {
-            wait_for_load_completion(&client, database_identity)?
+            wait_for_load_completion(&client, &database_name, database_identity, progress)?
         });
 
+        progress.set_message(format!("{database_name}: shutting down client"));
         time!("shutdown" {
             client.shutdown()
         });
 
+        progress.finish_with_message(format!("{database_name}: complete"));
         log::info!("tpcc load for database {database_identity} finished");
        Ok(())
     })
@@ -243,7 +284,12 @@ fn build_load_request(
     })
 }
 
-fn wait_for_load_completion(client: &ModuleClient, database_identity: spacetimedb_sdk::Identity) -> Result<()> {
+fn wait_for_load_completion(
+    client: &ModuleClient,
+    database_name: &str,
+    database_identity: spacetimedb_sdk::Identity,
+    progress: &ProgressBar,
+) -> Result<()> {
     let mut last_logged = None;
 
     loop {
@@ -261,9 +307,9 @@ fn wait_for_load_completion(client: &ModuleClient, database_identity: spacetimed
                 state.rows_inserted,
             );
             if last_logged != Some(current_progress) {
-                log::info!(
-                    "tpcc load progress for {}: status={:?} phase={:?} chunks={} rows={} next=({},{},{},{})",
-                    database_identity,
+                progress.set_message(format!(
+                    "{}: {:?} {:?} chunks={} rows={} next=({},{},{},{})",
+                    database_name,
                     state.status,
                     state.phase,
                     state.chunks_completed,
@@ -272,13 +318,14 @@ fn wait_for_load_completion(client: &ModuleClient, database_identity: spacetimed
                     state.next_district_id,
                     state.next_item_id,
                     state.next_order_id
-                );
+                ));
                 last_logged = Some(current_progress);
             }
 
             match state.status {
                 TpccLoadStatus::Complete => return Ok(()),
                 TpccLoadStatus::Failed => {
+                    progress.abandon_with_message(format!("{database_name}: failed"));
                     anyhow::bail!(
                         "tpcc load failed for {}: {}",
                         database_identity,

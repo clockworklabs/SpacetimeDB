@@ -9826,6 +9826,7 @@ dependencies = [
  "axum",
  "clap 4.5.50",
  "env_logger 0.10.2",
+ "indicatif",
  "log",
  "parking_lot 0.12.5",
  "rand 0.9.2",
