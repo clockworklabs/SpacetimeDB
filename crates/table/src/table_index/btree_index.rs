@@ -1,10 +1,11 @@
 use super::same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter};
 use super::{key_size::KeyBytesStorage, Index, KeySize, RangedIndex};
 use crate::indexes::RowPointer;
+use crate::table_index::same_key_entry::ManySameKeyEntryIter;
 use core::borrow::Borrow;
 use core::ops::RangeBounds;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use std::collections::btree_map::{BTreeMap, Range};
+use std::collections::btree_map::{BTreeMap, Range, Values};
 
 /// A multi map that relates a `K` to a *set* of `RowPointer`s.
 #[derive(Debug, PartialEq, Eq)]
@@ -76,6 +77,15 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
 
     fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
         self.seek_point(point)
+    }
+
+    type Iter<'a>
+        = BTreeIndexIter<'a, K>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        BTreeIndexIter::new(self.map.values())
     }
 
     fn num_keys(&self) -> usize {
@@ -182,35 +192,29 @@ impl<K: KeySize + Ord> BTreeIndex<K> {
     where
         <Self as Index>::Key: Borrow<Q>,
     {
-        BTreeIndexRangeIter {
-            outer: self.map.range((range.start_bound(), range.end_bound())),
-            inner: SameKeyEntry::empty_iter(),
-        }
+        BTreeIndexRangeIter::new(RangeValues(self.map.range((range.start_bound(), range.end_bound()))))
     }
 }
 
+/// An iterator over all the values in a [`BTreeIndex`].
+pub type BTreeIndexIter<'a, K> = ManySameKeyEntryIter<'a, Values<'a, K, SameKeyEntry>>;
+
 /// An iterator over values in a [`BTreeIndex`] where the keys are in a certain range.
-#[derive(Clone)]
-pub struct BTreeIndexRangeIter<'a, K> {
-    /// The outer iterator seeking for matching keys in the range.
-    outer: Range<'a, K, SameKeyEntry>,
-    /// The inner iterator for the value set for a found key.
-    inner: SameKeyEntryIter<'a>,
+pub type BTreeIndexRangeIter<'a, K> = ManySameKeyEntryIter<'a, RangeValues<'a, K, SameKeyEntry>>;
+
+/// An iterator over a key range in a [`BTreeMap`] providing only the values.
+pub struct RangeValues<'a, K, V>(Range<'a, K, V>);
+
+impl<K, V> Clone for RangeValues<'_, K, V> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
 }
 
-impl<K> Iterator for BTreeIndexRangeIter<'_, K> {
-    type Item = RowPointer;
+impl<'a, K, V> Iterator for RangeValues<'a, K, V> {
+    type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // While the inner iterator has elements, yield them.
-            if let Some(val) = self.inner.next() {
-                return Some(val);
-            }
-            // Advance and get a new inner, if possible, or quit.
-            // We'll come back and yield elements from it in the next iteration.
-            let inner = self.outer.next().map(|(_, i)| i)?;
-            self.inner = inner.iter();
-        }
+        self.0.next().map(|(_, v)| v)
     }
 }
