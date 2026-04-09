@@ -249,7 +249,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
     ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+    let local_addr = tcp.local_addr()?;
+    ctx.set_idc_http_port(local_addr.port());
+    log::info!("Starting SpacetimeDB listening on {local_addr}");
 
     if let Some(pg_port) = pg_port {
         let server_addr = listen_addr.split(':').next().unwrap();

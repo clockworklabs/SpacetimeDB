@@ -885,9 +885,9 @@ fn attach_outboxes_to_tables(
             .into());
         }
 
-        // Validate col 1: must be U256 (Identity wire representation).
+        // Validate col 1: must be Identity (or its raw U256 wire representation).
         let col1_ty = &table.columns[1].ty;
-        if *col1_ty != AlgebraicType::U256 {
+        if *col1_ty != AlgebraicType::U256 && !col1_ty.is_identity() {
             return Err(ValidationError::OutboxInvalidTargetColumn {
                 table: table.name.clone(),
                 found: col1_ty.clone().into(),
@@ -1246,6 +1246,34 @@ mod tests {
         assert_eq!(
             def.reducers[&extra_reducer_name].visibility,
             FunctionVisibility::ClientCallable
+        );
+    }
+
+    #[test]
+    fn test_outbox_accepts_identity_target_column() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .finish();
+
+        builder.add_reducer("send_ping", ProductType::unit());
+        builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        builder.add_outbox("outbound_pings", "receive_ping", Option::<&str>::None);
+
+        let validated: Result<ModuleDef> = builder.finish().try_into();
+        assert!(
+            validated.is_ok(),
+            "expected outbox validation to accept Identity target column, got {validated:?}",
         );
     }
 

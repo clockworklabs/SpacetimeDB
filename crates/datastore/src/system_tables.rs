@@ -710,7 +710,10 @@ fn system_module_def() -> ModuleDef {
 
     let st_outbound_msg_type = builder.add_type::<StOutboundMsgRow>();
     builder
-        .build_table(ST_OUTBOUND_MSG_NAME, *st_outbound_msg_type.as_ref().expect("should be ref"))
+        .build_table(
+            ST_OUTBOUND_MSG_NAME,
+            *st_outbound_msg_type.as_ref().expect("should be ref"),
+        )
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StOutboundMsgFields::MsgId)
         .with_index_no_accessor_name(btree(StOutboundMsgFields::MsgId));

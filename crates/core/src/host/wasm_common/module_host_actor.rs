@@ -472,7 +472,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn call_reducer_delete_outbound_on_success(&mut self, params: CallReducerParams, msg_id: u64) -> ReducerCallResult {
+    pub fn call_reducer_delete_outbound_on_success(
+        &mut self,
+        params: CallReducerParams,
+        msg_id: u64,
+    ) -> ReducerCallResult {
         let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
             self.common
                 .call_reducer_with_tx_and_success_action(None, params, &mut self.instance, |tx| {

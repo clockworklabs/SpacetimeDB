@@ -4,7 +4,7 @@
 /// 1. Loads undelivered entries from `st_outbound_msg` on startup, resolving delivery data from outbox tables.
 /// 2. Accepts immediate notifications via an mpsc channel when new outbox rows are inserted.
 /// 3. Delivers each message in msg_id order via HTTP POST to
-///    `http://localhost:80/v1/database/{target_db}/call-from-database/{reducer}?sender_identity=<hex>&msg_id=<n>`
+///    `http://localhost:{http_port}/v1/database/{target_db}/call-from-database/{reducer}?sender_identity=<hex>&msg_id=<n>`
 /// 4. On transport errors (network, 5xx, 4xx except 422/402): retries infinitely with exponential
 ///    backoff, blocking only the affected target database (other targets continue unaffected).
 /// 5. On reducer errors (HTTP 422) or budget exceeded (HTTP 402): calls the configured
@@ -16,14 +16,13 @@ use crate::host::FunctionArgs;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::{StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_lib::{AlgebraicValue, Identity};
+use spacetimedb_lib::{AlgebraicValue, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-const IDC_HTTP_PORT: u16 = 80;
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// How long to wait before polling again when there is no work.
@@ -38,6 +37,7 @@ pub type IdcActorSender = mpsc::UnboundedSender<()>;
 /// The identity of this (sender) database, set when the IDC actor is started.
 pub struct IdcActorConfig {
     pub sender_identity: Identity,
+    pub http_port: u16,
 }
 
 /// A handle that, when dropped, stops the IDC actor background task.
@@ -86,6 +86,7 @@ struct PendingMessage {
     target_db_identity: Identity,
     target_reducer: String,
     args_bsatn: Vec<u8>,
+    request_row: ProductValue,
     /// From the outbox table's `TableSchema::on_result_reducer`.
     on_result_reducer: Option<String>,
 }
@@ -171,7 +172,7 @@ async fn run_idc_loop(
                         log::warn!(
                             "idc_actor: transport error delivering msg_id={} to {}: {reason}",
                             msg.msg_id,
-                            hex::encode(msg.target_db_identity.to_byte_array()),
+                            msg.target_db_identity.to_hex(),
                         );
                         state.record_transport_error();
                         // Do NOT pop the front — keep retrying this message for this target.
@@ -246,19 +247,23 @@ async fn finalize_message(
             return;
         };
 
-        // Encode (result_payload: String) as BSATN args.
-        // The on_result reducer is expected to accept a single String argument.
-        let args_bytes = match spacetimedb_sats::bsatn::to_vec(&result_payload) {
-            Ok(b) => b,
-            Err(e) => {
-                log::error!(
-                    "idc_actor: failed to encode on_result args for msg_id={}: {e}",
-                    msg.msg_id
-                );
-                delete_message(db, msg.msg_id);
-                return;
-            }
+        // Encode `(request_row: OutboxRow, result: Result<(), String>)` as BSATN args.
+        let result = if result_payload.is_empty() {
+            Ok::<(), String>(())
+        } else {
+            Err::<(), String>(result_payload)
         };
+        let mut args_bytes = Vec::new();
+        if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &msg.request_row)
+            .and_then(|_| spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &result))
+        {
+            log::error!(
+                "idc_actor: failed to encode on_result args for msg_id={}: {e}",
+                msg.msg_id
+            );
+            delete_message(db, msg.msg_id);
+            return;
+        }
 
         let caller_identity = Identity::ZERO; // system call
         let result = host
@@ -366,12 +371,24 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
 
         let pv = outbox_row_ref.to_product_value();
 
-        // Col 1: target_db_identity (Identity stored as U256).
-        let target_db_identity = match pv.elements.get(1) {
-            Some(AlgebraicValue::U256(u)) => Identity::from_u256(**u),
+        // Col 1: target_db_identity stored as SATS `Identity`,
+        // i.e. the product wrapper `(__identity__: U256)`.
+        let target_db_identity: Identity = match pv.elements.get(1) {
+            Some(AlgebraicValue::Product(identity_pv)) if identity_pv.elements.len() == 1 => {
+                match &identity_pv.elements[0] {
+                    AlgebraicValue::U256(u) => Identity::from_u256(**u),
+                    other => {
+                        log::error!(
+                            "idc_actor: outbox row col 1 expected Identity inner U256, got {other:?} (msg_id={})",
+                            st_row.msg_id,
+                        );
+                        continue;
+                    }
+                }
+            }
             other => {
                 log::error!(
-                    "idc_actor: outbox row col 1 expected U256 (Identity), got {other:?} (msg_id={})",
+                    "idc_actor: outbox row col 1 expected Identity wrapper, got {other:?} (msg_id={})",
                     st_row.msg_id,
                 );
                 continue;
@@ -392,6 +409,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
             target_db_identity,
             target_reducer,
             args_bsatn,
+            request_row: pv,
             on_result_reducer,
         });
     }
@@ -412,17 +430,13 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
 }
 
 /// Attempt a single HTTP delivery of a message.
-async fn attempt_delivery(
-    client: &reqwest::Client,
-    config: &IdcActorConfig,
-    msg: &PendingMessage,
-) -> DeliveryOutcome {
-    let target_db_hex = hex::encode(msg.target_db_identity.to_byte_array());
-    let sender_hex = hex::encode(config.sender_identity.to_byte_array());
+async fn attempt_delivery(client: &reqwest::Client, config: &IdcActorConfig, msg: &PendingMessage) -> DeliveryOutcome {
+    let target_db_hex = msg.target_db_identity.to_hex();
+    let sender_hex = config.sender_identity.to_hex();
 
     let url = format!(
-        "http://localhost:{IDC_HTTP_PORT}/v1/database/{target_db_hex}/call-from-database/{}?sender_identity={sender_hex}&msg_id={}",
-        msg.target_reducer, msg.msg_id,
+        "http://localhost:{}/v1/database/{target_db_hex}/call-from-database/{}?sender_identity={sender_hex}&msg_id={}",
+        config.http_port, msg.target_reducer, msg.msg_id,
     );
 
     let result = client

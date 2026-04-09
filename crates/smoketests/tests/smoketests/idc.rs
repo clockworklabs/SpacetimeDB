@@ -94,10 +94,16 @@ pub fn always_fail(_ctx: &ReducerContext) -> Result<(), String> {
 
     assert_eq!(first.0, 422, "first IDC call should surface reducer error: {first:?}");
     assert_eq!(first.1.trim(), "boom");
-    assert_eq!(second.0, 422, "duplicate IDC call should replay reducer error: {second:?}");
+    assert_eq!(
+        second.0, 422,
+        "duplicate IDC call should replay reducer error: {second:?}"
+    );
     assert_eq!(second.1.trim(), "boom");
 
     let logs = test.logs(100).unwrap();
-    let executions = logs.iter().filter(|line| line.contains("IDC failing reducer executed")).count();
+    let executions = logs
+        .iter()
+        .filter(|line| line.contains("IDC failing reducer executed"))
+        .count();
     assert_eq!(executions, 1, "duplicate IDC request should not rerun the reducer");
 }

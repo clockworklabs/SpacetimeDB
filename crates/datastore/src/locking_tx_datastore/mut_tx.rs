@@ -2697,7 +2697,6 @@ impl MutTxId {
         })
     }
 
-
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,

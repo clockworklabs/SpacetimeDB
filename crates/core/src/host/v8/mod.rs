@@ -1188,13 +1188,15 @@ async fn spawn_instance_worker(
                     send_worker_reply("call_reducer", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
-                JsWorkerRequest::CallReducerDeleteOutboundOnSuccess { reply_tx, params, msg_id } => {
-                    let (res, trapped) = instance_common.call_reducer_with_tx_and_success_action(
-                        None,
-                        params,
-                        &mut inst,
-                        |tx| tx.delete_outbound_msg(msg_id).map_err(anyhow::Error::from),
-                    );
+                JsWorkerRequest::CallReducerDeleteOutboundOnSuccess {
+                    reply_tx,
+                    params,
+                    msg_id,
+                } => {
+                    let (res, trapped) =
+                        instance_common.call_reducer_with_tx_and_success_action(None, params, &mut inst, |tx| {
+                            tx.delete_outbound_msg(msg_id).map_err(anyhow::Error::from)
+                        });
                     worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_reducer", reply_tx, res, trapped);
                     should_exit = trapped;

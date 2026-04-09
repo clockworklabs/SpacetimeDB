@@ -25,13 +25,24 @@ pub(crate) struct TableArgs {
     outbox: Option<OutboxArg>,
 }
 
-/// Parsed from `outbox(remote_reducer_fn)` optionally followed by `on_result(local_reducer_fn)`.
+/// Parsed from `outbox(remote_reducer_fn, on_result = local_reducer_fn)`.
+///
+/// For backwards compatibility, `on_result(local_reducer_fn)` is also accepted as a sibling
+/// table attribute and attached to the previously-declared outbox.
 struct OutboxArg {
     span: Span,
-    /// Path to the remote-side reducer function (used only for its name via `FnInfo::NAME`).
+    /// Path to the remote-side reducer function, used only for its final path segment.
     remote_reducer: Path,
     /// Path to the local `on_result` reducer, if any.
     on_result_reducer: Option<Path>,
+}
+
+fn path_tail_name(path: &Path) -> LitStr {
+    let segment = path
+        .segments
+        .last()
+        .expect("syn::Path should always contain at least one segment");
+    LitStr::new(&segment.ident.to_string(), segment.ident.span())
 }
 
 enum TableAccess {
@@ -268,18 +279,44 @@ impl ScheduledArg {
 }
 
 impl OutboxArg {
-    /// Parse `outbox(remote_reducer_path)`.
+    /// Parse `outbox(remote_reducer_path, on_result = local_reducer_path)`.
     ///
-    /// `on_result` is parsed separately via `parse_single_path_meta` and attached afterwards.
+    /// For backwards compatibility, `on_result` may also be parsed separately via
+    /// `parse_single_path_meta` and attached afterwards.
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let span = meta.path.span();
         let mut remote_reducer: Option<Path> = None;
+        let mut on_result_reducer: Option<Path> = None;
 
         meta.parse_nested_meta(|meta| {
-            if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
-                Err(meta.error("outbox takes a single function path, e.g. `outbox(my_remote_reducer)`"))
+            if meta.input.peek(Token![=]) {
+                if meta.path.is_ident("on_result") {
+                    check_duplicate_msg(
+                        &on_result_reducer,
+                        &meta,
+                        "can only specify one on_result reducer",
+                    )?;
+                    on_result_reducer = Some(meta.value()?.parse()?);
+                    Ok(())
+                } else {
+                    Err(meta.error(
+                        "outbox only supports `on_result = my_local_reducer` as a named argument",
+                    ))
+                }
+            } else if meta.input.peek(syn::token::Paren) {
+                Err(meta.error(
+                    "outbox expects a remote reducer path and optional `on_result = my_local_reducer`, e.g. `outbox(my_remote_reducer, on_result = my_local_reducer)`",
+                ))
+            } else if meta.path.is_ident("on_result") {
+                Err(meta.error(
+                    "outbox `on_result` must use `=`, e.g. `outbox(my_remote_reducer, on_result = my_local_reducer)`",
+                ))
             } else {
-                check_duplicate_msg(&remote_reducer, &meta, "can only specify one remote reducer for outbox")?;
+                check_duplicate_msg(
+                    &remote_reducer,
+                    &meta,
+                    "can only specify one remote reducer for outbox",
+                )?;
                 remote_reducer = Some(meta.path);
                 Ok(())
             }
@@ -291,7 +328,7 @@ impl OutboxArg {
         Ok(Self {
             span,
             remote_reducer,
-            on_result_reducer: None,
+            on_result_reducer,
         })
     }
 
@@ -1209,19 +1246,24 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 ));
             }
 
-            let remote_reducer = &ob.remote_reducer;
-            let on_result_reducer_name = match &ob.on_result_reducer {
-                Some(r) => quote!(Some(<#r as spacetimedb::rt::FnInfo>::NAME)),
+            let remote_reducer_name = path_tail_name(&ob.remote_reducer);
+            let on_result_reducer_name = match ob.on_result_reducer.as_ref().map(path_tail_name) {
+                Some(r) => quote!(Some(#r)),
                 None => quote!(None),
             };
             let desc = quote!(spacetimedb::table::OutboxDesc {
-                remote_reducer_name: <#remote_reducer as spacetimedb::rt::FnInfo>::NAME,
+                remote_reducer_name: #remote_reducer_name,
                 on_result_reducer_name: #on_result_reducer_name,
             });
 
             let primary_key_ty = primary_key_column.ty;
+            let callback_typecheck = ob
+                .on_result_reducer
+                .as_ref()
+                .map(|r| quote!(spacetimedb::rt::outbox_typecheck::<#original_struct_ident>(#r);));
             let typecheck = quote! {
                 spacetimedb::rt::assert_outbox_table_primary_key::<#primary_key_ty>();
+                #callback_typecheck
             };
 
             Ok((desc, typecheck))

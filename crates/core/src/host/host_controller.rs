@@ -44,6 +44,7 @@ use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
@@ -118,6 +119,8 @@ pub struct HostController {
     db_cores: JobCores,
     /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
+    /// HTTP port used by local IDC delivery.
+    idc_http_port: Arc<AtomicU16>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -233,12 +236,17 @@ impl HostController {
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
+            idc_http_port: Arc::new(AtomicU16::new(80)),
         }
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
     pub fn set_program_storage(&mut self, ps: ProgramStorage) {
         self.program_storage = ps;
+    }
+
+    pub fn set_idc_http_port(&self, port: u16) {
+        self.idc_http_port.store(port, Ordering::Relaxed);
     }
 
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
@@ -1117,6 +1125,7 @@ impl Host {
             replica_ctx.relational_db().clone(),
             IdcActorConfig {
                 sender_identity: replica_ctx.database_identity,
+                http_port: host_controller.idc_http_port.load(Ordering::Relaxed),
             },
             module_host.downgrade(),
         );
