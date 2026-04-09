@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { execSync } from 'node:child_process';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { CONNECTORS } from './connectors';
@@ -9,21 +9,25 @@ import { initConvex } from './init/init_convex';
 import { sh } from './init/utils';
 import { setTimeout as sleep } from 'node:timers/promises';
 import EventEmitter from 'node:events';
-import {
+import { type ConnectorKey } from './config.ts';
+import { parseDemoOptions } from './opts.ts';
+
+const options = parseDemoOptions();
+const {
   accounts,
   alpha,
   concurrency,
-  ConnectorKey,
+  convexDir,
+  convexUrl,
   initialBalance,
   noAnimation,
   seconds,
   skipPrep,
-  stdbConfirmedReads,
   stdbModule,
   stdbModulePath,
   stdbUrl,
   systems,
-} from './opts';
+} = options;
 
 // Simple TCP ping - just check if something is listening on the port
 function ping(port: number, timeout = 2000): Promise<boolean> {
@@ -108,11 +112,6 @@ const serviceConfigs: Record<string, ServiceConfig> = {
     healthCheck: spacetimePing,
     startCmd: 'spacetime start',
   },
-  spacetimedbRustClient: {
-    name: 'SpacetimeDB',
-    healthCheck: spacetimePing,
-    startCmd: 'spacetime start',
-  },
   convex: {
     name: 'Convex',
     healthCheck: () => ping(3210),
@@ -180,8 +179,8 @@ async function checkService(system: string): Promise<boolean> {
 // ============================================================================
 
 async function prepSystem(system: ConnectorKey): Promise<void> {
-  const connector = CONNECTORS[system];
-  if (!connector) {
+  const makeConnector = CONNECTORS[system];
+  if (!makeConnector) {
     console.log(`  ${system.padEnd(15)} ${c('yellow', '⚠ SKIPPED')}`);
     return;
   }
@@ -189,7 +188,7 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
   const spinner = createSpinner(system.padEnd(15));
 
   try {
-    if (system === 'spacetimedb' || system == 'spacetimedbRustClient') {
+    if (system === 'spacetimedb') {
       // Publish module (creates DB if needed, updates if exists)
       await sh('spacetime', [
         'publish',
@@ -204,9 +203,9 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
     }
 
     if (system === 'convex') {
-      await initConvex();
+      await initConvex({ accounts, convexDir, convexUrl, initialBalance });
     } else {
-      const conn = connector();
+      const conn = makeConnector(options);
       await conn.open();
       try {
         await conn.call('seed', { accounts, initialBalance });
@@ -239,7 +238,7 @@ async function runBenchmarkOther(
     return null;
   }
 
-  const connector = connectorFactory();
+  const connector = connectorFactory(options);
   const testMod = await import(`./tests/test-1/${system}.ts`);
   const scenario = testMod.default.run;
 
@@ -250,6 +249,7 @@ async function runBenchmarkOther(
     concurrency,
     accounts,
     alpha,
+    runtimeConfig: options,
   });
 
   return {
@@ -258,50 +258,8 @@ async function runBenchmarkOther(
   };
 }
 
-async function runBenchmarkStdb(): Promise<BenchResult | null> {
-  await sh('cargo', [
-    'run',
-    //"--quiet",
-    '--manifest-path',
-    'spacetimedb-rust-client/Cargo.toml',
-    '--',
-    'bench',
-    //"--quiet",
-    '--server',
-    'ws://' + stdbUrl,
-    '--module',
-    stdbModule,
-    '--duration',
-    `${seconds}s`,
-    '--connections',
-    String(concurrency),
-    '--alpha',
-    String(alpha),
-    '--tps-write-path',
-    'spacetimedb-tps.tmp.log',
-    '--confirmed-reads',
-    String(stdbConfirmedReads),
-  ]);
-
-  const tpsStr = (await readFile('spacetimedb-tps.tmp.log', 'utf-8')).trim();
-  const tps = Number(tpsStr);
-  if (isNaN(tps)) {
-    console.warn(`[spacetimedb] Failed to parse TPS from file: ${tpsStr}`);
-    return null;
-  }
-
-  return {
-    system: 'spacetimedb',
-    tps: Math.round(tps),
-  };
-}
-
 async function runBenchmark(system: ConnectorKey): Promise<BenchResult | null> {
-  if (system === 'spacetimedbRustClient') {
-    return await runBenchmarkStdb();
-  } else {
-    return await runBenchmarkOther(system);
-  }
+  return await runBenchmarkOther(system);
 }
 
 // ============================================================================

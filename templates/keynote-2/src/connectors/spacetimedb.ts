@@ -1,17 +1,17 @@
 import type { ReducerConnector } from '../core/connectors';
 import * as mod from '../../module_bindings';
-import {
-  initialBalance,
-  stdbConfirmedReads,
-  stdbModule,
-  stdbUrl,
-} from '../opts';
 import { deriveWebsocketUrl } from '../core/stdbUrl';
+import type { SpacetimeConnectorConfig } from '../config.ts';
 
-export function spacetimedb(
-  url = stdbUrl,
-  moduleName = stdbModule,
-): ReducerConnector {
+export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector {
+  const {
+    initialBalance,
+    stdbCompression,
+    stdbConfirmedReads,
+    stdbModule: moduleName,
+    stdbUrl: url,
+  } = config;
+
   let ready: ReturnType<typeof Promise.withResolvers<void>>;
   let conn: mod.DbConnection;
 
@@ -34,6 +34,7 @@ export function spacetimedb(
     const builder = Db.builder()
       .withUri(deriveWebsocketUrl(url))
       .withDatabaseName(moduleName)
+      .withCompression(stdbCompression)
       .withConfirmedReads(stdbConfirmedReads)
       .onConnect((ctx) => {
         console.log('[stdb] connected');
@@ -77,7 +78,7 @@ export function spacetimedb(
 
   return {
     name: 'spacetimedb',
-    maxInflightPerWorker: 16384,
+    maxInflightPerWorker: 512,
 
     async open() {
       try {
@@ -98,7 +99,7 @@ export function spacetimedb(
     },
 
     async createWorker(): Promise<ReducerConnector> {
-      const worker = spacetimedb(url, moduleName);
+      const worker = spacetimedb(config);
       await worker.open();
       worker.verify = async () => {
         throw new Error(

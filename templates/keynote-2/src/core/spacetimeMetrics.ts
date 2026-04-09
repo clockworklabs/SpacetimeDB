@@ -1,4 +1,3 @@
-import { stdbUrl } from '../opts';
 import { deriveMetricsUrl } from './stdbUrl';
 
 type LabelFilter = Record<string, string>;
@@ -13,20 +12,24 @@ function formatErrorWithCause(err: unknown): string {
   return `${err.message}${cause}`;
 }
 
-export async function fetchMetrics(url: string): Promise<string> {
+async function fetchText(url: string, label: string): Promise<string> {
   let res: Response;
   try {
     res = await fetch(url);
   } catch (err) {
-    throw new Error(`metrics GET ${url} failed: ${formatErrorWithCause(err)}`);
+    throw new Error(`${label} GET ${url} failed: ${formatErrorWithCause(err)}`);
   }
 
   if (!res.ok) {
     throw new Error(
-      `metrics GET ${url} failed: ${res.status} ${res.statusText}`,
+      `${label} GET ${url} failed: ${res.status} ${res.statusText}`,
     );
   }
   return await res.text();
+}
+
+export async function fetchMetrics(url: string): Promise<string> {
+  return await fetchText(url, 'metrics');
 }
 
 export function parseMetricCounter(
@@ -81,7 +84,7 @@ export function parseMetricCounter(
 }
 
 export async function getSpacetimeCommittedTransfers(
-  rawStdbUrl = stdbUrl,
+  rawStdbUrl: string,
 ): Promise<bigint | null> {
   const url = deriveMetricsUrl(rawStdbUrl);
 

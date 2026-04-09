@@ -3,6 +3,7 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
+use crate::config::V8HeapPolicyConfig;
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -124,9 +125,9 @@ pub(crate) struct HostRuntimes {
 }
 
 impl HostRuntimes {
-    fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
+    fn new(data_dir: Option<&ServerDataDir>, v8_heap_policy: V8HeapPolicyConfig) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
-        let v8 = V8Runtime::default();
+        let v8 = V8Runtime::new(v8_heap_policy);
         Arc::new(Self { wasmtime, v8 })
     }
 }
@@ -210,6 +211,7 @@ impl HostController {
     pub fn new(
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
+        v8_heap_policy: V8HeapPolicyConfig,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         persistence: Arc<dyn PersistenceProvider>,
@@ -221,7 +223,7 @@ impl HostController {
             program_storage,
             energy_monitor,
             persistence,
-            runtimes: HostRuntimes::new(Some(&data_dir)),
+            runtimes: HostRuntimes::new(Some(&data_dir), v8_heap_policy),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
@@ -1387,7 +1389,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     extract_schema_with_pools(
         PagePool::new(None),
         BsatnRowListBuilderPool::new(),
-        &HostRuntimes::new(None),
+        &HostRuntimes::new(None, V8HeapPolicyConfig::default()),
         program_bytes,
         host_type,
     )
@@ -1421,4 +1423,25 @@ where
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
     let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
+    let worker_kind = crate::host::v8::V8_WORKER_KIND_INSTANCE_LANE;
+    let _ = WORKER_METRICS
+        .v8_total_heap_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_total_physical_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_used_global_handles_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_used_heap_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_heap_size_limit_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_external_memory_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(db, worker_kind);
 }

@@ -1,10 +1,6 @@
 import { spawn } from 'node:child_process';
 import pg from 'pg';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { accounts, initialBalance } from '../opts';
-
-export const ACC = accounts;
-export const BAL = initialBalance;
 
 export function has(v?: string) {
   return v && v.trim().length > 0;

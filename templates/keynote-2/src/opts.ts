@@ -1,42 +1,40 @@
 import cac from 'cac';
 import { normalizeStdbUrl } from './core/stdbUrl';
+import {
+  defaultBenchTestName,
+  defaultDemoSystems,
+  getSharedRuntimeDefaults,
+  parseStdbCompression,
+  parseConnectorList,
+  type BenchOptions,
+  type ConcurrencyTests,
+  type ContentionTests,
+  type DemoOptions,
+  type SharedRuntimeConfig,
+  validConnectors,
+} from './config.ts';
 
-export const validConnectors = [
-  'convex',
-  'spacetimedb',
-  'spacetimedbRustClient',
-  'bun',
-  'postgres_rpc',
-  'cockroach_rpc',
-  'sqlite_rpc',
-  'supabase_rpc',
-  'planetscale_pg_rpc',
-] as const;
-export type ConnectorKey = (typeof validConnectors)[number];
-
-interface OptionConfigBase {
-  env?: string;
-}
-interface OptionConfigNone extends OptionConfigBase {
+interface OptionConfigNone {
   type?: undefined;
 }
-interface OptionConfigString extends OptionConfigBase {
+
+interface OptionConfigString {
   type: 'string';
-  default?: string;
 }
-interface OptionConfigNumber extends OptionConfigBase {
+
+interface OptionConfigNumber {
   type: 'number';
-  default?: number;
 }
-interface OptionConfigBoolean extends OptionConfigBase {
+
+interface OptionConfigBoolean {
   type: 'boolean';
-  default?: boolean;
 }
-interface OptionConfigStrings extends OptionConfigBase {
+
+interface OptionConfigStrings {
   type: 'strings';
   possibleValues: readonly string[];
-  default?: readonly string[];
 }
+
 type OptionConfig =
   | OptionConfigString
   | OptionConfigNumber
@@ -45,12 +43,14 @@ type OptionConfig =
   | OptionConfigNone;
 
 class CLIParser {
-  constructor() {
-    this.cac.globalCommand.ignoreOptionDefaultValue();
-    this.cac.help().usage('[options]');
-  }
-  cac = cac();
+  private readonly cli = cac();
   #configs: Record<string, OptionConfig> = {};
+
+  constructor(usage = '[options]') {
+    this.cli.globalCommand.ignoreOptionDefaultValue();
+    this.cli.help().usage(usage);
+  }
+
   option(
     rawName: string,
     description: string,
@@ -59,211 +59,331 @@ class CLIParser {
     if (config.type === 'strings') {
       description += ` (valid values: ${config.possibleValues.join(', ')})`;
     }
-    if (config.env) {
-      description += ` [env: ${config.env}]`;
-    }
-    this.cac.option(rawName, description, {
-      default: 'default' in config ? config.default : undefined,
+
+    this.cli.option(rawName, description, {
       type: config.type === 'strings' ? [] : undefined,
     });
-    const { name, isBoolean, negated } =
-      this.cac.globalCommand.options[this.cac.globalCommand.options.length - 1];
-    this.#configs[name] =
-      isBoolean && config.type === undefined
-        ? { type: 'boolean', env: config.env, default: negated }
-        : config;
+
+    const { name, isBoolean } =
+      this.cli.globalCommand.options[this.cli.globalCommand.options.length - 1];
+    this.#configs[name] = isBoolean && config.type === undefined
+      ? { type: 'boolean' }
+      : config;
+
     return this;
   }
 
-  parse() {
-    const args = this.cac.parse();
+  parse(
+    argv: string[],
+    { maxArgs = 0 }: { maxArgs?: number } = {},
+  ) {
+    const parsed = this.cli.parse(argv);
 
-    this.cac.globalCommand.checkUnknownOptions();
-    this.cac.globalCommand.checkOptionValue();
-    this.cac.globalCommand.checkRequiredArgs();
-    this.cac.globalCommand.checkUnusedArgs();
+    this.cli.globalCommand.checkUnknownOptions();
+    this.cli.globalCommand.checkOptionValue();
+    this.cli.globalCommand.checkRequiredArgs();
 
-    const { options } = args;
+    if (parsed.args.length > maxArgs) {
+      throw new Error(
+        `Unused args: ${parsed.args
+          .slice(maxArgs)
+          .map((arg) => `\`${arg}\``)
+          .join(', ')}`,
+      );
+    }
+
+    const { options } = parsed;
 
     if (options.help) {
       process.exit(0);
     }
 
     for (const [name, config] of Object.entries(this.#configs)) {
-      if (config.env) options[name] ??= process.env[config.env];
+      if (options[name] === undefined) continue;
 
-      let parser: (s: any) => any = (s) => s;
       switch (config.type) {
         case 'boolean':
-          parser = (s) =>
-            typeof s === 'boolean'
-              ? s
-              : !(s === '0' || s === '' || s === 'false');
+          options[name] =
+            typeof options[name] === 'boolean'
+              ? options[name]
+              : !(options[name] === '0' ||
+                  options[name] === '' ||
+                  options[name] === 'false');
           break;
-        case 'number':
-          parser = (s) => {
-            const n = Number(s);
-            if (Number.isFinite(n)) return n;
-            throw new Error(`invalid number '${s}'`);
-          };
+        case 'number': {
+          const value = Number(options[name]);
+          if (!Number.isFinite(value)) {
+            throw new Error(`invalid number '${options[name]}'`);
+          }
+          options[name] = value;
           break;
+        }
         case 'strings':
           if (options[name]?.length === 1 && options[name][0] === undefined) {
             options[name] = undefined;
+            break;
           }
-          parser = (s: string | string[]) =>
-            (Array.isArray(s) ? s : s.split(',')).flat().map((s) => {
-              const x = s.trim();
-              if (!config.possibleValues.includes(x)) {
-                throw new Error(`${x} is not a valid value for this option`);
-              }
-              return x;
-            });
+          options[name] = parseConnectorList(
+            options[name] as string | string[] | undefined,
+            `--${name}`,
+          );
           break;
-      }
-
-      if (options[name] !== undefined) {
-        options[name] = parser(options[name]);
-      } else if ('default' in config) {
-        options[name] = config.default;
       }
     }
 
-    return args;
+    return parsed;
   }
 }
 
-const num = (defaultVal: number, env?: string): OptionConfig => ({
-  type: 'number',
-  default: defaultVal,
-  env,
-});
-const str = (defaultVal: string, env?: string): OptionConfig => ({
-  type: 'string',
-  default: defaultVal,
-  env,
-});
+const num = (): OptionConfig => ({ type: 'number' });
+const str = (): OptionConfig => ({ type: 'string' });
 
-const args = new CLIParser()
-  .option('--seconds <seconds>', 'Number of seconds to benchmark for', num(10))
-  .option('--concurrency <concurrency>', 'Concurrent clients to run', num(10))
-  .option('--alpha <alpha>', 'Alpha value', num(1.5))
-  .option('--systems <systems>', 'The systems to run against', {
-    type: 'strings',
-    possibleValues: validConnectors,
-    default: ['convex', 'spacetimedb'],
-  })
-  .option('--skip-prep', 'Skip prep')
-  .option('--no-animation', 'No animation')
-  .option(
-    '--accounts <num>',
-    'Number of accounts to run with',
-    num(100_000, 'SEED_ACCOUNTS'),
-  )
-  .option(
-    '--initial-balance <balance>',
-    'Initial balance for accounts',
-    num(10_000_000, 'SEED_INITIAL_BALANCE'),
-  )
-  .option(
-    '--stdb-url <url>',
-    'SpacetimeDB url',
-    str('127.0.0.1:3000', 'STDB_URL'),
-  )
-  .option(
-    '--stdb-module <name>',
-    'SpacetimeDB module name',
-    str('test-1', 'STDB_MODULE'),
-  )
-  .option(
-    '--stdb-module-path <dir>',
-    'SpacetimeDB module path',
-    str('./spacetimedb', 'STDB_MODULE_PATH'),
-  )
-  .option('--no-stdb-confirmed-reads', 'Disable confirmed reads', {
-    env: 'STDB_CONFIRMED_READS',
-  })
-  .option('--use-docker', 'Use docker', { env: 'USE_DOCKER' })
-  .option('--no-use-spacetime-metrics-endpoint', '', {
-    env: 'SPACETIME_METRICS_ENDPOINT',
-  })
-  .option(
-    '--pool-max <num>',
-    'Max pool size for postgres',
-    num(1000, 'MAX_POOL'),
-  )
-  .option(
-    '--bun-url <url>',
-    'Bun server url',
-    str('http://127.0.0.1:4000', 'BUN_URL'),
-  )
-  .option(
-    '--convex-url <url>',
-    'Convex server url',
-    str('http://127.0.0.1:3210', 'CONVEX_URL'),
-  )
-  .option(
-    '--convex-dir <dir>',
-    'Convex directory',
-    str('./convex-app', 'CONVEX_DIR'),
-  )
-  .option('--op-timeout-ms <num>', '', num(15000, 'BENCH_OP_TIMEOUT_MS'))
-  .option('--min-op-timeout-ms <num>', '', num(250, 'MIN_OP_TIMEOUT_MS'))
-  .option('--tail-slack-ms <num>', '', num(1000, 'TAIL_SLACK_MS'))
-  .option(
-    '--precomputed-transfer-pairs <num>',
-    '',
-    num(10_000_000, 'BENCH_PRECOMPUTED_TRANSFER_PAIRS'),
-  )
-  .option('--bench-pipelined', 'Force all systems to run pipelined', {
-    type: 'boolean',
-    env: 'BENCH_PIPELINED',
-  })
-  .option('--no-bench-pipelined', 'Disable request pipelining', {
-    type: 'boolean',
-    env: 'BENCH_PIPELINED',
-  })
-  .option(
-    '--max-inflight-per-worker <num>',
-    'When pipelining, max number of inflight requests allowed',
-    { type: 'number', env: 'MAX_INFLIGHT_PER_WORKER' },
-  )
-  .option('--log-errors', 'Log errors', { env: 'LOG_ERRORS' })
-  .option('--verify-transactions', 'Verify transactions', { env: 'VERIFY' })
-  .parse();
+function addSharedRuntimeOptions(parser: CLIParser): CLIParser {
+  return parser
+    .option('--seconds <seconds>', 'Number of seconds to benchmark for', num())
+    .option('--concurrency <concurrency>', 'Concurrent clients to run', num())
+    .option('--alpha <alpha>', 'Alpha value', num())
+    .option('--accounts <num>', 'Number of accounts to run with', num())
+    .option(
+      '--initial-balance <balance>',
+      'Initial balance for accounts',
+      num(),
+    )
+    .option('--stdb-url <url>', 'SpacetimeDB url', str())
+    .option('--stdb-module <name>', 'SpacetimeDB module name', str())
+    .option('--stdb-module-path <dir>', 'SpacetimeDB module path', str())
+    .option(
+      '--stdb-compression <mode>',
+      'SpacetimeDB client compression mode (`none` or `gzip`)',
+      str(),
+    )
+    .option('--no-stdb-confirmed-reads', 'Disable confirmed reads')
+    .option('--use-docker', 'Use docker')
+    .option('--no-use-spacetime-metrics-endpoint', '')
+    .option('--pool-max <num>', 'Max pool size for postgres', num())
+    .option('--bun-url <url>', 'Bun server url', str())
+    .option('--convex-url <url>', 'Convex server url', str())
+    .option('--convex-dir <dir>', 'Convex directory', str())
+    .option('--op-timeout-ms <num>', '', num())
+    .option('--min-op-timeout-ms <num>', '', num())
+    .option('--tail-slack-ms <num>', '', num())
+    .option('--precomputed-transfer-pairs <num>', '', num())
+    .option('--bench-pipelined', 'Force all systems to run pipelined', {
+      type: 'boolean',
+    })
+    .option('--no-bench-pipelined', 'Disable request pipelining', {
+      type: 'boolean',
+    })
+    .option(
+      '--max-inflight-per-worker <num>',
+      'When pipelining, max number of inflight requests allowed',
+      num(),
+    )
+    .option('--log-errors', 'Log errors')
+    .option('--verify-transactions', 'Verify transactions');
+}
 
-const opts = args.options;
+function resolveRuntimeOptions(
+  options: Record<string, any>,
+  defaults: SharedRuntimeConfig = getSharedRuntimeDefaults(),
+): SharedRuntimeConfig {
+  return {
+    accounts: options.accounts ?? defaults.accounts,
+    initialBalance: options.initialBalance ?? defaults.initialBalance,
+    stdbUrl: normalizeStdbUrl(options.stdbUrl ?? defaults.stdbUrl),
+    stdbModule: options.stdbModule ?? defaults.stdbModule,
+    stdbModulePath: options.stdbModulePath ?? defaults.stdbModulePath,
+    stdbCompression: parseStdbCompression(
+      options.stdbCompression ?? defaults.stdbCompression,
+      '--stdb-compression',
+    ),
+    stdbConfirmedReads:
+      options.stdbConfirmedReads ?? defaults.stdbConfirmedReads,
+    useDocker: options.useDocker ?? defaults.useDocker,
+    useSpacetimeMetricsEndpoint:
+      options.useSpacetimeMetricsEndpoint ??
+      defaults.useSpacetimeMetricsEndpoint,
+    poolMax: options.poolMax ?? defaults.poolMax,
+    bunUrl: options.bunUrl ?? defaults.bunUrl,
+    convexUrl: options.convexUrl ?? defaults.convexUrl,
+    convexDir: options.convexDir ?? defaults.convexDir,
+    opTimeoutMs: options.opTimeoutMs ?? defaults.opTimeoutMs,
+    minOpTimeoutMs: options.minOpTimeoutMs ?? defaults.minOpTimeoutMs,
+    tailSlackMs: options.tailSlackMs ?? defaults.tailSlackMs,
+    precomputedTransferPairs:
+      options.precomputedTransferPairs ?? defaults.precomputedTransferPairs,
+    benchPipelined: options.benchPipelined ?? defaults.benchPipelined,
+    maxInflightPerWorker:
+      options.maxInflightPerWorker ?? defaults.maxInflightPerWorker,
+    logErrors: options.logErrors ?? defaults.logErrors,
+    verifyTransactions:
+      options.verifyTransactions ?? defaults.verifyTransactions,
+  };
+}
 
-export const seconds: number = opts.seconds;
-export const concurrency: number = opts.concurrency;
-export const alpha: number = opts.alpha;
-export const systems: ConnectorKey[] = opts.systems;
-export const skipPrep: boolean = opts.skipPrep;
-export const noAnimation: boolean = !opts.animation;
+function parseNumericTuple(
+  raw: string | string[] | undefined,
+  label: string,
+  expectedLength: number,
+): number[] | undefined {
+  if (raw === undefined) return undefined;
 
-export const accounts: number = opts.accounts;
-export const initialBalance: number = opts.initialBalance;
+  const values = (Array.isArray(raw) ? raw : [raw])
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
 
-export const stdbUrl: string = normalizeStdbUrl(opts.stdbUrl);
-export const stdbModule: string = opts.stdbModule;
-export const stdbModulePath: string = opts.stdbModulePath;
-export const stdbConfirmedReads: boolean = opts.stdbConfirmedReads;
+  if (values.length !== expectedLength) {
+    throw new Error(
+      `${label} expects ${expectedLength} values, got ${values.length}`,
+    );
+  }
 
-export const useDocker: boolean = opts.useDocker;
-export const useSpacetimeMetricsEndpoint: boolean =
-  opts.useSpacetimeMetricsEndpoint;
+  return values.map((value) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      throw new Error(`invalid number '${value}'`);
+    }
+    return number;
+  });
+}
 
-export const poolMax: number = opts.poolMax;
-export const bunUrl: string = opts.bunUrl;
-export const convexUrl: string = opts.convexUrl;
-export const convexDir: string = opts.convexDir;
+function collapseTupleOptionArgs(
+  argv: string[],
+  tupleOptionArities: Record<string, number>,
+): string[] {
+  const normalized = argv.slice(0, 2);
 
-export const opTimeoutMs: number = opts.opTimeoutMs;
-export const minOpTimeoutMs: number = opts.minOpTimeoutMs;
-export const tailSlackMs: number = opts.tailSlackMs;
-export const precomputedTransferPairs: number = opts.precomputedTransferPairs;
-export const benchPipelined: boolean | undefined = opts.benchPipelined;
-export const maxInflightPerWorker: number | undefined =
-  opts.maxInflightPerWorker;
-export const logErrors: boolean = opts.logErrors;
-export const verifyTransactions: boolean = opts.verifyTransactions;
+  for (let i = 2; i < argv.length; i++) {
+    const token = argv[i]!;
+    const arity = tupleOptionArities[token];
+
+    if (arity === undefined) {
+      normalized.push(token);
+      continue;
+    }
+
+    const firstValue = argv[i + 1];
+    if (!firstValue || firstValue.startsWith('--')) {
+      throw new Error(`${token} expects ${arity} values`);
+    }
+
+    if (firstValue.includes(',')) {
+      normalized.push(token, firstValue);
+      i += 1;
+      continue;
+    }
+
+    const values = argv.slice(i + 1, i + 1 + arity);
+    if (values.length !== arity || values.some((value) => value.startsWith('--'))) {
+      throw new Error(`${token} expects ${arity} values`);
+    }
+
+    normalized.push(token, values.join(','));
+    i += arity;
+  }
+
+  return normalized;
+}
+
+export function parseDemoOptions(argv: string[] = process.argv): DemoOptions {
+  const runtimeDefaults = getSharedRuntimeDefaults();
+  const { options } = addSharedRuntimeOptions(new CLIParser('[options]'))
+    .option('--systems <systems>', 'The systems to run against', {
+      type: 'strings',
+      possibleValues: validConnectors,
+    })
+    .option('--connectors <connectors>', 'Alias for --systems', {
+      type: 'strings',
+      possibleValues: validConnectors,
+    })
+    .option('--skip-prep', 'Skip prep')
+    .option('--no-animation', 'No animation')
+    .parse(argv);
+
+  const runtimeOptions = resolveRuntimeOptions(options, runtimeDefaults);
+
+  return {
+    ...runtimeOptions,
+    seconds: options.seconds ?? 10,
+    concurrency: options.concurrency ?? 10,
+    alpha: options.alpha ?? 1.5,
+    systems:
+      options.systems ?? options.connectors ?? [...defaultDemoSystems],
+    skipPrep: options.skipPrep ?? false,
+    noAnimation:
+      options.animation === undefined ? false : !options.animation,
+  };
+}
+
+export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
+  const runtimeDefaults = getSharedRuntimeDefaults();
+  const normalizedArgv = collapseTupleOptionArgs(argv, {
+    '--contention-tests': 4,
+    '--concurrency-tests': 4,
+  });
+  const { args, options } = addSharedRuntimeOptions(
+    new CLIParser('[test-name] [options]'),
+  )
+    .option('--connectors <connectors>', 'The connectors to run against', {
+      type: 'strings',
+      possibleValues: validConnectors,
+    })
+    .option('--systems <systems>', 'Alias for --connectors', {
+      type: 'strings',
+      possibleValues: validConnectors,
+    })
+    .option(
+      '--contention-tests <spec>',
+      'Run alpha sweep as start,end,step,concurrency',
+      str(),
+    )
+    .option(
+      '--concurrency-tests <spec>',
+      'Run concurrency sweep as start,end,factor,alpha',
+      str(),
+    )
+    .parse(normalizedArgv, { maxArgs: 1 });
+
+  const runtimeOptions = resolveRuntimeOptions(options, runtimeDefaults);
+
+  const contentionValues = parseNumericTuple(
+    options.contentionTests as string | string[] | undefined,
+    '--contention-tests',
+    4,
+  );
+  const concurrencyValues = parseNumericTuple(
+    options.concurrencyTests as string | string[] | undefined,
+    '--concurrency-tests',
+    4,
+  );
+
+  const contentionTests: ContentionTests | null = contentionValues
+    ? {
+        startAlpha: contentionValues[0]!,
+        endAlpha: contentionValues[1]!,
+        step: contentionValues[2]!,
+        concurrency: contentionValues[3]!,
+      }
+    : null;
+  const concurrencyTests: ConcurrencyTests | null = concurrencyValues
+    ? {
+        startConc: concurrencyValues[0]!,
+        endConc: concurrencyValues[1]!,
+        step: concurrencyValues[2]!,
+        alpha: concurrencyValues[3]!,
+      }
+    : null;
+
+  return {
+    ...runtimeOptions,
+    testName: args[0] ?? defaultBenchTestName,
+    seconds: options.seconds ?? 1,
+    concurrency:
+      contentionTests?.concurrency ?? options.concurrency ?? 50,
+    alpha: concurrencyTests?.alpha ?? options.alpha ?? 1.5,
+    connectors: options.connectors ?? options.systems ?? null,
+    contentionTests,
+    concurrencyTests,
+  };
+}

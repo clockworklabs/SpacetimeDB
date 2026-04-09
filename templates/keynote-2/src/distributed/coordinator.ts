@@ -4,6 +4,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
+import {
+  getSharedRuntimeDefaults,
+  parseStdbCompression,
+  type SpacetimeConnectorConfig,
+  type StdbCompression,
+} from '../config.ts';
 import { getSpacetimeCommittedTransfers } from '../core/spacetimeMetrics.ts';
 import { normalizeStdbUrl } from '../core/stdbUrl.ts';
 import {
@@ -23,6 +29,7 @@ import type {
   RegisterRequest,
   StartEpochRequest,
   StartEpochResponse,
+  StartedRequest,
   StoppedRequest,
 } from './protocol.ts';
 import { isoNow, sleep, writeJsonFile } from './util.ts';
@@ -41,6 +48,7 @@ type ActiveEpoch = {
   label: string | null;
   participantIds: string[];
   participantConnections: number;
+  startedAcks: Set<string>;
   stopAcks: Set<string>;
 };
 
@@ -70,11 +78,24 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
-async function runVerification(url: string, moduleName: string): Promise<void> {
+async function runVerification(
+  url: string,
+  moduleName: string,
+  compression: StdbCompression,
+): Promise<void> {
   const prevVerify = process.env.VERIFY;
   process.env.VERIFY = '1';
 
-  const conn = spacetimedb(url, moduleName);
+  const defaults = getSharedRuntimeDefaults();
+  const config: SpacetimeConnectorConfig = {
+    initialBalance: defaults.initialBalance,
+    stdbCompression: compression,
+    stdbConfirmedReads: defaults.stdbConfirmedReads,
+    stdbModule: moduleName,
+    stdbUrl: url,
+  };
+
+  const conn = spacetimedb(config);
   try {
     await conn.open();
     await conn.verify();
@@ -91,13 +112,14 @@ async function runVerification(url: string, moduleName: string): Promise<void> {
 class DistributedCoordinator {
   private readonly testName: string;
   private readonly connectorName: string;
-  private readonly warmupMs: number;
+  private readonly startAckTimeoutMs: number;
   private readonly windowMs: number;
   private readonly verifyAfterEpoch: boolean;
   private readonly stopAckTimeoutMs: number;
   private readonly resultsDir: string;
   private readonly stdbUrl: string;
   private readonly moduleName: string;
+  private readonly stdbCompression: StdbCompression;
 
   private readonly generators = new Map<string, GeneratorRecord>();
   private phase: CoordinatorPhase = 'idle';
@@ -109,23 +131,25 @@ class DistributedCoordinator {
   constructor(opts: {
     testName: string;
     connectorName: string;
-    warmupMs: number;
+    startAckTimeoutMs: number;
     windowMs: number;
     verifyAfterEpoch: boolean;
     stopAckTimeoutMs: number;
     resultsDir: string;
     stdbUrl: string;
     moduleName: string;
+    stdbCompression: StdbCompression;
   }) {
     this.testName = opts.testName;
     this.connectorName = opts.connectorName;
-    this.warmupMs = opts.warmupMs;
+    this.startAckTimeoutMs = opts.startAckTimeoutMs;
     this.windowMs = opts.windowMs;
     this.verifyAfterEpoch = opts.verifyAfterEpoch;
     this.stopAckTimeoutMs = opts.stopAckTimeoutMs;
     this.resultsDir = opts.resultsDir;
     this.stdbUrl = opts.stdbUrl;
     this.moduleName = opts.moduleName;
+    this.stdbCompression = opts.stdbCompression;
   }
 
   snapshot(): CoordinatorState {
@@ -169,6 +193,24 @@ class DistributedCoordinator {
     generator.openedConnections = body.openedConnections;
     generator.localState = 'ready';
     generator.activeEpoch = null;
+    return this.snapshot();
+  }
+
+  started(body: StartedRequest): CoordinatorState {
+    const generator = this.requireGenerator(body.id);
+    if (!this.currentEpoch || body.epoch !== this.currentEpoch.epoch) {
+      throw new Error(
+        `Generator "${body.id}" acknowledged unexpected epoch ${body.epoch}`,
+      );
+    }
+    if (generator.activeEpoch !== body.epoch) {
+      throw new Error(
+        `Generator "${body.id}" is not assigned to epoch ${body.epoch}`,
+      );
+    }
+
+    generator.localState = 'running';
+    this.currentEpoch.startedAcks.add(body.id);
     return this.snapshot();
   }
 
@@ -230,18 +272,19 @@ class DistributedCoordinator {
         (sum, generator) => sum + generator.openedConnections,
         0,
       ),
+      startedAcks: new Set<string>(),
       stopAcks: new Set<string>(),
     };
 
     for (const participantId of activeEpoch.participantIds) {
       const generator = this.generators.get(participantId);
       if (!generator) continue;
-      generator.localState = 'running';
+      generator.localState = 'starting';
       generator.activeEpoch = activeEpoch.epoch;
     }
 
     this.currentEpoch = activeEpoch;
-    this.phase = 'warmup';
+    this.phase = 'starting';
     this.epochTask = this.runEpoch(activeEpoch)
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
@@ -275,9 +318,14 @@ class DistributedCoordinator {
 
     try {
       console.log(
-        `[coordinator] epoch ${activeEpoch.epoch} warmup for ${(this.warmupMs / 1000).toFixed(1)}s`,
+        `[coordinator] epoch ${activeEpoch.epoch} waiting for start acknowledgements from ${activeEpoch.participantIds.length} generators`,
       );
-      await sleep(this.warmupMs);
+      const pendingStarts = await this.waitForStarts(activeEpoch);
+      if (pendingStarts.length > 0) {
+        throw new Error(
+          `Missing start acknowledgements from: ${pendingStarts.join(', ')}`,
+        );
+      }
 
       const before = await getSpacetimeCommittedTransfers(this.stdbUrl);
       if (before == null) {
@@ -314,7 +362,11 @@ class DistributedCoordinator {
 
       if (this.verifyAfterEpoch) {
         try {
-          await runVerification(this.stdbUrl, this.moduleName);
+          await runVerification(
+            this.stdbUrl,
+            this.moduleName,
+            this.stdbCompression,
+          );
           verification = 'passed';
         } catch (err) {
           verification = 'failed';
@@ -353,7 +405,6 @@ class DistributedCoordinator {
       label: activeEpoch.label,
       test: this.testName,
       connector: this.connectorName,
-      warmupSeconds: this.warmupMs / 1000,
       windowSeconds: this.windowMs / 1000,
       actualWindowSeconds,
       participantIds: activeEpoch.participantIds,
@@ -377,6 +428,25 @@ class DistributedCoordinator {
     const outPath = join(this.resultsDir, fileName);
     await writeJsonFile(outPath, result);
     console.log(`[coordinator] wrote epoch ${result.epoch} result to ${outPath}`);
+  }
+
+  private async waitForStarts(activeEpoch: ActiveEpoch): Promise<string[]> {
+    const deadline = Date.now() + this.startAckTimeoutMs;
+
+    while (Date.now() < deadline) {
+      if (activeEpoch.startedAcks.size >= activeEpoch.participantIds.length) {
+        return [];
+      }
+      await sleep(250);
+    }
+
+    const pending = activeEpoch.participantIds.filter(
+      (id) => !activeEpoch.startedAcks.has(id),
+    );
+    console.warn(
+      `[coordinator] start acknowledgements timed out for epoch ${activeEpoch.epoch}: ${pending.join(', ')}`,
+    );
+    return pending;
   }
 
   private async waitForStops(activeEpoch: ActiveEpoch): Promise<string[]> {
@@ -424,7 +494,11 @@ async function main(): Promise<void> {
     new URL('../../runs/distributed/', import.meta.url),
   );
   const resultsDir = getStringFlag(flags, 'results-dir', defaultResultsDir);
-  const warmupSeconds = getNumberFlag(flags, 'warmup-seconds', 15);
+  const startAckTimeoutSeconds = getNumberFlag(
+    flags,
+    'start-ack-timeout-seconds',
+    60,
+  );
   const windowSeconds = getNumberFlag(flags, 'window-seconds', 60);
   const stopAckTimeoutSeconds = getNumberFlag(
     flags,
@@ -438,23 +512,29 @@ async function main(): Promise<void> {
     process.env.STDB_URL ?? 'ws://127.0.0.1:3000',
   );
   const stdbUrl = normalizeStdbUrl(rawStdbUrl);
+  const defaults = getSharedRuntimeDefaults();
   const moduleName = getStringFlag(
     flags,
     'stdb-module',
     process.env.STDB_MODULE ?? 'test-1',
+  );
+  const stdbCompression = parseStdbCompression(
+    getStringFlag(flags, 'stdb-compression', defaults.stdbCompression),
+    '--stdb-compression',
   );
   const initialIds = getStringListFlag(flags, 'generator-ids');
 
   const coordinator = new DistributedCoordinator({
     testName,
     connectorName,
-    warmupMs: warmupSeconds * 1000,
+    startAckTimeoutMs: startAckTimeoutSeconds * 1000,
     windowMs: windowSeconds * 1000,
     verifyAfterEpoch,
     stopAckTimeoutMs: stopAckTimeoutSeconds * 1000,
     resultsDir,
     stdbUrl,
     moduleName,
+    stdbCompression,
   });
 
   const server = createServer(async (req, res) => {
@@ -482,6 +562,12 @@ async function main(): Promise<void> {
       if (method === 'POST' && path === '/ready') {
         const body = await readJsonBody<ReadyRequest>(req);
         json(res, 200, coordinator.ready(body));
+        return;
+      }
+
+      if (method === 'POST' && path === '/started') {
+        const body = await readJsonBody<StartedRequest>(req);
+        json(res, 200, coordinator.started(body));
         return;
       }
 
@@ -518,7 +604,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} warmup=${warmupSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl}`,
+    `[coordinator] listening on http://${bind}:${port} test=${testName} connector=${connectorName} start_ack_timeout=${startAckTimeoutSeconds}s window=${windowSeconds}s verify=${verifyAfterEpoch ? 'on' : 'off'} stdb=${stdbUrl} compression=${stdbCompression}`,
   );
 }
 

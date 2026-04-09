@@ -1,4 +1,4 @@
-import type { ConnectorKey } from '../opts';
+import type { ConnectorKey } from '../config.ts';
 
 export type TestCase = {
   system: ConnectorKey;
