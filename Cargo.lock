@@ -8578,6 +8578,7 @@ dependencies = [
  "cargo_metadata",
  "predicates",
  "regex",
+ "reqwest 0.12.24",
  "serde_json",
  "spacetimedb-core",
  "spacetimedb-guard",

@@ -266,7 +266,7 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
     let module_def = &module.info().module_def;
 
     let Some((handler_id, _handler_def, _route_def)) = module_def.match_http_route(&st_method, &handler_path) else {
-        return Ok(StatusCode::NOT_FOUND.into_response());
+        return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());
     };
 
     let body = body.collect().await.map_err(log_and_500)?.to_bytes();
@@ -1399,7 +1399,15 @@ where
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset);
 
-        let authed_router = axum::Router::new()
+        let authed_root_router = axum::Router::new().route(
+            "/",
+            self.root_post.layer(axum::middleware::from_fn_with_state(
+                ctx.clone(),
+                anon_auth_middleware::<S>,
+            )),
+        );
+
+        let authed_named_router = axum::Router::new()
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>));
 
@@ -1413,8 +1421,8 @@ where
             .route("/:name_or_identity/route/*path", any(handle_http_route::<S>));
 
         axum::Router::new()
-            .route("/", self.root_post)
-            .merge(authed_router)
+            .merge(authed_root_router)
+            .merge(authed_named_router)
             .merge(http_route_router)
     }
 }
@@ -1658,21 +1666,21 @@ mod tests {
     }
 
     impl Authorization for DummyState {
-        fn authorize_action(
+        async fn authorize_action(
             &self,
             _subject: Identity,
             _database: Identity,
             _action: Action,
-        ) -> impl std::future::Future<Output = Result<(), Unauthorized>> + Send {
-            async { Err(Unauthorized::InternalError(anyhow::anyhow!("unused"))) }
+        ) -> Result<(), Unauthorized> {
+            Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
 
-        fn authorize_sql(
+        async fn authorize_sql(
             &self,
             _subject: Identity,
             _database: Identity,
-        ) -> impl std::future::Future<Output = Result<AuthCtx, Unauthorized>> + Send {
-            async { Err(Unauthorized::InternalError(anyhow::anyhow!("unused"))) }
+        ) -> Result<AuthCtx, Unauthorized> {
+            Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
     }
 
