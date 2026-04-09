@@ -9,7 +9,7 @@ use spacetimedb_snapshot::SnapshotRepository;
 use crate::{messages::control_db::Database, util::asyncify};
 
 use super::{
-    relational_db::{self, Txdata},
+    relational_db::{self, LocalDurability, Txdata},
     snapshot::{self, SnapshotDatabaseState, SnapshotWorker},
 };
 
@@ -30,6 +30,10 @@ pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<SizeOnDisk> + Send + Sync>;
 pub struct Persistence {
     /// The [Durability] to use, for persisting transactions.
     pub durability: Arc<Durability>,
+    /// The concrete local durability handle, when the database uses the built-in
+    /// local commitlog path. This allows the core DB layer to bypass helper
+    /// actors on the local hot path without changing the generic trait object.
+    pub local_durability: Option<LocalDurability>,
     /// The [DiskSizeFn].
     ///
     /// Currently the expectation is that the reported size is the commitlog
@@ -55,6 +59,7 @@ impl Persistence {
     ) -> Self {
         Self {
             durability: Arc::new(durability),
+            local_durability: None,
             disk_size: Arc::new(disk_size),
             snapshots,
             runtime,
@@ -83,12 +88,14 @@ impl Persistence {
 
     /// Convenience to deconstruct an [Option<Self>] into parts.
     ///
-    /// Returns `(Some(durability), Some(disk_size), Option<SnapshotWorker>, Some(runtime))`
-    /// if `this` is `Some`, and `(None, None, None, None)` if `this` is `None`.
+    /// Returns `(Some(durability), local_durability, Some(disk_size), Option<SnapshotWorker>, Some(runtime))`
+    /// if `this` is `Some`, and `(None, None, None, None, None)` if `this` is `None`.
+    #[allow(clippy::type_complexity)]
     pub(super) fn unzip(
         this: Option<Self>,
     ) -> (
         Option<Arc<Durability>>,
+        Option<LocalDurability>,
         Option<DiskSizeFn>,
         Option<SnapshotWorker>,
         Option<tokio::runtime::Handle>,
@@ -96,10 +103,19 @@ impl Persistence {
         this.map(
             |Self {
                  durability,
+                 local_durability,
                  disk_size,
                  snapshots,
                  runtime,
-             }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
+             }| {
+                (
+                    Some(durability),
+                    local_durability,
+                    Some(disk_size),
+                    snapshots,
+                    Some(runtime),
+                )
+            },
         )
         .unwrap_or_default()
     }
@@ -159,7 +175,8 @@ impl PersistenceProvider for LocalPersistenceProvider {
         ));
 
         Ok(Persistence {
-            durability,
+            durability: durability.clone(),
+            local_durability: Some(durability),
             disk_size,
             snapshots: Some(snapshot_worker),
             runtime: tokio::runtime::Handle::current(),

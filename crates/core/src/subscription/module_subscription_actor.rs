@@ -2043,6 +2043,7 @@ mod tests {
             EmptyHistory::new(),
             Some(Persistence {
                 durability: durability.clone(),
+                local_durability: None,
                 disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
                 runtime: rt,
