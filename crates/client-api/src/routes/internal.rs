@@ -1,6 +1,6 @@
 use crate::NodeDelegate;
 
-#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
+#[cfg(not(target_env = "msvc"))]
 mod jemalloc_profiling {
     use axum::body::Body;
     use axum::extract::Query;
@@ -132,12 +132,13 @@ mod jemalloc_profiling {
     }
 }
 
-#[cfg(any(target_env = "msvc", all(target_os = "linux", target_arch = "aarch64")))]
+#[cfg(target_env = "msvc")]
 mod jemalloc_profiling {
     use axum::response::IntoResponse;
     use http::StatusCode;
 
     async fn jemalloc_unsupported() -> impl IntoResponse {
+        // Return an error for msvc environments
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "jemalloc heap profiling is not supported on this platform.",

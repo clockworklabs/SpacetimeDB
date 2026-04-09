@@ -501,13 +501,13 @@ metrics_group!(
 
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 
-#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
+#[cfg(not(target_env = "msvc"))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
-#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
+#[cfg(not(target_env = "msvc"))]
 static SPAWN_JEMALLOC_GUARD: Once = Once::new();
 pub fn spawn_jemalloc_stats(_node_id: String) {
-    #[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
+    #[cfg(not(target_env = "msvc"))]
     SPAWN_JEMALLOC_GUARD.call_once(|| {
         spawn(async move {
             let allocated_bytes = WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&_node_id);
