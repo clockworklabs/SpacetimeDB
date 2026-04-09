@@ -1,103 +1,138 @@
-# Converting a SpacetimeDB 2.0.x project to use NativeAOT-LLVM
+# Using NativeAOT-LLVM with SpacetimeDB C# Modules
 
-This guide provides instructions on taking an existing C# module that targets the public-released SpacetimeDB CLI, and guides you through the necessary steps to enable `NativeAOT-LLVM` use.
+This guide provides instructions for enabling NativeAOT-LLVM compilation for C# SpacetimeDB modules, which can provide performance improvements.
 
 ## Overview
-In order to use `NativeAOT-LLVM` on a C# module, we'll need to set the `EXPERIMENTAL_WASM_AOT` environment variable to `1` which SpacetimeDB will check during publishing of a module.
-For the module to work, we'll also need the `NuGet.Config` and `.csproj` files with the required package sources and references.
 
-### Prerequisites:
+NativeAOT-LLVM compiles C# modules to native WebAssembly (WASM) instead of using the Mono runtime.
+
+> [!WARNING]
+> This is currently only supported for Windows server modules and is experimental.
+
+## Prerequisites
+
 - **.NET SDK 8.x** (same version used by SpacetimeDB)
 - **Emscripten SDK (EMSDK)** installed (must contain `upstream/emscripten/emcc.bat`)
 - **(Optional) Binaryen (wasm-opt)** installed and on `PATH` (recommended: `version_116`)
+- **Windows** - NativeAOT-LLVM is currently only supported for Windows server modules
 
-## Steps
+## Prerequisites Installation
 
-1. **Install EMSDK**
-   - Download and extract the `https://github.com/emscripten-core/emsdk` release.
+### Install Emscripten SDK (EMSDK)
+
+The Emscripten SDK is required for NativeAOT-LLVM compilation:
+
+1. **Download and extract** the Emscripten SDK from `https://github.com/emscripten-core/emsdk`
    - Example path: `D:\Tools\emsdk`
 
-2. **Set environment variables**
-
+2. **Set environment variable** (optional - the CLI will detect it automatically):
    ```powershell
-   $env:EXPERIMENTAL_WASM_AOT=1
    $env:EMSDK="D:\Tools\emsdk"
    ```
 
-3. **Ensure NuGet feed is configured**
-   NativeAOT-LLVM packages currently come from **dotnet-experimental**:
-   - Add the `dotnet-experimental` feed to a project-local `NuGet.Config`
-    ```xml
-    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
-    ```
-    This should be a `NuGet.Config` placed in the root directory of your module folder (next to the `.csproj`). You can simply add the above line to the `packageSources` of your existing file, or if you need to create a minimal one, you can use:
-    
-    ```xml
-    <?xml version="1.0" encoding="utf-8"?>
-    <configuration>
-      <packageSources>
-        <clear />
-        <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
-        <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-      </packageSources>
-    </configuration>
-    ```
+### Install Binaryen (Optional)
 
-4. **Ensure NativeAOT emits a `.wasm` output**
-   - For LLVM AOT builds, the CLI currently accepts `dotnet.wasm` under `bin/Release/net8.0/wasi-wasm/publish/`.
-   - In the module `.csproj`, ensure the AOT package references include:
+Binaryen provides `wasm-opt` for WASM optimization (recommended for performance):
 
-    ```xml
-    <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-        <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
-        <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-        <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-    </ItemGroup>
-    ```
-    
-    The contents of your `.csproj` should look something like this:
-    
-    ```xml
-    <Project Sdk="Microsoft.NET.Sdk">
-        <PropertyGroup>
-            <TargetFramework>net8.0</TargetFramework>
-            <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-            <ImplicitUsings>enable</ImplicitUsings>
-            <Nullable>enable</Nullable>
-        </PropertyGroup>
-        <ItemGroup>
-            <PackageReference Include="SpacetimeDB.Runtime" Version="2.0.*" />
-        </ItemGroup>
-        <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-            <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
-            <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-            <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-        </ItemGroup>
-    </Project>
-    ```
+1. Download Binaryen `https://github.com/WebAssembly/binaryen/releases/tag/version_116` for Windows
+2. Extract to e.g. `D:\Tools\binaryen`
+3. Add `D:\Tools\binaryen\bin` to `PATH`
+4. Verify:
+   ```powershell
+   wasm-opt --version
+   ```
 
-   - **NU1504 warning**: Because the runtime targets also add these LLVM packages, you may see a duplicate PackageReference warning. It is non-blocking.
+## Creating a New NativeAOT Project
 
-5. **(Optional) Install wasm-opt (Binaryen)**
-   This step is optional, but provides performance improvements, and therefore is recommended.
-   - Download Binaryen `https://github.com/WebAssembly/binaryen/releases/tag/version_116` for Windows and extract it, e.g. `D:\Tools\binaryen`.
-   - Add `D:\Tools\binaryen\bin` to `PATH`.
-   - Verify:
+When creating a new C# project, use the `--native-aot` flag:
 
-     ```powershell
-     wasm-opt --version
-     ```
+```powershell
+spacetime init --lang csharp --native-aot my-native-aot-project
+```
 
-6. **Publish module**
-   - Use the SpacetimeDB CLI to publish from the module directory.
-   - With `EXPERIMENTAL_WASM_AOT=1`, publish should attempt LLVM AOT.
-   - Ensure the local server is running if publishing to `local`.
+This automatically:
+- Creates a C# project with the required package references
+- Generates a `spacetime.json` with `"native-aot": true`
+- Configures the project for NativeAOT-LLVM compilation
+
+## Converting an Existing Project
+
+1. **Update spacetime.json**
+   Add `"native-aot": true` to your `spacetime.json`:
+   ```json
+   {
+     "module": "your-module-name",
+     "native-aot": true
+   }
+   ```
+   
+   **Note:** Once `spacetime.json` has `"native-aot": true`, you can simply run `spacetime publish` without the `--native-aot` flag. The CLI will automatically detect the configuration and use NativeAOT compilation.
+
+2. **Ensure NuGet feed is configured**
+   NativeAOT-LLVM packages come from **dotnet-experimental**. Add to `NuGet.Config`:
+   ```xml
+   <?xml version="1.0" encoding="utf-8"?>
+   <configuration>
+     <packageSources>
+       <clear />
+       <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
+       <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+     </packageSources>
+   </configuration>
+   ```
+
+3. **Add NativeAOT package references**
+   Add this `ItemGroup` to your `.csproj`:
+   ```xml
+   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+     <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
+     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+   </ItemGroup>
+   ```
+
+   Your complete `.csproj` should look like:
+   ```xml
+   <Project Sdk="Microsoft.NET.Sdk">
+     <PropertyGroup>
+       <TargetFramework>net8.0</TargetFramework>
+       <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+       <ImplicitUsings>enable</ImplicitUsings>
+       <Nullable>enable</Nullable>
+     </PropertyGroup>
+     <ItemGroup>
+       <PackageReference Include="SpacetimeDB.Runtime" Version="2.0.*" />
+     </ItemGroup>
+     <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+       <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
+       <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+       <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+     </ItemGroup>
+   </Project>
+   ```
+
+## Publishing Your NativeAOT Module
+
+After completing either the **Creating a New NativeAOT Project** or **Converting an Existing Project** steps above, you can publish your module normally:
+
+```powershell
+# From your project directory
+spacetime publish your-database-name
+```
+
+If you have `"native-aot": true` in your `spacetime.json`, the CLI will automatically detect this and use NativeAOT compilation. Alternatively, you can use:
+
+```powershell
+spacetime publish --native-aot your-database-name
+```
+
+The CLI will display "Using NativeAOT-LLVM compilation (experimental)" when NativeAOT is enabled.
 
 ## Troubleshooting
 
 ### Package source mapping enabled
-If you have **package source mapping** enabled in `NuGet.Config`, you must add mappings for the LLVM packages or restores will fail.
-Place the following in `NuGet.Config` inside the `configuration` section:
+If you have **package source mapping** enabled in `NuGet.Config`, add mappings for the LLVM packages:
+
 ```xml
 <packageSourceMapping>
     <packageSource key="bsatn-runtime">
@@ -122,3 +157,13 @@ If the CLI cannot install the `wasi-experimental` workload automatically, instal
 ```powershell
 dotnet workload install wasi-experimental
 ```
+
+### Duplicate PackageReference warning
+You may see a `NU1504` warning about duplicate `PackageReference` items. This is expected and non-blocking.
+
+### Code generation failed
+If you see errors like "Code generation failed for method", ensure:
+1. You're using `SpacetimeDB.Runtime` version 2.0.4 or newer
+2. All required package references are in your `.csproj`
+3. The `dotnet-experimental` feed is configured in `NuGet.Config`
+

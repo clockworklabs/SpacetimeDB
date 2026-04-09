@@ -12,8 +12,8 @@ use std::{env, fs};
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::spacetime_config::{
-    find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
-    SpacetimeConfig,
+    find_and_load_with_env, find_and_load_with_env_from, CommandConfig, CommandSchema, CommandSchemaBuilder,
+    FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
@@ -33,6 +33,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("anon_identity"))
         .key(Key::new("parent"))
         .key(Key::new("organization"))
+        .key(Key::new("native_aot").module_specific())
         .exclude("clear-database")
         .exclude("force")
         .exclude("no_config")
@@ -223,6 +224,12 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .action(Set)
                 .help("Environment name for config file layering (e.g., dev, staging)")
         )
+        .arg(
+            Arg::new("native_aot")
+                .long("native-aot")
+                .action(SetTrue)
+                .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -293,13 +300,23 @@ pub async fn exec_with_options(
     let env = args.get_one::<String>("env").map(|s| s.as_str());
 
     // Get publish configs (from spacetime.json or empty)
-    let owned_loaded;
+    let mut owned_loaded;
     let loaded_config_ref = if no_config {
         None
     } else if let Some(pre) = pre_loaded_config {
         Some(pre)
     } else {
+        // First, try to load config from current directory
         owned_loaded = find_and_load_with_env(env)?;
+
+        // If no config found and --module-path is specified, try loading from module path
+        if owned_loaded.is_none()
+            && args.contains_id("module_path")
+            && let Some(module_path) = args.get_one::<PathBuf>("module_path")
+        {
+            owned_loaded = find_and_load_with_env_from(env, module_path.clone())?;
+        }
+
         owned_loaded.as_ref().inspect(|loaded| {
             if !quiet_config {
                 for path in &loaded.loaded_files {
@@ -420,6 +437,7 @@ async fn execute_publish_configs<'a>(
         let parent = parent_opt.as_deref();
         let org_opt = command_config.get_one::<String>("organization")?;
         let org = org_opt.as_deref();
+        let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
@@ -447,6 +465,16 @@ async fn execute_publish_configs<'a>(
             println!("(JS) Skipping build. Instead we are publishing {}", path.display());
             (path.clone(), "Js")
         } else {
+            // Set EXPERIMENTAL_WASM_AOT environment variable if native_aot is enabled
+            // This is read by the C# build system (MSBuild) and by csharp.rs to determine output paths
+            if native_aot {
+                println!("Using NativeAOT-LLVM compilation (experimental)");
+                // SAFETY: We are single-threaded at this point and no other code is reading
+                // this environment variable concurrently.
+                unsafe {
+                    env::set_var("EXPERIMENTAL_WASM_AOT", "1");
+                }
+            }
             build::exec_with_argstring(
                 path_to_project
                     .as_ref()
