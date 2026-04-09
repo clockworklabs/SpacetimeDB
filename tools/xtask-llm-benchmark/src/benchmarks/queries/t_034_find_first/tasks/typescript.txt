@@ -1,0 +1,19 @@
+Write a SpacetimeDB backend module in TypeScript that defines a task table and a result table, with a reducer that finds the first incomplete task and writes it to the result table.
+
+TABLES
+- task
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - title: string
+    - completed: boolean
+
+- firstIncomplete
+  - Fields:
+    - taskId: number (u64, primary key)
+    - title: string
+
+REDUCERS
+- find_first_incomplete(ctx)
+  - Iterate through the task table
+  - Find the first task where completed is false
+  - If found, insert it into firstIncomplete

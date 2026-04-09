@@ -5,7 +5,7 @@ const entity = table(
     name: 'entity',
   },
   {
-    id: t.i32().primaryKey(),
+    id: t.u64().primaryKey().autoInc(),
   }
 );
 
@@ -33,7 +33,7 @@ const velocity = table(
 
 const nextPosition = table(
   {
-    name: 'nextPosition',
+    name: 'next_position',
   },
   {
     entityId: t.i32().primaryKey(),
@@ -46,8 +46,8 @@ const spacetimedb = schema({ entity, position, velocity, nextPosition });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(ctx => {
-  ctx.db.entity.insert({ id: 1 });
-  ctx.db.entity.insert({ id: 2 });
+  ctx.db.entity.insert({ id: 0n });
+  ctx.db.entity.insert({ id: 0n });
 
   ctx.db.position.insert({ entityId: 1, x: 0, y: 0 });
   ctx.db.position.insert({ entityId: 2, x: 10, y: 0 });

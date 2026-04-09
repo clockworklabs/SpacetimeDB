@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in Rust that defines a table with a unique constraint on a non-primary-key column and a reducer that inserts rows.
+
+TABLES
+- account
+  - Struct: Account
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - email: String (unique)
+    - display_name: String
+
+REDUCERS
+- create_account(ctx, email: String, display_name: String)
+  - Insert an Account row with the given email and display_name
+  - Use id: 0 for auto_inc

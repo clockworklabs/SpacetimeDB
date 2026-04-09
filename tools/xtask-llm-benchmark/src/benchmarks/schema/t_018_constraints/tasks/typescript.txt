@@ -3,12 +3,12 @@ Write a SpacetimeDB backend module in TypeScript that demonstrates unique constr
 TABLE
 - account
   - Fields:
-    - id: number (i32, primary key)
+    - id: number (u64, primary key, autoInc)
     - email: string (unique)
     - name: string
   - Index: byName (btree on name)
 
 REDUCERS
-- seed: insert two rows:
-  - (id=1, email="a@example.com", name="Alice")
-  - (id=2, email="b@example.com", name="Bob")
+- seed: insert two rows (IDs are auto-assigned):
+  - (email="a@example.com", name="Alice")
+  - (email="b@example.com", name="Bob")

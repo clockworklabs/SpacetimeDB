@@ -23,7 +23,9 @@ use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash
 use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
 use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
-use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_summary_from_details_file};
+use xtask_llm_benchmark::results::io::{
+    normalize_details_file, update_golden_answers_on_disk, write_summary_from_details_file,
+};
 use xtask_llm_benchmark::results::{load_summary, Summary};
 
 #[derive(Clone, Debug)]
@@ -100,6 +102,9 @@ enum Commands {
 
     /// Scan details file for LLM API failures and print rerun commands per (lang, model). Does not run anything.
     ScanRerunCommands(ScanRerunCommandsArgs),
+
+    /// Show which (mode, model, category) combinations have no results and print rerun commands.
+    Status(StatusArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -145,6 +150,15 @@ struct RunArgs {
     ///   --models "anthropic:Claude 4.5 Sonnet" --models openai:gpt-5
     #[arg(long, num_args = 1..)]
     models: Option<Vec<ModelGroup>>,
+
+    /// Upload results to a remote API endpoint after the run completes.
+    /// Requires LLM_BENCHMARK_API_KEY env var for authentication.
+    #[arg(long)]
+    upload_url: Option<String>,
+
+    /// Run benchmarks without saving results to disk
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -175,6 +189,21 @@ struct ScanRerunCommandsArgs {
     /// Input details.json (default: llm-comparison-details.json)
     #[arg(long)]
     details: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct StatusArgs {
+    /// Input details.json (default: llm-comparison-details.json)
+    #[arg(long)]
+    details: Option<PathBuf>,
+
+    /// Comma-separated modes to check (default: guidelines,no_context)
+    #[arg(long, value_delimiter = ',', default_value = "guidelines,no_context")]
+    modes: Vec<String>,
+
+    /// Comma-separated languages to check (default: all languages found in details.json)
+    #[arg(long, value_delimiter = ',')]
+    lang: Option<Vec<String>>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -256,6 +285,7 @@ fn main() -> Result<()> {
         Commands::Analyze(args) => cmd_analyze(args),
         Commands::CountHttpFailures(args) => cmd_count_http_failures(args),
         Commands::ScanRerunCommands(args) => cmd_scan_rerun_commands(args),
+        Commands::Status(args) => cmd_status(args),
     }
 }
 
@@ -266,7 +296,79 @@ fn cmd_run(args: RunArgs) -> Result<()> {
     let details_path = llm_comparison_details();
     let summary_path = llm_comparison_summary();
 
-    run_benchmarks(args, &details_path, &summary_path)
+    let upload_url = args.upload_url.clone();
+    run_benchmarks(args, &details_path, &summary_path)?;
+
+    // Upload results to remote API if --upload-url was provided
+    if let Some(url) = upload_url {
+        upload_results_to_api(&url, &details_path)?;
+    }
+
+    Ok(())
+}
+
+/// Upload the details JSON to a remote API endpoint (spacetime-web Postgres).
+fn upload_results_to_api(base_url: &str, details_path: &Path) -> Result<()> {
+    let api_key =
+        std::env::var("LLM_BENCHMARK_API_KEY").context("LLM_BENCHMARK_API_KEY env var required for --upload-url")?;
+
+    let details_json = std::fs::read_to_string(details_path).context("failed to read details JSON for upload")?;
+
+    let details: serde_json::Value =
+        serde_json::from_str(&details_json).context("failed to parse details JSON for upload")?;
+
+    let languages = details["languages"]
+        .as_array()
+        .context("details JSON missing 'languages' array")?;
+
+    let upload_url = format!("{}/api/llm-benchmark-upload", base_url.trim_end_matches('/'));
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .context("failed to build HTTP client for upload")?;
+
+    let mut total_uploaded = 0usize;
+
+    for lang_entry in languages {
+        let lang = lang_entry["lang"].as_str().unwrap_or("unknown");
+        let modes = lang_entry["modes"].as_array();
+        let Some(modes) = modes else { continue };
+
+        for mode_entry in modes {
+            let mode = mode_entry["mode"].as_str().unwrap_or("unknown");
+            let hash = mode_entry["hash"].as_str();
+
+            let payload = serde_json::json!({
+                "lang": lang,
+                "mode": mode,
+                "hash": hash,
+                "models": mode_entry["models"],
+            });
+
+            let resp = client
+                .post(&upload_url)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .header("Content-Type", "application/json")
+                .json(&payload)
+                .send()
+                .with_context(|| format!("upload failed for {lang}/{mode}"))?;
+
+            if resp.status().is_success() {
+                let body: serde_json::Value = resp.json().unwrap_or_default();
+                let inserted = body["inserted"].as_u64().unwrap_or(0);
+                total_uploaded += inserted as usize;
+                println!("📤 uploaded {lang}/{mode}: {inserted} results");
+            } else {
+                let status = resp.status();
+                let body = resp.text().unwrap_or_default();
+                eprintln!("⚠️ upload failed for {lang}/{mode}: {status} — {body}");
+            }
+        }
+    }
+
+    println!("📤 total uploaded: {total_uploaded} results to {upload_url}");
+    Ok(())
 }
 
 /// Core benchmark runner used by both `run` and `ci-quickfix`
@@ -283,6 +385,7 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         model_filter: model_filter_from_groups(args.models),
         host: None,
         details_path: details_path.to_path_buf(),
+        dry_run: args.dry_run,
     };
 
     let bench_root = find_bench_root();
@@ -326,11 +429,12 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         )?;
     }
 
-    if !config.goldens_only && !config.hash_only {
+    if !config.goldens_only && !config.hash_only && !config.dry_run {
         fs::create_dir_all(docs_dir().join("llms"))?;
 
         update_golden_answers_on_disk(details_path, &bench_root, /*all=*/ true, /*overwrite=*/ true)?;
 
+        normalize_details_file(details_path)?;
         write_summary_from_details_file(details_path, summary_path)?;
         println!("Results written to:");
         println!("  Details: {}", details_path.display());
@@ -484,6 +588,8 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(rust_rustdoc_args, &details_path, &summary_path)?;
 
@@ -501,6 +607,8 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(rust_docs_args, &details_path, &summary_path)?;
 
@@ -518,6 +626,8 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(csharp_args, &details_path, &summary_path)?;
 
@@ -535,6 +645,8 @@ fn cmd_ci_quickfix() -> Result<()> {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-5".to_string()],
         }]),
+        upload_url: None,
+        dry_run: false,
     };
     run_benchmarks(typescript_args, &details_path, &summary_path)?;
 
@@ -898,16 +1010,23 @@ fn run_mode_benchmarks(
         &routes,
     ))?;
 
-    // Print summary
-    for rr in &route_runs {
-        let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
-        let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
-        let pct = if total == 0 {
-            0.0
-        } else {
-            (passed as f32 / total as f32) * 100.0
-        };
-        println!("   ↳ {}: {}/{} passed ({:.1}%)", rr.route_name, passed, total, pct);
+    // Print summary sorted by pass rate descending
+    let mut summary: Vec<(&str, u32, u32, f32)> = route_runs
+        .iter()
+        .map(|rr| {
+            let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
+            let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
+            let pct = if total == 0 {
+                0.0
+            } else {
+                (passed as f32 / total as f32) * 100.0
+            };
+            (rr.route_name.as_str(), passed, total, pct)
+        })
+        .collect();
+    summary.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+    for (name, passed, total, pct) in &summary {
+        println!("   ↳ {}: {}/{} passed ({:.1}%)", name, passed, total, pct);
     }
 
     Ok(())
@@ -915,8 +1034,11 @@ fn run_mode_benchmarks(
 
 /// Routes to run: when `model_filter` is set (from --models), only routes whose vendor and
 /// model are in that filter are included; vendors not in the filter are excluded.
+///
+/// When explicit `openrouter:vendor/model` entries are passed they won't appear in
+/// `default_model_routes`, so we synthesize ad-hoc routes for them here.
 fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
-    default_model_routes()
+    let mut routes: Vec<ModelRoute> = default_model_routes()
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| match &config.model_filter {
@@ -926,12 +1048,35 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
                 Some(allowed) => {
                     let api = r.api_model.to_ascii_lowercase();
                     let dn = r.display_name.to_ascii_lowercase();
-                    allowed.contains(&api) || allowed.contains(&dn)
+                    let or_id = r.openrouter_model.as_ref().map(|m| m.to_ascii_lowercase());
+                    allowed.contains(&api)
+                        || allowed.contains(&dn)
+                        || or_id.as_ref().map(|m| allowed.contains(m)).unwrap_or(false)
                 }
             },
         })
         .cloned()
-        .collect()
+        .collect();
+
+    // Synthesize ad-hoc routes for any vendor:model that isn't in the static list.
+    // This lets callers pass arbitrary model IDs (e.g. new models, openrouter paths)
+    // without having to add them to default_model_routes() first.
+    if let Some(mf) = &config.model_filter {
+        for (vendor, model_ids) in mf {
+            for model_id in model_ids {
+                let already_matched = routes.iter().any(|r| {
+                    r.vendor == *vendor
+                        && (r.api_model == model_id.as_str()
+                            || r.openrouter_model.as_deref() == Some(model_id.as_str()))
+                });
+                if !already_matched {
+                    routes.push(ModelRoute::new(model_id, *vendor, model_id, None));
+                }
+            }
+        }
+    }
+
+    routes
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -949,6 +1094,7 @@ async fn run_many_routes_for_mode(
     let selectors = config.selectors.as_deref();
     let host = config.host.clone();
     let details_path = config.details_path.clone();
+    let dry_run = config.dry_run;
 
     futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
@@ -968,6 +1114,7 @@ async fn run_many_routes_for_mode(
                 selectors,
                 host,
                 details_path,
+                dry_run,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
@@ -1114,6 +1261,7 @@ fn cmd_summary(args: SummaryArgs) -> Result<()> {
         fs::create_dir_all(parent).with_context(|| format!("create dir {}", parent.display()))?;
     }
 
+    normalize_details_file(&in_path)?;
     write_summary_from_details_file(&in_path, &out_path)?;
     println!("Summary written to: {}", out_path.display());
     Ok(())
@@ -1200,11 +1348,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
     let provider = make_provider_from_env()?;
 
     // Use a fast model for analysis
-    let route = ModelRoute {
-        display_name: "gpt-4o-mini",
-        api_model: "gpt-4o-mini",
-        vendor: Vendor::OpenAi,
-    };
+    let route = ModelRoute::new("gpt-5-mini", Vendor::OpenAi, "gpt-5-mini", Some("openai/gpt-5-mini"));
 
     use xtask_llm_benchmark::llm::prompt::BuiltPrompt;
 
@@ -1216,9 +1360,10 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
         ),
         static_prefix: None,
         segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
+        search_enabled: false,
     };
 
-    let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?;
+    let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?.text;
 
     // Write markdown output
     let markdown = format!(
@@ -1291,6 +1436,243 @@ fn cmd_scan_rerun_commands(args: ScanRerunCommandsArgs) -> Result<()> {
             lang, mode, vendor, api_model, tasks_arg
         );
         println!();
+    }
+    Ok(())
+}
+
+fn cmd_status(args: StatusArgs) -> Result<()> {
+    use xtask_llm_benchmark::results::schema::Results;
+
+    let details_path = args.details.unwrap_or_else(llm_comparison_details);
+
+    // All known categories by scanning benchmarks dir
+    let all_categories = {
+        let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let mut cats: Vec<String> = fs::read_dir(&bench_dir)
+            .with_context(|| format!("read benchmarks dir {}", bench_dir.display()))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        cats.sort();
+        cats
+    };
+
+    // Build task_id -> category map by scanning benchmarks dir
+    let task_cat: HashMap<String, String> = {
+        let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let mut m = HashMap::new();
+        for cat in &all_categories {
+            let cat_dir = bench_dir.join(cat);
+            if let Ok(entries) = fs::read_dir(&cat_dir) {
+                for e in entries.filter_map(|e| e.ok()) {
+                    if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        m.insert(e.file_name().to_string_lossy().to_string(), cat.clone());
+                    }
+                }
+            }
+        }
+        m
+    };
+
+    // All task IDs across all categories (sorted)
+    let all_tasks: Vec<String> = {
+        let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let mut tasks: Vec<String> = Vec::new();
+        for cat in &all_categories {
+            let cat_dir = bench_dir.join(cat);
+            if let Ok(entries) = fs::read_dir(&cat_dir) {
+                for e in entries.filter_map(|e| e.ok()) {
+                    if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        tasks.push(e.file_name().to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        tasks.sort();
+        tasks
+    };
+
+    // Parse the details file once and reuse for both settled-task and missing-timestamp checks.
+    let results: Option<Results> = if details_path.exists() {
+        let content = fs::read_to_string(&details_path).with_context(|| format!("read {}", details_path.display()))?;
+        Some(serde_json::from_str(&content).context("parse details.json")?)
+    } else {
+        None
+    };
+
+    // Build map: (lang, mode, display_name) -> set of task IDs that have a real result
+    // (llm responded AND no API error — i.e. the LLM actually generated code, pass or fail)
+    let mut settled: HashMap<(String, String, String), std::collections::HashSet<String>> = HashMap::new();
+    let mut all_langs: Vec<String> = Vec::new();
+
+    if let Some(ref results) = results {
+        for lang_entry in &results.languages {
+            if !all_langs.contains(&lang_entry.lang) {
+                all_langs.push(lang_entry.lang.clone());
+            }
+            for mode_entry in &lang_entry.modes {
+                if !args.modes.contains(&mode_entry.mode) {
+                    continue;
+                }
+                for model_entry in &mode_entry.models {
+                    let key = (
+                        lang_entry.lang.clone(),
+                        mode_entry.mode.clone(),
+                        model_entry.name.clone(),
+                    );
+                    for (task_id, outcome) in &model_entry.tasks {
+                        // Settled = LLM responded (has output). Pass or fail doesn't matter here —
+                        // what matters is we got a real answer, not an API/network error.
+                        let is_api_error = outcome.llm_output.is_none()
+                            && get_publish_error_from_outcome(outcome)
+                                .map(|e| is_http_like_error(&e))
+                                .unwrap_or(false);
+                        if !is_api_error {
+                            settled.entry(key.clone()).or_default().insert(task_id.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    all_langs.sort();
+
+    let langs = args.lang.unwrap_or_else(|| all_langs.clone());
+    let routes = default_model_routes();
+    let mut any_missing = false;
+
+    for lang in &langs {
+        let mut lang_header_printed = false;
+        for mode in &args.modes {
+            for route in routes {
+                let display = route.display_name.to_string();
+                let done = settled
+                    .get(&(lang.clone(), mode.clone(), display.clone()))
+                    .cloned()
+                    .unwrap_or_default();
+                // Tasks never attempted OR that hit an API error and need a real retry
+                let incomplete: Vec<&str> = all_tasks
+                    .iter()
+                    .filter(|t| !done.contains(t.as_str()))
+                    .map(|s| s.as_str())
+                    .collect();
+                if incomplete.is_empty() {
+                    continue;
+                }
+                if !lang_header_printed {
+                    println!("=== {} ===\n", lang);
+                    lang_header_printed = true;
+                }
+                any_missing = true;
+                let vendor_str = format!("{:?}", route.vendor).to_ascii_lowercase();
+                // Show by category for readability
+                let by_cat: Vec<String> = all_categories
+                    .iter()
+                    .filter_map(|cat| {
+                        let cat_tasks: Vec<&str> = incomplete
+                            .iter()
+                            .filter(|t| task_cat.get(**t).map(|c| c == cat).unwrap_or(false))
+                            .copied()
+                            .collect();
+                        if cat_tasks.is_empty() {
+                            None
+                        } else {
+                            Some(format!("  {} ({}): {}", cat, cat_tasks.len(), cat_tasks.join(", ")))
+                        }
+                    })
+                    .collect();
+                println!("# {} | mode={} | {} incomplete tasks", display, mode, incomplete.len());
+                for line in &by_cat {
+                    println!("{}", line);
+                }
+                println!(
+                    "cargo run -p xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+                    lang,
+                    mode,
+                    vendor_str,
+                    route.api_model,
+                    incomplete.join(",")
+                );
+                println!();
+            }
+        }
+    }
+
+    // ── Check for results missing started_at/finished_at timestamps ────────
+    // These can't be uploaded to Postgres and need to be re-run.
+    let mut missing_timestamps: Vec<(String, String, String, Vec<String>)> = Vec::new(); // (lang, mode, model, tasks)
+
+    if let Some(ref results) = results {
+        for lang_entry in &results.languages {
+            if !langs.contains(&lang_entry.lang) {
+                continue;
+            }
+            for mode_entry in &lang_entry.modes {
+                if !args.modes.contains(&mode_entry.mode) {
+                    continue;
+                }
+                for model_entry in &mode_entry.models {
+                    let mut no_ts: Vec<String> = Vec::new();
+                    for (task_id, outcome) in &model_entry.tasks {
+                        if outcome.started_at.is_none() || outcome.finished_at.is_none() {
+                            // Only flag results that actually have LLM output (real results, not errors)
+                            if outcome.llm_output.is_some() {
+                                no_ts.push(task_id.clone());
+                            }
+                        }
+                    }
+                    if !no_ts.is_empty() {
+                        no_ts.sort();
+                        missing_timestamps.push((
+                            lang_entry.lang.clone(),
+                            mode_entry.mode.clone(),
+                            model_entry.name.clone(),
+                            no_ts,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if !missing_timestamps.is_empty() {
+        let total: usize = missing_timestamps.iter().map(|(_, _, _, t)| t.len()).sum();
+        println!("---");
+        println!(
+            "⚠️  {} results missing started_at/finished_at timestamps (cannot upload to Postgres):\n",
+            total
+        );
+        for (lang, mode, model, tasks) in &missing_timestamps {
+            println!(
+                "# {} | {} | mode={} | {} tasks without timestamps",
+                model,
+                lang,
+                mode,
+                tasks.len()
+            );
+            // Find the route for this model to generate the rerun command
+            let route = routes.iter().find(|r| r.display_name == model.as_str());
+            if let Some(route) = route {
+                let vendor_str = format!("{:?}", route.vendor).to_ascii_lowercase();
+                println!(
+                    "cargo run -p xtask-llm-benchmark -- run --lang {} --modes {} --models {}:{} --tasks {}",
+                    lang,
+                    mode,
+                    vendor_str,
+                    route.api_model,
+                    tasks.join(",")
+                );
+            }
+            println!();
+        }
+    }
+
+    if !any_missing && missing_timestamps.is_empty() {
+        println!(
+            "All models have real results for all tasks in modes: {}",
+            args.modes.join(", ")
+        );
     }
     Ok(())
 }

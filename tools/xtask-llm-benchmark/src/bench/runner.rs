@@ -16,8 +16,8 @@ use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
-    bench_concurrency, bench_csharp_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name,
-    task_slug, work_server_dir_scoped,
+    bench_concurrency, bench_csharp_concurrency, bench_rust_concurrency, category_slug, debug_llm, fmt_dur,
+    print_llm_output, sanitize_db_name, task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
 use crate::eval::{Lang, ScoreDetails};
@@ -175,7 +175,7 @@ impl TaskRunner {
 
         let category = category_slug(&task.root);
         let task_id = task_slug(&task.root);
-        let route_tag = sanitize_db_name(cfg.route.display_name);
+        let route_tag = sanitize_db_name(&cfg.route.display_name);
         let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
         let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
 
@@ -187,16 +187,80 @@ impl TaskRunner {
 
         let prompt_builder = (spec.make_prompt)(cfg.lang);
         println!("→ [{}] {}: building prompt", cfg.lang_name, cfg.route.display_name);
-        let prompt = prompt_builder.build_segmented(cfg.context);
+        let prompt = prompt_builder.build_segmented(cfg.mode, cfg.context);
 
         println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
-        let llm_output = tokio::time::timeout(std::time::Duration::from_secs(90), cfg.llm.generate(cfg.route, &prompt))
-            .await
-            .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
-            .map_err(RunOneError::Other)?;
+        let mut gen_start = Instant::now();
+        let llm_result = {
+            const MAX_ATTEMPTS: u32 = 3;
+            // Slow models (Gemini 3.1 Pro, DeepSeek Reasoner) can take 8+ minutes on large contexts.
+            let timeout_secs = match cfg.route.display_name.to_ascii_lowercase() {
+                n if n.contains("gemini") || n.contains("deepseek") => 600,
+                _ => 300,
+            };
+            let mut last_err: anyhow::Error = anyhow!("no attempts made");
+            let mut result = None;
+            for attempt in 1..=MAX_ATTEMPTS {
+                gen_start = Instant::now();
+                let r = tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_secs),
+                    cfg.llm.generate(cfg.route, &prompt),
+                )
+                .await;
+                match r {
+                    Ok(Ok(output)) => {
+                        result = Some(output);
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        let msg = format!("{e:#}");
+                        let retryable = msg.contains("timed out")
+                            || msg.contains("429")
+                            || msg.contains("502")
+                            || msg.contains("503")
+                            || msg.contains("504")
+                            || msg.contains("rate limit");
+                        if retryable && attempt < MAX_ATTEMPTS {
+                            let delay = if msg.contains("429") || msg.contains("rate limit") {
+                                60
+                            } else {
+                                30
+                            };
+                            eprintln!(
+                                "⚠️ [{}/{}] provider error (attempt {}/{}), retrying in {delay}s: {}",
+                                cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS, msg
+                            );
+                            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                            last_err = e;
+                        } else {
+                            return Err(RunOneError::Other(e));
+                        }
+                    }
+                    Err(_) => {
+                        if attempt < MAX_ATTEMPTS {
+                            eprintln!(
+                                "⚠️ [{}/{}] LLM call timed out after {timeout_secs}s (attempt {}/{}), retrying in 30s",
+                                cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS
+                            );
+                            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                            last_err = anyhow!("LLM call timed out after {timeout_secs}s");
+                        } else {
+                            return Err(RunOneError::Other(anyhow!(
+                                "LLM call timed out after {timeout_secs}s ({MAX_ATTEMPTS} attempts)"
+                            )));
+                        }
+                    }
+                }
+            }
+            result.ok_or_else(|| RunOneError::Other(last_err))?
+        };
+        let generation_duration_ms = Some(gen_start.elapsed().as_millis() as u64);
+        let input_tokens = llm_result.input_tokens;
+        let output_tokens = llm_result.output_tokens;
+        let llm_output = llm_result.text;
 
         if debug_llm() {
-            print_llm_output(cfg.route.display_name, &task_id, &llm_output);
+            print_llm_output(&cfg.route.display_name, &task_id, &llm_output);
         }
 
         let publish_error: Option<String> = self
@@ -296,6 +360,9 @@ impl TaskRunner {
                     .into_owned(),
             ),
             scorer_details: Some(scorer_details),
+            input_tokens,
+            output_tokens,
+            generation_duration_ms,
             started_at: Some(started),
             finished_at: Some(finished),
         })
@@ -316,6 +383,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -335,6 +403,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                 let run_cfg = RunContext {
                     lang_name: &lang_name,
                     lang,
+                    mode: cfg.mode,
                     route,
                     context,
                     hash,
@@ -384,7 +453,9 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
 
     println!("[runner] completed batch: ok={} err={}", outcomes.len(), errs);
 
-    if !outcomes.is_empty() {
+    if cfg.dry_run {
+        eprintln!("[dry-run] skipping merge_task_runs ({} outcomes)", outcomes.len());
+    } else if !outcomes.is_empty() {
         merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
     } else {
         eprintln!("[runner] no successful runs; not calling merge_task_runs");
@@ -433,6 +504,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -451,6 +523,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                 let run_cfg = RunContext {
                     lang_name: &lang_name,
                     lang,
+                    mode: cfg.mode,
                     route,
                     context,
                     hash,
@@ -498,7 +571,9 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         }
     }
 
-    if !outcomes.is_empty() {
+    if cfg.dry_run {
+        eprintln!("[dry-run] skipping merge_task_runs ({} outcomes)", outcomes.len());
+    } else if !outcomes.is_empty() {
         merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
     }
 
@@ -527,6 +602,7 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
             selectors: Option::from(sels),
             host: ctx.host.clone(),
             details_path: ctx.details_path.clone(),
+            dry_run: ctx.dry_run,
         };
         return run_selected_for_model_async_for_lang(&sel_cfg).await;
     }
@@ -567,6 +643,7 @@ pub async fn build_goldens_only_for_lang(
     let lang_name = lang.as_str();
     let buf = match lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -654,6 +731,9 @@ fn build_fail_outcome(
         scorer_details: Some(sd),
 
         vendor: route.vendor.slug().to_string(),
+        input_tokens: None,
+        output_tokens: None,
+        generation_duration_ms: None,
         started_at: Some(now),
         finished_at: Some(now),
     }

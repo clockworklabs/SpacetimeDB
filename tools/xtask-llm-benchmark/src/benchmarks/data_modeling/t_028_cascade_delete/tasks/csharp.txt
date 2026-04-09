@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in C# that defines an Author table and a Post table with a foreign key, and a reducer that deletes an author along with all their posts.
+
+TABLES
+- Author
+  - Struct: Author
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Name: string
+
+- Post
+  - Struct: Post
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - AuthorId: ulong (index BTree)
+    - Title: string
+
+REDUCERS
+- DeleteAuthor(ctx, ulong authorId)
+  - First, iterate all posts with matching AuthorId and delete each one
+  - Then delete the author by Id
