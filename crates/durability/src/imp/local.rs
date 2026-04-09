@@ -311,7 +311,15 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                         for item in tx_buf.drain(..) {
                             txs.push(item.prepare());
                         }
-                        clog.commit(txs)?;
+                        while !txs.is_empty() {
+                            let rest = if txs.len() > MAX_TXS_PER_COMMITLOG_COMMIT {
+                                txs.split_off(MAX_TXS_PER_COMMITLOG_COMMIT)
+                            } else {
+                                Vec::new()
+                            };
+                            clog.commit(txs)?;
+                            txs = rest;
+                        }
                         Ok(tx_buf)
                     })
                     .await
@@ -453,6 +461,8 @@ impl<T: Send + Sync + 'static> Local<T> {
         })
     }
 }
+
+const MAX_TXS_PER_COMMITLOG_COMMIT: usize = u16::MAX as usize;
 
 impl<T: Encode + 'static> History for Commitlog<Txdata<T>> {
     type TxData = Txdata<T>;

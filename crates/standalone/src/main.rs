@@ -1,6 +1,9 @@
 use clap::Command;
+#[cfg(target_os = "linux")]
+use std::collections::BTreeSet;
 
-use spacetimedb::startup;
+#[cfg(target_os = "linux")]
+use spacetimedb::startup::CoreId;
 use spacetimedb::util::jobs::JobCores;
 use tokio::runtime::Builder;
 
@@ -59,6 +62,26 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[unsafe(export_name = "_rjem_malloc_conf")]
 pub static _rjem_malloc_conf: &[u8] = b"prof:true,prof_active:false,lg_prof_sample:19\0";
 
+#[cfg(target_os = "linux")]
+fn database_cores() -> JobCores {
+    let wanted = BTreeSet::from([8usize, 9, 10, 11]);
+    let cores = spacetimedb::startup::Cores::get_core_ids()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|core| wanted.contains(&core.id))
+        .collect::<Vec<CoreId>>();
+    if cores.is_empty() {
+        JobCores::without_pinned_cores()
+    } else {
+        JobCores::from_pinned_cores(cores)
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn database_cores() -> JobCores {
+    JobCores::without_pinned_cores()
+}
+
 fn main() -> anyhow::Result<()> {
     // take_hook() returns the default hook in case when a custom one is not set
     let orig_hook = panic::take_hook();
@@ -68,15 +91,11 @@ fn main() -> anyhow::Result<()> {
         process::exit(1);
     }));
 
-    let cores = startup::pin_threads();
-
     // Create a multi-threaded run loop
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
-    cores.tokio.configure(&mut builder);
     let rt = builder.build().unwrap();
-    cores.rayon.configure(rt.handle());
-    let database_cores = cores.databases.make_database_runners();
+    let database_cores = database_cores();
 
     // Keep a handle on the `database_cores` alive outside of `async_main`
     // and explicitly drop it to avoid dropping it from an `async` context -
