@@ -533,7 +533,7 @@ mod test {
     use spacetimedb_sats::bsatn::to_len;
     use spacetimedb_sats::proptest::{gen_with, generate_product_value, generate_row_type, generate_typed_row, SIZE};
 
-    const N: usize = 4096;
+    const N: usize = u8::MAX as usize;
 
     proptest! {
         #![proptest_config(ProptestConfig { max_global_rejects: 65536, ..<_>::default() })]
@@ -547,7 +547,7 @@ mod test {
             let av = AlgebraicValue::Product(av);
             let key = BytesKey::<N>::from_algebraic_value(&av);
             let decoded_av = key.decode_algebraic_value(&ty);
-            assert_eq!(av, decoded_av);
+            prop_assert_eq!(av, decoded_av);
         }
 
         /// This test does not hold for `BytesKey`
