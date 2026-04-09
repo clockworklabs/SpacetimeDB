@@ -72,6 +72,7 @@ macro_rules! table_iter {
         $($(#[$vattr:meta])* $var:ident($varty:ty),)*
      }) => {
         $(#[$wattr])*
+        #[derive(Clone)]
         pub struct $wrapper<'a> {
             iter: $base<'a>,
         }
@@ -84,8 +85,15 @@ macro_rules! table_iter {
             }
         }
 
+        impl fmt::Debug for $wrapper<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let iter = self.clone();
+                f.debug_list().entries(iter).finish()
+            }
+        }
+
         $(#[$battr])*
-        #[derive(derive_more::From)]
+        #[derive(Clone, derive_more::From)]
         enum $base<'a> {
             $($(#[$vattr])* $var($varty)),*
         }
@@ -226,12 +234,10 @@ table_iter! {
 
 table_iter! {
     /// An iterator over rows matching a range of [`AlgebraicValue`]s on the [`TableIndex`].
-    #[derive(Clone)]
     pub struct TableIndexRangeIter =>
     /// A ranged iterator over a [`TypedIndex`], with a specialized key type.
     ///
     /// See module docs for info about specialization.
-    #[derive(Clone)]
     enum TypedIndexRangeIter {
         /// The range itself provided was empty.
         RangeEmpty(iter::Empty<RowPointer>),
@@ -288,13 +294,6 @@ table_iter! {
 
         UniqueDirect(UniqueDirectIndexRangeIter<'a>),
         UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
-    }
-}
-
-impl fmt::Debug for TableIndexRangeIter<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let iter = self.clone();
-        f.debug_list().entries(iter).finish()
     }
 }
 
