@@ -145,7 +145,7 @@ export default spacetimedb;
 
 export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
-        ctx.myTable.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
     return {};
 })
@@ -332,7 +332,7 @@ export const maybe_insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.str
         if (a < 10) {
             throw new SenderError("a is less than 10!");
         }
-        ctx.myTable.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
 })
 ```
