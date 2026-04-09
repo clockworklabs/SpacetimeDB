@@ -1896,7 +1896,7 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
             ServerLanguage::Rust => "rust-server",
             ServerLanguage::TypeScript => "typescript-server",
             ServerLanguage::Csharp => "csharp-server",
-            ServerLanguage::Cpp => "", // no skill yet
+            ServerLanguage::Cpp => "cpp-server",
         };
         if !name.is_empty() {
             if let Some(content) = embedded::get_skill(name) {
