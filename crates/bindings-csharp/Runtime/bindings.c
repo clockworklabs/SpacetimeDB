@@ -259,9 +259,24 @@ WASI_SHIM(path_remove_directory, (int32_t, int32_t, int32_t));
 WASI_SHIM(path_rename, (int32_t, int32_t, int32_t, int32_t, int32_t, int32_t));
 WASI_SHIM(path_symlink, (int32_t, int32_t, int32_t, int32_t, int32_t));
 WASI_SHIM(path_unlink_file, (int32_t, int32_t, int32_t));
-WASI_SHIM(poll_oneoff, (int32_t, int32_t, int32_t, int32_t));
+int32_t WASI_NAME(poll_oneoff)(int32_t, int32_t, int32_t, int32_t nevents_ptr) {
+  if (nevents_ptr) {
+    *(__wasi_size_t*)(uintptr_t)nevents_ptr = 0;
+  }
+  // Returning success with uninitialized events can wedge the runtime.
+  // Fail explicitly so the caller surfaces the missing capability instead.
+  return __WASI_ERRNO_NOSYS;
+}
 WASI_SHIM(sched_yield, ());
-WASI_SHIM(random_get, (int32_t, int32_t));
+int32_t WASI_NAME(random_get)(int32_t buf, int32_t len) {
+  static uint32_t state = 0x13579BDFu;
+  uint8_t* out = (uint8_t*)(uintptr_t)buf;
+  for (int32_t i = 0; i < len; i++) {
+    state = state * 1664525u + 1013904223u;
+    out[i] = (uint8_t)(state >> 24);
+  }
+  return 0;
+}
 WASI_SHIM(sock_accept, (int32_t, int32_t, int32_t));
 WASI_SHIM(sock_recv, (int32_t, int32_t, int32_t, int32_t, int32_t, int32_t));
 WASI_SHIM(sock_send, (int32_t, int32_t, int32_t, int32_t, int32_t));

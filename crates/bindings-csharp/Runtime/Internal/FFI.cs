@@ -2,6 +2,12 @@ namespace SpacetimeDB.Internal;
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
+#if EXPERIMENTAL_WASM_AOT
+using WasmImportLinkageAttribute = System.Runtime.InteropServices.WasmImportLinkageAttribute;
+#else
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+file sealed class WasmImportLinkageAttribute : Attribute { }
+#endif
 
 // This type is outside of the hidden `FFI` class because for now we need to do some public
 // forwarding in the codegen for `__describe_module__` and `__call_reducer__` exports which both
@@ -182,6 +188,7 @@ internal static partial class FFI
         public static readonly RowIter INVALID = new(0);
     }
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus table_id_from_name(
         [In] byte[] name,
@@ -189,6 +196,7 @@ internal static partial class FFI
         out TableId out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus index_id_from_name(
         [In] byte[] name,
@@ -196,15 +204,18 @@ internal static partial class FFI
         out IndexId out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_table_row_count(TableId table_id, out ulong out_);
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_table_scan_bsatn(
         TableId table_id,
         out RowIter out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_4)]
     public static partial CheckedStatus datastore_index_scan_point_bsatn(
         IndexId index_id,
@@ -213,6 +224,7 @@ internal static partial class FFI
         out RowIter out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_4)]
     public static partial CheckedStatus datastore_delete_by_index_scan_point_bsatn(
         IndexId index_id,
@@ -221,6 +233,7 @@ internal static partial class FFI
         out uint out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_index_scan_range_bsatn(
         IndexId index_id,
@@ -234,6 +247,7 @@ internal static partial class FFI
         out RowIter out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
@@ -241,9 +255,11 @@ internal static partial class FFI
         ref uint buffer_len
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus row_iter_bsatn_close(RowIter iter_handle);
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_insert_bsatn(
         TableId table_id,
@@ -251,6 +267,7 @@ internal static partial class FFI
         ref uint row_len
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_update_bsatn(
         TableId table_id,
@@ -259,6 +276,7 @@ internal static partial class FFI
         ref uint row_len
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_delete_by_index_scan_range_bsatn(
         IndexId index_id,
@@ -272,6 +290,7 @@ internal static partial class FFI
         out uint out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
@@ -280,6 +299,7 @@ internal static partial class FFI
         out uint out_
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial Errno bytes_source_read(
         BytesSource source,
@@ -287,6 +307,7 @@ internal static partial class FFI
         ref uint buffer_len
     );
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus bytes_sink_write(
         BytesSink sink,
@@ -304,6 +325,7 @@ internal static partial class FFI
         Panic = 5,
     }
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial void console_log(
         LogLevel level,
@@ -341,12 +363,15 @@ internal static partial class FFI
         }
     }
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial ConsoleTimerId console_timer_start([In] byte[] name, uint name_len);
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial void volatile_nonatomic_schedule_immediate(
         [In] byte[] name,
@@ -363,22 +388,28 @@ internal static partial class FFI
     // which prevents source-generated PInvokes from working with types from other assemblies, and
     // `Identity` lives in another assembly (`BSATN.Runtime`). Luckily, `DllImport` is enough here.
 #pragma warning disable SYSLIB1054 // Suppress "Use 'LibraryImportAttribute' instead of 'DllImportAttribute'" warning.
+    [WasmImportLinkage]
     [DllImport(StdbNamespace10_0)]
     public static extern void identity(out Identity dest);
 #pragma warning restore SYSLIB1054
 
+    [WasmImportLinkage]
     [DllImport(StdbNamespace10_1)]
     public static extern Errno bytes_source_remaining_length(BytesSource source, ref uint len);
 
+    [WasmImportLinkage]
     [DllImport(StdbNamespace10_2)]
     public static extern Errno get_jwt(ref ConnectionId connectionId, out BytesSource source);
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_start_mut_tx")]
     public static partial Errno procedure_start_mut_tx(out long micros);
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_commit_mut_tx")]
     public static partial Errno procedure_commit_mut_tx();
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_abort_mut_tx")]
     public static partial Errno procedure_abort_mut_tx();
 
@@ -389,6 +420,7 @@ internal static partial class FFI
         public readonly BytesSource B;
     }
 
+    [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_http_request")]
     public static partial Errno procedure_http_request(
         ReadOnlySpan<byte> request,
