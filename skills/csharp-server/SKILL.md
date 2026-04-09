@@ -49,7 +49,7 @@ public partial struct Entity
 }
 ```
 
-Options: `Accessor = "PascalCase"` (required), `Public = true`, `Scheduled = nameof(ReducerFn)`, `ScheduledAt = nameof(field)`, `Event = true`
+Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = nameof(ReducerFn)`, `ScheduledAt = nameof(field)`, `Event = true`
 
 `ctx.Db` accessors use the `Accessor` name: `ctx.Db.Entity`, `ctx.Db.Record`.
 
@@ -172,7 +172,7 @@ ctx.Db.Item.Insert(new Item { CreatedAt = ctx.Timestamp, .. });
 var expiry = ctx.Timestamp + new TimeDuration(delayMicros);
 
 // Client: Timestamp → milliseconds since epoch
-timestamp.MicrosecondsSinceEpoch / 1000
+timestamp.MicrosecondsSinceUnixEpoch / 1000
 ```
 
 ## Scheduled Tables

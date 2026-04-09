@@ -59,7 +59,7 @@ spacetime publish my-database --yes
 spacetime publish my-database --server local --yes
 
 # Clear database and republish
-spacetime publish my-database --delete-data --yes
+spacetime publish my-database --delete-data always --yes
 ```
 
 ### Database Interaction
@@ -69,8 +69,8 @@ spacetime publish my-database --delete-data --yes
 spacetime sql my-database "SELECT * FROM users"
 spacetime sql my-database --interactive   # REPL mode
 
-# Call reducers
-spacetime call my-database my_reducer '{"arg1": "value", "arg2": 123}'
+# Call reducers (each argument is a separate positional arg)
+spacetime call my-database my_reducer '"value"' '123'
 
 # Subscribe to changes
 spacetime subscribe my-database "SELECT * FROM users" --num-updates 10
@@ -170,7 +170,7 @@ spacetime server ping <server>
 ### "Schema conflict"
 ```bash
 # Clear data and republish
-spacetime publish my-db --delete-data --yes
+spacetime publish my-db --delete-data always --yes
 ```
 
 ### "Build failed"

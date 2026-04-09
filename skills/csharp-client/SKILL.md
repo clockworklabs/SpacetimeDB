@@ -22,7 +22,7 @@ using SpacetimeDB;
 using SpacetimeDB.Types;
 
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("http://localhost:3000"))
+    .WithUri("http://localhost:3000")
     .WithDatabaseName("my-database")
     .WithToken(savedToken)
     .OnConnect((conn, identity, token) =>

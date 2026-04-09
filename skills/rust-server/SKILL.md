@@ -89,8 +89,8 @@ pub struct Post { ... }
 
 ```rust
 #[spacetimedb::reducer]
-pub fn create_entity(ctx: &ReducerContext, name: String, age: i32) {
-    ctx.db.entity().insert(Entity { id: 0, owner: ctx.sender(), name, age, active: true });
+pub fn create_entity(ctx: &ReducerContext, name: String) {
+    ctx.db.entity().insert(Entity { id: 0, owner: ctx.sender(), name, active: true });
 }
 
 // Reducers can return Result<(), String> or Result<(), E> where E: Display

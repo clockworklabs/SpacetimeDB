@@ -36,7 +36,7 @@ const entity = table(
 );
 ```
 
-Options: `name` (snake_case, required), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
+Options: `name` (snake_case, recommended), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
 
 `ctx.db` accessors are the camelCase form of the table's `name` field.
 
