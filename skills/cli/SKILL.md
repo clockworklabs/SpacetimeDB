@@ -59,7 +59,7 @@ spacetime publish my-database --yes
 spacetime publish my-database --server local --yes
 
 # Clear database and republish
-spacetime publish my-database --clear-database --yes
+spacetime publish my-database --delete-data --yes
 ```
 
 ### Database Interaction
@@ -170,7 +170,7 @@ spacetime server ping <server>
 ### "Schema conflict"
 ```bash
 # Clear data and republish
-spacetime publish my-db --clear-database --yes
+spacetime publish my-db --delete-data --yes
 ```
 
 ### "Build failed"
@@ -184,6 +184,6 @@ rustup target add wasm32-unknown-unknown
 ## Module Languages
 
 **Server-side (modules):** Rust, C#, TypeScript, C++
-**Client SDKs:** TypeScript, C#, Rust, Python, Unreal Engine
+**Client SDKs:** TypeScript, C#, Rust, Unreal Engine
 **CLI `generate` targets:** TypeScript, C#, Rust, Unreal C++
 

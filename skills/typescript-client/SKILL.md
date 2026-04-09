@@ -16,7 +16,7 @@ metadata:
 ## React — main.tsx
 
 ```typescript
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings';

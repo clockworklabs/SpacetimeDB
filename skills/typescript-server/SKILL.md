@@ -38,7 +38,7 @@ const entity = table(
 
 Options: `name` (snake_case, required), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
 
-`ctx.db` accessors use the JS variable name (camelCase), not the SQL name.
+`ctx.db` accessors are the camelCase form of the table's `name` field.
 
 ## Column Types
 
@@ -140,8 +140,8 @@ const tickTimer = table({
   name: 'tick_timer',
   scheduled: (): any => tick,   // (): any => breaks circular dep
 }, {
-  scheduledId: t.u64().primaryKey().autoInc(),
-  scheduledAt: t.scheduleAt(),
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  scheduled_at: t.scheduleAt(),
 });
 
 export const tick = spacetimedb.reducer(
@@ -151,4 +151,97 @@ export const tick = spacetimedb.reducer(
 
 // One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)
 // Repeating: ScheduleAt.interval(60_000_000n)
+```
+
+## Custom Types
+
+```typescript
+// Product type (struct):
+const Position = t.object('Position', { x: t.i32(), y: t.i32() });
+const entity = table({ name: 'entity' }, {
+  id: t.u64().primaryKey().autoInc(),
+  pos: Position,
+});
+
+// Sum type (tagged union):
+const Shape = t.enum('Shape', {
+  circle: t.i32(),
+  rectangle: t.object('Rect', { w: t.i32(), h: t.i32() }),
+});
+// Values: { tag: 'circle', value: 10 }
+```
+
+## Views
+
+```typescript
+// Anonymous view (same for all clients):
+export const activeUsers = spacetimedb.anonymousView(
+  { name: 'active_users', public: true },
+  t.array(entity.rowType),
+  (ctx) => [...ctx.db.entity.iter()].filter(e => e.active)
+);
+
+// Per-user view (varies by ctx.sender):
+export const myProfile = spacetimedb.view(
+  { name: 'my_profile', public: true },
+  t.option(entity.rowType),
+  (ctx) => ctx.db.entity.identity.find(ctx.sender) ?? undefined
+);
+```
+
+## Complete Example
+
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+const entity = table(
+  { name: 'entity', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    active: t.bool(),
+  }
+);
+
+const record = table(
+  {
+    name: 'record',
+    public: true,
+    indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['owner'] }],
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity(),
+    value: t.u32(),
+  }
+);
+
+const spacetimedb = schema({ entity, record });
+export default spacetimedb;
+
+export const onConnect = spacetimedb.clientConnected((ctx) => {
+  const existing = ctx.db.entity.identity.find(ctx.sender);
+  if (existing) ctx.db.entity.identity.update({ ...existing, active: true });
+});
+
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
+  const existing = ctx.db.entity.identity.find(ctx.sender);
+  if (existing) ctx.db.entity.identity.update({ ...existing, active: false });
+});
+
+export const createEntity = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    if (ctx.db.entity.identity.find(ctx.sender)) throw new Error('already exists');
+    ctx.db.entity.insert({ identity: ctx.sender, name, active: true });
+  }
+);
+
+export const addRecord = spacetimedb.reducer(
+  { value: t.u32() },
+  (ctx, { value }) => {
+    if (!ctx.db.entity.identity.find(ctx.sender)) throw new Error('not found');
+    ctx.db.record.insert({ id: 0n, owner: ctx.sender, value });
+  }
+);
 ```

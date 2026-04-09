@@ -19,6 +19,19 @@ metadata:
 using SpacetimeDB;
 ```
 
+## Module Structure
+
+All tables, types, and reducers go inside a static partial class:
+
+```csharp
+using SpacetimeDB;
+
+public static partial class Module
+{
+    // Tables, types, and reducers here
+}
+```
+
 ## Tables
 
 `[SpacetimeDB.Table(...)]` on a `public partial struct` — `Accessor` should be PascalCase:
@@ -105,7 +118,7 @@ ctx.Db.Entity.Id.Find(entityId);                                  // Find by PK 
 ctx.Db.Entity.Identity.Find(ctx.Sender);                          // Find by unique column → Entity?
 ctx.Db.Item.AuthorId.Filter(authorId);                            // Filter by index → IEnumerable<Item>
 ctx.Db.Entity.Iter();                                             // All rows → IEnumerable<Entity>
-ctx.Db.Entity.Count();                                            // Count rows
+ctx.Db.Entity.Count;                                              // Count rows
 ctx.Db.Entity.Id.Update(existing with { Name = newName });        // Update by PK
 ctx.Db.Entity.Id.Delete(entityId);                                // Delete by PK
 ```
@@ -127,6 +140,24 @@ public static void OnConnect(ReducerContext ctx) { ... }
 public static void OnDisconnect(ReducerContext ctx) { ... }
 ```
 
+## Views
+
+```csharp
+// Anonymous view (same result for all clients):
+[SpacetimeDB.View(Accessor = "ActiveUsers", Public = true)]
+public static List<Entity> ActiveUsers(AnonymousViewContext ctx)
+{
+    return ctx.Db.Entity.Iter().Where(e => e.Active).ToList();
+}
+
+// Per-user view:
+[SpacetimeDB.View(Accessor = "MyProfile", Public = true)]
+public static Entity? MyProfile(ViewContext ctx)
+{
+    return ctx.Db.Entity.Identity.Find(ctx.Sender) as Entity?;
+}
+```
+
 ## Authentication & Timestamps
 
 ```csharp
@@ -138,7 +169,7 @@ if (row.Owner != ctx.Sender)
 ctx.Db.Item.Insert(new Item { CreatedAt = ctx.Timestamp, .. });
 
 // Timestamp arithmetic
-var expiry = ctx.Timestamp + TimeDuration.FromMicroseconds(delayMicros);
+var expiry = ctx.Timestamp + new TimeDuration(delayMicros);
 
 // Client: Timestamp → milliseconds since epoch
 timestamp.MicrosecondsSinceEpoch / 1000
@@ -187,6 +218,20 @@ public partial struct Point { public float X; public float Y; }
 // Tagged enum (discriminated union):
 [SpacetimeDB.Type]
 public partial record MyUnion : SpacetimeDB.TaggedEnum<(string Text, int Number)>;
+```
+
+## Optional Fields
+
+```csharp
+[SpacetimeDB.Table(Accessor = "Player")]
+public partial struct Player
+{
+    [PrimaryKey, AutoInc]
+    public ulong Id;
+    public string Name;
+    public string? Nickname;
+    public uint? HighScore;
+}
 ```
 
 ## Complete Example

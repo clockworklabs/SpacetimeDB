@@ -137,6 +137,26 @@ pub fn on_connect(ctx: &ReducerContext) { ... }
 pub fn on_disconnect(ctx: &ReducerContext) { ... }
 ```
 
+## Views
+
+```rust
+// Anonymous view (same result for all clients):
+use spacetimedb::{view, AnonymousViewContext};
+
+#[view(accessor = active_users, public)]
+fn active_users(ctx: &AnonymousViewContext) -> Vec<Entity> {
+    ctx.db.entity().iter().filter(|e| e.active).collect()
+}
+
+// Per-user view (result varies by sender):
+use spacetimedb::{view, ViewContext};
+
+#[view(accessor = my_profile, public)]
+fn my_profile(ctx: &ViewContext) -> Option<Entity> {
+    ctx.db.entity().identity().find(ctx.sender())
+}
+```
+
 ## Authentication & Timestamps
 
 ```rust

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 pub const DOCS_DIR_DEFAULT: &str = "../../docs";
+pub const SKILLS_DIR_DEFAULT: &str = "../../skills";
 pub const RUSTDOC_CRATE_ROOT_DEFAULT: &str = "../../crates/bindings";
 
 // Docs benchmark files (CI - single "best" model to test documentation quality)
