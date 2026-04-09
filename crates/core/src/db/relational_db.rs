@@ -1770,6 +1770,9 @@ pub async fn snapshot_watching_commitlog_compressor(
             // which we don't want to compress, so an exclusive range is correct.
             let segment_offsets = &segment_offsets[..end_idx];
             durability.compress_segments(segment_offsets)?;
+            for &segment_offset in segment_offsets {
+                info!("compressed commitlog segment at offset {segment_offset} after snapshot {snapshot_offset}");
+            }
             let n = segment_offsets.len();
             let last_compressed_segment = if n > 0 { Some(segment_offsets[n - 1]) } else { None };
             Ok(last_compressed_segment)
