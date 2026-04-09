@@ -9,6 +9,8 @@
 **/telemetry/metrics.jsonl
 **/telemetry/*.jsonl.bak
 
+# Input snapshots (copies of shared tooling, not source of truth)
+**/inputs/
 
 # Playwright
 **/playwright/node_modules/
