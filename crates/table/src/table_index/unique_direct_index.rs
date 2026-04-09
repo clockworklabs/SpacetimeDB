@@ -243,6 +243,15 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
         UniquePointIter::new(point)
     }
 
+    type Iter<'a>
+        = UniqueDirectIndexRangeIter<'a>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        self.seek_range(&..)
+    }
+
     fn num_keys(&self) -> usize {
         self.len
     }
