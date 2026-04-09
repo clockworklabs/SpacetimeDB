@@ -29,7 +29,10 @@ const textDecoder = new TextDecoder('utf-8' /* { fatal: true } */);
 
 function deserializeHeaders(headers: HttpHeaders): Headers {
   return new Headers(
-    headers.entries.map(({ name, value }): [string, string] => [name, textDecoder.decode(value)])
+    headers.entries.map(({ name, value }): [string, string] => [
+      name,
+      textDecoder.decode(value),
+    ])
   );
 }
 

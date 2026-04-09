@@ -10,7 +10,10 @@ describe('HttpResponse header round-trip', () => {
     const original: HttpResponse = {
       headers: {
         entries: [
-          { name: 'content-type', value: textEncoder.encode('text/event-stream') },
+          {
+            name: 'content-type',
+            value: textEncoder.encode('text/event-stream'),
+          },
           { name: 'x-request-id', value: textEncoder.encode('abc-123') },
         ],
       },
@@ -28,10 +31,14 @@ describe('HttpResponse header round-trip', () => {
     expect(deserialized.headers.entries).toHaveLength(2);
 
     expect(deserialized.headers.entries[0].name).toBe('content-type');
-    expect(textDecoder.decode(deserialized.headers.entries[0].value)).toBe('text/event-stream');
+    expect(textDecoder.decode(deserialized.headers.entries[0].value)).toBe(
+      'text/event-stream'
+    );
 
     expect(deserialized.headers.entries[1].name).toBe('x-request-id');
-    expect(textDecoder.decode(deserialized.headers.entries[1].value)).toBe('abc-123');
+    expect(textDecoder.decode(deserialized.headers.entries[1].value)).toBe(
+      'abc-123'
+    );
   });
 
   test('empty headers round-trip correctly', () => {
@@ -43,7 +50,9 @@ describe('HttpResponse header round-trip', () => {
 
     const writer = new BinaryWriter(64);
     HttpResponse.serialize(writer, original);
-    const deserialized = HttpResponse.deserialize(new BinaryReader(writer.getBuffer()));
+    const deserialized = HttpResponse.deserialize(
+      new BinaryReader(writer.getBuffer())
+    );
 
     expect(deserialized.code).toBe(404);
     expect(deserialized.headers.entries).toHaveLength(0);
