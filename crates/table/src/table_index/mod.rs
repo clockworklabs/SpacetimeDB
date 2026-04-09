@@ -1772,7 +1772,7 @@ impl TypedIndex {
 }
 
 /// A key into a [`TableIndex`].
-#[derive(derive_more::From)]
+#[derive(Debug, derive_more::From)]
 pub struct IndexKey<'a> {
     key: TypedIndexKey<'a>,
 }
@@ -1785,6 +1785,7 @@ impl IndexKey<'_> {
 }
 
 /// A decoded range scan bound, which may be a point or a range.
+#[derive(Debug)]
 pub enum PointOrRange<'a> {
     /// A point scan.
     Point(IndexKey<'a>),
