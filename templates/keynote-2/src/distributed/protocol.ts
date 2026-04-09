@@ -1,6 +1,10 @@
-export type GeneratorLocalState = 'registered' | 'ready' | 'running';
+export type GeneratorLocalState =
+  | 'registered'
+  | 'ready'
+  | 'starting'
+  | 'running';
 
-export type CoordinatorPhase = 'idle' | 'warmup' | 'measure' | 'stop';
+export type CoordinatorPhase = 'idle' | 'starting' | 'measure' | 'stop';
 
 export type GeneratorSnapshot = {
   id: string;
@@ -16,7 +20,6 @@ export type EpochResult = {
   label: string | null;
   test: string;
   connector: string;
-  warmupSeconds: number;
   windowSeconds: number;
   actualWindowSeconds: number;
   participantIds: string[];
@@ -52,6 +55,11 @@ export type RegisterRequest = {
 export type ReadyRequest = {
   id: string;
   openedConnections: number;
+};
+
+export type StartedRequest = {
+  id: string;
+  epoch: number;
 };
 
 export type StoppedRequest = {

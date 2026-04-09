@@ -112,3 +112,7 @@ declare module 'spacetime:sys@2.0' {
     point_len: u32
   ): u32;
 }
+
+declare module 'spacetime:sys@2.1' {
+  export function datastore_clear(table_id: u32): u64;
+}
