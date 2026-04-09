@@ -69,6 +69,18 @@ public:
 	TArray<FString> ExpectedStrings;
 };
 
+UCLASS()
+class UOrderedInsertHandler : public UTestHandler
+{
+	GENERATED_BODY()
+public:
+	TArray<uint8> ExpectedValues;
+	TArray<uint8> ReceivedValues;
+
+	UFUNCTION()
+	void OnInsertOneU8(const FEventContext& Context, const FOneU8Type& Value);
+};
+
 /** Handler used for delete-primitive tests. */
 UCLASS()
 class UDeletePrimitiveHandler : public UTestHandler

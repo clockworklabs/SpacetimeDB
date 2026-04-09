@@ -9,6 +9,9 @@ come from SpacetimeDB codegen (`--lang unrealcpp`) and websocket schema definiti
 
 This is not automated; regenerate manually whenever websocket message schemas or Unreal codegen behavior changes.
 
+The Unreal SDK still uses generated WS v2 logical message bindings (`ClientMessageType.g.h`, `ServerMessageType.g.h`).
+The WS v3 transport envelope is implemented manually in `Connection/WebsocketV3Frames.h`, because it is only a thin wrapper around already-encoded v2 messages rather than a new logical message schema.
+
 ## WS v2 websocket schema regeneration workflow
 
 Run from repo root:
@@ -77,6 +80,5 @@ Here's an example of how to include `AdditionalPluginDirectories` in your `.upro
 	]
 }
 ```
-
 
 
