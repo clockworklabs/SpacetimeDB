@@ -2,6 +2,7 @@ using System.Diagnostics;
 using CsCheck;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
+using SpacetimeDB.ClientApi;
 using SpacetimeDB.Types;
 
 public class Tests
@@ -127,5 +128,46 @@ public class Tests
                 Debug.Assert(arr1.SequenceEqual(arr2));
             }
         });
+    }
+
+    [Fact]
+    public static void V3BatchSizingCapsAt256KiB()
+    {
+        var messages = new[]
+        {
+            new byte[100_000],
+            new byte[100_000],
+            new byte[100_000],
+        };
+
+        Assert.Equal(2, WebSocketV3Frames.CountClientMessagesThatFitInFrame(messages));
+        Assert.Equal(1, WebSocketV3Frames.CountClientMessagesThatFitInFrame(new[] { new byte[300_000] }));
+        Assert.Equal(0, WebSocketV3Frames.CountClientMessagesThatFitInFrame(Array.Empty<byte[]>()));
+    }
+
+    [Fact]
+    public static void V3ServerFrameDecodeHandlesSingleAndBatch()
+    {
+        static byte[] EncodeFrame(ServerFrame frame) =>
+            IStructuralReadWrite.ToBytes(new ServerFrame.BSATN(), frame);
+
+        var singlePayload = new byte[] { 1, 2, 3 };
+        var single = WebSocketV3Frames.DecodeServerMessages(
+            EncodeFrame(new ServerFrame.Single(singlePayload))
+        );
+        Assert.Single(single);
+        Assert.Equal(singlePayload, single[0]);
+
+        var batchPayloads = new[]
+        {
+            new byte[] { 4, 5 },
+            new byte[] { 6, 7, 8 },
+        };
+        var batch = WebSocketV3Frames.DecodeServerMessages(
+            EncodeFrame(new ServerFrame.Batch(batchPayloads))
+        );
+        Assert.Equal(2, batch.Length);
+        Assert.Equal(batchPayloads[0], batch[0]);
+        Assert.Equal(batchPayloads[1], batch[1]);
     }
 }

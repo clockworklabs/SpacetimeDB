@@ -381,6 +381,72 @@ public class SnapshotTests
 
     }
 
+    [Fact]
+    public void V3BatchedServerFrameIsProcessedInOrder()
+    {
+        DbConnection.IsTesting = true;
+
+        var client =
+            DbConnection.Builder()
+            .WithUri("wss://spacetimedb.com")
+            .WithDatabaseName("example")
+            .Build();
+
+        client.webSocket.ProtocolVersion = WebSocketProtocolVersion.V3;
+
+        ServerMessage initialConnection = SampleId(
+            "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=",
+            "token",
+            "Vd4dFzcEzhLHJ6uNL8VXFg=="
+        );
+        ServerMessage transactionUpdate = SampleTransactionUpdate(
+            1,
+            [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "A", true)]
+        );
+
+        ServerFrame frame = new ServerFrame.Batch(new[]
+        {
+            IStructuralReadWrite.ToBytes(new ServerMessage.BSATN(), initialConnection),
+            IStructuralReadWrite.ToBytes(new ServerMessage.BSATN(), transactionUpdate),
+        });
+        var payload = IStructuralReadWrite.ToBytes(new ServerFrame.BSATN(), frame);
+
+        var transportMessage = new byte[payload.Length + 1];
+        transportMessage[0] = 0;
+        Buffer.BlockCopy(payload, 0, transportMessage, 1, payload.Length);
+
+        client.OnMessageReceived(transportMessage, DateTime.UtcNow);
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        List<User>? users = null;
+        while (true)
+        {
+            client.FrameTick();
+            users = client.Db.User.Iter().ToList();
+            if (users.Count == 1)
+            {
+                break;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new TimeoutException("Timed out waiting for a v3 batched frame to be applied.");
+            }
+            Thread.Sleep(1);
+        }
+
+        Assert.Equal(
+            Identity.From(Convert.FromBase64String("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=")),
+            client.Identity
+        );
+
+        Assert.Single(users);
+        Assert.Equal("A", users[0].Name);
+        Assert.True(users[0].Online);
+
+        client.Disconnect();
+    }
+
     [Theory]
     [MemberData(nameof(SampleDump))]
     public async Task VerifySampleDump(string dumpName, ServerMessage[] sampleDumpParsed)

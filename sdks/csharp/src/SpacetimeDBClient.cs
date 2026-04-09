@@ -168,6 +168,8 @@ namespace SpacetimeDB
         protected abstract IErrorContext ToErrorContext(Exception errorContext);
         protected abstract IProcedureEventContext ToProcedureEventContext(ProcedureEvent procedureEvent);
 
+        private Func<byte[], byte[][]> decodeTransportMessages = DecodeV2TransportMessages;
+
         private readonly ConcurrentDictionary<uint, TaskCompletionSource<OneOffQueryResult>> waitingOneOffQueries = new();
 
         private readonly ConcurrentDictionary<uint, PendingReducerCall> pendingReducerCalls = new();
@@ -219,10 +221,16 @@ namespace SpacetimeDB
         {
             var options = new WebSocket.ConnectOptions
             {
-                Protocol = "v2.bsatn.spacetimedb"
+                Protocols = WebSocketProtocols.Preferred
             };
             webSocket = new WebSocket(options);
             webSocket.OnMessage += OnMessageReceived;
+            webSocket.OnProtocolNegotiated += protocolVersion =>
+            {
+                decodeTransportMessages = protocolVersion == WebSocketProtocolVersion.V3
+                    ? WebSocketV3Frames.DecodeServerMessages
+                    : DecodeV2TransportMessages;
+            };
             webSocket.OnSendError += a => onSendError?.Invoke(a);
 #if UNITY_5_3_OR_NEWER
             webSocket.OnClose += (e) =>
@@ -288,6 +296,8 @@ namespace SpacetimeDB
         private CancellationToken _parseCancellationToken => _parseCancellationTokenSource.Token;
 
         private static readonly Status Committed = new Status.Committed(default);
+
+        private static byte[][] DecodeV2TransportMessages(byte[] payload) => new[] { payload };
 
         /// <summary>
         /// Get a description of a message suitable for storing in the tracker metadata.
@@ -427,9 +437,18 @@ namespace SpacetimeDB
 #endif
                 try
                 {
-                    var message = _parseQueue.Take(_parseCancellationToken);
-                    var parsedMessage = ParseMessage(message);
-                    _applyQueue.Add(parsedMessage, _parseCancellationToken);
+                    var unparsed = _parseQueue.Take(_parseCancellationToken);
+                    var payload = CompressionHelpers.DecompressMessagePayload(unparsed.bytes);
+                    var decodedMessages = decodeTransportMessages(payload);
+                    stats.ParseMessageQueueTracker.FinishTrackingRequest(
+                        unparsed.parseQueueTrackerId,
+                        $"type=ws_frame,count={decodedMessages.Length}"
+                    );
+                    foreach (var messageBytes in decodedMessages)
+                    {
+                        var parsedMessage = ParseMessage(messageBytes, unparsed.timestamp);
+                        _applyQueue.Add(parsedMessage, _parseCancellationToken);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -452,13 +471,11 @@ namespace SpacetimeDB
                 }
             }
 
-            ParsedMessage ParseMessage(UnparsedMessage unparsed)
+            ParsedMessage ParseMessage(byte[] messageBytes, DateTime timestamp)
             {
                 var dbOps = ParsedDatabaseUpdate.New();
-                var message = CompressionHelpers.DecompressDecodeMessage(unparsed.bytes);
+                var message = CompressionHelpers.DecodeServerMessage(messageBytes);
                 var trackerMetadata = TrackerMetadataForMessage(message);
-
-                stats.ParseMessageQueueTracker.FinishTrackingRequest(unparsed.parseQueueTrackerId, trackerMetadata);
                 var parseStart = DateTime.UtcNow;
 
                 ReducerEvent<Reducer>? reducerEvent = default;
@@ -469,11 +486,11 @@ namespace SpacetimeDB
                     case ServerMessage.InitialConnection:
                         break;
                     case ServerMessage.SubscribeApplied(var subscribeApplied):
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeApplied.RequestId, unparsed.timestamp);
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeApplied.RequestId, timestamp);
                         dbOps = ParseSubscribeRows(subscribeApplied.Rows);
                         break;
                     case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeApplied.RequestId, unparsed.timestamp);
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeApplied.RequestId, timestamp);
                         if (unsubscribeApplied.Rows != null)
                         {
                             dbOps = ParseUnsubscribeRows(unsubscribeApplied.Rows);
@@ -482,7 +499,7 @@ namespace SpacetimeDB
                     case ServerMessage.SubscriptionError(var subscriptionError):
                         if (subscriptionError.RequestId.HasValue)
                         {
-                            stats.SubscriptionRequestTracker.FinishTrackingRequest(subscriptionError.RequestId.Value, unparsed.timestamp);
+                            stats.SubscriptionRequestTracker.FinishTrackingRequest(subscriptionError.RequestId.Value, timestamp);
                         }
                         break;
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
@@ -492,7 +509,7 @@ namespace SpacetimeDB
                         ParseOneOffQuery(resp);
                         break;
                     case ServerMessage.ReducerResult(var reducerResult):
-                        if (!stats.ReducerRequestTracker.FinishTrackingRequest(reducerResult.RequestId, unparsed.timestamp))
+                        if (!stats.ReducerRequestTracker.FinishTrackingRequest(reducerResult.RequestId, timestamp))
                         {
                             Log.Warn($"Failed to finish tracking reducer request: {reducerResult.RequestId}");
                         }
@@ -545,7 +562,7 @@ namespace SpacetimeDB
                             procedureResult.RequestId
                         );
 
-                        if (!stats.ProcedureRequestTracker.FinishTrackingRequest(procedureResult.RequestId, unparsed.timestamp))
+                        if (!stats.ProcedureRequestTracker.FinishTrackingRequest(procedureResult.RequestId, timestamp))
                         {
                             Log.Warn($"Failed to finish tracking procedure request: {procedureResult.RequestId}");
                         }
@@ -558,7 +575,7 @@ namespace SpacetimeDB
                 stats.ParseMessageTracker.InsertRequest(parseStart, trackerMetadata);
                 var applyTracker = stats.ApplyMessageQueueTracker.StartTrackingRequest(trackerMetadata);
 
-                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent, procedureEvent = procedureEvent };
+                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent, procedureEvent = procedureEvent };
             }
         }
 
@@ -609,6 +626,7 @@ namespace SpacetimeDB
         {
             isClosing = false;
             connectionClosed = false;
+            decodeTransportMessages = DecodeV2TransportMessages;
             Identity = null;
             initialConnectionId = null;
             onConnectInvoked = false;

@@ -24,6 +24,9 @@ mergeInto(LibraryManager.library, {
             var host = UTF8ToString(baseUriPtr);
             var uri = UTF8ToString(uriPtr);
             var protocol = UTF8ToString(protocolPtr);
+            // The C# WebGL bridge can only pass one string argument here, so
+            // multiple offered subprotocols are marshalled as a comma-separated string.
+            var offeredProtocols = protocol.indexOf(',') === -1 ? protocol : protocol.split(',');
             var authToken = UTF8ToString(authTokenPtr);
             if (authToken)
             {
@@ -46,7 +49,7 @@ mergeInto(LibraryManager.library, {
                 }
             }
 
-            var socket = new window.WebSocket(uri, protocol);
+            var socket = new window.WebSocket(uri, offeredProtocols);
             socket.binaryType = "arraybuffer";
 
             var socketId = manager.nextId++;
@@ -54,7 +57,12 @@ mergeInto(LibraryManager.library, {
 
             socket.onopen = function() {
                 if (manager.callbacks.open) {
-                    dynCall('vi', manager.callbacks.open, [socketId]);
+                    var protocolStr = socket.protocol || "";
+                    var protocolArray = intArrayFromString(protocolStr);
+                    var protocolPtr = _malloc(protocolArray.length);
+                    HEAP8.set(protocolArray, protocolPtr);
+                    dynCall('vii', manager.callbacks.open, [socketId, protocolPtr]);
+                    _free(protocolPtr);
                 }
             };
 
