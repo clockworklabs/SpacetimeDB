@@ -163,6 +163,36 @@ pub(super) fn required_bytes_key_size(ty: &AlgebraicType, is_ranged_idx: bool) -
     }
 }
 
+/// Validates BSATN `byte` to conform to `seed`.
+///
+/// The BSATN can originate from untrusted sources, e.g., from module code.
+/// This also means that e.g., a `BytesKey` can be trusted to hold valid BSATN
+/// for the key type, which we can rely on in e.g., `decode_algebraic_value`,
+/// which isn't used in a context where it would be appropriate to fail.
+///
+/// Another reason to validate is that we wish for `BytesKey` to be strictly
+/// an optimization and not allow things that would be rejected by the non-optimized code.
+///
+/// After validating, we also don't need to validate that `bytes`
+/// will fit into e.g., a `BytesKey<N>`
+/// since if all parts that are encoded into it are valid according to a key type,
+/// then `bytes` cannot be longer than `N`.
+fn validate<'a, 'de, S: 'a + ?Sized>(seed: &'a S, mut bytes: &'de [u8]) -> DecodeResult<()>
+where
+    WithTypespace<'a, S>: DeserializeSeed<'de>,
+{
+    WithTypespace::empty(seed).validate(Deserializer::new(&mut bytes))?;
+
+    if !bytes.is_empty() {
+        return Err(DecodeError::custom(format_args!(
+            "after decoding, there are {} extra bytes",
+            bytes.len()
+        )));
+    }
+
+    Ok(())
+}
+
 impl<const N: usize> BytesKey<N> {
     fn new(length: usize, bytes: [u8; N]) -> Self {
         let length = length as _;
@@ -181,56 +211,13 @@ impl<const N: usize> BytesKey<N> {
             .expect("A `BytesKey` should by construction always deserialize to the right `key_type`")
     }
 
-    /// Ensure bytes of length `got` fit in `N` or return an error.
-    fn ensure_key_fits(got: usize) -> DecodeResult<()> {
-        if got > N {
-            return Err(DecodeError::custom(format_args!(
-                "key provided is too long, expected at most {N}, but got {got}"
-            )));
-        }
-        Ok(())
-    }
-
-    /// Decodes `prefix` and `endpoint` in BSATN to a [`BytesKey<N>`]
-    /// by copying over both if they fit into the key.
-    pub(super) fn from_bsatn_prefix_and_endpoint(
-        prefix: &[u8],
-        prefix_types: &[ProductTypeElement],
-        endpoint: &[u8],
-        range_type: &AlgebraicType,
-    ) -> DecodeResult<Self> {
-        // Validate the BSATN.
-        //
-        // The BSATN can originate from untrusted sources, e.g., from module code.
-        // This also means that a `BytesKey` can be trusted to hold valid BSATN
-        // for the key type, which we can rely on in e.g., `decode_algebraic_value`,
-        // which isn't used in a context where it would be appropriate to fail.
-        //
-        // Another reason to validate is that we wish for `BytesKey` to be strictly
-        // an optimization and not allow things that would be rejected by the non-optimized code.
-        WithTypespace::empty(prefix_types).validate(Deserializer::new(&mut { prefix }))?;
-        WithTypespace::empty(range_type).validate(Deserializer::new(&mut { endpoint }))?;
-        // Check that the `prefix` and the `endpoint` together fit into the key.
-        let prefix_len = prefix.len();
-        let endpoint_len = endpoint.len();
-        let total_len = prefix_len + endpoint_len;
-        Self::ensure_key_fits(total_len)?;
-        // Copy the `prefix` and the `endpoint` over.
-        let mut bytes = [0; N];
-        bytes[..prefix_len].copy_from_slice(prefix);
-        bytes[prefix_len..total_len].copy_from_slice(endpoint);
-        Ok(Self::new(total_len, bytes))
-    }
-
     /// Decodes `bytes` in BSATN to a [`BytesKey<N>`]
     /// by copying over the bytes if they fit into the key.
     pub(super) fn from_bsatn(ty: &AlgebraicType, bytes: &[u8]) -> DecodeResult<Self> {
-        // Validate the BSATN. See `Self::from_bsatn_prefix_and_endpoint` for more details.
-        WithTypespace::empty(ty).validate(Deserializer::new(&mut { bytes }))?;
-        // Check that the `bytes` fit into the key.
-        let got = bytes.len();
-        Self::ensure_key_fits(got)?;
+        // Validate the BSATN.
+        validate(ty, bytes)?;
         // Copy the bytes over.
+        let got = bytes.len();
         let mut arr = [0; N];
         arr[..got].copy_from_slice(bytes);
         Ok(Self::new(got, arr))
@@ -343,6 +330,11 @@ fn split_map_write_back<const N: usize>(slice: &mut [u8], map_bytes: impl FnOnce
 }
 
 impl<const N: usize> RangeCompatBytesKey<N> {
+    fn new(length: usize, bytes: [u8; N]) -> Self {
+        let length = length as _;
+        Self { length, bytes }
+    }
+
     /// Decodes `self` as an [`AlgebraicValue`] at `key_type`.
     ///
     /// An incorrect `key_type`,
@@ -354,6 +346,26 @@ impl<const N: usize> RangeCompatBytesKey<N> {
         Self::to_bytes_key(*self, key_type).decode_algebraic_value(key_type)
     }
 
+    /// Decodes `prefix` in BSATN to a [`RangeCompatBytesKey<N>`]
+    /// by copying over `prefix` and massaging if they fit into the key.
+    pub(super) fn from_bsatn_prefix(prefix: &[u8], prefix_types: &[ProductTypeElement]) -> DecodeResult<Self> {
+        // Validate the BSATN.
+        validate(prefix_types, prefix)?;
+
+        // Copy the `prefix` over.
+        let mut bytes = [0; N];
+        let got = prefix.len();
+        bytes[..got].copy_from_slice(prefix);
+
+        // Massage the `bytes`.
+        let mut slice = bytes.as_mut_slice();
+        for ty in prefix_types {
+            slice = Self::process_from_bytes_key(slice, &ty.algebraic_type);
+        }
+
+        Ok(Self::new(got, bytes))
+    }
+
     /// Decodes `prefix` and `endpoint` in BSATN to a [`RangeCompatBytesKey<N>`]
     /// by copying over both and massaging if they fit into the key.
     pub(super) fn from_bsatn_prefix_and_endpoint(
@@ -362,17 +374,28 @@ impl<const N: usize> RangeCompatBytesKey<N> {
         endpoint: &[u8],
         range_type: &AlgebraicType,
     ) -> DecodeResult<Self> {
-        let BytesKey { length, mut bytes } =
-            BytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, endpoint, range_type)?;
+        // Validate the BSATN.
+        validate(prefix_types, prefix)?;
+        validate(range_type, endpoint)?;
 
-        // Masage the bytes in `key`.
+        // Sum up the lengths.
+        let prefix_len = prefix.len();
+        let endpoint_len = endpoint.len();
+        let total_len = prefix_len + endpoint_len;
+
+        // Copy the `prefix` and the `endpoint` over.
+        let mut bytes = [0; N];
+        bytes[..prefix_len].copy_from_slice(prefix);
+        bytes[prefix_len..total_len].copy_from_slice(endpoint);
+
+        // Massage the bytes.
         let mut slice = bytes.as_mut_slice();
         for ty in prefix_types {
             slice = Self::process_from_bytes_key(slice, &ty.algebraic_type);
         }
         Self::process_from_bytes_key(slice, range_type);
 
-        Ok(Self { length, bytes })
+        Ok(Self::new(total_len, bytes))
     }
 
     /// Decodes `bytes` in BSATN to a [`RangeCompatBytesKey<N>`]
@@ -491,6 +514,14 @@ impl<const N: usize> RangeCompatBytesKey<N> {
         let Self { length, mut bytes } = key;
         process(bytes.as_mut_slice(), ty);
         BytesKey { length, bytes }
+    }
+
+    /// Extend the length to `N` by filling with `u8::MAX`.
+    pub(super) fn add_max_suffix(mut self) -> Self {
+        let len = self.len();
+        self.bytes[len..].fill(u8::MAX);
+        self.length = N as u8;
+        self
     }
 }
 

@@ -41,6 +41,7 @@ use super::table::RowRef;
 use crate::{read_column::ReadColumn, static_assert_size};
 use core::ops::{Bound, RangeBounds};
 use core::{fmt, iter};
+use enum_as_inner::EnumAsInner;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::bsatn::{decode, from_reader};
 use spacetimedb_sats::buffer::{DecodeError, DecodeResult};
@@ -1785,7 +1786,7 @@ impl IndexKey<'_> {
 }
 
 /// A decoded range scan bound, which may be a point or a range.
-#[derive(Debug)]
+#[derive(Debug, EnumAsInner)]
 pub enum PointOrRange<'a> {
     /// A point scan.
     Point(IndexKey<'a>),
@@ -1993,15 +1994,47 @@ impl TableIndex {
     ) -> DecodeResult<PointOrRange<'de>> {
         // Is this really a point scan?
         let from = |k| ctor(k).into();
-        let decode = |bytes| {
-            RangeCompatBytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, bytes, range_type).map(from)
-        };
+        let decode_prefix = || RangeCompatBytesKey::from_bsatn_prefix(prefix, prefix_types);
+        let decode =
+            |bytes| RangeCompatBytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, bytes, range_type);
         Ok(if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
-            PointOrRange::Point(decode(point)?)
+            PointOrRange::Point(from(decode(point)?))
         } else {
             // It's not a point scan.
             let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
-            PointOrRange::Range(decode_bound(start)?, decode_bound(end)?)
+
+            // For the start endpoint,
+            // it's only necessary to consider the `prefix`.
+            // The suffix is implicitly taken care of as a shorter slice is lesser than a longer one.
+            // That is, we have e.g., `prefix ++ [] <= prefix ++ suffix`.
+            //
+            // The exception to this is `Excluded`, where we need to fill with `Max`.
+            let prefix_is_empty = prefix.is_empty();
+            let start = match decode_bound(start)? {
+                Bound::Included(r) => Bound::Included(r),
+                Bound::Excluded(r) => Bound::Excluded(r.add_max_suffix()),
+                Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+                // We have a prefix, so the start is actually the prefix.
+                Bound::Unbounded => Bound::Included(decode_prefix()?),
+            };
+
+            // The end endpoint needs "max" as the suffix-filling element,
+            // as it imposes the least and acts like `Unbounded`.
+            //
+            // The exception to this is `Excluded`,
+            // where e.g., `[0]..[1]` should not find [1, 2],
+            // which it would if "max" was used.
+            // Instead, "min" must be used, but it can be omitted, as it's implicit.
+            let end = match decode_bound(end)? {
+                Bound::Included(r) => Bound::Included(r.add_max_suffix()),
+                Bound::Excluded(r) => Bound::Excluded(r),
+                // Prefix is empty, and suffix will be `Max`,
+                // so simplify `(Max, Max, ...)` to `Unbounded`.
+                Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+                Bound::Unbounded => Bound::Included(decode_prefix()?.add_max_suffix()),
+            };
+
+            PointOrRange::Range(start.map(from), end.map(from))
         })
     }
 
@@ -2033,6 +2066,8 @@ impl TableIndex {
         suffix_len: usize,
     ) -> (Bound<AlgebraicValue>, Bound<AlgebraicValue>) {
         let prefix_is_empty = prefix.elements.is_empty();
+        // Conses value to prefix.
+        let cons = |prefix: ProductValue, val| prefix.push(val).into();
         // Concatenate prefix, value, and the most permissive value for the suffix.
         let concat = |prefix: ProductValue, val, fill| {
             let mut vals: Vec<_> = prefix.elements.into();
@@ -2041,27 +2076,34 @@ impl TableIndex {
             vals.extend(iter::repeat_n(fill, suffix_len));
             AlgebraicValue::product(vals)
         };
-        // The start endpoint needs `Min` as the suffix-filling element,
-        // as it imposes the least and acts like `Unbounded`.
-        let concat_start = |val| concat(prefix.clone(), val, AlgebraicValue::Min);
+
+        // For the start endpoint,
+        // the suffix is implicitly taken care of as a shorter slice is lesser than a longer one.
+        // That is, we have e.g., `(prefix : val) <= (prefix : val) ++ suffix`.
+        //
+        // The exception to this is `Excluded`, where we need to fill with `Max`.
         let range_start = match start {
-            Bound::Included(r) => Bound::Included(concat_start(r)),
-            Bound::Excluded(r) => Bound::Excluded(concat_start(r)),
+            Bound::Included(r) => Bound::Included(cons(prefix.clone(), r)),
+            Bound::Excluded(r) => Bound::Excluded(concat(prefix.clone(), r, AlgebraicValue::Max)),
             // Prefix is empty, and suffix will be `Min`,
             // so simplify `(Min, Min, ...)` to `Unbounded`.
             Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
-            Bound::Unbounded => Bound::Included(concat_start(AlgebraicValue::Min)),
+            Bound::Unbounded => Bound::Included(prefix.clone().into()),
         };
         // The end endpoint needs `Max` as the suffix-filling element,
         // as it imposes the least and acts like `Unbounded`.
-        let concat_end = |val| concat(prefix, val, AlgebraicValue::Max);
+        //
+        // The exception to this is `Excluded`,
+        // where e.g., `[0]..[1]` should not find [1, 2],
+        // which it would if `Max` was used.
+        // Instead, `Min` must be used, but it can be omitted, as it's implicit.
         let range_end = match end {
-            Bound::Included(r) => Bound::Included(concat_end(r)),
-            Bound::Excluded(r) => Bound::Excluded(concat_end(r)),
+            Bound::Included(r) => Bound::Included(concat(prefix, r, AlgebraicValue::Max)),
+            Bound::Excluded(r) => Bound::Excluded(cons(prefix, r)),
             // Prefix is empty, and suffix will be `Max`,
             // so simplify `(Max, Max, ...)` to `Unbounded`.
             Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
-            Bound::Unbounded => Bound::Included(concat_end(AlgebraicValue::Max)),
+            Bound::Unbounded => Bound::Included(concat(prefix, AlgebraicValue::Max, AlgebraicValue::Max)),
         };
         (range_start, range_end)
     }
@@ -2336,18 +2378,24 @@ mod test {
     use crate::page_pool::PagePool;
     use crate::table::Table;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
+    use core::cmp::Ordering;
     use core::ops::Bound::*;
     use decorum::Total;
+    use proptest::array::uniform;
     use proptest::prelude::*;
     use proptest::{
         collection::{hash_set, vec},
         test_runner::TestCaseResult,
     };
     use spacetimedb_data_structures::map::HashMap;
+    use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::ProductTypeElement;
-    use spacetimedb_primitives::ColId;
+    use spacetimedb_primitives::{ColId, IndexId};
     use spacetimedb_sats::algebraic_value::Packed;
-    use spacetimedb_sats::proptest::{generate_algebraic_value, generate_primitive_algebraic_type};
+    use spacetimedb_sats::proptest::{
+        gen_with, generate_algebraic_type, generate_algebraic_value, generate_primitive_algebraic_type,
+        generate_typed_value,
+    };
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
@@ -2441,6 +2489,22 @@ mod test {
         let start = range.start_bound().map(|v| index.key_from_algebraic_value(v));
         let end = range.end_bound().map(|v| index.key_from_algebraic_value(v));
         index.seek_range(&(start, end))
+    }
+
+    fn find_start_mid_end<T: Ord>(a: T, b: T, c: T) -> (T, T, T) {
+        use Ordering::*;
+        match (a.cmp(&b), b.cmp(&c)) {
+            (Less | Equal, Less | Equal) => (a, b, c),
+            (Less, Greater) => match a.cmp(&c) {
+                Less | Equal => (a, c, b),
+                Greater => (c, a, b),
+            },
+            (Greater, Less) => match a.cmp(&c) {
+                Less | Equal => (b, a, c),
+                Greater => (b, c, a),
+            },
+            (Greater | Equal, Greater | Equal) => (c, b, a),
+        }
     }
 
     proptest! {
@@ -2680,6 +2744,70 @@ mod test {
             assert_eq!(rows, []);
             let rows = seek_range(&index, &(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
+        }
+
+        #[test]
+        fn btree_multi_col_range_scans_work(
+            is_unique: bool,
+            (prefix_ty, prefix_val) in generate_typed_value(),
+            (middle_ty, [start, middle, end]) in gen_with(generate_algebraic_type(), |ty| uniform(generate_algebraic_value(ty))),
+            (suffix_ty, suffix_val) in generate_typed_value(),
+        ) {
+            // Make the product type.
+            let ty = ProductType::from([prefix_ty, middle_ty, suffix_ty]);
+            let index = new_index(&ty, &[0, 1, 2].into(), is_unique, IndexKind::BTree);
+
+            // Find the actual start, middle, and end.
+            let (start, middle, end) = find_start_mid_end(start, middle, end);
+            let row = product![prefix_val.clone(), middle.clone(), suffix_val.clone()];
+
+            // Make a table, add the index, and insert the row.
+            let (mut table, pool, mut blob_store) = setup(ty);
+            unsafe { table.add_index(IndexId::SENTINEL, index) };
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &row).unwrap();
+            let row_ptr = row_ref.pointer();
+            let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
+
+            // Test sanity of various bounds.
+            let seek = |start, end| {
+                let prefix = to_vec(&prefix_val).unwrap();
+                let rstart = to_vec(&start).unwrap();
+                let rend = to_vec(&end).unwrap();
+                let range = index
+                    .bounds_from_bsatn(&prefix, 1.into(), &rstart, &rend)
+                    .unwrap()
+                    .into_range()
+                    .unwrap();
+                index.seek_range(&range).unwrap().collect::<Vec<_>>()
+            };
+            use Bound::*;
+            // An unbounded range on both ends will find the row.
+            assert_eq!(seek(Unbounded, Unbounded), [row_ptr]);
+            // Including middle as the start/end should find the row.
+            assert_eq!(seek(Included(middle.clone()), Unbounded), [row_ptr]);
+            assert_eq!(seek(Unbounded, Included(middle.clone())), [row_ptr]);
+            assert_eq!(seek(Included(middle.clone()), Included(middle.clone())), [row_ptr]);
+            // Excluding middle as the start/end shouldn't find the row.
+            assert_eq!(seek(Excluded(middle.clone()), Unbounded), []);
+            assert_eq!(seek(Excluded(middle.clone()), Included(end.clone())), []);
+            assert_eq!(seek(Unbounded, Excluded(middle.clone())), []);
+            assert_eq!(seek(Included(start.clone()), Excluded(middle.clone())), []);
+            // Including start and end should find the row.
+            assert_eq!(seek(Included(start.clone()), Unbounded), [row_ptr]);
+            assert_eq!(seek(Unbounded, Included(end.clone())), [row_ptr]);
+            assert_eq!(seek(Included(start.clone()), Included(end.clone())), [row_ptr]);
+            // Excluding start/end should find the row when `start, end != middle`.
+            if start < middle && middle < end {
+                assert_eq!(seek(Excluded(start.clone()), Excluded(end.clone())), [row_ptr]);
+            }
+            if start < middle {
+                assert_eq!(seek(Excluded(start.clone()), Included(end.clone())), [row_ptr]);
+                assert_eq!(seek(Excluded(start.clone()), Unbounded), [row_ptr]);
+            }
+            if middle < end {
+                assert_eq!(seek(Included(start.clone()), Excluded(end.clone())), [row_ptr]);
+                assert_eq!(seek(Unbounded, Excluded(end.clone())), [row_ptr]);
+            }
         }
     }
 }
