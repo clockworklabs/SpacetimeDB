@@ -4,9 +4,7 @@
 **/results/**/.vite/
 **/results/**/drizzle/
 
-# Telemetry raw logs (large)
-**/telemetry/logs.jsonl
-**/telemetry/metrics.jsonl
+# Telemetry backup files
 **/telemetry/*.jsonl.bak
 
 
