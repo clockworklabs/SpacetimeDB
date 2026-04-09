@@ -13,7 +13,7 @@ use spacetimedb_memory_usage::MemoryUsage;
 /// that deals with a smaller number of values in the first variant
 /// and with a larger number in the second variant.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum SameKeyEntry {
+pub enum SameKeyEntry {
     /// A small number of values.
     ///
     /// No ordering is kept between values.
@@ -154,5 +154,39 @@ impl Iterator for SameKeyEntryIter<'_> {
             Self::Large(set) => set.next(),
         }
         .copied()
+    }
+}
+
+/// An iterator over many [`SameKeyEntry`]s.
+#[derive(Clone)]
+pub struct ManySameKeyEntryIter<'a, OuterIter> {
+    /// The outer iterator providing [`SameKeyEntry`]s.
+    outer: OuterIter,
+    /// The inner iterator for the value set for a found key.
+    inner: SameKeyEntryIter<'a>,
+}
+
+impl<OuterIter> ManySameKeyEntryIter<'_, OuterIter> {
+    /// Returns an iterator drawing entries from `outer`.
+    pub fn new(outer: OuterIter) -> Self {
+        let inner = SameKeyEntry::empty_iter();
+        Self { outer, inner }
+    }
+}
+
+impl<'a, OI: Iterator<Item = &'a SameKeyEntry>> Iterator for ManySameKeyEntryIter<'a, OI> {
+    type Item = RowPointer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // While the inner iterator has elements, yield them.
+            if let Some(val) = self.inner.next() {
+                return Some(val);
+            }
+            // Advance and get a new inner, if possible, or quit.
+            // We'll come back and yield elements from it in the next iteration.
+            let inner = self.outer.next()?;
+            self.inner = inner.iter();
+        }
     }
 }

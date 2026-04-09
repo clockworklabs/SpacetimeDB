@@ -25,8 +25,11 @@ export default class BinaryReader {
     this.offset = 0;
   }
 
-  reset(view: DataView) {
-    this.view = view;
+  reset(input: Uint8Array | DataView) {
+    this.view =
+      input instanceof DataView
+        ? input
+        : new DataView(input.buffer, input.byteOffset, input.byteLength);
     this.offset = 0;
   }
 

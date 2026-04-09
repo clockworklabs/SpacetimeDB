@@ -376,11 +376,6 @@ export async function runOne({
     return { start, completedWithinWindow, completedTotal, committedDelta };
   };
 
-  // const warmUpSeconds = 5;
-  // console.log(`[${connector.name}] Warming up for ${warmUpSeconds}s...`);
-  // await run(warmUpSeconds);
-  // console.log(`[${connector.name}] Finished warmup.`);
-
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
   const { start, completedWithinWindow, completedTotal, committedDelta } =
