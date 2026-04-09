@@ -556,9 +556,20 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
   echo "  Prompt: $(basename "$PROMPT_FILE")"
   echo ""
 
+  # In upgrade mode, use the incremental feature file instead of the full composed prompt
+  FEATURE_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/features/$(printf '%02d' "$LEVEL")_"*".md"
+  # shellcheck disable=SC2086
+  FEATURE_FILE=$(ls $FEATURE_PROMPT 2>/dev/null | head -1)
+  if [[ -n "$FEATURE_FILE" ]]; then
+    echo "  Using incremental feature file: $(basename "$FEATURE_FILE")"
+  else
+    echo "  WARNING: No incremental feature file for level $LEVEL, falling back to composed prompt"
+    FEATURE_FILE="$PROMPT_FILE"
+  fi
+
   # Read language and feature files to inline into the prompt
   LANG_CONTENT=$(cat "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/language/typescript-$UPGRADE_BACKEND.md" 2>/dev/null || echo "")
-  FEATURE_CONTENT=$(cat "$PROMPT_FILE" 2>/dev/null || echo "")
+  FEATURE_CONTENT=$(cat "$FEATURE_FILE" 2>/dev/null || echo "")
 
   PROMPT=$(cat <<PROMPT_EOF
 Upgrade the existing chat app to add the new feature(s) from level $LEVEL.
