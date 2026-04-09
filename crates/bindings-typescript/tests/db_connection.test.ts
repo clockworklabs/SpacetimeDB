@@ -12,10 +12,7 @@ import {
 import { ClientFrame } from '../src/sdk/client_api/v3';
 import { ServerMessage } from '../src/sdk/client_api/types';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
-import {
-  V2_WS_PROTOCOL,
-  V3_WS_PROTOCOL,
-} from '../src/sdk/websocket_protocols';
+import { V2_WS_PROTOCOL, V3_WS_PROTOCOL } from '../src/sdk/websocket_protocols';
 import { DbConnection } from '../test-app/src/module_bindings';
 import User from '../test-app/src/module_bindings/user_table';
 import {
