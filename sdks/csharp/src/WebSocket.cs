@@ -3,7 +3,7 @@ using SpacetimeDB.ClientApi;
 
 using System;
 using System.Collections.Concurrent;
-using System.Linq;
+using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -15,6 +15,8 @@ namespace SpacetimeDB
 {
     internal class WebSocket
     {
+        private delegate (byte[] EncodedMessage, bool ShouldYield) DequeueSendWork();
+
         public delegate void OpenEventHandler();
 
         public delegate void MessageEventHandler(byte[] message, DateTime timestamp);
@@ -26,7 +28,7 @@ namespace SpacetimeDB
 
         public struct ConnectOptions
         {
-            public string Protocol;
+            public string[] Protocols;
         }
 
         // WebSocket buffer for incoming messages
@@ -36,13 +38,16 @@ namespace SpacetimeDB
         private readonly ConnectOptions _options;
         private readonly byte[] _receiveBuffer = new byte[MAXMessageSize];
         private readonly ConcurrentQueue<Action> dispatchQueue = new();
+        private static readonly ClientMessage.BSATN clientMessageBsatn = new();
 
         protected ClientWebSocket Ws = new();
         private CancellationTokenSource? _connectCts;
+        private DequeueSendWork dequeueSendWork;
 
         public WebSocket(ConnectOptions options)
         {
             _options = options;
+            dequeueSendWork = DequeueV2SendWork;
 #if UNITY_WEBGL && !UNITY_EDITOR
             InitializeWebGL();
 #endif
@@ -57,6 +62,14 @@ namespace SpacetimeDB
         /// </summary>
         public event MessageEventHandler? OnMessage;
         public event CloseEventHandler? OnClose;
+        public event Action<WebSocketProtocolVersion>? OnProtocolNegotiated;
+
+        private WebSocketProtocolVersion protocolVersion = WebSocketProtocolVersion.V2;
+        public WebSocketProtocolVersion ProtocolVersion
+        {
+            get => protocolVersion;
+            internal set => SetProtocolVersion(value);
+        }
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         private bool _isConnected = false;
@@ -88,10 +101,13 @@ namespace SpacetimeDB
     [DllImport("__Internal")]
     private static extern void WebSocket_Close(int socketId, int code, string reason);
 
-    [AOT.MonoPInvokeCallback(typeof(Action<int>))]
-    private static void WebGLOnOpen(int socketId)
+    [AOT.MonoPInvokeCallback(typeof(Action<int, IntPtr>))]
+    private static void WebGLOnOpen(int socketId, IntPtr protocolPtr)
     {
-        Instance?.HandleWebGLOpen(socketId);
+        // The JS bridge passes a temporary UTF-8 pointer that is only valid for
+        // this callback, so copy it into a managed string immediately.
+        var protocol = Marshal.PtrToStringUTF8(protocolPtr) ?? string.Empty;
+        Instance?.HandleWebGLOpen(socketId, protocol);
     }
 
     [AOT.MonoPInvokeCallback(typeof(Action<int, IntPtr, int>))]
@@ -137,7 +153,7 @@ namespace SpacetimeDB
     {
         Instance = this;
         // Convert callbacks to function pointers
-        var openPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)WebGLOnOpen);
+        var openPtr = Marshal.GetFunctionPointerForDelegate((Action<int, IntPtr>)WebGLOnOpen);
         var messagePtr = Marshal.GetFunctionPointerForDelegate((Action<int, IntPtr, int>)WebGLOnMessage);
         var closePtr = Marshal.GetFunctionPointerForDelegate((Action<int, int, IntPtr>)WebGLOnClose);
         var errorPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)WebGLOnError);
@@ -148,6 +164,7 @@ namespace SpacetimeDB
 
         public async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light, bool? confirmedReads)
         {
+            ResetProtocolVersion();
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (_isConnecting || _isConnected) return;
 
@@ -166,7 +183,7 @@ namespace SpacetimeDB
 
                 _socketId = new TaskCompletionSource<int>();
                 var callbackPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)OnSocketIdReceived);
-                WebSocket_Connect(host, uri, _options.Protocol, auth, callbackPtr);
+                WebSocket_Connect(host, uri, WebSocketProtocols.SerializeOfferedProtocols(_options.Protocols), auth, callbackPtr);
                 _webglSocketId = await _socketId.Task;
                 if (_webglSocketId == -1)
                 {
@@ -189,6 +206,7 @@ namespace SpacetimeDB
             }
         // Events will be handled via UnitySendMessage callbacks
 #else
+            Ws = new ClientWebSocket();
             var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
             if (light)
             {
@@ -201,7 +219,10 @@ namespace SpacetimeDB
                 uri += $"&confirmed={enabled}";
             }
             var url = new Uri(uri);
-            Ws.Options.AddSubProtocol(_options.Protocol);
+            foreach (var protocol in _options.Protocols)
+            {
+                Ws.Options.AddSubProtocol(protocol);
+            }
 
             _connectCts = new CancellationTokenSource(10000);
             if (!string.IsNullOrEmpty(auth))
@@ -218,6 +239,7 @@ namespace SpacetimeDB
                 await Ws.ConnectAsync(url, _connectCts.Token);
                 if (Ws.State == WebSocketState.Open)
                 {
+                    SetProtocolVersion(WebSocketProtocols.Normalize(Ws.SubProtocol));
                     if (OnConnect != null)
                     {
                         dispatchQueue.Enqueue(() => OnConnect());
@@ -373,7 +395,8 @@ namespace SpacetimeDB
 
                     if (OnMessage != null)
                     {
-                        var message = _receiveBuffer.Take(count).ToArray();
+                        var message = new byte[count];
+                        Buffer.BlockCopy(_receiveBuffer, 0, message, 0, count);
                         // directly invoke message handling
                         OnMessage(message, startReceive);
                     }
@@ -454,8 +477,8 @@ namespace SpacetimeDB
 #endif
         }
 
-        private Task? senderTask;
-        private readonly ConcurrentQueue<ClientMessage> messageSendQueue = new();
+        private bool senderActive;
+        private readonly Queue<byte[]> messageSendQueue = new();
 
         /// <summary>
         /// This sender guarantees that that messages are sent out in the order they are received. Our websocket
@@ -465,25 +488,66 @@ namespace SpacetimeDB
         /// <param name="message">The message to send</param>
         public void Send(ClientMessage message)
         {
-#if UNITY_WEBGL && !UNITY_EDITOR
             try
             {
-                var messageBSATN = new ClientMessage.BSATN();
-                var encodedMessage = IStructuralReadWrite.ToBytes(messageBSATN, message);
-                WebSocket_Send(_webglSocketId, encodedMessage, encodedMessage.Length);
+                var encodedMessage = IStructuralReadWrite.ToBytes(clientMessageBsatn, message);
+                var startProcessor = false;
+                lock (messageSendQueue)
+                {
+                    messageSendQueue.Enqueue(encodedMessage);
+                    if (!senderActive)
+                    {
+                        senderActive = true;
+                        startProcessor = true;
+                    }
+                }
+
+                if (startProcessor)
+                {
+                    _ = StartProcessSendQueue();
+                }
             }
             catch (Exception e)
             {
-                UnityEngine.Debug.LogError($"WebSocket send error: {e}");
                 dispatchQueue.Enqueue(() => OnSendError?.Invoke(e));
             }
+        }
+
+        private Task StartProcessSendQueue()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return ProcessSendQueue();
 #else
+            return Task.Run(ProcessSendQueue);
+#endif
+        }
+
+        private void ScheduleSendQueueContinuation()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            dispatchQueue.Enqueue(TryStartSendQueueProcessor);
+#else
+            _ = Task.Run(() =>
+            {
+                TryStartSendQueueProcessor();
+                return Task.CompletedTask;
+            });
+#endif
+        }
+
+        private void TryStartSendQueueProcessor()
+        {
             lock (messageSendQueue)
             {
-                messageSendQueue.Enqueue(message);
-                senderTask ??= Task.Run(ProcessSendQueue);
+                if (senderActive || messageSendQueue.Count == 0)
+                {
+                    return;
+                }
+
+                senderActive = true;
             }
-#endif
+
+            _ = StartProcessSendQueue();
         }
 
         private async Task ProcessSendQueue()
@@ -492,28 +556,102 @@ namespace SpacetimeDB
             {
                 while (true)
                 {
-                    ClientMessage message;
+                    byte[] encodedMessage;
+                    bool shouldYield;
 
                     lock (messageSendQueue)
                     {
-                        if (!messageSendQueue.TryDequeue(out message))
+                        if (messageSendQueue.Count == 0)
                         {
                             // We are out of messages to send
-                            senderTask = null;
+                            senderActive = false;
                             return;
                         }
+
+                        (encodedMessage, shouldYield) = dequeueSendWork();
                     }
 
-                    var messageBSATN = new ClientMessage.BSATN();
-                    var encodedMessage = IStructuralReadWrite.ToBytes(messageBSATN, message);
-                    await Ws!.SendAsync(encodedMessage, WebSocketMessageType.Binary, true, CancellationToken.None);
+                    await SendEncodedMessage(encodedMessage);
+
+                    if (shouldYield)
+                    {
+                        // After sending one capped v3 frame, stop this queue pump and
+                        // schedule a follow-up pass using the same runtime primitives
+                        // this SDK already uses for send processing on each platform.
+                        lock (messageSendQueue)
+                        {
+                            senderActive = false;
+                        }
+                        ScheduleSendQueueContinuation();
+                        return;
+                    }
                 }
             }
             catch (Exception e)
             {
-                senderTask = null;
+                lock (messageSendQueue)
+                {
+                    senderActive = false;
+                }
                 if (OnSendError != null) dispatchQueue.Enqueue(() => OnSendError(e));
             }
+        }
+
+        private byte[][] DequeueMessagesForV3Frame()
+        {
+            var messageCount = WebSocketV3Frames.CountClientMessagesThatFitInFrame(messageSendQueue);
+            if (messageCount <= 0)
+            {
+                throw new InvalidOperationException("Expected at least one queued v2 message when building a v3 frame.");
+            }
+
+            var messages = new byte[messageCount][];
+            for (var i = 0; i < messageCount; i++)
+            {
+                messages[i] = messageSendQueue.Dequeue();
+            }
+            return messages;
+        }
+
+        private (byte[] EncodedMessage, bool ShouldYield) DequeueV2SendWork() =>
+            (messageSendQueue.Dequeue(), false);
+
+        private (byte[] EncodedMessage, bool ShouldYield) DequeueV3SendWork()
+        {
+            var queuedMessages = DequeueMessagesForV3Frame();
+            return (WebSocketV3Frames.EncodeClientMessages(queuedMessages), messageSendQueue.Count > 0);
+        }
+
+        private void ResetProtocolVersion()
+        {
+            protocolVersion = WebSocketProtocolVersion.V2;
+            dequeueSendWork = DequeueV2SendWork;
+        }
+
+        private void SetProtocolVersion(WebSocketProtocolVersion protocolVersion)
+        {
+            // Protocol selection is a transport concern: changing it swaps the
+            // active send strategy and notifies higher layers to swap their
+            // receive decoder as well.
+            this.protocolVersion = protocolVersion;
+            dequeueSendWork = protocolVersion == WebSocketProtocolVersion.V3
+                ? DequeueV3SendWork
+                : DequeueV2SendWork;
+            OnProtocolNegotiated?.Invoke(protocolVersion);
+        }
+
+        private Task SendEncodedMessage(byte[] encodedMessage)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            var result = WebSocket_Send(_webglSocketId, encodedMessage, encodedMessage.Length);
+            if (result != 0)
+            {
+                throw new InvalidOperationException("WebSocket send failed.");
+            }
+            return Task.CompletedTask;
+#else
+            return Ws!.SendAsync(new ArraySegment<byte>(encodedMessage), WebSocketMessageType.Binary, true, CancellationToken.None);
+#endif
         }
 
         public WebSocketState GetState()
@@ -522,7 +660,7 @@ namespace SpacetimeDB
         }
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-        public void HandleWebGLOpen(int socketId)
+        public void HandleWebGLOpen(int socketId, string protocol)
         {
             if (socketId == _webglSocketId)
             {
@@ -535,6 +673,7 @@ namespace SpacetimeDB
                     _cancelConnectRequested = false;
                     return;
                 }
+                SetProtocolVersion(WebSocketProtocols.Normalize(protocol));
                 _isConnected = true;
                 if (OnConnect != null)
                     dispatchQueue.Enqueue(() => OnConnect());

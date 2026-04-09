@@ -24,6 +24,9 @@ mergeInto(LibraryManager.library, {
             var host = UTF8ToString(baseUriPtr);
             var uri = UTF8ToString(uriPtr);
             var protocol = UTF8ToString(protocolPtr);
+            // The C# WebGL bridge can only pass one string argument here, so
+            // multiple offered subprotocols are marshalled as a comma-separated string.
+            var offeredProtocols = protocol.indexOf(',') === -1 ? protocol : protocol.split(',');
             var authToken = UTF8ToString(authTokenPtr);
             if (authToken)
             {
@@ -46,7 +49,7 @@ mergeInto(LibraryManager.library, {
                 }
             }
 
-            var socket = new window.WebSocket(uri, protocol);
+            var socket = new window.WebSocket(uri, offeredProtocols);
             socket.binaryType = "arraybuffer";
 
             var socketId = manager.nextId++;
@@ -54,7 +57,23 @@ mergeInto(LibraryManager.library, {
 
             socket.onopen = function() {
                 if (manager.callbacks.open) {
-                    dynCall('vi', manager.callbacks.open, [socketId]);
+                    var protocolStr = socket.protocol || "";
+                    // Marshal the negotiated subprotocol to C# just for the duration of
+                    // this callback. We use stack allocation because the pointer only
+                    // needs to remain valid while dynCall is executing synchronously.
+                    var protocolLength = lengthBytesUTF8(protocolStr) + 1;
+                    var stack = stackSave();
+                    try {
+                        var protocolPtr = stackAlloc(protocolLength);
+                        // Write a temporary null-terminated UTF-8 string into the
+                        // Emscripten stack frame so the C# callback can copy it.
+                        stringToUTF8(protocolStr, protocolPtr, protocolLength);
+                        dynCall('vii', manager.callbacks.open, [socketId, protocolPtr]);
+                    } finally {
+                        // Release the temporary stack allocation immediately after
+                        // the callback returns; C# must not retain the pointer.
+                        stackRestore(stack);
+                    }
                 }
             };
 
