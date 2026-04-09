@@ -50,6 +50,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
     let client = reqwest::Client::new();
 
+    if !y_or_n(
+        force,
+        &format!(
+            "Are you sure you want to delete database '{}'? This action cannot be undone.",
+            resolved.database
+        ),
+    )? {
+        println!("Aborting");
+        return Ok(());
+    }
+
     let response = send_request(&client, &request_path, &auth_header, None).await?;
     match response.status() {
         StatusCode::PRECONDITION_REQUIRED => {
