@@ -57,7 +57,6 @@ fn get_manifest_dir() -> PathBuf {
 //   * `get_template_files` - returns a HashMap with templates contents based on the
 //                            templates list at templates/templates-list.json
 //   * `get_skill` - returns the content of a skill file by name
-//   * `get_all_skill_names` - returns all available skill names
 fn generate_template_files() {
     let manifest_dir = get_manifest_dir();
     let repo_root = get_repo_root();
@@ -126,14 +125,6 @@ fn generate_template_files() {
     }
     generated_code.push_str("        _ => None,\n");
     generated_code.push_str("    }\n");
-    generated_code.push_str("}\n\n");
-
-    generated_code.push_str("pub fn get_all_skill_names() -> &'static [&'static str] {\n");
-    generated_code.push_str("    &[\n");
-    for skill_name in &skill_names {
-        generated_code.push_str(&format!("        \"{}\",\n", skill_name));
-    }
-    generated_code.push_str("    ]\n");
     generated_code.push_str("}\n\n");
 
     // Expose workspace metadata so `spacetime init` can rewrite template manifests without hardcoding versions.
