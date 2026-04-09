@@ -17,7 +17,9 @@ function flattenFrame(frame: V3FrameValue): Uint8Array[] {
 
 function ensureMessages(messages: readonly Uint8Array[]): void {
   if (messages.length === 0) {
-    throw new RangeError('v3 websocket frames must contain at least one message');
+    throw new RangeError(
+      'v3 websocket frames must contain at least one message'
+    );
   }
 }
 

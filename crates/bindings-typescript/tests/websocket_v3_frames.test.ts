@@ -10,14 +10,11 @@ describe('websocket_v3_frames', () => {
     ];
 
     expect(countClientMessagesForV3Frame(messages, 1 + 4 + 10)).toBe(1);
-    expect(countClientMessagesForV3Frame(messages, 1 + 4 + 4 + 10 + 4 + 20)).toBe(
-      2
-    );
     expect(
-      countClientMessagesForV3Frame(
-        messages,
-        1 + 4 + 4 + 10 + 4 + 20 + 4 + 30
-      )
+      countClientMessagesForV3Frame(messages, 1 + 4 + 4 + 10 + 4 + 20)
+    ).toBe(2);
+    expect(
+      countClientMessagesForV3Frame(messages, 1 + 4 + 4 + 10 + 4 + 20 + 4 + 30)
     ).toBe(3);
   });
 

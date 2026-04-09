@@ -2,10 +2,7 @@ import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
 import { ClientMessage, ServerMessage } from './client_api/types';
 import type { WebsocketAdapter } from './websocket_decompress_adapter';
-import {
-  PREFERRED_WS_PROTOCOLS,
-  V3_WS_PROTOCOL,
-} from './websocket_protocols';
+import { PREFERRED_WS_PROTOCOLS, V3_WS_PROTOCOL } from './websocket_protocols';
 import {
   decodeClientMessagesV3,
   encodeServerMessagesV3,
@@ -22,7 +19,6 @@ class WebsocketTestAdapter implements WebsocketAdapter {
   #onclose: (ev: CloseEvent) => void = () => {};
   #onopen: () => void = () => {};
   #onmessage: (msg: { data: Uint8Array }) => void = () => {};
-  #onerror: (msg: ErrorEvent) => void = () => {};
 
   constructor() {
     this.messageQueue = [];
@@ -43,9 +39,7 @@ class WebsocketTestAdapter implements WebsocketAdapter {
     this.#onmessage = handler;
   }
 
-  set onerror(handler: (msg: ErrorEvent) => void) {
-    this.#onerror = handler;
-  }
+  set onerror(_handler: (msg: ErrorEvent) => void) {}
 
   send(message: Uint8Array): void {
     const rawMessage = message.slice();
