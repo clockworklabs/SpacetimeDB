@@ -589,7 +589,7 @@ pub fn call_identity_connected(
             // then insert into `st_client`,
             // but if we crashed in between, we'd be left in an inconsistent state
             // where the reducer had run but `st_client` was not yet updated.
-            ReducerOutcome::Committed | ReducerOutcome::Deduplicated => Ok(()),
+            ReducerOutcome::Committed => Ok(()),
 
             // If the reducer returned an error or couldn't run due to insufficient energy,
             // abort the connection: the module code has decided it doesn't want this client.
@@ -629,7 +629,8 @@ pub struct CallReducerParams {
     /// The tuple is `(sender_database_identity, sender_msg_id)`.
     /// Before running the reducer, `st_inbound_msg` is consulted:
     /// if `sender_msg_id` ≤ the stored last-delivered msg_id for the sender,
-    /// the call is a duplicate and returns [`ReducerCallError::Deduplicated`].
+    /// the call is a duplicate and returns the stored committed or failed result
+    /// without running the reducer again.
     /// Otherwise the reducer runs, and the stored msg_id is updated atomically
     /// within the same transaction.
     pub dedup_sender: Option<(Identity, u64)>,
@@ -1500,9 +1501,9 @@ impl ModuleHost {
                     ..
                 }) => fallback(),
 
-                // If it succeeded (or was deduplicated), as mentioned above, `st_client` is already updated.
+                // If it succeeded, as mentioned above, `st_client` is already updated.
                 Ok(ReducerCallResult {
-                    outcome: ReducerOutcome::Committed | ReducerOutcome::Deduplicated,
+                    outcome: ReducerOutcome::Committed,
                     ..
                 }) => Ok(()),
             }
@@ -1762,7 +1763,7 @@ impl ModuleHost {
     /// delivery using the `st_inbound_msg` dedup index.
     /// Before invoking the reducer, the receiver checks whether
     /// `sender_msg_id` ≤ the last delivered msg_id for `sender_database_identity`.
-    /// If so, the call is a duplicate and [`ReducerOutcome::Deduplicated`] is returned
+    /// If so, the call is a duplicate and the stored committed or failed result is returned
     /// without running the reducer.
     /// Otherwise the reducer runs, and the dedup index is updated atomically
     /// within the same transaction.

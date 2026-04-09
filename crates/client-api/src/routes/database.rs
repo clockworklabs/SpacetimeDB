@@ -311,7 +311,6 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
         Ok(rcr) => {
             let (status, body) = match rcr.outcome {
                 ReducerOutcome::Committed => (StatusCode::OK, "".into()),
-                ReducerOutcome::Deduplicated => (StatusCode::OK, "deduplicated".into()),
                 // 422 = reducer ran but returned Err; the IDC actor uses this to distinguish
                 // reducer failures from transport errors (which it retries).
                 ReducerOutcome::Failed(errmsg) => (StatusCode::UNPROCESSABLE_ENTITY, *errmsg),
@@ -351,7 +350,7 @@ fn reducer_outcome_response(
     outcome: ReducerOutcome,
 ) -> (StatusCode, Box<str>) {
     match outcome {
-        ReducerOutcome::Committed | ReducerOutcome::Deduplicated => (StatusCode::OK, "".into()),
+        ReducerOutcome::Committed => (StatusCode::OK, "".into()),
         ReducerOutcome::Failed(errmsg) => {
             // TODO: different status code? this is what cloudflare uses, sorta
             (StatusCode::from_u16(530).unwrap(), *errmsg)

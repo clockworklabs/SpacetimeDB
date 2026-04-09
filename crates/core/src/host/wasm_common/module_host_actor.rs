@@ -487,6 +487,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
@@ -892,7 +893,15 @@ impl InstanceCommon {
                     s if s == st_inbound_msg_result_status::REDUCER_ERROR => {
                         ReducerOutcome::Failed(Box::new(stored.result_payload.into()))
                     }
-                    _ => ReducerOutcome::Deduplicated,
+                    _ => {
+                        log::warn!(
+                            "IDC: unexpected inbound dedup result_status={} for sender {}, msg_id={}",
+                            stored.result_status,
+                            sender_identity,
+                            sender_msg_id
+                        );
+                        ReducerOutcome::Committed
+                    }
                 };
                 return (
                     ReducerCallResult {

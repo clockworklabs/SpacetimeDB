@@ -165,22 +165,19 @@ pub enum ReducerOutcome {
     Committed,
     Failed(Box<Box<str>>),
     BudgetExceeded,
-    /// The call was identified as a duplicate via the `st_databases_tx_offset` dedup index
-    /// and was discarded without running the reducer.
-    Deduplicated,
 }
 
 impl ReducerOutcome {
     pub fn into_result(self) -> anyhow::Result<()> {
         match self {
-            Self::Committed | Self::Deduplicated => Ok(()),
+            Self::Committed => Ok(()),
             Self::Failed(e) => Err(anyhow::anyhow!(e)),
             Self::BudgetExceeded => Err(anyhow::anyhow!("reducer ran out of energy")),
         }
     }
 
     pub fn is_err(&self) -> bool {
-        !matches!(self, Self::Committed | Self::Deduplicated)
+        !matches!(self, Self::Committed)
     }
 }
 
