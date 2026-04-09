@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { BinaryReader, BinaryWriter } from '../src';
-import { HttpResponse, HttpHeaders } from '../src/lib/http_types';
+import { HttpResponse } from '../src/lib/http_types';
 
 describe('HttpResponse header round-trip', () => {
   test('headers survive BSATN serialize/deserialize', () => {
