@@ -216,18 +216,48 @@ pub fn serialize_v2(
 /// conditional compression when configured.
 pub fn serialize_v3(
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
-    mut buffer: SerializeBuffer,
+    buffer: SerializeBuffer,
     msg: ws_v2::ServerMessage,
     compression: ws_v1::Compression,
 ) -> (InUseSerializeBuffer, Bytes) {
-    let mut inner = BytesMut::with_capacity(SERIALIZE_BUFFER_INIT_CAP);
-    bsatn::to_writer((&mut inner).writer().into_inner(), &msg).expect("should be able to bsatn encode v2 message");
+    serialize_v3_batch(bsatn_rlb_pool, buffer, [msg], compression)
+}
 
-    // At this point, we no longer have a use for `msg`,
-    // so try to reclaim its buffers.
-    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
+/// Serialize `messages` into a [`DataMessage`] containing a [`ws_v3::ServerFrame`]
+/// whose payloads are BSATN-encoded [`ws_v2::ServerMessage`] values.
+///
+/// A single inner message is encoded as [`ws_v3::ServerFrame::Single`]. Multiple
+/// inner messages are encoded as [`ws_v3::ServerFrame::Batch`].
+pub fn serialize_v3_batch(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    mut buffer: SerializeBuffer,
+    messages: impl IntoIterator<Item = ws_v2::ServerMessage>,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    let mut encoded_messages = messages
+        .into_iter()
+        .map(|msg| {
+            let mut inner = BytesMut::with_capacity(SERIALIZE_BUFFER_INIT_CAP);
+            bsatn::to_writer((&mut inner).writer().into_inner(), &msg)
+                .expect("should be able to bsatn encode v2 message");
 
-    let frame = ws_v3::ServerFrame::Single(inner.freeze());
+            // At this point, we no longer have a use for `msg`,
+            // so try to reclaim its buffers.
+            msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
+            inner.freeze()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        !encoded_messages.is_empty(),
+        "serialize_v3_batch requires at least one message"
+    );
+
+    let frame = if encoded_messages.len() == 1 {
+        ws_v3::ServerFrame::Single(encoded_messages.pop().unwrap())
+    } else {
+        ws_v3::ServerFrame::Batch(encoded_messages.into_boxed_slice())
+    };
     let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
         bsatn::to_writer(w.into_inner(), &frame).expect("should be able to bsatn encode v3 server frame");
     });
@@ -309,21 +339,25 @@ impl OutboundMessage {
     pub fn workload(&self) -> Option<WorkloadType> {
         match self {
             Self::V1(message) => message.workload(),
-            Self::V2(message) => match message {
-                ws_v2::ServerMessage::InitialConnection(_) => None,
-                ws_v2::ServerMessage::SubscribeApplied(_) => Some(WorkloadType::Subscribe),
-                ws_v2::ServerMessage::UnsubscribeApplied(_) => Some(WorkloadType::Unsubscribe),
-                ws_v2::ServerMessage::SubscriptionError(_) => None,
-                ws_v2::ServerMessage::TransactionUpdate(_) => Some(WorkloadType::Update),
-                ws_v2::ServerMessage::OneOffQueryResult(_) => Some(WorkloadType::Sql),
-                ws_v2::ServerMessage::ReducerResult(_) => Some(WorkloadType::Reducer),
-                ws_v2::ServerMessage::ProcedureResult(_) => Some(WorkloadType::Procedure),
-            },
+            Self::V2(message) => v2_message_workload(message),
         }
     }
 }
 
-fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
+pub fn v2_message_workload(message: &ws_v2::ServerMessage) -> Option<WorkloadType> {
+    match message {
+        ws_v2::ServerMessage::InitialConnection(_) => None,
+        ws_v2::ServerMessage::SubscribeApplied(_) => Some(WorkloadType::Subscribe),
+        ws_v2::ServerMessage::UnsubscribeApplied(_) => Some(WorkloadType::Unsubscribe),
+        ws_v2::ServerMessage::SubscriptionError(_) => None,
+        ws_v2::ServerMessage::TransactionUpdate(_) => Some(WorkloadType::Update),
+        ws_v2::ServerMessage::OneOffQueryResult(_) => Some(WorkloadType::Sql),
+        ws_v2::ServerMessage::ReducerResult(_) => Some(WorkloadType::Reducer),
+        ws_v2::ServerMessage::ProcedureResult(_) => Some(WorkloadType::Procedure),
+    }
+}
+
+pub fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
     match message {
         ws_v2::ServerMessage::InitialConnection(_) => None,
         ws_v2::ServerMessage::SubscribeApplied(message) => Some(count_query_rows(&message.rows)),
@@ -842,5 +876,60 @@ impl ToProtocol for ProcedureResultMessage {
                     .into()
             })),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::WsVersion;
+    use spacetimedb_lib::{ConnectionId, Identity};
+
+    fn config_v3_no_compression() -> ClientConfig {
+        ClientConfig {
+            version: WsVersion::V3,
+            compression: ws_v1::Compression::None,
+            ..ClientConfig::for_test()
+        }
+    }
+
+    fn initial_connection(token: &str) -> ws_v2::ServerMessage {
+        ws_v2::InitialConnection {
+            identity: Identity::ZERO,
+            connection_id: ConnectionId::ZERO,
+            token: token.into(),
+        }
+        .into()
+    }
+
+    #[test]
+    fn serialize_v3_batch_wraps_multiple_messages_in_batch_frame() {
+        let pool = BsatnRowListBuilderPool::new();
+        let config = config_v3_no_compression();
+        let (_in_use, encoded) = serialize_v3_batch(
+            &pool,
+            SerializeBuffer::new(config),
+            [initial_connection("first"), initial_connection("second")],
+            config.compression,
+        );
+
+        assert_eq!(encoded[0], ws_common::SERVER_MSG_COMPRESSION_TAG_NONE);
+
+        let frame = bsatn::from_slice::<ws_v3::ServerFrame>(&encoded[1..]).unwrap();
+        let ws_v3::ServerFrame::Batch(messages) = frame else {
+            panic!("expected a batched v3 server frame");
+        };
+        assert_eq!(messages.len(), 2);
+        let first = bsatn::from_slice::<ws_v2::ServerMessage>(&messages[0]).unwrap();
+        let second = bsatn::from_slice::<ws_v2::ServerMessage>(&messages[1]).unwrap();
+
+        assert!(matches!(
+            first,
+            ws_v2::ServerMessage::InitialConnection(ws_v2::InitialConnection { token, .. }) if token.as_ref() == "first"
+        ));
+        assert!(matches!(
+            second,
+            ws_v2::ServerMessage::InitialConnection(ws_v2::InitialConnection { token, .. }) if token.as_ref() == "second"
+        ));
     }
 }

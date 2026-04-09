@@ -23,8 +23,8 @@ use prometheus::{Histogram, IntGauge};
 use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
-    serialize, serialize_v2, serialize_v3, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer,
-    SwitchedServerMessage, ToProtocol,
+    serialize, serialize_v2, serialize_v3, serialize_v3_batch, v2_message_num_rows, v2_message_workload,
+    IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage, ToProtocol,
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
@@ -1299,6 +1299,7 @@ async fn ws_encode_task(
     outgoing_frames: mpsc::UnboundedSender<Frame>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
+    const V3_ENCODE_BATCH_CAPACITY: usize = 64;
     // Serialize buffers can be reclaimed once all frames of a message are
     // copied to the wire. Since we don't know when that will happen, we prepare
     // for a few messages to be in-flight, i.e. encoded but not yet sent.
@@ -1310,92 +1311,168 @@ async fn ws_encode_task(
     };
     let buf_pool = ArrayQueue::new(BUF_POOL_CAPACITY);
     let mut in_use_bufs: Vec<ScopeGuard<InUseSerializeBuffer, _>> = Vec::with_capacity(BUF_POOL_CAPACITY);
+    let mut message_batch = Vec::with_capacity(V3_ENCODE_BATCH_CAPACITY);
 
-    'send: while let Some(message) = messages.recv().await {
-        // Drop serialize buffers with no external referent,
-        // returning them to the pool.
-        in_use_bufs.retain(|in_use| !in_use.is_unique());
-        // Get a serialize buffer from the pool,
-        // or create a fresh one.
-        let buf = buf_pool.pop().unwrap_or_else(|| SerializeBuffer::new(config));
+    'send: while messages.recv_many(&mut message_batch, V3_ENCODE_BATCH_CAPACITY).await != 0 {
+        let mut pending = message_batch.drain(..).peekable();
+        while let Some(message) = pending.next() {
+            // Drop serialize buffers with no external referent,
+            // returning them to the pool.
+            in_use_bufs.retain(|in_use| !in_use.is_unique());
+            // Get a serialize buffer from the pool,
+            // or create a fresh one.
+            let buf = buf_pool.pop().unwrap_or_else(|| SerializeBuffer::new(config));
 
-        let in_use_buf = match message {
-            OutboundWsMessage::Error(message) => {
-                if config.version != WsVersion::V1 {
-                    log::error!(
-                        "dropping v1 error message sent to a binary websocket client: {:?}",
-                        message
-                    );
-                    continue;
-                }
-                let Ok(in_use) = ws_forward_frames(
-                    &metrics,
-                    &outgoing_frames,
-                    None,
-                    None,
-                    ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await,
-                ) else {
-                    break 'send;
-                };
-                in_use
-            }
-            OutboundWsMessage::Message(message) => {
-                let workload = message.workload();
-                let num_rows = message.num_rows();
-                match message {
-                    OutboundMessage::V2(server_message) => {
-                        if config.version == WsVersion::V1 {
-                            log::error!("dropping v2 message on v1 connection");
-                            continue;
-                        }
-
-                        let Ok(in_use) = ws_forward_frames(
-                            &metrics,
-                            &outgoing_frames,
-                            workload,
-                            num_rows,
-                            ws_encode_binary_message(
-                                config,
-                                buf,
-                                server_message,
-                                binary_message_serializer.expect("v2 message should not be sent on a v1 connection"),
-                                false,
-                                &bsatn_rlb_pool,
-                            )
-                            .await,
-                        ) else {
-                            break 'send;
-                        };
-                        in_use
+            let in_use_buf = match message {
+                OutboundWsMessage::Error(message) => {
+                    if config.version != WsVersion::V1 {
+                        log::error!(
+                            "dropping v1 error message sent to a binary websocket client: {:?}",
+                            message
+                        );
+                        continue;
                     }
-                    OutboundMessage::V1(message) => {
-                        if config.version != WsVersion::V1 {
-                            log::error!("dropping v1 message for a binary websocket connection: {:?}", message);
-                            continue;
+                    let Ok(in_use) = ws_forward_frames(
+                        &metrics,
+                        &outgoing_frames,
+                        None,
+                        None,
+                        ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await,
+                    ) else {
+                        break 'send;
+                    };
+                    in_use
+                }
+                OutboundWsMessage::Message(message) => {
+                    let workload = message.workload();
+                    let num_rows = message.num_rows();
+                    match message {
+                        OutboundMessage::V2(server_message) => {
+                            if config.version == WsVersion::V1 {
+                                log::error!("dropping v2 message on v1 connection");
+                                continue;
+                            }
+
+                            if config.version == WsVersion::V3 {
+                                let mut server_messages = vec![server_message];
+                                let mut batch_workload = v2_message_workload(server_messages.last().unwrap());
+                                let mut batch_num_rows = v2_message_num_rows(server_messages.last().unwrap());
+
+                                while let Some(OutboundWsMessage::Message(OutboundMessage::V2(next_message))) =
+                                    pending.peek()
+                                {
+                                    let next_workload = v2_message_workload(next_message);
+                                    let next_num_rows = v2_message_num_rows(next_message);
+                                    if batch_workload != next_workload {
+                                        batch_workload = None;
+                                        batch_num_rows = None;
+                                    } else {
+                                        batch_num_rows = match (batch_num_rows, next_num_rows) {
+                                            (Some(total), Some(next)) => Some(total + next),
+                                            (None, None) => None,
+                                            _ => {
+                                                batch_workload = None;
+                                                None
+                                            }
+                                        };
+                                    }
+
+                                    let Some(OutboundWsMessage::Message(OutboundMessage::V2(next_message))) =
+                                        pending.next()
+                                    else {
+                                        unreachable!("peeked v2 message should still be present");
+                                    };
+                                    server_messages.push(next_message);
+                                }
+
+                                let encoded = if server_messages.len() > 1 {
+                                    ws_forward_frames(
+                                        &metrics,
+                                        &outgoing_frames,
+                                        batch_workload,
+                                        batch_num_rows,
+                                        ws_encode_binary_message_batch_v3(
+                                            config,
+                                            buf,
+                                            server_messages,
+                                            false,
+                                            &bsatn_rlb_pool,
+                                        )
+                                        .await,
+                                    )
+                                } else {
+                                    ws_forward_frames(
+                                        &metrics,
+                                        &outgoing_frames,
+                                        batch_workload,
+                                        batch_num_rows,
+                                        ws_encode_binary_message(
+                                            config,
+                                            buf,
+                                            server_messages.pop().unwrap(),
+                                            binary_message_serializer
+                                                .expect("v2 message should not be sent on a v1 connection"),
+                                            false,
+                                            &bsatn_rlb_pool,
+                                        )
+                                        .await,
+                                    )
+                                };
+                                let Ok(in_use) = encoded else {
+                                    break 'send;
+                                };
+                                in_use
+                            } else {
+                                let Ok(in_use) = ws_forward_frames(
+                                    &metrics,
+                                    &outgoing_frames,
+                                    workload,
+                                    num_rows,
+                                    ws_encode_binary_message(
+                                        config,
+                                        buf,
+                                        server_message,
+                                        binary_message_serializer
+                                            .expect("v2 message should not be sent on a v1 connection"),
+                                        false,
+                                        &bsatn_rlb_pool,
+                                    )
+                                    .await,
+                                ) else {
+                                    break 'send;
+                                };
+                                in_use
+                            }
                         }
+                        OutboundMessage::V1(message) => {
+                            if config.version != WsVersion::V1 {
+                                log::error!("dropping v1 message for a binary websocket connection: {:?}", message);
+                                continue;
+                            }
 
-                        let is_large = num_rows.is_some_and(|n| n > 1024);
+                            let is_large = num_rows.is_some_and(|n| n > 1024);
 
-                        let Ok(in_use) = ws_forward_frames(
-                            &metrics,
-                            &outgoing_frames,
-                            workload,
-                            num_rows,
-                            ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await,
-                        ) else {
-                            break 'send;
-                        };
-                        in_use
+                            let Ok(in_use) = ws_forward_frames(
+                                &metrics,
+                                &outgoing_frames,
+                                workload,
+                                num_rows,
+                                ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await,
+                            ) else {
+                                break 'send;
+                            };
+                            in_use
+                        }
                     }
                 }
-            }
-        };
+            };
 
-        if in_use_bufs.len() < BUF_POOL_CAPACITY {
-            in_use_bufs.push(scopeguard::guard(in_use_buf, |in_use| {
-                let buf = in_use.try_reclaim().expect("buffer should be unique");
-                let _ = buf_pool.push(buf);
-            }));
+            if in_use_bufs.len() < BUF_POOL_CAPACITY {
+                in_use_bufs.push(scopeguard::guard(in_use_buf, |in_use| {
+                    let buf = in_use.try_reclaim().expect("buffer should be unique");
+                    let _ = buf_pool.push(buf);
+                }));
+            }
         }
     }
 }
@@ -1522,6 +1599,31 @@ async fn ws_encode_binary_message(
     };
     let frames = fragment(data, Data::Binary, 4096);
     (metrics, in_use, frames)
+}
+
+async fn ws_encode_binary_message_batch_v3(
+    config: ClientConfig,
+    buf: SerializeBuffer,
+    messages: Vec<ws_v2::ServerMessage>,
+    is_large_message: bool,
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
+    let start = Instant::now();
+    let compression = config.compression;
+
+    let (in_use, data) = if is_large_message {
+        let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+        spawn_rayon(move || serialize_v3_batch(&bsatn_rlb_pool, buf, messages, compression)).await
+    } else {
+        serialize_v3_batch(bsatn_rlb_pool, buf, messages, compression)
+    };
+
+    let metrics = EncodeMetrics {
+        timing: start.elapsed(),
+        encoded_len: data.len(),
+    };
+    let frame = Frame::message(data, OpCode::Data(Data::Binary), true);
+    (metrics, in_use, std::iter::once(frame))
 }
 
 /// Split payload `data` of type `ty` into `fragment_size`d [`Frame`]s,
