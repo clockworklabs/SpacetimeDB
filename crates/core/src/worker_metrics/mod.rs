@@ -93,6 +93,12 @@ metrics_group!(
         #[labels(coordinator_identity: Identity, role: str)]
         pub global_tx_younger_owner_finished_within_grace_period_total: IntCounterVec,
 
+        #[name = spacetime_global_tx_lock_acquire_time_sec]
+        #[help = "The time (in seconds) spent trying to acquire the global transaction lock"]
+        #[labels(coordinator_identity: Identity, role: str)]
+        #[buckets(100e-6, 500e-6, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10)]
+        pub global_tx_lock_acquire_time: HistogramVec,
+
         #[name = jemalloc_active_bytes]
         #[help = "Number of bytes in jemallocs heap"]
         #[labels(node_id: str)]

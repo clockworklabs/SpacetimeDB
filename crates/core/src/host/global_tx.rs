@@ -6,10 +6,10 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{watch, Notify};
 
-const DEFAULT_WOUND_GRACE_PERIOD: Duration = Duration::from_millis(10);
+const DEFAULT_WOUND_GRACE_PERIOD: Duration = Duration::from_millis(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalTxRole {
@@ -344,6 +344,15 @@ impl GlobalTxManager {
         F: FnMut(GlobalTxId) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        let acquire_started_at = Instant::now();
+        let observe_acquire_time = || {
+            if let Some((coordinator_identity, role)) = self.session_metric_labels(&tx_id) {
+                WORKER_METRICS
+                    .global_tx_lock_acquire_time
+                    .with_label_values(&coordinator_identity, &role)
+                    .observe(acquire_started_at.elapsed().as_secs_f64());
+            }
+        };
         let mut wounded_rx = match self.subscribe_wounded(&tx_id) {
             Some(rx) => rx,
             None => return AcquireDisposition::Cancelled,
@@ -376,6 +385,7 @@ impl GlobalTxManager {
                             registration.disarm(&mut state);
                         }
                         log::info!("global transaction {tx_id} acquired the lock");
+                        observe_acquire_time();
                         return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self.clone(), tx_id));
                     }
                     None => {
@@ -412,6 +422,7 @@ impl GlobalTxManager {
                         if let Some(registration) = registration.take() {
                             registration.disarm(&mut state);
                         }
+                        observe_acquire_time();
                         return AcquireDisposition::Acquired(GlobalTxLockGuard::new(self.clone(), tx_id));
                     }
                     Some(owner) => {

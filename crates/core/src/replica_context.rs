@@ -164,6 +164,7 @@ where
             Ok(result) => break Some(result),
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if should_cancel() {
+                    log::info!("cancelling blocking HTTP call because we are wounded");
                     // Drop handle — thread is detached and its result discarded.
                     return HttpOutcome::Cancelled;
                 }
