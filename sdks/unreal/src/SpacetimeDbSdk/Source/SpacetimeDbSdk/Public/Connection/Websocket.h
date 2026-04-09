@@ -10,7 +10,13 @@
 #include "LogCategory.h"
 
 
-#include "Websocket.generated.h" 
+#include "Websocket.generated.h"
+
+enum class ESpacetimeDBWsProtocol : uint8
+{
+	V2,
+	V3,
+};
 
 /** Delegate broadcast when a connection is successfully established */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnWebSocketConnected);
@@ -69,6 +75,9 @@ public:
 	 */
 	bool IsConnected() const;
 
+	/** Returns the websocket protocol currently in use for this connection. */
+	ESpacetimeDBWsProtocol GetActiveProtocol() const { return ActiveProtocol; }
+
 	/**
 	* Sets the initial auth token used when connecting.
 	* @param Token JWT or session token expected by the server.
@@ -109,8 +118,12 @@ private:
 	void HandleBinaryMessageReceived(const void* Data, SIZE_T Size, bool bIsLastFragment);
 	/** Handler for socket close */
 	void HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
+	void ConnectWithProtocol(const FString& ServerUrl, ESpacetimeDBWsProtocol Protocol);
+	bool TryFallbackToV2(const FString& FailureReason);
+	void ResetSocket();
 
 	FString InitToken;
+	FString PendingServerUrl;
 
 	/** Buffer used to accumulate binary fragments until a complete message
 	*  is received. */
@@ -118,7 +131,10 @@ private:
 
 	/** Tracks if we are waiting for additional binary fragments. */
 	bool bAwaitingBinaryFragments = false;
-
+	bool bHasEstablishedConnection = false;
+	bool bHasAttemptedV2Fallback = false;
+	uint32 ConnectAttemptId = 0;
+	ESpacetimeDBWsProtocol ActiveProtocol = ESpacetimeDBWsProtocol::V3;
 };
 
 // Helper function to log a struct as JSON, expanding any transient objects

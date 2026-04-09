@@ -37,6 +37,7 @@
 #include "ModuleBindings/Types/UnsubscribeFlagsType.g.h"
 #include "ModuleBindings/Types/UnsubscribeType.g.h"
 #include "ModuleBindings/Optionals/SpacetimeDbSdkOptionalQueryRows.g.h"
+#include "Connection/WebsocketV3Frames.h"
 
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -247,6 +248,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClientMessageType ClientMessageUnsubscribe = FClientMessageType::Unsubscribe(Unsubscribe);
 	TEST_ROUNDTRIP(FClientMessageType, ClientMessageUnsubscribe, "FClientMessageType::Unsubscribe Variant");
 
+	LOG_Category("Client API WS v3");
+	UE::SpacetimeDB::V3::FClientFrame ClientFrameSingle =
+		UE::SpacetimeDB::V3::FClientFrame::Single(UE::SpacetimeDB::Serialize(ClientMessageCallReducer));
+	TEST_ROUNDTRIP(UE::SpacetimeDB::V3::FClientFrame, ClientFrameSingle, "FClientFrame::Single");
+	TArray<TArray<uint8>> BatchedClientMessages;
+	BatchedClientMessages.Add(UE::SpacetimeDB::Serialize(ClientMessageCallReducer));
+	BatchedClientMessages.Add(UE::SpacetimeDB::Serialize(ClientMessageCallProcedure));
+	UE::SpacetimeDB::V3::FClientFrame ClientFrameBatch = UE::SpacetimeDB::V3::FClientFrame::Batch(BatchedClientMessages);
+	TEST_ROUNDTRIP(UE::SpacetimeDB::V3::FClientFrame, ClientFrameBatch, "FClientFrame::Batch");
+
 	FPersistentTableRowsType PersistentRows;
 	PersistentRows.Inserts = BsatnRowsFixed;
 	PersistentRows.Deletes = BsatnRowsOffsets;
@@ -357,6 +368,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	TEST_ROUNDTRIP(FServerMessageType, MessageReducerResult, "FServerMessageType::ReducerResult Variant");
 	FServerMessageType MessageProcedureResult = FServerMessageType::ProcedureResult(ProcedureResult);
 	TEST_ROUNDTRIP(FServerMessageType, MessageProcedureResult, "FServerMessageType::ProcedureResult Variant");
+	UE::SpacetimeDB::V3::FServerFrame ServerFrameSingle =
+		UE::SpacetimeDB::V3::FServerFrame::Single(UE::SpacetimeDB::Serialize(MessageInitialConnection));
+	TEST_ROUNDTRIP(UE::SpacetimeDB::V3::FServerFrame, ServerFrameSingle, "FServerFrame::Single");
+	TArray<TArray<uint8>> BatchedServerMessages;
+	BatchedServerMessages.Add(UE::SpacetimeDB::Serialize(MessageInitialConnection));
+	BatchedServerMessages.Add(UE::SpacetimeDB::Serialize(MessageTransactionUpdate));
+	UE::SpacetimeDB::V3::FServerFrame ServerFrameBatch = UE::SpacetimeDB::V3::FServerFrame::Batch(BatchedServerMessages);
+	TEST_ROUNDTRIP(UE::SpacetimeDB::V3::FServerFrame, ServerFrameBatch, "FServerFrame::Batch");
 
 	return true;
 }

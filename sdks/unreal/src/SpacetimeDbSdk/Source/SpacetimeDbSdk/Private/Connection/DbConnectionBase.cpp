@@ -9,6 +9,7 @@
 #include "Async/Async.h"
 #include "BSATN/UEBSATNHelpers.h"
 #include "Connection/ProcedureFlags.h"
+#include "Connection/WebsocketV3Frames.h"
 
 namespace
 {
@@ -63,6 +64,15 @@ static FString DecodeReducerErrorMessage(const TArray<uint8>& ErrorBytes)
 	}
 	return UE::SpacetimeDB::Deserialize<FString>(ErrorBytes);
 }
+
+static void AppendMovedServerMessages(TArray<FServerMessageType>& Target, TArray<FServerMessageType>& Source)
+{
+	for (FServerMessageType& Message : Source)
+	{
+		Target.Add(MoveTemp(Message));
+	}
+	Source.Reset();
+}
 }
 
 UDbConnectionBase::UDbConnectionBase(const FObjectInitializer& ObjectInitializer)
@@ -75,6 +85,7 @@ UDbConnectionBase::UDbConnectionBase(const FObjectInitializer& ObjectInitializer
 
 void UDbConnectionBase::Disconnect()
 {
+	ClearOutboundQueue();
 	if (WebSocket)
 	{
 		WebSocket->Disconnect();
@@ -111,7 +122,27 @@ bool UDbConnectionBase::SendRawMessage(const FString& Message)
 
 bool UDbConnectionBase::SendRawMessage(const TArray<uint8>& Message)
 {
-	return WebSocket && WebSocket->SendMessage(Message);
+	if (!WebSocket)
+	{
+		return false;
+	}
+
+	// Binary messages reaching this layer are already BSATN-encoded v2 logical
+	// websocket messages. v3 batching only wraps those bytes in a transport
+	// envelope; it does not re-materialize higher-level client message objects.
+	if (WebSocket->GetActiveProtocol() != ESpacetimeDBWsProtocol::V3)
+	{
+		return WebSocket->SendMessage(Message);
+	}
+
+	if (!WebSocket->IsConnected())
+	{
+		return WebSocket->SendMessage(Message);
+	}
+
+	TArray<uint8> QueuedMessage = Message;
+	QueueOutboundMessageV3(MoveTemp(QueuedMessage));
+	return true;
 }
 
 USubscriptionBuilderBase* UDbConnectionBase::SubscriptionBuilderBase()
@@ -167,10 +198,14 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 	//tag for arrival order
 	const int32 Id = NextPreprocessId.GetValue();
 	NextPreprocessId.Increment();
+	// Capture the transport protocol before handing work to the background
+	// preprocess thread so reconnect/disconnect state changes cannot alter how
+	// this raw websocket frame is decoded.
+	const ESpacetimeDBWsProtocol Protocol = WebSocket ? WebSocket->GetActiveProtocol() : ESpacetimeDBWsProtocol::V2;
 
 	//do expensive work off-thread
 	TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
-	Async(EAsyncExecution::Thread, [WeakThis, Message, Id]()
+	Async(EAsyncExecution::Thread, [WeakThis, Message, Id, Protocol]()
 	{
 		if (!WeakThis.IsValid())
 		{
@@ -179,8 +214,8 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 		UDbConnectionBase* This = WeakThis.Get();
 
 		//parse the message, decompress if needed
-		FServerMessageType Parsed;
-		if (!This->PreProcessMessage(Message, Parsed))
+		TArray<FServerMessageType> ParsedMessages;
+		if (!This->PreProcessMessage(Protocol, Message, ParsedMessages))
 		{
 			AsyncTask(ENamedThreads::GameThread, [WeakThis]()
 			{
@@ -198,12 +233,14 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 		TArray<FServerMessageType> Ready;
 		{
 			FScopeLock Lock(&This->PreprocessMutex);
-			// Move the parsed message into the map to avoid copying
-			This->PreprocessedMessages.Add(Id, MoveTemp(Parsed));
+			// Move the parsed frame into the map to avoid copying and release
+			// websocket frames in arrival order.
+			This->PreprocessedMessages.Add(Id, MoveTemp(ParsedMessages));
 			//check if we can release any messages in order
 			while (This->PreprocessedMessages.Contains(This->NextReleaseId))
 			{
-				Ready.Add(This->PreprocessedMessages.FindAndRemoveChecked(This->NextReleaseId));
+				TArray<FServerMessageType> Released = This->PreprocessedMessages.FindAndRemoveChecked(This->NextReleaseId);
+				AppendMovedServerMessages(Ready, Released);
 				++This->NextReleaseId;
 			}
 		}
@@ -211,7 +248,7 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 		if (Ready.Num() > 0)
 		{
 			FScopeLock Lock(&This->PendingMessagesMutex);
-			This->PendingMessages.Append(MoveTemp(Ready));
+			AppendMovedServerMessages(This->PendingMessages, Ready);
 		}
 	});
 }
@@ -260,6 +297,89 @@ bool UDbConnectionBase::IsTickable() const
 bool UDbConnectionBase::IsTickableInEditor() const
 {
 	return bIsAutoTicking;
+}
+
+void UDbConnectionBase::QueueOutboundMessageV3(TArray<uint8> Message)
+{
+	{
+		FScopeLock Lock(&PendingOutboundMessagesMutex);
+		PendingOutboundMessages.Add(MoveTemp(Message));
+	}
+	ScheduleOutboundFlush();
+}
+
+void UDbConnectionBase::FlushOutboundQueueV3()
+{
+	if (!WebSocket || !WebSocket->IsConnected() || WebSocket->GetActiveProtocol() != ESpacetimeDBWsProtocol::V3)
+	{
+		FScopeLock Lock(&PendingOutboundMessagesMutex);
+		bIsOutboundFlushScheduled = false;
+		return;
+	}
+
+	TArray<TArray<uint8>> PendingFrameMessages;
+	bool bHasRemainingMessages = false;
+	{
+		FScopeLock Lock(&PendingOutboundMessagesMutex);
+		bIsOutboundFlushScheduled = false;
+		if (PendingOutboundMessages.Num() == 0)
+		{
+			return;
+		}
+
+		// Emit at most one bounded v3 transport frame per flush. If more encoded
+		// v2 messages remain, they are sent by a later scheduled task so inbound
+		// websocket work and other game-thread tasks can run between writes.
+		const int32 BatchSize = UE::SpacetimeDB::V3::CountClientMessagesForFrame(
+			PendingOutboundMessages,
+			UE::SpacetimeDB::V3::MaxOutboundFrameBytes
+		);
+		PendingFrameMessages.Reserve(BatchSize);
+		for (int32 Index = 0; Index < BatchSize; ++Index)
+		{
+			PendingFrameMessages.Add(MoveTemp(PendingOutboundMessages[Index]));
+		}
+		PendingOutboundMessages.RemoveAt(0, BatchSize, EAllowShrinking::No);
+		bHasRemainingMessages = PendingOutboundMessages.Num() > 0;
+	}
+
+	WebSocket->SendMessage(UE::SpacetimeDB::V3::EncodeClientMessages(PendingFrameMessages));
+	if (bHasRemainingMessages)
+	{
+		ScheduleOutboundFlush();
+	}
+}
+
+void UDbConnectionBase::ScheduleOutboundFlush()
+{
+	{
+		FScopeLock Lock(&PendingOutboundMessagesMutex);
+		if (bIsOutboundFlushScheduled)
+		{
+			return;
+		}
+		bIsOutboundFlushScheduled = true;
+	}
+
+	const TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
+	// Run the follow-up flush on a later game-thread task instead of draining
+	// multiple oversized batches back-to-back in one turn. That matches the
+	// yield-and-flush-later behavior used in the other SDKs.
+	AsyncTask(ENamedThreads::GameThread, [WeakThis]()
+	{
+		if (!WeakThis.IsValid())
+		{
+			return;
+		}
+		WeakThis->FlushOutboundQueueV3();
+	});
+}
+
+void UDbConnectionBase::ClearOutboundQueue()
+{
+	FScopeLock Lock(&PendingOutboundMessagesMutex);
+	PendingOutboundMessages.Reset();
+	bIsOutboundFlushScheduled = false;
 }
 
 
@@ -525,6 +645,7 @@ void UDbConnectionBase::ClearPendingOperations(const FString& Reason)
 	{
 		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Cleared pending operations due to connection issue: %s"), *Reason);
 	}
+	ClearOutboundQueue();
 }
 
 void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update)
@@ -564,7 +685,49 @@ void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Upda
 	}
 }
 
-bool UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Message, FServerMessageType& OutMessage)
+void UDbConnectionBase::PreProcessDecodedServerMessage(const FServerMessageType& Message)
+{
+	switch (Message.Tag)
+	{
+	case EServerMessageTag::SubscribeApplied:
+	{
+		const FSubscribeAppliedType Payload = Message.GetAsSubscribeApplied();
+		PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Payload.Rows, false));
+		break;
+	}
+	case EServerMessageTag::UnsubscribeApplied:
+	{
+		const FUnsubscribeAppliedType Payload = Message.GetAsUnsubscribeApplied();
+		if (Payload.Rows.IsSet())
+		{
+			PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Payload.Rows.Value, true));
+		}
+		break;
+	}
+	case EServerMessageTag::TransactionUpdate:
+	{
+		const FTransactionUpdateType Payload = Message.GetAsTransactionUpdate();
+		PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Payload));
+		break;
+	}
+	case EServerMessageTag::ReducerResult:
+	{
+		const FReducerResultType Payload = Message.GetAsReducerResult();
+		if (Payload.Result.IsOk())
+		{
+			PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Payload.Result.GetAsOk().TransactionUpdate));
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+bool UDbConnectionBase::PreProcessMessage(
+	ESpacetimeDBWsProtocol Protocol,
+	const TArray<uint8>& Message,
+	TArray<FServerMessageType>& OutMessages)
 {
 	if (Message.Num() == 0)
 	{
@@ -584,45 +747,30 @@ bool UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Message, FServerM
 		return false;
 	}
 
-	// Deserialize the decompressed data into a UServerMessageType object
-	OutMessage = UE::SpacetimeDB::Deserialize<FServerMessageType>(Decompressed);
-
-	// Preprocess row-bearing payloads for table deserializers.
-	switch (OutMessage.Tag)
+	OutMessages.Reset();
+	if (Protocol == ESpacetimeDBWsProtocol::V3)
 	{
-		case EServerMessageTag::SubscribeApplied:
+		TArray<TArray<uint8>> EncodedMessages;
+		UE::SpacetimeDB::V3::DecodeServerMessages(Decompressed, EncodedMessages);
+		if (EncodedMessages.Num() == 0)
 		{
-			const FSubscribeAppliedType Payload = OutMessage.GetAsSubscribeApplied();
-			PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Payload.Rows, false));
-			break;
+			UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Received empty v3 websocket frame"));
+			return false;
 		}
-		case EServerMessageTag::UnsubscribeApplied:
+
+		OutMessages.Reserve(EncodedMessages.Num());
+		for (const TArray<uint8>& EncodedMessage : EncodedMessages)
 		{
-			const FUnsubscribeAppliedType Payload = OutMessage.GetAsUnsubscribeApplied();
-			if (Payload.Rows.IsSet())
-			{
-				PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Payload.Rows.Value, true));
-			}
-			break;
+			FServerMessageType ParsedMessage = UE::SpacetimeDB::Deserialize<FServerMessageType>(EncodedMessage);
+			PreProcessDecodedServerMessage(ParsedMessage);
+			OutMessages.Add(MoveTemp(ParsedMessage));
 		}
-		case EServerMessageTag::TransactionUpdate:
-		{
-			const FTransactionUpdateType Payload = OutMessage.GetAsTransactionUpdate();
-			PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Payload));
-			break;
-		}
-		case EServerMessageTag::ReducerResult:
-		{
-			const FReducerResultType Payload = OutMessage.GetAsReducerResult();
-			if (Payload.Result.IsOk())
-			{
-				PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Payload.Result.GetAsOk().TransactionUpdate));
-			}
-			break;
-		}
-		default:
-			break;
+		return true;
 	}
+
+	FServerMessageType ParsedMessage = UE::SpacetimeDB::Deserialize<FServerMessageType>(Decompressed);
+	PreProcessDecodedServerMessage(ParsedMessage);
+	OutMessages.Add(MoveTemp(ParsedMessage));
 	return true;
 }
 
