@@ -2334,6 +2334,7 @@ impl TableIndex {
 mod test {
     use super::*;
     use crate::page_pool::PagePool;
+    use crate::table::Table;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::ops::Bound::*;
     use decorum::Total;
@@ -2373,6 +2374,10 @@ mod test {
         fn gen_for_ranged() -> impl Strategy<Value = Self> {
             any::<bool>().prop_map(|is_direct| if is_direct { Self::Direct } else { Self::BTree })
         }
+    }
+
+    fn setup(ty: ProductType) -> (Table, PagePool, HashMapBlobStore) {
+        (table(ty), PagePool::new_for_test(), HashMapBlobStore::default())
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool, kind: IndexKind) -> TableIndex {
@@ -2452,9 +2457,7 @@ mod test {
         #[test]
         fn remove_nonexistent_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(unsafe { index.delete(row_ref) }, false);
             prop_assert!(index.idx.is_empty());
@@ -2466,9 +2469,7 @@ mod test {
         #[test]
         fn insert_delete_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
@@ -2499,9 +2500,7 @@ mod test {
             let ty = ProductType::from(ty.into_boxed_slice());
 
             let mut index = new_index(&ty, &cols, false, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
 
             let num_vals = vals.len();
             for val in vals {
@@ -2522,9 +2521,7 @@ mod test {
         #[test]
         fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind) {
             let mut index = new_index(&ty, &cols, true, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
@@ -2561,9 +2558,7 @@ mod test {
             let cols = 0.into();
             let ty = ProductType::from_iter([AlgebraicType::U64]);
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
 
             let prev = needle - 1;
             let next = needle + 1;
@@ -2662,9 +2657,7 @@ mod test {
             let mut index = new_index(&row_ty, &[0].into(), is_unique, kind);
 
             // Construct the table and add `val` as a row.
-            let mut table = table(row_ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(row_ty);
             let pv = product![val.clone()];
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
 
