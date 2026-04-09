@@ -116,7 +116,9 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 | [rust-server](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/rust-server/SKILL.md) | Rust server module SDK |
 | [typescript-server](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/typescript-server/SKILL.md) | TypeScript server module SDK |
 | [typescript-client](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/typescript-client/SKILL.md) | TypeScript/React client SDK |
+| [cpp-server](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/cpp-server/SKILL.md) | C++ server module SDK |
 | [csharp-server](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/csharp-server/SKILL.md) | C# server module SDK |
+| [csharp-client](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/csharp-client/SKILL.md) | C#/.NET client SDK |
 | [unity](https://github.com/clockworklabs/SpacetimeDB/blob/master/skills/unity/SKILL.md) | Unity client integration |
 ## Basic Project Workflow
 
