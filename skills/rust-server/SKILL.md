@@ -90,7 +90,7 @@ pub struct Post { ... }
 ```rust
 #[spacetimedb::reducer]
 pub fn create_entity(ctx: &ReducerContext, name: String, age: i32) {
-    ctx.db.entity().insert(Entity { id: 0, owner: ctx.sender, name, age, active: true });
+    ctx.db.entity().insert(Entity { id: 0, owner: ctx.sender(), name, age, active: true });
 }
 
 // Reducers can return Result<(), String> or Result<(), E> where E: Display
@@ -99,7 +99,7 @@ pub fn validate_entity(ctx: &ReducerContext, name: String) -> Result<(), String>
     if name.is_empty() {
         return Err("Name cannot be empty".to_string());
     }
-    ctx.db.entity().try_insert(Entity { id: 0, owner: ctx.sender, name, active: true })?;
+    ctx.db.entity().try_insert(Entity { id: 0, owner: ctx.sender(), name, active: true })?;
     Ok(())
 }
 ```
@@ -111,14 +111,18 @@ Note: `insert()` panics on constraint violations. Use `try_insert()` with `?` wh
 ```rust
 ctx.db.entity().insert(Entity { id: 0, name: "Sample".into() });  // Insert (0 for autoInc)
 ctx.db.entity().id().find(entity_id);                              // Find by PK → Option<Entity>
-ctx.db.entity().identity().find(ctx.sender);                       // Find by unique column → Option<Entity>
+ctx.db.entity().identity().find(ctx.sender());                     // Find by unique column → Option<Entity>
 ctx.db.item().author_id().filter(author_id);                       // Filter by index → iterator
 ctx.db.entity().iter();                                            // All rows → iterator
+ctx.db.entity().count();                                           // Count rows
 ctx.db.entity().id().update(Entity { ..existing, name: new_name }); // Update (spread + override)
 ctx.db.entity().id().delete(entity_id);                            // Delete by PK
+ctx.db.entity().name().delete("Alice");                            // Delete by indexed column
 ```
 
 Note: `iter()` and `filter()` return iterators. Collect to Vec if you need `.sort()`, `.filter()`, `.map()`.
+
+Range queries on btree indexes: `filter(18..=65)`, `filter(18..)`, `filter(..18)`.
 
 ## Lifecycle Hooks
 
@@ -136,14 +140,14 @@ pub fn on_disconnect(ctx: &ReducerContext) { ... }
 ## Authentication & Timestamps
 
 ```rust
-// Auth: ctx.sender is the caller's Identity
-if row.owner != ctx.sender {
+// Auth: ctx.sender() is the caller's Identity
+if row.owner != ctx.sender() {
     panic!("unauthorized");
     // or: return Err(anyhow::anyhow!("unauthorized"));
 }
 
 // Server timestamps
-ctx.db.item().insert(Item { id: 0, created_at: ctx.timestamp, .. });
+ctx.db.item().insert(Item { id: 0, owner: ctx.sender(), created_at: ctx.timestamp, .. });
 
 // Timestamp arithmetic
 let expiry = ctx.timestamp + TimeDuration::from_micros(delay_micros);
@@ -174,6 +178,14 @@ let at = ScheduleAt::Time(ctx.timestamp + std::time::Duration::from_secs(10));
 let at = ScheduleAt::Interval(std::time::Duration::from_secs(5).into());
 
 ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
+```
+
+## Logging
+
+```rust
+log::info!("Player connected: {:?}", ctx.sender());
+log::warn!("Low health: {}", hp);
+log::error!("Failed to find entity");
 ```
 
 ## Custom Types
@@ -212,34 +224,34 @@ pub struct Record {
 
 #[spacetimedb::reducer(client_connected)]
 pub fn on_connect(ctx: &ReducerContext) {
-    if let Some(existing) = ctx.db.entity().identity().find(ctx.sender) {
+    if let Some(existing) = ctx.db.entity().identity().find(ctx.sender()) {
         ctx.db.entity().identity().update(Entity { active: true, ..existing });
     }
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn on_disconnect(ctx: &ReducerContext) {
-    if let Some(existing) = ctx.db.entity().identity().find(ctx.sender) {
+    if let Some(existing) = ctx.db.entity().identity().find(ctx.sender()) {
         ctx.db.entity().identity().update(Entity { active: false, ..existing });
     }
 }
 
 #[spacetimedb::reducer]
 pub fn create_entity(ctx: &ReducerContext, name: String) {
-    if ctx.db.entity().identity().find(ctx.sender).is_some() {
+    if ctx.db.entity().identity().find(ctx.sender()).is_some() {
         panic!("already exists");
     }
-    ctx.db.entity().insert(Entity { identity: ctx.sender, name, active: true });
+    ctx.db.entity().insert(Entity { identity: ctx.sender(), name, active: true });
 }
 
 #[spacetimedb::reducer]
 pub fn add_record(ctx: &ReducerContext, value: u32) {
-    if ctx.db.entity().identity().find(ctx.sender).is_none() {
+    if ctx.db.entity().identity().find(ctx.sender()).is_none() {
         panic!("not found");
     }
     ctx.db.record().insert(Record {
         id: 0,
-        owner: ctx.sender,
+        owner: ctx.sender(),
         value,
         created_at: ctx.timestamp,
     });

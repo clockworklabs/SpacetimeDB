@@ -95,7 +95,7 @@ Modules are WebAssembly bundles containing application logic that runs inside th
 - **Views**: Read-only functions that expose computed subsets of data to clients
 - **Procedures**: (Unstable) Functions that can have side effects (HTTP requests, `ctx.withTx`)
 
-Server-side modules can be written in: Rust, C#, TypeScript
+Server-side modules can be written in: Rust, C#, TypeScript, C++
 
 Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
 

@@ -1905,14 +1905,14 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
         }
     }
 
-    // Client language skill
+    // Client language skill(s)
     if let Some(client_lang) = config.client_lang {
-        let name = match client_lang {
-            ClientLanguage::Rust => "", // no Rust client skill yet
-            ClientLanguage::TypeScript => "typescript-client",
-            ClientLanguage::Csharp => "unity", // C# client = Unity
+        let names: &[&str] = match client_lang {
+            ClientLanguage::Rust => &[], // no Rust client skill yet
+            ClientLanguage::TypeScript => &["typescript-client"],
+            ClientLanguage::Csharp => &["csharp-client", "unity"],
         };
-        if !name.is_empty() {
+        for name in names {
             if let Some(content) = embedded::get_skill(name) {
                 skills.push((name, content));
             }

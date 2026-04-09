@@ -105,7 +105,8 @@ ctx.Db.Entity.Id.Find(entityId);                                  // Find by PK 
 ctx.Db.Entity.Identity.Find(ctx.Sender);                          // Find by unique column → Entity?
 ctx.Db.Item.AuthorId.Filter(authorId);                            // Filter by index → IEnumerable<Item>
 ctx.Db.Entity.Iter();                                             // All rows → IEnumerable<Entity>
-ctx.Db.Entity.Id.Update(new Entity { ..existing, Name = newName }); // Update by PK
+ctx.Db.Entity.Count();                                            // Count rows
+ctx.Db.Entity.Id.Update(existing with { Name = newName });        // Update by PK
 ctx.Db.Entity.Id.Delete(entityId);                                // Delete by PK
 ```
 
