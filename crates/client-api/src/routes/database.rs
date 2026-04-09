@@ -1675,11 +1675,7 @@ mod tests {
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
 
-        async fn authorize_sql(
-            &self,
-            _subject: Identity,
-            _database: Identity,
-        ) -> Result<AuthCtx, Unauthorized> {
+        async fn authorize_sql(&self, _subject: Identity, _database: Identity) -> Result<AuthCtx, Unauthorized> {
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
     }
