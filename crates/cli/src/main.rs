@@ -7,10 +7,14 @@ use spacetimedb_paths::RootDir;
 
 // Note that the standalone server is invoked through standaline/src/main.rs, so you will
 // also want to set the allocator there.
-#[cfg(not(target_env = "msvc"))]
+//
+// jemalloc aborts on some Linux/aarch64 systems with larger page sizes, including
+// Fedora Asahi on Apple Silicon. Fall back to the system allocator there until we
+// have a jemalloc configuration that is known to work on those targets.
+#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
 use tikv_jemallocator::Jemalloc;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 

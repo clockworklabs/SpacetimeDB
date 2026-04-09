@@ -41,10 +41,13 @@ Example usage:
         )
 }
 
-#[cfg(not(target_env = "msvc"))]
+// jemalloc aborts on some Linux/aarch64 systems with larger page sizes, including
+// Fedora Asahi on Apple Silicon. Fall back to the system allocator there until we
+// have a jemalloc configuration that is known to work on those targets.
+#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
 use tikv_jemallocator::Jemalloc;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -55,6 +58,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 // This can be overridden by setting the `_RJEM_MALLOC_CONF` environment variable.
 // We export this symbol so that the jemalloc library can find it.
 // See https://github.com/polarsignals/rust-jemalloc-pprof?tab=readme-ov-file#usage
+#[cfg(all(not(target_env = "msvc"), not(all(target_os = "linux", target_arch = "aarch64"))))]
 #[allow(non_upper_case_globals)]
 #[unsafe(export_name = "_rjem_malloc_conf")]
 pub static _rjem_malloc_conf: &[u8] = b"prof:true,prof_active:false,lg_prof_sample:19\0";
