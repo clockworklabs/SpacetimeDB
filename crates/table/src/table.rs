@@ -179,8 +179,8 @@ impl TableInner {
     //       during a table scan or index seek.
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
-    fn is_row_present(&self, _squashed_offset: SquashedOffset, ptr: RowPointer) -> bool {
-        if _squashed_offset != ptr.squashed_offset() {
+    fn is_row_present(&self, squashed_offset: SquashedOffset, ptr: RowPointer) -> bool {
+        if squashed_offset != ptr.squashed_offset() {
             return false;
         }
         let Some((page, offset)) = self.try_page_and_offset(ptr) else {
@@ -2334,13 +2334,7 @@ impl Table {
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
     fn is_row_present(&self, ptr: RowPointer) -> bool {
-        if self.squashed_offset != ptr.squashed_offset() {
-            return false;
-        }
-        let Some((page, offset)) = self.inner.try_page_and_offset(ptr) else {
-            return false;
-        };
-        page.has_row_offset(self.row_size(), offset)
+        self.inner.is_row_present(self.squashed_offset, ptr)
     }
 
     /// Returns the row size for a row in the table.
@@ -2542,8 +2536,7 @@ pub(crate) mod test {
         let index = table.get_index_by_id(index_id).unwrap();
 
         index
-            .seek_range(&(..))
-            .unwrap()
+            .iter()
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
                 let key = row_ref.project(&index.indexed_columns).unwrap();
