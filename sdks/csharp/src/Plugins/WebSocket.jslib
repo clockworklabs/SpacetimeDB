@@ -58,11 +58,22 @@ mergeInto(LibraryManager.library, {
             socket.onopen = function() {
                 if (manager.callbacks.open) {
                     var protocolStr = socket.protocol || "";
-                    var protocolArray = intArrayFromString(protocolStr);
-                    var protocolPtr = _malloc(protocolArray.length);
-                    HEAP8.set(protocolArray, protocolPtr);
-                    dynCall('vii', manager.callbacks.open, [socketId, protocolPtr]);
-                    _free(protocolPtr);
+                    // Marshal the negotiated subprotocol to C# just for the duration of
+                    // this callback. We use stack allocation because the pointer only
+                    // needs to remain valid while dynCall is executing synchronously.
+                    var protocolLength = lengthBytesUTF8(protocolStr) + 1;
+                    var stack = stackSave();
+                    try {
+                        var protocolPtr = stackAlloc(protocolLength);
+                        // Write a temporary null-terminated UTF-8 string into the
+                        // Emscripten stack frame so the C# callback can copy it.
+                        stringToUTF8(protocolStr, protocolPtr, protocolLength);
+                        dynCall('vii', manager.callbacks.open, [socketId, protocolPtr]);
+                    } finally {
+                        // Release the temporary stack allocation immediately after
+                        // the callback returns; C# must not retain the pointer.
+                        stackRestore(stack);
+                    }
                 }
             };
 

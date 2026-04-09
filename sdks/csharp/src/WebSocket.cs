@@ -104,6 +104,8 @@ namespace SpacetimeDB
     [AOT.MonoPInvokeCallback(typeof(Action<int, IntPtr>))]
     private static void WebGLOnOpen(int socketId, IntPtr protocolPtr)
     {
+        // The JS bridge passes a temporary UTF-8 pointer that is only valid for
+        // this callback, so copy it into a managed string immediately.
         var protocol = Marshal.PtrToStringUTF8(protocolPtr) ?? string.Empty;
         Instance?.HandleWebGLOpen(socketId, protocol);
     }
