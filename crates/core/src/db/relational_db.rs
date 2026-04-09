@@ -122,6 +122,7 @@ pub struct RelationalDB {
 // this value, later introduction of dynamic configuration will allow the
 // compiler to find external dependencies.
 pub const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
+const GENERIC_DURABILITY_REORDER_WINDOW_SIZE: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -151,17 +152,28 @@ impl RelationalDB {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
-        let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
-        let durability = durability.zip(rt).map(|(durability, rt)| {
-            let next_tx_offset = {
-                let tx = inner.begin_tx(Workload::Internal);
-                let next_tx_offset = tx.tx_offset();
-                let _ = inner.release_tx(tx);
-                next_tx_offset.into_inner()
-            };
-            let reorder_window_size = NonZeroUsize::new(8).unwrap();
-            DurabilityWorker::new(database_identity, durability, rt, next_tx_offset, reorder_window_size)
-        });
+        let (durability, local_durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
+        let durability = match (local_durability, durability, rt) {
+            (Some(local_durability), _, Some(rt)) => {
+                Some(DurabilityWorker::new_local(database_identity, local_durability, rt))
+            }
+            (None, Some(durability), Some(rt)) => {
+                let next_tx_offset = {
+                    let tx = inner.begin_tx(Workload::Internal);
+                    let next_tx_offset = tx.tx_offset();
+                    let _ = inner.release_tx(tx);
+                    next_tx_offset.into_inner()
+                };
+                Some(DurabilityWorker::new(
+                    database_identity,
+                    durability,
+                    rt,
+                    next_tx_offset,
+                    GENERIC_DURABILITY_REORDER_WINDOW_SIZE,
+                ))
+            }
+            _ => None,
+        };
 
         Self {
             inner,
@@ -1974,6 +1986,7 @@ pub mod tests_utils {
 
             let persistence = Persistence {
                 durability: local.clone(),
+                local_durability: Some(local.clone()),
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime: rt,
@@ -2095,6 +2108,7 @@ pub mod tests_utils {
             let history = local.as_history();
             let persistence = Persistence {
                 durability: local.clone(),
+                local_durability: Some(local.clone()),
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime: rt,
