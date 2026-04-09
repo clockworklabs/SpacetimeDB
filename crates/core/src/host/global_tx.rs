@@ -98,8 +98,10 @@ impl GlobalTxSession {
 
 struct LockState {
     owner: Option<GlobalTxId>,
-    // An set of waiters ordered by tx_id with the oldest first.
-    waiting: BTreeSet<WaitKey>,
+    // Waiters ordered by tx_id with the oldest first, with remote waiters
+    // always preferred over local waiters.
+    local_waiting: BTreeSet<WaitKey>,
+    remote_waiting: BTreeSet<WaitKey>,
     // A map from wait_id to the corresponding wait entry, which contains the notify object to wake up the waiter when its turn comes.
     wait_entries: HashMap<u64, WaitEntry>,
     waiter_ids_by_tx: HashMap<GlobalTxId, u64>,
@@ -111,7 +113,8 @@ impl Default for LockState {
     fn default() -> Self {
         Self {
             owner: None,
-            waiting: BTreeSet::new(),
+            local_waiting: BTreeSet::new(),
+            remote_waiting: BTreeSet::new(),
             wait_entries: HashMap::new(),
             waiter_ids_by_tx: HashMap::new(),
             wounded_owners: HashSet::new(),
@@ -216,6 +219,7 @@ impl Drop for GlobalTxLockGuard {
 }
 
 pub struct GlobalTxManager {
+    local_database_identity: Identity,
     sessions: Mutex<HashMap<GlobalTxId, Arc<GlobalTxSession>>>,
     prepare_to_tx: Mutex<HashMap<String, GlobalTxId>>,
     lock_state: Mutex<LockState>,
@@ -224,7 +228,7 @@ pub struct GlobalTxManager {
 
 impl Default for GlobalTxManager {
     fn default() -> Self {
-        Self::new(DEFAULT_WOUND_GRACE_PERIOD)
+        Self::new(Identity::ZERO, DEFAULT_WOUND_GRACE_PERIOD)
     }
 }
 
@@ -238,8 +242,9 @@ impl GlobalTxManager {
         Some((session.coordinator_identity, role))
     }
 
-    pub fn new(wound_grace_period: Duration) -> Self {
+    pub fn new(local_database_identity: Identity, wound_grace_period: Duration) -> Self {
         Self {
+            local_database_identity,
             sessions: Mutex::default(),
             prepare_to_tx: Mutex::default(),
             lock_state: Mutex::default(),
@@ -249,6 +254,10 @@ impl GlobalTxManager {
 
     pub fn wound_grace_period(&self) -> Duration {
         self.wound_grace_period
+    }
+
+    fn is_local_tx(&self, tx_id: &GlobalTxId) -> bool {
+        tx_id.creator_db == self.local_database_identity
     }
 
     pub fn ensure_session(
@@ -399,7 +408,7 @@ impl GlobalTxManager {
                         let Some((wait_id, notify)) = waiter else {
                             return AcquireDisposition::Cancelled;
                         };
-                        let head_waiter = state.waiting.first().map(|wait_key| wait_key.tx_id);
+                        let head_waiter = self.next_waiter_key_locked(&state).map(|wait_key| wait_key.tx_id);
                         if let Some(head_waiter) = head_waiter
                             && head_waiter != tx_id
                         {
@@ -436,7 +445,9 @@ impl GlobalTxManager {
                         let Some((wait_id, notify)) = waiter else {
                             return AcquireDisposition::Cancelled;
                         };
-                        let owner_to_wound = (tx_id < owner && state.wounded_owners.insert(owner)).then_some(owner);
+                        let owner_to_wound =
+                            (!self.is_local_tx(&tx_id) && tx_id < owner && state.wounded_owners.insert(owner))
+                                .then_some(owner);
                         let new_registration = registration.is_none().then(|| WaitRegistration::new(self, wait_id));
                         (notify, owner_to_wound, new_registration, false)
                     }
@@ -456,7 +467,11 @@ impl GlobalTxManager {
                         .with_label_values(&coordinator_identity, &role)
                         .inc();
                 }
-                let wound_grace_period = self.wound_grace_period;
+                let wound_grace_period = if self.is_local_tx(&owner) {
+                    Duration::ZERO
+                } else {
+                    self.wound_grace_period
+                };
                 log::info!(
                     "global transaction {tx_id} is waiting behind younger owner {owner}; giving it {:?} to finish before wound flow",
                     wound_grace_period
@@ -552,7 +567,7 @@ impl GlobalTxManager {
             },
         );
         state.waiter_ids_by_tx.insert(tx_id, wait_id);
-        state.waiting.insert(WaitKey { tx_id, wait_id });
+        self.insert_waiter_key_locked(state, WaitKey { tx_id, wait_id });
         (wait_id, notify)
     }
 
@@ -574,14 +589,22 @@ impl GlobalTxManager {
     }
 
     fn is_next_waiter_locked(&self, state: &LockState, tx_id: GlobalTxId) -> bool {
-        match state.waiting.first() {
+        match self.next_waiter_key_locked(state) {
             None => true,
             Some(wait_key) => wait_key.tx_id == tx_id,
         }
     }
 
+    fn next_waiter_key_locked(&self, state: &LockState) -> Option<WaitKey> {
+        state
+            .remote_waiting
+            .first()
+            .copied()
+            .or_else(|| state.local_waiting.first().copied())
+    }
+
     fn notify_next_waiter_locked(&self, state: &LockState) {
-        if let Some(wait_key) = state.waiting.first()
+        if let Some(wait_key) = self.next_waiter_key_locked(state)
             && let Some(wait_entry) = state.wait_entries.get(&wait_key.wait_id)
         {
             log::info!("Notifying next waiter for tx_id {}", wait_entry.tx_id);
@@ -592,17 +615,17 @@ impl GlobalTxManager {
     fn remove_waiter_locked(&self, state: &mut LockState, tx_id: &GlobalTxId) {
         if let Some(wait_id) = state.waiter_ids_by_tx.remove(tx_id) {
             state.wait_entries.remove(&wait_id);
-            state.waiting.remove(&WaitKey { tx_id: *tx_id, wait_id });
+            self.remove_waiter_key_locked(state, &WaitKey { tx_id: *tx_id, wait_id });
         }
     }
 
     fn remove_waiter_by_id(&self, state: &mut LockState, wait_id: u64) {
         log::info!("Removing waiter with wait_id {}", wait_id);
-        let was_head = state.waiting.first().map(|w| w.wait_id) == Some(wait_id);
+        let was_head = self.next_waiter_key_locked(state).map(|w| w.wait_id) == Some(wait_id);
         if let Some(wait_entry) = state.wait_entries.remove(&wait_id) {
             log::info!("Removing waiter with wait_id {}, tx_id {}", wait_id, wait_entry.tx_id);
             state.waiter_ids_by_tx.remove(&wait_entry.tx_id);
-            state.waiting.remove(&WaitKey {
+            self.remove_waiter_key_locked(state, &WaitKey {
                 tx_id: wait_entry.tx_id,
                 wait_id,
             });
@@ -615,6 +638,22 @@ impl GlobalTxManager {
                 wait_id,
                 state.owner
             );
+        }
+    }
+
+    fn insert_waiter_key_locked(&self, state: &mut LockState, wait_key: WaitKey) {
+        if self.is_local_tx(&wait_key.tx_id) {
+            state.local_waiting.insert(wait_key);
+        } else {
+            state.remote_waiting.insert(wait_key);
+        }
+    }
+
+    fn remove_waiter_key_locked(&self, state: &mut LockState, wait_key: &WaitKey) {
+        if self.is_local_tx(&wait_key.tx_id) {
+            state.local_waiting.remove(wait_key);
+        } else {
+            state.remote_waiting.remove(wait_key);
         }
     }
 
@@ -636,7 +675,7 @@ impl GlobalTxManager {
     }
 
     fn prune_stale_head_waiters_locked(&self, state: &mut LockState) {
-        while let Some(wait_key) = state.waiting.first().copied() {
+        while let Some(wait_key) = self.next_waiter_key_locked(state) {
             let tx_id = wait_key.tx_id;
             if self.is_terminalish(&tx_id) {
                 let session_state = self.get_session(&tx_id).map(|session| session.state());
@@ -654,13 +693,17 @@ impl GlobalTxManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{AcquireDisposition, GlobalTxManager};
+    use super::{AcquireDisposition, GlobalTxManager, DEFAULT_WOUND_GRACE_PERIOD};
     use crate::identity::Identity;
     use spacetimedb_lib::{GlobalTxId, Timestamp};
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::runtime::Runtime;
+
+    fn manager(local_database_identity: Identity) -> Arc<GlobalTxManager> {
+        Arc::new(GlobalTxManager::new(local_database_identity, DEFAULT_WOUND_GRACE_PERIOD))
+    }
 
     fn tx_id(ts: i64, db_byte: u8, nonce: u32) -> GlobalTxId {
         GlobalTxId::new(
@@ -673,7 +716,7 @@ mod tests {
 
     #[test]
     fn manager_uses_configured_wound_grace_period() {
-        let manager = GlobalTxManager::new(Duration::from_millis(42));
+        let manager = GlobalTxManager::new(Identity::ZERO, Duration::from_millis(42));
         assert_eq!(manager.wound_grace_period(), Duration::from_millis(42));
     }
 
@@ -698,7 +741,7 @@ mod tests {
                 AcquireDisposition::Cancelled => false,
             }
         });
-        std::thread::sleep(Duration::from_millis(25));
+        std::thread::sleep(Duration::from_millis(50));
         assert!(manager.is_wounded(&younger));
         drop(younger_guard);
         assert!(matches!(rt.block_on(older_task).expect("task should complete"), true));
@@ -731,6 +774,35 @@ mod tests {
 
         assert!(matches!(rt.block_on(older_task).expect("task should complete"), true));
         assert!(!manager.is_wounded(&younger));
+    }
+
+    #[test]
+    fn local_owner_is_wounded_without_grace_period() {
+        let local_db = Identity::from_byte_array([1; 32]);
+        let manager = manager(local_db);
+        let local_owner = tx_id(20, 1, 0);
+        let remote_older = tx_id(10, 2, 0);
+        manager.ensure_session(local_owner, super::GlobalTxRole::Coordinator, local_owner.creator_db);
+        manager.ensure_session(remote_older, super::GlobalTxRole::Participant, remote_older.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(local_owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("local owner should acquire immediately"),
+        };
+
+        let manager_for_task = manager.clone();
+        let older_task = rt.spawn(async move {
+            match manager_for_task.acquire(remote_older, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => true,
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(manager.is_wounded(&local_owner));
+        drop(owner_guard);
+        assert!(matches!(rt.block_on(older_task).expect("task should complete"), true));
     }
 
     #[test]
@@ -779,6 +851,179 @@ mod tests {
         std::thread::sleep(Duration::from_millis(25));
         drop(owner_guard);
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn remote_waiter_is_prioritized_over_older_local_waiter() {
+        let local_db = Identity::from_byte_array([1; 32]);
+        let manager = manager(local_db);
+        let owner = tx_id(5, 9, 0);
+        let local_waiter = tx_id(10, 1, 0);
+        let remote_waiter = tx_id(20, 2, 0);
+        manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        manager.ensure_session(local_waiter, super::GlobalTxRole::Coordinator, local_waiter.creator_db);
+        manager.ensure_session(remote_waiter, super::GlobalTxRole::Participant, remote_waiter.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
+
+        let (order_tx, order_rx) = std::sync::mpsc::channel();
+
+        let local_manager = manager.clone();
+        let local_order_tx = order_tx.clone();
+        let local_task = rt.spawn(async move {
+            match local_manager.acquire(local_waiter, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => {
+                    let _ = local_order_tx.send("local");
+                    true
+                }
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        let remote_manager = manager.clone();
+        let remote_order_tx = order_tx.clone();
+        let remote_task = rt.spawn(async move {
+            match remote_manager.acquire(remote_waiter, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => {
+                    let _ = remote_order_tx.send("remote");
+                    true
+                }
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(10));
+        drop(owner_guard);
+
+        assert_eq!(
+            order_rx.recv_timeout(Duration::from_millis(100)).expect("first waiter should acquire"),
+            "remote"
+        );
+        assert_eq!(
+            order_rx.recv_timeout(Duration::from_millis(100)).expect("second waiter should acquire"),
+            "local"
+        );
+        assert!(rt.block_on(local_task).expect("local task should complete"));
+        assert!(rt.block_on(remote_task).expect("remote task should complete"));
+    }
+
+    #[test]
+    fn remote_waiters_preserve_age_order() {
+        let manager = manager(Identity::from_byte_array([1; 32]));
+        let owner = tx_id(5, 9, 0);
+        let older_remote = tx_id(10, 2, 0);
+        let younger_remote = tx_id(20, 3, 0);
+        manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        manager.ensure_session(older_remote, super::GlobalTxRole::Participant, older_remote.creator_db);
+        manager.ensure_session(younger_remote, super::GlobalTxRole::Participant, younger_remote.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
+
+        let (order_tx, order_rx) = std::sync::mpsc::channel();
+
+        let older_manager = manager.clone();
+        let older_order_tx = order_tx.clone();
+        let older_task = rt.spawn(async move {
+            match older_manager.acquire(older_remote, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => {
+                    let _ = older_order_tx.send("older");
+                    true
+                }
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        let younger_manager = manager.clone();
+        let younger_order_tx = order_tx.clone();
+        let younger_task = rt.spawn(async move {
+            match younger_manager.acquire(younger_remote, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => {
+                    let _ = younger_order_tx.send("younger");
+                    true
+                }
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(10));
+        drop(owner_guard);
+
+        assert_eq!(
+            order_rx.recv_timeout(Duration::from_millis(100)).expect("first remote waiter should acquire"),
+            "older"
+        );
+        assert_eq!(
+            order_rx.recv_timeout(Duration::from_millis(100)).expect("second remote waiter should acquire"),
+            "younger"
+        );
+        assert!(rt.block_on(older_task).expect("older task should complete"));
+        assert!(rt.block_on(younger_task).expect("younger task should complete"));
+    }
+
+    #[test]
+    fn local_waiters_preserve_age_order_when_no_remote_waiters_exist() {
+        let local_db = Identity::from_byte_array([1; 32]);
+        let manager = manager(local_db);
+        let owner = tx_id(5, 9, 0);
+        let older_local = tx_id(10, 1, 0);
+        let younger_local = tx_id(20, 1, 1);
+        manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        manager.ensure_session(older_local, super::GlobalTxRole::Coordinator, older_local.creator_db);
+        manager.ensure_session(younger_local, super::GlobalTxRole::Coordinator, younger_local.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
+
+        let (order_tx, order_rx) = std::sync::mpsc::channel();
+
+        let older_manager = manager.clone();
+        let older_order_tx = order_tx.clone();
+        let older_task = rt.spawn(async move {
+            match older_manager.acquire(older_local, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => {
+                    let _ = older_order_tx.send("older");
+                    true
+                }
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        let younger_manager = manager.clone();
+        let younger_order_tx = order_tx.clone();
+        let younger_task = rt.spawn(async move {
+            match younger_manager.acquire(younger_local, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => {
+                    let _ = younger_order_tx.send("younger");
+                    true
+                }
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(10));
+        drop(owner_guard);
+
+        assert_eq!(
+            order_rx.recv_timeout(Duration::from_millis(100)).expect("first local waiter should acquire"),
+            "older"
+        );
+        assert_eq!(
+            order_rx.recv_timeout(Duration::from_millis(100)).expect("second local waiter should acquire"),
+            "younger"
+        );
+        assert!(rt.block_on(older_task).expect("older task should complete"));
+        assert!(rt.block_on(younger_task).expect("younger task should complete"));
     }
 
     #[test]
@@ -863,6 +1108,99 @@ mod tests {
         assert!(!manager.is_wounded(&owner));
         drop(owner_guard);
         assert!(rt.block_on(older_task).expect("task should complete"));
+    }
+
+    #[test]
+    fn local_waiter_does_not_trigger_wound_or_callback() {
+        let local_db = Identity::from_byte_array([1; 32]);
+        let manager = manager(local_db);
+        let owner = tx_id(20, 2, 0);
+        let local_waiter = tx_id(10, 1, 0);
+        manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        manager.ensure_session(local_waiter, super::GlobalTxRole::Coordinator, local_waiter.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
+
+        let callback_called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let callback_flag = callback_called.clone();
+        let manager_for_task = manager.clone();
+        let waiter_task = rt.spawn(async move {
+            match manager_for_task
+                .acquire(local_waiter, move |_| {
+                    let callback_flag = callback_flag.clone();
+                    async move {
+                        callback_flag.store(true, Ordering::SeqCst);
+                    }
+                })
+                .await
+            {
+                AcquireDisposition::Acquired(_guard) => true,
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!manager.is_wounded(&owner));
+        assert!(!callback_called.load(Ordering::SeqCst));
+
+        drop(owner_guard);
+        assert!(rt.block_on(waiter_task).expect("waiter task should complete"));
+    }
+
+    #[test]
+    fn suppressed_local_waiter_does_not_block_remote_wound() {
+        let local_db = Identity::from_byte_array([1; 32]);
+        let manager = manager(local_db);
+        let owner = tx_id(30, 2, 0);
+        let local_waiter = tx_id(10, 1, 0);
+        let remote_waiter = tx_id(15, 3, 0);
+        manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
+        manager.ensure_session(local_waiter, super::GlobalTxRole::Coordinator, local_waiter.creator_db);
+        manager.ensure_session(remote_waiter, super::GlobalTxRole::Participant, remote_waiter.creator_db);
+
+        let rt = Runtime::new().unwrap();
+        let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
+            AcquireDisposition::Acquired(guard) => guard,
+            AcquireDisposition::Cancelled => panic!("owner should acquire immediately"),
+        };
+
+        let local_callback_called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let local_callback_flag = local_callback_called.clone();
+        let local_manager = manager.clone();
+        let local_task = rt.spawn(async move {
+            match local_manager
+                .acquire(local_waiter, move |_| {
+                    let local_callback_flag = local_callback_flag.clone();
+                    async move {
+                        local_callback_flag.store(true, Ordering::SeqCst);
+                    }
+                })
+                .await
+            {
+                AcquireDisposition::Acquired(_guard) => true,
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        let remote_manager = manager.clone();
+        let remote_task = rt.spawn(async move {
+            match remote_manager.acquire(remote_waiter, |_| async {}).await {
+                AcquireDisposition::Acquired(_guard) => true,
+                AcquireDisposition::Cancelled => false,
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!local_callback_called.load(Ordering::SeqCst));
+        assert!(manager.is_wounded(&owner));
+
+        drop(owner_guard);
+        assert!(rt.block_on(remote_task).expect("remote task should complete"));
+        assert!(rt.block_on(local_task).expect("local task should complete"));
     }
 
     #[test]

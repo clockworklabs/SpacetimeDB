@@ -733,6 +733,7 @@ async fn make_replica_ctx(
         }
     });
 
+    let database_identity = database.database_identity;
     Ok(ReplicaContext {
         database,
         replica_id,
@@ -744,6 +745,7 @@ async fn make_replica_ctx(
         call_reducer_auth_token,
         tx_id_nonce: Arc::default(),
         global_tx_manager: Arc::new(crate::host::global_tx::GlobalTxManager::new(
+            database_identity,
             global_tx_config.wound_grace_period,
         )),
         fake_2pc_persistence: global_tx_config.fake_2pc_persistence,
