@@ -38,8 +38,8 @@ pub struct Options {
     /// transactions that are currently in the queue, but shrink the buffer to
     /// `batch_capacity` if it had to make additional space during a burst.
     ///
-    /// The internal queue of [Local] is bounded to
-    /// `Options::QUEUE_CAPACITY_MULTIPLIER * batch_capacity`.
+    /// The reorder window is bounded to
+    /// `Options::REORDER_WINDOW_CAPACITY_MULTIPLIER * batch_capacity`.
     ///
     /// Default: 4096
     pub batch_capacity: NonZeroUsize,
@@ -49,10 +49,11 @@ pub struct Options {
 
 impl Options {
     pub const DEFAULT_BATCH_CAPACITY: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
-    pub const QUEUE_CAPACITY_MULTIPLIER: usize = 4;
+    pub const REORDER_WINDOW_CAPACITY_MULTIPLIER: usize = 4;
 
-    fn queue_capacity(self) -> usize {
-        Self::QUEUE_CAPACITY_MULTIPLIER * self.batch_capacity.get()
+    fn reorder_window_size(self) -> NonZeroUsize {
+        NonZeroUsize::new(Self::REORDER_WINDOW_CAPACITY_MULTIPLIER * self.batch_capacity.get())
+            .expect("local durability reorder window size is non-zero")
     }
 }
 
@@ -131,10 +132,7 @@ pub struct Local<T> {
     durable_offset: watch::Receiver<Option<TxOffset>>,
     /// Backlog of transactions to be written to disk by the background
     /// [`PersisterTask`].
-    ///
-    /// The queue is bounded to
-    /// `Options::QUEUE_CAPACITY_MULTIPLIER * Options::batch_capacity`.
-    queue: mpsc::Sender<QueueItem<T>>,
+    queue: mpsc::UnboundedSender<QueueItem<T>>,
     /// How many transactions are pending durability, including items buffered
     /// in the queue and items waiting in the reorder window.
     ///
@@ -174,11 +172,8 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             on_new_segment,
         )?);
         let next_tx_offset = clog.max_committed_offset().map_or(0, |offset| offset + 1);
-        let queue_capacity = opts.queue_capacity();
-        // The reorder window should be the same size as the queue capacity
-        let reorder_window_size =
-            NonZeroUsize::new(queue_capacity).expect("local durability queue capacity is non-zero");
-        let (queue, txdata_rx) = mpsc::channel(queue_capacity);
+        let reorder_window_size = opts.reorder_window_size();
+        let (queue, txdata_rx) = mpsc::unbounded_channel();
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
@@ -261,7 +256,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
         mut self,
-        mut transactions_rx: mpsc::Receiver<QueueItem<T>>,
+        mut transactions_rx: mpsc::UnboundedReceiver<QueueItem<T>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
@@ -283,15 +278,16 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     let _ = reply.send(self.lock.notified());
                 },
 
-                // Pop as many elements from the channel as possible,
-                // potentially requiring the `tx_buf` to allocate additional
-                // capacity.
-                // We'll reclaim capacity in excess of `self.batch_size` below.
-                n = transactions_rx.recv_many(&mut tx_buf, usize::MAX) => {
-                    if n == 0 {
+                maybe_item = transactions_rx.recv() => {
+                    let Some(item) = maybe_item else {
                         break;
+                    };
+                    tx_buf.push(item);
+                    while let Ok(item) = transactions_rx.try_recv() {
+                        tx_buf.push(item);
                     }
-                    // `recv_many` preserves arrival order, not tx order.
+                    let n = tx_buf.len();
+                    // The unbounded queue preserves arrival order, not tx order.
                     // Sort first so gaps already present in this batch can close immediately.
                     tx_buf.sort_unstable_by_key(QueueItem::tx_offset);
                     let ordered = tx_buf.drain(..).map(|item| (item.tx_offset(), item));
@@ -441,36 +437,16 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
 }
 
 impl<T: Send + Sync + 'static> Local<T> {
-    fn send_item(&self, item: QueueItem<T>) -> bool {
-        let blocked = match self.queue.try_reserve() {
-            Ok(permit) => {
-                permit.send(item);
-                false
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                panic!("durability actor crashed");
-            }
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                let send = || self.queue.blocking_send(item);
-                if tokio::runtime::Handle::try_current().is_ok() {
-                    tokio::task::block_in_place(send)
-                } else {
-                    send()
-                }
-                .expect("durability actor crashed");
-                true
-            }
-        };
-
+    fn send_item(&self, item: QueueItem<T>) {
+        self.queue.send(item).expect("durability actor crashed");
         self.queue_depth.fetch_add(1, Relaxed);
-        blocked
     }
 
     pub fn append_tx_deferred(
         &self,
         tx_offset: TxOffset,
         prepare: impl FnOnce() -> Transaction<Txdata<T>> + Send + Sync + 'static,
-    ) -> bool {
+    ) {
         self.send_item(QueueItem::Deferred {
             tx_offset,
             prepare: Box::new(prepare),

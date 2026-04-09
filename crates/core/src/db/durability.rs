@@ -16,7 +16,7 @@ use tokio::{
     runtime,
     sync::{
         futures::OwnedNotified,
-        mpsc::{self, channel, Receiver, Sender},
+        mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
         oneshot, Notify,
     },
     time::timeout,
@@ -79,7 +79,7 @@ pub struct DurabilityWorker {
 
 enum DurabilityWorkerInner {
     Generic {
-        request_tx: Sender<DurabilityRequest>,
+        request_tx: UnboundedSender<DurabilityRequest>,
         shutdown: Sender<ShutdownReply>,
         durability: Arc<Durability>,
     },
@@ -99,7 +99,7 @@ impl DurabilityWorker {
         next_tx_offset: TxOffset,
         reorder_window_size: NonZeroUsize,
     ) -> Self {
-        let (request_tx, request_rx) = channel(4 * 4096);
+        let (request_tx, request_rx) = unbounded_channel();
         let (shutdown_tx, shutdown_rx) = channel(1);
 
         let actor = DurabilityWorkerActor {
@@ -150,7 +150,6 @@ impl DurabilityWorker {
     /// and calling `durability.append_tx`.
     ///
     /// This method queues the work for durability processing.
-    /// It blocks if the active queue is at capacity.
     ///
     /// # Panics
     ///
@@ -163,40 +162,12 @@ impl DurabilityWorker {
     pub fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
         match &self.inner {
             DurabilityWorkerInner::Generic { request_tx, .. } => {
-                // We first try to send it without blocking.
-                match request_tx.try_reserve() {
-                    Ok(permit) => {
-                        permit.send(DurabilityRequest {
-                            reducer_context,
-                            tx_data: tx_data.clone(),
-                        });
-                    }
-                    Err(mpsc::error::TrySendError::Closed(_)) => {
-                        panic!("durability actor vanished database={}", self.database);
-                    }
-                    Err(mpsc::error::TrySendError::Full(_)) => {
-                        // If the channel was full, we use the blocking version.
-                        let start = std::time::Instant::now();
-                        let send = || {
-                            request_tx.blocking_send(DurabilityRequest {
-                                reducer_context,
-                                tx_data: tx_data.clone(),
-                            })
-                        };
-                        if tokio::runtime::Handle::try_current().is_ok() {
-                            tokio::task::block_in_place(send)
-                        } else {
-                            send()
-                        }
-                        .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
-                        // We could cache this metric, but if we are already in the blocking code path,
-                        // the extra time of looking up the metric is probably negligible.
-                        WORKER_METRICS
-                            .durability_blocking_send_duration
-                            .with_label_values(&self.database)
-                            .observe(start.elapsed().as_secs_f64());
-                    }
-                }
+                request_tx
+                    .send(DurabilityRequest {
+                        reducer_context,
+                        tx_data: tx_data.clone(),
+                    })
+                    .unwrap_or_else(|_| panic!("durability actor vanished database={}", self.database));
             }
             DurabilityWorkerInner::Local { durability } => {
                 let Some(tx_offset) = tx_data.tx_offset() else {
@@ -208,17 +179,10 @@ impl DurabilityWorker {
                     return;
                 };
 
-                let start = std::time::Instant::now();
                 let tx_data = tx_data.clone();
-                let blocked = durability.append_tx_deferred(tx_offset, move || {
+                durability.append_tx_deferred(tx_offset, move || {
                     prepare_tx_data_for_durability(tx_offset, reducer_context, &tx_data)
                 });
-                if blocked {
-                    WORKER_METRICS
-                        .durability_blocking_send_duration
-                        .with_label_values(&self.database)
-                        .observe(start.elapsed().as_secs_f64());
-                }
             }
         }
     }
@@ -299,7 +263,7 @@ impl DurabilityWorker {
 }
 
 pub struct DurabilityWorkerActor {
-    request_rx: mpsc::Receiver<DurabilityRequest>,
+    request_rx: UnboundedReceiver<DurabilityRequest>,
     shutdown: Receiver<ShutdownReply>,
     durability: Arc<Durability>,
     reorder_window: ReorderWindow<DurabilityRequest>,
