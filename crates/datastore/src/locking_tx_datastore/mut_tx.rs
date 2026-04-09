@@ -35,6 +35,7 @@ use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
+use bytes::Bytes;
 use core::{cell::RefCell, iter, mem, ops::RangeBounds};
 use itertools::Either;
 use smallvec::SmallVec;
@@ -2636,7 +2637,7 @@ impl MutTxId {
         sender_identity: Identity,
         last_outbound_msg: u64,
         result_status: u8,
-        result_payload: String,
+        result_payload: Bytes,
     ) -> Result<()> {
         // Delete the existing row if present.
         self.delete_col_eq(

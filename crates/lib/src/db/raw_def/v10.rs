@@ -280,7 +280,7 @@ pub struct RawColumnDefaultValueV10 {
 ///
 /// The `remote_reducer` is the name of the reducer to call on the target database.
 /// If `on_result_reducer` is set, that local reducer is called when delivery completes,
-/// with signature `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<(), String>)`.
+/// with signature `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<T, String>)`.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]

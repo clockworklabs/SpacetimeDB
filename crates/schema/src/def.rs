@@ -723,7 +723,7 @@ pub struct OutboxDef {
 
     /// The local reducer called with the delivery result, if any.
     ///
-    /// Signature: `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<(), String>)`.
+    /// Signature: `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<T, String>)`.
     pub on_result_reducer: Option<Identifier>,
 }
 

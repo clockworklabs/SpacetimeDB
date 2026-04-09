@@ -11,6 +11,7 @@
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
+use bytes::Bytes;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
@@ -1936,8 +1937,10 @@ pub struct StInboundMsgRow {
     pub last_outbound_msg: u64,
     /// See [st_inbound_msg_result_status] for values.
     pub result_status: u8,
-    /// Error message if result_status is REDUCER_ERROR, empty otherwise.
-    pub result_payload: String,
+    /// Reducer return payload encoded as raw bytes.
+    /// For `SUCCESS`, this stores the committed reducer return value.
+    /// For `REDUCER_ERROR`, this stores the error message bytes.
+    pub result_payload: Bytes,
 }
 
 impl TryFrom<RowRef<'_>> for StInboundMsgRow {

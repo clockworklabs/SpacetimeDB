@@ -13,8 +13,9 @@
 use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::WeakModuleHost;
 use crate::host::FunctionArgs;
+use bytes::Bytes;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::system_tables::{StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
+use spacetimedb_datastore::system_tables::{st_inbound_msg_result_status, StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{AlgebraicValue, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
@@ -130,7 +131,7 @@ impl TargetState {
 /// Outcome of a delivery attempt.
 enum DeliveryOutcome {
     /// Reducer succeeded (HTTP 200).
-    Success,
+    Success(Bytes),
     /// Reducer ran but returned Err (HTTP 422).
     ReducerError(String),
     /// Budget exceeded (HTTP 402).
@@ -211,14 +212,13 @@ async fn run_idc_loop(
 }
 
 /// Decode the delivery outcome into `(result_status, result_payload)` for recording.
-fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, String) {
-    use spacetimedb_datastore::system_tables::st_inbound_msg_result_status;
+fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, Bytes) {
     match outcome {
-        DeliveryOutcome::Success => (st_inbound_msg_result_status::SUCCESS, String::new()),
-        DeliveryOutcome::ReducerError(msg) => (st_inbound_msg_result_status::REDUCER_ERROR, msg.clone()),
+        DeliveryOutcome::Success(payload) => (st_inbound_msg_result_status::SUCCESS, payload.clone()),
+        DeliveryOutcome::ReducerError(msg) => (st_inbound_msg_result_status::REDUCER_ERROR, Bytes::from(msg.clone())),
         DeliveryOutcome::BudgetExceeded => (
             st_inbound_msg_result_status::REDUCER_ERROR,
-            "budget exceeded".to_string(),
+            Bytes::from("budget exceeded".to_string()),
         ),
         DeliveryOutcome::TransportError(_) => unreachable!("transport errors never finalize"),
     }
@@ -232,8 +232,8 @@ async fn finalize_message(
     db: &RelationalDB,
     module_host: &WeakModuleHost,
     msg: &PendingMessage,
-    _result_status: u8,
-    result_payload: String,
+    result_status: u8,
+    result_payload: Bytes,
 ) {
     // Call the on_result reducer if configured.
     if let Some(on_result_reducer) = &msg.on_result_reducer {
@@ -247,22 +247,36 @@ async fn finalize_message(
             return;
         };
 
-        // Encode `(request_row: OutboxRow, result: Result<(), String>)` as BSATN args.
-        let result = if result_payload.is_empty() {
-            Ok::<(), String>(())
-        } else {
-            Err::<(), String>(result_payload)
-        };
         let mut args_bytes = Vec::new();
-        if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &msg.request_row)
-            .and_then(|_| spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &result))
-        {
+        if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &msg.request_row) {
             log::error!(
                 "idc_actor: failed to encode on_result args for msg_id={}: {e}",
                 msg.msg_id
             );
             delete_message(db, msg.msg_id);
             return;
+        }
+        match result_status {
+            st_inbound_msg_result_status::SUCCESS => {
+                args_bytes.push(0);
+                args_bytes.extend_from_slice(&result_payload);
+            }
+            st_inbound_msg_result_status::REDUCER_ERROR => {
+                let err = String::from_utf8_lossy(&result_payload).into_owned();
+                if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &Err::<(), String>(err)) {
+                    log::error!(
+                        "idc_actor: failed to encode on_result error args for msg_id={}: {e}",
+                        msg.msg_id
+                    );
+                    delete_message(db, msg.msg_id);
+                    return;
+                }
+            }
+            status => {
+                log::error!("idc_actor: unexpected result status {status} for msg_id={}", msg.msg_id);
+                delete_message(db, msg.msg_id);
+                return;
+            }
         }
 
         let caller_identity = Identity::ZERO; // system call
@@ -452,7 +466,7 @@ async fn attempt_delivery(client: &reqwest::Client, config: &IdcActorConfig, msg
             let status = resp.status();
             if status.is_success() {
                 // HTTP 200: reducer committed successfully.
-                DeliveryOutcome::Success
+                DeliveryOutcome::Success(resp.bytes().await.unwrap_or_default())
             } else if status.as_u16() == 422 {
                 // HTTP 422: reducer ran but returned Err(...).
                 let body = resp.text().await.unwrap_or_default();

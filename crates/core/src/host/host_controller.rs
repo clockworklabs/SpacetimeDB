@@ -23,6 +23,7 @@ use crate::util::jobs::{AllocatedJobCore, JobCores};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
+use bytes::Bytes;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
@@ -139,6 +140,7 @@ impl HostRuntimes {
 #[derive(Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
+    pub reducer_return_value: Option<Bytes>,
     pub energy_used: EnergyQuanta,
     pub execution_duration: Duration,
     pub tx_offset: Option<TransactionOffset>,

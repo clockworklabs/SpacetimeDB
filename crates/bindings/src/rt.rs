@@ -538,11 +538,12 @@ pub const fn assert_outbox_table_primary_key<T: OutboxTablePrimaryKey>() {}
 
 /// Verify at compile time that a function has the correct signature for an outbox `on_result` reducer.
 ///
-/// The reducer must accept `(OutboxRow, Result<(), String>)` as its user-supplied arguments:
-/// `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<(), String>)`
-pub const fn outbox_typecheck<'de, OutboxRow>(_x: impl Reducer<'de, (OutboxRow, Result<(), String>)>)
+/// The reducer must accept `(OutboxRow, Result<T, String>)` as its user-supplied arguments:
+/// `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<T, String>)`
+pub const fn outbox_typecheck<'de, OutboxRow, T>(_x: impl Reducer<'de, (OutboxRow, Result<T, String>)>)
 where
     OutboxRow: spacetimedb_lib::SpacetimeType + Serialize + Deserialize<'de>,
+    T: spacetimedb_lib::SpacetimeType + Serialize + Deserialize<'de>,
 {
     core::mem::forget(_x);
 }

@@ -2,7 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, EnergyQuanta, FunctionBudget, FunctionFingerprint};
+use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
@@ -880,41 +880,6 @@ impl InstanceCommon {
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
 
-        // Check the dedup index atomically within this transaction.
-        // If the incoming msg_id is ≤ the last delivered msg_id for this sender,
-        // the message is a duplicate; discard it and return the stored result.
-        if let Some((sender_identity, sender_msg_id)) = dedup_sender {
-            let stored = tx.get_inbound_msg_row(sender_identity);
-            if stored.as_ref().is_some_and(|r| sender_msg_id <= r.last_outbound_msg) {
-                let _ = stdb.rollback_mut_tx(tx);
-                let stored = stored.unwrap();
-                let outcome = match stored.result_status {
-                    s if s == st_inbound_msg_result_status::SUCCESS => ReducerOutcome::Committed,
-                    s if s == st_inbound_msg_result_status::REDUCER_ERROR => {
-                        ReducerOutcome::Failed(Box::new(stored.result_payload.into()))
-                    }
-                    _ => {
-                        log::warn!(
-                            "IDC: unexpected inbound dedup result_status={} for sender {}, msg_id={}",
-                            stored.result_status,
-                            sender_identity,
-                            sender_msg_id
-                        );
-                        ReducerOutcome::Committed
-                    }
-                };
-                return (
-                    ReducerCallResult {
-                        outcome,
-                        energy_used: EnergyQuanta::ZERO,
-                        execution_duration: Duration::ZERO,
-                        tx_offset: None,
-                    },
-                    false,
-                );
-            }
-        }
-
         let mut tx_slot = inst.tx_slot();
 
         let vm_metrics = self.vm_metrics.get_for_reducer_id(reducer_id);
@@ -969,7 +934,7 @@ impl InstanceCommon {
                         sender_identity,
                         sender_msg_id,
                         st_inbound_msg_result_status::SUCCESS,
-                        String::new(),
+                        return_value.clone().unwrap_or_default(),
                     ),
                     None => Ok(()),
                 };
@@ -1049,7 +1014,7 @@ impl InstanceCommon {
                 sender_identity,
                 sender_msg_id,
                 st_inbound_msg_result_status::REDUCER_ERROR,
-                err_msg,
+                err_msg.into(),
             ) {
                 log::error!("IDC: failed to record reducer error in dedup table for sender {sender_identity}: {e}");
                 let _ = stdb.rollback_mut_tx(dedup_tx);
@@ -1060,6 +1025,7 @@ impl InstanceCommon {
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
+            reducer_return_value: event.reducer_return_value.clone(),
             energy_used: energy_quanta_used,
             execution_duration: total_duration,
             tx_offset: Some(tx_offset),

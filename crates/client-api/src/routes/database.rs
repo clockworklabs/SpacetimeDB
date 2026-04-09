@@ -310,15 +310,26 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
     match result {
         Ok(rcr) => {
             let (status, body) = match rcr.outcome {
-                ReducerOutcome::Committed => (StatusCode::OK, "".into()),
+                ReducerOutcome::Committed => (
+                    StatusCode::OK,
+                    axum::body::Body::from(rcr.reducer_return_value.unwrap_or_default()),
+                ),
                 // 422 = reducer ran but returned Err; the IDC actor uses this to distinguish
                 // reducer failures from transport errors (which it retries).
-                ReducerOutcome::Failed(errmsg) => (StatusCode::UNPROCESSABLE_ENTITY, *errmsg),
+                ReducerOutcome::Failed(errmsg) => {
+                    (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        axum::body::Body::from(errmsg.to_string()),
+                    )
+                }
                 ReducerOutcome::BudgetExceeded => {
                     log::warn!(
                         "Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}"
                     );
-                    (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
+                    (
+                        StatusCode::PAYMENT_REQUIRED,
+                        axum::body::Body::from("Module energy budget exhausted."),
+                    )
                 }
             };
             Ok((
