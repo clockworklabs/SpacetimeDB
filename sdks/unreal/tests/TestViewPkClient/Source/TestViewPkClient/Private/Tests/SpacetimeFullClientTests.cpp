@@ -80,11 +80,11 @@ bool FViewPkQueryBuilderDirectSourcesTest::RunTest(const FString& Parameters)
         TEXT("SELECT * FROM \"view_pk_player\"")
     );
 
-    FTypedSubscriptionBuilder Typed(nullptr);
-    Typed.AddQuery([](const FQueryBuilder& Query)
+    USubscriptionBuilder* Builder = NewObject<USubscriptionBuilder>();
+    Builder->AddQuery([](const FQueryBuilder& Query)
     {
         return Query.From.AllViewPkPlayers();
-    }).AddQuery([](const FQueryBuilder& Query)
+    })->AddQuery([](const FQueryBuilder& Query)
     {
         return Query.From.ViewPkPlayer().Where([](const FViewPkPlayerCols& Cols)
         {
@@ -208,13 +208,44 @@ bool FViewPkRuntimeUpdatePairingTest::RunTest(const FString& Parameters)
             {
                 return Q.From.AllViewPkPlayers();
             })
-            .AddQuery([](const FQueryBuilder& Q)
+            ->AddQuery([](const FQueryBuilder& Q)
             {
                 return Q.From.SenderViewPkPlayersA();
             })
-            .Subscribe();
+            ->Subscribe();
     });
 
     ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, RuntimeTestName, Handler->Counter, FPlatformTime::Seconds()));
+    return true;
+}
+
+bool FViewPkBlueprintQueryBuilderFlowTest::RunTest(const FString& Parameters)
+{
+    FAllViewPkPlayersQuery Query = UQueryBuilderBlueprintLibrary::FromAllViewPkPlayers();
+
+    TestEqual(
+        TEXT("blueprint all_view_pk_players base sql"),
+        Query.Sql,
+        TEXT("SELECT * FROM \"all_view_pk_players\"")
+    );
+
+    Query = UQueryBuilderBlueprintLibrary::AllViewPkPlayersWhere(
+        Query,
+        UQueryBuilderBlueprintLibrary::StringEqual(
+            UQueryBuilderBlueprintLibrary::AllViewPkPlayersName(Query),
+            TEXT("Alice")));
+    TestEqual(
+        TEXT("blueprint pk view filtered sql"),
+        Query.Sql,
+        TEXT("SELECT * FROM \"all_view_pk_players\" WHERE (\"all_view_pk_players\".\"name\" = 'Alice')")
+    );
+    TestEqual(TEXT("blueprint pk view result source"), Query.ResultSourceName, TEXT("all_view_pk_players"));
+
+    USubscriptionBuilder* Builder = NewObject<USubscriptionBuilder>();
+    USubscriptionHandle* Handle = Builder->AddAllViewPkPlayersQuery(Query)->Subscribe();
+    TestNotNull(TEXT("blueprint pk view handle"), Handle);
+    TestEqual(TEXT("blueprint pk view builder sql count"), Handle->GetQuerySqls().Num(), 1);
+    TestEqual(TEXT("blueprint pk view builder sql"), Handle->GetQuerySqls()[0], Query.Sql);
+
     return true;
 }

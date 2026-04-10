@@ -425,27 +425,6 @@ USubscriptionBuilder* UDbConnection::SubscriptionBuilder()
 	Builder->Conn = this;
 	return Builder;
 }
-FTypedSubscriptionBuilder& FTypedSubscriptionBuilder::OnApplied(FOnSubscriptionApplied Callback)
-{
-	OnAppliedDelegateInternal = Callback;
-	return *this;
-}
-FTypedSubscriptionBuilder& FTypedSubscriptionBuilder::OnError(FOnSubscriptionError Callback)
-{
-	OnErrorDelegateInternal = Callback;
-	return *this;
-}
-USubscriptionHandle* FTypedSubscriptionBuilder::Subscribe()
-{
-	if (!Conn)
-	{
-		return nullptr;
-	}
-	USubscriptionBuilder* Builder = Conn->SubscriptionBuilder();
-	Builder->OnApplied(OnAppliedDelegateInternal);
-	Builder->OnError(OnErrorDelegateInternal);
-	return Builder->Subscribe(Sql);
-}
 USubscriptionBuilder* USubscriptionBuilder::OnApplied(FOnSubscriptionApplied Callback)
 {
 	OnAppliedDelegateInternal = Callback;
@@ -455,6 +434,12 @@ USubscriptionBuilder* USubscriptionBuilder::OnError(FOnSubscriptionError Callbac
 {
 	OnErrorDelegateInternal = Callback;
 	return this;
+}
+USubscriptionHandle* USubscriptionBuilder::Subscribe()
+{
+	const TArray<FString> SqlQueries = PendingSqlQueries;
+	PendingSqlQueries.Empty();
+	return Subscribe(SqlQueries);
 }
 USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 {
@@ -484,6 +469,60 @@ USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 USubscriptionHandle* USubscriptionBuilder::SubscribeToAllTables()
 {
 	return Subscribe(FQueryBuilder::AllTablesSqlQueries());
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddBlueprintQuery(const FBlueprintQuery& Query)
+{
+	PendingSqlQueries.Add(Query.Sql);
+	return this;
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddAllViewPkPlayersQuery(const FAllViewPkPlayersQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddSenderViewPkPlayersAQuery(const FSenderViewPkPlayersAQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddSenderViewPkPlayersBQuery(const FSenderViewPkPlayersBQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddViewPkMembershipQuery(const FViewPkMembershipQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddViewPkMembershipSecondaryQuery(const FViewPkMembershipSecondaryQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddViewPkPlayerQuery(const FViewPkPlayerQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
 }
 
 USubscriptionHandle::USubscriptionHandle(UDbConnection* InConn)
@@ -566,7 +605,7 @@ void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpaceti
 {
 	if (OnConnectDelegate.IsBound())
 	{
-		OnConnectDelegate.Execute(this, Identity, Token);
+		OnConnectDelegate.Execute(this, InIdentity, InToken);
 	}
 }
 void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)

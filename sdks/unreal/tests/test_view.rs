@@ -26,3 +26,15 @@ fn unreal_view_query_builder_direct_sources() {
 fn unreal_view_subscribe_all_tables() {
     make_test("ViewSubscribeAllTablesTest").run();
 }
+
+#[test]
+#[serial(ViewGroup)]
+fn unreal_view_blueprint_query_builder_flow() {
+    make_test("ViewBlueprintQueryBuilderFlowTest").run();
+}
+
+#[test]
+#[serial(ViewGroup)]
+fn unreal_view_blueprint_query_builder_runtime() {
+    make_test("ViewBlueprintQueryBuilderRuntimeTest").run();
+}

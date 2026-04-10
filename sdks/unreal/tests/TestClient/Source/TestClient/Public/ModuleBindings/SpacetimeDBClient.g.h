@@ -13263,32 +13263,5573 @@ struct TESTCLIENT_API FQueryBuilder
     }
 };
 
-struct TESTCLIENT_API FTypedSubscriptionBuilder
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintQuery
 {
-    explicit FTypedSubscriptionBuilder(UDbConnection* InConn)
-        : Conn(InConn) {}
+    GENERATED_BODY()
 
-    FTypedSubscriptionBuilder& OnApplied(FOnSubscriptionApplied Callback);
-    FTypedSubscriptionBuilder& OnError(FOnSubscriptionError Callback);
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
 
-    template<typename TFn>
-    FTypedSubscriptionBuilder& AddQuery(TFn&& Build)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintPredicate
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBtreeU32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FIndexedSimpleEnumQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FLargeTableQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneBoolQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneByteStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneConnectionIdQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneEnumWithPayloadQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneEveryPrimitiveStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneEveryVecStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneF32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneF64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneI128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneI16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneI256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneI64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneI8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneIdentityQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneSimpleEnumQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneStringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneTimestampQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneU128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneU16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneU256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneU32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneU64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneU8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneUnitStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOneUuidQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOptionEveryPrimitiveStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOptionI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOptionIdentityQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOptionSimpleEnumQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOptionStringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOptionUuidQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FOptionVecOptionI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkBoolQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkConnectionIdQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkI128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkI16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkI256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkI64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkI8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkIdentityQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkSimpleEnumQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkStringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkU128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkU16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkU256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkU32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkU32TwoQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkU64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkU8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FPkUuidQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FResultEveryPrimitiveStructStringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FResultI32StringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FResultIdentityStringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FResultSimpleEnumI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FResultStringI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FResultVecI32StringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FScheduledTableQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FTableHoldsTableQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueBoolQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueConnectionIdQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueI128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueI16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueI256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueI64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueI8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueIdentityQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueStringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueU128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueU16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueU256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueU32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueU64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueU8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUniqueUuidQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FUsersQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecBoolQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecByteStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecConnectionIdQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecEnumWithPayloadQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecEveryPrimitiveStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecEveryVecStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecF32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecF64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecI128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecI16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecI256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecI32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecI64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecI8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecIdentityQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecSimpleEnumQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecStringQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecTimestampQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecU128Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecU16Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecU256Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecU32Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecU64Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecU8Query
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecUnitStructQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FVecUuidQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintBoolColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintUInt8Column
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintInt32Column
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintInt64Column
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintFloatColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintDoubleColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintStringColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintIdentityColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintConnectionIdColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintTimestampColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTCLIENT_API FBlueprintUuidColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+UCLASS(BlueprintType)
+class TESTCLIENT_API UQueryBuilderBlueprintLibrary : public UBlueprintFunctionLibrary
+{
+    GENERATED_BODY()
+
+public:
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|BtreeU32", meta=(DisplayName="From BtreeU32"))
+    static FBtreeU32Query FromBtreeU32()
     {
-        FQueryBuilder Q;
-        auto Query = std::forward<TFn>(Build)(Q);
-        static_assert(::SpacetimeDB::query_builder::QueryBuilderReturn<decltype(Query)>,
-            "Typed subscription queries must return a query_builder table/query expression.");
-        Sql.Add(FString(UTF8_TO_TCHAR(Query.into_sql().c_str())));
-        return *this;
+        FBtreeU32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.BtreeU32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("btree_u_32");
+        return Query;
     }
 
-    USubscriptionHandle* Subscribe();
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|BtreeU32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_BtreeU32QueryToBlueprintQuery(const FBtreeU32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|BtreeU32|Columns", meta=(DisplayName="BtreeU32 Data"))
+    static FBlueprintInt32Column BtreeU32Data(const FBtreeU32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("btree_u_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|BtreeU32", meta=(DisplayName="BtreeU32 Where"))
+    static FBtreeU32Query BtreeU32Where(FBtreeU32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|IndexedSimpleEnum", meta=(DisplayName="From IndexedSimpleEnum"))
+    static FIndexedSimpleEnumQuery FromIndexedSimpleEnum()
+    {
+        FIndexedSimpleEnumQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.IndexedSimpleEnum().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("indexed_simple_enum");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|IndexedSimpleEnum", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_IndexedSimpleEnumQueryToBlueprintQuery(const FIndexedSimpleEnumQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|IndexedSimpleEnum", meta=(DisplayName="IndexedSimpleEnum Where"))
+    static FIndexedSimpleEnumQuery IndexedSimpleEnumWhere(FIndexedSimpleEnumQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable", meta=(DisplayName="From LargeTable"))
+    static FLargeTableQuery FromLargeTable()
+    {
+        FLargeTableQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.LargeTable().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("large_table");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_LargeTableQueryToBlueprintQuery(const FLargeTableQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable|Columns", meta=(DisplayName="LargeTable A"))
+    static FBlueprintUInt8Column LargeTableA(const FLargeTableQuery& Query)
+    {
+        FBlueprintUInt8Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("large_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("a");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable|Columns", meta=(DisplayName="LargeTable I"))
+    static FBlueprintInt32Column LargeTableI(const FLargeTableQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("large_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("i");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable|Columns", meta=(DisplayName="LargeTable J"))
+    static FBlueprintInt64Column LargeTableJ(const FLargeTableQuery& Query)
+    {
+        FBlueprintInt64Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("large_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("j");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable|Columns", meta=(DisplayName="LargeTable M"))
+    static FBlueprintBoolColumn LargeTableM(const FLargeTableQuery& Query)
+    {
+        FBlueprintBoolColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("large_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("m");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable|Columns", meta=(DisplayName="LargeTable N"))
+    static FBlueprintFloatColumn LargeTableN(const FLargeTableQuery& Query)
+    {
+        FBlueprintFloatColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("large_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable|Columns", meta=(DisplayName="LargeTable O"))
+    static FBlueprintDoubleColumn LargeTableO(const FLargeTableQuery& Query)
+    {
+        FBlueprintDoubleColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("large_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("o");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable|Columns", meta=(DisplayName="LargeTable P"))
+    static FBlueprintStringColumn LargeTableP(const FLargeTableQuery& Query)
+    {
+        FBlueprintStringColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("large_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("p");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|LargeTable", meta=(DisplayName="LargeTable Where"))
+    static FLargeTableQuery LargeTableWhere(FLargeTableQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneBool", meta=(DisplayName="From OneBool"))
+    static FOneBoolQuery FromOneBool()
+    {
+        FOneBoolQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneBool().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_bool");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneBool", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneBoolQueryToBlueprintQuery(const FOneBoolQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneBool|Columns", meta=(DisplayName="OneBool B"))
+    static FBlueprintBoolColumn OneBoolB(const FOneBoolQuery& Query)
+    {
+        FBlueprintBoolColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_bool") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("b");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneBool", meta=(DisplayName="OneBool Where"))
+    static FOneBoolQuery OneBoolWhere(FOneBoolQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneByteStruct", meta=(DisplayName="From OneByteStruct"))
+    static FOneByteStructQuery FromOneByteStruct()
+    {
+        FOneByteStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneByteStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_byte_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneByteStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneByteStructQueryToBlueprintQuery(const FOneByteStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneByteStruct", meta=(DisplayName="OneByteStruct Where"))
+    static FOneByteStructQuery OneByteStructWhere(FOneByteStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneConnectionId", meta=(DisplayName="From OneConnectionId"))
+    static FOneConnectionIdQuery FromOneConnectionId()
+    {
+        FOneConnectionIdQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneConnectionId().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_connection_id");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneConnectionId", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneConnectionIdQueryToBlueprintQuery(const FOneConnectionIdQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneConnectionId|Columns", meta=(DisplayName="OneConnectionId A"))
+    static FBlueprintConnectionIdColumn OneConnectionIdA(const FOneConnectionIdQuery& Query)
+    {
+        FBlueprintConnectionIdColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_connection_id") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("a");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneConnectionId", meta=(DisplayName="OneConnectionId Where"))
+    static FOneConnectionIdQuery OneConnectionIdWhere(FOneConnectionIdQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEnumWithPayload", meta=(DisplayName="From OneEnumWithPayload"))
+    static FOneEnumWithPayloadQuery FromOneEnumWithPayload()
+    {
+        FOneEnumWithPayloadQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneEnumWithPayload().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_enum_with_payload");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEnumWithPayload", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneEnumWithPayloadQueryToBlueprintQuery(const FOneEnumWithPayloadQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEnumWithPayload", meta=(DisplayName="OneEnumWithPayload Where"))
+    static FOneEnumWithPayloadQuery OneEnumWithPayloadWhere(FOneEnumWithPayloadQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEveryPrimitiveStruct", meta=(DisplayName="From OneEveryPrimitiveStruct"))
+    static FOneEveryPrimitiveStructQuery FromOneEveryPrimitiveStruct()
+    {
+        FOneEveryPrimitiveStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneEveryPrimitiveStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_every_primitive_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEveryPrimitiveStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneEveryPrimitiveStructQueryToBlueprintQuery(const FOneEveryPrimitiveStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEveryPrimitiveStruct", meta=(DisplayName="OneEveryPrimitiveStruct Where"))
+    static FOneEveryPrimitiveStructQuery OneEveryPrimitiveStructWhere(FOneEveryPrimitiveStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEveryVecStruct", meta=(DisplayName="From OneEveryVecStruct"))
+    static FOneEveryVecStructQuery FromOneEveryVecStruct()
+    {
+        FOneEveryVecStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneEveryVecStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_every_vec_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEveryVecStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneEveryVecStructQueryToBlueprintQuery(const FOneEveryVecStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneEveryVecStruct", meta=(DisplayName="OneEveryVecStruct Where"))
+    static FOneEveryVecStructQuery OneEveryVecStructWhere(FOneEveryVecStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF32", meta=(DisplayName="From OneF32"))
+    static FOneF32Query FromOneF32()
+    {
+        FOneF32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneF32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_f_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneF32QueryToBlueprintQuery(const FOneF32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF32|Columns", meta=(DisplayName="OneF32 F"))
+    static FBlueprintFloatColumn OneF32F(const FOneF32Query& Query)
+    {
+        FBlueprintFloatColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_f_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("f");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF32", meta=(DisplayName="OneF32 Where"))
+    static FOneF32Query OneF32Where(FOneF32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF64", meta=(DisplayName="From OneF64"))
+    static FOneF64Query FromOneF64()
+    {
+        FOneF64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneF64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_f_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneF64QueryToBlueprintQuery(const FOneF64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF64|Columns", meta=(DisplayName="OneF64 F"))
+    static FBlueprintDoubleColumn OneF64F(const FOneF64Query& Query)
+    {
+        FBlueprintDoubleColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_f_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("f");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneF64", meta=(DisplayName="OneF64 Where"))
+    static FOneF64Query OneF64Where(FOneF64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI128", meta=(DisplayName="From OneI128"))
+    static FOneI128Query FromOneI128()
+    {
+        FOneI128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneI128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_i_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneI128QueryToBlueprintQuery(const FOneI128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI128", meta=(DisplayName="OneI128 Where"))
+    static FOneI128Query OneI128Where(FOneI128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI16", meta=(DisplayName="From OneI16"))
+    static FOneI16Query FromOneI16()
+    {
+        FOneI16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneI16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_i_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneI16QueryToBlueprintQuery(const FOneI16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI16", meta=(DisplayName="OneI16 Where"))
+    static FOneI16Query OneI16Where(FOneI16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI256", meta=(DisplayName="From OneI256"))
+    static FOneI256Query FromOneI256()
+    {
+        FOneI256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneI256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_i_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneI256QueryToBlueprintQuery(const FOneI256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI256", meta=(DisplayName="OneI256 Where"))
+    static FOneI256Query OneI256Where(FOneI256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI32", meta=(DisplayName="From OneI32"))
+    static FOneI32Query FromOneI32()
+    {
+        FOneI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneI32QueryToBlueprintQuery(const FOneI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI32|Columns", meta=(DisplayName="OneI32 N"))
+    static FBlueprintInt32Column OneI32N(const FOneI32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_i_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI32", meta=(DisplayName="OneI32 Where"))
+    static FOneI32Query OneI32Where(FOneI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI64", meta=(DisplayName="From OneI64"))
+    static FOneI64Query FromOneI64()
+    {
+        FOneI64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneI64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_i_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneI64QueryToBlueprintQuery(const FOneI64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI64|Columns", meta=(DisplayName="OneI64 N"))
+    static FBlueprintInt64Column OneI64N(const FOneI64Query& Query)
+    {
+        FBlueprintInt64Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_i_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI64", meta=(DisplayName="OneI64 Where"))
+    static FOneI64Query OneI64Where(FOneI64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI8", meta=(DisplayName="From OneI8"))
+    static FOneI8Query FromOneI8()
+    {
+        FOneI8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneI8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_i_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneI8QueryToBlueprintQuery(const FOneI8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneI8", meta=(DisplayName="OneI8 Where"))
+    static FOneI8Query OneI8Where(FOneI8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneIdentity", meta=(DisplayName="From OneIdentity"))
+    static FOneIdentityQuery FromOneIdentity()
+    {
+        FOneIdentityQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneIdentity().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_identity");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneIdentity", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneIdentityQueryToBlueprintQuery(const FOneIdentityQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneIdentity|Columns", meta=(DisplayName="OneIdentity I"))
+    static FBlueprintIdentityColumn OneIdentityI(const FOneIdentityQuery& Query)
+    {
+        FBlueprintIdentityColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_identity") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("i");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneIdentity", meta=(DisplayName="OneIdentity Where"))
+    static FOneIdentityQuery OneIdentityWhere(FOneIdentityQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneSimpleEnum", meta=(DisplayName="From OneSimpleEnum"))
+    static FOneSimpleEnumQuery FromOneSimpleEnum()
+    {
+        FOneSimpleEnumQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneSimpleEnum().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_simple_enum");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneSimpleEnum", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneSimpleEnumQueryToBlueprintQuery(const FOneSimpleEnumQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneSimpleEnum", meta=(DisplayName="OneSimpleEnum Where"))
+    static FOneSimpleEnumQuery OneSimpleEnumWhere(FOneSimpleEnumQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneString", meta=(DisplayName="From OneString"))
+    static FOneStringQuery FromOneString()
+    {
+        FOneStringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneString().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneString", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneStringQueryToBlueprintQuery(const FOneStringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneString|Columns", meta=(DisplayName="OneString S"))
+    static FBlueprintStringColumn OneStringS(const FOneStringQuery& Query)
+    {
+        FBlueprintStringColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_string") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("s");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneString", meta=(DisplayName="OneString Where"))
+    static FOneStringQuery OneStringWhere(FOneStringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneTimestamp", meta=(DisplayName="From OneTimestamp"))
+    static FOneTimestampQuery FromOneTimestamp()
+    {
+        FOneTimestampQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneTimestamp().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_timestamp");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneTimestamp", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneTimestampQueryToBlueprintQuery(const FOneTimestampQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneTimestamp|Columns", meta=(DisplayName="OneTimestamp T"))
+    static FBlueprintTimestampColumn OneTimestampT(const FOneTimestampQuery& Query)
+    {
+        FBlueprintTimestampColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_timestamp") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("t");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneTimestamp", meta=(DisplayName="OneTimestamp Where"))
+    static FOneTimestampQuery OneTimestampWhere(FOneTimestampQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU128", meta=(DisplayName="From OneU128"))
+    static FOneU128Query FromOneU128()
+    {
+        FOneU128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneU128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_u_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneU128QueryToBlueprintQuery(const FOneU128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU128", meta=(DisplayName="OneU128 Where"))
+    static FOneU128Query OneU128Where(FOneU128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU16", meta=(DisplayName="From OneU16"))
+    static FOneU16Query FromOneU16()
+    {
+        FOneU16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneU16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_u_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneU16QueryToBlueprintQuery(const FOneU16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU16", meta=(DisplayName="OneU16 Where"))
+    static FOneU16Query OneU16Where(FOneU16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU256", meta=(DisplayName="From OneU256"))
+    static FOneU256Query FromOneU256()
+    {
+        FOneU256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneU256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_u_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneU256QueryToBlueprintQuery(const FOneU256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU256", meta=(DisplayName="OneU256 Where"))
+    static FOneU256Query OneU256Where(FOneU256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU32", meta=(DisplayName="From OneU32"))
+    static FOneU32Query FromOneU32()
+    {
+        FOneU32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneU32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_u_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneU32QueryToBlueprintQuery(const FOneU32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU32", meta=(DisplayName="OneU32 Where"))
+    static FOneU32Query OneU32Where(FOneU32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU64", meta=(DisplayName="From OneU64"))
+    static FOneU64Query FromOneU64()
+    {
+        FOneU64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneU64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_u_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneU64QueryToBlueprintQuery(const FOneU64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU64", meta=(DisplayName="OneU64 Where"))
+    static FOneU64Query OneU64Where(FOneU64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU8", meta=(DisplayName="From OneU8"))
+    static FOneU8Query FromOneU8()
+    {
+        FOneU8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneU8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_u_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneU8QueryToBlueprintQuery(const FOneU8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU8|Columns", meta=(DisplayName="OneU8 N"))
+    static FBlueprintUInt8Column OneU8N(const FOneU8Query& Query)
+    {
+        FBlueprintUInt8Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_u_8") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneU8", meta=(DisplayName="OneU8 Where"))
+    static FOneU8Query OneU8Where(FOneU8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneUnitStruct", meta=(DisplayName="From OneUnitStruct"))
+    static FOneUnitStructQuery FromOneUnitStruct()
+    {
+        FOneUnitStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneUnitStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_unit_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneUnitStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneUnitStructQueryToBlueprintQuery(const FOneUnitStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneUnitStruct", meta=(DisplayName="OneUnitStruct Where"))
+    static FOneUnitStructQuery OneUnitStructWhere(FOneUnitStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneUuid", meta=(DisplayName="From OneUuid"))
+    static FOneUuidQuery FromOneUuid()
+    {
+        FOneUuidQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OneUuid().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("one_uuid");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneUuid", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OneUuidQueryToBlueprintQuery(const FOneUuidQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneUuid|Columns", meta=(DisplayName="OneUuid U"))
+    static FBlueprintUuidColumn OneUuidU(const FOneUuidQuery& Query)
+    {
+        FBlueprintUuidColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("one_uuid") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("u");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OneUuid", meta=(DisplayName="OneUuid Where"))
+    static FOneUuidQuery OneUuidWhere(FOneUuidQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionEveryPrimitiveStruct", meta=(DisplayName="From OptionEveryPrimitiveStruct"))
+    static FOptionEveryPrimitiveStructQuery FromOptionEveryPrimitiveStruct()
+    {
+        FOptionEveryPrimitiveStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OptionEveryPrimitiveStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("option_every_primitive_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionEveryPrimitiveStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OptionEveryPrimitiveStructQueryToBlueprintQuery(const FOptionEveryPrimitiveStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionEveryPrimitiveStruct", meta=(DisplayName="OptionEveryPrimitiveStruct Where"))
+    static FOptionEveryPrimitiveStructQuery OptionEveryPrimitiveStructWhere(FOptionEveryPrimitiveStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionI32", meta=(DisplayName="From OptionI32"))
+    static FOptionI32Query FromOptionI32()
+    {
+        FOptionI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OptionI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("option_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OptionI32QueryToBlueprintQuery(const FOptionI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionI32", meta=(DisplayName="OptionI32 Where"))
+    static FOptionI32Query OptionI32Where(FOptionI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionIdentity", meta=(DisplayName="From OptionIdentity"))
+    static FOptionIdentityQuery FromOptionIdentity()
+    {
+        FOptionIdentityQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OptionIdentity().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("option_identity");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionIdentity", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OptionIdentityQueryToBlueprintQuery(const FOptionIdentityQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionIdentity", meta=(DisplayName="OptionIdentity Where"))
+    static FOptionIdentityQuery OptionIdentityWhere(FOptionIdentityQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionSimpleEnum", meta=(DisplayName="From OptionSimpleEnum"))
+    static FOptionSimpleEnumQuery FromOptionSimpleEnum()
+    {
+        FOptionSimpleEnumQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OptionSimpleEnum().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("option_simple_enum");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionSimpleEnum", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OptionSimpleEnumQueryToBlueprintQuery(const FOptionSimpleEnumQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionSimpleEnum", meta=(DisplayName="OptionSimpleEnum Where"))
+    static FOptionSimpleEnumQuery OptionSimpleEnumWhere(FOptionSimpleEnumQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionString", meta=(DisplayName="From OptionString"))
+    static FOptionStringQuery FromOptionString()
+    {
+        FOptionStringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OptionString().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("option_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionString", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OptionStringQueryToBlueprintQuery(const FOptionStringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionString", meta=(DisplayName="OptionString Where"))
+    static FOptionStringQuery OptionStringWhere(FOptionStringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionUuid", meta=(DisplayName="From OptionUuid"))
+    static FOptionUuidQuery FromOptionUuid()
+    {
+        FOptionUuidQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OptionUuid().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("option_uuid");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionUuid", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OptionUuidQueryToBlueprintQuery(const FOptionUuidQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionUuid", meta=(DisplayName="OptionUuid Where"))
+    static FOptionUuidQuery OptionUuidWhere(FOptionUuidQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionVecOptionI32", meta=(DisplayName="From OptionVecOptionI32"))
+    static FOptionVecOptionI32Query FromOptionVecOptionI32()
+    {
+        FOptionVecOptionI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.OptionVecOptionI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("option_vec_option_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionVecOptionI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_OptionVecOptionI32QueryToBlueprintQuery(const FOptionVecOptionI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|OptionVecOptionI32", meta=(DisplayName="OptionVecOptionI32 Where"))
+    static FOptionVecOptionI32Query OptionVecOptionI32Where(FOptionVecOptionI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkBool", meta=(DisplayName="From PkBool"))
+    static FPkBoolQuery FromPkBool()
+    {
+        FPkBoolQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkBool().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_bool");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkBool", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkBoolQueryToBlueprintQuery(const FPkBoolQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkBool|Columns", meta=(DisplayName="PkBool B"))
+    static FBlueprintBoolColumn PkBoolB(const FPkBoolQuery& Query)
+    {
+        FBlueprintBoolColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_bool") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("b");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkBool|Columns", meta=(DisplayName="PkBool Data"))
+    static FBlueprintInt32Column PkBoolData(const FPkBoolQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_bool") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkBool", meta=(DisplayName="PkBool Where"))
+    static FPkBoolQuery PkBoolWhere(FPkBoolQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkConnectionId", meta=(DisplayName="From PkConnectionId"))
+    static FPkConnectionIdQuery FromPkConnectionId()
+    {
+        FPkConnectionIdQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkConnectionId().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_connection_id");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkConnectionId", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkConnectionIdQueryToBlueprintQuery(const FPkConnectionIdQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkConnectionId|Columns", meta=(DisplayName="PkConnectionId A"))
+    static FBlueprintConnectionIdColumn PkConnectionIdA(const FPkConnectionIdQuery& Query)
+    {
+        FBlueprintConnectionIdColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_connection_id") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("a");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkConnectionId|Columns", meta=(DisplayName="PkConnectionId Data"))
+    static FBlueprintInt32Column PkConnectionIdData(const FPkConnectionIdQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_connection_id") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkConnectionId", meta=(DisplayName="PkConnectionId Where"))
+    static FPkConnectionIdQuery PkConnectionIdWhere(FPkConnectionIdQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI128", meta=(DisplayName="From PkI128"))
+    static FPkI128Query FromPkI128()
+    {
+        FPkI128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkI128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_i_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkI128QueryToBlueprintQuery(const FPkI128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI128|Columns", meta=(DisplayName="PkI128 Data"))
+    static FBlueprintInt32Column PkI128Data(const FPkI128Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_128") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI128", meta=(DisplayName="PkI128 Where"))
+    static FPkI128Query PkI128Where(FPkI128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI16", meta=(DisplayName="From PkI16"))
+    static FPkI16Query FromPkI16()
+    {
+        FPkI16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkI16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_i_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkI16QueryToBlueprintQuery(const FPkI16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI16|Columns", meta=(DisplayName="PkI16 Data"))
+    static FBlueprintInt32Column PkI16Data(const FPkI16Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_16") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI16", meta=(DisplayName="PkI16 Where"))
+    static FPkI16Query PkI16Where(FPkI16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI256", meta=(DisplayName="From PkI256"))
+    static FPkI256Query FromPkI256()
+    {
+        FPkI256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkI256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_i_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkI256QueryToBlueprintQuery(const FPkI256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI256|Columns", meta=(DisplayName="PkI256 Data"))
+    static FBlueprintInt32Column PkI256Data(const FPkI256Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_256") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI256", meta=(DisplayName="PkI256 Where"))
+    static FPkI256Query PkI256Where(FPkI256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI32", meta=(DisplayName="From PkI32"))
+    static FPkI32Query FromPkI32()
+    {
+        FPkI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkI32QueryToBlueprintQuery(const FPkI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI32|Columns", meta=(DisplayName="PkI32 N"))
+    static FBlueprintInt32Column PkI32N(const FPkI32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI32|Columns", meta=(DisplayName="PkI32 Data"))
+    static FBlueprintInt32Column PkI32Data(const FPkI32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI32", meta=(DisplayName="PkI32 Where"))
+    static FPkI32Query PkI32Where(FPkI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI64", meta=(DisplayName="From PkI64"))
+    static FPkI64Query FromPkI64()
+    {
+        FPkI64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkI64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_i_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkI64QueryToBlueprintQuery(const FPkI64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI64|Columns", meta=(DisplayName="PkI64 N"))
+    static FBlueprintInt64Column PkI64N(const FPkI64Query& Query)
+    {
+        FBlueprintInt64Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI64|Columns", meta=(DisplayName="PkI64 Data"))
+    static FBlueprintInt32Column PkI64Data(const FPkI64Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI64", meta=(DisplayName="PkI64 Where"))
+    static FPkI64Query PkI64Where(FPkI64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI8", meta=(DisplayName="From PkI8"))
+    static FPkI8Query FromPkI8()
+    {
+        FPkI8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkI8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_i_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkI8QueryToBlueprintQuery(const FPkI8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI8|Columns", meta=(DisplayName="PkI8 Data"))
+    static FBlueprintInt32Column PkI8Data(const FPkI8Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_i_8") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkI8", meta=(DisplayName="PkI8 Where"))
+    static FPkI8Query PkI8Where(FPkI8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkIdentity", meta=(DisplayName="From PkIdentity"))
+    static FPkIdentityQuery FromPkIdentity()
+    {
+        FPkIdentityQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkIdentity().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_identity");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkIdentity", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkIdentityQueryToBlueprintQuery(const FPkIdentityQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkIdentity|Columns", meta=(DisplayName="PkIdentity I"))
+    static FBlueprintIdentityColumn PkIdentityI(const FPkIdentityQuery& Query)
+    {
+        FBlueprintIdentityColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_identity") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("i");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkIdentity|Columns", meta=(DisplayName="PkIdentity Data"))
+    static FBlueprintInt32Column PkIdentityData(const FPkIdentityQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_identity") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkIdentity", meta=(DisplayName="PkIdentity Where"))
+    static FPkIdentityQuery PkIdentityWhere(FPkIdentityQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkSimpleEnum", meta=(DisplayName="From PkSimpleEnum"))
+    static FPkSimpleEnumQuery FromPkSimpleEnum()
+    {
+        FPkSimpleEnumQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkSimpleEnum().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_simple_enum");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkSimpleEnum", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkSimpleEnumQueryToBlueprintQuery(const FPkSimpleEnumQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkSimpleEnum|Columns", meta=(DisplayName="PkSimpleEnum Data"))
+    static FBlueprintInt32Column PkSimpleEnumData(const FPkSimpleEnumQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_simple_enum") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkSimpleEnum", meta=(DisplayName="PkSimpleEnum Where"))
+    static FPkSimpleEnumQuery PkSimpleEnumWhere(FPkSimpleEnumQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkString", meta=(DisplayName="From PkString"))
+    static FPkStringQuery FromPkString()
+    {
+        FPkStringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkString().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkString", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkStringQueryToBlueprintQuery(const FPkStringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkString|Columns", meta=(DisplayName="PkString S"))
+    static FBlueprintStringColumn PkStringS(const FPkStringQuery& Query)
+    {
+        FBlueprintStringColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_string") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("s");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkString|Columns", meta=(DisplayName="PkString Data"))
+    static FBlueprintInt32Column PkStringData(const FPkStringQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_string") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkString", meta=(DisplayName="PkString Where"))
+    static FPkStringQuery PkStringWhere(FPkStringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU128", meta=(DisplayName="From PkU128"))
+    static FPkU128Query FromPkU128()
+    {
+        FPkU128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkU128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_u_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkU128QueryToBlueprintQuery(const FPkU128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU128|Columns", meta=(DisplayName="PkU128 Data"))
+    static FBlueprintInt32Column PkU128Data(const FPkU128Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_128") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU128", meta=(DisplayName="PkU128 Where"))
+    static FPkU128Query PkU128Where(FPkU128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU16", meta=(DisplayName="From PkU16"))
+    static FPkU16Query FromPkU16()
+    {
+        FPkU16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkU16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_u_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkU16QueryToBlueprintQuery(const FPkU16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU16|Columns", meta=(DisplayName="PkU16 Data"))
+    static FBlueprintInt32Column PkU16Data(const FPkU16Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_16") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU16", meta=(DisplayName="PkU16 Where"))
+    static FPkU16Query PkU16Where(FPkU16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU256", meta=(DisplayName="From PkU256"))
+    static FPkU256Query FromPkU256()
+    {
+        FPkU256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkU256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_u_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkU256QueryToBlueprintQuery(const FPkU256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU256|Columns", meta=(DisplayName="PkU256 Data"))
+    static FBlueprintInt32Column PkU256Data(const FPkU256Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_256") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU256", meta=(DisplayName="PkU256 Where"))
+    static FPkU256Query PkU256Where(FPkU256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32", meta=(DisplayName="From PkU32"))
+    static FPkU32Query FromPkU32()
+    {
+        FPkU32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkU32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_u_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkU32QueryToBlueprintQuery(const FPkU32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32|Columns", meta=(DisplayName="PkU32 Data"))
+    static FBlueprintInt32Column PkU32Data(const FPkU32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32", meta=(DisplayName="PkU32 Where"))
+    static FPkU32Query PkU32Where(FPkU32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32Two", meta=(DisplayName="From PkU32Two"))
+    static FPkU32TwoQuery FromPkU32Two()
+    {
+        FPkU32TwoQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkU32Two().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_u_32_two");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32Two", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkU32TwoQueryToBlueprintQuery(const FPkU32TwoQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32Two|Columns", meta=(DisplayName="PkU32Two Data"))
+    static FBlueprintInt32Column PkU32TwoData(const FPkU32TwoQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_32_two") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU32Two", meta=(DisplayName="PkU32Two Where"))
+    static FPkU32TwoQuery PkU32TwoWhere(FPkU32TwoQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU64", meta=(DisplayName="From PkU64"))
+    static FPkU64Query FromPkU64()
+    {
+        FPkU64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkU64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_u_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkU64QueryToBlueprintQuery(const FPkU64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU64|Columns", meta=(DisplayName="PkU64 Data"))
+    static FBlueprintInt32Column PkU64Data(const FPkU64Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU64", meta=(DisplayName="PkU64 Where"))
+    static FPkU64Query PkU64Where(FPkU64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU8", meta=(DisplayName="From PkU8"))
+    static FPkU8Query FromPkU8()
+    {
+        FPkU8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkU8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_u_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkU8QueryToBlueprintQuery(const FPkU8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU8|Columns", meta=(DisplayName="PkU8 N"))
+    static FBlueprintUInt8Column PkU8N(const FPkU8Query& Query)
+    {
+        FBlueprintUInt8Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_8") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU8|Columns", meta=(DisplayName="PkU8 Data"))
+    static FBlueprintInt32Column PkU8Data(const FPkU8Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_u_8") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkU8", meta=(DisplayName="PkU8 Where"))
+    static FPkU8Query PkU8Where(FPkU8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid", meta=(DisplayName="From PkUuid"))
+    static FPkUuidQuery FromPkUuid()
+    {
+        FPkUuidQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkUuid().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_uuid");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkUuidQueryToBlueprintQuery(const FPkUuidQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid|Columns", meta=(DisplayName="PkUuid U"))
+    static FBlueprintUuidColumn PkUuidU(const FPkUuidQuery& Query)
+    {
+        FBlueprintUuidColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_uuid") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("u");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid|Columns", meta=(DisplayName="PkUuid Data"))
+    static FBlueprintInt32Column PkUuidData(const FPkUuidQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_uuid") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid", meta=(DisplayName="PkUuid Where"))
+    static FPkUuidQuery PkUuidWhere(FPkUuidQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultEveryPrimitiveStructString", meta=(DisplayName="From ResultEveryPrimitiveStructString"))
+    static FResultEveryPrimitiveStructStringQuery FromResultEveryPrimitiveStructString()
+    {
+        FResultEveryPrimitiveStructStringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ResultEveryPrimitiveStructString().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("result_every_primitive_struct_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultEveryPrimitiveStructString", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ResultEveryPrimitiveStructStringQueryToBlueprintQuery(const FResultEveryPrimitiveStructStringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultEveryPrimitiveStructString", meta=(DisplayName="ResultEveryPrimitiveStructString Where"))
+    static FResultEveryPrimitiveStructStringQuery ResultEveryPrimitiveStructStringWhere(FResultEveryPrimitiveStructStringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultI32String", meta=(DisplayName="From ResultI32String"))
+    static FResultI32StringQuery FromResultI32String()
+    {
+        FResultI32StringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ResultI32String().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("result_i_32_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultI32String", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ResultI32StringQueryToBlueprintQuery(const FResultI32StringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultI32String", meta=(DisplayName="ResultI32String Where"))
+    static FResultI32StringQuery ResultI32StringWhere(FResultI32StringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultIdentityString", meta=(DisplayName="From ResultIdentityString"))
+    static FResultIdentityStringQuery FromResultIdentityString()
+    {
+        FResultIdentityStringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ResultIdentityString().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("result_identity_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultIdentityString", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ResultIdentityStringQueryToBlueprintQuery(const FResultIdentityStringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultIdentityString", meta=(DisplayName="ResultIdentityString Where"))
+    static FResultIdentityStringQuery ResultIdentityStringWhere(FResultIdentityStringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultSimpleEnumI32", meta=(DisplayName="From ResultSimpleEnumI32"))
+    static FResultSimpleEnumI32Query FromResultSimpleEnumI32()
+    {
+        FResultSimpleEnumI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ResultSimpleEnumI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("result_simple_enum_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultSimpleEnumI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ResultSimpleEnumI32QueryToBlueprintQuery(const FResultSimpleEnumI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultSimpleEnumI32", meta=(DisplayName="ResultSimpleEnumI32 Where"))
+    static FResultSimpleEnumI32Query ResultSimpleEnumI32Where(FResultSimpleEnumI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultStringI32", meta=(DisplayName="From ResultStringI32"))
+    static FResultStringI32Query FromResultStringI32()
+    {
+        FResultStringI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ResultStringI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("result_string_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultStringI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ResultStringI32QueryToBlueprintQuery(const FResultStringI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultStringI32", meta=(DisplayName="ResultStringI32 Where"))
+    static FResultStringI32Query ResultStringI32Where(FResultStringI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultVecI32String", meta=(DisplayName="From ResultVecI32String"))
+    static FResultVecI32StringQuery FromResultVecI32String()
+    {
+        FResultVecI32StringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ResultVecI32String().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("result_vec_i_32_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultVecI32String", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ResultVecI32StringQueryToBlueprintQuery(const FResultVecI32StringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ResultVecI32String", meta=(DisplayName="ResultVecI32String Where"))
+    static FResultVecI32StringQuery ResultVecI32StringWhere(FResultVecI32StringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ScheduledTable", meta=(DisplayName="From ScheduledTable"))
+    static FScheduledTableQuery FromScheduledTable()
+    {
+        FScheduledTableQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ScheduledTable().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("scheduled_table");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ScheduledTable", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ScheduledTableQueryToBlueprintQuery(const FScheduledTableQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ScheduledTable|Columns", meta=(DisplayName="ScheduledTable Text"))
+    static FBlueprintStringColumn ScheduledTableText(const FScheduledTableQuery& Query)
+    {
+        FBlueprintStringColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("scheduled_table") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("text");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ScheduledTable", meta=(DisplayName="ScheduledTable Where"))
+    static FScheduledTableQuery ScheduledTableWhere(FScheduledTableQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|TableHoldsTable", meta=(DisplayName="From TableHoldsTable"))
+    static FTableHoldsTableQuery FromTableHoldsTable()
+    {
+        FTableHoldsTableQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.TableHoldsTable().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("table_holds_table");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|TableHoldsTable", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_TableHoldsTableQueryToBlueprintQuery(const FTableHoldsTableQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|TableHoldsTable", meta=(DisplayName="TableHoldsTable Where"))
+    static FTableHoldsTableQuery TableHoldsTableWhere(FTableHoldsTableQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueBool", meta=(DisplayName="From UniqueBool"))
+    static FUniqueBoolQuery FromUniqueBool()
+    {
+        FUniqueBoolQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueBool().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_bool");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueBool", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueBoolQueryToBlueprintQuery(const FUniqueBoolQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueBool|Columns", meta=(DisplayName="UniqueBool B"))
+    static FBlueprintBoolColumn UniqueBoolB(const FUniqueBoolQuery& Query)
+    {
+        FBlueprintBoolColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_bool") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("b");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueBool|Columns", meta=(DisplayName="UniqueBool Data"))
+    static FBlueprintInt32Column UniqueBoolData(const FUniqueBoolQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_bool") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueBool", meta=(DisplayName="UniqueBool Where"))
+    static FUniqueBoolQuery UniqueBoolWhere(FUniqueBoolQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueConnectionId", meta=(DisplayName="From UniqueConnectionId"))
+    static FUniqueConnectionIdQuery FromUniqueConnectionId()
+    {
+        FUniqueConnectionIdQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueConnectionId().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_connection_id");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueConnectionId", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueConnectionIdQueryToBlueprintQuery(const FUniqueConnectionIdQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueConnectionId|Columns", meta=(DisplayName="UniqueConnectionId A"))
+    static FBlueprintConnectionIdColumn UniqueConnectionIdA(const FUniqueConnectionIdQuery& Query)
+    {
+        FBlueprintConnectionIdColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_connection_id") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("a");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueConnectionId|Columns", meta=(DisplayName="UniqueConnectionId Data"))
+    static FBlueprintInt32Column UniqueConnectionIdData(const FUniqueConnectionIdQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_connection_id") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueConnectionId", meta=(DisplayName="UniqueConnectionId Where"))
+    static FUniqueConnectionIdQuery UniqueConnectionIdWhere(FUniqueConnectionIdQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI128", meta=(DisplayName="From UniqueI128"))
+    static FUniqueI128Query FromUniqueI128()
+    {
+        FUniqueI128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueI128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_i_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueI128QueryToBlueprintQuery(const FUniqueI128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI128|Columns", meta=(DisplayName="UniqueI128 Data"))
+    static FBlueprintInt32Column UniqueI128Data(const FUniqueI128Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_128") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI128", meta=(DisplayName="UniqueI128 Where"))
+    static FUniqueI128Query UniqueI128Where(FUniqueI128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI16", meta=(DisplayName="From UniqueI16"))
+    static FUniqueI16Query FromUniqueI16()
+    {
+        FUniqueI16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueI16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_i_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueI16QueryToBlueprintQuery(const FUniqueI16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI16|Columns", meta=(DisplayName="UniqueI16 Data"))
+    static FBlueprintInt32Column UniqueI16Data(const FUniqueI16Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_16") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI16", meta=(DisplayName="UniqueI16 Where"))
+    static FUniqueI16Query UniqueI16Where(FUniqueI16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI256", meta=(DisplayName="From UniqueI256"))
+    static FUniqueI256Query FromUniqueI256()
+    {
+        FUniqueI256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueI256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_i_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueI256QueryToBlueprintQuery(const FUniqueI256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI256|Columns", meta=(DisplayName="UniqueI256 Data"))
+    static FBlueprintInt32Column UniqueI256Data(const FUniqueI256Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_256") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI256", meta=(DisplayName="UniqueI256 Where"))
+    static FUniqueI256Query UniqueI256Where(FUniqueI256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI32", meta=(DisplayName="From UniqueI32"))
+    static FUniqueI32Query FromUniqueI32()
+    {
+        FUniqueI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueI32QueryToBlueprintQuery(const FUniqueI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI32|Columns", meta=(DisplayName="UniqueI32 N"))
+    static FBlueprintInt32Column UniqueI32N(const FUniqueI32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI32|Columns", meta=(DisplayName="UniqueI32 Data"))
+    static FBlueprintInt32Column UniqueI32Data(const FUniqueI32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI32", meta=(DisplayName="UniqueI32 Where"))
+    static FUniqueI32Query UniqueI32Where(FUniqueI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI64", meta=(DisplayName="From UniqueI64"))
+    static FUniqueI64Query FromUniqueI64()
+    {
+        FUniqueI64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueI64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_i_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueI64QueryToBlueprintQuery(const FUniqueI64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI64|Columns", meta=(DisplayName="UniqueI64 N"))
+    static FBlueprintInt64Column UniqueI64N(const FUniqueI64Query& Query)
+    {
+        FBlueprintInt64Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI64|Columns", meta=(DisplayName="UniqueI64 Data"))
+    static FBlueprintInt32Column UniqueI64Data(const FUniqueI64Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI64", meta=(DisplayName="UniqueI64 Where"))
+    static FUniqueI64Query UniqueI64Where(FUniqueI64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI8", meta=(DisplayName="From UniqueI8"))
+    static FUniqueI8Query FromUniqueI8()
+    {
+        FUniqueI8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueI8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_i_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueI8QueryToBlueprintQuery(const FUniqueI8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI8|Columns", meta=(DisplayName="UniqueI8 Data"))
+    static FBlueprintInt32Column UniqueI8Data(const FUniqueI8Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_i_8") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueI8", meta=(DisplayName="UniqueI8 Where"))
+    static FUniqueI8Query UniqueI8Where(FUniqueI8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueIdentity", meta=(DisplayName="From UniqueIdentity"))
+    static FUniqueIdentityQuery FromUniqueIdentity()
+    {
+        FUniqueIdentityQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueIdentity().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_identity");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueIdentity", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueIdentityQueryToBlueprintQuery(const FUniqueIdentityQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueIdentity|Columns", meta=(DisplayName="UniqueIdentity I"))
+    static FBlueprintIdentityColumn UniqueIdentityI(const FUniqueIdentityQuery& Query)
+    {
+        FBlueprintIdentityColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_identity") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("i");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueIdentity|Columns", meta=(DisplayName="UniqueIdentity Data"))
+    static FBlueprintInt32Column UniqueIdentityData(const FUniqueIdentityQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_identity") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueIdentity", meta=(DisplayName="UniqueIdentity Where"))
+    static FUniqueIdentityQuery UniqueIdentityWhere(FUniqueIdentityQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueString", meta=(DisplayName="From UniqueString"))
+    static FUniqueStringQuery FromUniqueString()
+    {
+        FUniqueStringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueString().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueString", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueStringQueryToBlueprintQuery(const FUniqueStringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueString|Columns", meta=(DisplayName="UniqueString S"))
+    static FBlueprintStringColumn UniqueStringS(const FUniqueStringQuery& Query)
+    {
+        FBlueprintStringColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_string") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("s");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueString|Columns", meta=(DisplayName="UniqueString Data"))
+    static FBlueprintInt32Column UniqueStringData(const FUniqueStringQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_string") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueString", meta=(DisplayName="UniqueString Where"))
+    static FUniqueStringQuery UniqueStringWhere(FUniqueStringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU128", meta=(DisplayName="From UniqueU128"))
+    static FUniqueU128Query FromUniqueU128()
+    {
+        FUniqueU128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueU128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_u_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueU128QueryToBlueprintQuery(const FUniqueU128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU128|Columns", meta=(DisplayName="UniqueU128 Data"))
+    static FBlueprintInt32Column UniqueU128Data(const FUniqueU128Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_u_128") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU128", meta=(DisplayName="UniqueU128 Where"))
+    static FUniqueU128Query UniqueU128Where(FUniqueU128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU16", meta=(DisplayName="From UniqueU16"))
+    static FUniqueU16Query FromUniqueU16()
+    {
+        FUniqueU16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueU16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_u_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueU16QueryToBlueprintQuery(const FUniqueU16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU16|Columns", meta=(DisplayName="UniqueU16 Data"))
+    static FBlueprintInt32Column UniqueU16Data(const FUniqueU16Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_u_16") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU16", meta=(DisplayName="UniqueU16 Where"))
+    static FUniqueU16Query UniqueU16Where(FUniqueU16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU256", meta=(DisplayName="From UniqueU256"))
+    static FUniqueU256Query FromUniqueU256()
+    {
+        FUniqueU256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueU256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_u_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueU256QueryToBlueprintQuery(const FUniqueU256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU256|Columns", meta=(DisplayName="UniqueU256 Data"))
+    static FBlueprintInt32Column UniqueU256Data(const FUniqueU256Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_u_256") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU256", meta=(DisplayName="UniqueU256 Where"))
+    static FUniqueU256Query UniqueU256Where(FUniqueU256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU32", meta=(DisplayName="From UniqueU32"))
+    static FUniqueU32Query FromUniqueU32()
+    {
+        FUniqueU32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueU32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_u_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueU32QueryToBlueprintQuery(const FUniqueU32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU32|Columns", meta=(DisplayName="UniqueU32 Data"))
+    static FBlueprintInt32Column UniqueU32Data(const FUniqueU32Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_u_32") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU32", meta=(DisplayName="UniqueU32 Where"))
+    static FUniqueU32Query UniqueU32Where(FUniqueU32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU64", meta=(DisplayName="From UniqueU64"))
+    static FUniqueU64Query FromUniqueU64()
+    {
+        FUniqueU64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueU64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_u_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueU64QueryToBlueprintQuery(const FUniqueU64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU64|Columns", meta=(DisplayName="UniqueU64 Data"))
+    static FBlueprintInt32Column UniqueU64Data(const FUniqueU64Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_u_64") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU64", meta=(DisplayName="UniqueU64 Where"))
+    static FUniqueU64Query UniqueU64Where(FUniqueU64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU8", meta=(DisplayName="From UniqueU8"))
+    static FUniqueU8Query FromUniqueU8()
+    {
+        FUniqueU8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueU8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_u_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueU8QueryToBlueprintQuery(const FUniqueU8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU8|Columns", meta=(DisplayName="UniqueU8 N"))
+    static FBlueprintUInt8Column UniqueU8N(const FUniqueU8Query& Query)
+    {
+        FBlueprintUInt8Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_u_8") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("n");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU8|Columns", meta=(DisplayName="UniqueU8 Data"))
+    static FBlueprintInt32Column UniqueU8Data(const FUniqueU8Query& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_u_8") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueU8", meta=(DisplayName="UniqueU8 Where"))
+    static FUniqueU8Query UniqueU8Where(FUniqueU8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueUuid", meta=(DisplayName="From UniqueUuid"))
+    static FUniqueUuidQuery FromUniqueUuid()
+    {
+        FUniqueUuidQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.UniqueUuid().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("unique_uuid");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueUuid", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UniqueUuidQueryToBlueprintQuery(const FUniqueUuidQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueUuid|Columns", meta=(DisplayName="UniqueUuid U"))
+    static FBlueprintUuidColumn UniqueUuidU(const FUniqueUuidQuery& Query)
+    {
+        FBlueprintUuidColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_uuid") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("u");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueUuid|Columns", meta=(DisplayName="UniqueUuid Data"))
+    static FBlueprintInt32Column UniqueUuidData(const FUniqueUuidQuery& Query)
+    {
+        FBlueprintInt32Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("unique_uuid") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|UniqueUuid", meta=(DisplayName="UniqueUuid Where"))
+    static FUniqueUuidQuery UniqueUuidWhere(FUniqueUuidQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Users", meta=(DisplayName="From Users"))
+    static FUsersQuery FromUsers()
+    {
+        FUsersQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.Users().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("users");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Users", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_UsersQueryToBlueprintQuery(const FUsersQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Users|Columns", meta=(DisplayName="Users Identity"))
+    static FBlueprintIdentityColumn UsersIdentity(const FUsersQuery& Query)
+    {
+        FBlueprintIdentityColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("users") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("identity");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Users|Columns", meta=(DisplayName="Users Name"))
+    static FBlueprintStringColumn UsersName(const FUsersQuery& Query)
+    {
+        FBlueprintStringColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("users") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("name");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Users", meta=(DisplayName="Users Where"))
+    static FUsersQuery UsersWhere(FUsersQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecBool", meta=(DisplayName="From VecBool"))
+    static FVecBoolQuery FromVecBool()
+    {
+        FVecBoolQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecBool().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_bool");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecBool", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecBoolQueryToBlueprintQuery(const FVecBoolQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecBool", meta=(DisplayName="VecBool Where"))
+    static FVecBoolQuery VecBoolWhere(FVecBoolQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecByteStruct", meta=(DisplayName="From VecByteStruct"))
+    static FVecByteStructQuery FromVecByteStruct()
+    {
+        FVecByteStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecByteStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_byte_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecByteStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecByteStructQueryToBlueprintQuery(const FVecByteStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecByteStruct", meta=(DisplayName="VecByteStruct Where"))
+    static FVecByteStructQuery VecByteStructWhere(FVecByteStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecConnectionId", meta=(DisplayName="From VecConnectionId"))
+    static FVecConnectionIdQuery FromVecConnectionId()
+    {
+        FVecConnectionIdQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecConnectionId().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_connection_id");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecConnectionId", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecConnectionIdQueryToBlueprintQuery(const FVecConnectionIdQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecConnectionId", meta=(DisplayName="VecConnectionId Where"))
+    static FVecConnectionIdQuery VecConnectionIdWhere(FVecConnectionIdQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEnumWithPayload", meta=(DisplayName="From VecEnumWithPayload"))
+    static FVecEnumWithPayloadQuery FromVecEnumWithPayload()
+    {
+        FVecEnumWithPayloadQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecEnumWithPayload().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_enum_with_payload");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEnumWithPayload", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecEnumWithPayloadQueryToBlueprintQuery(const FVecEnumWithPayloadQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEnumWithPayload", meta=(DisplayName="VecEnumWithPayload Where"))
+    static FVecEnumWithPayloadQuery VecEnumWithPayloadWhere(FVecEnumWithPayloadQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEveryPrimitiveStruct", meta=(DisplayName="From VecEveryPrimitiveStruct"))
+    static FVecEveryPrimitiveStructQuery FromVecEveryPrimitiveStruct()
+    {
+        FVecEveryPrimitiveStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecEveryPrimitiveStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_every_primitive_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEveryPrimitiveStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecEveryPrimitiveStructQueryToBlueprintQuery(const FVecEveryPrimitiveStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEveryPrimitiveStruct", meta=(DisplayName="VecEveryPrimitiveStruct Where"))
+    static FVecEveryPrimitiveStructQuery VecEveryPrimitiveStructWhere(FVecEveryPrimitiveStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEveryVecStruct", meta=(DisplayName="From VecEveryVecStruct"))
+    static FVecEveryVecStructQuery FromVecEveryVecStruct()
+    {
+        FVecEveryVecStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecEveryVecStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_every_vec_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEveryVecStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecEveryVecStructQueryToBlueprintQuery(const FVecEveryVecStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecEveryVecStruct", meta=(DisplayName="VecEveryVecStruct Where"))
+    static FVecEveryVecStructQuery VecEveryVecStructWhere(FVecEveryVecStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecF32", meta=(DisplayName="From VecF32"))
+    static FVecF32Query FromVecF32()
+    {
+        FVecF32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecF32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_f_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecF32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecF32QueryToBlueprintQuery(const FVecF32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecF32", meta=(DisplayName="VecF32 Where"))
+    static FVecF32Query VecF32Where(FVecF32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecF64", meta=(DisplayName="From VecF64"))
+    static FVecF64Query FromVecF64()
+    {
+        FVecF64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecF64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_f_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecF64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecF64QueryToBlueprintQuery(const FVecF64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecF64", meta=(DisplayName="VecF64 Where"))
+    static FVecF64Query VecF64Where(FVecF64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI128", meta=(DisplayName="From VecI128"))
+    static FVecI128Query FromVecI128()
+    {
+        FVecI128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecI128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_i_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecI128QueryToBlueprintQuery(const FVecI128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI128", meta=(DisplayName="VecI128 Where"))
+    static FVecI128Query VecI128Where(FVecI128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI16", meta=(DisplayName="From VecI16"))
+    static FVecI16Query FromVecI16()
+    {
+        FVecI16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecI16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_i_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecI16QueryToBlueprintQuery(const FVecI16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI16", meta=(DisplayName="VecI16 Where"))
+    static FVecI16Query VecI16Where(FVecI16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI256", meta=(DisplayName="From VecI256"))
+    static FVecI256Query FromVecI256()
+    {
+        FVecI256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecI256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_i_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecI256QueryToBlueprintQuery(const FVecI256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI256", meta=(DisplayName="VecI256 Where"))
+    static FVecI256Query VecI256Where(FVecI256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI32", meta=(DisplayName="From VecI32"))
+    static FVecI32Query FromVecI32()
+    {
+        FVecI32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecI32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_i_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecI32QueryToBlueprintQuery(const FVecI32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI32", meta=(DisplayName="VecI32 Where"))
+    static FVecI32Query VecI32Where(FVecI32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI64", meta=(DisplayName="From VecI64"))
+    static FVecI64Query FromVecI64()
+    {
+        FVecI64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecI64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_i_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecI64QueryToBlueprintQuery(const FVecI64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI64", meta=(DisplayName="VecI64 Where"))
+    static FVecI64Query VecI64Where(FVecI64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI8", meta=(DisplayName="From VecI8"))
+    static FVecI8Query FromVecI8()
+    {
+        FVecI8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecI8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_i_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecI8QueryToBlueprintQuery(const FVecI8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecI8", meta=(DisplayName="VecI8 Where"))
+    static FVecI8Query VecI8Where(FVecI8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecIdentity", meta=(DisplayName="From VecIdentity"))
+    static FVecIdentityQuery FromVecIdentity()
+    {
+        FVecIdentityQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecIdentity().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_identity");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecIdentity", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecIdentityQueryToBlueprintQuery(const FVecIdentityQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecIdentity", meta=(DisplayName="VecIdentity Where"))
+    static FVecIdentityQuery VecIdentityWhere(FVecIdentityQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecSimpleEnum", meta=(DisplayName="From VecSimpleEnum"))
+    static FVecSimpleEnumQuery FromVecSimpleEnum()
+    {
+        FVecSimpleEnumQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecSimpleEnum().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_simple_enum");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecSimpleEnum", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecSimpleEnumQueryToBlueprintQuery(const FVecSimpleEnumQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecSimpleEnum", meta=(DisplayName="VecSimpleEnum Where"))
+    static FVecSimpleEnumQuery VecSimpleEnumWhere(FVecSimpleEnumQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecString", meta=(DisplayName="From VecString"))
+    static FVecStringQuery FromVecString()
+    {
+        FVecStringQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecString().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_string");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecString", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecStringQueryToBlueprintQuery(const FVecStringQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecString", meta=(DisplayName="VecString Where"))
+    static FVecStringQuery VecStringWhere(FVecStringQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecTimestamp", meta=(DisplayName="From VecTimestamp"))
+    static FVecTimestampQuery FromVecTimestamp()
+    {
+        FVecTimestampQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecTimestamp().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_timestamp");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecTimestamp", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecTimestampQueryToBlueprintQuery(const FVecTimestampQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecTimestamp", meta=(DisplayName="VecTimestamp Where"))
+    static FVecTimestampQuery VecTimestampWhere(FVecTimestampQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU128", meta=(DisplayName="From VecU128"))
+    static FVecU128Query FromVecU128()
+    {
+        FVecU128Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecU128().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_u_128");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU128", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecU128QueryToBlueprintQuery(const FVecU128Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU128", meta=(DisplayName="VecU128 Where"))
+    static FVecU128Query VecU128Where(FVecU128Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU16", meta=(DisplayName="From VecU16"))
+    static FVecU16Query FromVecU16()
+    {
+        FVecU16Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecU16().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_u_16");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU16", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecU16QueryToBlueprintQuery(const FVecU16Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU16", meta=(DisplayName="VecU16 Where"))
+    static FVecU16Query VecU16Where(FVecU16Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU256", meta=(DisplayName="From VecU256"))
+    static FVecU256Query FromVecU256()
+    {
+        FVecU256Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecU256().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_u_256");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU256", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecU256QueryToBlueprintQuery(const FVecU256Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU256", meta=(DisplayName="VecU256 Where"))
+    static FVecU256Query VecU256Where(FVecU256Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU32", meta=(DisplayName="From VecU32"))
+    static FVecU32Query FromVecU32()
+    {
+        FVecU32Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecU32().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_u_32");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU32", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecU32QueryToBlueprintQuery(const FVecU32Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU32", meta=(DisplayName="VecU32 Where"))
+    static FVecU32Query VecU32Where(FVecU32Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU64", meta=(DisplayName="From VecU64"))
+    static FVecU64Query FromVecU64()
+    {
+        FVecU64Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecU64().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_u_64");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU64", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecU64QueryToBlueprintQuery(const FVecU64Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU64", meta=(DisplayName="VecU64 Where"))
+    static FVecU64Query VecU64Where(FVecU64Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU8", meta=(DisplayName="From VecU8"))
+    static FVecU8Query FromVecU8()
+    {
+        FVecU8Query Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecU8().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_u_8");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU8", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecU8QueryToBlueprintQuery(const FVecU8Query& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecU8", meta=(DisplayName="VecU8 Where"))
+    static FVecU8Query VecU8Where(FVecU8Query Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecUnitStruct", meta=(DisplayName="From VecUnitStruct"))
+    static FVecUnitStructQuery FromVecUnitStruct()
+    {
+        FVecUnitStructQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecUnitStruct().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_unit_struct");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecUnitStruct", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecUnitStructQueryToBlueprintQuery(const FVecUnitStructQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecUnitStruct", meta=(DisplayName="VecUnitStruct Where"))
+    static FVecUnitStructQuery VecUnitStructWhere(FVecUnitStructQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecUuid", meta=(DisplayName="From VecUuid"))
+    static FVecUuidQuery FromVecUuid()
+    {
+        FVecUuidQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.VecUuid().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("vec_uuid");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecUuid", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_VecUuidQueryToBlueprintQuery(const FVecUuidQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|VecUuid", meta=(DisplayName="VecUuid Where"))
+    static FVecUuidQuery VecUuidWhere(FVecUuidQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Bool Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate BoolEqual(const FBlueprintBoolColumn& Column, const bool Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate UInt8Equal(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate UInt8GreaterThan(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate UInt8GreaterEqual(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate UInt8LessThan(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate UInt8LessEqual(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate Int32Equal(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate Int32GreaterThan(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate Int32GreaterEqual(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate Int32LessThan(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate Int32LessEqual(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate Int64Equal(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate Int64GreaterThan(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate Int64GreaterEqual(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate Int64LessThan(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate Int64LessEqual(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate FloatEqual(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate FloatGreaterThan(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate FloatGreaterEqual(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate FloatLessThan(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate FloatLessEqual(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate DoubleEqual(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate DoubleGreaterThan(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate DoubleGreaterEqual(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate DoubleLessThan(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate DoubleLessEqual(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="String Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate StringEqual(const FBlueprintStringColumn& Column, const FString& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Identity Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate IdentityEqual(const FBlueprintIdentityColumn& Column, const FSpacetimeDBIdentity& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="ConnectionId Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate ConnectionIdEqual(const FBlueprintConnectionIdColumn& Column, const FSpacetimeDBConnectionId& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate TimestampEqual(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate TimestampGreaterThan(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate TimestampGreaterEqual(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate TimestampLessThan(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate TimestampLessEqual(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Uuid Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate UuidEqual(const FBlueprintUuidColumn& Column, const FSpacetimeDBUuid& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="AND", CompactNodeTitle="AND", Keywords="and &&"))
+    static FBlueprintPredicate And(const FBlueprintPredicate& A, const FBlueprintPredicate& B)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = A.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("(%s) AND (%s)"), *A.Sql, *B.Sql);
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="OR", CompactNodeTitle="OR", Keywords="or ||"))
+    static FBlueprintPredicate Or(const FBlueprintPredicate& A, const FBlueprintPredicate& B)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = A.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("(%s) OR (%s)"), *A.Sql, *B.Sql);
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="NOT", CompactNodeTitle="NOT", Keywords="not !"))
+    static FBlueprintPredicate Not(const FBlueprintPredicate& A)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = A.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("NOT (%s)"), *A.Sql);
+        return Predicate;
+    }
 
 private:
-    UDbConnection* Conn = nullptr;
-    TArray<FString> Sql;
-    FOnSubscriptionApplied OnAppliedDelegateInternal;
-    FOnSubscriptionError OnErrorDelegateInternal;
+    static FString AppendPredicate(const FString& Sql, const FString& Predicate)
+    {
+        if (Sql.Contains(TEXT(" WHERE ")))
+        {
+            return Sql + TEXT(" AND (") + Predicate + TEXT(")");
+        }
+        return Sql + TEXT(" WHERE (") + Predicate + TEXT(")");
+    }
 };
 
 // SubscriptionBuilder class
@@ -13306,17 +18847,237 @@ public:
     USubscriptionBuilder* OnError(FOnSubscriptionError Callback);
 
     UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+    USubscriptionHandle* Subscribe();
+
     USubscriptionHandle* Subscribe(const TArray<FString>& SQL);
 
     template<typename TFn>
-    [[nodiscard]] FTypedSubscriptionBuilder AddQuery(TFn&& Build)
+    USubscriptionBuilder* AddQuery(TFn&& Build)
     {
-        FTypedSubscriptionBuilder Typed(Conn);
-        Typed.OnApplied(OnAppliedDelegateInternal);
-        Typed.OnError(OnErrorDelegateInternal);
-        Typed.AddQuery(std::forward<TFn>(Build));
-        return Typed;
+        FQueryBuilder Q;
+        auto Query = std::forward<TFn>(Build)(Q);
+        static_assert(::SpacetimeDB::query_builder::QueryBuilderReturn<decltype(Query)>,
+            "Typed subscription queries must return a query_builder table/query expression.");
+        PendingSqlQueries.Add(FString(UTF8_TO_TCHAR(Query.into_sql().c_str())));
+        return this;
     }
+
+    UFUNCTION(BlueprintCallable, Category="SpacetimeDB", meta=(DisplayName="AddQuery", ScriptName="AddQuery"))
+    USubscriptionBuilder* AddBlueprintQuery(const FBlueprintQuery& Query);
+
+    USubscriptionBuilder* AddBtreeU32Query(const FBtreeU32Query& Query);
+
+    USubscriptionBuilder* AddIndexedSimpleEnumQuery(const FIndexedSimpleEnumQuery& Query);
+
+    USubscriptionBuilder* AddLargeTableQuery(const FLargeTableQuery& Query);
+
+    USubscriptionBuilder* AddOneBoolQuery(const FOneBoolQuery& Query);
+
+    USubscriptionBuilder* AddOneByteStructQuery(const FOneByteStructQuery& Query);
+
+    USubscriptionBuilder* AddOneConnectionIdQuery(const FOneConnectionIdQuery& Query);
+
+    USubscriptionBuilder* AddOneEnumWithPayloadQuery(const FOneEnumWithPayloadQuery& Query);
+
+    USubscriptionBuilder* AddOneEveryPrimitiveStructQuery(const FOneEveryPrimitiveStructQuery& Query);
+
+    USubscriptionBuilder* AddOneEveryVecStructQuery(const FOneEveryVecStructQuery& Query);
+
+    USubscriptionBuilder* AddOneF32Query(const FOneF32Query& Query);
+
+    USubscriptionBuilder* AddOneF64Query(const FOneF64Query& Query);
+
+    USubscriptionBuilder* AddOneI128Query(const FOneI128Query& Query);
+
+    USubscriptionBuilder* AddOneI16Query(const FOneI16Query& Query);
+
+    USubscriptionBuilder* AddOneI256Query(const FOneI256Query& Query);
+
+    USubscriptionBuilder* AddOneI32Query(const FOneI32Query& Query);
+
+    USubscriptionBuilder* AddOneI64Query(const FOneI64Query& Query);
+
+    USubscriptionBuilder* AddOneI8Query(const FOneI8Query& Query);
+
+    USubscriptionBuilder* AddOneIdentityQuery(const FOneIdentityQuery& Query);
+
+    USubscriptionBuilder* AddOneSimpleEnumQuery(const FOneSimpleEnumQuery& Query);
+
+    USubscriptionBuilder* AddOneStringQuery(const FOneStringQuery& Query);
+
+    USubscriptionBuilder* AddOneTimestampQuery(const FOneTimestampQuery& Query);
+
+    USubscriptionBuilder* AddOneU128Query(const FOneU128Query& Query);
+
+    USubscriptionBuilder* AddOneU16Query(const FOneU16Query& Query);
+
+    USubscriptionBuilder* AddOneU256Query(const FOneU256Query& Query);
+
+    USubscriptionBuilder* AddOneU32Query(const FOneU32Query& Query);
+
+    USubscriptionBuilder* AddOneU64Query(const FOneU64Query& Query);
+
+    USubscriptionBuilder* AddOneU8Query(const FOneU8Query& Query);
+
+    USubscriptionBuilder* AddOneUnitStructQuery(const FOneUnitStructQuery& Query);
+
+    USubscriptionBuilder* AddOneUuidQuery(const FOneUuidQuery& Query);
+
+    USubscriptionBuilder* AddOptionEveryPrimitiveStructQuery(const FOptionEveryPrimitiveStructQuery& Query);
+
+    USubscriptionBuilder* AddOptionI32Query(const FOptionI32Query& Query);
+
+    USubscriptionBuilder* AddOptionIdentityQuery(const FOptionIdentityQuery& Query);
+
+    USubscriptionBuilder* AddOptionSimpleEnumQuery(const FOptionSimpleEnumQuery& Query);
+
+    USubscriptionBuilder* AddOptionStringQuery(const FOptionStringQuery& Query);
+
+    USubscriptionBuilder* AddOptionUuidQuery(const FOptionUuidQuery& Query);
+
+    USubscriptionBuilder* AddOptionVecOptionI32Query(const FOptionVecOptionI32Query& Query);
+
+    USubscriptionBuilder* AddPkBoolQuery(const FPkBoolQuery& Query);
+
+    USubscriptionBuilder* AddPkConnectionIdQuery(const FPkConnectionIdQuery& Query);
+
+    USubscriptionBuilder* AddPkI128Query(const FPkI128Query& Query);
+
+    USubscriptionBuilder* AddPkI16Query(const FPkI16Query& Query);
+
+    USubscriptionBuilder* AddPkI256Query(const FPkI256Query& Query);
+
+    USubscriptionBuilder* AddPkI32Query(const FPkI32Query& Query);
+
+    USubscriptionBuilder* AddPkI64Query(const FPkI64Query& Query);
+
+    USubscriptionBuilder* AddPkI8Query(const FPkI8Query& Query);
+
+    USubscriptionBuilder* AddPkIdentityQuery(const FPkIdentityQuery& Query);
+
+    USubscriptionBuilder* AddPkSimpleEnumQuery(const FPkSimpleEnumQuery& Query);
+
+    USubscriptionBuilder* AddPkStringQuery(const FPkStringQuery& Query);
+
+    USubscriptionBuilder* AddPkU128Query(const FPkU128Query& Query);
+
+    USubscriptionBuilder* AddPkU16Query(const FPkU16Query& Query);
+
+    USubscriptionBuilder* AddPkU256Query(const FPkU256Query& Query);
+
+    USubscriptionBuilder* AddPkU32Query(const FPkU32Query& Query);
+
+    USubscriptionBuilder* AddPkU32TwoQuery(const FPkU32TwoQuery& Query);
+
+    USubscriptionBuilder* AddPkU64Query(const FPkU64Query& Query);
+
+    USubscriptionBuilder* AddPkU8Query(const FPkU8Query& Query);
+
+    USubscriptionBuilder* AddPkUuidQuery(const FPkUuidQuery& Query);
+
+    USubscriptionBuilder* AddResultEveryPrimitiveStructStringQuery(const FResultEveryPrimitiveStructStringQuery& Query);
+
+    USubscriptionBuilder* AddResultI32StringQuery(const FResultI32StringQuery& Query);
+
+    USubscriptionBuilder* AddResultIdentityStringQuery(const FResultIdentityStringQuery& Query);
+
+    USubscriptionBuilder* AddResultSimpleEnumI32Query(const FResultSimpleEnumI32Query& Query);
+
+    USubscriptionBuilder* AddResultStringI32Query(const FResultStringI32Query& Query);
+
+    USubscriptionBuilder* AddResultVecI32StringQuery(const FResultVecI32StringQuery& Query);
+
+    USubscriptionBuilder* AddScheduledTableQuery(const FScheduledTableQuery& Query);
+
+    USubscriptionBuilder* AddTableHoldsTableQuery(const FTableHoldsTableQuery& Query);
+
+    USubscriptionBuilder* AddUniqueBoolQuery(const FUniqueBoolQuery& Query);
+
+    USubscriptionBuilder* AddUniqueConnectionIdQuery(const FUniqueConnectionIdQuery& Query);
+
+    USubscriptionBuilder* AddUniqueI128Query(const FUniqueI128Query& Query);
+
+    USubscriptionBuilder* AddUniqueI16Query(const FUniqueI16Query& Query);
+
+    USubscriptionBuilder* AddUniqueI256Query(const FUniqueI256Query& Query);
+
+    USubscriptionBuilder* AddUniqueI32Query(const FUniqueI32Query& Query);
+
+    USubscriptionBuilder* AddUniqueI64Query(const FUniqueI64Query& Query);
+
+    USubscriptionBuilder* AddUniqueI8Query(const FUniqueI8Query& Query);
+
+    USubscriptionBuilder* AddUniqueIdentityQuery(const FUniqueIdentityQuery& Query);
+
+    USubscriptionBuilder* AddUniqueStringQuery(const FUniqueStringQuery& Query);
+
+    USubscriptionBuilder* AddUniqueU128Query(const FUniqueU128Query& Query);
+
+    USubscriptionBuilder* AddUniqueU16Query(const FUniqueU16Query& Query);
+
+    USubscriptionBuilder* AddUniqueU256Query(const FUniqueU256Query& Query);
+
+    USubscriptionBuilder* AddUniqueU32Query(const FUniqueU32Query& Query);
+
+    USubscriptionBuilder* AddUniqueU64Query(const FUniqueU64Query& Query);
+
+    USubscriptionBuilder* AddUniqueU8Query(const FUniqueU8Query& Query);
+
+    USubscriptionBuilder* AddUniqueUuidQuery(const FUniqueUuidQuery& Query);
+
+    USubscriptionBuilder* AddUsersQuery(const FUsersQuery& Query);
+
+    USubscriptionBuilder* AddVecBoolQuery(const FVecBoolQuery& Query);
+
+    USubscriptionBuilder* AddVecByteStructQuery(const FVecByteStructQuery& Query);
+
+    USubscriptionBuilder* AddVecConnectionIdQuery(const FVecConnectionIdQuery& Query);
+
+    USubscriptionBuilder* AddVecEnumWithPayloadQuery(const FVecEnumWithPayloadQuery& Query);
+
+    USubscriptionBuilder* AddVecEveryPrimitiveStructQuery(const FVecEveryPrimitiveStructQuery& Query);
+
+    USubscriptionBuilder* AddVecEveryVecStructQuery(const FVecEveryVecStructQuery& Query);
+
+    USubscriptionBuilder* AddVecF32Query(const FVecF32Query& Query);
+
+    USubscriptionBuilder* AddVecF64Query(const FVecF64Query& Query);
+
+    USubscriptionBuilder* AddVecI128Query(const FVecI128Query& Query);
+
+    USubscriptionBuilder* AddVecI16Query(const FVecI16Query& Query);
+
+    USubscriptionBuilder* AddVecI256Query(const FVecI256Query& Query);
+
+    USubscriptionBuilder* AddVecI32Query(const FVecI32Query& Query);
+
+    USubscriptionBuilder* AddVecI64Query(const FVecI64Query& Query);
+
+    USubscriptionBuilder* AddVecI8Query(const FVecI8Query& Query);
+
+    USubscriptionBuilder* AddVecIdentityQuery(const FVecIdentityQuery& Query);
+
+    USubscriptionBuilder* AddVecSimpleEnumQuery(const FVecSimpleEnumQuery& Query);
+
+    USubscriptionBuilder* AddVecStringQuery(const FVecStringQuery& Query);
+
+    USubscriptionBuilder* AddVecTimestampQuery(const FVecTimestampQuery& Query);
+
+    USubscriptionBuilder* AddVecU128Query(const FVecU128Query& Query);
+
+    USubscriptionBuilder* AddVecU16Query(const FVecU16Query& Query);
+
+    USubscriptionBuilder* AddVecU256Query(const FVecU256Query& Query);
+
+    USubscriptionBuilder* AddVecU32Query(const FVecU32Query& Query);
+
+    USubscriptionBuilder* AddVecU64Query(const FVecU64Query& Query);
+
+    USubscriptionBuilder* AddVecU8Query(const FVecU8Query& Query);
+
+    USubscriptionBuilder* AddVecUnitStructQuery(const FVecUnitStructQuery& Query);
+
+    USubscriptionBuilder* AddVecUuidQuery(const FVecUuidQuery& Query);
 
     /** Convenience for subscribing to all rows from all public sources, including views */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
@@ -13329,6 +19090,9 @@ public:
 protected:
     UPROPERTY()
     class UDbConnection* Conn;
+
+    UPROPERTY()
+    TArray<FString> PendingSqlQueries;
 
     // Delegates stored so Subscribe() can bind forwarding callbacks
     FOnSubscriptionApplied OnAppliedDelegateInternal;

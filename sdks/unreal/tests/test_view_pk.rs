@@ -38,3 +38,9 @@ fn unreal_view_pk_subscribe_all_tables() {
 fn unreal_view_pk_runtime_update_pairing() {
     make_test("ViewPkRuntimeUpdatePairingTest").run();
 }
+
+#[test]
+#[serial(ViewPkGroup)]
+fn unreal_view_pk_blueprint_query_builder_flow() {
+    make_test("ViewPkBlueprintQueryBuilderFlowTest").run();
+}
