@@ -43,7 +43,7 @@ impl OptionEveryPrimitiveStructTableAccess for super::RemoteTables {
 pub struct OptionEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
 pub struct OptionEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OptionEveryPrimitiveStructTableHandle<'ctx> {
     type Row = OptionEveryPrimitiveStruct;
     type EventContext = super::EventContext;
 
@@ -53,7 +53,9 @@ impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OptionEveryPrimitiveStruct> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OptionEveryPrimitiveStructTableHandle<'ctx> {
     type InsertCallbackId = OptionEveryPrimitiveStructInsertCallbackId;
 
     fn on_insert(
@@ -66,7 +68,9 @@ impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OptionEveryPrimitiveStructInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OptionEveryPrimitiveStructTableHandle<'ctx> {
     type DeleteCallbackId = OptionEveryPrimitiveStructDeleteCallbackId;
 
     fn on_delete(
@@ -80,6 +84,8 @@ impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

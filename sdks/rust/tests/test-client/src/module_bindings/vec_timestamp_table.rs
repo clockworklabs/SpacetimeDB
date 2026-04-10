@@ -40,7 +40,7 @@ impl VecTimestampTableAccess for super::RemoteTables {
 pub struct VecTimestampInsertCallbackId(__sdk::CallbackId);
 pub struct VecTimestampDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for VecTimestampTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for VecTimestampTableHandle<'ctx> {
     type Row = VecTimestamp;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for VecTimestampTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = VecTimestamp> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for VecTimestampTableHandle<'ctx> {
     type InsertCallbackId = VecTimestampInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for VecTimestampTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: VecTimestampInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for VecTimestampTableHandle<'ctx> {
     type DeleteCallbackId = VecTimestampDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for VecTimestampTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for VecTimestampTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

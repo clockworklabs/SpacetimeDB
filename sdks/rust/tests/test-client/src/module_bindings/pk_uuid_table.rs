@@ -40,7 +40,7 @@ impl PkUuidTableAccess for super::RemoteTables {
 pub struct PkUuidInsertCallbackId(__sdk::CallbackId);
 pub struct PkUuidDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkUuidTableHandle<'ctx> {
     type Row = PkUuid;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkUuid> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkUuidTableHandle<'ctx> {
     type InsertCallbackId = PkUuidInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkUuidInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkUuidTableHandle<'ctx> {
     type DeleteCallbackId = PkUuidDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkUuidTableHandle<'ctx> {}
+
 pub struct PkUuidUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkUuidTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkUuidTableHandle<'ctx> {
     type UpdateCallbackId = PkUuidUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkUuidTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkUuidTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

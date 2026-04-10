@@ -43,7 +43,7 @@ impl OneEveryPrimitiveStructTableAccess for super::RemoteTables {
 pub struct OneEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
 pub struct OneEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OneEveryPrimitiveStructTableHandle<'ctx> {
     type Row = OneEveryPrimitiveStruct;
     type EventContext = super::EventContext;
 
@@ -53,7 +53,9 @@ impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OneEveryPrimitiveStruct> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OneEveryPrimitiveStructTableHandle<'ctx> {
     type InsertCallbackId = OneEveryPrimitiveStructInsertCallbackId;
 
     fn on_insert(
@@ -66,7 +68,9 @@ impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OneEveryPrimitiveStructInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OneEveryPrimitiveStructTableHandle<'ctx> {
     type DeleteCallbackId = OneEveryPrimitiveStructDeleteCallbackId;
 
     fn on_delete(
@@ -80,6 +84,8 @@ impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

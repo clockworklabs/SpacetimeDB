@@ -40,7 +40,7 @@ impl UniqueConnectionIdTableAccess for super::RemoteTables {
 pub struct UniqueConnectionIdInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueConnectionIdDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for UniqueConnectionIdTableHandle<'ctx> {
     type Row = UniqueConnectionId;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = UniqueConnectionId> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for UniqueConnectionIdTableHandle<'ctx> {
     type InsertCallbackId = UniqueConnectionIdInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: UniqueConnectionIdInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for UniqueConnectionIdTableHandle<'ctx> {
     type DeleteCallbackId = UniqueConnectionIdDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for UniqueConnectionIdTableHandle<'ctx> {}
 
 /// Access to the `a` unique index on the table `unique_connection_id`,
 /// which allows point queries on the field of the same name

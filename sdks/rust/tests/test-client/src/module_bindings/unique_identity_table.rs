@@ -40,7 +40,7 @@ impl UniqueIdentityTableAccess for super::RemoteTables {
 pub struct UniqueIdentityInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueIdentityDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for UniqueIdentityTableHandle<'ctx> {
     type Row = UniqueIdentity;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = UniqueIdentity> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for UniqueIdentityTableHandle<'ctx> {
     type InsertCallbackId = UniqueIdentityInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: UniqueIdentityInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for UniqueIdentityTableHandle<'ctx> {
     type DeleteCallbackId = UniqueIdentityDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {}
 
 /// Access to the `i` unique index on the table `unique_identity`,
 /// which allows point queries on the field of the same name

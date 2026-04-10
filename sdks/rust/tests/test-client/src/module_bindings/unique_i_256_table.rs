@@ -40,7 +40,7 @@ impl UniqueI256TableAccess for super::RemoteTables {
 pub struct UniqueI256InsertCallbackId(__sdk::CallbackId);
 pub struct UniqueI256DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for UniqueI256TableHandle<'ctx> {
     type Row = UniqueI256;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = UniqueI256> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for UniqueI256TableHandle<'ctx> {
     type InsertCallbackId = UniqueI256InsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
     fn remove_on_insert(&self, callback: UniqueI256InsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for UniqueI256TableHandle<'ctx> {
     type DeleteCallbackId = UniqueI256DeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {}
 
 /// Access to the `n` unique index on the table `unique_i_256`,
 /// which allows point queries on the field of the same name

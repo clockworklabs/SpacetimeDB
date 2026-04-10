@@ -40,7 +40,7 @@ impl OneUuidTableAccess for super::RemoteTables {
 pub struct OneUuidInsertCallbackId(__sdk::CallbackId);
 pub struct OneUuidDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OneUuidTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OneUuidTableHandle<'ctx> {
     type Row = OneUuid;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for OneUuidTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OneUuid> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OneUuidTableHandle<'ctx> {
     type InsertCallbackId = OneUuidInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for OneUuidTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OneUuidInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OneUuidTableHandle<'ctx> {
     type DeleteCallbackId = OneUuidDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for OneUuidTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OneUuidTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

@@ -40,7 +40,7 @@ impl UsersTableAccess for super::RemoteTables {
 pub struct UsersInsertCallbackId(__sdk::CallbackId);
 pub struct UsersDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for UsersTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for UsersTableHandle<'ctx> {
     type Row = Users;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for UsersTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = Users> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for UsersTableHandle<'ctx> {
     type InsertCallbackId = UsersInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for UsersTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: UsersInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for UsersTableHandle<'ctx> {
     type DeleteCallbackId = UsersDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for UsersTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for UsersTableHandle<'ctx> {}
+
 pub struct UsersUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for UsersTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for UsersTableHandle<'ctx> {
     type UpdateCallbackId = UsersUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for UsersTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for UsersTableHandle<'ctx> {}
 
 /// Access to the `identity` unique index on the table `users`,
 /// which allows point queries on the field of the same name

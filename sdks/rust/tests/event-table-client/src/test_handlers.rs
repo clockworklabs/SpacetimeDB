@@ -1,6 +1,6 @@
 use crate::module_bindings::*;
 
-use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Event, EventTable};
+use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Event, TableLike, WithInsert};
 use std::sync::atomic::{AtomicU32, Ordering};
 use test_counter::TestCounter;
 

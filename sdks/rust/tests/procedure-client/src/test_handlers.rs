@@ -2,7 +2,7 @@ use crate::module_bindings::*;
 use anyhow::Context;
 use core::time::Duration;
 use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9};
-use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
+use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table, TableLike, WithInsert};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";

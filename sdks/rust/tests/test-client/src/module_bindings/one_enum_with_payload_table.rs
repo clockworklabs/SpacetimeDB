@@ -41,7 +41,7 @@ impl OneEnumWithPayloadTableAccess for super::RemoteTables {
 pub struct OneEnumWithPayloadInsertCallbackId(__sdk::CallbackId);
 pub struct OneEnumWithPayloadDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OneEnumWithPayloadTableHandle<'ctx> {
     type Row = OneEnumWithPayload;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OneEnumWithPayload> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OneEnumWithPayloadTableHandle<'ctx> {
     type InsertCallbackId = OneEnumWithPayloadInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OneEnumWithPayloadInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OneEnumWithPayloadTableHandle<'ctx> {
     type DeleteCallbackId = OneEnumWithPayloadDeleteCallbackId;
 
     fn on_delete(
@@ -78,6 +82,8 @@ impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

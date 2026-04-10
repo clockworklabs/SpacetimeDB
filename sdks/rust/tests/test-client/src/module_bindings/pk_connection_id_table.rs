@@ -40,7 +40,7 @@ impl PkConnectionIdTableAccess for super::RemoteTables {
 pub struct PkConnectionIdInsertCallbackId(__sdk::CallbackId);
 pub struct PkConnectionIdDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkConnectionIdTableHandle<'ctx> {
     type Row = PkConnectionId;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkConnectionId> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkConnectionIdTableHandle<'ctx> {
     type InsertCallbackId = PkConnectionIdInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkConnectionIdInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkConnectionIdTableHandle<'ctx> {
     type DeleteCallbackId = PkConnectionIdDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {}
+
 pub struct PkConnectionIdUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkConnectionIdTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkConnectionIdTableHandle<'ctx> {
     type UpdateCallbackId = PkConnectionIdUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkConnectionIdTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkConnectionIdTableHandle<'ctx> {}
 
 /// Access to the `a` unique index on the table `pk_connection_id`,
 /// which allows point queries on the field of the same name

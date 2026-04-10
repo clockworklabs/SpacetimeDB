@@ -41,7 +41,7 @@ impl PkSimpleEnumTableAccess for super::RemoteTables {
 pub struct PkSimpleEnumInsertCallbackId(__sdk::CallbackId);
 pub struct PkSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkSimpleEnumTableHandle<'ctx> {
     type Row = PkSimpleEnum;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkSimpleEnum> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkSimpleEnumTableHandle<'ctx> {
     type InsertCallbackId = PkSimpleEnumInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkSimpleEnumInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkSimpleEnumTableHandle<'ctx> {
     type DeleteCallbackId = PkSimpleEnumDeleteCallbackId;
 
     fn on_delete(
@@ -79,9 +83,11 @@ impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {}
+
 pub struct PkSimpleEnumUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkSimpleEnumTableHandle<'ctx> {
     type UpdateCallbackId = PkSimpleEnumUpdateCallbackId;
 
     fn on_update(
@@ -95,6 +101,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {}
 
 /// Access to the `a` unique index on the table `pk_simple_enum`,
 /// which allows point queries on the field of the same name
