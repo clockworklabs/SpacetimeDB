@@ -84,7 +84,7 @@ macro_rules! register_synthetic_module_export {
     };
 }
 
-/// Registers all module -> host syscalls in the JS module `spacetimedb_sys`.
+/// Registers all 2.0 module -> host syscalls in the JS module `spacetimedb_sys`.
 pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
     create_synthetic_module!(
         scope,
@@ -157,6 +157,15 @@ pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
             AbiCall::DatastoreDeleteByIndexScanPointBsatn,
             datastore_delete_by_index_scan_point_bsatn
         ),
+    )
+}
+
+/// Registers all 2.1 module -> host syscalls in the JS module `spacetimedb_sys`.
+pub(super) fn sys_v2_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(
+        scope,
+        "spacetime:sys@2.1",
+        (with_sys_result, AbiCall::DatastoreClear, datastore_clear),
     )
 }
 
@@ -1162,6 +1171,44 @@ fn datastore_delete_all_by_eq_bsatn(
             .datastore_delete_all_by_eq_bsatn(table_id, relation)?;
         Ok(count)
     })
+}
+
+/// Module ABI that deletes all rows in the table identified by `table_id`.
+///
+/// Returns the number of rows deleted.
+///
+/// # Signature
+///
+/// ```ignore
+/// datastore_clear(table_id: u32) -> u64 throws {
+///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
+/// }
+/// ```
+///
+/// # Types
+///
+/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
+/// - `u64` is `bigint` in JS restricted to unsigned 64-bit integers.
+///
+/// # Returns
+///
+/// Returns a `u64` containing the number of rows deleted from the table.
+///
+/// # Throws
+///
+/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
+///
+/// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
+///   when called outside of a transaction.
+///
+/// - [`spacetimedb_primitives::errno::NO_SUCH_TABLE`]
+///   when `table_id` is not a known ID of a table.
+///
+/// Throws a `TypeError` if:
+/// - `table_id` is not a `u32`.
+pub fn datastore_clear(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
+    let table_id: TableId = deserialize_js(scope, args.get(0))?;
+    Ok(get_env(scope)?.instance_env.clear(table_id)?)
 }
 
 /// Module ABI to read a JWT payload associated with a connection ID from the system tables.

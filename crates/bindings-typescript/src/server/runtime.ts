@@ -1,4 +1,5 @@
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
+import * as _syscalls2_1 from 'spacetime:sys@2.1';
 
 import type { ModuleHooks, u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import {
@@ -45,7 +46,7 @@ import type { SchemaInner } from './schema';
 
 const { freeze } = Object;
 
-export const sys = _syscalls2_0;
+export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -508,6 +509,7 @@ function makeTableView(
       );
       return count > 0;
     },
+    clear: () => sys.datastore_clear(table_id),
   };
 
   const tableView = Object.assign(
