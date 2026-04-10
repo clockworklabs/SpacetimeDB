@@ -4,17 +4,13 @@
     "jsx": "react-jsx"
   },
   "include": [
-    "tests/**/*",
-    "src/lib/**/*",
-    "src/sdk/**/*",
-    "src/react/**/*",
-    "test-app/**/*"
+    "src/**/*.test-d.ts",
+    "src/server/sys.d.ts"
   ],
   "exclude": [
     "node_modules",
     "dist/**/*",
     "src/svelte/**/*",
-    "src/vue/**/*",
-    "src/server/**/*"
+    "src/vue/**/*"
   ]
 }
