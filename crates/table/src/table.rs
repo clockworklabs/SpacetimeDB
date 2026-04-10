@@ -26,6 +26,7 @@ use core::{
 use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
+use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
@@ -45,7 +46,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
-    def::{BTreeAlgorithm, IndexAlgorithm},
+    def::IndexAlgorithm,
     identifier::Identifier,
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
     table_name::TableName,
@@ -526,9 +527,7 @@ impl Table {
         let schema = self.get_schema().clone();
         let row_type = schema.get_row_type();
         for index in self.indexes.values_mut() {
-            index.key_type = row_type
-                .project(&index.indexed_columns)
-                .expect("new row type should have as many columns as before")
+            index.recompute_key_type(row_type);
         }
     }
 
@@ -1429,23 +1428,25 @@ impl Table {
             let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
 
             if let Some(index_schema) = self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id) {
-                let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
-                    Some(columns)
-                } else {
-                    None
-                };
-                let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
-                let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+                let cols = index_schema.index_algorithm.columns().to_owned();
+                let cols_infos = cols
+                    .iter()
+                    .map(|col|
+                        self.schema.get_column(col.idx())
+                            .map(|c| format!("`{}`", &*c.col_name))
+                            .unwrap_or_else(|| "<unknown>".into())
+                    )
+                    .join(",");
 
                 format!(
-                    "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.\
+                    "Adding index `{}` {:?} to table `{}` {:?} on columns `{}` {:?} should cause no unique constraint violations.\
                     Found violation at pointer {ptr:?} to row {:?}.",
                     index_schema.index_name,
                     index_schema.index_id,
                     self.schema.table_name,
                     self.schema.table_id,
-                    indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
-                    indexed_column,
+                    cols_infos,
+                    cols,
                     row,
                 )
             } else {
@@ -1455,7 +1456,7 @@ impl Table {
                     self.schema.table_name,
                     self.schema.table_id,
                     index.indexed_columns,
-                    index.key_type,
+                    index.key_type(),
                     row,
                 )
             }

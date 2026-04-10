@@ -3285,7 +3285,7 @@ pub(crate) mod tests {
                 .unwrap()
                 .indexes
                 .values()
-                .map(|i| i.key_type.clone())
+                .map(|i| i.key_type().clone())
                 .collect::<Vec<_>>()
         };
         assert_eq!(index_key_types(&tx), [AlgebraicType::U64, sum_original]);
