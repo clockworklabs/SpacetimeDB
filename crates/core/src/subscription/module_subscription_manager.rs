@@ -12,6 +12,7 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::worker_metrics::WORKER_METRICS;
 type V2EvalUpdatesResult = (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics);
+use bytes::Bytes;
 use core::mem;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -1383,6 +1384,19 @@ impl SubscriptionManager {
             module_def_version,
         };
 
+        let no_subscription_work = self.queries.is_empty()
+            && queries.updates.is_empty()
+            && queries.v2_updates.is_empty()
+            && queries.errs.is_empty()
+            && queries.v2_errs.is_empty();
+
+        if no_subscription_work {
+            // With no subscriptions registered, the only possible recipient is
+            // the reducer caller, so we can skip waking the broadcast worker.
+            direct_send_if_no_subscription_work(tx_offset, &queries);
+            return (metrics, failed_v2_subscriptions.into_iter().collect());
+        }
+
         // We've now finished all of the work which needs to read from the datastore,
         // so get this work off the main thread and over to the `send_worker`,
         // then return ASAP in order to unlock the datastore and start running the next transaction.
@@ -2120,16 +2134,7 @@ impl SendWorker {
             }
         }
         if !sent_to_caller && let Some(caller) = caller {
-            let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
-                request_id: event.request_id.unwrap(), // TODO: Handle error here.
-                timestamp: event.timestamp,
-                result: ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
-                    ret_value: event.reducer_return_value.clone().unwrap_or_default(),
-                    transaction_update: ws_v2::TransactionUpdate {
-                        query_sets: vec![].into_boxed_slice(),
-                    },
-                }),
-            });
+            let server_message = reducer_result_with_empty_tx_update(&event);
             send_to_client(&caller, Some(tx_offset), OutboundMessage::V2(server_message));
         }
     }
@@ -2166,6 +2171,17 @@ fn send_to_client_v1(
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }
+
+fn send_to_client_v1_deferred(
+    client: &ClientConnectionSender,
+    tx_offset: Option<TransactionOffset>,
+    message: impl Into<SerializableMessage>,
+) {
+    if let Err(e) = client.send_message_deferred(tx_offset, OutboundMessage::V1(message.into())) {
+        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
+}
+
 fn send_to_client(
     client: &ClientConnectionSender,
     tx_offset: Option<TxOffset>,
@@ -2175,6 +2191,57 @@ fn send_to_client(
     tracing::trace!(client = %client.id, tx_offset, "send_to_client");
     if let Err(e) = client.send_message(tx_offset, message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
+}
+
+fn send_to_client_deferred(
+    client: &ClientConnectionSender,
+    tx_offset: Option<TransactionOffset>,
+    message: OutboundMessage,
+) {
+    if let Err(e) = client.send_message_deferred(tx_offset, message) {
+        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
+}
+
+fn reducer_result_with_empty_tx_update(event: &ModuleEvent) -> ws_v2::ServerMessage {
+    let result = if event.reducer_return_value.as_ref().is_none_or(Bytes::is_empty) {
+        ws_v2::ReducerOutcome::OkEmpty
+    } else {
+        ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
+            ret_value: event.reducer_return_value.clone().unwrap_or_default(),
+            transaction_update: ws_v2::TransactionUpdate {
+                query_sets: vec![].into_boxed_slice(),
+            },
+        })
+    };
+    ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+        request_id: event.request_id.unwrap(), // TODO: Handle error here.
+        timestamp: event.timestamp,
+        result,
+    })
+}
+
+fn direct_send_if_no_subscription_work(tx_offset: TransactionOffset, queries: &ComputedQueries) {
+    let Some(caller) = queries.caller.as_ref() else {
+        return;
+    };
+
+    match caller.config.version {
+        WsVersion::V1 => {
+            let message = TransactionUpdateMessage {
+                event: Some(queries.event.clone()),
+                database_update: SubscriptionUpdateMessage::default_for_protocol(
+                    caller.config.protocol,
+                    queries.event.request_id,
+                ),
+            };
+            send_to_client_v1_deferred(caller, Some(tx_offset), message);
+        }
+        WsVersion::V2 | WsVersion::V3 => {
+            let message = reducer_result_with_empty_tx_update(&queries.event);
+            send_to_client_deferred(caller, Some(tx_offset), OutboundMessage::V2(message));
+        }
     }
 }
 
@@ -2201,7 +2268,7 @@ mod tests {
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::tx::DeltaTx;
     use crate::{
-        client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
+        client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, OutboundMessage, WsVersion},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         energy::EnergyQuanta,
         host::{
@@ -3209,6 +3276,75 @@ mod tests {
             })
             .await
             .expect("Timed out waiting for a message to the client");
+        });
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_v2_caller_reducer_result_without_subscription() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let id0 = Identity::ZERO;
+        let client0 = ClientActorId::for_test(id0);
+        let config = ClientConfig {
+            version: WsVersion::V2,
+            ..ClientConfig::for_test()
+        };
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, config, (*db).clone());
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+        let subscriptions = SubscriptionManager::for_test_without_metrics();
+
+        let event = Arc::new(ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: id0,
+            caller_connection_id: Some(client0.id.connection_id),
+            function_call: ModuleFunctionCall {
+                reducer: Some(ReducerName::for_test("DummyReducer")),
+                reducer_id: u32::MAX.into(),
+                args: ArgsTuple::nullary(),
+            },
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            energy_quanta_used: EnergyQuanta::ZERO,
+            host_execution_duration: Duration::default(),
+            request_id: Some(7),
+            timer: None,
+        });
+
+        {
+            let (offset_tx, offset_rx) = oneshot::channel();
+            let tx = scopeguard::guard(db.begin_tx(Workload::Update), |tx| {
+                let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+                let _ = offset_tx.send(tx_offset);
+                db.report_read_tx_metrics(reducer, tx_metrics);
+            });
+            let delta_tx = DeltaTx::from(&*tx);
+            let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
+            let _ = subscriptions.eval_updates_sequential(
+                (&delta_tx, offset_rx),
+                &bsatn_rlb_pool,
+                RawModuleDefVersion::V9OrEarlier,
+                event,
+                Some(Arc::new(client0)),
+            );
+        }
+
+        runtime.block_on(async move {
+            let message = tokio::time::timeout(Duration::from_millis(20), async move { rx.recv().await })
+                .await
+                .expect("Timed out waiting for a message to the client")
+                .expect("Expected at least one message");
+            assert!(matches!(
+                message,
+                OutboundMessage::V2(ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                    request_id: 7,
+                    result: ws_v2::ReducerOutcome::OkEmpty,
+                    ..
+                }))
+            ));
         });
 
         Ok(())

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::future::poll_fn;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use crate::host::{
     CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
     ReducerCallResult,
 };
-use crate::subscription::module_subscription_manager::BroadcastError;
+use crate::subscription::module_subscription_manager::{BroadcastError, TransactionOffset};
 use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
 use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
@@ -100,15 +101,22 @@ impl ClientConfig {
 ///
 // TODO: Consider a different name, "ClientUpdate" is used elsewhere already.
 #[derive(Debug)]
+enum ClientUpdateTxOffset {
+    Known(TxOffset),
+    Deferred(TransactionOffset),
+}
+
+#[derive(Debug)]
 struct ClientUpdate {
     /// Transaction offset at which `message` was computed.
     ///
-    /// This is only `Some` if `message` is a query result.
+    /// This is only `Some` if `message` is a query result or other data-related
+    /// message whose visibility depends on a transaction offset.
     ///
     /// If `Some` and [`ClientConfig::confirmed_reads`] is `true`,
     /// [`ClientConnectionReceiver`] will delay delivery until the durable
     /// offset of the database is equal to or greater than `tx_offset`.
-    pub tx_offset: Option<TxOffset>,
+    pub tx_offset: Option<ClientUpdateTxOffset>,
     /// Type-erased outgoing message.
     pub message: OutboundMessage,
 }
@@ -211,41 +219,84 @@ impl ClientConnectionReceiver {
     //
     // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
     pub async fn recv(&mut self) -> Option<OutboundMessage> {
-        let ClientUpdate { tx_offset, message } = match self.current.take() {
+        let mut update = match self.current.take() {
             None => self.channel.recv().await?,
             Some(update) => update,
         };
         if !self.confirmed_reads {
-            return Some(message);
+            return Some(update.message);
         }
 
-        if let Some(tx_offset) = tx_offset {
-            match self.offset_supply.durable_offset() {
-                Ok(Some(mut durable)) => {
-                    // Store the current update in case we get cancelled while
-                    // waiting for the durable offset.
-                    self.current = Some(ClientUpdate {
-                        tx_offset: Some(tx_offset),
-                        message,
-                    });
-                    trace!("waiting for offset {tx_offset} to become durable");
-                    durable
-                        .wait_for(tx_offset)
-                        .await
-                        .inspect_err(|_| {
-                            warn!("database went away while waiting for durable offset");
-                        })
-                        .ok()?;
-                    self.current.take().map(|update| update.message)
-                }
-                // Database shut down or crashed.
-                Err(NoSuchModule) => None,
-                // In-memory database.
-                Ok(None) => Some(message),
-            }
-        } else {
-            Some(message)
+        if matches!(update.tx_offset, Some(ClientUpdateTxOffset::Deferred(_))) {
+            let ClientUpdate { tx_offset, message } = update;
+            let Some(ClientUpdateTxOffset::Deferred(tx_offset)) = tx_offset else {
+                unreachable!("deferred offset check should only match deferred offsets")
+            };
+            self.current = Some(ClientUpdate {
+                tx_offset: Some(ClientUpdateTxOffset::Deferred(tx_offset)),
+                message,
+            });
+            let tx_offset = self.recv_deferred_tx_offset().await?;
+            update = self
+                .current
+                .take()
+                .expect("deferred tx_offset wait should preserve current update");
+            update.tx_offset = Some(ClientUpdateTxOffset::Known(tx_offset));
         }
+
+        match update.tx_offset {
+            Some(ClientUpdateTxOffset::Known(tx_offset)) => {
+                let message = update.message;
+                match self.offset_supply.durable_offset() {
+                    Ok(Some(mut durable)) => {
+                        // Store the current update in case we get cancelled while
+                        // waiting for the durable offset.
+                        self.current = Some(ClientUpdate {
+                            tx_offset: Some(ClientUpdateTxOffset::Known(tx_offset)),
+                            message,
+                        });
+                        trace!("waiting for offset {tx_offset} to become durable");
+                        durable
+                            .wait_for(tx_offset)
+                            .await
+                            .inspect_err(|_| {
+                                warn!("database went away while waiting for durable offset");
+                            })
+                            .ok()?;
+                        self.current.take().map(|update| update.message)
+                    }
+                    // Database shut down or crashed.
+                    Err(NoSuchModule) => None,
+                    // In-memory database.
+                    Ok(None) => Some(message),
+                }
+            }
+            Some(ClientUpdateTxOffset::Deferred(_)) => {
+                unreachable!("deferred tx_offset should resolve to a known tx_offset before waiting for durability")
+            }
+            None => Some(update.message),
+        }
+    }
+
+    async fn recv_deferred_tx_offset(&mut self) -> Option<TxOffset> {
+        poll_fn(|cx| {
+            let update = self
+                .current
+                .as_mut()
+                .expect("deferred tx_offset wait requires a current update");
+            let Some(ClientUpdateTxOffset::Deferred(tx_offset)) = update.tx_offset.as_mut() else {
+                unreachable!("recv_deferred_tx_offset should only be called for deferred offsets")
+            };
+            match Pin::new(tx_offset).poll(cx) {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(Ok(tx_offset)) => Poll::Ready(Some(tx_offset)),
+                Poll::Ready(Err(_)) => {
+                    warn!("tx_offset sender dropped before client update became visible");
+                    Poll::Ready(None)
+                }
+            }
+        })
+        .await
     }
 
     /// Close the receiver without dropping it.
@@ -378,6 +429,22 @@ impl ClientConnectionSender {
     pub fn send_message(
         &self,
         tx_offset: Option<TxOffset>,
+        message: impl Into<OutboundMessage>,
+    ) -> Result<(), ClientSendError> {
+        self.send_message_with_tx_offset(tx_offset.map(ClientUpdateTxOffset::Known), message)
+    }
+
+    pub fn send_message_deferred(
+        &self,
+        tx_offset: Option<TransactionOffset>,
+        message: impl Into<OutboundMessage>,
+    ) -> Result<(), ClientSendError> {
+        self.send_message_with_tx_offset(tx_offset.map(ClientUpdateTxOffset::Deferred), message)
+    }
+
+    fn send_message_with_tx_offset(
+        &self,
+        tx_offset: Option<ClientUpdateTxOffset>,
         message: impl Into<OutboundMessage>,
     ) -> Result<(), ClientSendError> {
         let message = message.into();
@@ -1260,6 +1327,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn client_connection_receiver_waits_for_deferred_offset() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        let (tx_offset_tx, tx_offset_rx) = oneshot::channel();
+        sender
+            .send_message_deferred(Some(tx_offset_rx), empty_tx_update())
+            .unwrap();
+
+        let mut recv = pin!(receiver.recv());
+        assert_pending(&mut recv).await;
+
+        tx_offset_tx.send(7).unwrap();
+        assert_pending(&mut recv).await;
+
+        offset.mark_durable_at(7);
+        assert_received_update(recv).await;
+    }
+
+    #[tokio::test]
     async fn client_connection_receiver_immediately_yields_message_if_already_durable() {
         let offset = FakeDurableOffset::new();
         let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
@@ -1269,6 +1356,18 @@ mod tests {
             sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
             assert_received_update(receiver.recv()).await;
         }
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_immediately_yields_deferred_message_without_confirmed_reads() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = default_client(offset);
+
+        let (_tx_offset_tx, tx_offset_rx) = oneshot::channel();
+        sender
+            .send_message_deferred(Some(tx_offset_rx), empty_tx_update())
+            .unwrap();
+        assert_received_update(receiver.recv()).await;
     }
 
     #[tokio::test]
