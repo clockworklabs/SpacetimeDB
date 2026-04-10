@@ -79,6 +79,11 @@ metrics_group!(
         #[buckets(0.001, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
         pub two_pc_participant_decision_wait_seconds: HistogramVec,
 
+        #[name = spacetime_2pc_participant_early_decisions_total]
+        #[help = "Total number of 2PC commit/abort decisions that arrived before the participant registered its local waiter."]
+        #[labels(database_identity: Identity, decision: str)]
+        pub two_pc_participant_early_decisions_total: IntCounterVec,
+
         #[name = spacetime_2pc_status_polls_total]
         #[help = "Total number of 2PC status polls sent by this database to a coordinator while acting as a participant."]
         #[labels(database_identity: Identity)]
