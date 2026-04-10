@@ -470,19 +470,19 @@
   </div>
   <div class="hero-stats">
     <div class="hero-stat">
-      <div class="hero-stat-value">3.5x</div>
+      <div class="hero-stat-value">3.9x</div>
       <div class="hero-stat-label">fewer bugs generated</div>
     </div>
     <div class="hero-stat">
-      <div class="hero-stat-value">40%</div>
+      <div class="hero-stat-value">44%</div>
       <div class="hero-stat-label">lower total cost</div>
     </div>
     <div class="hero-stat">
-      <div class="hero-stat-value">37%</div>
+      <div class="hero-stat-value">46%</div>
       <div class="hero-stat-label">less server code</div>
     </div>
     <div class="hero-stat">
-      <div class="hero-stat-value">73%</div>
+      <div class="hero-stat-value">75%</div>
       <div class="hero-stat-label">first-try success rate</div>
     </div>
   </div>
@@ -493,7 +493,7 @@
 <section>
   <div class="section-label">Head-to-Head Results</div>
   <h2>The numbers, side by side</h2>
-  <p class="section-sub">11 feature levels. Same AI model. Same prompts. Same app requirements. Figures averaged across 2 runs. The only variable was the backend.</p>
+  <p class="section-sub">12 feature levels. Same AI model. Same prompts. Same app requirements. Figures averaged across 2 runs. The only variable was the backend.</p>
   <table class="compare-table">
     <thead>
       <tr>
@@ -505,48 +505,48 @@
     <tbody>
       <tr>
         <td>Total AI cost to build (avg)</td>
-        <td>$12.07</td>
-        <td>$16.85</td>
+        <td>$12.98</td>
+        <td>$18.74</td>
       </tr>
       <tr>
         <td>Features working first try (avg)</td>
-        <td>73%</td>
-        <td>50%</td>
+        <td>75%</td>
+        <td>46%</td>
       </tr>
       <tr>
         <td>Bugs found per run (avg)</td>
         <td>3.5</td>
-        <td>12.5</td>
+        <td>13.5</td>
       </tr>
       <tr>
         <td>Fix iterations per run (avg)</td>
         <td>2.5</td>
-        <td>12</td>
+        <td>13.5</td>
       </tr>
       <tr>
         <td>Cost spent on fixes (avg)</td>
         <td>$1.14 (9%)</td>
-        <td>$6.60 (39%)</td>
+        <td>$7.09 (38%)</td>
       </tr>
       <tr>
         <td>Hand-written lines of code (avg)</td>
-        <td>2,750</td>
-        <td>3,521</td>
+        <td>2,304</td>
+        <td>3,288</td>
       </tr>
       <tr>
         <td>Backend lines of code (avg)</td>
-        <td>866</td>
-        <td>1,373</td>
+        <td>777</td>
+        <td>1,451</td>
       </tr>
       <tr>
         <td>LLM API calls per run (avg)</td>
-        <td>366</td>
-        <td>593</td>
+        <td>395</td>
+        <td>666</td>
       </tr>
       <tr>
         <td>Total build time (avg)</td>
-        <td>~51 min</td>
-        <td>~77 min</td>
+        <td>~55 min</td>
+        <td>~83 min</td>
       </tr>
     </tbody>
   </table>
@@ -592,16 +592,16 @@
     <div style="text-align:center">
       <div style="font-size:72px;font-weight:800;letter-spacing:-3px;color:var(--accent);line-height:1">9%</div>
       <div style="font-size:14px;color:var(--muted);margin-top:8px;font-weight:500">SpacetimeDB budget on fixes</div>
-      <div style="font-size:13px;color:var(--muted);opacity:0.7">$1.14 of $12.07</div>
+      <div style="font-size:13px;color:var(--muted);opacity:0.7">$1.14 of $12.98</div>
     </div>
     <div style="font-size:32px;color:var(--muted);font-weight:300">vs</div>
     <div style="text-align:center">
-      <div style="font-size:72px;font-weight:800;letter-spacing:-3px;color:var(--accent2);line-height:1">39%</div>
+      <div style="font-size:72px;font-weight:800;letter-spacing:-3px;color:var(--accent2);line-height:1">38%</div>
       <div style="font-size:14px;color:var(--muted);margin-top:8px;font-weight:500">PostgreSQL budget on fixes</div>
-      <div style="font-size:13px;color:var(--muted);opacity:0.7">$6.60 of $16.85</div>
+      <div style="font-size:13px;color:var(--muted);opacity:0.7">$7.09 of $18.74</div>
     </div>
   </div>
-  <p style="text-align:center;color:var(--muted);font-size:14px;max-width:480px;margin:24px auto 0">For every $1 SpacetimeDB spent on repairs, PostgreSQL spent $5.79. The backend determines whether your AI ships features or debugs them.</p>
+  <p style="text-align:center;color:var(--muted);font-size:14px;max-width:480px;margin:24px auto 0">For every $1 SpacetimeDB spent on repairs, PostgreSQL spent $6.22. The backend determines whether your AI ships features or debugs them.</p>
 </section>
 
 <div class="divider"></div>
@@ -636,25 +636,25 @@
       <div class="bug-card-header">
         <div>
           <div class="bug-card-title">PostgreSQL Stack</div>
-          <div style="font-size:13px;color:var(--muted);margin-top:4px">avg 12.5 bugs / run &nbsp;|&nbsp; 25 total across 2 runs</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:4px">avg 13.5 bugs / run &nbsp;|&nbsp; 27 total across 2 runs</div>
         </div>
-        <div class="bug-count bad">12.5</div>
+        <div class="bug-count bad">13.5</div>
       </div>
       <div class="bug-bar-item">
         <div class="bug-bar-label"><span>Real-time state not updating</span><span>9</span></div>
-        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:36%;background:var(--accent2)"></div></div>
+        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:33%;background:var(--accent2)"></div></div>
       </div>
       <div class="bug-bar-item">
         <div class="bug-bar-label"><span>Missing UI element</span><span>5</span></div>
-        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:20%;background:var(--warning)"></div></div>
+        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:19%;background:var(--warning)"></div></div>
       </div>
       <div class="bug-bar-item">
         <div class="bug-bar-label"><span>Logic error / wrong value</span><span>4</span></div>
-        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:16%;background:var(--primary)"></div></div>
+        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:15%;background:var(--primary)"></div></div>
       </div>
       <div class="bug-bar-item">
-        <div class="bug-bar-label"><span>Race condition / data / crash</span><span>7</span></div>
-        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:28%;background:var(--muted)"></div></div>
+        <div class="bug-bar-label"><span>Race condition / data / crash</span><span>9</span></div>
+        <div class="bug-bar-track"><div class="bug-bar-fill" style="width:33%;background:var(--muted)"></div></div>
       </div>
     </div>
   </div>
@@ -665,12 +665,12 @@
 <section>
   <div class="section-label">Backend Code</div>
   <h2>The backend is where the gap is biggest</h2>
-  <p class="section-sub">SpacetimeDB's backend is <strong style="color:var(--text)">37% smaller on average</strong> (866 vs 1,373 lines). The entire layer of WebSocket management, REST routing, and SQL boilerplate is replaced by reducers and subscriptions.</p>
+  <p class="section-sub">SpacetimeDB's backend is <strong style="color:var(--text)">46% smaller on average</strong> (777 vs 1,451 lines). The entire layer of WebSocket management, REST routing, and SQL boilerplate is replaced by reducers and subscriptions.</p>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
     <div style="background:var(--surface);border:1px solid rgba(124,92,252,0.3);border-radius:16px;padding:28px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <div style="font-size:15px;font-weight:700">SpacetimeDB Backend</div>
-        <div style="font-size:28px;font-weight:800;color:var(--success);letter-spacing:-1px">~866 lines</div>
+        <div style="font-size:28px;font-weight:800;color:var(--success);letter-spacing:-1px">~777 lines</div>
       </div>
       <div style="font-size:13px;color:var(--muted);line-height:1.8">
         <div style="margin-bottom:8px"><span style="color:var(--primary-light);margin-right:8px">+</span>Declare tables as structs</div>
@@ -683,7 +683,7 @@
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <div style="font-size:15px;font-weight:700">PostgreSQL Stack Backend</div>
-        <div style="font-size:28px;font-weight:800;color:var(--accent2);letter-spacing:-1px">~1,373 lines</div>
+        <div style="font-size:28px;font-weight:800;color:var(--accent2);letter-spacing:-1px">~1,451 lines</div>
       </div>
       <div style="font-size:13px;color:var(--muted);line-height:1.8">
         <div style="margin-bottom:8px"><span style="color:var(--accent2);margin-right:8px">-</span>SQL schema migrations (Drizzle)</div>
@@ -695,7 +695,7 @@
     </div>
   </div>
   <div style="margin-top:24px;background:rgba(124,92,252,0.06);border:1px solid rgba(124,92,252,0.2);border-radius:12px;padding:20px 24px;font-size:14px;color:var(--muted);line-height:1.7">
-    <strong style="color:var(--primary-light)">Why this matters for AI:</strong> Every manually-wired Socket.io emit is a potential bug. In our benchmark, missed wiring was the <strong style="color:var(--text)">single largest bug category</strong> for PostgreSQL across both runs (36% of all bugs). SpacetimeDB eliminates this error class entirely. The AI declares what the data is; the platform handles how it propagates.
+    <strong style="color:var(--primary-light)">Why this matters for AI:</strong> Every manually-wired Socket.io emit is a potential bug. In our benchmark, missed wiring was the <strong style="color:var(--text)">single largest bug category</strong> for PostgreSQL across both runs (33% of all bugs). SpacetimeDB eliminates this error class entirely. The AI declares what the data is; the platform handles how it propagates.
   </div>
 </section>
 
@@ -718,6 +718,7 @@
     <div class="level-cell"><div class="level-cell-label">L9</div><div class="level-cell-name">Private Rooms</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-green"></div><div class="level-dot dot-green"></div></div></div></div>
     <div class="level-cell"><div class="level-cell-label">L10</div><div class="level-cell-name">Activity</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-green"></div><div class="level-dot dot-green"></div></div></div></div>
     <div class="level-cell"><div class="level-cell-label">L11</div><div class="level-cell-name">Draft Sync</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-yellow" title="Run 1: 1 fix"></div><div class="level-dot dot-green" title="Run 2: clean"></div></div></div></div>
+    <div class="level-cell"><div class="level-cell-label">L12</div><div class="level-cell-name">Anon Migration</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-green" title="Run 1: clean"></div><div class="level-dot dot-green" title="Run 2: clean"></div></div></div></div>
   </div>
   <div style="margin-bottom:16px;font-size:13px;color:var(--muted);font-weight:600">PostgreSQL Stack</div>
   <div class="level-grid">
@@ -732,6 +733,7 @@
     <div class="level-cell"><div class="level-cell-label">L9</div><div class="level-cell-name">Private Rooms</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-red" title="Run 1: 7 bugs"></div><div class="level-dot dot-green" title="Run 2: clean"></div></div></div></div>
     <div class="level-cell"><div class="level-cell-label">L10</div><div class="level-cell-name">Activity</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-green" title="Run 1: clean"></div><div class="level-dot dot-yellow" title="Run 2: 2 bugs"></div></div></div></div>
     <div class="level-cell"><div class="level-cell-label">L11</div><div class="level-cell-name">Draft Sync</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-green"></div><div class="level-dot dot-green"></div></div></div></div>
+    <div class="level-cell"><div class="level-cell-label">L12</div><div class="level-cell-name">Anon Migration</div><div class="level-runs"><div class="level-run-row"><div class="level-dot dot-yellow" title="Run 1: 1 fix (guest persistence)"></div><div class="level-dot dot-red" title="Run 2: 1 bug, 2 fix attempts (guest persistence)"></div></div></div></div>
   </div>
   <div style="display:flex;gap:24px;margin-top:20px;font-size:13px;color:var(--muted)">
     <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--success);margin-right:6px;vertical-align:middle"></span>Passed first try</span>
@@ -750,12 +752,12 @@
     <div class="why-card">
       <div class="why-icon">&#9889;</div>
       <div class="why-title">Real-time is built in</div>
-      <div class="why-body">SpacetimeDB's subscription model propagates state changes automatically. The AI declares the data model — the platform handles delivery. <strong>No WebSocket wiring, no event routing, nothing to forget.</strong> 36% of PostgreSQL bugs across both runs were missed wiring that SpacetimeDB simply doesn't require.</div>
+      <div class="why-body">SpacetimeDB's subscription model propagates state changes automatically. The AI declares the data model — the platform handles delivery. <strong>No WebSocket wiring, no event routing, nothing to forget.</strong> 33% of PostgreSQL bugs across both runs were missed wiring that SpacetimeDB simply doesn't require.</div>
     </div>
     <div class="why-card">
       <div class="why-icon">&#129504;</div>
-      <div class="why-title">37% less server code to reason about</div>
-      <div class="why-body">SpacetimeDB collapses the backend into a single coherent layer — <strong>866 lines vs 1,373</strong>. Less code means less context to track across sessions, fewer places to introduce inconsistencies, and a tighter feedback loop when something does go wrong.</div>
+      <div class="why-title">46% less server code to reason about</div>
+      <div class="why-body">SpacetimeDB collapses the backend into a single coherent layer — <strong>777 lines vs 1,451</strong>. Less code means less context to track across sessions, fewer places to introduce inconsistencies, and a tighter feedback loop when something does go wrong.</div>
     </div>
     <div class="why-card">
       <div class="why-icon">&#128640;</div>
@@ -776,12 +778,12 @@
       <div class="consistent-metric">PG bugs vs STDB bugs</div>
       <div class="consistent-values">
         <div class="consistent-val">
-          <div class="consistent-val-num" style="color:var(--accent2)">3.6x</div>
+          <div class="consistent-val-num" style="color:var(--accent2)">3.8x</div>
           <div class="consistent-val-run">Run 1</div>
         </div>
         <div class="consistent-arrow">-&gt;</div>
         <div class="consistent-val">
-          <div class="consistent-val-num" style="color:var(--accent2)">3.5x</div>
+          <div class="consistent-val-num" style="color:var(--accent2)">4x</div>
           <div class="consistent-val-run">Run 2</div>
         </div>
       </div>
@@ -790,12 +792,12 @@
       <div class="consistent-metric">PG cost premium over STDB</div>
       <div class="consistent-values">
         <div class="consistent-val">
-          <div class="consistent-val-num" style="color:var(--warning)">+30%</div>
+          <div class="consistent-val-num" style="color:var(--warning)">+34%</div>
           <div class="consistent-val-run">Run 1</div>
         </div>
         <div class="consistent-arrow">-&gt;</div>
         <div class="consistent-val">
-          <div class="consistent-val-num" style="color:var(--warning)">+50%</div>
+          <div class="consistent-val-num" style="color:var(--warning)">+56%</div>
           <div class="consistent-val-run">Run 2</div>
         </div>
       </div>
@@ -804,12 +806,12 @@
       <div class="consistent-metric">PG code vs STDB code</div>
       <div class="consistent-values">
         <div class="consistent-val">
-          <div class="consistent-val-num" style="color:var(--primary-light)">+27%</div>
+          <div class="consistent-val-num" style="color:var(--primary-light)">+37%</div>
           <div class="consistent-val-run">Run 1</div>
         </div>
         <div class="consistent-arrow">-&gt;</div>
         <div class="consistent-val">
-          <div class="consistent-val-num" style="color:var(--primary-light)">+30%</div>
+          <div class="consistent-val-num" style="color:var(--primary-light)">+47%</div>
           <div class="consistent-val-run">Run 2</div>
         </div>
       </div>
@@ -822,7 +824,7 @@
 <section>
   <div class="quote-section">
     <span class="quote-mark">"</span>
-    <p class="quote-text">39% of PostgreSQL's AI budget went to fixing bugs the AI itself created. <span>The backend you choose determines whether your AI ships features or debugs them.</span></p>
+    <p class="quote-text">38% of PostgreSQL's AI budget went to fixing bugs the AI itself created. <span>The backend you choose determines whether your AI ships features or debugs them.</span></p>
     <p class="quote-source">From 2 controlled benchmark runs, April 2026</p>
   </div>
 </section>
@@ -860,7 +862,7 @@
 
 <section style="padding:24px 0">
   <p style="max-width:720px;margin:0 auto;text-align:center;font-size:13px;color:var(--muted);line-height:1.7">
-    <strong style="color:var(--text)">Methodology:</strong> Both runs used Claude Sonnet 4.6. Each backend received its own tailored guidelines (setup, build, deploy instructions). The app was built via sequential upgrade: 11 feature levels added one at a time, with identical feature prompts and bug fixes between levels. Cost was measured via OpenTelemetry instrumentation of the Claude API.
+    <strong style="color:var(--text)">Methodology:</strong> Both runs used Claude Sonnet 4.6. Each backend received its own tailored guidelines (setup, build, deploy instructions). The app was built via sequential upgrade: 12 feature levels added one at a time, with identical feature prompts and bug fixes between levels. Cost was measured via OpenTelemetry instrumentation of the Claude API.
   </p>
 </section>
 
@@ -880,8 +882,8 @@ Chart.defaults.color = '#6b6b8a';
 Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 // Cost breakdown bar chart, averaged across 2 runs
-// STDB avg: upgrades (10.99+10.86)/2=$10.93, fixes (1.47+0.81)/2=$1.14
-// PG avg: upgrades (7.50+13.00)/2=$10.25, fixes (8.72+4.47)/2=$6.60
+// STDB avg: upgrades (11.85+11.81)/2=$11.83, fixes (1.47+0.81)/2=$1.14
+// PG avg: upgrades (8.74+14.56)/2=$11.65, fixes (9.06+5.11)/2=$7.09
 new Chart(document.getElementById('costChart'), {
   type: 'bar',
   data: {
@@ -889,14 +891,14 @@ new Chart(document.getElementById('costChart'), {
     datasets: [
       {
         label: 'Upgrades',
-        data: [10.93, 10.25],
+        data: [11.83, 11.65],
         backgroundColor: [stdbColor, pgColor],
         borderRadius: 6,
         borderSkipped: false,
       },
       {
         label: 'Fixes',
-        data: [1.14, 6.60],
+        data: [1.14, 7.09],
         backgroundColor: ['rgba(0,229,160,0.45)', 'rgba(51,103,145,0.5)'],
         borderRadius: 6,
         borderSkipped: false,
@@ -923,15 +925,15 @@ new Chart(document.getElementById('costChart'), {
 });
 
 // Cumulative cost line chart, all 4 series
-const levels = ['L1','L2','L3','L4','L5','L6','L7','L8','L9','L10','L11'];
+const levels = ['L1','L2','L3','L4','L5','L6','L7','L8','L9','L10','L11','L12'];
 
 // Run 2 (measured)
-const stdbRun2 = [1.65, 2.83, 3.82, 4.41, 5.33, 6.83, 8.08, 9.06, 10.45, 11.27, 11.67];
-const pgRun2   = [2.53, 3.19, 4.26, 5.11, 6.01, 10.34, 11.91, 13.83, 15.60, 17.06, 17.47];
+const stdbRun2 = [1.65, 2.83, 3.82, 4.41, 5.33, 6.83, 8.08, 9.06, 10.45, 11.27, 11.67, 12.62];
+const pgRun2   = [2.53, 3.19, 4.26, 5.11, 6.01, 10.34, 11.91, 13.83, 15.60, 17.06, 17.47, 19.68];
 
 // Run 1 (reconstructed from totals and fix timing)
-const stdbRun1 = [1.37, 2.37, 3.37, 4.37, 5.74, 7.11, 8.11, 9.11, 10.11, 11.11, 12.46];
-const pgRun1   = [1.77, 2.45, 3.13, 3.81, 5.04, 6.81, 9.12, 10.89, 14.84, 15.52, 16.20];
+const stdbRun1 = [1.37, 2.37, 3.37, 4.37, 5.74, 7.11, 8.11, 9.11, 10.11, 11.11, 12.46, 13.33];
+const pgRun1   = [1.77, 2.45, 3.13, 3.81, 5.04, 6.81, 9.12, 10.89, 14.84, 15.52, 16.20, 17.80];
 
 new Chart(document.getElementById('cumulativeChart'), {
   type: 'line',
@@ -1003,8 +1005,8 @@ new Chart(document.getElementById('cumulativeChart'), {
 });
 
 // Bugs per level, averaged across both runs
-const stdbBugsAvg = [1, 0, 0.5, 0, 1, 0.5, 0, 0, 0, 0, 0.5];
-const pgBugsAvg   = [2, 0, 0.5, 0, 0.5, 2, 2, 1, 3.5, 1, 0];
+const stdbBugsAvg = [1, 0, 0.5, 0, 1, 0.5, 0, 0, 0, 0, 0.5, 0];
+const pgBugsAvg   = [2, 0, 0.5, 0, 0.5, 2, 2, 1, 3.5, 1, 0, 1];
 
 new Chart(document.getElementById('bugsChart'), {
   type: 'bar',
@@ -1045,9 +1047,9 @@ new Chart(document.getElementById('bugsChart'), {
   }
 });
 
-// LOC chart, hand-written only, averaged across both runs
-// STDB avg: backend 866, frontend 1885
-// PG avg: backend 1373, frontend 2149
+// LOC chart, hand-written code only (excludes CSS), averaged across both runs
+// STDB avg: backend 777, frontend 1527
+// PG avg: backend 1451, frontend 1837
 new Chart(document.getElementById('locChart'), {
   type: 'bar',
   data: {
@@ -1055,14 +1057,14 @@ new Chart(document.getElementById('locChart'), {
     datasets: [
       {
         label: 'Backend',
-        data: [866, 1373],
+        data: [777, 1451],
         backgroundColor: [stdbColor, pgColor],
         borderRadius: 6,
         borderSkipped: false,
       },
       {
         label: 'Frontend',
-        data: [1885, 2149],
+        data: [1527, 1837],
         backgroundColor: ['rgba(124,92,252,0.75)', 'rgba(124,92,252,0.45)'],
         borderRadius: 6,
         borderSkipped: false,

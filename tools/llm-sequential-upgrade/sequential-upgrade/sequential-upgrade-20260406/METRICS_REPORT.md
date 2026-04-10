@@ -1,9 +1,9 @@
-# AI App Generation Benchmark — Metrics Report (L1–L11)
+# AI App Generation Benchmark — Metrics Report (L1–L12)
 
-**Date:** 2026-04-07
+**Date:** 2026-04-07 (L1–L11), 2026-04-10 (L12 added)
 **Variant:** Sequential Upgrade (one feature group added per level)
 **Model:** Claude Sonnet (claude-sonnet-4-6)
-**Levels completed:** L1–L11 (11 feature groups)
+**Levels completed:** L1–L12 (12 feature groups)
 **Backends:** SpacetimeDB vs PostgreSQL (Express + Socket.io + Drizzle ORM)
 
 ---
@@ -35,18 +35,18 @@ SpacetimeDB required detailed SDK documentation because it uses a novel propriet
 
 | | SpacetimeDB | PostgreSQL |
 |-|------------|------------|
-| Upgrades (L1–L11) | $10.86 | $13.00 |
-| Fixes | $0.81 | $4.47 |
-| **Total** | **$11.67** | **$17.47** |
-| **Combined** | | **$29.14** |
+| Upgrades (L1–L12) | $11.81 | $14.56 |
+| Fixes | $0.81 | $5.11 |
+| **Total** | **$12.62** | **$19.68** |
+| **Combined** | | **$32.30** |
 
-### Cost per Feature Group (11 feature groups)
+### Cost per Feature Group (12 feature groups)
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Cost / feature (all-in) | $1.06 | $1.59 |
-| Cost / feature (upgrades only) | $0.99 | $1.18 |
-| Cost / feature (fixes only) | $0.07 | $0.41 |
+| Cost / feature (all-in) | $1.05 | $1.64 |
+| Cost / feature (upgrades only) | $0.98 | $1.21 |
+| Cost / feature (fixes only) | $0.07 | $0.43 |
 
 ---
 
@@ -54,22 +54,22 @@ SpacetimeDB required detailed SDK documentation because it uses a novel propriet
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Fresh input tokens | 21,460 | 28,977 |
-| Fresh output tokens | 215,871 | 278,353 |
-| Cache read tokens | 20,890,518 | 35,427,182 |
-| Cache creation tokens | 607,859 | 705,278 |
-| Total API calls | 362 | 624 |
+| Fresh input tokens | 21,490 | 29,081 |
+| Fresh output tokens | 226,079 | 304,198 |
+| Cache read tokens | 22,870,337 | 40,443,349 |
+| Cache creation tokens | 661,888 | 792,679 |
+| Total API calls | 390 | 718 |
 
-**Cache leverage** — for every 1 fresh input token, ~974 cache tokens were read (SpacetimeDB) and ~1,222 (PostgreSQL). The sequential upgrade approach with prompt caching is highly economical: prior context is cached and reused across sessions.
+**Cache leverage** — for every 1 fresh input token, ~1,064 cache tokens were read (SpacetimeDB) and ~1,391 (PostgreSQL). The sequential upgrade approach with prompt caching is highly economical: prior context is cached and reused across sessions.
 
 ### Tokens per Feature Group
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Fresh output tokens / feature | ~19,625 | ~25,305 |
-| API calls / feature | 32.9 | 56.7 |
+| Fresh output tokens / feature | ~18,840 | ~25,350 |
+| API calls / feature | 32.5 | 59.8 |
 
-PostgreSQL required ~72% more API calls and ~29% more output tokens per feature, primarily due to fix iterations.
+PostgreSQL required ~84% more API calls and ~35% more output tokens per feature, primarily due to fix iterations.
 
 ---
 
@@ -77,13 +77,15 @@ PostgreSQL required ~72% more API calls and ~29% more output tokens per feature,
 
 | | SpacetimeDB | PostgreSQL |
 |-|------------|------------|
-| Backend (hand-written) | 1,072 | 1,625 |
-| Frontend (hand-written) | 1,547 | 1,770 |
-| Generated bindings | 1,134 | 0 |
-| **Total hand-written** | **2,619** | **3,395** |
-| **LOC / feature group** | **238** | **309** |
+| Backend (hand-written) | 876 | 1,710 |
+| Frontend (hand-written, incl. CSS) | 2,740 | 2,727 |
+| Generated bindings | 1,174 | 0 |
+| **Total hand-written** | **3,616** | **4,437** |
+| **LOC / feature group** | **301** | **370** |
 
-SpacetimeDB produced **23% less hand-written code** overall, with the backend being **34% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate.
+SpacetimeDB produced **19% less hand-written code** overall, with the backend being **49% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate. The frontend counts are nearly identical because both backends drive the same React + Vite UI.
+
+*Methodology: counts all hand-written `.ts`/`.tsx`/`.css` files in the app's `src/` and `server/src/` directories at L12, excluding `node_modules`, `dist`, and `level-N` snapshot copies. Generated bindings counted separately.*
 
 ---
 
@@ -104,17 +106,18 @@ SpacetimeDB produced **23% less hand-written code** overall, with the backend be
 | L9 | Private Rooms + Direct Messages | 0 | 0 |
 | L10 | Room Activity Indicators | 0 | 2 |
 | L11 | Draft Sync | 0 | 0 |
-| **Total** | | **2** | **7** |
+| L12 | Anonymous to Registered Migration | 0 | 1 |
+| **Total** | | **2** | **8** |
 
 ### Bug Summary
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Total bugs found | 2 | 7 |
-| Bugs per feature group | 0.18 | 0.64 |
-| Levels with zero bugs | 9 / 11 (82%) | 6 / 11 (55%) |
-| Fix sessions required | 1 | 8 |
-| Multi-attempt fixes | 0 | 1 (L6 kick — 3 attempts) |
+| Total bugs found | 2 | 8 |
+| Bugs per feature group | 0.17 | 0.67 |
+| Levels with zero bugs | 10 / 12 (83%) | 6 / 12 (50%) |
+| Fix sessions required | 1 | 10 |
+| Multi-attempt fixes | 0 | 2 (L6 kick — 3 attempts; L12 guest persistence — 2 attempts) |
 
 ### Bug Categories
 
@@ -124,14 +127,15 @@ SpacetimeDB produced **23% less hand-written code** overall, with the backend be
 | Real-time state not updating | 1 (L1: unread badge) |
 | SDK API misuse | 1 (L3: Timestamp constructor wrong type) |
 
-**PostgreSQL (7 bugs):**
+**PostgreSQL (8 bugs):**
 | Category | Count |
 |----------|-------|
 | Real-time state not updating | 4 (L1: unread badge; L6: member panel; L10: activity reset, thread unread badge) |
+| Data not persisted | 1 (L12: guest session lost on refresh) |
 | Logic error (wrong value/enforcement) | 2 (L6: kick re-entry not blocked; L7: last-active timestamp stale) |
 | Runtime crash | 1 (L3: messages not iterable after schema change) |
 
-Real-time state management was PostgreSQL's biggest weakness — requiring manual Socket.io event wiring made it easy to miss subscription cases that SpacetimeDB handles automatically via its subscription model.
+Real-time state management was PostgreSQL's biggest weakness — requiring manual Socket.io event wiring made it easy to miss subscription cases that SpacetimeDB handles automatically via its subscription model. The L12 guest-persistence bug is a related architectural issue: SpacetimeDB's identity token is automatically persisted in `localStorage` by the SDK, so a guest's session survives a page refresh for free. PostgreSQL had to explicitly implement `localStorage` + a rehydration fetch endpoint, and the LLM missed it in both the original upgrade and the first fix attempt (the fix introduced a route-ordering regression that broke `/api/users/online`, requiring a second fix iteration).
 
 ---
 
@@ -139,11 +143,11 @@ Real-time state management was PostgreSQL's biggest weakness — requiring manua
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Zero-bug generation rate | 82% | 55% |
-| Fix cost as % of total | 6.9% | 25.6% |
+| Zero-bug generation rate | 83% | 50% |
+| Fix cost as % of total | 6.4% | 26.0% |
 | Avg fix cost per bug | $0.40 | $0.64 |
-| Multi-attempt bugs | 0 | 1 |
-| Fix sessions per bug | 0.5 | 1.14 |
+| Multi-attempt bugs | 0 | 2 |
+| Fix sessions per bug | 0.5 | 1.25 |
 
 ---
 
@@ -152,33 +156,36 @@ Real-time state management was PostgreSQL's biggest weakness — requiring manua
 | Phase | SpacetimeDB | PostgreSQL |
 |-------|------------|------------|
 | L1 generation | 4m 41s | ~7m |
-| Per-level upgrade (avg) | 4m 28s | 4m 30s |
-| Per-fix session (avg) | 4m 26s | 3m 25s |
-| **Total wall time** | **~54m** | **~77m** |
+| Per-level upgrade (avg) | 4m 21s | 4m 32s |
+| Per-fix session (avg) | 4m 26s | 2m 59s |
+| **Total wall time** | **~57m** | **~84m** |
 
-Both backends spent nearly identical time on upgrades (~4m 30s avg). All of PostgreSQL's extra time came from fix iterations — 27 additional minutes in fix sessions vs SpacetimeDB.
+Both backends spent nearly identical time on upgrades (~4m 25s avg). All of PostgreSQL's extra time came from fix iterations — 25 additional minutes in fix sessions vs SpacetimeDB.
 
 ---
 
 ## Key Takeaways
 
 ### 1. Removing domain bias strengthened the STDB advantage
-In the previous run (20260403), SpacetimeDB's SDK docs contained chat-domain examples (user/message/sendMessage tables). After neutralizing this, SpacetimeDB still had 3.5× fewer bugs (2 vs 7) and cost 33% less. The advantage is real, not an artifact of domain familiarity.
+In the previous run (20260403), SpacetimeDB's SDK docs contained chat-domain examples (user/message/sendMessage tables). After neutralizing this, SpacetimeDB still had 4× fewer bugs (2 vs 8) and cost 36% less. The advantage is real, not an artifact of domain familiarity.
 
 ### 2. Real-time state is PostgreSQL's systemic weakness
-4 of 7 PG bugs were real-time state not updating. In SpacetimeDB, subscriptions automatically push state changes to clients — the AI doesn't need to wire up individual Socket.io events. In PostgreSQL, each state change requires a manually-authored emit, and missing any one causes a bug.
+4 of 8 PG bugs were real-time state not updating. In SpacetimeDB, subscriptions automatically push state changes to clients — the AI doesn't need to wire up individual Socket.io events. In PostgreSQL, each state change requires a manually-authored emit, and missing any one causes a bug.
 
-### 3. Fix cost disparity is dramatic
-SpacetimeDB spent $0.81 on fixes (6.9% of total). PostgreSQL spent $4.47 (25.6%). The L6 kick-enforcement bug alone required 3 fix sessions at $3.06, demonstrating that some correctness properties (persistent ban state, server-side enforcement) are genuinely hard for the AI to reason about in a REST+WebSocket architecture.
+### 3. Free session persistence for STDB; manual for PG
+The L12 anonymous migration exposed a second architectural advantage: SpacetimeDB's identity token is automatically persisted to `localStorage` by the SDK, so a guest's session survives a page refresh without any code. PostgreSQL had to explicitly implement client-side session storage + a user-lookup endpoint — and got it wrong twice (missed entirely in the upgrade; first fix introduced a route-ordering regression; a second fix iteration was required). Both PG runs (20260403 and 20260406) independently hit the same bug, confirming it's structural, not stochastic.
 
-### 4. LOC is a maintenance proxy
-23% less hand-written code in SpacetimeDB means smaller context windows for future upgrades, less surface area for bugs, and lower ongoing maintenance cost. The backend is particularly lean (1,072 vs 1,625 lines) — SpacetimeDB reducers replace manual routing, SQL, and WebSocket plumbing.
+### 4. Fix cost disparity is dramatic
+SpacetimeDB spent $0.81 on fixes (6.4% of total). PostgreSQL spent $5.11 (26.0%). The L6 kick-enforcement bug alone required 3 fix sessions at $3.06, and the L12 guest-persistence bug required 2 fix sessions ($0.65), demonstrating that some correctness properties (persistent ban state, client-side session management) are genuinely hard for the AI to reason about in a REST+WebSocket architecture.
 
-### 5. Sequential upgrade economics remain strong
-20.9M cache tokens read by SpacetimeDB, 35.4M by PostgreSQL — at ~$0.30/1M, this represents enormous cost savings vs a from-scratch approach. Each upgrade session benefits from the full prior context being cached.
+### 5. LOC is a maintenance proxy
+19% less hand-written code in SpacetimeDB means smaller context windows for future upgrades, less surface area for bugs, and lower ongoing maintenance cost. The backend is particularly lean (876 vs 1,710 lines at L12) — SpacetimeDB reducers replace manual routing, SQL, and WebSocket plumbing. Frontend LOC is essentially tied because both backends drive the same React UI.
 
-### 6. Per-upgrade costs are similar; fix costs are not
-SpacetimeDB and PostgreSQL had nearly identical per-upgrade costs ($0.99 vs $1.18 per feature) and identical avg upgrade times (~4m 30s). The entire cost and time gap is explained by fix iterations — not generation difficulty.
+### 6. Sequential upgrade economics remain strong
+22.9M cache tokens read by SpacetimeDB, 40.4M by PostgreSQL — at ~$0.30/1M, this represents enormous cost savings vs a from-scratch approach. Each upgrade session benefits from the full prior context being cached.
+
+### 7. Per-upgrade costs are similar; fix costs are not
+SpacetimeDB and PostgreSQL had nearly identical per-upgrade costs ($0.98 vs $1.21 per feature) and similar avg upgrade times (~4m 25s). The entire cost and time gap is explained by fix iterations — not generation difficulty.
 
 ---
 
@@ -186,13 +193,13 @@ SpacetimeDB and PostgreSQL had nearly identical per-upgrade costs ($0.99 vs $1.1
 
 | Metric | Run 1 (20260403) | Run 2 (20260406) | Change |
 |--------|-----------------|-----------------|--------|
-| STDB total cost | $12.46 | $11.67 | -6% |
-| PG total cost | $16.22 | $17.47 | +8% |
+| STDB total cost | $13.33 | $12.62 | -5% |
+| PG total cost | $17.80 | $19.68 | +11% |
 | STDB bugs | 5 | 2 | -60% |
-| PG bugs | 18 | 7 | -61% |
+| PG bugs | 19 | 8 | -58% |
 | STDB fix sessions | 4 | 1 | -75% |
-| PG fix sessions | 16 | 8 | -50% |
-| STDB LOC | 2,881 | 2,619 | -9% |
-| PG LOC | 3,647 | 3,395 | -7% |
+| PG fix sessions | 17 | 10 | -41% |
+| STDB LOC | 2,952 | 3,616 | +22% |
+| PG LOC | 3,892 | 4,437 | +14% |
 
-Both backends improved substantially after fixing the confounds (domain hints, PORT contradictions, prescriptive instructions). The bug reduction is particularly notable — 60% fewer bugs across the board despite the same feature set and model.
+Both backends improved substantially after fixing the confounds (domain hints, PORT contradictions, prescriptive instructions). The bug reduction is particularly notable — ~60% fewer bugs across the board despite the same feature set and model. Both runs agree on the direction of the PG-vs-STDB gap (STDB cheaper, fewer bugs); the refined 20260406 methodology widens it.

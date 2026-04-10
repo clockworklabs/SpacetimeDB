@@ -1,9 +1,10 @@
 {
   "meta": {
     "date": "2026-04-07",
+    "l12_added": "2026-04-10",
     "variant": "sequential-upgrade",
     "model": "claude-sonnet-4-6",
-    "levels_completed": 11,
+    "levels_completed": 12,
     "run_id": "sequential-upgrade-20260406"
   },
   "guidelines": {
@@ -26,59 +27,60 @@
   },
   "cost": {
     "spacetime": {
-      "upgrades_usd": 10.86,
+      "upgrades_usd": 11.81,
       "fixes_usd": 0.81,
-      "total_usd": 11.67,
-      "per_feature_usd": 1.06,
-      "per_feature_upgrades_usd": 0.99,
+      "total_usd": 12.62,
+      "per_feature_usd": 1.05,
+      "per_feature_upgrades_usd": 0.98,
       "per_feature_fixes_usd": 0.07
     },
     "postgres": {
-      "upgrades_usd": 13.00,
-      "fixes_usd": 4.47,
-      "total_usd": 17.47,
-      "per_feature_usd": 1.59,
-      "per_feature_upgrades_usd": 1.18,
-      "per_feature_fixes_usd": 0.41
+      "upgrades_usd": 14.56,
+      "fixes_usd": 5.11,
+      "total_usd": 19.68,
+      "per_feature_usd": 1.64,
+      "per_feature_upgrades_usd": 1.21,
+      "per_feature_fixes_usd": 0.43
     },
-    "combined_usd": 29.14,
-    "pg_premium_usd": 5.80,
-    "pg_premium_pct": 50
+    "combined_usd": 32.30,
+    "pg_premium_usd": 7.06,
+    "pg_premium_pct": 56
   },
   "tokens": {
     "spacetime": {
-      "fresh_input": 21460,
-      "fresh_output": 215871,
-      "cache_read": 20890518,
-      "cache_creation": 607859,
-      "total_api_calls": 362,
-      "output_per_feature": 19625,
-      "calls_per_feature": 32.9
+      "fresh_input": 21490,
+      "fresh_output": 226079,
+      "cache_read": 22870337,
+      "cache_creation": 661888,
+      "total_api_calls": 390,
+      "output_per_feature": 18840,
+      "calls_per_feature": 32.5
     },
     "postgres": {
-      "fresh_input": 28977,
-      "fresh_output": 278353,
-      "cache_read": 35427182,
-      "cache_creation": 705278,
-      "total_api_calls": 624,
-      "output_per_feature": 25305,
-      "calls_per_feature": 56.7
+      "fresh_input": 29081,
+      "fresh_output": 304198,
+      "cache_read": 40443349,
+      "cache_creation": 792679,
+      "total_api_calls": 718,
+      "output_per_feature": 25350,
+      "calls_per_feature": 59.8
     }
   },
   "lines_of_code": {
+    "methodology_note": "L12 LOC re-measured with consistent rules across both runs: counts all .ts/.tsx/.css files in backend/server src/ and client/src/ directories, excluding node_modules, dist, and level-N snapshots. Generated bindings counted separately. Historical L1-L11 numbers in this report used inconsistent counting (CSS included for 20260403, excluded for 20260406); the L12 numbers below are the corrected consistent measurement.",
     "spacetime": {
-      "backend_handwritten": 1072,
-      "frontend_handwritten": 1547,
-      "generated_bindings": 1134,
-      "total_handwritten": 2619,
-      "loc_per_feature": 238
+      "backend_handwritten": 876,
+      "frontend_handwritten": 2740,
+      "generated_bindings": 1174,
+      "total_handwritten": 3616,
+      "loc_per_feature": 301
     },
     "postgres": {
-      "backend_handwritten": 1625,
-      "frontend_handwritten": 1770,
+      "backend_handwritten": 1710,
+      "frontend_handwritten": 2727,
       "generated_bindings": 0,
-      "total_handwritten": 3395,
-      "loc_per_feature": 309
+      "total_handwritten": 4437,
+      "loc_per_feature": 370
     }
   },
   "bugs": {
@@ -93,14 +95,15 @@
       { "level": 8, "feature": "Message Threading", "stdb": 0, "pg": 0 },
       { "level": 9, "feature": "Private Rooms + Direct Messages", "stdb": 0, "pg": 0 },
       { "level": 10, "feature": "Room Activity Indicators", "stdb": 0, "pg": 2 },
-      { "level": 11, "feature": "Draft Sync", "stdb": 0, "pg": 0 }
+      { "level": 11, "feature": "Draft Sync", "stdb": 0, "pg": 0 },
+      { "level": 12, "feature": "Anonymous to Registered Migration", "stdb": 0, "pg": 1 }
     ],
     "summary": {
       "spacetime": {
         "total_bugs": 2,
-        "bugs_per_feature": 0.18,
-        "zero_bug_levels": 9,
-        "zero_bug_rate_pct": 82,
+        "bugs_per_feature": 0.17,
+        "zero_bug_levels": 10,
+        "zero_bug_rate_pct": 83,
         "fix_sessions": 1,
         "multi_attempt_bugs": 0,
         "categories": {
@@ -109,14 +112,15 @@
         }
       },
       "postgres": {
-        "total_bugs": 7,
-        "bugs_per_feature": 0.64,
+        "total_bugs": 8,
+        "bugs_per_feature": 0.67,
         "zero_bug_levels": 6,
-        "zero_bug_rate_pct": 55,
-        "fix_sessions": 8,
-        "multi_attempt_bugs": 1,
+        "zero_bug_rate_pct": 50,
+        "fix_sessions": 10,
+        "multi_attempt_bugs": 2,
         "categories": {
           "realtime_state_not_updating": 4,
+          "data_not_persisted": 1,
           "logic_error": 2,
           "runtime_crash": 1
         }
@@ -125,47 +129,47 @@
   },
   "timing_seconds": {
     "spacetime": {
-      "total_duration": 3211.6,
-      "upgrade_total": 2945.4,
-      "fix_total": 266.2,
-      "upgrade_avg": 267.8,
-      "fix_avg": 266.2,
-      "total_minutes": 53.5
+      "total_duration": 3400.08,
+      "upgrade_total": 3133.85,
+      "fix_total": 266.23,
+      "upgrade_avg": 261.2,
+      "fix_avg": 266.23,
+      "total_minutes": 56.7
     },
     "postgres": {
-      "total_duration": 4609.9,
-      "upgrade_total": 2969.5,
-      "fix_total": 1640.4,
-      "upgrade_avg": 269.9,
-      "fix_avg": 205.0,
-      "total_minutes": 76.8
+      "total_duration": 5066.39,
+      "upgrade_total": 3272.32,
+      "fix_total": 1794.07,
+      "upgrade_avg": 272.7,
+      "fix_avg": 179.4,
+      "total_minutes": 84.4
     }
   },
   "efficiency": {
     "spacetime": {
-      "fix_cost_pct_of_total": 6.9,
+      "fix_cost_pct_of_total": 6.4,
       "avg_fix_cost_per_bug_usd": 0.40,
       "multi_attempt_bugs": 0,
       "fix_sessions_per_bug": 0.5
     },
     "postgres": {
-      "fix_cost_pct_of_total": 25.6,
+      "fix_cost_pct_of_total": 26.0,
       "avg_fix_cost_per_bug_usd": 0.64,
-      "multi_attempt_bugs": 1,
-      "fix_sessions_per_bug": 1.14
+      "multi_attempt_bugs": 2,
+      "fix_sessions_per_bug": 1.25
     }
   },
   "vs_previous_run": {
     "run_id_previous": "sequential-upgrade-20260403",
     "spacetime": {
-      "cost_change_pct": -6,
+      "cost_change_pct": -5,
       "bugs_change": -3,
       "fix_sessions_change": -3
     },
     "postgres": {
-      "cost_change_pct": 8,
+      "cost_change_pct": 11,
       "bugs_change": -11,
-      "fix_sessions_change": -8
+      "fix_sessions_change": -7
     }
   }
 }

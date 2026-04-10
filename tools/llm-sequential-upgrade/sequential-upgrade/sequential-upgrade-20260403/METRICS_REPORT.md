@@ -1,9 +1,9 @@
-# AI App Generation Benchmark — Metrics Report (L1–L11)
+# AI App Generation Benchmark — Metrics Report (L1–L12)
 
-**Date:** 2026-04-04
+**Date:** 2026-04-04 (L1–L11), 2026-04-10 (L12 added)
 **Variant:** Sequential Upgrade (one feature group added per level)
 **Model:** Claude Sonnet (claude-sonnet-4-6)
-**Levels completed:** L1–L11 (13 feature groups, 10+ features per feature group)
+**Levels completed:** L1–L12 (14 feature groups, 10+ features per feature group)
 **Backends:** SpacetimeDB vs PostgreSQL (Express + Socket.io + Drizzle ORM)
 
 ---
@@ -37,18 +37,18 @@ Both confounds have been corrected for future runs (SpacetimeDB examples general
 
 | | SpacetimeDB | PostgreSQL |
 |-|------------|------------|
-| Upgrades (L1–L11) | $10.99 | $7.50 |
-| Fixes | $1.47 | $8.72 |
-| **Total** | **$12.46** | **$16.22** |
-| **Combined** | | **$28.68** |
+| Upgrades (L1–L12) | $11.85 | $8.74 |
+| Fixes | $1.47 | $9.06 |
+| **Total** | **$13.33** | **$17.80** |
+| **Combined** | | **$31.13** |
 
-### Cost per Feature Group (13 feature groups through L11)
+### Cost per Feature Group (14 feature groups through L12)
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Cost / feature (all-in) | $0.96 | $1.25 |
-| Cost / feature (upgrades only) | $0.85 | $0.58 |
-| Cost / feature (fixes only) | $0.11 | $0.67 |
+| Cost / feature (all-in) | $0.95 | $1.27 |
+| Cost / feature (upgrades only) | $0.85 | $0.62 |
+| Cost / feature (fixes only) | $0.11 | $0.65 |
 
 ---
 
@@ -56,22 +56,22 @@ Both confounds have been corrected for future runs (SpacetimeDB examples general
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Fresh input tokens | 382 | 595 |
-| Fresh output tokens | 179,621 | 260,728 |
-| Cache read tokens | 26,336,554 | 31,731,184 |
-| Cache creation tokens | 491,496 | 743,243 |
-| Total API calls | 370 | 561 |
+| Fresh input tokens | 417 | 651 |
+| Fresh output tokens | 192,025 | 285,844 |
+| Cache read tokens | 28,123,377 | 34,631,117 |
+| Cache creation tokens | 544,253 | 832,727 |
+| Total API calls | 399 | 613 |
 
-**Cache leverage is enormous** — for every 1 fresh input token, ~69,000 cache tokens were read (SpacetimeDB) and ~53,000 (PostgreSQL). This is what makes the sequential upgrade approach economical: prior context is cached and reused across sessions.
+**Cache leverage is enormous** — for every 1 fresh input token, ~67,000 cache tokens were read (SpacetimeDB) and ~53,000 (PostgreSQL). This is what makes the sequential upgrade approach economical: prior context is cached and reused across sessions.
 
 ### Tokens per Feature Group
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Fresh output tokens / feature | ~13,817 | ~20,056 |
-| API calls / feature | 28.5 | 43.2 |
+| Fresh output tokens / feature | ~13,716 | ~20,417 |
+| API calls / feature | 28.5 | 43.8 |
 
-PostgreSQL requires ~52% more API calls and ~45% more output tokens per feature, primarily due to fix iterations.
+PostgreSQL requires ~54% more API calls and ~49% more output tokens per feature, primarily due to fix iterations.
 
 ---
 
@@ -79,13 +79,15 @@ PostgreSQL requires ~52% more API calls and ~45% more output tokens per feature,
 
 | | SpacetimeDB | PostgreSQL |
 |-|------------|------------|
-| Backend (hand-written) | 659 | 1,120 |
-| Frontend (hand-written) | 2,222 | 2,527 |
-| Generated bindings | 556 | 0 |
-| **Total hand-written** | **2,881** | **3,647** |
-| **LOC / feature group** | **221** | **281** |
+| Backend (hand-written) | 678 | 1,192 |
+| Frontend (hand-written, incl. CSS) | 2,274 | 2,700 |
+| Generated bindings | 1,183 | 0 |
+| **Total hand-written** | **2,952** | **3,892** |
+| **LOC / feature group** | **211** | **278** |
 
-SpacetimeDB produces **21% less hand-written code** overall, with the backend being **41% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate.
+SpacetimeDB produces **24% less hand-written code** overall, with the backend being **43% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate.
+
+*Methodology: counts all hand-written `.ts`/`.tsx`/`.css` files in the app's `src/` and `server/src/` directories at L12, excluding `node_modules`, `dist`, and `level-N` snapshot copies. Generated bindings counted separately.*
 
 ---
 
@@ -106,7 +108,8 @@ SpacetimeDB produces **21% less hand-written code** overall, with the backend be
 | L9 | Private Rooms + DMs | 0 | 7 |
 | L10 | Room Activity Indicators | 0 | 0 |
 | L11 | Draft Sync | 1 | 0 |
-| **Total** | | **5** | **18** |
+| L12 | Anonymous to Registered Migration | 0 | 1 |
+| **Total** | | **5** | **19** |
 
 *L9 count includes 3 DM bugs found during L10 grading (no DM button, DM name offline, DM room disappears offline) — attributed to L9 since all are L9 features.*
 
@@ -114,11 +117,11 @@ SpacetimeDB produces **21% less hand-written code** overall, with the backend be
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Total bugs found | 5 | 18 |
-| Bugs per feature group | 0.38 | 1.38 |
-| Levels with zero bugs | 7 / 11 (64%) | 5 / 11 (45%) |
-| Fix sessions required | 4 | 16 |
-| First-attempt fix success | 4 / 4 (100%) | 16 / 18 (89%) |
+| Total bugs found | 5 | 19 |
+| Bugs per feature group | 0.36 | 1.36 |
+| Levels with zero bugs | 8 / 12 (67%) | 5 / 12 (42%) |
+| Fix sessions required | 4 | 17 |
+| First-attempt fix success | 4 / 4 (100%) | 17 / 19 (89%) |
 | Multi-attempt fixes | 0 | 2 |
 
 ### Bug Categories (PostgreSQL)
@@ -128,6 +131,7 @@ SpacetimeDB produces **21% less hand-written code** overall, with the backend be
 | Real-time state not updating | 5 |
 | Missing UI element | 5 |
 | Data not persisted server-side | 3 |
+| Data not persisted client-side | 1 (L12: guest session lost on refresh) |
 | Logic error (wrong value/calculation) | 2 |
 | Race condition / stale reference | 3 |
 
@@ -139,11 +143,11 @@ Real-time state management was PostgreSQL's biggest weakness — requiring manua
 
 | Metric | SpacetimeDB | PostgreSQL |
 |--------|------------|------------|
-| Zero-bug generation rate | 64% | 45% |
+| Zero-bug generation rate | 67% | 42% |
 | First-attempt fix success rate | 100% | 89% |
-| Fix cost as % of total | 11.8% | 53.8% |
+| Fix cost as % of total | 11.0% | 50.9% |
 | Avg fix cost per bug | $0.29 | $0.48 |
-| Time in fixes vs upgrades | 15% / 85% | 54% / 46% |
+| Time in fixes vs upgrades | 12% / 88% | 58% / 42% |
 | Multi-attempt bugs | 0 | 2 |
 
 ---
@@ -153,9 +157,9 @@ Real-time state management was PostgreSQL's biggest weakness — requiring manua
 | Phase | SpacetimeDB | PostgreSQL |
 |-------|------------|------------|
 | L1 generation | 6m 6s | 5m 0s |
-| Per-level upgrade (avg) | 4m 26s | 2m 41s |
-| Per-fix session (avg) | 1m 21s | 4m 57s |
-| **Total wall time** | **~48m** | **~77m** |
+| Per-level upgrade (avg) | 3m 51s | 2m 53s |
+| Per-fix session (avg) | 1m 36s | 2m 56s |
+| **Total wall time** | **~53m** | **~82m** |
 
 SpacetimeDB takes longer per upgrade (more complex backend changes each level), but dramatically less time in fixes. PostgreSQL upgrades are faster but fix sessions dominate the timeline.
 
@@ -173,7 +177,7 @@ SpacetimeDB received 574 lines of guidelines vs PostgreSQL's 357. Despite more d
 SpacetimeDB: 100% first-attempt fix success. PostgreSQL: 89% (2 of 18 bugs required two fix sessions each). When a fix fails on the first try, it signals the AI is struggling to reason about the bug — which compounds cost and time.
 
 ### 4. LOC is a proxy for maintenance cost
-21% less hand-written code in SpacetimeDB means less surface area for bugs, smaller context windows for future upgrades, and lower ongoing maintenance burden.
+24% less hand-written code in SpacetimeDB means less surface area for bugs, smaller context windows for future upgrades, and lower ongoing maintenance burden. The backend is where the gap is widest: 678 vs 1,192 lines (43% smaller), because SpacetimeDB replaces REST routing, SQL boilerplate, and manual Socket.io event wiring with reducers and auto-subscriptions.
 
 ### 5. Feature complexity is not uniform
 L9 (Private Rooms + DMs) was the most expensive feature to get right: $4.53 in fix costs for PostgreSQL across 7 distinct bugs spanning private room visibility, invite flows, DM creation, and DM offline state handling. Features involving complex access control, persistent membership state, and multi-user UX edge cases consistently trip up AI generation more than UI-heavy features.
@@ -185,12 +189,12 @@ L9 (Private Rooms + DMs) was the most expensive feature to get right: $4.53 in f
 
 ## Projection to Full Feature Set (L19)
 
-Based on observed cost curves (approximately linear per upgrade, fix costs trending upward with complexity):
+Based on observed cost curves (approximately linear per upgrade, fix costs trending upward with complexity). L12 is now measured data, not projection:
 
 | Metric | SpacetimeDB (est.) | PostgreSQL (est.) |
 |--------|-------------------|-------------------|
-| Total cost to L19 | ~$22–26 | ~$30–38 |
-| Total bugs to L19 | ~8–10 | ~26–32 |
-| Total time to L19 | ~80–90m | ~120–150m |
+| Total cost to L19 | ~$22–26 | ~$31–39 |
+| Total bugs to L19 | ~8–10 | ~27–34 |
+| Total time to L19 | ~82–92m | ~125–155m |
 
-*Estimates. Actual results depend on complexity of L12–L19 features.*
+*Estimates for L13–L19. L1–L12 are measured data.*

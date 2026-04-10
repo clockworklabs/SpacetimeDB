@@ -1,93 +1,95 @@
 {
   "meta": {
     "date": "2026-04-04",
+    "l12_added": "2026-04-10",
     "variant": "sequential-upgrade",
     "model": "claude-sonnet-4-6",
-    "levels_completed": 11,
-    "feature_groups": 13
+    "levels_completed": 12,
+    "feature_groups": 14
   },
 
   "cost": {
     "spacetime": {
-      "upgrades": 10.99,
+      "upgrades": 11.85,
       "fixes": 1.47,
-      "total": 12.46,
-      "per_feature_all_in": 0.96,
+      "total": 13.33,
+      "per_feature_all_in": 0.95,
       "per_feature_upgrades_only": 0.85,
       "per_feature_fixes_only": 0.11,
-      "fix_pct_of_total": 11.8
+      "fix_pct_of_total": 11.0
     },
     "postgres": {
-      "upgrades": 7.50,
-      "fixes": 8.72,
-      "total": 16.22,
-      "per_feature_all_in": 1.25,
-      "per_feature_upgrades_only": 0.58,
-      "per_feature_fixes_only": 0.67,
-      "fix_pct_of_total": 53.8
+      "upgrades": 8.74,
+      "fixes": 9.06,
+      "total": 17.80,
+      "per_feature_all_in": 1.27,
+      "per_feature_upgrades_only": 0.62,
+      "per_feature_fixes_only": 0.65,
+      "fix_pct_of_total": 50.9
     }
   },
 
   "tokens": {
     "spacetime": {
-      "fresh_input": 382,
-      "fresh_output": 179621,
-      "cache_read": 26336554,
-      "cache_creation": 491496,
-      "api_calls": 370,
-      "fresh_output_per_feature": 13817,
+      "fresh_input": 417,
+      "fresh_output": 192025,
+      "cache_read": 28123377,
+      "cache_creation": 544253,
+      "api_calls": 399,
+      "fresh_output_per_feature": 13716,
       "api_calls_per_feature": 28.5
     },
     "postgres": {
-      "fresh_input": 595,
-      "fresh_output": 260728,
-      "cache_read": 31731184,
-      "cache_creation": 743243,
-      "api_calls": 561,
-      "fresh_output_per_feature": 20056,
-      "api_calls_per_feature": 43.2
+      "fresh_input": 651,
+      "fresh_output": 285844,
+      "cache_read": 34631117,
+      "cache_creation": 832727,
+      "api_calls": 613,
+      "fresh_output_per_feature": 20417,
+      "api_calls_per_feature": 43.8
     }
   },
 
   "loc": {
+    "methodology_note": "L12 LOC re-measured with consistent rules across both runs: counts all .ts/.tsx/.css files in backend/server src/ and client/src/ directories, excluding node_modules, dist, and level-N snapshots. Generated bindings counted separately. Historical L1-L11 per_level arrays used a different counting method; the summary numbers below reflect the corrected L12 measurement.",
     "spacetime": {
-      "backend_handwritten": 659,
-      "frontend_handwritten": 2222,
-      "generated_bindings": 556,
-      "total_handwritten": 2881,
-      "per_feature": 221
+      "backend_handwritten": 678,
+      "frontend_handwritten": 2274,
+      "generated_bindings": 1183,
+      "total_handwritten": 2952,
+      "per_feature": 211
     },
     "postgres": {
-      "backend_handwritten": 1120,
-      "frontend_handwritten": 2527,
+      "backend_handwritten": 1192,
+      "frontend_handwritten": 2700,
       "generated_bindings": 0,
-      "total_handwritten": 3647,
-      "per_feature": 281
+      "total_handwritten": 3892,
+      "per_feature": 278
     }
   },
 
   "time_seconds": {
     "spacetime": {
       "l1_generation": 366,
-      "avg_upgrade": 266,
-      "avg_fix_session": 81,
-      "total": 2880
+      "avg_upgrade": 231,
+      "avg_fix_session": 96,
+      "total": 3160
     },
     "postgres": {
       "l1_generation": 300,
-      "avg_upgrade": 161,
-      "avg_fix_session": 297,
-      "total": 4620
+      "avg_upgrade": 173,
+      "avg_fix_session": 176,
+      "total": 4894
     }
   },
 
   "quality": {
     "spacetime": {
       "total_bugs": 5,
-      "bugs_per_feature": 0.38,
-      "zero_bug_levels": 7,
-      "total_levels": 11,
-      "zero_bug_rate_pct": 64,
+      "bugs_per_feature": 0.36,
+      "zero_bug_levels": 8,
+      "total_levels": 12,
+      "zero_bug_rate_pct": 67,
       "fix_sessions": 4,
       "first_attempt_fix_success": 4,
       "first_attempt_fix_rate_pct": 100,
@@ -95,47 +97,16 @@
       "avg_fix_cost_per_bug": 0.29
     },
     "postgres": {
-      "total_bugs": 18,
-      "bugs_per_feature": 1.38,
+      "total_bugs": 19,
+      "bugs_per_feature": 1.36,
       "zero_bug_levels": 5,
-      "total_levels": 11,
-      "zero_bug_rate_pct": 45,
-      "fix_sessions": 16,
-      "first_attempt_fix_success": 16,
+      "total_levels": 12,
+      "zero_bug_rate_pct": 42,
+      "fix_sessions": 17,
+      "first_attempt_fix_success": 17,
       "first_attempt_fix_rate_pct": 89,
       "multi_attempt_fixes": 2,
       "avg_fix_cost_per_bug": 0.48
-    }
-  },
-
-  "per_level": {
-    "upgrade_cost": {
-      "spacetime": [1.37, 1.18, 1.29, 0.95, 0.06, 1.16, 0.80, 0.83, 1.77, 0.57, 1.00],
-      "postgres":   [1.03, 0.50, 0.66, 0.60, 0.64, 0.96, 0.90, 0.16, 0.51, 0.68, 0.86]
-    },
-    "fix_cost": {
-      "spacetime": [0.17, 0, 0, 0, 0.84, 0.19, 0, 0, 0, 0, 0.27],
-      "postgres":  [0.62, 0, 0, 0, 0.26, 0.87, 0.99, 1.45, 4.53, 0, 0]
-    },
-    "loc_backend": {
-      "spacetime": [609, 588, 615, 574, 574, 522, 517, 480, 459, 677, 645],
-      "postgres":  [361, 458, 484, 562, 629, 733, 814, 815, 871, 1027, 1110]
-    },
-    "loc_frontend": {
-      "spacetime": [1040, 1232, 1310, 1414, 1414, 1623, 1731, 1919, 2120, 2177, 2206],
-      "postgres":  [1060, 1304, 1368, 1506, 1701, 1841, 1973, 1201, 2239, 2420, 2527]
-    },
-    "loc_bindings": {
-      "spacetime": [524, 610, 633, 710, 710, 859, 882, 951, 1079, 1079, 1143],
-      "postgres":  [0,   0,   0,   0,   0,   0,   0,   0,   0,    0,    0   ]
-    },
-    "duration_seconds": {
-      "spacetime": [366, 340, 339, 176, 19, 300, 172, 195, 347, 99, 205],
-      "postgres":  [300, 196, 150, 119, 138, 196, 172, 37, 141, 138, 166]
-    },
-    "output_tokens": {
-      "spacetime": [24285, 23845, 21639, 10712, 1024, 16675, 11017, 9393, 22561, 6249, 10266],
-      "postgres":  [23532, 8795,  9018,  7911,  9319, 14416, 9961,  1679, 6315,  7470, 9900]
     }
   },
 
@@ -150,13 +121,15 @@
     { "level": 8,  "feature": "Message Threading",                             "spacetime": 0, "postgres": 2 },
     { "level": 9,  "feature": "Private Rooms + DMs",                           "spacetime": 0, "postgres": 7 },
     { "level": 10, "feature": "Room Activity Indicators",                      "spacetime": 0, "postgres": 0 },
-    { "level": 11, "feature": "Draft Sync",                                    "spacetime": 1, "postgres": 0 }
+    { "level": 11, "feature": "Draft Sync",                                    "spacetime": 1, "postgres": 0 },
+    { "level": 12, "feature": "Anonymous to Registered Migration",             "spacetime": 0, "postgres": 1 }
   ],
 
   "postgres_bug_categories": [
     { "category": "Real-time state not updating",       "count": 5 },
     { "category": "Missing UI element",                 "count": 5 },
     { "category": "Data not persisted server-side",     "count": 3 },
+    { "category": "Data not persisted client-side",     "count": 1 },
     { "category": "Logic error (wrong value/calc)",     "count": 2 },
     { "category": "Race condition / stale reference",   "count": 3 }
   ]
