@@ -127,6 +127,7 @@ export const User = __t.object("User", {
   status: __t.string(),
   lastActiveAt: __t.option(__t.timestamp()),
   createdAt: __t.timestamp(),
+  isAnonymous: __t.bool(),
 });
 export type User = __Infer<typeof User>;
 

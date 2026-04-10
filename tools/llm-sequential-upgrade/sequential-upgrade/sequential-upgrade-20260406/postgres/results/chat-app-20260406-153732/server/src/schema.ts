@@ -7,6 +7,7 @@ export const users = pgTable('users', {
   status: text('status').default('offline').notNull(), // 'online' | 'away' | 'dnd' | 'invisible' | 'offline'
   lastSeen: timestamp('last_seen').defaultNow().notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  isAnonymous: boolean('is_anonymous').default(false).notNull(),
 });
 
 export const rooms = pgTable('rooms', {

@@ -75,9 +75,29 @@ const lastMessageTime = new Map<number, number>();
 
 // ─── REST API ─────────────────────────────────────────────────────────────────
 
-// Create or get user by name
+// Create or get user by name (or create anonymous user)
 app.post('/api/users', async (req, res) => {
-  const { name } = req.body as { name?: string };
+  const { name, anonymous } = req.body as { name?: string; anonymous?: boolean };
+
+  // Anonymous join: generate a unique guest name
+  if (anonymous) {
+    try {
+      let guestName: string;
+      let attempts = 0;
+      do {
+        const suffix = Math.floor(1000 + Math.random() * 9000);
+        guestName = `Guest_${suffix}`;
+        const existing = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.name, guestName));
+        if (existing.length === 0) break;
+        attempts++;
+      } while (attempts < 20);
+      const [user] = await db.insert(schema.users).values({ name: guestName!, isAnonymous: true }).returning();
+      return res.json(user);
+    } catch {
+      return res.status(500).json({ error: 'Failed to create anonymous user' });
+    }
+  }
+
   if (!name || name.trim().length === 0) {
     return res.status(400).json({ error: 'Name required' });
   }
@@ -93,6 +113,44 @@ app.post('/api/users', async (req, res) => {
     res.json(user);
   } catch {
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Register an anonymous user (give them a real name)
+app.post('/api/users/:id/register', async (req, res) => {
+  const userId = parseInt(req.params.id);
+  const { name } = req.body as { name?: string };
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Name required' });
+  }
+  if (name.trim().length > 30) {
+    return res.status(400).json({ error: 'Name must be 30 characters or fewer' });
+  }
+  // Disallow Guest_ prefix for registered users
+  if (name.trim().startsWith('Guest_')) {
+    return res.status(400).json({ error: 'Name cannot start with "Guest_"' });
+  }
+
+  try {
+    const [existing] = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.name, name.trim()));
+    if (existing) {
+      return res.status(409).json({ error: 'Name already taken' });
+    }
+
+    const [user] = await db
+      .update(schema.users)
+      .set({ name: name.trim(), isAnonymous: false })
+      .where(eq(schema.users.id, userId))
+      .returning();
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Broadcast name change so all clients can update their UI
+    io.emit('user_renamed', { userId, newName: name.trim() });
+
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: 'Failed to register user' });
   }
 });
 
@@ -117,6 +175,7 @@ app.get('/api/users', async (_req, res) => {
         online: schema.users.online,
         status: schema.users.status,
         lastSeen: schema.users.lastSeen,
+        isAnonymous: schema.users.isAnonymous,
       })
       .from(schema.users)
       .orderBy(schema.users.name);

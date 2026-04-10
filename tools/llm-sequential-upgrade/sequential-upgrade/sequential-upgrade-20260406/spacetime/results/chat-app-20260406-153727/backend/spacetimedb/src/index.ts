@@ -11,6 +11,18 @@ export const onConnect = spacetimedb.clientConnected((ctx) => {
     // Restore to online unless user explicitly set invisible
     const newStatus = existing.status === 'invisible' ? 'invisible' : 'online';
     ctx.db.user.identity.update({ ...existing, status: newStatus, lastActiveAt: null });
+  } else {
+    // Auto-create an anonymous user with a temporary name derived from their identity
+    const hex = ctx.sender.toHexString();
+    const shortId = hex.slice(0, 6);
+    ctx.db.user.insert({
+      identity: ctx.sender,
+      name: `Anon_${shortId}`,
+      status: 'online',
+      lastActiveAt: null,
+      createdAt: ctx.timestamp,
+      isAnonymous: true,
+    });
   }
 });
 
@@ -25,7 +37,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   }
 });
 
-// Set or update display name
+// Set or update display name (also marks user as registered, no longer anonymous)
 export const setName = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
@@ -35,9 +47,9 @@ export const setName = spacetimedb.reducer(
 
     const existing = ctx.db.user.identity.find(ctx.sender);
     if (existing) {
-      ctx.db.user.identity.update({ ...existing, name: trimmed });
+      ctx.db.user.identity.update({ ...existing, name: trimmed, isAnonymous: false });
     } else {
-      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, status: 'online', lastActiveAt: null, createdAt: ctx.timestamp });
+      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, status: 'online', lastActiveAt: null, createdAt: ctx.timestamp, isAnonymous: false });
     }
   }
 );

@@ -1,0 +1,23 @@
+{
+  "level": 2,
+  "backend": "spacetime",
+  "timestamp": "20260406-162210",
+  "startedAt": "2026-04-06T16:22:10-0400",
+  "startedAtUtc": "2026-04-06T20:22:10Z",
+  "runId": "spacetime-upgrade-to-level2-20260406-162210",
+  "appDir": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDBPrivate\\public\\tools\\llm-oneshot\\exhaust-test\\sequential-upgrade\\sequential-upgrade-20260406\\spacetime\\results\\chat-app-20260406-153727",
+  "promptFile": "exhaust-prompt-0-02_scheduled.md",
+  "phase": "upgrade",
+  "variant": "sequential-upgrade",
+  "rules": "guided",
+  "testMode": "none",
+  "runIndex": 0,
+  "vitePort": 6173,
+  "expressPort": 6001,
+  "pgDatabase": "spacetime",
+  "sessionId": "3e4127fe-0ad7-4f1a-8848-23d0dd93c1a2",
+  "endedAt": "2026-04-06T16:29:19-0400",
+  "endedAtUtc": "2026-04-06T20:29:19Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

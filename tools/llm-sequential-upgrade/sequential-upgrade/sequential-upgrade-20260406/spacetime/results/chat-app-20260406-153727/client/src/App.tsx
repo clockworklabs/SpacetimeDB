@@ -137,12 +137,8 @@ export default function App() {
     ? users.find((u) => u.identity.toHexString() === myIdentity.toHexString())
     : null;
 
-  // Show name modal if connected but no name set
-  useEffect(() => {
-    if (isActive && subscribed && !myUser) {
-      setShowNameModal(true);
-    }
-  }, [isActive, subscribed, myUser]);
+  // Show name modal if user explicitly wants to register or edit name
+  // (No longer auto-shown — anonymous users can use the app immediately)
 
   // Auto-away: track activity and set status to away after 5 minutes of inactivity
   useEffect(() => {
@@ -317,6 +313,8 @@ export default function App() {
       showError(String(e));
     }
   };
+
+  const isAnonymous = myUser?.isAnonymous ?? true;
 
   const handleCreateRoom = () => {
     if (!conn || !roomInput.trim()) return;
@@ -816,7 +814,10 @@ export default function App() {
             return (
               <div key={u.identity.toHexString()} className="user-item">
                 <span className="status-dot" style={{ background: statusColor(u.status) }} title={u.status} />
-                <span style={{ flex: 1 }}>{u.name}</span>
+                <span style={{ flex: 1 }}>
+                  {u.name}
+                  {u.isAnonymous && <span style={{ color: 'var(--text-muted)', fontSize: 10, marginLeft: 3 }}>(anon)</span>}
+                </span>
                 {isMe && (
                   <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(you)</span>
                 )}
@@ -841,9 +842,16 @@ export default function App() {
 
         <div className="sidebar-user">
           <span className="status-dot" style={{ background: statusColor(myUser?.status ?? 'offline') }} />
-          <span className="sidebar-user-name">{myUser?.name ?? '...'}</span>
-          <button className="sidebar-user-edit" onClick={() => { setNameInput(myUser?.name ?? ''); setShowNameModal(true); }}>
-            Edit
+          <span className="sidebar-user-name">
+            {myUser?.name ?? '...'}
+            {isAnonymous && <span style={{ color: 'var(--text-muted)', fontSize: 10, marginLeft: 4 }}>(anon)</span>}
+          </span>
+          <button
+            className="sidebar-user-edit"
+            style={isAnonymous ? { color: 'var(--primary)', fontWeight: 600 } : {}}
+            onClick={() => { setNameInput(''); setShowNameModal(true); }}
+          >
+            {isAnonymous ? 'Register' : 'Edit'}
           </button>
         </div>
         <div className="sidebar-status-row">
@@ -863,6 +871,29 @@ export default function App() {
 
       {/* Main area */}
       <div className="main">
+        {/* Anonymous registration banner */}
+        {isAnonymous && (
+          <div style={{
+            background: 'var(--surface)',
+            borderBottom: '1px solid var(--border)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            fontSize: 13,
+          }}>
+            <span style={{ color: 'var(--text-muted)' }}>
+              You're browsing as <strong style={{ color: 'var(--text)' }}>{myUser?.name}</strong> (anonymous). Your messages are saved.
+            </span>
+            <button
+              className="btn-primary"
+              style={{ padding: '4px 14px', fontSize: 12, flexShrink: 0 }}
+              onClick={() => { setNameInput(''); setShowNameModal(true); }}
+            >
+              Register
+            </button>
+          </div>
+        )}
         {!selectedRoom ? (
           <div className="no-room-selected">Select a room to start chatting</div>
         ) : (
@@ -975,6 +1006,7 @@ export default function App() {
                         <div className="message-header">
                           <span className={`message-sender${isMe ? ' is-me' : ''}`}>
                             {sender?.name ?? 'Unknown'}
+                            {sender?.isAnonymous && <span style={{ color: 'var(--text-muted)', fontSize: 10, marginLeft: 3, fontWeight: 400 }}>(anon)</span>}
                           </span>
                           <span className="message-time">{formatTime(tsToDate(msg.sentAt))}</span>
                           {isEphemeral && (
@@ -1251,26 +1283,33 @@ export default function App() {
         </div>
       )}
 
-      {/* Set name modal */}
+      {/* Set name / register modal */}
       {showNameModal && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && myUser) setShowNameModal(false); }}>
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setShowNameModal(false); }}>
           <div className="modal">
-            <div className="modal-title">{myUser ? 'Edit your name' : 'Welcome! Set your name'}</div>
+            <div className="modal-title">
+              {isAnonymous ? 'Register — Choose a display name' : 'Edit your name'}
+            </div>
+            {isAnonymous && (
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px 0' }}>
+                Your message history and room memberships will be preserved under your new name.
+              </p>
+            )}
             <input
               className="modal-input"
               placeholder="Your display name"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSetName(); if (e.key === 'Escape' && myUser) setShowNameModal(false); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSetName(); if (e.key === 'Escape') setShowNameModal(false); }}
               autoFocus
               maxLength={32}
             />
             <div className="modal-actions">
-              {myUser && (
-                <button className="btn-secondary" onClick={() => setShowNameModal(false)}>Cancel</button>
-              )}
+              <button className="btn-secondary" onClick={() => setShowNameModal(false)}>
+                {isAnonymous ? 'Stay anonymous' : 'Cancel'}
+              </button>
               <button className="btn-primary" onClick={handleSetName} disabled={!nameInput.trim()}>
-                {myUser ? 'Save' : 'Start chatting'}
+                {isAnonymous ? 'Register' : 'Save'}
               </button>
             </div>
           </div>

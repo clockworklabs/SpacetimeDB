@@ -16,4 +16,5 @@ export default __t.row({
   status: __t.string(),
   lastActiveAt: __t.option(__t.timestamp()).name("last_active_at"),
   createdAt: __t.timestamp().name("created_at"),
+  isAnonymous: __t.bool().name("is_anonymous"),
 });

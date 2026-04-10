@@ -9,6 +9,7 @@ interface User {
   online: boolean;
   status?: UserStatus;
   lastSeen?: string;
+  isAnonymous?: boolean;
 }
 
 interface Room {
@@ -85,6 +86,11 @@ export default function App() {
   const [nameInput, setNameInput] = useState('');
   const [nameError, setNameError] = useState('');
   const [nameLoading, setNameLoading] = useState(false);
+
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registerInput, setRegisterInput] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [registerLoading, setRegisterLoading] = useState(false);
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
@@ -407,6 +413,25 @@ export default function App() {
       }
     });
 
+    socket.on('user_renamed', ({ userId, newName }: { userId: number; newName: string }) => {
+      // Update messages attributed to this user
+      setMessages((prev) =>
+        prev.map((m) => m.userId === userId ? { ...m, userName: newName } : m)
+      );
+      setThreadMessages((prev) =>
+        prev.map((m) => m.userId === userId ? { ...m, userName: newName } : m)
+      );
+      // Update user lists
+      setAllUsers((prev) =>
+        prev.map((u) => u.id === userId ? { ...u, name: newName, isAnonymous: false } : u)
+      );
+      setOnlineUsers((prev) =>
+        prev.map((u) => u.id === userId ? { ...u, name: newName, isAnonymous: false } : u)
+      );
+      // Update own user if it's us
+      setCurrentUser((prev) => prev && prev.id === userId ? { ...prev, name: newName, isAnonymous: false } : prev);
+    });
+
     return () => { socket.disconnect(); };
   }, []);
 
@@ -534,6 +559,52 @@ export default function App() {
       setNameError('Network error');
     } finally {
       setNameLoading(false);
+    }
+  }
+
+  async function handleJoinAnonymously() {
+    setNameLoading(true);
+    setNameError('');
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anonymous: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setNameError(data.error ?? 'Failed to join anonymously');
+      setCurrentUser(data);
+    } catch {
+      setNameError('Network error');
+    } finally {
+      setNameLoading(false);
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentUser) return;
+    const name = registerInput.trim();
+    if (!name) return setRegisterError('Please enter a name');
+    if (name.length > 30) return setRegisterError('Name must be 30 characters or fewer');
+
+    setRegisterLoading(true);
+    setRegisterError('');
+    try {
+      const res = await fetch(`/api/users/${currentUser.id}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setRegisterError(data.error ?? 'Failed to register');
+      setCurrentUser(data);
+      setShowRegisterModal(false);
+      setRegisterInput('');
+    } catch {
+      setRegisterError('Network error');
+    } finally {
+      setRegisterLoading(false);
     }
   }
 
@@ -960,7 +1031,7 @@ export default function App() {
       <div className="modal-overlay">
         <div className="modal">
           <h2>Welcome to PostgreSQL Chat</h2>
-          <p>Enter a display name to get started.</p>
+          <p>Enter a display name to get started, or join anonymously.</p>
           <form onSubmit={handleSetName} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="form-field">
               <label>Display Name</label>
@@ -979,6 +1050,17 @@ export default function App() {
               {nameLoading ? 'Joining…' : 'Enter Chat'}
             </button>
           </form>
+          <div style={{ marginTop: 12, textAlign: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>or </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 12 }}
+              onClick={handleJoinAnonymously}
+              disabled={nameLoading}
+            >
+              Join Anonymously
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1203,16 +1285,31 @@ export default function App() {
             <span className="user-name" style={{ flex: 1 }}>{currentUser.name}</span>
             {!connected && <span style={{ fontSize: 11, color: 'var(--warning)' }}>●</span>}
           </div>
-          <select
-            style={{ fontSize: 11, background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', width: '100%', cursor: 'pointer' }}
-            value={myStatus}
-            onChange={(e) => handleSetStatus(e.target.value as UserStatus)}
-          >
-            <option value="online">● Online</option>
-            <option value="away">● Away</option>
-            <option value="dnd">● Do Not Disturb</option>
-            <option value="invisible">● Invisible</option>
-          </select>
+          {currentUser.isAnonymous && (
+            <div style={{ width: '100%', background: 'rgba(242,101,34,0.12)', border: '1px solid var(--warning)', borderRadius: 6, padding: '6px 8px', fontSize: 12 }}>
+              <div style={{ color: 'var(--warning)', fontWeight: 600, marginBottom: 4 }}>Browsing anonymously</div>
+              <div style={{ color: 'var(--text-muted)', marginBottom: 6 }}>Register to keep your identity and history.</div>
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ width: '100%', fontSize: 12 }}
+                onClick={() => setShowRegisterModal(true)}
+              >
+                Register Account
+              </button>
+            </div>
+          )}
+          {!currentUser.isAnonymous && (
+            <select
+              style={{ fontSize: 11, background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', width: '100%', cursor: 'pointer' }}
+              value={myStatus}
+              onChange={(e) => handleSetStatus(e.target.value as UserStatus)}
+            >
+              <option value="online">● Online</option>
+              <option value="away">● Away</option>
+              <option value="dnd">● Do Not Disturb</option>
+              <option value="invisible">● Invisible</option>
+            </select>
+          )}
         </div>
       </aside>
 
@@ -1240,6 +1337,42 @@ export default function App() {
               </div>
             )}
             <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => setShowInvitationsPanel(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Register Account Modal ── */}
+      {showRegisterModal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setShowRegisterModal(false); setRegisterError(''); setRegisterInput(''); } }}>
+          <div className="modal">
+            <h2>Create Account</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+              Choose a username to preserve your identity and message history.
+            </p>
+            <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="form-field">
+                <label>Username</label>
+                <input
+                  className="text-input"
+                  type="text"
+                  placeholder="e.g. Alice"
+                  value={registerInput}
+                  onChange={(e) => setRegisterInput(e.target.value)}
+                  maxLength={30}
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setShowRegisterModal(false); setRegisterError(''); setRegisterInput(''); } }}
+                />
+                {registerError && <span className="error-msg">{registerError}</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" type="submit" disabled={registerLoading || !registerInput.trim()}>
+                  {registerLoading ? 'Registering…' : 'Register'}
+                </button>
+                <button className="btn btn-ghost" type="button" onClick={() => { setShowRegisterModal(false); setRegisterError(''); setRegisterInput(''); }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

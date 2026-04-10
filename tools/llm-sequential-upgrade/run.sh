@@ -11,8 +11,9 @@
 #   ./run.sh --rules standard --backend spacetime   # standard: SDK rules only, no templates
 #   ./run.sh --run-index 1 --backend spacetime      # parallel run with offset ports
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
-#   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app
-#   ./run.sh --upgrade <app-dir> --level 3 --resume-session  # same, but resume prior session for cache
+#   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app (incremental feature file)
+#   ./run.sh --upgrade <app-dir> --level 3 --composed-prompt  # use the full cumulative composed spec instead
+#   ./run.sh --upgrade <app-dir> --level 3 --resume-session   # same, but resume prior session for cache
 #
 # Prerequisites:
 #   - Claude Code CLI installed (claude or npx @anthropic-ai/claude-code)
@@ -40,6 +41,7 @@ FIX_APP_DIR=""
 UPGRADE_MODE=""
 UPGRADE_APP_DIR=""
 RESUME_SESSION=""
+COMPOSED_UPGRADE_PROMPT=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --level) LEVEL="$2"; LEVEL_EXPLICIT=1; shift 2 ;;
@@ -50,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
+    --composed-prompt) COMPOSED_UPGRADE_PROMPT=1; shift ;;
     --resume-session) RESUME_SESSION=1; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -556,15 +559,22 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
   echo "  Prompt: $(basename "$PROMPT_FILE")"
   echo ""
 
-  # In upgrade mode, use the incremental feature file instead of the full composed prompt
-  FEATURE_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/features/$(printf '%02d' "$LEVEL")_"*".md"
-  # shellcheck disable=SC2086
-  FEATURE_FILE=$(ls $FEATURE_PROMPT 2>/dev/null | head -1)
-  if [[ -n "$FEATURE_FILE" ]]; then
-    echo "  Using incremental feature file: $(basename "$FEATURE_FILE")"
-  else
-    echo "  WARNING: No incremental feature file for level $LEVEL, falling back to composed prompt"
+  # In upgrade mode, default to the incremental feature file (only the new
+  # feature). Pass --composed-prompt to use the full cumulative composed spec
+  # for this level, matching how the original L1-L11 benchmark was prompted.
+  if [[ -n "$COMPOSED_UPGRADE_PROMPT" ]]; then
     FEATURE_FILE="$PROMPT_FILE"
+    echo "  Using composed (cumulative) feature file: $(basename "$FEATURE_FILE")"
+  else
+    FEATURE_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/features/$(printf '%02d' "$LEVEL")_"*".md"
+    # shellcheck disable=SC2086
+    FEATURE_FILE=$(ls $FEATURE_PROMPT 2>/dev/null | head -1)
+    if [[ -n "$FEATURE_FILE" ]]; then
+      echo "  Using incremental feature file: $(basename "$FEATURE_FILE")"
+    else
+      echo "  WARNING: No incremental feature file for level $LEVEL, falling back to composed prompt"
+      FEATURE_FILE="$PROMPT_FILE"
+    fi
   fi
 
   # Read language and feature files to inline into the prompt

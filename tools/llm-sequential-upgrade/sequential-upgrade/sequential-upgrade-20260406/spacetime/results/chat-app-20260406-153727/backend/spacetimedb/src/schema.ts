@@ -9,6 +9,7 @@ const user = table(
     status: t.string(), // 'online' | 'away' | 'dnd' | 'invisible' | 'offline'
     lastActiveAt: t.option(t.timestamp()),
     createdAt: t.timestamp(),
+    isAnonymous: t.bool(), // true until user sets a real name via setName
   }
 );
 
