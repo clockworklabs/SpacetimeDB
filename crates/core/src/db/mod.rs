@@ -3,6 +3,7 @@ use std::sync::Arc;
 use enum_map::EnumMap;
 use spacetimedb_schema::reducer_name::ReducerName;
 use tokio::sync::mpsc;
+use tokio::time::MissedTickBehavior;
 
 use crate::subscription::ExecutionCounters;
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -79,37 +80,50 @@ impl MetricsRecorderQueue {
     }
 }
 
+fn record_metrics(
+    MetricsMessage {
+        reducer,
+        metrics_for_writer,
+        metrics_for_reader,
+        tx_data,
+        counters,
+    }: MetricsMessage,
+) {
+    if let Some(tx_metrics) = metrics_for_writer {
+        tx_metrics.report(
+            // If row updates are present,
+            // they will always belong to the writer transaction.
+            tx_data.as_deref(),
+            reducer.as_ref(),
+            |wl| &counters[wl],
+        );
+    }
+    if let Some(tx_metrics) = metrics_for_reader {
+        tx_metrics.report(
+            // If row updates are present,
+            // they will never belong to the reader transaction.
+            // Passing row updates here will most likely panic.
+            None,
+            reducer.as_ref(),
+            |wl| &counters[wl],
+        );
+    }
+}
+
+const TX_METRICS_RECORDING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
+
 /// Spawns a task for recording transaction metrics.
 /// Returns the handle for pushing metrics to the recorder.
 pub fn spawn_tx_metrics_recorder() -> (MetricsRecorderQueue, tokio::task::AbortHandle) {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let abort_handle = tokio::spawn(async move {
-        while let Some(MetricsMessage {
-            reducer,
-            metrics_for_writer,
-            metrics_for_reader,
-            tx_data,
-            counters,
-        }) = rx.recv().await
-        {
-            if let Some(tx_metrics) = metrics_for_writer {
-                tx_metrics.report(
-                    // If row updates are present,
-                    // they will always belong to the writer transaction.
-                    tx_data.as_deref(),
-                    reducer.as_ref(),
-                    |wl| &counters[wl],
-                );
-            }
-            if let Some(tx_metrics) = metrics_for_reader {
-                tx_metrics.report(
-                    // If row updates are present,
-                    // they will never belong to the reader transaction.
-                    // Passing row updates here will most likely panic.
-                    None,
-                    reducer.as_ref(),
-                    |wl| &counters[wl],
-                );
+        let mut interval = tokio::time::interval(TX_METRICS_RECORDING_INTERVAL);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        loop {
+            interval.tick().await;
+            while let Ok(metrics) = rx.try_recv() {
+                record_metrics(metrics);
             }
         }
     })
