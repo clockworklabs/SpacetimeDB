@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <locale>
 #include <memory>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -95,11 +96,21 @@ inline std::string literal_sql(bool value) { return value ? "TRUE" : "FALSE"; }
 inline std::string literal_sql(const ::SpacetimeDb::Identity& value) { return "0x" + value.to_hex_string(); }
 inline std::string literal_sql(const ::SpacetimeDb::ConnectionId& value) { return "0x" + value.to_string(); }
 inline std::string literal_sql(const ::SpacetimeDb::Timestamp& value) { return quote_string(trim_timestamp_fraction(value.to_string())); }
-inline std::string literal_sql(const FSpacetimeDBIdentity& value) { return std::string(TCHAR_TO_UTF8(*value.ToHex())); }
-inline std::string literal_sql(const FSpacetimeDBConnectionId& value) { return std::string(TCHAR_TO_UTF8(*value.ToHex())); }
+inline std::string ensure_hex_prefix(std::string value) {
+    if (value.rfind("0x", 0) == 0 || value.rfind("0X", 0) == 0) {
+        return value;
+    }
+    return "0x" + value;
+}
+inline std::string literal_sql(const FSpacetimeDBIdentity& value) { return ensure_hex_prefix(std::string(TCHAR_TO_UTF8(*value.ToHex()))); }
+inline std::string literal_sql(const FSpacetimeDBConnectionId& value) { return ensure_hex_prefix(std::string(TCHAR_TO_UTF8(*value.ToHex()))); }
+inline std::string literal_sql(const FSpacetimeDBUuid& value) {
+    return quote_string(TCHAR_TO_UTF8(*value.ToString()));
+}
 inline std::string literal_sql(const FSpacetimeDBTimestamp& value) {
     return quote_string(trim_timestamp_fraction(TCHAR_TO_UTF8(*value.ToString())));
 }
+std::string literal_sql(const FSpacetimeDBTimeDuration& value) = delete;
 inline std::string literal_sql(const std::vector<uint8_t>& value) {
     std::ostringstream out;
     out << "0x" << std::hex << std::setfill('0');
@@ -125,15 +136,17 @@ inline std::string literal_sql(const FSpacetimeDBInt128& value) { return TCHAR_T
 inline std::string literal_sql(const FSpacetimeDBUInt256& value) { return TCHAR_TO_UTF8(*value.ToDecimalString()); }
 inline std::string literal_sql(const FSpacetimeDBInt256& value) { return TCHAR_TO_UTF8(*value.ToDecimalString()); }
 
-inline std::string format_floating_point(double value) {
+template<typename TFloat>
+inline std::string format_floating_point(TFloat value) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
+    out << std::setprecision(std::numeric_limits<TFloat>::max_digits10);
     out << value;
     return out.str();
 }
 
 inline std::string literal_sql(float value) {
-    return format_floating_point(static_cast<double>(value));
+    return format_floating_point(value);
 }
 
 inline std::string literal_sql(double value) {

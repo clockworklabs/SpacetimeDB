@@ -1112,9 +1112,15 @@ private:
 };
 
 // QueryBuilder types
+struct TESTPROCCLIENT_API FMyTableCols;
+struct TESTPROCCLIENT_API FMyTableIxCols;
+struct TESTPROCCLIENT_API FPkUuidCols;
+struct TESTPROCCLIENT_API FPkUuidIxCols;
+struct TESTPROCCLIENT_API FProcInsertsIntoCols;
+struct TESTPROCCLIENT_API FProcInsertsIntoIxCols;
+
 struct TESTPROCCLIENT_API FMyTableCols
 {
-    using legacy_type = FMyTableCols;
     explicit FMyTableCols(const char* TableName)
         : Field(TableName, "field") {}
 
@@ -1123,7 +1129,6 @@ struct TESTPROCCLIENT_API FMyTableCols
 
 struct TESTPROCCLIENT_API FMyTableIxCols
 {
-    using legacy_type = FMyTableIxCols;
     explicit FMyTableIxCols(const char* TableName)
  {}
 
@@ -1137,7 +1142,6 @@ namespace SpacetimeDB::query_builder
 
 struct TESTPROCCLIENT_API FPkUuidCols
 {
-    using legacy_type = FPkUuidCols;
     explicit FPkUuidCols(const char* TableName)
         : U(TableName, "u"), Data(TableName, "data") {}
 
@@ -1147,7 +1151,6 @@ struct TESTPROCCLIENT_API FPkUuidCols
 
 struct TESTPROCCLIENT_API FPkUuidIxCols
 {
-    using legacy_type = FPkUuidIxCols;
     explicit FPkUuidIxCols(const char* TableName)
  {}
 
@@ -1161,7 +1164,6 @@ namespace SpacetimeDB::query_builder
 
 struct TESTPROCCLIENT_API FProcInsertsIntoCols
 {
-    using legacy_type = FProcInsertsIntoCols;
     explicit FProcInsertsIntoCols(const char* TableName)
         : ReducerTs(TableName, "reducer_ts"), ProcedureTs(TableName, "procedure_ts"), X(TableName, "x"), Y(TableName, "y") {}
 
@@ -1173,7 +1175,6 @@ struct TESTPROCCLIENT_API FProcInsertsIntoCols
 
 struct TESTPROCCLIENT_API FProcInsertsIntoIxCols
 {
-    using legacy_type = FProcInsertsIntoIxCols;
     explicit FProcInsertsIntoIxCols(const char* TableName)
  {}
 
@@ -1206,32 +1207,697 @@ struct TESTPROCCLIENT_API FQueryBuilder
     }
 };
 
-struct TESTPROCCLIENT_API FTypedSubscriptionBuilder
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintQuery
 {
-    explicit FTypedSubscriptionBuilder(UDbConnection* InConn)
-        : Conn(InConn) {}
+    GENERATED_BODY()
 
-    FTypedSubscriptionBuilder& OnApplied(FOnSubscriptionApplied Callback);
-    FTypedSubscriptionBuilder& OnError(FOnSubscriptionError Callback);
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
 
-    template<typename TFn>
-    FTypedSubscriptionBuilder& AddQuery(TFn&& Build)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintPredicate
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FMyTableQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FPkUuidQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FProcInsertsIntoQuery
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString Sql;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintBoolColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintUInt8Column
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintInt32Column
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintInt64Column
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintFloatColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintDoubleColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintStringColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintIdentityColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintConnectionIdColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintTimestampColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+USTRUCT(BlueprintType)
+struct TESTPROCCLIENT_API FBlueprintUuidColumn
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ResultSourceName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB|Queries")
+    FString ColumnName;
+};
+
+UCLASS(BlueprintType)
+class TESTPROCCLIENT_API UQueryBuilderBlueprintLibrary : public UBlueprintFunctionLibrary
+{
+    GENERATED_BODY()
+
+public:
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|MyTable", meta=(DisplayName="From MyTable"))
+    static FMyTableQuery FromMyTable()
     {
-        FQueryBuilder Q;
-        auto Query = std::forward<TFn>(Build)(Q);
-        static_assert(::SpacetimeDB::query_builder::QueryBuilderReturn<decltype(Query)>,
-            "Typed subscription queries must return a query_builder table/query expression.");
-        Sql.Add(FString(UTF8_TO_TCHAR(Query.into_sql().c_str())));
-        return *this;
+        FMyTableQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.MyTable().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("my_table");
+        return Query;
     }
 
-    USubscriptionHandle* Subscribe();
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|MyTable", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_MyTableQueryToBlueprintQuery(const FMyTableQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|MyTable", meta=(DisplayName="MyTable Where"))
+    static FMyTableQuery MyTableWhere(FMyTableQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid", meta=(DisplayName="From PkUuid"))
+    static FPkUuidQuery FromPkUuid()
+    {
+        FPkUuidQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.PkUuid().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("pk_uuid");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_PkUuidQueryToBlueprintQuery(const FPkUuidQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid|Columns", meta=(DisplayName="PkUuid U"))
+    static FBlueprintUuidColumn PkUuidU(const FPkUuidQuery& Query)
+    {
+        FBlueprintUuidColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_uuid") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("u");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid|Columns", meta=(DisplayName="PkUuid Data"))
+    static FBlueprintUInt8Column PkUuidData(const FPkUuidQuery& Query)
+    {
+        FBlueprintUInt8Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("pk_uuid") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("data");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|PkUuid", meta=(DisplayName="PkUuid Where"))
+    static FPkUuidQuery PkUuidWhere(FPkUuidQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ProcInsertsInto", meta=(DisplayName="From ProcInsertsInto"))
+    static FProcInsertsIntoQuery FromProcInsertsInto()
+    {
+        FProcInsertsIntoQuery Query;
+        Query.Sql = FString(UTF8_TO_TCHAR(FQueryBuilder().From.ProcInsertsInto().into_sql().c_str()));
+        Query.ResultSourceName = TEXT("proc_inserts_into");
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ProcInsertsInto", meta=(DisplayName="To Query", BlueprintAutocast))
+    static FBlueprintQuery Conv_ProcInsertsIntoQueryToBlueprintQuery(const FProcInsertsIntoQuery& Query)
+    {
+        FBlueprintQuery GenericQuery;
+        GenericQuery.Sql = Query.Sql;
+        GenericQuery.ResultSourceName = Query.ResultSourceName;
+        return GenericQuery;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ProcInsertsInto|Columns", meta=(DisplayName="ProcInsertsInto ReducerTs"))
+    static FBlueprintTimestampColumn ProcInsertsIntoReducerTs(const FProcInsertsIntoQuery& Query)
+    {
+        FBlueprintTimestampColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("proc_inserts_into") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("reducer_ts");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ProcInsertsInto|Columns", meta=(DisplayName="ProcInsertsInto ProcedureTs"))
+    static FBlueprintTimestampColumn ProcInsertsIntoProcedureTs(const FProcInsertsIntoQuery& Query)
+    {
+        FBlueprintTimestampColumn Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("proc_inserts_into") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("procedure_ts");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ProcInsertsInto|Columns", meta=(DisplayName="ProcInsertsInto X"))
+    static FBlueprintUInt8Column ProcInsertsIntoX(const FProcInsertsIntoQuery& Query)
+    {
+        FBlueprintUInt8Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("proc_inserts_into") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("x");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ProcInsertsInto|Columns", meta=(DisplayName="ProcInsertsInto Y"))
+    static FBlueprintUInt8Column ProcInsertsIntoY(const FProcInsertsIntoQuery& Query)
+    {
+        FBlueprintUInt8Column Column;
+        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT("proc_inserts_into") : Query.ResultSourceName;
+        Column.ColumnName = TEXT("y");
+        return Column;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|ProcInsertsInto", meta=(DisplayName="ProcInsertsInto Where"))
+    static FProcInsertsIntoQuery ProcInsertsIntoWhere(FProcInsertsIntoQuery Query, const FBlueprintPredicate& Predicate)
+    {
+        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())
+        {
+            return Query;
+        }
+        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);
+        return Query;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Bool Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate BoolEqual(const FBlueprintBoolColumn& Column, const bool Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate UInt8Equal(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate UInt8GreaterThan(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate UInt8GreaterEqual(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate UInt8LessThan(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="UInt8 Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate UInt8LessEqual(const FBlueprintUInt8Column& Column, const uint8 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate Int32Equal(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate Int32GreaterThan(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate Int32GreaterEqual(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate Int32LessThan(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int32 Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate Int32LessEqual(const FBlueprintInt32Column& Column, const int32 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate Int64Equal(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate Int64GreaterThan(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate Int64GreaterEqual(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate Int64LessThan(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Int64 Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate Int64LessEqual(const FBlueprintInt64Column& Column, const int64 Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate FloatEqual(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate FloatGreaterThan(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate FloatGreaterEqual(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate FloatLessThan(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Float Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate FloatLessEqual(const FBlueprintFloatColumn& Column, const float Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate DoubleEqual(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate DoubleGreaterThan(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate DoubleGreaterEqual(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate DoubleLessThan(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Double Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate DoubleLessEqual(const FBlueprintDoubleColumn& Column, const double Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="String Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate StringEqual(const FBlueprintStringColumn& Column, const FString& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Identity Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate IdentityEqual(const FBlueprintIdentityColumn& Column, const FSpacetimeDBIdentity& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="ConnectionId Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate ConnectionIdEqual(const FBlueprintConnectionIdColumn& Column, const FSpacetimeDBConnectionId& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate TimestampEqual(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Greater Than", CompactNodeTitle=">", Keywords="> greater"))
+    static FBlueprintPredicate TimestampGreaterThan(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" > %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Greater Equal", CompactNodeTitle=">=", Keywords=">= greater equal"))
+    static FBlueprintPredicate TimestampGreaterEqual(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" >= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Less Than", CompactNodeTitle="<", Keywords="< less"))
+    static FBlueprintPredicate TimestampLessThan(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" < %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Timestamp Less Equal", CompactNodeTitle="<=", Keywords="<= less equal"))
+    static FBlueprintPredicate TimestampLessEqual(const FBlueprintTimestampColumn& Column, const FSpacetimeDBTimestamp& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" <= %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="Uuid Equal", CompactNodeTitle="==", Keywords="== equal"))
+    static FBlueprintPredicate UuidEqual(const FBlueprintUuidColumn& Column, const FSpacetimeDBUuid& Value)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = Column.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("\"%s\".\"%s\" = %s"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="AND", CompactNodeTitle="AND", Keywords="and &&"))
+    static FBlueprintPredicate And(const FBlueprintPredicate& A, const FBlueprintPredicate& B)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = A.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("(%s) AND (%s)"), *A.Sql, *B.Sql);
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="OR", CompactNodeTitle="OR", Keywords="or ||"))
+    static FBlueprintPredicate Or(const FBlueprintPredicate& A, const FBlueprintPredicate& B)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = A.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("(%s) OR (%s)"), *A.Sql, *B.Sql);
+        return Predicate;
+    }
+
+    UFUNCTION(BlueprintPure, Category="SpacetimeDB|Queries|Predicates", meta=(DisplayName="NOT", CompactNodeTitle="NOT", Keywords="not !"))
+    static FBlueprintPredicate Not(const FBlueprintPredicate& A)
+    {
+        FBlueprintPredicate Predicate;
+        Predicate.ResultSourceName = A.ResultSourceName;
+        Predicate.Sql = FString::Printf(TEXT("NOT (%s)"), *A.Sql);
+        return Predicate;
+    }
 
 private:
-    UDbConnection* Conn = nullptr;
-    TArray<FString> Sql;
-    FOnSubscriptionApplied OnAppliedDelegateInternal;
-    FOnSubscriptionError OnErrorDelegateInternal;
+    static FString AppendPredicate(const FString& Sql, const FString& Predicate)
+    {
+        if (Sql.Contains(TEXT(" WHERE ")))
+        {
+            return Sql + TEXT(" AND (") + Predicate + TEXT(")");
+        }
+        return Sql + TEXT(" WHERE (") + Predicate + TEXT(")");
+    }
 };
 
 // SubscriptionBuilder class
@@ -1249,17 +1915,29 @@ public:
     USubscriptionBuilder* OnError(FOnSubscriptionError Callback);
 
     UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+    USubscriptionHandle* Subscribe();
+
     USubscriptionHandle* Subscribe(const TArray<FString>& SQL);
 
     template<typename TFn>
-    [[nodiscard]] FTypedSubscriptionBuilder AddQuery(TFn&& Build)
+    USubscriptionBuilder* AddQuery(TFn&& Build)
     {
-        FTypedSubscriptionBuilder Typed(Conn);
-        Typed.OnApplied(OnAppliedDelegateInternal);
-        Typed.OnError(OnErrorDelegateInternal);
-        Typed.AddQuery(std::forward<TFn>(Build));
-        return Typed;
+        FQueryBuilder Q;
+        auto Query = std::forward<TFn>(Build)(Q);
+        static_assert(::SpacetimeDB::query_builder::QueryBuilderReturn<decltype(Query)>,
+            "Typed subscription queries must return a query_builder table/query expression.");
+        PendingSqlQueries.Add(FString(UTF8_TO_TCHAR(Query.into_sql().c_str())));
+        return this;
     }
+
+    UFUNCTION(BlueprintCallable, Category="SpacetimeDB", meta=(DisplayName="AddQuery", ScriptName="AddQuery"))
+    USubscriptionBuilder* AddBlueprintQuery(const FBlueprintQuery& Query);
+
+    USubscriptionBuilder* AddMyTableQuery(const FMyTableQuery& Query);
+
+    USubscriptionBuilder* AddPkUuidQuery(const FPkUuidQuery& Query);
+
+    USubscriptionBuilder* AddProcInsertsIntoQuery(const FProcInsertsIntoQuery& Query);
 
     /** Convenience for subscribing to all rows from all public sources, including views */
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
@@ -1272,6 +1950,9 @@ public:
 protected:
     UPROPERTY()
     class UDbConnection* Conn;
+
+    UPROPERTY()
+    TArray<FString> PendingSqlQueries;
 
     // Delegates stored so Subscribe() can bind forwarding callbacks
     FOnSubscriptionApplied OnAppliedDelegateInternal;

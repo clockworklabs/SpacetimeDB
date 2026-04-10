@@ -27,3 +27,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     "SpacetimeDB.TestViewPkClient.ViewPkRuntimeUpdatePairingTest",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
 )
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FViewPkBlueprintQueryBuilderFlowTest,
+    "SpacetimeDB.TestViewPkClient.ViewPkBlueprintQueryBuilderFlowTest",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)

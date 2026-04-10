@@ -1009,7 +1009,13 @@ impl Lang for UnrealCpp<'_> {
         );
 
         // SubscriptionBuilder class
-        generate_subscription_builder_class(&mut client_h, self.module_prefix, &self.get_api_macro());
+        generate_subscription_builder_class(
+            &mut client_h,
+            module,
+            options.visibility,
+            self.module_prefix,
+            &self.get_api_macro(),
+        );
 
         // SubscriptionHandle class
         generate_subscription_handle_class(&mut client_h, self.module_prefix, &self.get_api_macro());
@@ -2975,11 +2981,128 @@ fn generate_query_builder_types(
     api_macro: &str,
     module_name: &str,
 ) {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    enum BlueprintPredicateKind {
+        Bool,
+        U8,
+        I32,
+        I64,
+        F32,
+        F64,
+        String,
+        Identity,
+        ConnectionId,
+        Timestamp,
+        Uuid,
+    }
+
+    fn supports_blueprint_query_filter(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
+        match ty {
+            AlgebraicTypeUse::Primitive(_)
+            | AlgebraicTypeUse::String
+            | AlgebraicTypeUse::Identity
+            | AlgebraicTypeUse::ConnectionId
+            | AlgebraicTypeUse::Timestamp
+            | AlgebraicTypeUse::Uuid => is_blueprintable(module, ty),
+            _ => false,
+        }
+    }
+
+    fn blueprint_predicate_kind(ty: &AlgebraicTypeUse) -> Option<BlueprintPredicateKind> {
+        match ty {
+            AlgebraicTypeUse::Primitive(PrimitiveType::Bool) => Some(BlueprintPredicateKind::Bool),
+            AlgebraicTypeUse::Primitive(PrimitiveType::U8) => Some(BlueprintPredicateKind::U8),
+            AlgebraicTypeUse::Primitive(PrimitiveType::I32) => Some(BlueprintPredicateKind::I32),
+            AlgebraicTypeUse::Primitive(PrimitiveType::I64) => Some(BlueprintPredicateKind::I64),
+            AlgebraicTypeUse::Primitive(PrimitiveType::F32) => Some(BlueprintPredicateKind::F32),
+            AlgebraicTypeUse::Primitive(PrimitiveType::F64) => Some(BlueprintPredicateKind::F64),
+            AlgebraicTypeUse::String => Some(BlueprintPredicateKind::String),
+            AlgebraicTypeUse::Identity => Some(BlueprintPredicateKind::Identity),
+            AlgebraicTypeUse::ConnectionId => Some(BlueprintPredicateKind::ConnectionId),
+            AlgebraicTypeUse::Timestamp => Some(BlueprintPredicateKind::Timestamp),
+            AlgebraicTypeUse::Uuid => Some(BlueprintPredicateKind::Uuid),
+            _ => None,
+        }
+    }
+
+    fn blueprint_predicate_kind_name(kind: BlueprintPredicateKind) -> &'static str {
+        match kind {
+            BlueprintPredicateKind::Bool => "Bool",
+            BlueprintPredicateKind::U8 => "UInt8",
+            BlueprintPredicateKind::I32 => "Int32",
+            BlueprintPredicateKind::I64 => "Int64",
+            BlueprintPredicateKind::F32 => "Float",
+            BlueprintPredicateKind::F64 => "Double",
+            BlueprintPredicateKind::String => "String",
+            BlueprintPredicateKind::Identity => "Identity",
+            BlueprintPredicateKind::ConnectionId => "ConnectionId",
+            BlueprintPredicateKind::Timestamp => "Timestamp",
+            BlueprintPredicateKind::Uuid => "Uuid",
+        }
+    }
+
+    fn blueprint_predicate_kinds() -> &'static [BlueprintPredicateKind] {
+        &[
+            BlueprintPredicateKind::Bool,
+            BlueprintPredicateKind::U8,
+            BlueprintPredicateKind::I32,
+            BlueprintPredicateKind::I64,
+            BlueprintPredicateKind::F32,
+            BlueprintPredicateKind::F64,
+            BlueprintPredicateKind::String,
+            BlueprintPredicateKind::Identity,
+            BlueprintPredicateKind::ConnectionId,
+            BlueprintPredicateKind::Timestamp,
+            BlueprintPredicateKind::Uuid,
+        ]
+    }
+
+    fn blueprint_predicate_kind_ty(kind: BlueprintPredicateKind) -> AlgebraicTypeUse {
+        match kind {
+            BlueprintPredicateKind::Bool => AlgebraicTypeUse::Primitive(PrimitiveType::Bool),
+            BlueprintPredicateKind::U8 => AlgebraicTypeUse::Primitive(PrimitiveType::U8),
+            BlueprintPredicateKind::I32 => AlgebraicTypeUse::Primitive(PrimitiveType::I32),
+            BlueprintPredicateKind::I64 => AlgebraicTypeUse::Primitive(PrimitiveType::I64),
+            BlueprintPredicateKind::F32 => AlgebraicTypeUse::Primitive(PrimitiveType::F32),
+            BlueprintPredicateKind::F64 => AlgebraicTypeUse::Primitive(PrimitiveType::F64),
+            BlueprintPredicateKind::String => AlgebraicTypeUse::String,
+            BlueprintPredicateKind::Identity => AlgebraicTypeUse::Identity,
+            BlueprintPredicateKind::ConnectionId => AlgebraicTypeUse::ConnectionId,
+            BlueprintPredicateKind::Timestamp => AlgebraicTypeUse::Timestamp,
+            BlueprintPredicateKind::Uuid => AlgebraicTypeUse::Uuid,
+        }
+    }
+
+    fn blueprint_predicate_kind_supports_ordering(kind: BlueprintPredicateKind) -> bool {
+        !matches!(
+            kind,
+            BlueprintPredicateKind::Bool
+                | BlueprintPredicateKind::String
+                | BlueprintPredicateKind::Identity
+                | BlueprintPredicateKind::ConnectionId
+                | BlueprintPredicateKind::Uuid
+        )
+    }
+
+    fn blueprint_predicate_kind_spec(
+        module_prefix: &str,
+        module: &ModuleDef,
+        module_name: &str,
+        kind: BlueprintPredicateKind,
+    ) -> (String, bool, bool) {
+        let ty = blueprint_predicate_kind_ty(kind);
+        (
+            cpp_ty_fmt_blueprint_compatible(module_prefix, module, &ty, module_name).to_string(),
+            should_pass_by_value_in_delegate(module, &ty),
+            blueprint_predicate_kind_supports_ordering(kind),
+        )
+    }
+
     struct QueryBuilderSourceMeta {
         row_struct: String,
         cols_struct: String,
         ix_cols_struct: String,
-        fields: Vec<(String, String, String)>,
+        fields: Vec<(String, String, String, AlgebraicTypeUse)>,
         singleton_indexed_fields: Vec<String>,
         source_name: String,
         source_pascal: String,
@@ -3026,14 +3149,15 @@ fn generate_query_builder_types(
                     field_name.deref().to_string(),
                     field_name.deref().to_case(Case::Pascal),
                     cpp_ty_fmt_with_module(module_prefix, module, field_ty, module_name).to_string(),
+                    field_ty.clone(),
                 )
             })
             .collect::<Vec<_>>();
 
         source_metas.push(QueryBuilderSourceMeta {
             row_struct,
-            cols_struct: format!("F{source_pascal}Cols"),
-            ix_cols_struct: format!("F{source_pascal}IxCols"),
+            cols_struct: format!("F{module_prefix}{source_pascal}Cols"),
+            ix_cols_struct: format!("F{module_prefix}{source_pascal}IxCols"),
             fields,
             singleton_indexed_fields,
             source_name: table.name.deref().to_string(),
@@ -3062,14 +3186,15 @@ fn generate_query_builder_types(
                     field_name.deref().to_string(),
                     field_name.deref().to_case(Case::Pascal),
                     cpp_ty_fmt_with_module(module_prefix, module, field_ty, module_name).to_string(),
+                    field_ty.clone(),
                 )
             })
             .collect::<Vec<_>>();
 
         source_metas.push(QueryBuilderSourceMeta {
             row_struct,
-            cols_struct: format!("F{source_pascal}Cols"),
-            ix_cols_struct: format!("F{source_pascal}IxCols"),
+            cols_struct: format!("F{module_prefix}{source_pascal}Cols"),
+            ix_cols_struct: format!("F{module_prefix}{source_pascal}IxCols"),
             fields,
             singleton_indexed_fields,
             source_name: view.name.deref().to_string(),
@@ -3117,7 +3242,7 @@ fn generate_query_builder_types(
         writeln!(output, "{{");
         writeln!(output, "    explicit {cols_struct}(const char* TableName)");
         write!(output, "        : ");
-        for (idx, (field_name_raw, field_name_pascal, _field_type)) in source_meta.fields.iter().enumerate() {
+        for (idx, (field_name_raw, field_name_pascal, _field_type, _field_ty)) in source_meta.fields.iter().enumerate() {
             if idx > 0 {
                 write!(output, ", ");
             }
@@ -3130,7 +3255,7 @@ fn generate_query_builder_types(
         }
         writeln!(output, " {{}}");
         writeln!(output);
-        for (_field_name_raw, field_name_pascal, field_type) in &source_meta.fields {
+        for (_field_name_raw, field_name_pascal, field_type, _field_ty) in &source_meta.fields {
             writeln!(
                 output,
                 "    ::SpacetimeDB::query_builder::Col<{row_struct}, {field_type}> {field_name_pascal};"
@@ -3144,10 +3269,10 @@ fn generate_query_builder_types(
         writeln!(output, "    explicit {ix_cols_struct}(const char* TableName)");
         if !singleton_indexed_fields.is_empty() {
             write!(output, "        : ");
-            for (idx, (field_name_raw, field_name_pascal, _field_type)) in source_meta
+            for (idx, (field_name_raw, field_name_pascal, _field_type, _field_ty)) in source_meta
                 .fields
                 .iter()
-                .filter(|(_field_name_raw, field_name_pascal, _)| singleton_indexed_fields.contains(field_name_pascal))
+                .filter(|(_field_name_raw, field_name_pascal, _, _)| singleton_indexed_fields.contains(field_name_pascal))
                 .enumerate()
             {
                 if idx > 0 {
@@ -3163,10 +3288,10 @@ fn generate_query_builder_types(
         }
         writeln!(output, " {{}}");
         writeln!(output);
-        for (_field_name_raw, field_name_pascal, field_type) in source_meta
+        for (_field_name_raw, field_name_pascal, field_type, _field_ty) in source_meta
             .fields
             .iter()
-            .filter(|(_field_name_raw, field_name_pascal, _)| singleton_indexed_fields.contains(field_name_pascal))
+            .filter(|(_field_name_raw, field_name_pascal, _, _)| singleton_indexed_fields.contains(field_name_pascal))
         {
             writeln!(
                 output,
@@ -3226,64 +3351,290 @@ fn generate_query_builder_types(
     writeln!(output, "}};");
     writeln!(output);
 
-    writeln!(output, "struct {api_macro} F{module_prefix}TypedSubscriptionBuilder");
+    let blueprint_query_struct = format!("F{module_prefix}BlueprintQuery");
+    let blueprint_predicate_struct = format!("F{module_prefix}BlueprintPredicate");
+    writeln!(output, "USTRUCT(BlueprintType)");
+    writeln!(output, "struct {api_macro} {blueprint_query_struct}");
     writeln!(output, "{{");
-    writeln!(
-        output,
-        "    explicit F{module_prefix}TypedSubscriptionBuilder(U{module_prefix}DbConnection* InConn)"
-    );
-    writeln!(output, "        : Conn(InConn) {{}}");
+    writeln!(output, "    GENERATED_BODY()");
     writeln!(output);
-    writeln!(
-        output,
-        "    F{module_prefix}TypedSubscriptionBuilder& OnApplied(F{module_prefix}OnSubscriptionApplied Callback);"
-    );
-    writeln!(
-        output,
-        "    F{module_prefix}TypedSubscriptionBuilder& OnError(F{module_prefix}OnSubscriptionError Callback);"
-    );
+    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(output, "    FString Sql;");
     writeln!(output);
-    writeln!(output, "    template<typename TFn>");
+    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(output, "    FString ResultSourceName;");
+    writeln!(output, "}};");
+    writeln!(output);
+
+    writeln!(output, "USTRUCT(BlueprintType)");
+    writeln!(output, "struct {api_macro} {blueprint_predicate_struct}");
+    writeln!(output, "{{");
+    writeln!(output, "    GENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(output, "    FString Sql;");
+    writeln!(output);
+    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(output, "    FString ResultSourceName;");
+    writeln!(output, "}};");
+    writeln!(output);
+
+    for source_meta in &source_metas {
+        let source_pascal = &source_meta.source_pascal;
+        let query_struct = format!("F{module_prefix}{source_pascal}Query");
+        writeln!(output, "USTRUCT(BlueprintType)");
+        writeln!(output, "struct {api_macro} {query_struct}");
+        writeln!(output, "{{");
+        writeln!(output, "    GENERATED_BODY()");
+        writeln!(output);
+        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(output, "    FString Sql;");
+        writeln!(output);
+        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(output, "    FString ResultSourceName;");
+        writeln!(output, "}};");
+        writeln!(output);
+    }
+
+    for kind in blueprint_predicate_kinds() {
+        let column_struct =
+            format!("F{module_prefix}Blueprint{}Column", blueprint_predicate_kind_name(*kind));
+        writeln!(output, "USTRUCT(BlueprintType)");
+        writeln!(output, "struct {api_macro} {column_struct}");
+        writeln!(output, "{{");
+        writeln!(output, "    GENERATED_BODY()");
+        writeln!(output);
+        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(output, "    FString ResultSourceName;");
+        writeln!(output);
+        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(output, "    FString ColumnName;");
+        writeln!(output, "}};");
+        writeln!(output);
+    }
+
+    writeln!(output, "UCLASS(BlueprintType)");
     writeln!(
         output,
-        "    F{module_prefix}TypedSubscriptionBuilder& AddQuery(TFn&& Build)"
+        "class {api_macro} U{module_prefix}QueryBuilderBlueprintLibrary : public UBlueprintFunctionLibrary"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "    GENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "public:");
+    writeln!(output);
+
+    for source_meta in &source_metas {
+        let source_pascal = &source_meta.source_pascal;
+        let source_name = &source_meta.source_name;
+        let query_struct = format!("F{module_prefix}{source_pascal}Query");
+
+        writeln!(
+            output,
+            "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|{source_pascal}\", meta=(DisplayName=\"From {source_pascal}\"))"
+        );
+        writeln!(output, "    static {query_struct} From{source_pascal}()");
+        writeln!(output, "    {{");
+        writeln!(output, "        {query_struct} Query;");
+        writeln!(
+            output,
+            "        Query.Sql = FString(UTF8_TO_TCHAR(F{module_prefix}QueryBuilder().From.{source_pascal}().into_sql().c_str()));"
+        );
+        writeln!(output, "        Query.ResultSourceName = TEXT(\"{source_name}\");");
+        writeln!(output, "        return Query;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        writeln!(
+            output,
+            "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|{source_pascal}\", meta=(DisplayName=\"To Query\", BlueprintAutocast))"
+        );
+        writeln!(
+            output,
+            "    static {blueprint_query_struct} Conv_{source_pascal}QueryToBlueprintQuery(const {query_struct}& Query)"
+        );
+        writeln!(output, "    {{");
+        writeln!(output, "        {blueprint_query_struct} GenericQuery;");
+        writeln!(output, "        GenericQuery.Sql = Query.Sql;");
+        writeln!(output, "        GenericQuery.ResultSourceName = Query.ResultSourceName;");
+        writeln!(output, "        return GenericQuery;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        for (field_name_raw, field_name_pascal, _field_type, field_ty) in &source_meta.fields {
+            if !supports_blueprint_query_filter(module, field_ty) {
+                continue;
+            }
+            let Some(kind) = blueprint_predicate_kind(field_ty) else {
+                continue;
+            };
+            let column_struct =
+                format!("F{module_prefix}Blueprint{}Column", blueprint_predicate_kind_name(kind));
+            writeln!(
+                output,
+                "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|{source_pascal}|Columns\", meta=(DisplayName=\"{source_pascal} {field_name_pascal}\"))"
+            );
+            writeln!(output, "    static {column_struct} {source_pascal}{field_name_pascal}(const {query_struct}& Query)");
+            writeln!(output, "    {{");
+            writeln!(output, "        {column_struct} Column;");
+            writeln!(
+                output,
+                "        Column.ResultSourceName = Query.ResultSourceName.IsEmpty() ? TEXT(\"{source_name}\") : Query.ResultSourceName;"
+            );
+            writeln!(output, "        Column.ColumnName = TEXT(\"{field_name_raw}\");");
+            writeln!(output, "        return Column;");
+            writeln!(output, "    }}");
+            writeln!(output);
+        }
+
+        writeln!(
+            output,
+            "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|{source_pascal}\", meta=(DisplayName=\"{source_pascal} Where\"))"
+        );
+        writeln!(
+            output,
+            "    static {query_struct} {source_pascal}Where({query_struct} Query, const {blueprint_predicate_struct}& Predicate)"
+        );
+        writeln!(output, "    {{");
+        writeln!(output, "        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())");
+        writeln!(output, "        {{");
+        writeln!(output, "            return Query;");
+        writeln!(output, "        }}");
+        writeln!(output, "        Query.Sql = AppendPredicate(Query.Sql, Predicate.Sql);");
+        writeln!(output, "        return Query;");
+        writeln!(output, "    }}");
+        writeln!(output);
+    }
+
+    for kind in blueprint_predicate_kinds() {
+        let (blueprint_type, pass_by_value, supports_ordering) =
+            blueprint_predicate_kind_spec(module_prefix, module, module_name, *kind);
+        let kind_suffix = blueprint_predicate_kind_name(*kind);
+        let kind_display = blueprint_predicate_kind_name(*kind);
+        let column_struct = format!("F{module_prefix}Blueprint{kind_suffix}Column");
+        let value_param = if pass_by_value {
+            format!("const {blueprint_type} Value")
+        } else {
+            format!("const {blueprint_type}& Value")
+        };
+
+        writeln!(
+            output,
+            "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|Predicates\", meta=(DisplayName=\"{kind_display} Equal\", CompactNodeTitle=\"==\", Keywords=\"== equal\"))"
+        );
+        writeln!(
+            output,
+            "    static {blueprint_predicate_struct} {kind_suffix}Equal(const {column_struct}& Column, {value_param})"
+        );
+        writeln!(output, "    {{");
+        writeln!(output, "        {blueprint_predicate_struct} Predicate;");
+        writeln!(output, "        Predicate.ResultSourceName = Column.ResultSourceName;");
+        writeln!(
+            output,
+            "        Predicate.Sql = FString::Printf(TEXT(\"\\\"%s\\\".\\\"%s\\\" = %s\"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));"
+        );
+        writeln!(output, "        return Predicate;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        if supports_ordering {
+            for (fn_suffix, display_name, compact_title, sql_op, keywords) in [
+                ("GreaterThan", format!("{kind_display} Greater Than"), ">", ">", "> greater"),
+                ("GreaterEqual", format!("{kind_display} Greater Equal"), ">=", ">=" , ">= greater equal"),
+                ("LessThan", format!("{kind_display} Less Than"), "<", "<", "< less"),
+                ("LessEqual", format!("{kind_display} Less Equal"), "<=", "<=", "<= less equal"),
+            ] {
+                writeln!(
+                    output,
+                    "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|Predicates\", meta=(DisplayName=\"{display_name}\", CompactNodeTitle=\"{compact_title}\", Keywords=\"{keywords}\"))"
+                );
+                writeln!(
+                    output,
+                    "    static {blueprint_predicate_struct} {kind_suffix}{fn_suffix}(const {column_struct}& Column, {value_param})"
+                );
+                writeln!(output, "    {{");
+                writeln!(output, "        {blueprint_predicate_struct} Predicate;");
+                writeln!(output, "        Predicate.ResultSourceName = Column.ResultSourceName;");
+                writeln!(
+                    output,
+                    "        Predicate.Sql = FString::Printf(TEXT(\"\\\"%s\\\".\\\"%s\\\" {sql_op} %s\"), *Column.ResultSourceName, *Column.ColumnName, UTF8_TO_TCHAR(::SpacetimeDB::query_builder::detail::literal_sql(Value).c_str()));"
+                );
+                writeln!(output, "        return Predicate;");
+                writeln!(output, "    }}");
+                writeln!(output);
+            }
+        }
+    }
+
+    writeln!(
+        output,
+        "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|Predicates\", meta=(DisplayName=\"AND\", CompactNodeTitle=\"AND\", Keywords=\"and &&\"))"
+    );
+    writeln!(
+        output,
+        "    static {blueprint_predicate_struct} And(const {blueprint_predicate_struct}& A, const {blueprint_predicate_struct}& B)"
     );
     writeln!(output, "    {{");
-    writeln!(output, "        F{module_prefix}QueryBuilder Q;");
-    writeln!(output, "        auto Query = std::forward<TFn>(Build)(Q);");
-    writeln!(
-        output,
-        "        static_assert(::SpacetimeDB::query_builder::QueryBuilderReturn<decltype(Query)>,"
-    );
-    writeln!(
-        output,
-        "            \"Typed subscription queries must return a query_builder table/query expression.\");"
-    );
-    writeln!(
-        output,
-        "        Sql.Add(FString(UTF8_TO_TCHAR(Query.into_sql().c_str())));"
-    );
-    writeln!(output, "        return *this;");
+    writeln!(output, "        {blueprint_predicate_struct} Predicate;");
+    writeln!(output, "        Predicate.ResultSourceName = A.ResultSourceName;");
+    writeln!(output, "        Predicate.Sql = FString::Printf(TEXT(\"(%s) AND (%s)\"), *A.Sql, *B.Sql);");
+    writeln!(output, "        return Predicate;");
     writeln!(output, "    }}");
     writeln!(output);
-    writeln!(output, "    U{module_prefix}SubscriptionHandle* Subscribe();");
+
+    writeln!(
+        output,
+        "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|Predicates\", meta=(DisplayName=\"OR\", CompactNodeTitle=\"OR\", Keywords=\"or ||\"))"
+    );
+    writeln!(
+        output,
+        "    static {blueprint_predicate_struct} Or(const {blueprint_predicate_struct}& A, const {blueprint_predicate_struct}& B)"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        {blueprint_predicate_struct} Predicate;");
+    writeln!(output, "        Predicate.ResultSourceName = A.ResultSourceName;");
+    writeln!(output, "        Predicate.Sql = FString::Printf(TEXT(\"(%s) OR (%s)\"), *A.Sql, *B.Sql);");
+    writeln!(output, "        return Predicate;");
+    writeln!(output, "    }}");
     writeln!(output);
+
+    writeln!(
+        output,
+        "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|Predicates\", meta=(DisplayName=\"NOT\", CompactNodeTitle=\"NOT\", Keywords=\"not !\"))"
+    );
+    writeln!(
+        output,
+        "    static {blueprint_predicate_struct} Not(const {blueprint_predicate_struct}& A)"
+    );
+    writeln!(output, "    {{");
+    writeln!(output, "        {blueprint_predicate_struct} Predicate;");
+    writeln!(output, "        Predicate.ResultSourceName = A.ResultSourceName;");
+    writeln!(output, "        Predicate.Sql = FString::Printf(TEXT(\"NOT (%s)\"), *A.Sql);");
+    writeln!(output, "        return Predicate;");
+    writeln!(output, "    }}");
+    writeln!(output);
+
     writeln!(output, "private:");
-    writeln!(output, "    U{module_prefix}DbConnection* Conn = nullptr;");
-    writeln!(output, "    TArray<FString> Sql;");
-    writeln!(
-        output,
-        "    F{module_prefix}OnSubscriptionApplied OnAppliedDelegateInternal;"
-    );
-    writeln!(
-        output,
-        "    F{module_prefix}OnSubscriptionError OnErrorDelegateInternal;"
-    );
+    writeln!(output, "    static FString AppendPredicate(const FString& Sql, const FString& Predicate)");
+    writeln!(output, "    {{");
+    writeln!(output, "        if (Sql.Contains(TEXT(\" WHERE \")))");
+    writeln!(output, "        {{");
+    writeln!(output, "            return Sql + TEXT(\" AND (\") + Predicate + TEXT(\")\");");
+    writeln!(output, "        }}");
+    writeln!(output, "        return Sql + TEXT(\" WHERE (\") + Predicate + TEXT(\")\");");
+    writeln!(output, "    }}");
     writeln!(output, "}};");
     writeln!(output);
 }
 
-fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_prefix: &str, api_macro: &str) {
+fn generate_subscription_builder_class(
+    output: &mut UnrealCppAutogen,
+    module: &ModuleDef,
+    visibility: CodegenVisibility,
+    module_prefix: &str,
+    api_macro: &str,
+) {
+    let blueprint_query_struct = format!("F{module_prefix}BlueprintQuery");
     writeln!(output, "// SubscriptionBuilder class");
     writeln!(output, "UCLASS(BlueprintType)");
     writeln!(
@@ -3308,6 +3659,8 @@ fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_pre
     );
     writeln!(output);
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")");
+    writeln!(output, "    U{module_prefix}SubscriptionHandle* Subscribe();");
+    writeln!(output);
     writeln!(
         output,
         "    U{module_prefix}SubscriptionHandle* Subscribe(const TArray<FString>& SQL);"
@@ -3316,16 +3669,45 @@ fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_pre
     writeln!(output, "    template<typename TFn>");
     writeln!(
         output,
-        "    [[nodiscard]] F{module_prefix}TypedSubscriptionBuilder AddQuery(TFn&& Build)"
+        "    U{module_prefix}SubscriptionBuilder* AddQuery(TFn&& Build)"
     );
     writeln!(output, "    {{");
-    writeln!(output, "        F{module_prefix}TypedSubscriptionBuilder Typed(Conn);");
-    writeln!(output, "        Typed.OnApplied(OnAppliedDelegateInternal);");
-    writeln!(output, "        Typed.OnError(OnErrorDelegateInternal);");
-    writeln!(output, "        Typed.AddQuery(std::forward<TFn>(Build));");
-    writeln!(output, "        return Typed;");
+    writeln!(output, "        F{module_prefix}QueryBuilder Q;");
+    writeln!(output, "        auto Query = std::forward<TFn>(Build)(Q);");
+    writeln!(
+        output,
+        "        static_assert(::SpacetimeDB::query_builder::QueryBuilderReturn<decltype(Query)>,"
+    );
+    writeln!(
+        output,
+        "            \"Typed subscription queries must return a query_builder table/query expression.\");"
+    );
+    writeln!(
+        output,
+        "        PendingSqlQueries.Add(FString(UTF8_TO_TCHAR(Query.into_sql().c_str())));"
+    );
+    writeln!(output, "        return this;");
     writeln!(output, "    }}");
     writeln!(output);
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\", meta=(DisplayName=\"AddQuery\", ScriptName=\"AddQuery\"))");
+    writeln!(
+        output,
+        "    U{module_prefix}SubscriptionBuilder* AddBlueprintQuery(const {blueprint_query_struct}& Query);"
+    );
+    writeln!(output);
+    let mut blueprint_sources = iter_tables(module, visibility)
+        .map(|t| t.accessor_name.deref().to_case(Case::Pascal))
+        .chain(iter_views(module).map(|v| v.accessor_name.deref().to_case(Case::Pascal)))
+        .collect::<Vec<_>>();
+    blueprint_sources.sort();
+    for source_pascal in blueprint_sources {
+        let query_struct = format!("F{module_prefix}{source_pascal}Query");
+        writeln!(
+            output,
+            "    U{module_prefix}SubscriptionBuilder* Add{source_pascal}Query(const {query_struct}& Query);"
+        );
+        writeln!(output);
+    }
     writeln!(
         output,
         "    /** Convenience for subscribing to all rows from all public sources, including views */"
@@ -3343,6 +3725,9 @@ fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_pre
     writeln!(output, "protected:");
     writeln!(output, "    UPROPERTY()");
     writeln!(output, "    class U{module_prefix}DbConnection* Conn;");
+    writeln!(output);
+    writeln!(output, "    UPROPERTY()");
+    writeln!(output, "    TArray<FString> PendingSqlQueries;");
     writeln!(output);
     writeln!(
         output,
@@ -3633,6 +4018,7 @@ fn generate_client_implementation(
     module_prefix: &str,
     module_name: &str,
 ) {
+    let blueprint_query_struct = format!("F{module_prefix}BlueprintQuery");
     // U{module_prefix}DbConnection constructor
     writeln!(
         output,
@@ -4016,39 +4402,6 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
-        "F{module_prefix}TypedSubscriptionBuilder& F{module_prefix}TypedSubscriptionBuilder::OnApplied(F{module_prefix}OnSubscriptionApplied Callback)"
-    );
-    writeln!(output, "{{");
-    writeln!(output, "\tOnAppliedDelegateInternal = Callback;");
-    writeln!(output, "\treturn *this;");
-    writeln!(output, "}}");
-    writeln!(
-        output,
-        "F{module_prefix}TypedSubscriptionBuilder& F{module_prefix}TypedSubscriptionBuilder::OnError(F{module_prefix}OnSubscriptionError Callback)"
-    );
-    writeln!(output, "{{");
-    writeln!(output, "\tOnErrorDelegateInternal = Callback;");
-    writeln!(output, "\treturn *this;");
-    writeln!(output, "}}");
-    writeln!(
-        output,
-        "U{module_prefix}SubscriptionHandle* F{module_prefix}TypedSubscriptionBuilder::Subscribe()"
-    );
-    writeln!(output, "{{");
-    writeln!(output, "\tif (!Conn)");
-    writeln!(output, "\t{{");
-    writeln!(output, "\t\treturn nullptr;");
-    writeln!(output, "\t}}");
-    writeln!(
-        output,
-        "\tU{module_prefix}SubscriptionBuilder* Builder = Conn->SubscriptionBuilder();"
-    );
-    writeln!(output, "\tBuilder->OnApplied(OnAppliedDelegateInternal);");
-    writeln!(output, "\tBuilder->OnError(OnErrorDelegateInternal);");
-    writeln!(output, "\treturn Builder->Subscribe(Sql);");
-    writeln!(output, "}}");
-    writeln!(
-        output,
         "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::OnApplied(F{module_prefix}OnSubscriptionApplied Callback)"
     );
     writeln!(output, "{{");
@@ -4062,6 +4415,15 @@ fn generate_client_implementation(
     writeln!(output, "{{");
     writeln!(output, "\tOnErrorDelegateInternal = Callback;");
     writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
+    writeln!(
+        output,
+        "U{module_prefix}SubscriptionHandle* U{module_prefix}SubscriptionBuilder::Subscribe()"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tconst TArray<FString> SqlQueries = PendingSqlQueries;");
+    writeln!(output, "\tPendingSqlQueries.Empty();");
+    writeln!(output, "\treturn Subscribe(SqlQueries);");
     writeln!(output, "}}");
     writeln!(
         output,
@@ -4105,6 +4467,34 @@ fn generate_client_implementation(
     writeln!(output, "\treturn Subscribe(F{module_prefix}QueryBuilder::AllTablesSqlQueries());");
     writeln!(output, "}}");
     writeln!(output);
+    writeln!(
+        output,
+        "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::AddBlueprintQuery(const {blueprint_query_struct}& Query)"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tPendingSqlQueries.Add(Query.Sql);");
+    writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
+    writeln!(output);
+    let mut blueprint_sources = iter_tables(module, visibility)
+        .map(|t| t.accessor_name.deref().to_case(Case::Pascal))
+        .chain(iter_views(module).map(|v| v.accessor_name.deref().to_case(Case::Pascal)))
+        .collect::<Vec<_>>();
+    blueprint_sources.sort();
+    for source_pascal in blueprint_sources {
+        let query_struct = format!("F{module_prefix}{source_pascal}Query");
+        writeln!(
+            output,
+            "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::Add{source_pascal}Query(const {query_struct}& Query)"
+        );
+        writeln!(output, "{{");
+        writeln!(output, "\t{blueprint_query_struct} GenericQuery;");
+        writeln!(output, "\tGenericQuery.Sql = Query.Sql;");
+        writeln!(output, "\tGenericQuery.ResultSourceName = Query.ResultSourceName;");
+        writeln!(output, "\treturn AddBlueprintQuery(GenericQuery);");
+        writeln!(output, "}}");
+        writeln!(output);
+    }
     writeln!(
         output,
         "U{module_prefix}SubscriptionHandle::U{module_prefix}SubscriptionHandle(U{module_prefix}DbConnection* InConn)"
@@ -4248,7 +4638,7 @@ fn generate_client_implementation(
     writeln!(output, "{{");
     writeln!(output, "\tif (OnConnectDelegate.IsBound())");
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tOnConnectDelegate.Execute(this, Identity, Token);");
+    writeln!(output, "\t\tOnConnectDelegate.Execute(this, InIdentity, InToken);");
     writeln!(output, "\t}}");
     writeln!(output, "}}");
     writeln!(
