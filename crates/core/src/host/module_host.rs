@@ -1749,16 +1749,6 @@ impl ModuleHost {
         res
     }
 
-    /// Variant of [`Self::call_reducer`] for database-to-database calls.
-    ///
-    /// Behaves identically to `call_reducer`, except that it enforces at-most-once
-    /// delivery using the `st_inbound_msg` dedup index.
-    /// Before invoking the reducer, the receiver checks whether
-    /// `sender_msg_id` ≤ the last delivered msg_id for `sender_database_identity`.
-    /// If so, the call is a duplicate and the stored committed or failed result is returned
-    /// without running the reducer.
-    /// Otherwise the reducer runs, and the dedup index is updated atomically
-    /// within the same transaction.
     pub async fn call_reducer_from_database(
         &self,
         caller_identity: Identity,

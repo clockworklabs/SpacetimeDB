@@ -1,4 +1,5 @@
 use super::instrumentation::CallTimes;
+
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
@@ -953,6 +954,7 @@ impl InstanceCommon {
                 };
                 let res = lifecycle_res
                     .map_err(anyhow::Error::from)
+                    // Call `on_success`, when about to commit
                     .and_then(|_| on_success(&mut tx, &return_value));
                 match res {
                     Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),

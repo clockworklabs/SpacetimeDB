@@ -98,7 +98,7 @@ struct PendingMessage {
 }
 
 /// Per-target-database delivery state.
-struct TargetState {
+struct DatabaseQueue {
     queue: VecDeque<PendingMessage>,
     /// When `Some`, this target is in backoff and should not be retried until this instant.
     blocked_until: Option<Instant>,
@@ -106,7 +106,7 @@ struct TargetState {
     backoff: Duration,
 }
 
-impl TargetState {
+impl DatabaseQueue {
     fn new() -> Self {
         Self {
             queue: VecDeque::new(),
@@ -141,7 +141,7 @@ enum DeliveryOutcome {
     ReducerError(String),
     /// Budget exceeded (HTTP 402).
     BudgetExceeded,
-    /// Transport error: network failure, unexpected HTTP status, etc. Caller should retry.
+    /// Transport error: database/reducer not found, network failure, unexpected HTTP status, etc. Caller should retry.
     TransportError(String),
 }
 
@@ -155,21 +155,21 @@ async fn run_idc_loop(
     let client = reqwest::Client::new();
 
     // Per-target-database delivery state.
-    let mut targets: HashMap<Identity, TargetState> = HashMap::new();
+    let mut db_queues: HashMap<Identity, DatabaseQueue> = HashMap::new();
 
     // On startup, load any pending messages that survived a restart.
-    load_pending_into_targets(&db, &mut targets);
+    load_pending_into_targets(&db, &mut db_queues);
 
     loop {
         // Deliver one message per ready target, then re-check.
         let mut any_delivered = true;
         while any_delivered {
             any_delivered = false;
-            for state in targets.values_mut() {
-                if !state.is_ready() {
+            for queue in db_queues.values_mut() {
+                if !queue.is_ready() {
                     continue;
                 }
-                let Some(msg) = state.queue.front().cloned() else {
+                let Some(msg) = queue.queue.front().cloned() else {
                     continue;
                 };
                 let outcome = attempt_delivery(&client, &config, &msg).await;
@@ -180,12 +180,12 @@ async fn run_idc_loop(
                             msg.msg_id,
                             msg.target_db_identity.to_hex(),
                         );
-                        state.record_transport_error();
+                        queue.record_transport_error();
                         // Do NOT pop the front — keep retrying this message for this target.
                     }
                     outcome => {
-                        state.queue.pop_front();
-                        state.record_success();
+                        queue.queue.pop_front();
+                        queue.record_success();
                         any_delivered = true;
                         let (result_status, result_payload) = outcome_to_result(&outcome);
                         finalize_message(&db, &module_host, &msg, result_status, result_payload).await;
@@ -195,7 +195,7 @@ async fn run_idc_loop(
         }
 
         // Compute how long to sleep: min over all blocked targets' unblock times.
-        let next_unblock = targets
+        let next_unblock = db_queues
             .values()
             .filter_map(|s| s.blocked_until)
             .min()
@@ -204,6 +204,8 @@ async fn run_idc_loop(
 
         // Wait for a notification or the next retry time.
         tokio::select! {
+            //TODO:(shub) optimise this to send new entry directly instead of calling
+            //`load_pending_into_targets`
             _ = notify_rx.recv() => {
                 // Drain all pending notifications (coalesce bursts).
                 while notify_rx.try_recv().is_ok() {}
@@ -211,8 +213,8 @@ async fn run_idc_loop(
             _ = tokio::time::sleep(sleep_duration) => {}
         }
 
-        // Reload pending messages from DB (catches anything missed and handles restart recovery).
-        load_pending_into_targets(&db, &mut targets);
+        // Reload pending messages from DB (catches new entries).
+        load_pending_into_targets(&db, &mut db_queues);
     }
 }
 
@@ -247,7 +249,7 @@ fn reducer_workload(module: &ModuleInfo, params: &CallReducerParams) -> Workload
     })
 }
 
-fn duplicate_result_from_row(row: spacetimedb_datastore::system_tables::StInboundMsgRow) -> ReducerCallResult {
+fn duplicate_result_from_st_inbound_row(row: spacetimedb_datastore::system_tables::StInboundMsgRow) -> ReducerCallResult {
     let outcome = match row.result_status {
         StInboundMsgResultStatus::Success => ReducerOutcome::Committed,
         StInboundMsgResultStatus::ReducerError => ReducerOutcome::Failed(Box::new(
@@ -294,7 +296,7 @@ where
     if let Some(row) = tx.get_inbound_msg_row(sender_identity) {
         if sender_msg_id == row.last_outbound_msg {
             let _ = db.rollback_mut_tx(tx);
-            return Ok((duplicate_result_from_row(row), false));
+            return Ok((duplicate_result_from_st_inbound_row(row), false));
         }
         if sender_msg_id < row.last_outbound_msg {
             let expected = row.last_outbound_msg + 1;
@@ -426,6 +428,8 @@ async fn finalize_message(
                 return;
             }
             Err(e) => {
+
+                delete_message(db, msg.msg_id);
                 log::error!(
                     "idc_actor: on_result reducer '{}' failed for msg_id={}: {e:?}",
                     on_result_reducer,
@@ -435,8 +439,6 @@ async fn finalize_message(
         }
     }
 
-    // Delete the row regardless of whether on_result succeeded or failed.
-    delete_message(db, msg.msg_id);
 }
 
 /// Load all messages from ST_OUTBOUND_MSG into the per-target queues, resolving delivery data
@@ -444,7 +446,7 @@ async fn finalize_message(
 ///
 /// A row's presence in ST_OUTBOUND_MSG means it has not yet been processed.
 /// Messages already in a target's queue (by msg_id) are not re-added.
-fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, TargetState>) {
+fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Identity, DatabaseQueue>) {
     let tx = db.begin_tx(Workload::Internal);
 
     let st_outbound_msg_rows: Vec<StOutboundMsgRow> = db
@@ -557,7 +559,7 @@ fn load_pending_into_targets(db: &RelationalDB, targets: &mut HashMap<Identity, 
     pending.sort_by_key(|m| m.msg_id);
 
     for msg in pending {
-        let state = targets.entry(msg.target_db_identity).or_insert_with(TargetState::new);
+        let state = db_queues.entry(msg.target_db_identity).or_insert_with(DatabaseQueue::new);
         // Only add if not already in the queue (avoid duplicates after reload).
         let already_queued = state.queue.iter().any(|m| m.msg_id == msg.msg_id);
         if !already_queued {

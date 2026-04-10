@@ -236,6 +236,7 @@ pub struct CallFromDatabaseQuery {
     msg_id: u64,
 }
 
+
 /// Call a reducer on behalf of another database, with deduplication.
 ///
 /// Endpoint: `POST /database/:name_or_identity/call-from-database/:reducer`
@@ -244,11 +245,12 @@ pub struct CallFromDatabaseQuery {
 /// - `sender_identity` — hex-encoded identity of the sending database.
 /// - `msg_id`          — the inter-database message ID from the sender's st_outbound_msg.
 ///
-/// Before invoking the reducer, the receiver checks `st_inbound_msg`.
-/// If the incoming `msg_id` is the last delivered msg_id for `sender_identity`,
-/// the call is a duplicate and 200 OK is returned immediately without running the reducer.
-/// Otherwise the reducer is invoked, the dedup index is updated atomically in the same
-/// transaction, and an acknowledgment is returned on success.
+/// Semantics:
+/// - The client **must send strictly increasing `msg_id` values per `sender_identity`.**
+/// - If a `msg_id` is **less than the last seen msg_id** for that sender, the request
+///   is treated as **invalid and rejected with a bad request error**.
+/// - If the incoming `msg_id` is equal to the last delivered msg_id, the call is treated
+///   as a duplicate and **200 OK is returned without invoking the reducer**.
 pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -295,6 +297,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
         )
         .await;
 
+    //Wait for durability before sending response
     if let Ok(rcr) = result.as_mut()
         && let Some(tx_offset) = rcr.tx_offset.as_mut()
         && let Some(mut durable_offset) = module.durable_tx_offset()
@@ -316,13 +319,14 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
                     axum::body::Body::from(rcr.reducer_return_value.unwrap_or_default()),
                 ),
                 // 422 = reducer ran but returned Err; the IDC actor uses this to distinguish
-                // reducer failures from transport errors (which it retries).
+                // reducer failures from other  errors (which it retries).
                 ReducerOutcome::Failed(errmsg) => {
                     (
                         StatusCode::UNPROCESSABLE_ENTITY,
                         axum::body::Body::from(errmsg.to_string()),
                     )
                 }
+                // This will be retried by IDC acttor
                 ReducerOutcome::BudgetExceeded => {
                     log::warn!(
                         "Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}"
