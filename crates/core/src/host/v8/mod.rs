@@ -1519,8 +1519,11 @@ async fn spawn_instance_worker(
                         Ok((rcr, trapped)) => (Ok(rcr), trapped),
                         Err(err) => (Err(err), false),
                     };
-                    worker_trapped.store(trapped, Ordering::Relaxed);
-                    send_worker_reply("call_reducer", reply_tx, res, trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+
+                    send_worker_reply("call_reducer", reply_tx, res);
                     should_exit = trapped;
                 }
                 JsWorkerRequest::CallReducerWithSuccessAction {
@@ -1535,8 +1538,11 @@ async fn spawn_instance_worker(
                         action,
                         |tx, params, on_success| call_reducer_with_success(tx, params, on_success),
                     );
-                    worker_trapped.store(trapped, Ordering::Relaxed);
-                    send_worker_reply("call_reducer", reply_tx, res, trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+
+                    send_worker_reply("call_reducer", reply_tx, res);
                     should_exit = trapped;
                 }
                 JsWorkerRequest::CallView { reply_tx, cmd } => {
