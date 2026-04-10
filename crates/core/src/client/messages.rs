@@ -10,6 +10,7 @@ use derive_more::From;
 use spacetimedb_client_api_messages::websocket::common::{self as ws_common, RowListLen as _};
 use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
+use spacetimedb_client_api_messages::websocket::v3 as ws_v3;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
@@ -97,6 +98,20 @@ impl SerializeBuffer {
     }
 }
 
+fn finalize_binary_serialize_buffer(
+    buffer: SerializeBuffer,
+    uncompressed_len: usize,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    match decide_compression(uncompressed_len, compression) {
+        ws_v1::Compression::None => buffer.uncompressed(),
+        ws_v1::Compression::Brotli => {
+            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
+        }
+        ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+    }
+}
+
 type BytesMutWriter<'a> = bytes::buf::Writer<&'a mut BytesMut>;
 
 pub enum InUseSerializeBuffer {
@@ -159,21 +174,14 @@ pub fn serialize(
             let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
                 bsatn::to_writer(w.into_inner(), &msg).unwrap()
             });
+            let srv_msg_len = srv_msg.len();
 
             // At this point, we no longer have a use for `msg`,
             // so try to reclaim its buffers.
             msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 
             // Conditionally compress the message.
-            let (in_use, msg_bytes) = match decide_compression(srv_msg.len(), config.compression) {
-                ws_v1::Compression::None => buffer.uncompressed(),
-                ws_v1::Compression::Brotli => {
-                    buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
-                }
-                ws_v1::Compression::Gzip => {
-                    buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress)
-                }
-            };
+            let (in_use, msg_bytes) = finalize_binary_serialize_buffer(buffer, srv_msg_len, config.compression);
             (in_use, msg_bytes.into())
         }
     }
@@ -192,18 +200,40 @@ pub fn serialize_v2(
     let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
         bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
     });
+    let srv_msg_len = srv_msg.len();
 
     // At this point, we no longer have a use for `msg`,
     // so try to reclaim its buffers.
     msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 
-    match decide_compression(srv_msg.len(), compression) {
-        ws_v1::Compression::None => buffer.uncompressed(),
-        ws_v1::Compression::Brotli => {
-            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
-        }
-        ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
-    }
+    finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
+}
+
+/// Serialize `msg` into a [`DataMessage`] containing a [`ws_v3::ServerFrame::Single`]
+/// whose payload is a BSATN-encoded [`ws_v2::ServerMessage`].
+///
+/// This mirrors the v2 framing by prepending the compression tag and applying
+/// conditional compression when configured.
+pub fn serialize_v3(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    mut buffer: SerializeBuffer,
+    msg: ws_v2::ServerMessage,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    let mut inner = BytesMut::with_capacity(SERIALIZE_BUFFER_INIT_CAP);
+    bsatn::to_writer((&mut inner).writer().into_inner(), &msg).expect("should be able to bsatn encode v2 message");
+
+    // At this point, we no longer have a use for `msg`,
+    // so try to reclaim its buffers.
+    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
+
+    let frame = ws_v3::ServerFrame::Single(inner.freeze());
+    let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
+        bsatn::to_writer(w.into_inner(), &frame).expect("should be able to bsatn encode v3 server frame");
+    });
+    let srv_msg_len = srv_msg.len();
+
+    finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
 }
 
 #[derive(Debug, From)]

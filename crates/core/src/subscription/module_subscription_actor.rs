@@ -1639,7 +1639,7 @@ impl ModuleSubscriptions {
                                 message,
                             );
                         }
-                        WsVersion::V2 => {
+                        WsVersion::V2 | WsVersion::V3 => {
                             if let Some(request_id) = event.request_id {
                                 self.send_reducer_failure_result_v2(client, &event, request_id);
                             }
