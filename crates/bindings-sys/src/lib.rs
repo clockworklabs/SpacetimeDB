@@ -865,6 +865,26 @@ pub mod raw {
         ) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.5")]
+    unsafe extern "C" {
+        /// Deletes all rows in the table identified by `table_id`.
+        ///
+        /// The number of rows deleted is written to the WASM pointer `out`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1170,6 +1190,21 @@ pub fn datastore_update_bsatn(table_id: TableId, index_id: IndexId, row: &mut [u
 #[inline]
 pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> Result<u32> {
     unsafe { call(|out| raw::datastore_delete_all_by_eq_bsatn(table_id, relation.as_ptr(), relation.len(), out)) }
+}
+
+/// Deletes all rows in the table identified by `table_id`.
+///
+/// The number of rows deleted is returned.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+#[inline]
+pub fn datastore_clear(table_id: TableId) -> Result<u64> {
+    unsafe { call(|out| raw::datastore_clear(table_id, out)) }
 }
 
 /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.

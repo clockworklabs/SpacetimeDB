@@ -156,6 +156,8 @@ public interface ITableView<View, T>
 
     bool Delete(T row);
 
+    ulong Clear();
+
     protected static ulong DoCount()
     {
         FFI.datastore_table_row_count(tableId, out var count);
@@ -198,6 +200,12 @@ public interface ITableView<View, T>
             out var out_
         );
         return out_ > 0;
+    }
+
+    protected static ulong DoClear()
+    {
+        FFI.datastore_clear(tableId, out var count);
+        return count;
     }
 
     protected static RawScheduleDefV10 MakeSchedule(string reducerName, ushort colIndex) =>
