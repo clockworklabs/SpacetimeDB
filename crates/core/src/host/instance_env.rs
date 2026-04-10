@@ -868,94 +868,14 @@ impl InstanceEnv {
             .with_label_values(self.database_identity())
             .inc_scope();
 
-        /// Strip the query part out of the URL in `err`, as query parameters may be sensitive
-        /// and we'd like it to be safe to directly log errors from this method.
-        fn strip_query_params_from_reqwest_error(mut err: reqwest::Error) -> reqwest::Error {
-            if let Some(url) = err.url_mut() {
-                // `set_query` of `None` clears the query part.
-                url.set_query(None);
-            }
-            err
-        }
+        let (client, reqwest_req) = prepare_http_request(request, body)?;
 
-        fn http_error<E: std::error::Error>(err: E) -> NodesError {
-            // Include the full error chain, not just the top-level message.
-            // `reqwest::Error` wraps underlying causes (DNS failure, connection refused,
-            // timeout, TLS errors, etc.) which are essential for debugging.
-            use std::fmt::Write;
-            let mut message = err.to_string();
-            let mut source = err.source();
-            while let Some(cause) = source {
-                write!(message, ": {cause}").unwrap();
-                source = cause.source();
-            }
-            NodesError::HttpError(message)
-        }
-
-        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
-        // and map its body into a type `reqwest` will like.
-        //
-        // See comments on and in `convert_http_request` for justification that there's no sensitive info in this error.
-        let (request, timeout) = convert_http_request(request).map_err(http_error)?;
-
-        let request = http::Request::from_parts(request, body);
-
-        let mut reqwest: reqwest::Request = request
-            .try_into()
-            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
-            // Strip those out before returning the error.
-            .map_err(strip_query_params_from_reqwest_error)
-            .map_err(http_error)?;
-
-        // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
-        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
-        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
-
-        // reqwest's timeout covers from the start of the request to the end of reading the body,
-        // so there's no need to do our own timeout operation.
-        *reqwest.timeout_mut() = Some(timeout);
-
-        let reqwest = reqwest;
-
-        // Check if we have a blocked IP address, since IP literals bypass DNS resolution.
-        if is_blocked_ip_literal(reqwest.url()) {
-            return Err(NodesError::HttpError(BLOCKED_HTTP_ADDRESS_ERROR.to_string()));
-        }
-
-        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
-            if is_blocked_ip_literal(attempt.url()) {
-                attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
-            } else {
-                reqwest::redirect::Policy::default().redirect(attempt)
-            }
-        });
-
-        // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
-
-        // Actually execute the HTTP request!
-        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-        let execute_fut = reqwest::Client::builder()
-            .dns_resolver(Arc::new(FilteredDnsResolver))
-            .redirect(redirect_policy)
-            .build()
-            .map_err(http_error)?
-            .execute(reqwest);
-
-        // Run the future that does IO work on a tokio worker thread, where it's more efficent.
+        // Run the future that does IO work on a tokio worker thread, where it's more efficient.
+        let execute_fut = client.execute(reqwest_req);
         let response_fut = tokio::spawn(async {
-            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
-            // We'll strip those with `strip_query_params_from_eqwest_error`
-            // after `await`ing `response_fut` below.
             let response = execute_fut.await?;
-
-            // Download the response body, which in all likelihood will be a stream,
-            // as reqwest seems to prefer that.
             let (response, body) = http::Response::from(response).into_parts();
-
-            // This error may also contain the full URL with query params.
-            // Again, we'll strip them after `await`ing `response_fut` below.
             let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
-
             Ok((response, body))
         })
         .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
@@ -966,29 +886,13 @@ impl InstanceEnv {
             let (response, body) = response_fut
                 .await
                 .inspect_err(|err: &reqwest::Error| {
-                    // Report the request's failure in our metrics as either a timeout or a misc. failure, as appropriate.
-                    if err.is_timeout() {
-                        DB_METRICS
-                            .procedure_num_timeout_http_requests
-                            .with_label_values(&database_identity)
-                            .inc();
-                    } else {
-                        DB_METRICS
-                            .procedure_num_failed_http_requests
-                            .with_label_values(&database_identity)
-                            .inc();
-                    }
+                    record_http_error_metrics(&database_identity, err);
                 })
-                // `response_fut` returns a `reqwest::Error`, which may contain the full URL including query params.
-                // Strip them out to clean the error of potentially sensitive info.
                 .map_err(strip_query_params_from_reqwest_error)
                 .map_err(http_error)?;
 
-            // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
-            // which has a stable BSATN encoding to pass across the WASM boundary.
             let response = convert_http_response(response);
 
-            // Record the response size in bytes.
             DB_METRICS
                 .procedure_http_response_size_bytes
                 .with_label_values(&database_identity)
@@ -996,6 +900,202 @@ impl InstanceEnv {
 
             Ok((response, body))
         })
+    }
+}
+
+/// State for an in-progress streaming HTTP response.
+///
+/// The background tokio task reads chunks from the response body
+/// and sends them through a bounded channel. The procedure reads
+/// chunks one at a time via [`InstanceEnv::http_stream_next`].
+pub struct HttpStreamState {
+    pub receiver: tokio::sync::mpsc::Receiver<Result<bytes::Bytes, String>>,
+    pub abort_handle: tokio::task::AbortHandle,
+}
+
+impl Drop for HttpStreamState {
+    fn drop(&mut self) {
+        self.abort_handle.abort();
+    }
+}
+
+impl InstanceEnv {
+    /// Initiate a streaming HTTP request.
+    ///
+    /// Returns a future that resolves to the response metadata and a chunk receiver.
+    /// The response body is read in the background and sent through a bounded channel.
+    ///
+    /// Security: reuses the same IP filtering, DNS resolution, timeout clamping,
+    /// and redirect policy as [`InstanceEnv::http_request`].
+    pub fn http_stream_open(
+        &mut self,
+        request: st_http::Request,
+        body: bytes::Bytes,
+    ) -> Result<
+        impl Future<
+                Output = Result<
+                    (
+                        st_http::Response,
+                        tokio::sync::mpsc::Receiver<Result<bytes::Bytes, String>>,
+                        tokio::task::AbortHandle,
+                    ),
+                    NodesError,
+                >,
+            > + use<>,
+        NodesError,
+    > {
+        if self.in_tx() {
+            return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpStreamOpen));
+        }
+
+        DB_METRICS
+            .procedure_num_http_requests
+            .with_label_values(self.database_identity())
+            .inc();
+        DB_METRICS
+            .procedure_http_request_size_bytes
+            .with_label_values(self.database_identity())
+            .inc_by((request.size_in_bytes() + body.len()) as _);
+        // Create the in-progress metric guard. Moved into the async block so it
+        // lives until the response headers are received and the chunk reader is spawned.
+        let in_progress_metric = DB_METRICS
+            .procedure_num_in_progress_http_requests
+            .with_label_values(self.database_identity())
+            .inc_scope();
+
+        let (client, reqwest_req) = prepare_http_request(request, body)?;
+        let execute_fut = client.execute(reqwest_req);
+
+        let database_identity = *self.database_identity();
+
+        Ok(async move {
+            // Keep the in-progress metric alive until the response headers arrive
+            // and the background chunk reader is spawned.
+            let _in_progress_metric = in_progress_metric;
+
+            let response = tokio::spawn(execute_fut)
+                .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
+                .await
+                .inspect_err(|err: &reqwest::Error| {
+                    record_http_error_metrics(&database_identity, err);
+                })
+                .map_err(strip_query_params_from_reqwest_error)
+                .map_err(http_error)?;
+
+            let (parts, body) = http::Response::from(response).into_parts();
+            let response = convert_http_response(parts);
+
+            // Spawn a background task that reads chunks from the response body
+            // and sends them through a bounded channel.
+            let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, String>>(8);
+            let task = tokio::spawn(async move {
+                use http_body_util::BodyExt;
+                let mut body = std::pin::pin!(body);
+                loop {
+                    match body.frame().await {
+                        Some(Ok(frame)) => {
+                            if let Ok(data) = frame.into_data() {
+                                if !data.is_empty() {
+                                    if tx.send(Ok(data)).await.is_err() {
+                                        // Receiver dropped — procedure closed the stream.
+                                        break;
+                                    }
+                                }
+                            }
+                            // Non-data frames (trailers) are skipped.
+                        }
+                        Some(Err(err)) => {
+                            let _ = tx.send(Err(err.to_string())).await;
+                            break;
+                        }
+                        None => {
+                            // Body stream ended.
+                            break;
+                        }
+                    }
+                }
+            });
+
+            Ok((response, rx, task.abort_handle()))
+        })
+    }
+}
+
+/// Strip the query part out of the URL in `err`, as query parameters may be sensitive
+/// and we'd like it to be safe to directly log errors from HTTP methods.
+fn strip_query_params_from_reqwest_error(mut err: reqwest::Error) -> reqwest::Error {
+    if let Some(url) = err.url_mut() {
+        url.set_query(None);
+    }
+    err
+}
+
+/// Convert a `std::error::Error` into a `NodesError::HttpError`,
+/// preserving the full error chain for debugging.
+fn http_error<E: std::error::Error>(err: E) -> NodesError {
+    use std::fmt::Write;
+    let mut message = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        write!(message, ": {cause}").unwrap();
+        source = cause.source();
+    }
+    NodesError::HttpError(message)
+}
+
+/// Prepare an HTTP request for execution: convert from our type to reqwest,
+/// apply timeout clamping, IP filtering, DNS filtering, and redirect policy.
+///
+/// Returns the `reqwest::Client` and `reqwest::Request` ready to execute.
+fn prepare_http_request(
+    request: st_http::Request,
+    body: bytes::Bytes,
+) -> Result<(reqwest::Client, reqwest::Request), NodesError> {
+    let (request_parts, timeout) = convert_http_request(request).map_err(http_error)?;
+    let request = http::Request::from_parts(request_parts, body);
+
+    let mut reqwest_req: reqwest::Request = request
+        .try_into()
+        .map_err(strip_query_params_from_reqwest_error)
+        .map_err(http_error)?;
+
+    let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
+    *reqwest_req.timeout_mut() = Some(timeout);
+
+    if is_blocked_ip_literal(reqwest_req.url()) {
+        return Err(NodesError::HttpError(BLOCKED_HTTP_ADDRESS_ERROR.to_string()));
+    }
+
+    let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+        if is_blocked_ip_literal(attempt.url()) {
+            attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
+        } else {
+            reqwest::redirect::Policy::default().redirect(attempt)
+        }
+    });
+
+    // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+    let client = reqwest::Client::builder()
+        .dns_resolver(Arc::new(FilteredDnsResolver))
+        .redirect(redirect_policy)
+        .build()
+        .map_err(http_error)?;
+
+    Ok((client, reqwest_req))
+}
+
+/// Record error metrics for a failed HTTP request.
+fn record_http_error_metrics(database_identity: &Identity, err: &reqwest::Error) {
+    if err.is_timeout() {
+        DB_METRICS
+            .procedure_num_timeout_http_requests
+            .with_label_values(database_identity)
+            .inc();
+    } else {
+        DB_METRICS
+            .procedure_num_failed_http_requests
+            .with_label_values(database_identity)
+            .inc();
     }
 }
 
@@ -2199,5 +2299,78 @@ mod test {
         assert_eq!(0, tx.metrics.bytes_written);
         assert_eq!(0, tx.metrics.bytes_sent_to_clients);
         Ok(())
+    }
+
+    #[test]
+    fn http_request_blocked_during_tx() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, _rt) = instance_env(db)?;
+
+        env.start_mutable_tx()?;
+
+        let request = spacetimedb_lib::http::Request {
+            method: spacetimedb_lib::http::Method::Get,
+            headers: std::iter::empty::<(Option<Box<str>>, Box<[u8]>)>().collect(),
+            timeout: None,
+            uri: "http://example.com".into(),
+            version: spacetimedb_lib::http::Version::Http11,
+        };
+        let result = env.http_request(request, bytes::Bytes::new());
+        assert!(
+            matches!(&result, Err(NodesError::WouldBlockTransaction(crate::host::AbiCall::ProcedureHttpRequest))),
+            "expected WouldBlockTransaction(ProcedureHttpRequest)"
+        );
+
+        env.abort_mutable_tx()?;
+        Ok(())
+    }
+
+    #[test]
+    fn http_stream_open_blocked_during_tx() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, _rt) = instance_env(db)?;
+
+        env.start_mutable_tx()?;
+
+        let request = spacetimedb_lib::http::Request {
+            method: spacetimedb_lib::http::Method::Get,
+            headers: std::iter::empty::<(Option<Box<str>>, Box<[u8]>)>().collect(),
+            timeout: None,
+            uri: "http://example.com".into(),
+            version: spacetimedb_lib::http::Version::Http11,
+        };
+        let result = env.http_stream_open(request, bytes::Bytes::new());
+        assert!(
+            matches!(&result, Err(NodesError::WouldBlockTransaction(crate::host::AbiCall::ProcedureHttpStreamOpen))),
+            "expected WouldBlockTransaction(ProcedureHttpStreamOpen)"
+        );
+
+        env.abort_mutable_tx()?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn http_stream_state_drop_aborts_background_task() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, String>>(8);
+        let task = tokio::spawn(async move {
+            // Hold the sender open and block indefinitely.
+            let _tx = tx;
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        });
+        let abort_handle = task.abort_handle();
+
+        let state = HttpStreamState {
+            receiver: rx,
+            abort_handle,
+        };
+
+        // Dropping the state should abort the background task via the Drop impl.
+        drop(state);
+
+        let result = task.await;
+        assert!(
+            result.unwrap_err().is_cancelled(),
+            "background task should have been cancelled by HttpStreamState::drop"
+        );
     }
 }

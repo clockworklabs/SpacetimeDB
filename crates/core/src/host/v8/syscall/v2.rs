@@ -17,6 +17,7 @@ use super::common::{
     console_log, console_timer_end, console_timer_start, datastore_index_scan_range_bsatn_inner,
     datastore_table_row_count, datastore_table_scan_bsatn, deserialize_row_iter_idx, get_env, identity,
     index_id_from_name, procedure_abort_mut_tx, procedure_commit_mut_tx, procedure_http_request,
+    procedure_http_stream_close, procedure_http_stream_next, procedure_http_stream_open,
     procedure_start_mut_tx, row_iter_bsatn_close, table_id_from_name, volatile_nonatomic_schedule_immediate,
 };
 use super::hooks::get_hook_function;
@@ -132,6 +133,9 @@ pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         (with_sys_result, AbiCall::Identity, identity),
         (with_sys_result, AbiCall::GetJwt, get_jwt_payload),
         (with_sys_result, AbiCall::ProcedureHttpRequest, procedure_http_request),
+        (with_sys_result, AbiCall::ProcedureHttpStreamOpen, procedure_http_stream_open),
+        (with_sys_result, AbiCall::ProcedureHttpStreamNext, procedure_http_stream_next),
+        (with_sys_result, AbiCall::ProcedureHttpStreamClose, procedure_http_stream_close),
         (
             with_sys_result,
             AbiCall::ProcedureStartMutTransaction,
