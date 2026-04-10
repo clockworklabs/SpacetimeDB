@@ -7,7 +7,7 @@ import os
 import re
 import fnmatch
 import json
-from . import TEST_DIR, SPACETIME_BIN, BASE_STDB_CONFIG_PATH, exe_suffix, build_template_target
+from . import TEST_DIR, SPACETIME_BIN, BASE_STDB_CONFIG_PATH, exe_suffix, build_template_target, update_spacetime_bin_path
 import smoketests
 import sys
 import logging
@@ -137,6 +137,9 @@ def main():
     if not args.no_build_cli:
         logging.info("Compiling spacetime cli...")
         smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
+        build_metadata = smoketests.run_cmd("cargo", "metadata", "--format-version", "1", "--no-deps", cwd=TEST_DIR.parent, capture_stdout=False)
+        parsed = json.loads(build_metadata)
+        update_spacetime_bin_path(Path(parsed['target_directory']))
 
     update_bin_name = "spacetimedb-update" + exe_suffix
     try:
