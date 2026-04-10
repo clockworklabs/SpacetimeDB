@@ -89,6 +89,18 @@ async function main(): Promise<void> {
   let activeEpoch: number | null = null;
   let stopping = false;
 
+  const startActiveEpoch = async (epoch: number) => {
+    console.log(`[generator ${id}] starting epoch ${epoch}`);
+    await session.startEpoch(epoch);
+    activeEpoch = epoch;
+    await retryUntilSuccess('[generator] started', async () => {
+      await postJson<CoordinatorState>(coordinatorUrl, '/started', {
+        id,
+        epoch,
+      });
+    }, pollMs, controlRetries, () => !stopping);
+  };
+
   const stopActiveEpoch = async () => {
     if (activeEpoch == null) return;
 
@@ -147,17 +159,15 @@ async function main(): Promise<void> {
         state.participants.includes(id);
       const shouldKeepRunning =
         isParticipant &&
-        (state.phase === 'warmup' || state.phase === 'measure');
+        (state.phase === 'starting' || state.phase === 'measure');
 
       if (!activeEpoch) {
         if (
-          state.phase === 'warmup' &&
+          state.phase === 'starting' &&
           state.currentEpoch != null &&
           state.participants.includes(id)
         ) {
-          console.log(`[generator ${id}] starting epoch ${state.currentEpoch}`);
-          await session.startEpoch(state.currentEpoch);
-          activeEpoch = state.currentEpoch;
+          await startActiveEpoch(state.currentEpoch);
         }
       } else if (!shouldKeepRunning) {
         await stopActiveEpoch();

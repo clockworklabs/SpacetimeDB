@@ -219,12 +219,12 @@ impl V8HeapPolicyConfig {
 
 /// Default number of requests between V8 heap checks.
 fn def_req_interval() -> Option<u64> {
-    Some(65_536)
+    Some(4_096)
 }
 
 /// Default wall-clock interval between V8 heap checks.
 fn def_time_interval() -> Option<Duration> {
-    Some(Duration::from_secs(30))
+    Some(Duration::from_secs(5))
 }
 
 /// Default heap fill fraction that triggers a GC.
@@ -413,10 +413,10 @@ mod tests {
     fn v8_heap_policy_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
 
-        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(65_536));
+        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(4_096));
         assert_eq!(
             config.v8_heap_policy.heap_check_time_interval,
-            Some(Duration::from_secs(30))
+            Some(Duration::from_secs(5))
         );
         assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.67);
         assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.75);

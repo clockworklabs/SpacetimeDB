@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { execSync } from 'node:child_process';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { CONNECTORS } from './connectors';
@@ -23,8 +23,6 @@ const {
   noAnimation,
   seconds,
   skipPrep,
-  stdbCompression,
-  stdbConfirmedReads,
   stdbModule,
   stdbModulePath,
   stdbUrl,
@@ -114,11 +112,6 @@ const serviceConfigs: Record<string, ServiceConfig> = {
     healthCheck: spacetimePing,
     startCmd: 'spacetime start',
   },
-  spacetimedbRustClient: {
-    name: 'SpacetimeDB',
-    healthCheck: spacetimePing,
-    startCmd: 'spacetime start',
-  },
   convex: {
     name: 'Convex',
     healthCheck: () => ping(3210),
@@ -195,7 +188,7 @@ async function prepSystem(system: ConnectorKey): Promise<void> {
   const spinner = createSpinner(system.padEnd(15));
 
   try {
-    if (system === 'spacetimedb' || system == 'spacetimedbRustClient') {
+    if (system === 'spacetimedb') {
       // Publish module (creates DB if needed, updates if exists)
       await sh('spacetime', [
         'publish',
@@ -265,52 +258,8 @@ async function runBenchmarkOther(
   };
 }
 
-async function runBenchmarkStdb(): Promise<BenchResult | null> {
-  await sh('cargo', [
-    'run',
-    //"--quiet",
-    '--manifest-path',
-    'spacetimedb-rust-client/Cargo.toml',
-    '--',
-    'bench',
-    //"--quiet",
-    '--server',
-    'ws://' + stdbUrl,
-    '--module',
-    stdbModule,
-    '--compression',
-    stdbCompression,
-    '--duration',
-    `${seconds}s`,
-    '--connections',
-    String(concurrency),
-    '--alpha',
-    String(alpha),
-    '--tps-write-path',
-    'spacetimedb-tps.tmp.log',
-    '--confirmed-reads',
-    String(stdbConfirmedReads),
-  ]);
-
-  const tpsStr = (await readFile('spacetimedb-tps.tmp.log', 'utf-8')).trim();
-  const tps = Number(tpsStr);
-  if (isNaN(tps)) {
-    console.warn(`[spacetimedb] Failed to parse TPS from file: ${tpsStr}`);
-    return null;
-  }
-
-  return {
-    system: 'spacetimedb',
-    tps: Math.round(tps),
-  };
-}
-
 async function runBenchmark(system: ConnectorKey): Promise<BenchResult | null> {
-  if (system === 'spacetimedbRustClient') {
-    return await runBenchmarkStdb();
-  } else {
-    return await runBenchmarkOther(system);
-  }
+  return await runBenchmarkOther(system);
 }
 
 // ============================================================================

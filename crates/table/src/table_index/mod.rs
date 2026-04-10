@@ -66,152 +66,208 @@ mod unique_hash_index;
 pub use self::index::{Index, IndexCannotSeekRange, IndexSeekRangeResult, RangedIndex};
 pub use self::key_size::KeySize;
 
-/// A point iterator over a [`TypedIndex`], with a specialized key type.
-///
-/// See module docs for info about specialization.
-enum TypedIndexPointIter<'a> {
-    NonUnique(SameKeyEntryIter<'a>),
-    Unique(UniquePointIter),
-}
-
-impl Iterator for TypedIndexPointIter<'_> {
-    type Item = RowPointer;
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::NonUnique(this) => this.next(),
-            Self::Unique(this) => this.next(),
+macro_rules! table_iter {
+    ($(#[$wattr:meta])* pub struct $wrapper:ident =>
+     $(#[$battr:meta])* enum $base:ident {
+        $($(#[$vattr:meta])* $var:ident($varty:ty),)*
+     }) => {
+        $(#[$wattr])*
+        pub struct $wrapper<'a> {
+            iter: $base<'a>,
         }
-    }
-}
 
-/// An iterator over rows matching a certain [`AlgebraicValue`] on the [`TableIndex`].
-pub struct TableIndexPointIter<'a> {
-    /// The iterator seeking for matching values.
-    iter: TypedIndexPointIter<'a>,
-}
+        impl Iterator for $wrapper<'_> {
+            type Item = RowPointer;
 
-impl Iterator for TableIndexPointIter<'_> {
-    type Item = RowPointer;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-/// A ranged iterator over a [`TypedIndex`], with a specialized key type.
-///
-/// See module docs for info about specialization.
-#[derive(Clone)]
-enum TypedIndexRangeIter<'a> {
-    /// The range itself provided was empty.
-    RangeEmpty,
-
-    // All the non-unique btree index iterators.
-    BTreeBool(BTreeIndexRangeIter<'a, bool>),
-    BTreeU8(BTreeIndexRangeIter<'a, u8>),
-    BTreeSumTag(BTreeIndexRangeIter<'a, SumTag>),
-    BTreeI8(BTreeIndexRangeIter<'a, i8>),
-    BTreeU16(BTreeIndexRangeIter<'a, u16>),
-    BTreeI16(BTreeIndexRangeIter<'a, i16>),
-    BTreeU32(BTreeIndexRangeIter<'a, u32>),
-    BTreeI32(BTreeIndexRangeIter<'a, i32>),
-    BTreeU64(BTreeIndexRangeIter<'a, u64>),
-    BTreeI64(BTreeIndexRangeIter<'a, i64>),
-    BTreeU128(BTreeIndexRangeIter<'a, u128>),
-    BTreeI128(BTreeIndexRangeIter<'a, i128>),
-    BTreeU256(BTreeIndexRangeIter<'a, u256>),
-    BTreeI256(BTreeIndexRangeIter<'a, i256>),
-    BTreeF32(BTreeIndexRangeIter<'a, F32>),
-    BTreeF64(BTreeIndexRangeIter<'a, F64>),
-    BTreeString(BTreeIndexRangeIter<'a, Box<str>>),
-    BTreeAV(BTreeIndexRangeIter<'a, AlgebraicValue>),
-
-    // All the unique btree index iterators.
-    UniqueBTreeBool(UniqueBTreeIndexRangeIter<'a, bool>),
-    UniqueBTreeU8(UniqueBTreeIndexRangeIter<'a, u8>),
-    UniqueBTreeSumTag(UniqueBTreeIndexRangeIter<'a, SumTag>),
-    UniqueBTreeI8(UniqueBTreeIndexRangeIter<'a, i8>),
-    UniqueBTreeU16(UniqueBTreeIndexRangeIter<'a, u16>),
-    UniqueBTreeI16(UniqueBTreeIndexRangeIter<'a, i16>),
-    UniqueBTreeU32(UniqueBTreeIndexRangeIter<'a, u32>),
-    UniqueBTreeI32(UniqueBTreeIndexRangeIter<'a, i32>),
-    UniqueBTreeU64(UniqueBTreeIndexRangeIter<'a, u64>),
-    UniqueBTreeI64(UniqueBTreeIndexRangeIter<'a, i64>),
-    UniqueBTreeU128(UniqueBTreeIndexRangeIter<'a, u128>),
-    UniqueBTreeI128(UniqueBTreeIndexRangeIter<'a, i128>),
-    UniqueBTreeU256(UniqueBTreeIndexRangeIter<'a, u256>),
-    UniqueBTreeI256(UniqueBTreeIndexRangeIter<'a, i256>),
-    UniqueBTreeF32(UniqueBTreeIndexRangeIter<'a, F32>),
-    UniqueBTreeF64(UniqueBTreeIndexRangeIter<'a, F64>),
-    UniqueBTreeString(UniqueBTreeIndexRangeIter<'a, Box<str>>),
-    UniqueBTreeAV(UniqueBTreeIndexRangeIter<'a, AlgebraicValue>),
-
-    UniqueDirect(UniqueDirectIndexRangeIter<'a>),
-    UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
-}
-
-impl Iterator for TypedIndexRangeIter<'_> {
-    type Item = RowPointer;
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::RangeEmpty => None,
-
-            Self::BTreeBool(this) => this.next(),
-            Self::BTreeU8(this) => this.next(),
-            Self::BTreeSumTag(this) => this.next(),
-            Self::BTreeI8(this) => this.next(),
-            Self::BTreeU16(this) => this.next(),
-            Self::BTreeI16(this) => this.next(),
-            Self::BTreeU32(this) => this.next(),
-            Self::BTreeI32(this) => this.next(),
-            Self::BTreeU64(this) => this.next(),
-            Self::BTreeI64(this) => this.next(),
-            Self::BTreeU128(this) => this.next(),
-            Self::BTreeI128(this) => this.next(),
-            Self::BTreeU256(this) => this.next(),
-            Self::BTreeI256(this) => this.next(),
-            Self::BTreeF32(this) => this.next(),
-            Self::BTreeF64(this) => this.next(),
-            Self::BTreeString(this) => this.next(),
-            Self::BTreeAV(this) => this.next(),
-
-            Self::UniqueBTreeBool(this) => this.next(),
-            Self::UniqueBTreeU8(this) => this.next(),
-            Self::UniqueBTreeSumTag(this) => this.next(),
-            Self::UniqueBTreeI8(this) => this.next(),
-            Self::UniqueBTreeU16(this) => this.next(),
-            Self::UniqueBTreeI16(this) => this.next(),
-            Self::UniqueBTreeU32(this) => this.next(),
-            Self::UniqueBTreeI32(this) => this.next(),
-            Self::UniqueBTreeU64(this) => this.next(),
-            Self::UniqueBTreeI64(this) => this.next(),
-            Self::UniqueBTreeU128(this) => this.next(),
-            Self::UniqueBTreeI128(this) => this.next(),
-            Self::UniqueBTreeU256(this) => this.next(),
-            Self::UniqueBTreeI256(this) => this.next(),
-            Self::UniqueBTreeF32(this) => this.next(),
-            Self::UniqueBTreeF64(this) => this.next(),
-            Self::UniqueBTreeString(this) => this.next(),
-            Self::UniqueBTreeAV(this) => this.next(),
-
-            Self::UniqueDirect(this) => this.next(),
-            Self::UniqueDirectU8(this) => this.next(),
+            fn next(&mut self) -> Option<Self::Item> {
+                self.iter.next()
+            }
         }
+
+        $(#[$battr])*
+        #[derive(derive_more::From)]
+        enum $base<'a> {
+            $($(#[$vattr])* $var($varty)),*
+        }
+
+        impl Iterator for $base<'_> {
+            type Item = RowPointer;
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    $(Self::$var(this) => this.next()),*
+                }
+            }
+        }
+    };
+}
+
+table_iter! {
+    /// An iterator over rows matching a certain [`AlgebraicValue`] on the [`TableIndex`].
+    pub struct TableIndexPointIter =>
+    /// A point iterator over a [`TypedIndex`], with a specialized key type.
+    ///
+    /// See module docs for info about specialization.
+    enum TypedIndexPointIter {
+        NonUnique(SameKeyEntryIter<'a>),
+        Unique(UniquePointIter),
     }
 }
 
-/// An iterator over rows matching a range of [`AlgebraicValue`]s on the [`TableIndex`].
-#[derive(Clone)]
-pub struct TableIndexRangeIter<'a> {
-    /// The iterator seeking for matching values.
-    iter: TypedIndexRangeIter<'a>,
+table_iter! {
+    /// An iterator over all rows in a [`TableIndex`].
+    pub struct TableIndexIter =>
+    /// An iterator over all rows in a [`TypedIndex`].
+    ///
+    /// See module docs for info about specialization.
+    enum TypedIndexIter {
+        // All the non-unique btree index iterators.
+        BTreeBool(<BTreeIndex<bool> as Index>::Iter<'a>),
+        BTreeU8(<BTreeIndex<u8> as Index>::Iter<'a>),
+        BTreeSumTag(<BTreeIndex<SumTag> as Index>::Iter<'a>),
+        BTreeI8(<BTreeIndex<i8> as Index>::Iter<'a>),
+        BTreeU16(<BTreeIndex<u16> as Index>::Iter<'a>),
+        BTreeI16(<BTreeIndex<i16> as Index>::Iter<'a>),
+        BTreeU32(<BTreeIndex<u32> as Index>::Iter<'a>),
+        BTreeI32(<BTreeIndex<i32> as Index>::Iter<'a>),
+        BTreeU64(<BTreeIndex<u64> as Index>::Iter<'a>),
+        BTreeI64(<BTreeIndex<i64> as Index>::Iter<'a>),
+        BTreeU128(<BTreeIndex<u128> as Index>::Iter<'a>),
+        BTreeI128(<BTreeIndex<i128> as Index>::Iter<'a>),
+        BTreeU256(<BTreeIndex<u256> as Index>::Iter<'a>),
+        BTreeI256(<BTreeIndex<i256> as Index>::Iter<'a>),
+        BTreeF32(<BTreeIndex<F32> as Index>::Iter<'a>),
+        BTreeF64(<BTreeIndex<F64> as Index>::Iter<'a>),
+        BTreeString(<BTreeIndex<Box<str>> as Index>::Iter<'a>),
+        BTreeAV(<BTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+
+        // All the unique btree index iterators.
+        UniqueBTreeBool(<UniqueBTreeIndex<bool> as Index>::Iter<'a>),
+        UniqueBTreeU8(<UniqueBTreeIndex<u8> as Index>::Iter<'a>),
+        UniqueBTreeSumTag(<UniqueBTreeIndex<SumTag> as Index>::Iter<'a>),
+        UniqueBTreeI8(<UniqueBTreeIndex<i8> as Index>::Iter<'a>),
+        UniqueBTreeU16(<UniqueBTreeIndex<u16> as Index>::Iter<'a>),
+        UniqueBTreeI16(<UniqueBTreeIndex<i16> as Index>::Iter<'a>),
+        UniqueBTreeU32(<UniqueBTreeIndex<u32> as Index>::Iter<'a>),
+        UniqueBTreeI32(<UniqueBTreeIndex<i32> as Index>::Iter<'a>),
+        UniqueBTreeU64(<UniqueBTreeIndex<u64> as Index>::Iter<'a>),
+        UniqueBTreeI64(<UniqueBTreeIndex<i64> as Index>::Iter<'a>),
+        UniqueBTreeU128(<UniqueBTreeIndex<u128> as Index>::Iter<'a>),
+        UniqueBTreeI128(<UniqueBTreeIndex<i128> as Index>::Iter<'a>),
+        UniqueBTreeU256(<UniqueBTreeIndex<u256> as Index>::Iter<'a>),
+        UniqueBTreeI256(<UniqueBTreeIndex<i256> as Index>::Iter<'a>),
+        UniqueBTreeF32(<UniqueBTreeIndex<F32> as Index>::Iter<'a>),
+        UniqueBTreeF64(<UniqueBTreeIndex<F64> as Index>::Iter<'a>),
+        UniqueBTreeString(<UniqueBTreeIndex<Box<str>> as Index>::Iter<'a>),
+        UniqueBTreeAV(<UniqueBTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+
+        // All the non-unique hash index iterators.
+        HashBool(<HashIndex<bool> as Index>::Iter<'a>),
+        HashU8(<HashIndex<u8> as Index>::Iter<'a>),
+        HashSumTag(<HashIndex<SumTag> as Index>::Iter<'a>),
+        HashI8(<HashIndex<i8> as Index>::Iter<'a>),
+        HashU16(<HashIndex<u16> as Index>::Iter<'a>),
+        HashI16(<HashIndex<i16> as Index>::Iter<'a>),
+        HashU32(<HashIndex<u32> as Index>::Iter<'a>),
+        HashI32(<HashIndex<i32> as Index>::Iter<'a>),
+        HashU64(<HashIndex<u64> as Index>::Iter<'a>),
+        HashI64(<HashIndex<i64> as Index>::Iter<'a>),
+        HashU128(<HashIndex<u128> as Index>::Iter<'a>),
+        HashI128(<HashIndex<i128> as Index>::Iter<'a>),
+        HashU256(<HashIndex<u256> as Index>::Iter<'a>),
+        HashI256(<HashIndex<i256> as Index>::Iter<'a>),
+        HashF32(<HashIndex<F32> as Index>::Iter<'a>),
+        HashF64(<HashIndex<F64> as Index>::Iter<'a>),
+        HashString(<HashIndex<Box<str>> as Index>::Iter<'a>),
+        HashAV(<HashIndex<AlgebraicValue> as Index>::Iter<'a>),
+        HashBytesKey8(<HashIndex<BytesKey<BYTES_KEY_SIZE_8_H>> as Index>::Iter<'a>),
+        HashBytesKey24(<HashIndex<BytesKey<BYTES_KEY_SIZE_24_H>> as Index>::Iter<'a>),
+        HashBytesKey56(<HashIndex<BytesKey<BYTES_KEY_SIZE_56_H>> as Index>::Iter<'a>),
+        HashBytesKey120(<HashIndex<BytesKey<BYTES_KEY_SIZE_120_H>> as Index>::Iter<'a>),
+
+        // All the unique hash index iterators.
+        UniqueHashBool(<UniqueHashIndex<bool> as Index>::Iter<'a>),
+        UniqueHashU8(<UniqueHashIndex<u8> as Index>::Iter<'a>),
+        UniqueHashSumTag(<UniqueHashIndex<SumTag> as Index>::Iter<'a>),
+        UniqueHashI8(<UniqueHashIndex<i8> as Index>::Iter<'a>),
+        UniqueHashU16(<UniqueHashIndex<u16> as Index>::Iter<'a>),
+        UniqueHashI16(<UniqueHashIndex<i16> as Index>::Iter<'a>),
+        UniqueHashU32(<UniqueHashIndex<u32> as Index>::Iter<'a>),
+        UniqueHashI32(<UniqueHashIndex<i32> as Index>::Iter<'a>),
+        UniqueHashU64(<UniqueHashIndex<u64> as Index>::Iter<'a>),
+        UniqueHashI64(<UniqueHashIndex<i64> as Index>::Iter<'a>),
+        UniqueHashU128(<UniqueHashIndex<u128> as Index>::Iter<'a>),
+        UniqueHashI128(<UniqueHashIndex<i128> as Index>::Iter<'a>),
+        UniqueHashU256(<UniqueHashIndex<u256> as Index>::Iter<'a>),
+        UniqueHashI256(<UniqueHashIndex<i256> as Index>::Iter<'a>),
+        UniqueHashF32(<UniqueHashIndex<F32> as Index>::Iter<'a>),
+        UniqueHashF64(<UniqueHashIndex<F64> as Index>::Iter<'a>),
+        UniqueHashString(<UniqueHashIndex<Box<str>> as Index>::Iter<'a>),
+        UniqueHashAV(<UniqueHashIndex<AlgebraicValue> as Index>::Iter<'a>),
+        UniqueHashBytesKey8(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_8_H>> as Index>::Iter<'a>),
+        UniqueHashBytesKey24(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_24_H>> as Index>::Iter<'a>),
+        UniqueHashBytesKey56(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_56_H>> as Index>::Iter<'a>),
+        UniqueHashBytesKey120(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_120_H>> as Index>::Iter<'a>),
+
+        // All the direct index iterators.
+        UniqueDirect(UniqueDirectIndexRangeIter<'a>),
+        UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
+    }
 }
 
-impl Iterator for TableIndexRangeIter<'_> {
-    type Item = RowPointer;
+table_iter! {
+    /// An iterator over rows matching a range of [`AlgebraicValue`]s on the [`TableIndex`].
+    #[derive(Clone)]
+    pub struct TableIndexRangeIter =>
+    /// A ranged iterator over a [`TypedIndex`], with a specialized key type.
+    ///
+    /// See module docs for info about specialization.
+    #[derive(Clone)]
+    enum TypedIndexRangeIter {
+        /// The range itself provided was empty.
+        RangeEmpty(iter::Empty<RowPointer>),
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        // All the non-unique btree index iterators.
+        BTreeBool(BTreeIndexRangeIter<'a, bool>),
+        BTreeU8(BTreeIndexRangeIter<'a, u8>),
+        BTreeSumTag(BTreeIndexRangeIter<'a, SumTag>),
+        BTreeI8(BTreeIndexRangeIter<'a, i8>),
+        BTreeU16(BTreeIndexRangeIter<'a, u16>),
+        BTreeI16(BTreeIndexRangeIter<'a, i16>),
+        BTreeU32(BTreeIndexRangeIter<'a, u32>),
+        BTreeI32(BTreeIndexRangeIter<'a, i32>),
+        BTreeU64(BTreeIndexRangeIter<'a, u64>),
+        BTreeI64(BTreeIndexRangeIter<'a, i64>),
+        BTreeU128(BTreeIndexRangeIter<'a, u128>),
+        BTreeI128(BTreeIndexRangeIter<'a, i128>),
+        BTreeU256(BTreeIndexRangeIter<'a, u256>),
+        BTreeI256(BTreeIndexRangeIter<'a, i256>),
+        BTreeF32(BTreeIndexRangeIter<'a, F32>),
+        BTreeF64(BTreeIndexRangeIter<'a, F64>),
+        BTreeString(BTreeIndexRangeIter<'a, Box<str>>),
+        BTreeAV(BTreeIndexRangeIter<'a, AlgebraicValue>),
+
+        // All the unique btree index iterators.
+        UniqueBTreeBool(UniqueBTreeIndexRangeIter<'a, bool>),
+        UniqueBTreeU8(UniqueBTreeIndexRangeIter<'a, u8>),
+        UniqueBTreeSumTag(UniqueBTreeIndexRangeIter<'a, SumTag>),
+        UniqueBTreeI8(UniqueBTreeIndexRangeIter<'a, i8>),
+        UniqueBTreeU16(UniqueBTreeIndexRangeIter<'a, u16>),
+        UniqueBTreeI16(UniqueBTreeIndexRangeIter<'a, i16>),
+        UniqueBTreeU32(UniqueBTreeIndexRangeIter<'a, u32>),
+        UniqueBTreeI32(UniqueBTreeIndexRangeIter<'a, i32>),
+        UniqueBTreeU64(UniqueBTreeIndexRangeIter<'a, u64>),
+        UniqueBTreeI64(UniqueBTreeIndexRangeIter<'a, i64>),
+        UniqueBTreeU128(UniqueBTreeIndexRangeIter<'a, u128>),
+        UniqueBTreeI128(UniqueBTreeIndexRangeIter<'a, i128>),
+        UniqueBTreeU256(UniqueBTreeIndexRangeIter<'a, u256>),
+        UniqueBTreeI256(UniqueBTreeIndexRangeIter<'a, i256>),
+        UniqueBTreeF32(UniqueBTreeIndexRangeIter<'a, F32>),
+        UniqueBTreeF64(UniqueBTreeIndexRangeIter<'a, F64>),
+        UniqueBTreeString(UniqueBTreeIndexRangeIter<'a, Box<str>>),
+        UniqueBTreeAV(UniqueBTreeIndexRangeIter<'a, AlgebraicValue>),
+
+        UniqueDirect(UniqueDirectIndexRangeIter<'a>),
+        UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
     }
 }
 
@@ -1298,95 +1354,99 @@ impl TypedIndex {
     fn seek_point(&self, key: &TypedIndexKey<'_>) -> TypedIndexPointIter<'_> {
         use TypedIndex::*;
         use TypedIndexKey::*;
-        use TypedIndexPointIter::*;
         match (self, key) {
-            (BTreeBool(this), Bool(key)) => NonUnique(this.seek_point(key)),
-            (BTreeU8(this), U8(key)) => NonUnique(this.seek_point(key)),
-            (BTreeSumTag(this), SumTag(key)) => NonUnique(this.seek_point(key)),
-            (BTreeI8(this), I8(key)) => NonUnique(this.seek_point(key)),
-            (BTreeU16(this), U16(key)) => NonUnique(this.seek_point(key)),
-            (BTreeI16(this), I16(key)) => NonUnique(this.seek_point(key)),
-            (BTreeU32(this), U32(key)) => NonUnique(this.seek_point(key)),
-            (BTreeI32(this), I32(key)) => NonUnique(this.seek_point(key)),
-            (BTreeU64(this), U64(key)) => NonUnique(this.seek_point(key)),
-            (BTreeI64(this), I64(key)) => NonUnique(this.seek_point(key)),
-            (BTreeU128(this), U128(key)) => NonUnique(this.seek_point(key)),
-            (BTreeI128(this), I128(key)) => NonUnique(this.seek_point(key)),
-            (BTreeU256(this), U256(key)) => NonUnique(this.seek_point(key)),
-            (BTreeI256(this), I256(key)) => NonUnique(this.seek_point(key)),
-            (BTreeF32(this), F32(key)) => NonUnique(this.seek_point(key)),
-            (BTreeF64(this), F64(key)) => NonUnique(this.seek_point(key)),
-            (BTreeString(this), String(key)) => NonUnique(this.seek_point(key.borrow())),
-            (BTreeAV(this), AV(key)) => NonUnique(this.seek_point(key.borrow())),
-            (HashBool(this), Bool(key)) => NonUnique(this.seek_point(key)),
-            (HashU8(this), U8(key)) => NonUnique(this.seek_point(key)),
-            (HashSumTag(this), SumTag(key)) => NonUnique(this.seek_point(key)),
-            (HashI8(this), I8(key)) => NonUnique(this.seek_point(key)),
-            (HashU16(this), U16(key)) => NonUnique(this.seek_point(key)),
-            (HashI16(this), I16(key)) => NonUnique(this.seek_point(key)),
-            (HashU32(this), U32(key)) => NonUnique(this.seek_point(key)),
-            (HashI32(this), I32(key)) => NonUnique(this.seek_point(key)),
-            (HashU64(this), U64(key)) => NonUnique(this.seek_point(key)),
-            (HashI64(this), I64(key)) => NonUnique(this.seek_point(key)),
-            (HashU128(this), U128(key)) => NonUnique(this.seek_point(key)),
-            (HashI128(this), I128(key)) => NonUnique(this.seek_point(key)),
-            (HashU256(this), U256(key)) => NonUnique(this.seek_point(key)),
-            (HashI256(this), I256(key)) => NonUnique(this.seek_point(key)),
-            (HashF32(this), F32(key)) => NonUnique(this.seek_point(key)),
-            (HashF64(this), F64(key)) => NonUnique(this.seek_point(key)),
-            (HashString(this), String(key)) => NonUnique(this.seek_point(key.borrow())),
-            (HashAV(this), AV(key)) => NonUnique(this.seek_point(key.borrow())),
-            (HashBytesKey8(this), BytesKey8(key)) => NonUnique(this.seek_point(key)),
-            (HashBytesKey24(this), BytesKey24(key)) => NonUnique(this.seek_point(key)),
-            (HashBytesKey56(this), BytesKey56(key)) => NonUnique(this.seek_point(key)),
-            (HashBytesKey120(this), BytesKey120(key)) => NonUnique(this.seek_point(key)),
-            (UniqueBTreeBool(this), Bool(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeU8(this), U8(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeSumTag(this), SumTag(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeI8(this), I8(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeU16(this), U16(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeI16(this), I16(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeU32(this), U32(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeI32(this), I32(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeU64(this), U64(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeI64(this), I64(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeU128(this), U128(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeI128(this), I128(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeU256(this), U256(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeI256(this), I256(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeF32(this), F32(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeF64(this), F64(key)) => Unique(this.seek_point(key)),
-            (UniqueBTreeString(this), String(key)) => Unique(this.seek_point(key.borrow())),
-            (UniqueBTreeAV(this), AV(key)) => Unique(this.seek_point(key.borrow())),
-            (UniqueHashBool(this), Bool(key)) => Unique(this.seek_point(key)),
-            (UniqueHashU8(this), U8(key)) => Unique(this.seek_point(key)),
-            (UniqueHashSumTag(this), SumTag(key)) => Unique(this.seek_point(key)),
-            (UniqueHashI8(this), I8(key)) => Unique(this.seek_point(key)),
-            (UniqueHashU16(this), U16(key)) => Unique(this.seek_point(key)),
-            (UniqueHashI16(this), I16(key)) => Unique(this.seek_point(key)),
-            (UniqueHashU32(this), U32(key)) => Unique(this.seek_point(key)),
-            (UniqueHashI32(this), I32(key)) => Unique(this.seek_point(key)),
-            (UniqueHashU64(this), U64(key)) => Unique(this.seek_point(key)),
-            (UniqueHashI64(this), I64(key)) => Unique(this.seek_point(key)),
-            (UniqueHashU128(this), U128(key)) => Unique(this.seek_point(key)),
-            (UniqueHashI128(this), I128(key)) => Unique(this.seek_point(key)),
-            (UniqueHashU256(this), U256(key)) => Unique(this.seek_point(key)),
-            (UniqueHashI256(this), I256(key)) => Unique(this.seek_point(key)),
-            (UniqueHashF32(this), F32(key)) => Unique(this.seek_point(key)),
-            (UniqueHashF64(this), F64(key)) => Unique(this.seek_point(key)),
-            (UniqueHashString(this), String(key)) => Unique(this.seek_point(key.borrow())),
-            (UniqueHashAV(this), AV(key)) => Unique(this.seek_point(key.borrow())),
-            (UniqueHashBytesKey8(this), BytesKey8(key)) => Unique(this.seek_point(key)),
-            (UniqueHashBytesKey24(this), BytesKey24(key)) => Unique(this.seek_point(key)),
-            (UniqueHashBytesKey56(this), BytesKey56(key)) => Unique(this.seek_point(key)),
-            (UniqueHashBytesKey120(this), BytesKey120(key)) => Unique(this.seek_point(key)),
-            (UniqueDirectSumTag(this), SumTag(key)) => Unique(this.seek_point(key)),
-            (UniqueDirectU8(this), U8(key)) => Unique(this.seek_point(key)),
-            (UniqueDirectU16(this), U16(key)) => Unique(this.seek_point(key)),
-            (UniqueDirectU32(this), U32(key)) => Unique(this.seek_point(key)),
-            (UniqueDirectU64(this), U64(key)) => Unique(this.seek_point(key)),
+            (BTreeBool(this), Bool(key)) => this.seek_point(key).into(),
+            (BTreeU8(this), U8(key)) => this.seek_point(key).into(),
+            (BTreeSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (BTreeI8(this), I8(key)) => this.seek_point(key).into(),
+            (BTreeU16(this), U16(key)) => this.seek_point(key).into(),
+            (BTreeI16(this), I16(key)) => this.seek_point(key).into(),
+            (BTreeU32(this), U32(key)) => this.seek_point(key).into(),
+            (BTreeI32(this), I32(key)) => this.seek_point(key).into(),
+            (BTreeU64(this), U64(key)) => this.seek_point(key).into(),
+            (BTreeI64(this), I64(key)) => this.seek_point(key).into(),
+            (BTreeU128(this), U128(key)) => this.seek_point(key).into(),
+            (BTreeI128(this), I128(key)) => this.seek_point(key).into(),
+            (BTreeU256(this), U256(key)) => this.seek_point(key).into(),
+            (BTreeI256(this), I256(key)) => this.seek_point(key).into(),
+            (BTreeF32(this), F32(key)) => this.seek_point(key).into(),
+            (BTreeF64(this), F64(key)) => this.seek_point(key).into(),
+            (BTreeString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (BTreeAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (HashBool(this), Bool(key)) => this.seek_point(key).into(),
+            (HashU8(this), U8(key)) => this.seek_point(key).into(),
+            (HashSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (HashI8(this), I8(key)) => this.seek_point(key).into(),
+            (HashU16(this), U16(key)) => this.seek_point(key).into(),
+            (HashI16(this), I16(key)) => this.seek_point(key).into(),
+            (HashU32(this), U32(key)) => this.seek_point(key).into(),
+            (HashI32(this), I32(key)) => this.seek_point(key).into(),
+            (HashU64(this), U64(key)) => this.seek_point(key).into(),
+            (HashI64(this), I64(key)) => this.seek_point(key).into(),
+            (HashU128(this), U128(key)) => this.seek_point(key).into(),
+            (HashI128(this), I128(key)) => this.seek_point(key).into(),
+            (HashU256(this), U256(key)) => this.seek_point(key).into(),
+            (HashI256(this), I256(key)) => this.seek_point(key).into(),
+            (HashF32(this), F32(key)) => this.seek_point(key).into(),
+            (HashF64(this), F64(key)) => this.seek_point(key).into(),
+            (HashString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (HashAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (HashBytesKey8(this), BytesKey8(key)) => this.seek_point(key).into(),
+            (HashBytesKey24(this), BytesKey24(key)) => this.seek_point(key).into(),
+            (HashBytesKey56(this), BytesKey56(key)) => this.seek_point(key).into(),
+            (HashBytesKey120(this), BytesKey120(key)) => this.seek_point(key).into(),
+            (UniqueBTreeBool(this), Bool(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU8(this), U8(key)) => this.seek_point(key).into(),
+            (UniqueBTreeSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI8(this), I8(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU16(this), U16(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI16(this), I16(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU32(this), U32(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI32(this), I32(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU64(this), U64(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI64(this), I64(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU128(this), U128(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI128(this), I128(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU256(this), U256(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI256(this), I256(key)) => this.seek_point(key).into(),
+            (UniqueBTreeF32(this), F32(key)) => this.seek_point(key).into(),
+            (UniqueBTreeF64(this), F64(key)) => this.seek_point(key).into(),
+            (UniqueBTreeString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueBTreeAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueHashBool(this), Bool(key)) => this.seek_point(key).into(),
+            (UniqueHashU8(this), U8(key)) => this.seek_point(key).into(),
+            (UniqueHashSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (UniqueHashI8(this), I8(key)) => this.seek_point(key).into(),
+            (UniqueHashU16(this), U16(key)) => this.seek_point(key).into(),
+            (UniqueHashI16(this), I16(key)) => this.seek_point(key).into(),
+            (UniqueHashU32(this), U32(key)) => this.seek_point(key).into(),
+            (UniqueHashI32(this), I32(key)) => this.seek_point(key).into(),
+            (UniqueHashU64(this), U64(key)) => this.seek_point(key).into(),
+            (UniqueHashI64(this), I64(key)) => this.seek_point(key).into(),
+            (UniqueHashU128(this), U128(key)) => this.seek_point(key).into(),
+            (UniqueHashI128(this), I128(key)) => this.seek_point(key).into(),
+            (UniqueHashU256(this), U256(key)) => this.seek_point(key).into(),
+            (UniqueHashI256(this), I256(key)) => this.seek_point(key).into(),
+            (UniqueHashF32(this), F32(key)) => this.seek_point(key).into(),
+            (UniqueHashF64(this), F64(key)) => this.seek_point(key).into(),
+            (UniqueHashString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueHashAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueHashBytesKey8(this), BytesKey8(key)) => this.seek_point(key).into(),
+            (UniqueHashBytesKey24(this), BytesKey24(key)) => this.seek_point(key).into(),
+            (UniqueHashBytesKey56(this), BytesKey56(key)) => this.seek_point(key).into(),
+            (UniqueHashBytesKey120(this), BytesKey120(key)) => this.seek_point(key).into(),
+            (UniqueDirectSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (UniqueDirectU8(this), U8(key)) => this.seek_point(key).into(),
+            (UniqueDirectU16(this), U16(key)) => this.seek_point(key).into(),
+            (UniqueDirectU32(this), U32(key)) => this.seek_point(key).into(),
+            (UniqueDirectU64(this), U64(key)) => this.seek_point(key).into(),
             _ => panic!("{}", WRONG_TYPE),
         }
+    }
+
+    #[inline]
+    fn iter(&self) -> TypedIndexIter<'_> {
+        same_for_all_types!(self, this => this.iter().into())
     }
 
     #[inline]
@@ -1417,7 +1477,6 @@ impl TypedIndex {
             (start, end)
         }
 
-        use TypedIndexRangeIter::*;
         Ok(match self {
             // Hash indices are not `RangeIndex`.
             Self::HashBool(_)
@@ -1466,57 +1525,57 @@ impl TypedIndex {
             | Self::UniqueHashBytesKey120(_) => return Err(IndexCannotSeekRange),
 
             // Ensure we don't panic inside `BTreeMap::seek_range`.
-            _ if is_empty(range) => RangeEmpty,
+            _ if is_empty(range) => iter::empty().into(),
 
-            Self::BTreeBool(this) => BTreeBool(this.seek_range(&map(range, TypedIndexKey::as_bool))),
-            Self::BTreeU8(this) => BTreeU8(this.seek_range(&map(range, TypedIndexKey::as_u8))),
-            Self::BTreeSumTag(this) => BTreeSumTag(this.seek_range(&map(range, TypedIndexKey::as_sum_tag))),
-            Self::BTreeI8(this) => BTreeI8(this.seek_range(&map(range, TypedIndexKey::as_i8))),
-            Self::BTreeU16(this) => BTreeU16(this.seek_range(&map(range, TypedIndexKey::as_u16))),
-            Self::BTreeI16(this) => BTreeI16(this.seek_range(&map(range, TypedIndexKey::as_i16))),
-            Self::BTreeU32(this) => BTreeU32(this.seek_range(&map(range, TypedIndexKey::as_u32))),
-            Self::BTreeI32(this) => BTreeI32(this.seek_range(&map(range, TypedIndexKey::as_i32))),
-            Self::BTreeU64(this) => BTreeU64(this.seek_range(&map(range, TypedIndexKey::as_u64))),
-            Self::BTreeI64(this) => BTreeI64(this.seek_range(&map(range, TypedIndexKey::as_i64))),
-            Self::BTreeU128(this) => BTreeU128(this.seek_range(&map(range, TypedIndexKey::as_u128))),
-            Self::BTreeI128(this) => BTreeI128(this.seek_range(&map(range, TypedIndexKey::as_i128))),
-            Self::BTreeU256(this) => BTreeU256(this.seek_range(&map(range, TypedIndexKey::as_u256))),
-            Self::BTreeI256(this) => BTreeI256(this.seek_range(&map(range, TypedIndexKey::as_i256))),
-            Self::BTreeF32(this) => BTreeF32(this.seek_range(&map(range, TypedIndexKey::as_f32))),
-            Self::BTreeF64(this) => BTreeF64(this.seek_range(&map(range, TypedIndexKey::as_f64))),
+            Self::BTreeBool(this) => this.seek_range(&map(range, TypedIndexKey::as_bool)).into(),
+            Self::BTreeU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
+            Self::BTreeSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
+            Self::BTreeI8(this) => this.seek_range(&map(range, TypedIndexKey::as_i8)).into(),
+            Self::BTreeU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
+            Self::BTreeI16(this) => this.seek_range(&map(range, TypedIndexKey::as_i16)).into(),
+            Self::BTreeU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
+            Self::BTreeI32(this) => this.seek_range(&map(range, TypedIndexKey::as_i32)).into(),
+            Self::BTreeU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
+            Self::BTreeI64(this) => this.seek_range(&map(range, TypedIndexKey::as_i64)).into(),
+            Self::BTreeU128(this) => this.seek_range(&map(range, TypedIndexKey::as_u128)).into(),
+            Self::BTreeI128(this) => this.seek_range(&map(range, TypedIndexKey::as_i128)).into(),
+            Self::BTreeU256(this) => this.seek_range(&map(range, TypedIndexKey::as_u256)).into(),
+            Self::BTreeI256(this) => this.seek_range(&map(range, TypedIndexKey::as_i256)).into(),
+            Self::BTreeF32(this) => this.seek_range(&map(range, TypedIndexKey::as_f32)).into(),
+            Self::BTreeF64(this) => this.seek_range(&map(range, TypedIndexKey::as_f64)).into(),
             Self::BTreeString(this) => {
                 let range = map(range, |k| k.as_string().map(|s| s.borrow()));
-                BTreeString(this.seek_range(&range))
+                this.seek_range(&range).into()
             }
-            Self::BTreeAV(this) => BTreeAV(this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow())))),
+            Self::BTreeAV(this) => this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow()))).into(),
 
-            Self::UniqueBTreeBool(this) => UniqueBTreeBool(this.seek_range(&map(range, TypedIndexKey::as_bool))),
-            Self::UniqueBTreeU8(this) => UniqueBTreeU8(this.seek_range(&map(range, TypedIndexKey::as_u8))),
-            Self::UniqueBTreeSumTag(this) => UniqueBTreeSumTag(this.seek_range(&map(range, TypedIndexKey::as_sum_tag))),
-            Self::UniqueBTreeI8(this) => UniqueBTreeI8(this.seek_range(&map(range, TypedIndexKey::as_i8))),
-            Self::UniqueBTreeU16(this) => UniqueBTreeU16(this.seek_range(&map(range, TypedIndexKey::as_u16))),
-            Self::UniqueBTreeI16(this) => UniqueBTreeI16(this.seek_range(&map(range, TypedIndexKey::as_i16))),
-            Self::UniqueBTreeU32(this) => UniqueBTreeU32(this.seek_range(&map(range, TypedIndexKey::as_u32))),
-            Self::UniqueBTreeI32(this) => UniqueBTreeI32(this.seek_range(&map(range, TypedIndexKey::as_i32))),
-            Self::UniqueBTreeU64(this) => UniqueBTreeU64(this.seek_range(&map(range, TypedIndexKey::as_u64))),
-            Self::UniqueBTreeI64(this) => UniqueBTreeI64(this.seek_range(&map(range, TypedIndexKey::as_i64))),
-            Self::UniqueBTreeU128(this) => UniqueBTreeU128(this.seek_range(&map(range, TypedIndexKey::as_u128))),
-            Self::UniqueBTreeI128(this) => UniqueBTreeI128(this.seek_range(&map(range, TypedIndexKey::as_i128))),
-            Self::UniqueBTreeU256(this) => UniqueBTreeU256(this.seek_range(&map(range, TypedIndexKey::as_u256))),
-            Self::UniqueBTreeI256(this) => UniqueBTreeI256(this.seek_range(&map(range, TypedIndexKey::as_i256))),
-            Self::UniqueBTreeF32(this) => UniqueBTreeF32(this.seek_range(&map(range, TypedIndexKey::as_f32))),
-            Self::UniqueBTreeF64(this) => UniqueBTreeF64(this.seek_range(&map(range, TypedIndexKey::as_f64))),
+            Self::UniqueBTreeBool(this) => this.seek_range(&map(range, TypedIndexKey::as_bool)).into(),
+            Self::UniqueBTreeU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
+            Self::UniqueBTreeSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
+            Self::UniqueBTreeI8(this) => this.seek_range(&map(range, TypedIndexKey::as_i8)).into(),
+            Self::UniqueBTreeU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
+            Self::UniqueBTreeI16(this) => this.seek_range(&map(range, TypedIndexKey::as_i16)).into(),
+            Self::UniqueBTreeU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
+            Self::UniqueBTreeI32(this) => this.seek_range(&map(range, TypedIndexKey::as_i32)).into(),
+            Self::UniqueBTreeU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
+            Self::UniqueBTreeI64(this) => this.seek_range(&map(range, TypedIndexKey::as_i64)).into(),
+            Self::UniqueBTreeU128(this) => this.seek_range(&map(range, TypedIndexKey::as_u128)).into(),
+            Self::UniqueBTreeI128(this) => this.seek_range(&map(range, TypedIndexKey::as_i128)).into(),
+            Self::UniqueBTreeU256(this) => this.seek_range(&map(range, TypedIndexKey::as_u256)).into(),
+            Self::UniqueBTreeI256(this) => this.seek_range(&map(range, TypedIndexKey::as_i256)).into(),
+            Self::UniqueBTreeF32(this) => this.seek_range(&map(range, TypedIndexKey::as_f32)).into(),
+            Self::UniqueBTreeF64(this) => this.seek_range(&map(range, TypedIndexKey::as_f64)).into(),
             Self::UniqueBTreeString(this) => {
                 let range = map(range, |k| k.as_string().map(|s| s.borrow()));
-                UniqueBTreeString(this.seek_range(&range))
+                this.seek_range(&range).into()
             }
-            Self::UniqueBTreeAV(this) => UniqueBTreeAV(this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow())))),
+            Self::UniqueBTreeAV(this) => this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow()))).into(),
 
-            Self::UniqueDirectSumTag(this) => UniqueDirectU8(this.seek_range(&map(range, TypedIndexKey::as_sum_tag))),
-            Self::UniqueDirectU8(this) => UniqueDirect(this.seek_range(&map(range, TypedIndexKey::as_u8))),
-            Self::UniqueDirectU16(this) => UniqueDirect(this.seek_range(&map(range, TypedIndexKey::as_u16))),
-            Self::UniqueDirectU32(this) => UniqueDirect(this.seek_range(&map(range, TypedIndexKey::as_u32))),
-            Self::UniqueDirectU64(this) => UniqueDirect(this.seek_range(&map(range, TypedIndexKey::as_u64))),
+            Self::UniqueDirectSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
+            Self::UniqueDirectU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
+            Self::UniqueDirectU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
+            Self::UniqueDirectU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
+            Self::UniqueDirectU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
         })
     }
 
@@ -1896,6 +1955,17 @@ impl TableIndex {
     pub fn seek_point(&self, key: &IndexKey<'_>) -> TableIndexPointIter<'_> {
         let iter = self.idx.seek_point(&key.key);
         TableIndexPointIter { iter }
+    }
+
+    /// Returns an iterator that yields all the `RowPointer`s in the index.
+    ///
+    /// The order in which the rows are yielded
+    /// depends on the underlying index algorithm.
+    /// For example, while btree and direct indices yield in key-sorted order,
+    /// hash indices provide a non-deterministic order.
+    /// As such, it's best not to rely on the order at all.
+    pub fn iter(&self) -> TableIndexIter<'_> {
+        TableIndexIter { iter: self.idx.iter() }
     }
 
     /// Returns an iterator over the [TableIndex],
