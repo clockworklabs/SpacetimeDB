@@ -1455,7 +1455,7 @@ impl Table {
                     Found violation at pointer {ptr:?} to row {:?}.",
                     self.schema.table_name,
                     self.schema.table_id,
-                    index.indexed_columns,
+                    index.indexed_columns(),
                     index.key_type(),
                     row,
                 )
@@ -1556,7 +1556,7 @@ impl Table {
     pub fn get_index_by_cols(&self, cols: &ColList) -> Option<(IndexId, &TableIndex)> {
         self.indexes
             .iter()
-            .find(|(_, index)| &index.indexed_columns == cols)
+            .find(|(_, index)| index.indexed_columns() == cols)
             .map(|(id, idx)| (*id, idx))
     }
 
@@ -2278,7 +2278,7 @@ impl UniqueConstraintViolation {
 
         // Fetch the names of the columns used in the index.
         let cols = schema
-            .get_columns(&index.indexed_columns)
+            .get_columns(index.indexed_columns())
             .map(|(_, cs)| cs.unwrap().col_name.clone())
             .collect();
 
@@ -2305,7 +2305,7 @@ impl Table {
         index_id: IndexId,
         row: RowRef<'_>,
     ) -> UniqueConstraintViolation {
-        let value = row.project(&index.indexed_columns).unwrap();
+        let value = index.project_row(row);
         let schema = self.get_schema();
         UniqueConstraintViolation::build(schema, index, index_id, value)
     }
@@ -2429,6 +2429,7 @@ pub(crate) mod test {
     use super::*;
     use crate::blob_store::{HashMapBlobStore, NullBlobStore};
     use crate::page::tests::hash_unmodified_save_get;
+    use crate::table_index::KeySize;
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
@@ -2561,8 +2562,7 @@ pub(crate) mod test {
             .iter()
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
-                let key = row_ref.project(&index.indexed_columns).unwrap();
-                crate::table_index::KeySize::key_size_in_bytes(&key) as u64
+                index.project_row(row_ref).key_size_in_bytes() as u64
             })
             .sum()
     }
