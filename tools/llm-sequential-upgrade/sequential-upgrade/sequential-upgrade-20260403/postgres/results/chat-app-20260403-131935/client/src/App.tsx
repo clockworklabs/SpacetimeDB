@@ -74,6 +74,7 @@ interface PendingInvite {
 function App() {
   const [connected, setConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isRehydrating, setIsRehydrating] = useState(() => !!localStorage.getItem('guestUserId'));
   const [loginName, setLoginName] = useState('');
   const [loginError, setLoginError] = useState('');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -362,6 +363,42 @@ function App() {
     };
   }, []);
 
+  // Restore guest session from localStorage on connect
+  useEffect(() => {
+    if (!connected || currentUser) { if (!connected) return; setIsRehydrating(false); return; }
+    const savedId = localStorage.getItem('guestUserId');
+    if (!savedId) { setIsRehydrating(false); return; }
+    const userId = parseInt(savedId);
+    if (isNaN(userId)) { setIsRehydrating(false); return; }
+    (async () => {
+      try {
+        const res = await fetch(`/api/users/${userId}`);
+        if (!res.ok) {
+          localStorage.removeItem('guestUserId');
+          setIsRehydrating(false);
+          return;
+        }
+        const user: User = await res.json();
+        if (!user.isAnonymous) {
+          // Already registered — don't restore as guest
+          localStorage.removeItem('guestUserId');
+          setIsRehydrating(false);
+          return;
+        }
+        setCurrentUser(user);
+        socketRef.current?.emit('user_connected', { userId: user.id, username: user.username });
+        loadRooms(user.id);
+        loadScheduledMessages(user.id);
+        loadDrafts(user.id);
+        setIsRehydrating(false);
+      } catch {
+        // If restore fails, silently fall through to login screen
+        setIsRehydrating(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
+
   // Keep currentRoomIdRef in sync with currentRoomId state
   useEffect(() => {
     currentRoomIdRef.current = currentRoomId;
@@ -435,6 +472,7 @@ function App() {
         return;
       }
       const user: User = await res.json();
+      localStorage.setItem('guestUserId', String(user.id));
       setCurrentUser(user);
       socketRef.current?.emit('user_connected', { userId: user.id, username: user.username });
       loadRooms(user.id);
@@ -463,6 +501,7 @@ function App() {
       }
       const updated: User = await res.json();
       setCurrentUser(updated);
+      localStorage.removeItem('guestUserId');
       setShowRegisterModal(false);
       setRegisterName('');
       setRegisterError('');
@@ -1100,6 +1139,17 @@ function App() {
 
   // ── Login screen ───────────────────────────────────────────────────────────
   if (!currentUser) {
+    if (isRehydrating) {
+      return (
+        <div className="login-screen">
+          <div className="login-card">
+            <h1>PostgreSQL Chat</h1>
+            <div className="spinner" style={{ margin: '0 auto 12px' }} />
+            <p>Restoring your session...</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="login-screen">
         <div className="login-card">
