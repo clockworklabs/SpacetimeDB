@@ -146,47 +146,6 @@ function App() {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Persist currentUser to localStorage ───────────────────────────────────
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('chat_user_id', String(currentUser.id));
-    }
-  }, [currentUser]);
-
-  // ── Rehydrate user from localStorage on mount ──────────────────────────────
-  useEffect(() => {
-    const storedId = localStorage.getItem('chat_user_id');
-    if (!storedId) return;
-    fetch(`/api/users/${storedId}`)
-      .then(res => {
-        if (!res.ok) {
-          localStorage.removeItem('chat_user_id');
-          return;
-        }
-        return res.json();
-      })
-      .then((user: User | undefined) => {
-        if (!user) return;
-        setCurrentUser(user);
-        // Socket may not be connected yet; defer emit until connected
-        const emitWhenReady = () => {
-          if (socketRef.current?.connected) {
-            socketRef.current.emit('user_connected', { userId: user.id, username: user.username });
-          } else {
-            socketRef.current?.once('connect', () => {
-              socketRef.current?.emit('user_connected', { userId: user.id, username: user.username });
-            });
-          }
-        };
-        emitWhenReady();
-        loadRooms(user.id);
-        loadScheduledMessages(user.id);
-        loadDrafts(user.id);
-      })
-      .catch(() => localStorage.removeItem('chat_user_id'));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // ── Socket setup ───────────────────────────────────────────────────────────
   useEffect(() => {
     const socket = io({ path: '/socket.io' });

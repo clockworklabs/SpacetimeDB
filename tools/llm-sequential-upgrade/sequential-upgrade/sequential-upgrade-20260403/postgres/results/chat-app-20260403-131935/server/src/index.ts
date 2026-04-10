@@ -57,18 +57,6 @@ app.get('/api/users', async (_req, res) => {
   return res.json(users);
 });
 
-app.get('/api/users/:userId', async (req, res) => {
-  const userId = parseInt(req.params.userId);
-  if (isNaN(userId)) return res.status(400).json({ error: 'Invalid user id' });
-  try {
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId));
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    return res.json(user);
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to fetch user' });
-  }
-});
-
 // Update user status (presence)
 app.put('/api/users/:userId/status', async (req, res) => {
   const userId = parseInt(req.params.userId);
