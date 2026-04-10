@@ -1,23 +1,32 @@
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
+use std::fmt;
 use std::io::{self, Write};
 use std::net::IpAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request, State};
+use axum::http::{self, StatusCode};
+use axum::middleware::Next;
+use axum::response::{Html, IntoResponse, Response};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
 use spacetimedb::db::{self, Storage};
+use spacetimedb::host::{FunctionArgs, ProcedureCallError};
+use spacetimedb::identity::Identity;
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
+use spacetimedb_client_api::{ControlStateReadAccess, NodeDelegate};
+use spacetimedb_lib::{sats, AlgebraicValue};
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -91,6 +100,12 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Run in non-interactive mode (fail immediately if port is in use)"),
         )
+        .arg(
+            Arg::new("root_domain")
+                .long("root-domain")
+                .help("Root domain for web subdomain routing (for example: example.com)")
+                .value_parser(clap::builder::NonEmptyStringValueParser::new()),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -108,10 +123,249 @@ impl ConfigFile {
     }
 }
 
+const INDEX_PROCEDURE: &str = "index";
+const SUBDOMAIN_CALLER_SUBJECT: &str = "subdomain-index";
+
+#[derive(Clone)]
+struct RootDomainRouteConfig {
+    root_domain: String,
+    subdomain_suffix: String,
+    ctx: Option<Arc<StandaloneEnv>>,
+}
+
+impl RootDomainRouteConfig {
+    fn new(root_domain: String, ctx: Arc<StandaloneEnv>) -> Self {
+        let subdomain_suffix = format!(".{root_domain}");
+        Self {
+            root_domain,
+            subdomain_suffix,
+            ctx: Some(ctx),
+        }
+    }
+
+    #[cfg(test)]
+    fn for_tests(root_domain: String) -> Self {
+        let subdomain_suffix = format!(".{root_domain}");
+        Self {
+            root_domain,
+            subdomain_suffix,
+            ctx: None,
+        }
+    }
+
+    fn classify_host(&self, host: &str) -> RootDomainHostMatch {
+        if host == self.root_domain {
+            return RootDomainHostMatch::NoMatch;
+        }
+
+        let Some(module_name) = host.strip_suffix(&self.subdomain_suffix) else {
+            return RootDomainHostMatch::NoMatch;
+        };
+
+        if module_name.is_empty() || module_name.contains('.') {
+            return RootDomainHostMatch::InvalidSubdomain;
+        }
+
+        RootDomainHostMatch::Module(module_name.to_owned())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RootDomainHostMatch {
+    Module(String),
+    InvalidSubdomain,
+    NoMatch,
+}
+
+impl fmt::Display for RootDomainRouteConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.root_domain)
+    }
+}
+
+fn normalize_root_domain(raw: &str) -> anyhow::Result<String> {
+    let root_domain = raw.trim().trim_end_matches('.').to_ascii_lowercase();
+    anyhow::ensure!(!root_domain.is_empty(), "`--root-domain` cannot be empty");
+    Ok(root_domain)
+}
+
+fn normalize_host_header_value(raw: &str) -> Option<String> {
+    let host = raw.trim().trim_end_matches('.');
+    if host.is_empty() {
+        return None;
+    }
+
+    let host = http::uri::Authority::from_str(host)
+        .map(|authority| authority.host().to_ascii_lowercase())
+        .unwrap_or_else(|_| host.to_ascii_lowercase());
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
+}
+
+async fn root_domain_middleware(State(config): State<RootDomainRouteConfig>, req: Request, next: Next) -> Response {
+    let host_match = req
+        .headers()
+        .get(http::header::HOST)
+        .and_then(|host| host.to_str().ok())
+        .and_then(normalize_host_header_value)
+        .map(|host| config.classify_host(&host))
+        .unwrap_or(RootDomainHostMatch::NoMatch);
+
+    match host_match {
+        RootDomainHostMatch::Module(module_name) => {
+            let procedure_name = match procedure_name_from_path(req.uri().path()) {
+                Ok(name) => name,
+                Err(message) => return (StatusCode::NOT_FOUND, message).into_response(),
+            };
+            module_procedure_response(&config, &module_name, &procedure_name).await
+        }
+        RootDomainHostMatch::InvalidSubdomain => (
+            StatusCode::NOT_FOUND,
+            "Only single-label subdomains are supported for root-domain routing.",
+        )
+            .into_response(),
+        RootDomainHostMatch::NoMatch => next.run(req).await,
+    }
+}
+
+fn procedure_name_from_path(path: &str) -> Result<String, &'static str> {
+    println!("path: {}", path);
+    let procedure_name = path.trim_matches('/');
+    if procedure_name.is_empty() {
+        return Ok(INDEX_PROCEDURE.to_string());
+    }
+    if procedure_name.contains('/') {
+        return Err("Only single-segment paths are supported for procedure routing.");
+    }
+    println!("procedure_name: {}", procedure_name);
+    Ok(procedure_name.to_string())
+}
+
+async fn module_procedure_response(
+    config: &RootDomainRouteConfig,
+    module_name: &str,
+    procedure_name: &str,
+) -> Response {
+    let Some(ctx) = config.ctx.as_ref() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Root-domain module routing context is unavailable.",
+        )
+            .into_response();
+    };
+
+    let database_identity = match ctx.lookup_database_identity(module_name).await {
+        Ok(Some(identity)) => identity,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response();
+        }
+        Err(err) => {
+            log::error!("Failed to resolve module `{module_name}`: {err:#}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to resolve module for root-domain routing.",
+            )
+                .into_response();
+        }
+    };
+
+    let database = match ctx.get_database_by_identity(&database_identity).await {
+        Ok(Some(database)) => database,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response();
+        }
+        Err(err) => {
+            log::error!("Failed to load database for module `{module_name}`: {err:#}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load database for root-domain routing.",
+            )
+                .into_response();
+        }
+    };
+
+    let leader = match ctx.leader(database.id).await {
+        Ok(leader) => leader,
+        Err(err) => {
+            let status = match err {
+                crate::GetLeaderHostError::NoSuchDatabase | crate::GetLeaderHostError::NoSuchReplica => {
+                    StatusCode::NOT_FOUND
+                }
+                crate::GetLeaderHostError::LaunchError { .. } | crate::GetLeaderHostError::Control { .. } => {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            };
+            return (status, err.to_string()).into_response();
+        }
+    };
+
+    let module = match leader.module().await {
+        Ok(module) => module,
+        Err(err) => {
+            log::error!("Failed to load module host for `{module_name}`: {err:#}");
+            return (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response();
+        }
+    };
+
+    if module.info().module_def.procedure(procedure_name).is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Procedure `{procedure_name}` not found in module `{module_name}`."),
+        )
+            .into_response();
+    }
+
+    let caller_identity = Identity::from_claims(spacetimedb_client_api::auth::LOCALHOST, SUBDOMAIN_CALLER_SUBJECT);
+    match module
+        .call_procedure(caller_identity, None, None, procedure_name, FunctionArgs::Nullary)
+        .await
+        .result
+    {
+        Ok(result) => procedure_result_response(result.return_val),
+        Err(err) => procedure_error_response(module_name, procedure_name, err),
+    }
+}
+
+fn procedure_result_response(return_val: AlgebraicValue) -> Response {
+    match return_val {
+        AlgebraicValue::String(body) => Html(body.to_string()).into_response(),
+        value => (StatusCode::OK, axum::Json(sats::serde::SerdeWrapper(value))).into_response(),
+    }
+}
+
+fn procedure_error_response(module_name: &str, procedure_name: &str, err: ProcedureCallError) -> Response {
+    match err {
+        ProcedureCallError::NoSuchProcedure => (
+            StatusCode::NOT_FOUND,
+            format!("Procedure `{procedure_name}` not found in module `{module_name}`."),
+        )
+            .into_response(),
+        ProcedureCallError::NoSuchModule(_) => {
+            (StatusCode::NOT_FOUND, format!("Module `{module_name}` not found.")).into_response()
+        }
+        ProcedureCallError::Args(err) => {
+            (StatusCode::BAD_REQUEST, format!("{:#}", anyhow::anyhow!(err))).into_response()
+        }
+        ProcedureCallError::OutOfEnergy => (
+            StatusCode::PAYMENT_REQUIRED,
+            "Procedure terminated due to insufficient budget.",
+        )
+            .into_response(),
+        ProcedureCallError::InternalError(err) => (StatusCode::INTERNAL_SERVER_ERROR, err).into_response(),
+    }
+}
+
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let pg_port = args.get_one::<u16>("pg_port");
     let non_interactive = args.get_flag("non_interactive");
+    let root_domain = args
+        .get_one::<String>("root_domain")
+        .map(|domain| normalize_root_domain(domain))
+        .transpose()?;
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
         args.get_one::<PubKeyPath>("jwt_pub_key_path").cloned(),
@@ -202,7 +456,15 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
+    let mut service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
+    if let Some(root_domain) = root_domain {
+        let config = RootDomainRouteConfig::new(root_domain, ctx.clone());
+        log::info!(
+            "Enabled root domain routing for {} (subdomains map to module `index` procedures)",
+            config,
+        );
+        service = service.layer(axum::middleware::from_fn_with_state(config, root_domain_middleware));
+    }
 
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
@@ -543,5 +805,66 @@ mod tests {
                 ..<_>::default()
             }
         );
+    }
+
+    #[test]
+    fn normalize_root_domain_trims_and_lowercases() {
+        let root_domain = normalize_root_domain("  ExAmPle.Com. ").unwrap();
+        assert_eq!(root_domain, "example.com");
+    }
+
+    #[test]
+    fn normalize_root_domain_rejects_empty() {
+        assert!(normalize_root_domain(" . ").is_err());
+    }
+
+    #[test]
+    fn root_domain_matching_supports_host_ports() {
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
+        let host = normalize_host_header_value("my-module.example.com:3000").unwrap();
+        assert_eq!(
+            config.classify_host(&host),
+            RootDomainHostMatch::Module("my-module".to_string())
+        );
+    }
+
+    #[test]
+    fn root_domain_matching_extracts_any_single_subdomain_as_module() {
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
+        let host = normalize_host_header_value("another-module.example.com").unwrap();
+        assert_eq!(
+            config.classify_host(&host),
+            RootDomainHostMatch::Module("another-module".to_string())
+        );
+    }
+
+    #[test]
+    fn root_domain_matching_rejects_nested_subdomains() {
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
+        let host = normalize_host_header_value("a.b.example.com").unwrap();
+        assert_eq!(config.classify_host(&host), RootDomainHostMatch::InvalidSubdomain);
+    }
+
+    #[test]
+    fn root_domain_matching_ignores_non_subdomain_hosts() {
+        let config = RootDomainRouteConfig::for_tests("example.com".to_string());
+        let host = normalize_host_header_value("localhost:3000").unwrap();
+        assert_eq!(config.classify_host(&host), RootDomainHostMatch::NoMatch);
+    }
+
+    #[test]
+    fn procedure_name_from_path_root_maps_to_index() {
+        assert_eq!(procedure_name_from_path("/").unwrap(), INDEX_PROCEDURE);
+    }
+
+    #[test]
+    fn procedure_name_from_path_single_segment_maps_to_procedure() {
+        assert_eq!(procedure_name_from_path("/foo").unwrap(), "foo");
+        assert_eq!(procedure_name_from_path("/foo/").unwrap(), "foo");
+    }
+
+    #[test]
+    fn procedure_name_from_path_rejects_nested_paths() {
+        assert!(procedure_name_from_path("/foo/bar").is_err());
     }
 }

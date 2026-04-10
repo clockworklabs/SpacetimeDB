@@ -26,6 +26,12 @@ Run `spacetime start --help` to see all options.",
                 .default_value("standalone"),
         )
         .arg(
+            Arg::new("root_domain")
+                .long("root-domain")
+                .help("The root domain to pass through to `spacetimedb-standalone start`")
+                .value_parser(clap::builder::NonEmptyStringValueParser::new()),
+        )
+        .arg(
             Arg::new("args")
                 .help("The args to pass to `spacetimedb-{edition} start`")
                 .value_parser(clap::value_parser!(OsString))
@@ -42,7 +48,8 @@ enum Edition {
 
 pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<ExitCode> {
     let edition = args.get_one::<Edition>("edition").unwrap();
-    let args = args.get_many::<OsString>("args").unwrap_or_default();
+    let root_domain = args.get_one::<String>("root_domain");
+    let passthrough_args = args.get_many::<OsString>("args").unwrap_or_default();
     let bin_name = match edition {
         Edition::Standalone => "spacetimedb-standalone",
         Edition::Cloud => "spacetimedb-cloud",
@@ -53,8 +60,11 @@ pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<E
         .arg("--data-dir")
         .arg(&paths.data_dir)
         .arg("--jwt-key-dir")
-        .arg(&paths.cli_config_dir)
-        .args(args);
+        .arg(&paths.cli_config_dir);
+    if let Some(root_domain) = root_domain {
+        cmd.arg("--root-domain").arg(root_domain);
+    }
+    cmd.args(passthrough_args);
 
     exec_replace(&mut cmd).with_context(|| format!("exec failed for {}", bin_path.display()))
 }
@@ -101,5 +111,35 @@ pub(crate) fn exec_replace(cmd: &mut Command) -> io::Result<ExitCode> {
 
         cmd.status()
             .map(|status| ExitCode::from(status.code().unwrap_or(1).try_into().unwrap_or(1)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn start_parses_root_domain_and_passthrough_args() {
+        let matches = cli()
+            .try_get_matches_from([
+                "start",
+                "--root-domain",
+                "example.com",
+                "--listen-addr",
+                "127.0.0.1:3000",
+            ])
+            .unwrap();
+
+        assert_eq!(
+            matches.get_one::<String>("root_domain").map(String::as_str),
+            Some("example.com")
+        );
+
+        let passthrough_args: Vec<_> = matches
+            .get_many::<OsString>("args")
+            .unwrap()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(passthrough_args, vec!["--listen-addr", "127.0.0.1:3000"]);
     }
 }
