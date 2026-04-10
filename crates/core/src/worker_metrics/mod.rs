@@ -109,6 +109,11 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub transactions_fatally_wounded_total: IntCounterVec,
 
+        #[name = spacetime_transactions_retried_due_to_wound_total]
+        #[help = "Total number of client reducer retry attempts triggered by a wounded outcome."]
+        #[labels(database_identity: Identity)]
+        pub transactions_retried_due_to_wound_total: IntCounterVec,
+
         #[name = spacetime_2pc_wound_requests_sent_total]
         #[help = "Total number of wound requests sent to a remote coordinator."]
         #[labels(database_identity: Identity)]

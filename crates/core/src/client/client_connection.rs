@@ -904,6 +904,10 @@ impl ClientConnection {
                 return Ok(result);
             }
 
+            WORKER_METRICS
+                .transactions_retried_due_to_wound_total
+                .with_label_values(&module.info.database_identity)
+                .inc();
             log::info!("Reducer call was wounded on attempt {attempt}, retrying after {wound_backoff:?} with new transaction ID {tx_id}");
             sleep(wound_backoff).await;
             wound_backoff = wound_backoff.mul_f32(2.0).min(MAX_BACKOFF);
