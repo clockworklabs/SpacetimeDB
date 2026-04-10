@@ -333,7 +333,7 @@ impl MutTxId {
 
         let idx = idx.index();
         let cols = idx.indexed_columns.clone();
-        let point = point.into_algebraic_value(&idx.key_type);
+        let point = idx.key_into_algebraic_value(point);
         self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
 

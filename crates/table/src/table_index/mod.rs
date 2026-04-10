@@ -1778,13 +1778,6 @@ pub struct IndexKey<'a> {
     key: TypedIndexKey<'a>,
 }
 
-impl IndexKey<'_> {
-    /// Converts the key into an [`AlgebraicValue`].
-    pub fn into_algebraic_value(self, key_type: &AlgebraicType) -> AlgebraicValue {
-        self.key.into_algebraic_value(key_type)
-    }
-}
-
 /// A decoded range scan bound, which may be a point or a range.
 #[derive(Debug, EnumAsInner)]
 pub enum PointOrRange<'a> {
@@ -1802,7 +1795,7 @@ pub struct TableIndex {
     /// The key type of this index.
     /// This is the projection of the row type to the types of the columns indexed.
     // NOTE(centril): This is accessed in index scan ABIs for decoding, so don't `Box<_>` it.
-    pub key_type: AlgebraicType,
+    key_type: AlgebraicType,
 
     /// Given a full row, typed at some `ty: ProductType`,
     /// these columns are the ones that this index indexes.
@@ -1856,6 +1849,27 @@ impl TableIndex {
     /// Returns whether this is a unique index or not.
     pub fn is_unique(&self) -> bool {
         self.idx.is_unique()
+    }
+
+    /// Returns the key type of this index.
+    pub fn key_type(&self) -> &AlgebraicType {
+        &self.key_type
+    }
+
+    /// Recomputes the key type of the index.
+    ///
+    /// Assumes that `row_type` is layout compatible with the row type
+    /// that `self` was constructed with.
+    /// The method may panic otherwise.
+    pub fn recompute_key_type(&mut self, row_type: &ProductType) {
+        self.key_type = row_type
+            .project(&self.indexed_columns)
+            .expect("new row type should have as many columns as before")
+    }
+
+    /// Converts `key` into an [`AlgebraicValue`]
+    pub fn key_into_algebraic_value(&self, key: IndexKey<'_>) -> AlgebraicValue {
+        key.key.into_algebraic_value(&self.key_type)
     }
 
     /// Derives a key for this index from `value`.
