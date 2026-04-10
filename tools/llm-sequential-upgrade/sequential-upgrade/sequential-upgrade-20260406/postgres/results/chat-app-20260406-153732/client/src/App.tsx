@@ -435,6 +435,20 @@ export default function App() {
     return () => { socket.disconnect(); };
   }, []);
 
+  // ── Restore anonymous session from localStorage on mount ────────────────────
+
+  useEffect(() => {
+    const savedUserId = localStorage.getItem('chatUserId');
+    if (!savedUserId) return;
+    fetch(`/api/users/${savedUserId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((user: User | null) => {
+        if (user) setCurrentUser(user);
+        else localStorage.removeItem('chatUserId');
+      })
+      .catch(() => localStorage.removeItem('chatUserId'));
+  }, []);
+
   // ── Register with server when user is set ───────────────────────────────────
 
   useEffect(() => {
@@ -459,7 +473,7 @@ export default function App() {
 
     fetch('/api/users/online')
       .then((r) => r.json())
-      .then(setOnlineUsers)
+      .then((data) => { if (Array.isArray(data)) setOnlineUsers(data); })
       .catch(console.error);
 
     fetch(`/api/scheduled-messages?userId=${currentUser.id}`)
@@ -554,6 +568,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) return setNameError(data.error ?? 'Failed to set name');
+      localStorage.setItem('chatUserId', String(data.id));
       setCurrentUser(data);
     } catch {
       setNameError('Network error');
@@ -573,6 +588,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) return setNameError(data.error ?? 'Failed to join anonymously');
+      localStorage.setItem('chatUserId', String(data.id));
       setCurrentUser(data);
     } catch {
       setNameError('Network error');
@@ -598,6 +614,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) return setRegisterError(data.error ?? 'Failed to register');
+      localStorage.setItem('chatUserId', String(data.id));
       setCurrentUser(data);
       setShowRegisterModal(false);
       setRegisterInput('');

@@ -165,3 +165,28 @@ All four now pass the updated timestamp through to the `user_status` broadcast s
 **Redeploy:** Both
 
 **Server verified:** API at http://localhost:6001 ✓ · Client at http://localhost:6273 ✓
+
+## Iteration 12 — Fix (21:10)
+
+**Category:** Feature Broken
+**What broke:** Guest identity did not persist across page refreshes. Clicking "Join Anonymously" after a refresh created a brand new Guest-XXXX account, orphaning prior messages and room memberships.
+**Root cause:** The anonymous user ID was only stored in React state (`currentUser`), which is reset on every page load. There was no mechanism to restore the existing guest session.
+**What I fixed:** 
+1. Added `GET /api/users/:id` endpoint to the server so the client can look up a user by ID.
+2. On mount, the client now reads `chatUserId` from `localStorage` and fetches that user from the server to restore the session.
+3. When a user joins anonymously (or by name, or registers), their user ID is saved to `localStorage`.
+**Files changed:** `server/src/index.ts` (new endpoint after line 155), `client/src/App.tsx` (new restore-on-mount effect, localStorage writes in handleJoinAnonymously/handleSetName/handleRegister)
+**Redeploy:** Both
+
+**Server verified:** Client at http://localhost:6273 ✓
+
+## Iteration 13 — Fix (16:30)
+
+**Category:** Runtime/Crash
+**What broke:** App crashed on load with `TypeError: onlineUsers is not iterable`. Server returned `400 {"error":"Invalid user ID"}` for `GET /api/users/online`.
+**Root cause:** Express route ordering bug — `/api/users/:id` was registered before `/api/users/online`, so the literal path segment "online" was matched as the `:id` param. `parseInt("online")` returns `NaN`, which is falsy, triggering the 400 guard.
+**What I fixed:** Moved the `/api/users/online` route above `/api/users/:id` in `server/src/index.ts` so it matches first. Also added an `Array.isArray` guard in the client before calling `setOnlineUsers` to prevent crashes if the response is not an array.
+**Files changed:** `server/src/index.ts` (route order swapped ~lines 157–189), `client/src/App.tsx` (Array.isArray guard ~line 476)
+**Redeploy:** Both
+
+**Server verified:** API at http://localhost:6001/api/users/online ✓ · Client at http://localhost:6273 ✓

@@ -165,6 +165,29 @@ app.get('/api/users/online', async (_req, res) => {
   }
 });
 
+// Get a single user by ID
+app.get('/api/users/:id', async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (!userId) return res.status(400).json({ error: 'Invalid user ID' });
+  try {
+    const [user] = await db
+      .select({
+        id: schema.users.id,
+        name: schema.users.name,
+        online: schema.users.online,
+        status: schema.users.status,
+        lastSeen: schema.users.lastSeen,
+        isAnonymous: schema.users.isAnonymous,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId));
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: 'Failed to get user' });
+  }
+});
+
 // Get all users for presence list
 app.get('/api/users', async (_req, res) => {
   try {
