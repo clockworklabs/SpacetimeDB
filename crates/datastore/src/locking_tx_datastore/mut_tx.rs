@@ -332,7 +332,7 @@ impl MutTxId {
         };
 
         let idx = idx.index();
-        let cols = idx.indexed_columns.clone();
+        let cols = idx.indexed_columns().clone();
         let point = idx.key_into_algebraic_value(point);
         self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
@@ -1299,10 +1299,8 @@ impl MutTxId {
         let map_violation = |violation, index: &TableIndex, table: &Table, bs: &dyn BlobStore| {
             let violation = table
                 .get_row_ref(bs, violation)
-                .expect("row came from scanning the table")
-                .project(&index.indexed_columns)
-                .expect("`cols` should consist of valid columns for this table");
-
+                .expect("row came from scanning the table");
+            let violation = index.project_row(violation);
             let schema = table.get_schema();
             let violation = UniqueConstraintViolation::build_with_index_schema(schema, index, &index_schema, violation);
             IndexError::from(violation).into()
@@ -3054,9 +3052,7 @@ impl MutTxId {
 
                 tx_row_ptr
             } else {
-                let index_key = tx_row_ref
-                    .project(&commit_index.indexed_columns)
-                    .expect("`tx_row_ref` should be compatible with `commit_index`");
+                let index_key = commit_index.project_row(tx_row_ref);
                 throw!(IndexError::KeyNotFound(index_id, index_key));
             };
 

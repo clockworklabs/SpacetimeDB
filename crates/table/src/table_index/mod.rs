@@ -1800,7 +1800,7 @@ pub struct TableIndex {
     /// Given a full row, typed at some `ty: ProductType`,
     /// these columns are the ones that this index indexes.
     /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
-    pub indexed_columns: ColList,
+    indexed_columns: ColList,
 }
 
 impl MemoryUsage for TableIndex {
@@ -1849,6 +1849,11 @@ impl TableIndex {
     /// Returns whether this is a unique index or not.
     pub fn is_unique(&self) -> bool {
         self.idx.is_unique()
+    }
+
+    /// Returns the indexed columns of this index.
+    pub fn indexed_columns(&self) -> &ColList {
+        &self.indexed_columns
     }
 
     /// Returns the key type of this index.
@@ -2134,6 +2139,15 @@ impl TableIndex {
         // 1. We're passing the same `ColList` that was provided during construction.
         // 2. Forward caller requirements.
         unsafe { TypedIndexKey::from_row_ref(&self.key_type, &self.idx, &self.indexed_columns, row_ref) }.into()
+    }
+
+    /// Projects `row_ref` to the columns of `self`.
+    ///
+    /// May panic if `row_ref` doesn't belong to the same table as this inex.
+    pub fn project_row(&self, row_ref: RowRef<'_>) -> AlgebraicValue {
+        row_ref
+            .project(&self.indexed_columns)
+            .expect("`row_ref` should belong to the same table as this index")
     }
 
     /// Inserts `ptr` with the value `row` to this index.
