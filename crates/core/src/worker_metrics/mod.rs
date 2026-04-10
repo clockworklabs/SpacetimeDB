@@ -68,6 +68,27 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub two_pc_transactions_committed_as_participant_total: IntCounterVec,
 
+        #[name = spacetime_2pc_participant_decisions_total]
+        #[help = "Total number of 2PC commit/abort decisions learned by this database while acting as a participant."]
+        #[labels(database_identity: Identity, decision: str, source: str)]
+        pub two_pc_participant_decisions_total: IntCounterVec,
+
+        #[name = spacetime_2pc_participant_decision_wait_seconds]
+        #[help = "Time spent waiting for a 2PC commit/abort decision while acting as a participant."]
+        #[labels(database_identity: Identity, decision: str, source: str)]
+        #[buckets(0.001, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
+        pub two_pc_participant_decision_wait_seconds: HistogramVec,
+
+        #[name = spacetime_2pc_status_polls_total]
+        #[help = "Total number of 2PC status polls sent by this database to a coordinator while acting as a participant."]
+        #[labels(database_identity: Identity)]
+        pub two_pc_status_polls_total: IntCounterVec,
+
+        #[name = spacetime_2pc_status_poll_results_total]
+        #[help = "Total number of 2PC status poll outcomes observed by this database while acting as a participant."]
+        #[labels(database_identity: Identity, result: str)]
+        pub two_pc_status_poll_results_total: IntCounterVec,
+
         #[name = spacetime_cross_db_reducer_duration_seconds]
         #[help = "Duration of cross-database reducer calls in seconds."]
         #[labels(caller_identity: Identity)]
@@ -77,6 +98,11 @@ metrics_group!(
         #[help = "Total number of distributed transactions that were marked wounded."]
         #[labels(coordinator_identity: Identity, role: str)]
         pub transactions_wounded_total: IntCounterVec,
+
+        #[name = spacetime_transactions_fatally_wounded_total]
+        #[help = "Total number of client reducer calls that exhausted wound retries and returned a wounded outcome."]
+        #[labels(database_identity: Identity)]
+        pub transactions_fatally_wounded_total: IntCounterVec,
 
         #[name = spacetime_2pc_wound_requests_sent_total]
         #[help = "Total number of wound requests sent to a remote coordinator."]

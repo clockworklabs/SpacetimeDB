@@ -2450,17 +2450,36 @@ impl ModuleHost {
                 let router = this.replica_ctx().call_reducer_router.clone();
                 let auth_token = this.replica_ctx().call_reducer_auth_token.clone();
                 tokio::spawn(async move {
+                    let wait_started_at = std::time::Instant::now();
                     loop {
                         let decision = Self::query_coordinator_status_with_client(
                             &client,
                             &router,
                             auth_token.clone(),
+                            this2.replica_ctx().database.database_identity,
                             coordinator_identity,
                             &original_prepare_id,
                         )
                         .await;
                         match decision {
                             Some(commit) => {
+                                let decision_label = if commit { "commit" } else { "abort" };
+                                WORKER_METRICS
+                                    .two_pc_participant_decisions_total
+                                    .with_label_values(
+                                        &this2.replica_ctx().database.database_identity,
+                                        decision_label,
+                                        "recovery_poll",
+                                    )
+                                    .inc();
+                                WORKER_METRICS
+                                    .two_pc_participant_decision_wait_seconds
+                                    .with_label_values(
+                                        &this2.replica_ctx().database.database_identity,
+                                        decision_label,
+                                        "recovery_poll",
+                                    )
+                                    .observe(wait_started_at.elapsed().as_secs_f64());
                                 if commit {
                                     let _ = this2.commit_prepared(&new_prepare_id);
                                     // The actor thread (call_reducer_prepare_and_hold) will wait
@@ -2490,12 +2509,21 @@ impl ModuleHost {
         client: &reqwest::Client,
         router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
         auth_token: Option<String>,
+        database_identity: Identity,
         coordinator_identity: Identity,
         prepare_id: &str,
     ) -> Option<bool> {
+        WORKER_METRICS
+            .two_pc_status_polls_total
+            .with_label_values(&database_identity)
+            .inc();
         let base_url = match router.resolve_base_url(coordinator_identity).await {
             Ok(url) => url,
             Err(e) => {
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, "retry_error")
+                    .inc();
                 log::warn!("2PC recovery status poll: cannot resolve coordinator URL: {e}");
                 return None;
             }
@@ -2513,13 +2541,26 @@ impl ModuleHost {
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
                 let body = resp.text().await.unwrap_or_default();
-                Some(body.trim() == "commit")
+                let commit = body.trim() == "commit";
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, if commit { "commit" } else { "abort" })
+                    .inc();
+                Some(commit)
             }
             Ok(resp) => {
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, "retry_error")
+                    .inc();
                 log::warn!("2PC recovery status poll: coordinator returned {}", resp.status());
                 None
             }
             Err(e) => {
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, "retry_error")
+                    .inc();
                 log::warn!("2PC recovery status poll: transport error: {e}");
                 None
             }

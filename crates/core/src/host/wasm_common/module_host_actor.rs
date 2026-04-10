@@ -839,6 +839,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         global_tx_id: Option<spacetimedb_lib::GlobalTxId>,
         replica_ctx: &std::sync::Arc<crate::replica_context::ReplicaContext>,
     ) -> bool {
+        let database_identity = replica_ctx.database.database_identity;
+        let wait_started_at = std::time::Instant::now();
         let decision_wait_deadline = std::time::Instant::now() + Duration::from_secs(20);
         while std::time::Instant::now() < decision_wait_deadline {
             if global_tx_id
@@ -850,9 +852,25 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
 
             let remaining = decision_wait_deadline.saturating_duration_since(std::time::Instant::now());
-            let wait_slice = remaining.min(Duration::from_secs(1));
+            // let wait_slice = remaining.min(Duration::from_secs(1));
+            let wait_slice = remaining.min(Duration::from_millis(10));
             match decision_rx.recv_timeout(wait_slice) {
-                Ok(commit) => return commit,
+                Ok(commit) => {
+                    let decision_label = if commit { "commit" } else { "abort" };
+                    WORKER_METRICS
+                        .two_pc_participant_decisions_total
+                        .with_label_values(
+                            &database_identity,
+                            decision_label,
+                            "channel",
+                        )
+                        .inc();
+                    WORKER_METRICS
+                        .two_pc_participant_decision_wait_seconds
+                        .with_label_values(&database_identity, decision_label, "channel")
+                        .observe(wait_started_at.elapsed().as_secs_f64());
+                    return commit;
+                }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                     log::warn!("2PC prepare_id={prepare_id}: decision channel closed, polling coordinator");
@@ -880,11 +898,27 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 &client,
                 &router,
                 auth_token.clone(),
+                database_identity,
                 coordinator_identity,
                 &prepare_id_owned,
             );
             match decision {
-                Some(commit) => return commit,
+                Some(commit) => {
+                    let decision_label = if commit { "commit" } else { "abort" };
+                    WORKER_METRICS
+                        .two_pc_participant_decisions_total
+                        .with_label_values(
+                            &database_identity,
+                            decision_label,
+                            "poll",
+                        )
+                        .inc();
+                    WORKER_METRICS
+                        .two_pc_participant_decision_wait_seconds
+                        .with_label_values(&database_identity, decision_label, "poll")
+                        .observe(wait_started_at.elapsed().as_secs_f64());
+                    return commit;
+                }
                 None => std::thread::sleep(Duration::from_secs(1)),
             }
         }
@@ -898,12 +932,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         client: &reqwest::blocking::Client,
         router: &std::sync::Arc<dyn crate::host::reducer_router::ReducerCallRouter>,
         auth_token: Option<String>,
+        database_identity: crate::identity::Identity,
         coordinator_identity: crate::identity::Identity,
         prepare_id: &str,
     ) -> Option<bool> {
+        WORKER_METRICS
+            .two_pc_status_polls_total
+            .with_label_values(&database_identity)
+            .inc();
         let base_url = match router.resolve_base_url_blocking(coordinator_identity) {
             Ok(url) => url,
             Err(e) => {
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, "retry_error")
+                    .inc();
                 log::warn!("2PC status poll: cannot resolve coordinator URL: {e}");
                 return None;
             }
@@ -921,6 +964,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let request = match req.build() {
             Ok(r) => r,
             Err(e) => {
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, "retry_error")
+                    .inc();
                 log::warn!("2PC status poll: failed to build request: {e}");
                 return None;
             }
@@ -930,12 +977,27 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let body = resp.text().unwrap_or_default();
             Ok((success, body))
         }) {
-            Ok((true, body)) => Some(body.trim() == "commit"),
+            Ok((true, body)) => {
+                let commit = body.trim() == "commit";
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, if commit { "commit" } else { "abort" })
+                    .inc();
+                Some(commit)
+            }
             Ok((false, _)) => {
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, "retry_error")
+                    .inc();
                 log::warn!("2PC status poll: coordinator returned non-success");
                 None
             }
             Err(e) => {
+                WORKER_METRICS
+                    .two_pc_status_poll_results_total
+                    .with_label_values(&database_identity, "retry_error")
+                    .inc();
                 log::warn!("2PC status poll: transport error: {e}");
                 None
             }

@@ -895,6 +895,10 @@ impl ClientConnection {
 
             if !matches!(result.outcome, ReducerOutcome::Wounded(_)) || attempt == MAX_WOUNDED_RETRIES {
                 if attempt == MAX_WOUNDED_RETRIES && matches!(result.outcome, ReducerOutcome::Wounded(_)) {
+                    WORKER_METRICS
+                        .transactions_fatally_wounded_total
+                        .with_label_values(&module.info.database_identity)
+                        .inc();
                     log::warn!("Reducer call was wounded on final attempt. Returning error to client.");
                 }
                 return Ok(result);
