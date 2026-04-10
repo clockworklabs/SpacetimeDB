@@ -4,13 +4,13 @@ use std::io;
 use std::sync::Arc;
 
 use log::{debug, warn};
-use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
+use spacetimedb_fs_utils::compression::{CompressReader, CompressionStats};
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
 use tempfile::NamedTempFile;
 
-use crate::segment::FileLike;
-
 use super::{Repo, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
+use crate::repo::CompressOnce;
+use crate::segment::FileLike;
 
 const SEGMENT_FILE_EXT: &str = ".stdb.log";
 
@@ -261,21 +261,18 @@ impl Repo for Fs {
         fs::remove_file(self.segment_path(offset))
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats> {
         let src = self.open_segment_reader(offset)?;
         // if it's already compressed, leave it be
         let CompressReader::None(mut src) = src.inner else {
-            return Ok(());
+            return Ok(<_>::default());
         };
 
         let mut dst = NamedTempFile::new_in(&self.root)?;
-        // bytes per frame. in the future, it might be worth looking into putting
-        // every commit into its own frame, to make seeking more efficient.
-        let max_frame_size = 0x1000;
-        compress_with_zstd(&mut src, &mut dst, Some(max_frame_size))?;
+        let stats = f.compress(&mut src, &mut dst)?;
         dst.persist(self.segment_path(offset))?;
 
-        Ok(())
+        Ok(stats)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
