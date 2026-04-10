@@ -1198,9 +1198,7 @@ async fn spawn_instance_worker(
                 |tx, params, on_success: crate::host::idc_actor::ReducerSuccessAction| {
                     instance_common.call_reducer_with_tx(tx, params, &mut inst, on_success)
                 };
-            let mut call_reducer = |tx, params| {
-                call_reducer_with_success(tx, params, Box::new(|_tx, _ret| Ok(())))
-            };
+            let mut call_reducer = |tx, params| call_reducer_with_success(tx, params, Box::new(|_tx, _ret| Ok(())));
             let mut should_exit = false;
 
             core_pinner.pin_if_changed();

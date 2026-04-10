@@ -514,7 +514,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
@@ -597,7 +596,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         F: FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>,
     {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance, on_success)
+            self.common
+                .call_reducer_with_tx(tx, params, &mut self.instance, on_success)
         })
     }
 

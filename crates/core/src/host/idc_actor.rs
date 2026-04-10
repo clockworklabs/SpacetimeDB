@@ -18,9 +18,7 @@ use anyhow::anyhow;
 use bytes::Bytes;
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_datastore::system_tables::{
-    StInboundMsgResultStatus, StOutboundMsgRow, ST_OUTBOUND_MSG_ID,
-};
+use spacetimedb_datastore::system_tables::{StInboundMsgResultStatus, StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{AlgebraicValue, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
@@ -249,11 +247,15 @@ fn reducer_workload(module: &ModuleInfo, params: &CallReducerParams) -> Workload
     })
 }
 
-fn duplicate_result_from_st_inbound_row(row: spacetimedb_datastore::system_tables::StInboundMsgRow) -> ReducerCallResult {
+fn duplicate_result_from_st_inbound_row(
+    row: spacetimedb_datastore::system_tables::StInboundMsgRow,
+) -> ReducerCallResult {
     let outcome = match row.result_status {
         StInboundMsgResultStatus::Success => ReducerOutcome::Committed,
         StInboundMsgResultStatus::ReducerError => ReducerOutcome::Failed(Box::new(
-            String::from_utf8_lossy(&row.result_payload).into_owned().into_boxed_str(),
+            String::from_utf8_lossy(&row.result_payload)
+                .into_owned()
+                .into_boxed_str(),
         )),
     };
 
@@ -344,11 +346,9 @@ where
     call_reducer(
         Some(tx),
         params,
-        Box::new(move |tx, _reducer_return_value| {
-            match action {
-                ReducerSuccessActionKind::DeleteOutboundMsg(msg_id) => {
-                    tx.delete_outbound_msg(msg_id).map_err(|e| anyhow!(e))
-                }
+        Box::new(move |tx, _reducer_return_value| match action {
+            ReducerSuccessActionKind::DeleteOutboundMsg(msg_id) => {
+                tx.delete_outbound_msg(msg_id).map_err(|e| anyhow!(e))
             }
         }),
     )
@@ -428,7 +428,6 @@ async fn finalize_message(
                 return;
             }
             Err(e) => {
-
                 delete_message(db, msg.msg_id);
                 log::error!(
                     "idc_actor: on_result reducer '{}' failed for msg_id={}: {e:?}",
@@ -438,7 +437,6 @@ async fn finalize_message(
             }
         }
     }
-
 }
 
 /// Load all messages from ST_OUTBOUND_MSG into the per-target queues, resolving delivery data
@@ -559,7 +557,9 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Identity
     pending.sort_by_key(|m| m.msg_id);
 
     for msg in pending {
-        let state = db_queues.entry(msg.target_db_identity).or_insert_with(DatabaseQueue::new);
+        let state = db_queues
+            .entry(msg.target_db_identity)
+            .or_insert_with(DatabaseQueue::new);
         // Only add if not already in the queue (avoid duplicates after reload).
         let already_queued = state.queue.iter().any(|m| m.msg_id == msg.msg_id);
         if !already_queued {

@@ -236,7 +236,6 @@ pub struct CallFromDatabaseQuery {
     msg_id: u64,
 }
 
-
 /// Call a reducer on behalf of another database, with deduplication.
 ///
 /// Endpoint: `POST /database/:name_or_identity/call-from-database/:reducer`
@@ -320,12 +319,10 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
                 ),
                 // 422 = reducer ran but returned Err; the IDC actor uses this to distinguish
                 // reducer failures from other  errors (which it retries).
-                ReducerOutcome::Failed(errmsg) => {
-                    (
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        axum::body::Body::from(errmsg.to_string()),
-                    )
-                }
+                ReducerOutcome::Failed(errmsg) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    axum::body::Body::from(errmsg.to_string()),
+                ),
                 // This will be retried by IDC acttor
                 ReducerOutcome::BudgetExceeded => {
                     log::warn!(
