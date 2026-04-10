@@ -80,14 +80,14 @@ PostgreSQL requires ~54% more API calls and ~49% more output tokens per feature,
 | | SpacetimeDB | PostgreSQL |
 |-|------------|------------|
 | Backend (hand-written) | 678 | 1,192 |
-| Frontend (hand-written, incl. CSS) | 2,274 | 2,700 |
+| Frontend (hand-written code) | 1,465 | 1,751 |
 | Generated bindings | 1,183 | 0 |
-| **Total hand-written** | **2,952** | **3,892** |
-| **LOC / feature group** | **211** | **278** |
+| **Total hand-written code** | **2,143** | **2,943** |
+| **LOC / feature group** | **153** | **210** |
 
-SpacetimeDB produces **24% less hand-written code** overall, with the backend being **43% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate.
+SpacetimeDB produces **27% less hand-written code** overall, with the backend being **43% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate.
 
-*Methodology: counts all hand-written `.ts`/`.tsx`/`.css` files in the app's `src/` and `server/src/` directories at L12, excluding `node_modules`, `dist`, and `level-N` snapshot copies. Generated bindings counted separately.*
+*Methodology: counts `.ts` and `.tsx` files in the app's `src/` and `server/src/` directories at L12, excluding `node_modules`, `dist`, `level-N` snapshot copies, CSS files, and generated SpacetimeDB bindings (counted separately).*
 
 ---
 
@@ -177,7 +177,7 @@ SpacetimeDB received 574 lines of guidelines vs PostgreSQL's 357. Despite more d
 SpacetimeDB: 100% first-attempt fix success. PostgreSQL: 89% (2 of 18 bugs required two fix sessions each). When a fix fails on the first try, it signals the AI is struggling to reason about the bug — which compounds cost and time.
 
 ### 4. LOC is a proxy for maintenance cost
-24% less hand-written code in SpacetimeDB means less surface area for bugs, smaller context windows for future upgrades, and lower ongoing maintenance burden. The backend is where the gap is widest: 678 vs 1,192 lines (43% smaller), because SpacetimeDB replaces REST routing, SQL boilerplate, and manual Socket.io event wiring with reducers and auto-subscriptions.
+27% less hand-written code in SpacetimeDB means less surface area for bugs, smaller context windows for future upgrades, and lower ongoing maintenance burden. The backend is where the gap is widest: 678 vs 1,192 lines (43% smaller), because SpacetimeDB replaces REST routing, SQL boilerplate, and manual Socket.io event wiring with reducers and auto-subscriptions.
 
 ### 5. Feature complexity is not uniform
 L9 (Private Rooms + DMs) was the most expensive feature to get right: $4.53 in fix costs for PostgreSQL across 7 distinct bugs spanning private room visibility, invite flows, DM creation, and DM offline state handling. Features involving complex access control, persistent membership state, and multi-user UX edge cases consistently trip up AI generation more than UI-heavy features.

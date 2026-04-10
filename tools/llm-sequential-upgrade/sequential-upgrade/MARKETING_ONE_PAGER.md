@@ -58,7 +58,7 @@ We ran this benchmark twice, with different methodology. The relative results we
 |--------|-------|-------|
 | PG bugs vs STDB | 3.8× more (19 vs 5) | 4× more (8 vs 2) |
 | PG cost vs STDB | +34% ($17.80 vs $13.33) | +56% ($19.68 vs $12.62) |
-| PG code vs STDB | +32% more (3,892 vs 2,952) | +23% more (4,437 vs 3,616) |
+| PG code vs STDB | +37% more (2,943 vs 2,143) | +47% more (3,632 vs 2,465) |
 
 Both runs independently hit the same L12 bug: the guest-session-on-refresh issue. STDB got session persistence for free via its SDK's identity token; PG had to implement it manually and missed it both times. Consistent results across independent runs means this isn't noise — it's a structural property of the technology.
 

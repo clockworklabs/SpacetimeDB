@@ -78,14 +78,14 @@ PostgreSQL required ~84% more API calls and ~35% more output tokens per feature,
 | | SpacetimeDB | PostgreSQL |
 |-|------------|------------|
 | Backend (hand-written) | 876 | 1,710 |
-| Frontend (hand-written, incl. CSS) | 2,740 | 2,727 |
+| Frontend (hand-written code) | 1,589 | 1,922 |
 | Generated bindings | 1,174 | 0 |
-| **Total hand-written** | **3,616** | **4,437** |
-| **LOC / feature group** | **301** | **370** |
+| **Total hand-written code** | **2,465** | **3,632** |
+| **LOC / feature group** | **205** | **303** |
 
-SpacetimeDB produced **19% less hand-written code** overall, with the backend being **49% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate. The frontend counts are nearly identical because both backends drive the same React + Vite UI.
+SpacetimeDB produced **32% less hand-written code** overall, with the backend being **49% smaller** — the SpacetimeDB model (reducers + subscriptions) replaces manual WebSocket management, routing, and SQL query boilerplate.
 
-*Methodology: counts all hand-written `.ts`/`.tsx`/`.css` files in the app's `src/` and `server/src/` directories at L12, excluding `node_modules`, `dist`, and `level-N` snapshot copies. Generated bindings counted separately.*
+*Methodology: counts `.ts` and `.tsx` files in the app's `src/` and `server/src/` directories at L12, excluding `node_modules`, `dist`, `level-N` snapshot copies, CSS files, and generated SpacetimeDB bindings (counted separately).*
 
 ---
 
@@ -179,7 +179,7 @@ The L12 anonymous migration exposed a second architectural advantage: SpacetimeD
 SpacetimeDB spent $0.81 on fixes (6.4% of total). PostgreSQL spent $5.11 (26.0%). The L6 kick-enforcement bug alone required 3 fix sessions at $3.06, and the L12 guest-persistence bug required 2 fix sessions ($0.65), demonstrating that some correctness properties (persistent ban state, client-side session management) are genuinely hard for the AI to reason about in a REST+WebSocket architecture.
 
 ### 5. LOC is a maintenance proxy
-19% less hand-written code in SpacetimeDB means smaller context windows for future upgrades, less surface area for bugs, and lower ongoing maintenance cost. The backend is particularly lean (876 vs 1,710 lines at L12) — SpacetimeDB reducers replace manual routing, SQL, and WebSocket plumbing. Frontend LOC is essentially tied because both backends drive the same React UI.
+32% less hand-written code in SpacetimeDB means smaller context windows for future upgrades, less surface area for bugs, and lower ongoing maintenance cost. The backend is particularly lean (876 vs 1,710 lines at L12 — a 49% reduction) — SpacetimeDB reducers replace manual routing, SQL, and WebSocket plumbing.
 
 ### 6. Sequential upgrade economics remain strong
 22.9M cache tokens read by SpacetimeDB, 40.4M by PostgreSQL — at ~$0.30/1M, this represents enormous cost savings vs a from-scratch approach. Each upgrade session benefits from the full prior context being cached.
@@ -199,7 +199,7 @@ SpacetimeDB and PostgreSQL had nearly identical per-upgrade costs ($0.98 vs $1.2
 | PG bugs | 19 | 8 | -58% |
 | STDB fix sessions | 4 | 1 | -75% |
 | PG fix sessions | 17 | 10 | -41% |
-| STDB LOC | 2,952 | 3,616 | +22% |
-| PG LOC | 3,892 | 4,437 | +14% |
+| STDB LOC (no CSS) | 2,143 | 2,465 | +15% |
+| PG LOC (no CSS) | 2,943 | 3,632 | +23% |
 
 Both backends improved substantially after fixing the confounds (domain hints, PORT contradictions, prescriptive instructions). The bug reduction is particularly notable — ~60% fewer bugs across the board despite the same feature set and model. Both runs agree on the direction of the PG-vs-STDB gap (STDB cheaper, fewer bugs); the refined 20260406 methodology widens it.

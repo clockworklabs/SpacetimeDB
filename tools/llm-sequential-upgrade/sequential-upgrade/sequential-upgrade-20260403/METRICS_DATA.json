@@ -51,20 +51,20 @@
   },
 
   "loc": {
-    "methodology_note": "L12 LOC re-measured with consistent rules across both runs: counts all .ts/.tsx/.css files in backend/server src/ and client/src/ directories, excluding node_modules, dist, and level-N snapshots. Generated bindings counted separately. Historical L1-L11 per_level arrays used a different counting method; the summary numbers below reflect the corrected L12 measurement.",
+    "methodology_note": "L12 LOC re-measured with consistent rules across both runs: counts .ts and .tsx files in backend/server src/ and client/src/ directories, excluding node_modules, dist, level-N snapshots, CSS files, and generated SpacetimeDB bindings (counted separately). CSS excluded because it's orthogonal to backend architecture and varies stylistically between runs.",
     "spacetime": {
       "backend_handwritten": 678,
-      "frontend_handwritten": 2274,
+      "frontend_handwritten": 1465,
       "generated_bindings": 1183,
-      "total_handwritten": 2952,
-      "per_feature": 211
+      "total_handwritten": 2143,
+      "per_feature": 153
     },
     "postgres": {
       "backend_handwritten": 1192,
-      "frontend_handwritten": 2700,
+      "frontend_handwritten": 1751,
       "generated_bindings": 0,
-      "total_handwritten": 3892,
-      "per_feature": 278
+      "total_handwritten": 2943,
+      "per_feature": 210
     }
   },
 
