@@ -425,7 +425,6 @@ async fn finalize_message(
                     on_result_reducer,
                     msg.msg_id,
                 );
-                return;
             }
             Err(e) => {
                 delete_message(db, msg.msg_id);
