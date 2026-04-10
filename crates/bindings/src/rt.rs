@@ -2,9 +2,7 @@
 
 use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
-use crate::{
-    http, sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext,
-};
+use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
     CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
@@ -24,7 +22,7 @@ use std::sync::{Mutex, OnceLock};
 pub use sys::raw::{BytesSink, BytesSource};
 
 #[cfg(feature = "unstable")]
-use crate::{HandlerContext, ProcedureContext, ProcedureResult};
+use crate::{http, HandlerContext, ProcedureContext, ProcedureResult};
 
 pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
