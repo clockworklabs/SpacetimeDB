@@ -17,7 +17,7 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::{IndexScanPointOrRange, MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
     system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
 };
@@ -42,7 +42,6 @@ use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
-use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -56,11 +55,11 @@ use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotReposit
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
-use spacetimedb_vm::errors::{ErrorType, ErrorVm};
-use spacetimedb_vm::ops::parse;
+use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
-use std::ops::{Bound, RangeBounds};
+use std::num::NonZeroUsize;
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -153,9 +152,16 @@ impl RelationalDB {
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
         let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
-        let durability = durability
-            .zip(rt)
-            .map(|(durability, rt)| DurabilityWorker::new(database_identity, durability, rt));
+        let durability = durability.zip(rt).map(|(durability, rt)| {
+            let next_tx_offset = {
+                let tx = inner.begin_tx(Workload::Internal);
+                let next_tx_offset = tx.tx_offset();
+                let _ = inner.release_tx(tx);
+                next_tx_offset.into_inner()
+            };
+            let reorder_window_size = NonZeroUsize::new(8).unwrap();
+            DurabilityWorker::new(database_identity, durability, rt, next_tx_offset, reorder_window_size)
+        });
 
         Self {
             inner,
@@ -1389,32 +1395,24 @@ impl RelationalDB {
         Ok(self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)?)
     }
 
-    pub fn index_scan_range<'a>(
+    pub fn index_scan_range<'de, 'a>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
-        prefix: &[u8],
+        prefix: &'de [u8],
         prefix_elems: ColId,
-        rstart: &[u8],
-        rend: &[u8],
-    ) -> Result<
-        (
-            TableId,
-            Bound<AlgebraicValue>,
-            Bound<AlgebraicValue>,
-            impl Iterator<Item = RowRef<'a>> + use<'a>,
-        ),
-        DBError,
-    > {
+        rstart: &'de [u8],
+        rend: &'de [u8],
+    ) -> Result<(TableId, IndexScanPointOrRange<'de, 'a>), DBError> {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 
-    pub fn index_scan_point<'a>(
+    pub fn index_scan_point<'a, 'p>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
-        point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
+        point: &'p [u8],
+    ) -> Result<(TableId, IndexKey<'p>, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
         Ok(tx.index_scan_point(index_id, point)?)
     }
 
@@ -1451,7 +1449,7 @@ impl RelationalDB {
     }
 
     /// Clears all rows from a table without dropping it.
-    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
+    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<u64, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
     }
@@ -1511,32 +1509,6 @@ impl RelationalDB {
         Ok(None)
     }
 
-    /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
-    pub(crate) fn query_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowQryThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
-    #[allow(dead_code)]
-    pub(crate) fn sub_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowSubThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
-    #[allow(dead_code)]
-    pub(crate) fn incr_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowIncThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
     /// Read the value of a system variable from `st_var`
     pub(crate) fn read_var(&self, tx: &Tx, name: StVarName) -> Result<Option<StVarValue>, DBError> {
         if let Some(row_ref) = self
@@ -1546,31 +1518,6 @@ impl RelationalDB {
             return Ok(Some(StVarRow::try_from(row_ref)?.value));
         }
         Ok(None)
-    }
-
-    /// Update the value of a system variable in `st_var`
-    pub(crate) fn write_var(&self, tx: &mut MutTx, name: StVarName, literal: &str) -> Result<(), DBError> {
-        let value = Self::parse_var(name, literal)?;
-        if let Some(row_ref) = self
-            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
-            .next()
-        {
-            self.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
-        }
-        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
-        Ok(())
-    }
-
-    /// Parse the literal representation of a system variable
-    fn parse_var(name: StVarName, literal: &str) -> Result<StVarValue, DBError> {
-        StVarValue::try_from_primitive(parse::parse(literal, &name.type_of())?).map_err(|v| {
-            ErrorVm::Type(ErrorType::Parse {
-                value: literal.to_string(),
-                ty: fmt_algebraic_type(&name.type_of()).to_string(),
-                err: format!("error parsing value: {v:?}"),
-            })
-            .into()
-        })
     }
 
     /// Write `rows` into a (sender) view's backing table.
@@ -2353,9 +2300,7 @@ mod tests {
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
-    use crate::db::relational_db::tests_utils::{
-        begin_tx, create_view_for_test, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
-    };
+    use crate::db::relational_db::tests_utils::{begin_tx, create_view_for_test, insert, make_snapshot, TestDB};
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
@@ -2463,18 +2408,6 @@ mod tests {
         stdb.commit_tx(tx)?;
 
         Ok(())
-    }
-
-    #[test]
-    fn test_system_variables() {
-        let db = TestDB::durable().expect("failed to create db");
-        let _ = with_auto_commit(&db, |tx| db.write_var(tx, StVarName::RowLimit, "5"));
-        assert_eq!(
-            5,
-            with_read_only(&db, |tx| db.row_limit(tx))
-                .expect("failed to read from st_var")
-                .expect("row_limit does not exist")
-        );
     }
 
     #[test]

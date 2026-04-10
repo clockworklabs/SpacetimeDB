@@ -228,11 +228,12 @@ pub const fn assert_is_primitive_type<T: IsPrimitiveType>() {}
 
 #[cfg(test)]
 mod tests {
-    use super::{to_vec, DecodeError};
-    use crate::proptest::generate_typed_value;
-    use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue};
+    use super::{to_vec, DecodeError, Deserializer};
+    use crate::de::DeserializeSeed;
+    use crate::proptest::{generate_algebraic_type, generate_typed_value};
+    use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue, WithTypespace};
     use proptest::prelude::*;
-    use proptest::proptest;
+    use proptest::{collection::vec, proptest};
 
     #[test]
     fn type_to_binary_equivalent() {
@@ -248,12 +249,30 @@ mod tests {
         assert_eq!(direct, through_value);
     }
 
+    fn type_non_empty(ty: &AlgebraicType) -> bool {
+        match ty {
+            AlgebraicType::Ref(_) => unreachable!(),
+            AlgebraicType::Array(elem_ty) => type_non_empty(&elem_ty.elem_ty),
+            AlgebraicType::Product(elems) => elems.iter().any(|e| type_non_empty(&e.algebraic_type)),
+            AlgebraicType::Sum(vars) => !vars.is_empty(),
+            _ => true,
+        }
+    }
+
     proptest! {
         #[test]
         fn bsatn_enc_de_roundtrips((ty, val) in generate_typed_value()) {
             let bytes = to_vec(&val).unwrap();
+            prop_assert_eq!(WithTypespace::empty(&ty).validate(Deserializer::new(&mut &bytes[..])), Ok(()));
             let val_decoded = AlgebraicValue::decode(&ty, &mut &bytes[..]).unwrap();
             prop_assert_eq!(val, val_decoded);
+        }
+
+        #[test]
+        fn bsatn_invalid_wont_decode(ty in generate_algebraic_type(), bytes in vec(any::<u8>(), 0..4096)) {
+            prop_assume!(type_non_empty(&ty));
+            prop_assume!(WithTypespace::empty(&ty).validate(Deserializer::new(&mut &bytes[..])).is_err());
+            prop_assert!(AlgebraicValue::decode(&ty, &mut &bytes[..]).is_err());
         }
 
         #[test]

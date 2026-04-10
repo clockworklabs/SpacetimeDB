@@ -51,7 +51,11 @@ impl Header {
         if !buf.starts_with(&MAGIC) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "segment header does not start with magic",
+                format!(
+                    "segment header does not start with magic: expected {:02x?}, got {:02x?}",
+                    MAGIC,
+                    &buf[..MAGIC.len()]
+                ),
             ));
         }
 

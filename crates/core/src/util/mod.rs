@@ -8,7 +8,7 @@ pub mod prometheus_handle;
 
 pub mod jobs;
 pub mod notify_once;
-pub mod slow;
+pub mod thread_scheduling;
 
 // TODO: use String::from_utf8_lossy_owned once stabilized
 pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {

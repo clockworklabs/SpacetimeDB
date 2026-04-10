@@ -7,16 +7,17 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    get_registered_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
 use super::UpdateDatabaseResult;
 use crate::client::ClientActorId;
+use crate::config::V8HeapPolicyConfig;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, ClientConnectedError, ViewCommand, ViewCommandResult,
+    call_identity_connected, init_database, ClientConnectedError, ViewCallError, ViewCommand, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -31,12 +32,14 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
+use crate::worker_metrics::WORKER_METRICS;
 use core::any::type_name;
 use core::str;
-use enum_as_inner::EnumAsInner;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
+use parking_lot::RwLock;
+use prometheus::IntGauge;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
@@ -46,14 +49,16 @@ use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
+use std::cell::Cell;
 use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex as AsyncMutex, Notify};
 use tracing::Instrument;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope_with_context, ArrayBuffer, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
+    scope_with_context, ArrayBuffer, Context, Function, Global, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
     ResolveModuleCallback, ScriptOrigin, Value,
 };
 
@@ -69,19 +74,32 @@ mod to_value;
 mod util;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
-#[derive(Default)]
 pub struct V8Runtime {
-    _priv: (),
+    heap_policy: V8HeapPolicyConfig,
+}
+
+impl Default for V8Runtime {
+    fn default() -> Self {
+        Self::new(V8HeapPolicyConfig::default())
+    }
 }
 
 impl V8Runtime {
+    pub fn new(heap_policy: V8HeapPolicyConfig) -> Self {
+        Self {
+            heap_policy: heap_policy.normalized(),
+        }
+    }
+
     pub async fn make_actor(
         &self,
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
     ) -> anyhow::Result<ModuleWithInstance> {
-        V8_RUNTIME_GLOBAL.make_actor(mcc, program_bytes, core).await
+        V8_RUNTIME_GLOBAL
+            .make_actor(mcc, program_bytes, core, self.heap_policy)
+            .await
     }
 }
 
@@ -93,6 +111,67 @@ impl V8Runtime {
 }
 
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
+static NEXT_JS_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
+const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
+pub(crate) const V8_WORKER_KIND_INSTANCE_LANE: &str = "instance_lane";
+
+thread_local! {
+    // Note, `on_module_thread` runs host closures on a single JS module thread.
+    // Enqueuing more JS module-thread work from one of those closures waits on the
+    // same worker thread that is already busy running the current closure.
+    // And this deadlocks.
+    static ON_JS_MODULE_THREAD: Cell<bool> = const { Cell::new(false) };
+}
+
+struct EnteredJsModuleThread;
+
+impl EnteredJsModuleThread {
+    fn new() -> Self {
+        ON_JS_MODULE_THREAD.with(|entered| {
+            assert!(
+                !entered.get(),
+                "reentrancy into the JS module thread; this would deadlock. \
+                 Do not enqueue onto this worker from inside `on_module_thread` work."
+            );
+            entered.set(true);
+        });
+        Self
+    }
+}
+
+impl Drop for EnteredJsModuleThread {
+    fn drop(&mut self) {
+        ON_JS_MODULE_THREAD.with(|entered| {
+            debug_assert!(
+                entered.get(),
+                "JS module thread marker should only be cleared after entry"
+            );
+            entered.set(false);
+        });
+    }
+}
+
+#[derive(Copy, Clone)]
+enum JsWorkerKind {
+    InstanceLane,
+    Pooled,
+}
+
+impl JsWorkerKind {
+    const fn checks_heap(self) -> bool {
+        matches!(self, Self::InstanceLane)
+    }
+}
+
+pub(crate) fn assert_not_on_js_module_thread(label: &str) {
+    ON_JS_MODULE_THREAD.with(|entered| {
+        assert!(
+            !entered.get(),
+            "{label} attempted to re-enter the JS module thread from code already \
+             running on that thread; this would deadlock"
+        );
+    });
+}
 
 /// The actual V8 runtime, with initialization of V8.
 struct V8RuntimeInner {
@@ -133,6 +212,7 @@ impl V8RuntimeInner {
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
+        heap_policy: V8HeapPolicyConfig,
     ) -> anyhow::Result<ModuleWithInstance> {
         #![allow(unreachable_code, unused_variables)]
 
@@ -144,18 +224,34 @@ impl V8RuntimeInner {
 
         // Convert program to a string.
         let program: Arc<str> = str::from_utf8(program_bytes)?.into();
+        let database_identity = mcc.replica_ctx.database_identity;
+        let lane_queue = JsWorkerQueue::unbounded_with_metric(
+            WORKER_METRICS
+                .v8_instance_lane_queue_length
+                .with_label_values(&database_identity),
+        );
 
         // Validate/create the module and spawn the first instance.
         let mcc = Either::Right(mcc);
         let load_balance_guard = Arc::new(core.guard);
         let core_pinner = core.pinner;
-        let (common, init_inst) =
-            spawn_instance_worker(program.clone(), mcc, load_balance_guard.clone(), core_pinner.clone()).await?;
+        let (common, init_inst) = spawn_instance_worker(
+            program.clone(),
+            mcc,
+            load_balance_guard.clone(),
+            core_pinner.clone(),
+            heap_policy,
+            JsWorkerKind::InstanceLane,
+            lane_queue.clone(),
+        )
+        .await?;
         let module = JsModule {
             common,
             program,
             load_balance_guard,
             core_pinner,
+            heap_policy,
+            lane_queue,
         };
 
         Ok(ModuleWithInstance::Js { module, init_inst })
@@ -168,6 +264,8 @@ pub struct JsModule {
     program: Arc<str>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
+    heap_policy: V8HeapPolicyConfig,
+    lane_queue: Arc<JsWorkerQueue>,
 }
 
 impl JsModule {
@@ -183,17 +281,37 @@ impl JsModule {
         self.common.info().clone()
     }
 
-    pub async fn create_instance(&self) -> JsInstance {
+    async fn create_instance_with_queue(&self, request_queue: Arc<JsWorkerQueue>) -> JsInstance {
         let program = self.program.clone();
         let common = self.common.clone();
         let load_balance_guard = self.load_balance_guard.clone();
         let core_pinner = self.core_pinner.clone();
+        let heap_policy = self.heap_policy;
 
         // This has to be done in a blocking context because of `blocking_recv`.
-        let (_, instance) = spawn_instance_worker(program, Either::Left(common), load_balance_guard, core_pinner)
-            .await
-            .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
+        let (_, instance) = spawn_instance_worker(
+            program,
+            Either::Left(common),
+            load_balance_guard,
+            core_pinner,
+            heap_policy,
+            JsWorkerKind::Pooled,
+            request_queue,
+        )
+        .await
+        .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
         instance
+    }
+
+    pub async fn create_instance(&self) -> JsInstance {
+        // We use a rendezvous channel for pooled instances, because they are checked
+        // out one request at a time and subsequently returned to the pool, unlike the
+        // long lived instance used for executing reducers.
+        self.create_instance_with_queue(JsWorkerQueue::bounded(0)).await
+    }
+
+    async fn create_lane_instance(&self) -> JsInstance {
+        self.create_instance_with_queue(self.lane_queue.clone()).await
     }
 }
 
@@ -261,11 +379,24 @@ impl JsInstanceEnv {
         self.instance_env.start_instant
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
-    /// This resets all of the state associated to a single reducer call,
+    /// Signal to this `WasmInstanceEnv` that a reducer/view/procedure call is over.
+    /// This resets all of the state associated to a single function call,
     /// and returns instrumentation records.
-    fn finish_reducer(&mut self) -> ExecutionTimings {
+    fn finish_funcall(&mut self) -> ExecutionTimings {
         let total_duration = self.reducer_start().elapsed();
+        let func_name = self.log_record_function().unwrap_or("<unknown>").to_owned();
+
+        let leftover_iters = self.iters.len();
+        if leftover_iters > 0 {
+            log::warn!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
+            self.iters.clear();
+        }
+
+        let leftover_timing_spans = self.timing_spans.len();
+        if leftover_timing_spans > 0 {
+            log::warn!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
+            self.timing_spans.clear();
+        }
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();
@@ -290,52 +421,185 @@ impl JsInstanceEnv {
 /// The actual work happens in a worker thread,
 /// which the instance communicates with through channels.
 ///
-/// When the instance is dropped, the channels will hang up,
-/// which will cause the worker's loop to terminate
-/// and cleanup the isolate and friends.
+/// This handle is cloneable and shared by callers. Requests are queued FIFO
+/// on the backing worker queue so the next reducer can start immediately after
+/// the previous one finishes, without waiting for an outer task to hand the
+/// instance back.
+///
+/// When the last handle is dropped, the channels will hang up,
+/// which will cause the worker's loop to terminate and cleanup the isolate
+/// and friends.
+#[derive(Clone)]
 pub struct JsInstance {
-    request_tx: flume::Sender<JsWorkerRequest>,
-    reply_rx: flume::Receiver<(JsWorkerReply, bool)>,
-    trapped: bool,
+    /// Stable identifier for the underlying worker generation.
+    ///
+    /// All clones of the same handle share the same `id`. The instance lane uses
+    /// it to tell whether the currently active worker has already been replaced
+    /// after a trap or disconnect.
+    id: u64,
+    /// Shared across cloned handles and JS instances so callers keep inserting
+    /// into the same queue while recovery swaps in a replacement instance.
+    ///
+    /// The `Arc` is intentional here because `JsWorkerQueue` owns the `rx` handle
+    /// that gets cloned into each worker during replacement, and cloning that wrapper
+    /// by value would clone the `Receiver` too, which changes flume’s receiver count.
+    /// It would also run `JsWorkerQueue::drop` once per `JsInstance` clone, which
+    /// would over-adjust the queue-length metric. So the outer `Arc` is there to keep
+    /// one queue wrapper identity shared across all `JsInstance` clones, and to make
+    /// its `Drop` run exactly once.
+    request_queue: Arc<JsWorkerQueue>,
+    /// Lifecycle flags for this specific worker generation.
+    worker_state: Arc<JsWorkerState>,
+}
+
+/// Shared request queue for a JS instance lane.
+///
+/// Async callers enqueue [`JsWorkerRequest`] values here
+/// and wait on their per-request one-shot replies sent back via [`JsReplyTx`].
+/// The dedicated JS worker thread, spawned in [`spawn_instance_worker`]
+/// drains this queue and executes those requests on the isolate.
+///
+/// Note, this queue outlives any single JS worker or V8 isolate.
+/// When the active worker traps or is retired for heap growth,
+/// [`JsInstanceLane::replace_active_if_current`] waits for it to fully exit
+/// and spawns a fresh worker which then starts reading from the queue so that
+/// buffered requests are not dropped.
+struct JsWorkerQueue {
+    /// Sending side used by async callers to enqueue work for the active worker.
+    tx: flume::Sender<JsWorkerRequest>,
+    /// Receiving side kept outside of the worker thread so a replacement worker can
+    /// resume draining the exact same queue after trap recovery or heap retirement.
+    rx: flume::Receiver<JsWorkerRequest>,
+    /// Optional backlog gauge for the long-lived instance-lane queue.
+    metric: Option<IntGauge>,
+}
+
+impl JsWorkerQueue {
+    /// Builds a rendezvous queue for pooled instances, where the caller and worker
+    /// synchronize directly on each handoff instead of buffering backlog.
+    fn bounded(capacity: usize) -> Arc<Self> {
+        let (tx, rx) = flume::bounded(capacity);
+        Arc::new(Self { tx, rx, metric: None })
+    }
+
+    /// Builds the long-lived instance-lane queue and wires in backlog accounting.
+    fn unbounded_with_metric(metric: IntGauge) -> Arc<Self> {
+        let (tx, rx) = flume::unbounded();
+        Arc::new(Self {
+            tx,
+            rx,
+            metric: Some(metric),
+        })
+    }
+
+    /// Enqueues a request for the active worker and increments the backlog gauge
+    /// after the request is accepted by the channel.
+    async fn send_async(&self, request: JsWorkerRequest) -> Result<(), flume::SendError<JsWorkerRequest>> {
+        self.tx.send_async(request).await?;
+        if let Some(metric) = &self.metric {
+            metric.inc();
+        }
+        Ok(())
+    }
+
+    /// Clones the receiving handle so a newly spawned worker can
+    /// resume draining this same queue after the previous one exits.
+    fn receiver(&self) -> flume::Receiver<JsWorkerRequest> {
+        self.rx.clone()
+    }
+}
+
+impl Drop for JsWorkerQueue {
+    fn drop(&mut self) {
+        if let Some(metric) = &self.metric {
+            metric.sub(self.tx.len() as _);
+        }
+    }
+}
+
+/// Lifecycle state for a single JS worker.
+///
+/// The `trapped` bit tells the lane that this worker must not keep serving
+/// future work. The `exited` bit and [`Notify`] are what make the [JsWorkerQueue]
+/// remain single-consumer. Recovery waits on [`Self::wait_exited`] before spawning
+/// the replacement worker, so there is no overlap where two workers can both drain
+/// the queue.
+#[derive(Default)]
+struct JsWorkerState {
+    /// Set once this JS instance has trapped or been retired and must not
+    /// accept any further work from the instance lane.
+    trapped: AtomicBool,
+    /// Set once the worker thread has actually exited and stopped draining the queue.
+    exited: AtomicBool,
+    /// Wakes replacement logic waiting for this worker to finish exiting.
+    exited_notify: Notify,
+}
+
+impl JsWorkerState {
+    /// Returns whether this JS instance has been marked unusable.
+    fn trapped(&self) -> bool {
+        self.trapped.load(Ordering::Relaxed)
+    }
+
+    /// Returns whether the worker thread has fully exited.
+    fn exited(&self) -> bool {
+        self.exited.load(Ordering::Relaxed)
+    }
+
+    /// Returns whether the instance lane should replace this JS instance.
+    fn needs_recovery(&self) -> bool {
+        self.trapped() || self.exited()
+    }
+
+    /// Marks the JS instance as poisoned so no further requests should target it.
+    fn mark_trapped(&self) {
+        self.trapped.store(true, Ordering::Relaxed);
+    }
+
+    /// Marks the worker thread as exited and wakes any replacement task waiting on it.
+    fn mark_exited(&self) {
+        self.exited.store(true, Ordering::Relaxed);
+        self.exited_notify.notify_waiters();
+    }
+
+    /// Waits until the worker thread has fully exited before replacement proceeds.
+    async fn wait_exited(&self) {
+        while !self.exited() {
+            self.exited_notify.notified().await;
+        }
+    }
 }
 
 impl JsInstance {
+    fn id(&self) -> u64 {
+        self.id
+    }
+
     pub fn trapped(&self) -> bool {
-        self.trapped
+        self.worker_state.trapped()
     }
 
-    /// Send a request to the worker and wait for a reply.
-    async fn send_recv<T>(
-        &mut self,
-        extract: impl FnOnce(JsWorkerReply) -> Result<T, JsWorkerReply>,
-        request: JsWorkerRequest,
-    ) -> T {
-        // Send the request.
-        self.request_tx
-            .send_async(request)
-            .await
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
-
-        // Wait for the response.
-        let (reply, trapped) = self
-            .reply_rx
-            .recv_async()
-            .await
-            .expect("worker's `reply_tx` should be live as `JsInstance::drop` hasn't happened");
-
-        self.trapped = trapped;
-
-        match extract(reply) {
-            Err(err) => unreachable!("should have received {} but got {err:?}", type_name::<T>()),
-            Ok(reply) => reply,
-        }
+    fn needs_recovery(&self) -> bool {
+        self.worker_state.needs_recovery()
     }
 
-    /// Run the given function on the worker thread.
-    ///
-    /// This method, unlike the others, does not expect a response on the
-    /// `reply_rx` channel, since the return value `R` could be of any type.
-    pub async fn run_on_thread<F, R>(&mut self, f: F) -> R
+    async fn wait_exited(&self) {
+        self.worker_state.wait_exited().await;
+    }
+
+    async fn send_request<T>(
+        &self,
+        request: impl FnOnce(JsReplyTx<T>) -> JsWorkerRequest,
+    ) -> Result<T, WorkerDisconnected> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.request_queue
+            .send_async(request(reply_tx))
+            .await
+            .map_err(|_| WorkerDisconnected)?;
+        reply_rx.await.map_err(|_| WorkerDisconnected)
+    }
+
+    pub async fn run_on_thread<F, R>(&self, f: F) -> R
     where
         F: AsyncFnOnce() -> R + Send + 'static,
         R: Send + 'static,
@@ -343,145 +607,132 @@ impl JsInstance {
         let span = tracing::Span::current();
         let (tx, rx) = oneshot::channel();
 
-        let request = JsWorkerRequest::RunFunction(Box::new(move || {
-            async move {
-                let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
-                if let Err(Err(_panic)) = tx.send(result) {
-                    tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+        self.request_queue
+            .send_async(JsWorkerRequest::RunFunction(Box::new(move || {
+                async move {
+                    let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
+                    if let Err(Err(_panic)) = tx.send(result) {
+                        tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+                    }
                 }
-            }
-            .boxed_local()
-        }));
-
-        self.request_tx
-            .send_async(request)
+                .boxed_local()
+            })))
             .await
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+            .unwrap_or_else(|_| panic!("worker should stay live while handling {}", type_name::<R>()));
 
-        match rx.await.unwrap() {
+        match rx
+            .await
+            .unwrap_or_else(|_| panic!("worker should stay live while handling {}", type_name::<R>()))
+        {
             Ok(r) => r,
             Err(e) => std::panic::resume_unwind(e),
         }
     }
 
     pub async fn update_database(
-        &mut self,
+        &self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.send_recv(
-            JsWorkerReply::into_update_database,
-            JsWorkerRequest::UpdateDatabase {
-                program,
-                old_module_info,
-                policy,
-            },
-        )
+        self.send_request(|reply_tx| JsWorkerRequest::UpdateDatabase {
+            reply_tx,
+            program,
+            old_module_info,
+            policy,
+        })
         .await
+        .unwrap_or_else(|_| panic!("worker should stay live while updating the database"))
     }
 
-    pub async fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        self.send_recv(
-            JsWorkerReply::into_call_reducer,
-            JsWorkerRequest::CallReducer { params },
-        )
-        .await
-    }
-
-    pub async fn clear_all_clients(&mut self) -> anyhow::Result<()> {
-        self.send_recv(JsWorkerReply::into_clear_all_clients, JsWorkerRequest::ClearAllClients)
+    pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
+        self.send_request(|reply_tx| JsWorkerRequest::CallReducer { reply_tx, params })
             .await
+            .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
+    }
+
+    pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.send_request(JsWorkerRequest::ClearAllClients)
+            .await
+            .unwrap_or_else(|_| panic!("worker should stay live while clearing clients"))
     }
 
     pub async fn call_identity_connected(
-        &mut self,
+        &self,
         caller_auth: ConnectionAuthCtx,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
-        self.send_recv(
-            JsWorkerReply::into_call_identity_connected,
-            JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id),
-        )
+        self.send_request(|reply_tx| JsWorkerRequest::CallIdentityConnected {
+            reply_tx,
+            caller_auth,
+            caller_connection_id,
+        })
         .await
+        .unwrap_or_else(|_| panic!("worker should stay live while running client_connected"))
     }
 
     pub async fn call_identity_disconnected(
-        &mut self,
+        &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ReducerCallError> {
-        self.send_recv(
-            JsWorkerReply::into_call_identity_disconnected,
-            JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id),
-        )
+        self.send_request(|reply_tx| JsWorkerRequest::CallIdentityDisconnected {
+            reply_tx,
+            caller_identity,
+            caller_connection_id,
+        })
         .await
+        .unwrap_or_else(|_| panic!("worker should stay live while running client_disconnected"))
     }
 
-    pub async fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
-        self.send_recv(
-            JsWorkerReply::into_disconnect_client,
-            JsWorkerRequest::DisconnectClient(client_id),
-        )
-        .await
-    }
-
-    pub async fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        *self
-            .send_recv(
-                JsWorkerReply::into_init_database,
-                JsWorkerRequest::InitDatabase(program),
-            )
+    pub async fn disconnect_client(&self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        self.send_request(|reply_tx| JsWorkerRequest::DisconnectClient { reply_tx, client_id })
             .await
+            .unwrap_or_else(|_| panic!("worker should stay live while disconnecting a client"))
     }
 
-    pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
-        *self
-            .send_recv(
-                JsWorkerReply::into_call_procedure,
-                JsWorkerRequest::CallProcedure { params },
-            )
+    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        self.send_request(|reply_tx| JsWorkerRequest::InitDatabase { reply_tx, program })
             .await
+            .unwrap_or_else(|_| panic!("worker should stay live while initializing the database"))
     }
 
-    pub async fn call_view(&mut self, cmd: ViewCommand) -> ViewCommandResult {
-        *self
-            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { cmd })
+    pub async fn call_procedure(&self, params: CallProcedureParams) -> CallProcedureReturn {
+        self.send_request(|reply_tx| JsWorkerRequest::CallProcedure { reply_tx, params })
             .await
+            .unwrap_or_else(|_| panic!("worker should stay live while calling a procedure"))
+    }
+
+    pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
+        self.send_request(|reply_tx| JsWorkerRequest::CallView { reply_tx, cmd })
+            .await
+            .unwrap_or_else(|_| panic!("worker should stay live while calling a view"))
     }
 
     pub(in crate::host) async fn call_scheduled_function(
-        &mut self,
+        &self,
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
-        self.send_recv(
-            JsWorkerReply::into_call_scheduled_function,
-            JsWorkerRequest::CallScheduledFunction(params),
-        )
-        .await
+        self.send_request(|reply_tx| JsWorkerRequest::CallScheduledFunction { reply_tx, params })
+            .await
+            .unwrap_or_else(|_| panic!("worker should stay live while calling a scheduled function"))
     }
 }
 
-/// A reply from the worker in [`spawn_instance_worker`].
-#[derive(EnumAsInner, Debug)]
-enum JsWorkerReply {
-    UpdateDatabase(anyhow::Result<UpdateDatabaseResult>),
-    CallReducer(ReducerCallResult),
-    CallView(Box<ViewCommandResult>),
-    CallProcedure(Box<CallProcedureReturn>),
-    ClearAllClients(anyhow::Result<()>),
-    CallIdentityConnected(Result<(), ClientConnectedError>),
-    CallIdentityDisconnected(Result<(), ReducerCallError>),
-    DisconnectClient(Result<(), ReducerCallError>),
-    InitDatabase(Box<anyhow::Result<Option<ReducerCallResult>>>),
-    CallScheduledFunction(CallScheduledFunctionResult),
+#[derive(Clone, Copy, Debug)]
+struct WorkerDisconnected;
+
+fn instance_lane_worker_error(label: &'static str) -> String {
+    format!("instance lane worker exited while handling {label}")
 }
 
-static_assert_size!(JsWorkerReply, 48);
+type JsReplyTx<T> = oneshot::Sender<T>;
 
-/// A request for the worker in [`spawn_instance_worker`].
-// We care about optimizing for `CallReducer` as it happens frequently,
-// so we don't want to box anything in it.
+/// Requests sent to the dedicated JS worker thread.
+///
+/// Most variants carry a `reply_tx` because the worker thread owns the isolate,
+/// executes the request there, and then has to send the typed result back to
+/// the async caller.
 enum JsWorkerRequest {
     /// See [`JsInstance::run_on_thread`].
     ///
@@ -489,33 +740,508 @@ enum JsWorkerRequest {
     RunFunction(Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>),
     /// See [`JsInstance::update_database`].
     UpdateDatabase {
+        reply_tx: JsReplyTx<anyhow::Result<UpdateDatabaseResult>>,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     },
     /// See [`JsInstance::call_reducer`].
-    CallReducer { params: CallReducerParams },
+    CallReducer {
+        reply_tx: JsReplyTx<ReducerCallResult>,
+        params: CallReducerParams,
+    },
     /// See [`JsInstance::call_view`].
-    CallView { cmd: ViewCommand },
+    CallView {
+        reply_tx: JsReplyTx<ViewCommandResult>,
+        cmd: ViewCommand,
+    },
     /// See [`JsInstance::call_procedure`].
-    CallProcedure { params: CallProcedureParams },
+    CallProcedure {
+        reply_tx: JsReplyTx<CallProcedureReturn>,
+        params: CallProcedureParams,
+    },
     /// See [`JsInstance::clear_all_clients`].
-    ClearAllClients,
+    ClearAllClients(JsReplyTx<anyhow::Result<()>>),
     /// See [`JsInstance::call_identity_connected`].
-    CallIdentityConnected(ConnectionAuthCtx, ConnectionId),
+    CallIdentityConnected {
+        reply_tx: JsReplyTx<Result<(), ClientConnectedError>>,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    },
     /// See [`JsInstance::call_identity_disconnected`].
-    CallIdentityDisconnected(Identity, ConnectionId),
+    CallIdentityDisconnected {
+        reply_tx: JsReplyTx<Result<(), ReducerCallError>>,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+    },
     /// See [`JsInstance::disconnect_client`].
-    DisconnectClient(ClientActorId),
+    DisconnectClient {
+        reply_tx: JsReplyTx<Result<(), ReducerCallError>>,
+        client_id: ClientActorId,
+    },
     /// See [`JsInstance::init_database`].
-    InitDatabase(Program),
+    InitDatabase {
+        reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
+        program: Program,
+    },
     /// See [`JsInstance::call_scheduled_function`].
-    CallScheduledFunction(ScheduledFunctionParams),
+    CallScheduledFunction {
+        reply_tx: JsReplyTx<CallScheduledFunctionResult>,
+        params: ScheduledFunctionParams,
+    },
 }
 
-// These two should be the same size (once core pinning PR lands).
-static_assert_size!(JsWorkerRequest, 192);
 static_assert_size!(CallReducerParams, 192);
+
+fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T) {
+    if reply_tx.send(value).is_err() {
+        log::error!("should have receiver for `{ctx}` response");
+    }
+}
+
+struct V8HeapMetrics {
+    total_heap_size_bytes: IntGauge,
+    total_physical_size_bytes: IntGauge,
+    used_global_handles_size_bytes: IntGauge,
+    used_heap_size_bytes: IntGauge,
+    heap_size_limit_bytes: IntGauge,
+    external_memory_bytes: IntGauge,
+    native_contexts: IntGauge,
+    detached_contexts: IntGauge,
+    last_observed: V8HeapSnapshot,
+}
+
+#[derive(Clone, Copy, Default)]
+struct V8HeapSnapshot {
+    total_heap_size_bytes: i64,
+    total_physical_size_bytes: i64,
+    used_global_handles_size_bytes: i64,
+    used_heap_size_bytes: i64,
+    heap_size_limit_bytes: i64,
+    external_memory_bytes: i64,
+    native_contexts: i64,
+    detached_contexts: i64,
+}
+
+impl V8HeapSnapshot {
+    fn from_stats(stats: &v8::HeapStatistics) -> Self {
+        Self {
+            total_heap_size_bytes: stats.total_heap_size() as i64,
+            total_physical_size_bytes: stats.total_physical_size() as i64,
+            used_global_handles_size_bytes: stats.used_global_handles_size() as i64,
+            used_heap_size_bytes: stats.used_heap_size() as i64,
+            heap_size_limit_bytes: stats.heap_size_limit() as i64,
+            external_memory_bytes: stats.external_memory() as i64,
+            native_contexts: stats.number_of_native_contexts() as i64,
+            detached_contexts: stats.number_of_detached_contexts() as i64,
+        }
+    }
+}
+
+impl V8HeapMetrics {
+    fn new(database_identity: &Identity) -> Self {
+        Self {
+            total_heap_size_bytes: WORKER_METRICS
+                .v8_total_heap_size_bytes
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            total_physical_size_bytes: WORKER_METRICS
+                .v8_total_physical_size_bytes
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            used_global_handles_size_bytes: WORKER_METRICS
+                .v8_used_global_handles_size_bytes
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            used_heap_size_bytes: WORKER_METRICS
+                .v8_used_heap_size_bytes
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            heap_size_limit_bytes: WORKER_METRICS
+                .v8_heap_size_limit_bytes
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            external_memory_bytes: WORKER_METRICS
+                .v8_external_memory_bytes
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            native_contexts: WORKER_METRICS
+                .v8_native_contexts
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            detached_contexts: WORKER_METRICS
+                .v8_detached_contexts
+                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+            last_observed: V8HeapSnapshot::default(),
+        }
+    }
+
+    fn adjust_by(&self, delta: V8HeapSnapshot) {
+        adjust_gauge(&self.total_heap_size_bytes, delta.total_heap_size_bytes);
+        adjust_gauge(&self.total_physical_size_bytes, delta.total_physical_size_bytes);
+        adjust_gauge(
+            &self.used_global_handles_size_bytes,
+            delta.used_global_handles_size_bytes,
+        );
+        adjust_gauge(&self.used_heap_size_bytes, delta.used_heap_size_bytes);
+        adjust_gauge(&self.heap_size_limit_bytes, delta.heap_size_limit_bytes);
+        adjust_gauge(&self.external_memory_bytes, delta.external_memory_bytes);
+        adjust_gauge(&self.native_contexts, delta.native_contexts);
+        adjust_gauge(&self.detached_contexts, delta.detached_contexts);
+    }
+
+    fn observe(&mut self, stats: &v8::HeapStatistics) {
+        let next = V8HeapSnapshot::from_stats(stats);
+        self.adjust_by(V8HeapSnapshot {
+            total_heap_size_bytes: next.total_heap_size_bytes - self.last_observed.total_heap_size_bytes,
+            total_physical_size_bytes: next.total_physical_size_bytes - self.last_observed.total_physical_size_bytes,
+            used_global_handles_size_bytes: next.used_global_handles_size_bytes
+                - self.last_observed.used_global_handles_size_bytes,
+            used_heap_size_bytes: next.used_heap_size_bytes - self.last_observed.used_heap_size_bytes,
+            heap_size_limit_bytes: next.heap_size_limit_bytes - self.last_observed.heap_size_limit_bytes,
+            external_memory_bytes: next.external_memory_bytes - self.last_observed.external_memory_bytes,
+            native_contexts: next.native_contexts - self.last_observed.native_contexts,
+            detached_contexts: next.detached_contexts - self.last_observed.detached_contexts,
+        });
+        self.last_observed = next;
+    }
+}
+
+impl Drop for V8HeapMetrics {
+    fn drop(&mut self) {
+        self.adjust_by(V8HeapSnapshot {
+            total_heap_size_bytes: -self.last_observed.total_heap_size_bytes,
+            total_physical_size_bytes: -self.last_observed.total_physical_size_bytes,
+            used_global_handles_size_bytes: -self.last_observed.used_global_handles_size_bytes,
+            used_heap_size_bytes: -self.last_observed.used_heap_size_bytes,
+            heap_size_limit_bytes: -self.last_observed.heap_size_limit_bytes,
+            external_memory_bytes: -self.last_observed.external_memory_bytes,
+            native_contexts: -self.last_observed.native_contexts,
+            detached_contexts: -self.last_observed.detached_contexts,
+        });
+    }
+}
+
+fn adjust_gauge(gauge: &IntGauge, delta: i64) {
+    if delta > 0 {
+        gauge.add(delta);
+    } else if delta < 0 {
+        gauge.sub(-delta);
+    }
+}
+
+fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
+    let stats = scope.get_heap_statistics();
+    metrics.observe(&stats);
+    stats
+}
+
+fn heap_usage(stats: &v8::HeapStatistics) -> (usize, usize) {
+    (stats.used_heap_size(), stats.heap_size_limit())
+}
+
+fn heap_fraction_at_or_above(used: usize, limit: usize, fraction: f64) -> bool {
+    limit > 0 && ((used as f64) / (limit as f64)) >= fraction
+}
+
+/// The single JS worker can process an unbounded number of reducer calls over its lifetime.
+/// That is great for locality, but it also means any JS heap retention that would previously
+/// have been spread across several pooled isolates now accumulates in one isolate.
+///
+/// If heap usage is close to the configured limit even after manually invoking GC,
+/// we'll instantiate a new isolate to reclaim memory and avoid OOMing the current one.
+fn should_retire_worker_for_heap(
+    scope: &mut PinScope<'_, '_>,
+    metrics: &mut V8HeapMetrics,
+    config: V8HeapPolicyConfig,
+) -> Option<(usize, usize)> {
+    let stats = sample_heap_stats(scope, metrics);
+    let (used, limit) = heap_usage(&stats);
+    if !heap_fraction_at_or_above(used, limit, config.heap_gc_trigger_fraction) {
+        return None;
+    }
+
+    scope.low_memory_notification();
+    let stats = sample_heap_stats(scope, metrics);
+    let (used, limit) = heap_usage(&stats);
+    if heap_fraction_at_or_above(used, limit, config.heap_retire_fraction) {
+        Some((used, limit))
+    } else {
+        None
+    }
+}
+
+struct JsInstanceLaneState {
+    // Instance-lane calls stay on one active worker for locality. The hot path clones
+    // this handle and feeds work straight into the worker-owned FIFO; trap
+    // recovery very rarely swaps it out for a fresh instance.
+    active: RwLock<JsInstance>,
+
+    // Replacement must be serialized because multiple callers can all observe
+    // the same worker becoming unusable and attempt recovery at once.
+    //
+    // This must be an async mutex rather than a blocking mutex because recovery
+    // may need to call `create_lane_instance().await`.
+    //
+    // This stays safe as long as these invariants hold:
+    // - `replace_lock` is only for trap/disconnect recovery, never the hot path.
+    // - no `parking_lot` guard is held across the `.await` in replacement.
+    // - `create_lane_instance()` must not call back into `JsInstanceLane` or try to
+    //   take `replace_lock`.
+    replace_lock: AsyncMutex<()>,
+}
+
+/// A single serialized execution lane for JS module work.
+///
+/// Callers share one active [`JsInstance`] so hot requests stay on the same
+/// worker thread for locality. The lane only steps in on the rare path, where
+/// a trap or disconnect forces that active worker to be replaced.
+#[derive(Clone)]
+pub struct JsInstanceLane {
+    module: JsModule,
+    state: Arc<JsInstanceLaneState>,
+}
+
+impl JsInstanceLane {
+    pub fn new(module: JsModule, init_inst: JsInstance) -> Self {
+        Self {
+            module,
+            state: Arc::new(JsInstanceLaneState {
+                active: RwLock::new(init_inst),
+                replace_lock: AsyncMutex::new(()),
+            }),
+        }
+    }
+
+    fn active_instance(&self) -> JsInstance {
+        self.state.active.read().clone()
+    }
+
+    async fn after_successful_call(&self, active: &JsInstance) {
+        if active.trapped() {
+            self.replace_active_if_current(active).await;
+        }
+    }
+
+    async fn replace_active_if_current(&self, stale: &JsInstance) {
+        // `replace_lock` intentionally serializes the rare recovery path. This
+        // prevents a trap observed by many callers from spawning many replacement
+        // workers and racing to install them.
+        let _replace_guard = self.state.replace_lock.lock().await;
+
+        // The same trapped instance can be observed by multiple callers at once.
+        // We only want the first one to do the swap; everybody else should notice
+        // that the active handle already changed and get out of the way.
+        if self.state.active.read().id() != stale.id() {
+            return;
+        }
+
+        // Wait for the stale worker generation to finish exiting before we
+        // install a replacement. That keeps the shared queue single-consumer.
+        if stale.needs_recovery() {
+            stale.wait_exited().await;
+        }
+
+        if self.state.active.read().id() != stale.id() {
+            return;
+        }
+
+        log::warn!("instance lane worker needs replacement; creating a fresh instance-lane worker");
+
+        // Keep the awaited instance creation outside of any `parking_lot` guard.
+        // The only lock held across this await is `replace_lock`, which is why it
+        // has to be async.
+        let next = self.module.create_lane_instance().await;
+        *self.state.active.write() = next;
+    }
+
+    /// Run an instance-lane operation exactly once.
+    ///
+    /// If the worker disappears before replying, we replace it for future
+    /// requests but surface the disconnect to the caller instead of retrying.
+    /// This keeps instance-lane semantics closer to the old pooled-instance
+    /// model while still preserving one-at-a-time execution on the worker.
+    async fn run_once<R>(
+        &self,
+        label: &'static str,
+        work: impl AsyncFnOnce(JsInstance) -> Result<R, WorkerDisconnected>,
+    ) -> Result<R, WorkerDisconnected> {
+        assert_not_on_js_module_thread(label);
+
+        let mut active = self.active_instance();
+        // Another caller may already have observed a trap or heap-triggered retirement
+        // and left the current active handle stale by the time we enter. Swap in the
+        // replacement before enqueueing more work.
+        if active.needs_recovery() {
+            self.replace_active_if_current(&active).await;
+            active = self.active_instance();
+        }
+        let result = work(active.clone()).await;
+        match result {
+            Ok(value) => {
+                self.after_successful_call(&active).await;
+                Ok(value)
+            }
+            Err(err) => {
+                self.replace_active_if_current(&active).await;
+                log::error!("instance-lane operation {label} lost its worker before replying");
+                Err(err)
+            }
+        }
+    }
+
+    /// Run an arbitrary closure on the instance-lane worker thread without replay.
+    ///
+    /// This is non-replayable because the closure is opaque host code, not a
+    /// cloneable request payload, and it may have already produced host-side
+    /// effects before a worker disconnect is observed.
+    pub async fn run_on_thread<F, R>(&self, f: F) -> anyhow::Result<R>
+    where
+        F: AsyncFnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let span = tracing::Span::current();
+        self.run_once("run_on_thread", async move |inst| {
+            let (tx, rx) = oneshot::channel();
+
+            inst.request_queue
+                .send_async(JsWorkerRequest::RunFunction(Box::new(move || {
+                    async move {
+                        let _on_js_module_thread = EnteredJsModuleThread::new();
+                        let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
+                        if let Err(Err(_panic)) = tx.send(result) {
+                            tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+                        }
+                    }
+                    .boxed_local()
+                })))
+                .await
+                .map_err(|_| WorkerDisconnected)?;
+
+            Ok(match rx.await.map_err(|_| WorkerDisconnected)? {
+                Ok(r) => r,
+                Err(e) => std::panic::resume_unwind(e),
+            })
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("instance lane worker exited while running a non-replayable module-thread task"))
+    }
+
+    /// Run a database update on the instance lane exactly once.
+    ///
+    /// If the worker disappears before replying, we replace it for future
+    /// requests and surface an internal host error to the caller.
+    pub async fn update_database(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.run_once("update_database", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::UpdateDatabase {
+                reply_tx,
+                program,
+                old_module_info,
+                policy,
+            })
+            .await
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!(instance_lane_worker_error("update_database")))?
+    }
+
+    /// Run a reducer on the instance lane exactly once.
+    ///
+    /// A real reducer trap still returns the reducer's own outcome before the
+    /// worker is replaced. If the worker disappears before any reply, we surface
+    /// that as `ReducerCallError::WorkerError`.
+    pub async fn call_reducer(&self, params: CallReducerParams) -> Result<ReducerCallResult, ReducerCallError> {
+        self.run_once("call_reducer", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallReducer { reply_tx, params })
+                .await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
+    }
+
+    /// Clear all instance-lane client state exactly once.
+    pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.run_once("clear_all_clients", |inst: JsInstance| async move {
+            inst.send_request(JsWorkerRequest::ClearAllClients).await
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!(instance_lane_worker_error("clear_all_clients")))?
+    }
+
+    /// Run the `client_connected` lifecycle reducer exactly once.
+    ///
+    /// If the worker disappears before replying, we replace it for future
+    /// requests and reject the connection with `ReducerCallError::WorkerError`.
+    pub async fn call_identity_connected(
+        &self,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ClientConnectedError> {
+        self.run_once("call_identity_connected", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallIdentityConnected {
+                reply_tx,
+                caller_auth,
+                caller_connection_id,
+            })
+            .await
+        })
+        .await
+        .map_err(|_| {
+            ClientConnectedError::from(ReducerCallError::WorkerError(instance_lane_worker_error(
+                "call_identity_connected",
+            )))
+        })?
+    }
+
+    /// Run the `client_disconnected` lifecycle reducer exactly once.
+    pub async fn call_identity_disconnected(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ReducerCallError> {
+        self.run_once("call_identity_disconnected", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallIdentityDisconnected {
+                reply_tx,
+                caller_identity,
+                caller_connection_id,
+            })
+            .await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_identity_disconnected")))?
+    }
+
+    /// Run disconnect cleanup on the instance lane exactly once.
+    pub async fn disconnect_client(&self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        self.run_once("disconnect_client", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::DisconnectClient { reply_tx, client_id })
+                .await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("disconnect_client")))?
+    }
+
+    /// Run reducer-style database initialization exactly once.
+    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        self.run_once("init_database", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::InitDatabase { reply_tx, program })
+                .await
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!(instance_lane_worker_error("init_database")))?
+    }
+
+    /// Run a view/subscription command on the instance lane exactly once.
+    ///
+    /// If the worker disappears before replying, we replace it for future
+    /// requests and surface a `ViewCallError::InternalError`.
+    pub async fn call_view(&self, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
+        self.run_once("call_view", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallView { reply_tx, cmd })
+                .await
+        })
+        .await
+        .map_err(|_| ViewCallError::InternalError(instance_lane_worker_error("call_view")))
+    }
+}
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
 ///
@@ -550,8 +1276,13 @@ fn startup_instance_worker<'scope>(
 }
 
 /// Returns a new isolate.
-fn new_isolate() -> OwnedIsolate {
-    let mut isolate = Isolate::new(<_>::default());
+fn new_isolate(heap_policy: V8HeapPolicyConfig) -> OwnedIsolate {
+    let params = if let Some(heap_limit_bytes) = heap_policy.heap_limit_bytes {
+        v8::CreateParams::default().heap_limits(0, heap_limit_bytes)
+    } else {
+        v8::CreateParams::default()
+    };
+    let mut isolate = Isolate::new(params);
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
     isolate
 }
@@ -574,28 +1305,35 @@ async fn spawn_instance_worker(
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     mut core_pinner: CorePinner,
+    heap_policy: V8HeapPolicyConfig,
+    worker_kind: JsWorkerKind,
+    request_queue: Arc<JsWorkerQueue>,
 ) -> anyhow::Result<(ModuleCommon, JsInstance)> {
-    // Spawn channels for bidirectional communication between worker and instance.
-    // The use-case is SPSC and all channels are rendezvous channels
-    // where each `.send` blocks until it's received.
-    // The Instance --Request-> Worker channel:
-    let (request_tx, request_rx) = flume::bounded(0);
-    // The Worker --Reply-> Instance channel:
-    let (reply_tx, reply_rx) = flume::bounded(0);
-
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
+    let worker_state = Arc::<JsWorkerState>::default();
+    let worker_state_in_thread = worker_state.clone();
 
     let rt = tokio::runtime::Handle::current();
+    let request_rx = request_queue.receiver();
+    let worker_queue_metric = request_queue.metric.clone();
 
     std::thread::spawn(move || {
+        scopeguard::defer! {
+            worker_state_in_thread.mark_exited();
+        }
+
         let _guard = load_balance_guard;
         core_pinner.pin_now();
 
         let _entered = rt.enter();
 
-        // Create the isolate and scope.
-        let mut isolate = new_isolate();
+        // Create the isolate and enter one long-lived worker scope/context.
+        //
+        // This outer scope is intentionally reused for the life of the worker so the
+        // isolate and current context stay entered, but individual reducer/view/procedure
+        // calls should still create their own nested handle scopes for temporary locals.
+        let mut isolate = new_isolate(heap_policy);
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         // Setup the instance environment.
@@ -641,83 +1379,100 @@ async fn spawn_instance_worker(
         }
 
         // Setup the instance common.
+        let args = Global::new(scope, ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE));
         let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-
-        // Create a zero-initialized buffer for holding reducer args.
-        // Arguments needing more space will not use this.
-        const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096; // 1 page.
-        let reducer_args_buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+        let mut heap_metrics = worker_kind
+            .checks_heap()
+            .then(|| V8HeapMetrics::new(&info.database_identity));
 
         let mut inst = V8Instance {
             scope,
             replica_ctx,
             hooks: &hooks,
-            reducer_args_buf,
+            args: &args,
         };
+        if let Some(heap_metrics) = heap_metrics.as_mut() {
+            let _initial_heap_stats = sample_heap_stats(inst.scope, heap_metrics);
+        }
 
         // Process requests to the worker.
         //
-        // The loop is terminated when a `JsInstance` is dropped.
+        // The loop is terminated when the last `JsInstance` handle is dropped.
         // This will cause channels, scopes, and the isolate to be cleaned up.
-        let reply = |ctx: &str, reply: JsWorkerReply, trapped| {
-            if let Err(e) = reply_tx.send((reply, trapped)) {
-                // This should never happen as `JsInstance::$function` immediately
-                // does `.recv` on the other end of the channel, though sometimes
-                // it gets cancelled.
-                log::error!("should have receiver for `{ctx}` response, {e}");
-            }
-        };
+        let mut requests_since_heap_check = 0u64;
+        let mut last_heap_check_at = Instant::now();
         for request in request_rx.iter() {
+            if let Some(metric) = &worker_queue_metric {
+                metric.dec();
+            }
             let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
+            let mut should_exit = false;
 
             core_pinner.pin_if_changed();
 
-            use JsWorkerReply::*;
             match request {
                 JsWorkerRequest::RunFunction(f) => rt.block_on(f()),
                 JsWorkerRequest::UpdateDatabase {
+                    reply_tx,
                     program,
                     old_module_info,
                     policy,
                 } => {
-                    // Update the database and reply to `JsInstance::update_database`.
                     let res = instance_common.update_database(program, old_module_info, policy, &mut inst);
-                    reply("update_database", UpdateDatabase(res), false);
+                    send_worker_reply("update_database", reply_tx, res);
                 }
-                JsWorkerRequest::CallReducer { params } => {
-                    // Call the reducer.
-                    // If execution trapped, we don't end the loop here,
-                    // but rather let this happen by `return_instance` using `JsInstance::trapped`
-                    // which will cause `JsInstance` to be dropped,
-                    // which in turn results in the loop being terminated.
+                JsWorkerRequest::CallReducer { reply_tx, params } => {
                     let (res, trapped) = call_reducer(None, params);
-                    reply("call_reducer", CallReducer(res), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("call_reducer", reply_tx, res);
+                    should_exit = trapped;
                 }
-                JsWorkerRequest::CallView { cmd } => {
+                JsWorkerRequest::CallView { reply_tx, cmd } => {
                     let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
-                    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("call_view", reply_tx, res);
+                    should_exit = trapped;
                 }
-                JsWorkerRequest::CallProcedure { params } => {
+                JsWorkerRequest::CallProcedure { reply_tx, params } => {
                     let (res, trapped) = instance_common
                         .call_procedure(params, &mut inst)
                         .now_or_never()
                         .expect("our call_procedure implementation is not actually async");
-
-                    reply("call_procedure", JsWorkerReply::CallProcedure(res.into()), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("call_procedure", reply_tx, res);
+                    should_exit = trapped;
                 }
-                JsWorkerRequest::ClearAllClients => {
+                JsWorkerRequest::ClearAllClients(reply_tx) => {
                     let res = instance_common.clear_all_clients();
-                    reply("clear_all_clients", ClearAllClients(res), false);
+                    send_worker_reply("clear_all_clients", reply_tx, res);
                 }
-                JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id) => {
+                JsWorkerRequest::CallIdentityConnected {
+                    reply_tx,
+                    caller_auth,
+                    caller_connection_id,
+                } => {
                     let mut trapped = false;
                     let res =
                         call_identity_connected(caller_auth, caller_connection_id, info, call_reducer, &mut trapped);
-                    reply("call_identity_connected", CallIdentityConnected(res), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("call_identity_connected", reply_tx, res);
+                    should_exit = trapped;
                 }
-                JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id) => {
+                JsWorkerRequest::CallIdentityDisconnected {
+                    reply_tx,
+                    caller_identity,
+                    caller_connection_id,
+                } => {
                     let mut trapped = false;
                     let res = ModuleHost::call_identity_disconnected_inner(
                         caller_identity,
@@ -726,25 +1481,78 @@ async fn spawn_instance_worker(
                         call_reducer,
                         &mut trapped,
                     );
-                    reply("call_identity_disconnected", CallIdentityDisconnected(res), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("call_identity_disconnected", reply_tx, res);
+                    should_exit = trapped;
                 }
-                JsWorkerRequest::DisconnectClient(client_id) => {
+                JsWorkerRequest::DisconnectClient { reply_tx, client_id } => {
                     let mut trapped = false;
                     let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
-                    reply("disconnect_client", DisconnectClient(res), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("disconnect_client", reply_tx, res);
+                    should_exit = trapped;
                 }
-                JsWorkerRequest::InitDatabase(program) => {
+                JsWorkerRequest::InitDatabase { reply_tx, program } => {
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
-                    reply("init_database", InitDatabase(Box::new(res)), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("init_database", reply_tx, res);
+                    should_exit = trapped;
                 }
-                JsWorkerRequest::CallScheduledFunction(params) => {
+                JsWorkerRequest::CallScheduledFunction { reply_tx, params } => {
                     let (res, trapped) = instance_common
                         .call_scheduled_function(params, &mut inst)
                         .now_or_never()
                         .expect("our call_procedure implementation is not actually async");
-                    reply("call_scheduled_function", CallScheduledFunction(res), trapped);
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+                    send_worker_reply("call_scheduled_function", reply_tx, res);
+                    should_exit = trapped;
                 }
+            }
+
+            if !should_exit && let Some(heap_metrics) = heap_metrics.as_mut() {
+                let request_check_due = heap_policy.heap_check_request_interval.is_some_and(|interval| {
+                    requests_since_heap_check += 1;
+                    requests_since_heap_check >= interval
+                });
+                let time_check_due = heap_policy
+                    .heap_check_time_interval
+                    .is_some_and(|interval| last_heap_check_at.elapsed() >= interval);
+                if request_check_due || time_check_due {
+                    requests_since_heap_check = 0;
+                    last_heap_check_at = Instant::now();
+                    if let Some((used, limit)) = should_retire_worker_for_heap(inst.scope, heap_metrics, heap_policy) {
+                        worker_state_in_thread.mark_trapped();
+                        should_exit = true;
+                        log::warn!(
+                            "retiring JS worker after V8 heap stayed high post-GC: used={}MiB limit={}MiB",
+                            used / (1024 * 1024),
+                            limit / (1024 * 1024),
+                        );
+                    }
+                }
+            }
+
+            // Once a JS instance traps, we must not let later queued work execute
+            // on that poisoned isolate. We reply to the trapping request first so
+            // the caller can observe the actual reducer/procedure error, and then
+            // shut the worker down so the shared queue can continue on a fresh
+            // instance.
+            //
+            // We also retire workers when they stay near the V8 heap limit after
+            // a GC. The instance lane intentionally keeps a JS worker alive for
+            // a long time, so this gives it a bounded-memory replacement policy
+            // instead of letting one isolate absorb the entire module lifetime.
+            if should_exit {
+                break;
             }
         }
     });
@@ -753,9 +1561,9 @@ async fn spawn_instance_worker(
     let res: Result<ModuleCommon, anyhow::Error> = result_rx.await.expect("should have a sender");
     res.map(|opt_mc| {
         let inst = JsInstance {
-            request_tx,
-            reply_rx,
-            trapped: false,
+            id: NEXT_JS_INSTANCE_ID.fetch_add(1, Ordering::Relaxed),
+            request_queue,
+            worker_state,
         };
         (opt_mc, inst)
     })
@@ -842,7 +1650,17 @@ struct V8Instance<'a, 'scope, 'isolate> {
     scope: &'a mut PinScope<'scope, 'isolate>,
     replica_ctx: &'a Arc<ReplicaContext>,
     hooks: &'a HookFunctions<'scope>,
-    reducer_args_buf: Local<'scope, ArrayBuffer>,
+    args: &'a Global<ArrayBuffer>,
+}
+
+macro_rules! with_call_scope {
+    ($scope:expr, |$call_scope:ident, $hooks:ident| $body:block) => {{
+        // Open a fresh HandleScope for this invocation so call-local V8 handles
+        // are released when the reducer/view/procedure returns.
+        v8::scope!(let $call_scope, $scope);
+        let $hooks = get_registered_hooks($call_scope).expect("module hooks should be registered before invoking JS");
+        $body
+    }};
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
@@ -863,21 +1681,26 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_buf)?)
+        with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| {
+                let reducer_args_buf = Local::new(scope, self.args);
+                Ok(call_call_reducer(scope, &hooks, op, reducer_args_buf)?)
+            })
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            call_call_view(scope, self.hooks, op)
+        with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| call_call_view(scope, &hooks, op))
         })
     }
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            call_call_view_anon(scope, self.hooks, op)
+        with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| {
+                call_call_view_anon(scope, &hooks, op)
+            })
         })
     }
 
@@ -890,8 +1713,10 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
-        let result = common_call(self.scope, self.hooks, budget, op, |scope, op| {
-            call_call_procedure(scope, self.hooks, op)
+        let result = with_call_scope!(self.scope, |scope, hooks| {
+            common_call(scope, &hooks, budget, op, |scope, op| {
+                call_call_procedure(scope, &hooks, op)
+            })
         })
         .map_result(|call_result| {
             call_result.map_err(|e| match e {
@@ -908,7 +1733,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
 fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'_>,
+    hooks: &HookFunctions<'scope>,
     budget: FunctionBudget,
     op: O,
     call: F,
@@ -924,7 +1749,12 @@ where
     // We'd like this tightly around `call`.
     env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
-    v8::tc_scope!(scope, scope);
+    // Wrap the call in `TryCatch`.
+    //
+    // `v8::tc_scope!` adds exception handling on top of the current scope; it
+    // does not create a new HandleScope. The fresh per-call HandleScope is
+    // opened by the caller before entering `common_call`.
+    v8::tc_scope!(let scope, scope);
     let call_result = call(scope, op).map_err(|mut e| {
         if let ErrorOrException::Exception(_) = e {
             // If we're terminating execution, don't try to check `instanceof`.
@@ -953,7 +1783,7 @@ where
     });
 
     // Finish timings.
-    let timings = env_on_isolate_unwrap(scope).finish_reducer();
+    let timings = env_on_isolate_unwrap(scope).finish_funcall();
 
     // Derive energy stats.
     let energy = energy_from_elapsed(budget, timings.total_duration);

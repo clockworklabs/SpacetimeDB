@@ -177,6 +177,13 @@ SPACETIMEDB_TABLE(CircleRecombineTimer, circle_recombine_timer, Private)
 FIELD_PrimaryKeyAutoInc(circle_recombine_timer, scheduled_id)
 SPACETIMEDB_SCHEDULE(circle_recombine_timer, 1, circle_recombine)
 
+struct ConsumeEntityEvent {
+    int32_t consumed_entity_id;
+    int32_t consumer_entity_id;
+};
+SPACETIMEDB_STRUCT(ConsumeEntityEvent, consumed_entity_id, consumer_entity_id)
+SPACETIMEDB_TABLE(ConsumeEntityEvent, consume_entity_event, Public, true)
+
 struct ConsumeEntityTimer {
     uint64_t scheduled_id;
     ScheduleAt scheduled_at;
@@ -594,6 +601,12 @@ SPACETIMEDB_REDUCER(consume_entity, ReducerContext ctx, ConsumeEntityTimer reque
     Entity consumed_entity = consumed_opt.value();
     Entity consumer_entity = consumer_opt.value();
     consumer_entity.mass += consumed_entity.mass;
+	
+	ConsumeEntityEvent consume_event{
+		consumed_entity.entity_id,
+		consumer_entity.entity_id
+	};
+	ctx.db[consume_entity_event].insert(consume_event);
 
     auto destroy_result = destroy_entity(ctx, consumed_entity.entity_id);
     if (destroy_result.is_err()) {
