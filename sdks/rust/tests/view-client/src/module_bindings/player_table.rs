@@ -40,7 +40,7 @@ impl PlayerTableAccess for super::RemoteTables {
 pub struct PlayerInsertCallbackId(__sdk::CallbackId);
 pub struct PlayerDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PlayerTableHandle<'ctx> {
     type Row = Player;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = Player> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PlayerTableHandle<'ctx> {
     type InsertCallbackId = PlayerInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PlayerInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PlayerTableHandle<'ctx> {
     type DeleteCallbackId = PlayerDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {}
+
 pub struct PlayerUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PlayerTableHandle<'ctx> {
     type UpdateCallbackId = PlayerUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {}
 
 /// Access to the `entity_id` unique index on the table `player`,
 /// which allows point queries on the field of the same name

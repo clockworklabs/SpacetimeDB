@@ -40,7 +40,7 @@ impl NearbyPlayersTableAccess for super::RemoteTables {
 pub struct NearbyPlayersInsertCallbackId(__sdk::CallbackId);
 pub struct NearbyPlayersDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for NearbyPlayersTableHandle<'ctx> {
     type Row = PlayerLocation;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PlayerLocation> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for NearbyPlayersTableHandle<'ctx> {
     type InsertCallbackId = NearbyPlayersInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: NearbyPlayersInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for NearbyPlayersTableHandle<'ctx> {
     type DeleteCallbackId = NearbyPlayersDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

@@ -40,7 +40,7 @@ impl ProcInsertsIntoTableAccess for super::RemoteTables {
 pub struct ProcInsertsIntoInsertCallbackId(__sdk::CallbackId);
 pub struct ProcInsertsIntoDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for ProcInsertsIntoTableHandle<'ctx> {
     type Row = ProcInsertsInto;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = ProcInsertsInto> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for ProcInsertsIntoTableHandle<'ctx> {
     type InsertCallbackId = ProcInsertsIntoInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: ProcInsertsIntoInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for ProcInsertsIntoTableHandle<'ctx> {
     type DeleteCallbackId = ProcInsertsIntoDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

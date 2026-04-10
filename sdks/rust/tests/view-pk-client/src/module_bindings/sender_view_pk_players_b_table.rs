@@ -40,7 +40,7 @@ impl SenderViewPkPlayersBTableAccess for super::RemoteTables {
 pub struct SenderViewPkPlayersBInsertCallbackId(__sdk::CallbackId);
 pub struct SenderViewPkPlayersBDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for SenderViewPkPlayersBTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for SenderViewPkPlayersBTableHandle<'ctx> {
     type Row = ViewPkPlayer;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for SenderViewPkPlayersBTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = ViewPkPlayer> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for SenderViewPkPlayersBTableHandle<'ctx> {
     type InsertCallbackId = SenderViewPkPlayersBInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for SenderViewPkPlayersBTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: SenderViewPkPlayersBInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for SenderViewPkPlayersBTableHandle<'ctx> {
     type DeleteCallbackId = SenderViewPkPlayersBDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for SenderViewPkPlayersBTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for SenderViewPkPlayersBTableHandle<'ctx> {}
+
 pub struct SenderViewPkPlayersBUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for SenderViewPkPlayersBTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for SenderViewPkPlayersBTableHandle<'ctx> {
     type UpdateCallbackId = SenderViewPkPlayersBUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for SenderViewPkPlayersBTableHandle<'ctx> 
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for SenderViewPkPlayersBTableHandle<'ctx> {}
 
 /// Access to the `id` unique index on the table `sender_view_pk_players_b`,
 /// which allows point queries on the field of the same name

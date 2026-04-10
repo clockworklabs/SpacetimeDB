@@ -39,7 +39,7 @@ impl TestEventTableAccess for super::RemoteTables {
 
 pub struct TestEventInsertCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::EventTable for TestEventTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for TestEventTableHandle<'ctx> {
     type Row = TestEvent;
     type EventContext = super::EventContext;
 
@@ -49,7 +49,9 @@ impl<'ctx> __sdk::EventTable for TestEventTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = TestEvent> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for TestEventTableHandle<'ctx> {
     type InsertCallbackId = TestEventInsertCallbackId;
 
     fn on_insert(
@@ -63,6 +65,8 @@ impl<'ctx> __sdk::EventTable for TestEventTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 }
+
+impl<'ctx> __sdk::EventTable for TestEventTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
