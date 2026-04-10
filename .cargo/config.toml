@@ -17,3 +17,9 @@ linker = "lld-link"
 # Without this, the linker complains that libc functions are undefined -
 # it probably signals to rustc and lld-link that libucrt should be included.
 rustflags = ["-Ctarget-feature=+crt-static"]
+
+[env]
+# Build vendored jemalloc with a 64 KiB allocator page size so it works on
+# Linux/aarch64 systems with larger kernel page sizes, including Fedora Asahi.
+# This still allows local environment overrides when needed.
+JEMALLOC_SYS_WITH_LG_PAGE = "16"
