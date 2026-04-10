@@ -140,6 +140,7 @@ impl<K: KeySize + Ord> UniqueBTreeIndex<K> {
 }
 
 /// An iterator over the potential value in a unique index for a given key.
+#[derive(Clone)]
 pub struct UniquePointIter {
     /// The iterator seeking for matching keys in the range.
     pub(super) iter: IntoIter<RowPointer>,

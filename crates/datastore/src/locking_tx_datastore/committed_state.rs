@@ -888,7 +888,8 @@ impl CommittedState {
 
             let index = table.new_index(&algo, is_unique)?;
             // SAFETY: `index` was derived from `table`.
-            unsafe { table.insert_index(blob_store, index_id, index) };
+            unsafe { table.insert_index(blob_store, index_id, index) }
+                .expect("rebuilding should not cause constraint violations");
             index_id_map.insert(index_id, table_id);
         }
         Ok(())
