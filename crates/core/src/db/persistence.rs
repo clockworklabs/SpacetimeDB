@@ -30,9 +30,10 @@ pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<SizeOnDisk> + Send + Sync>;
 pub struct Persistence {
     /// The [Durability] to use, for persisting transactions.
     pub durability: Arc<Durability>,
-    /// The concrete local durability handle, when the database uses the built-in
-    /// local commitlog path. This allows the core DB layer to bypass helper
-    /// actors on the local hot path without changing the generic trait object.
+    /// TODO: Merge this local durability handle with the generic trait object above.
+    /// This allows us to bypass an actor whose only responsibility is to generate a
+    /// commitlog payload from `TxData`. Ultimately though this should just be a part
+    /// of the [Durability] implementation itself.
     pub local_durability: Option<LocalDurability>,
     /// The [DiskSizeFn].
     ///

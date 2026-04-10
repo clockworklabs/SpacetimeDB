@@ -22,7 +22,7 @@ use tokio::{
 };
 use tracing::{instrument, Span};
 
-use crate::{Close, Durability, DurableOffset, History, ReorderWindow, TxOffset};
+use crate::{Close, Durability, DurableOffset, History, TxOffset};
 
 pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 
@@ -77,24 +77,14 @@ type ShutdownReply = oneshot::Sender<OwnedNotified>;
 
 enum QueueItem<T> {
     Ready(Transaction<Txdata<T>>),
-    Deferred {
-        tx_offset: TxOffset,
-        prepare: Box<dyn DeferredTx<T>>,
-    },
+    Deferred { prepare: Box<dyn DeferredTx<T>> },
 }
 
 impl<T> QueueItem<T> {
-    fn tx_offset(&self) -> TxOffset {
-        match self {
-            Self::Ready(tx) => tx.offset,
-            Self::Deferred { tx_offset, .. } => *tx_offset,
-        }
-    }
-
     fn prepare(self) -> Transaction<Txdata<T>> {
         match self {
             Self::Ready(tx) => tx,
-            Self::Deferred { prepare, .. } => prepare.prepare(),
+            Self::Deferred { prepare } => prepare.prepare(),
         }
     }
 }
@@ -136,7 +126,7 @@ pub struct Local<T> {
     /// `Options::QUEUE_CAPACITY_MULTIPLIER * Options::batch_capacity`.
     queue: mpsc::Sender<QueueItem<T>>,
     /// How many transactions are pending durability, including items buffered
-    /// in the queue and items waiting in the reorder window.
+    /// in the queue and items currently being written by the actor.
     ///
     /// This is mainly for observability purposes, and can thus be updated with
     /// relaxed memory ordering.
@@ -173,11 +163,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             opts.commitlog,
             on_new_segment,
         )?);
-        let next_tx_offset = clog.max_committed_offset().map_or(0, |offset| offset + 1);
         let queue_capacity = opts.queue_capacity();
-        // The reorder window should be the same size as the queue capacity
-        let reorder_window_size =
-            NonZeroUsize::new(queue_capacity).expect("local durability queue capacity is non-zero");
         let (queue, txdata_rx) = mpsc::channel(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
@@ -192,7 +178,6 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                     queue_depth: queue_depth.clone(),
 
                     batch_capacity: opts.batch_capacity,
-                    reorder_window: ReorderWindow::new(next_tx_offset, reorder_window_size),
 
                     lock,
                 }
@@ -251,7 +236,6 @@ struct Actor<T> {
     queue_depth: Arc<AtomicU64>,
 
     batch_capacity: NonZeroUsize,
-    reorder_window: ReorderWindow<QueueItem<T>>,
 
     #[allow(unused)]
     lock: Lock,
@@ -260,7 +244,7 @@ struct Actor<T> {
 impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
-        mut self,
+        self,
         mut transactions_rx: mpsc::Receiver<QueueItem<T>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
@@ -291,18 +275,6 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     if n == 0 {
                         break;
                     }
-                    // `recv_many` preserves arrival order, not tx order.
-                    // Sort first so gaps already present in this batch can close immediately.
-                    tx_buf.sort_unstable_by_key(QueueItem::tx_offset);
-                    let ordered = tx_buf.drain(..).map(|item| (item.tx_offset(), item));
-                    match self.reorder_window.push_batch_ready(ordered) {
-                        Ok(ready) => tx_buf = ready,
-                        Err(e) => {
-                            log::error!("durability actor reorder failure: {e}");
-                            sync_on_exit = false;
-                            break;
-                        }
-                    }
                     if tx_buf.is_empty() {
                         continue;
                     }
@@ -311,11 +283,9 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     let ready_len = tx_buf.len();
                     self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
                     tx_buf = spawn_blocking(move || -> io::Result<Vec<QueueItem<T>>> {
-                        let mut txs = Vec::with_capacity(tx_buf.len());
                         for item in tx_buf.drain(..) {
-                            txs.push(item.prepare());
+                            clog.commit([item.prepare()])?;
                         }
-                        clog.commit(txs)?;
                         Ok(tx_buf)
                     })
                     .await
@@ -466,13 +436,8 @@ impl<T: Send + Sync + 'static> Local<T> {
         blocked
     }
 
-    pub fn append_tx_deferred(
-        &self,
-        tx_offset: TxOffset,
-        prepare: impl FnOnce() -> Transaction<Txdata<T>> + Send + Sync + 'static,
-    ) -> bool {
+    pub fn append_tx_deferred(&self, prepare: impl FnOnce() -> Transaction<Txdata<T>> + Send + Sync + 'static) -> bool {
         self.send_item(QueueItem::Deferred {
-            tx_offset,
             prepare: Box::new(prepare),
         })
     }

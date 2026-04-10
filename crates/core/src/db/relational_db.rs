@@ -58,7 +58,6 @@ use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
-use std::num::NonZeroUsize;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -122,7 +121,6 @@ pub struct RelationalDB {
 // this value, later introduction of dynamic configuration will allow the
 // compiler to find external dependencies.
 pub const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
-const GENERIC_DURABILITY_REORDER_WINDOW_SIZE: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -157,21 +155,7 @@ impl RelationalDB {
             (Some(local_durability), _, Some(rt)) => {
                 Some(DurabilityWorker::new_local(database_identity, local_durability, rt))
             }
-            (None, Some(durability), Some(rt)) => {
-                let next_tx_offset = {
-                    let tx = inner.begin_tx(Workload::Internal);
-                    let next_tx_offset = tx.tx_offset();
-                    let _ = inner.release_tx(tx);
-                    next_tx_offset.into_inner()
-                };
-                Some(DurabilityWorker::new(
-                    database_identity,
-                    durability,
-                    rt,
-                    next_tx_offset,
-                    GENERIC_DURABILITY_REORDER_WINDOW_SIZE,
-                ))
-            }
+            (None, Some(durability), Some(rt)) => Some(DurabilityWorker::new(database_identity, durability, rt)),
             _ => None,
         };
 
@@ -826,16 +810,16 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+            if let Some(durability) = &self.durability {
+                durability.request_durability(reducer_context, tx_data);
+            }
+        })?
+        else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, &tx_data);
-        }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -844,14 +828,14 @@ impl RelationalDB {
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
         log::trace!("COMMIT MUT TX");
 
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload);
+        let reducer_context = tx.ctx.reducer_context().cloned();
+        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+            if let Some(durability) = &self.durability {
+                durability.request_durability(reducer_context, tx_data);
+            }
+        });
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
-        }
 
         (tx_data, tx_metrics, tx)
     }

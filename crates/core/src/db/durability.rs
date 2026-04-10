@@ -1,15 +1,14 @@
-use std::{num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use futures::TryFutureExt as _;
 use log::{error, info};
-use prometheus::IntGauge;
 use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
 };
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::Durability as _;
-use spacetimedb_durability::{DurableOffset, ReorderWindow, Transaction, TxOffset};
+use spacetimedb_durability::{DurableOffset, Transaction, TxOffset};
 use spacetimedb_lib::Identity;
 use spacetimedb_sats::ProductValue;
 use tokio::{
@@ -39,36 +38,8 @@ type ShutdownReply = oneshot::Sender<OwnedNotified>;
 /// Represents a handle to a background task that persists transactions
 /// according to the [`Durability`] policy provided.
 ///
-/// This exists to avoid holding a transaction lock while
-/// preparing the [TxData] for processing by the [Durability] layer.
-///
-/// The durability worker is internal to [RelationalDB], which calls
-/// [DurabilityWorker::request_durability] after committing a transaction.
-///
-/// # Transaction ordering
-///
-/// The backing datastore of [RelationalDB] is responsible for creating a total
-/// ordering of transactions and must uphold that [TxOffset]s are monotonically
-/// increasing without gaps.
-///
-/// However, [RelationalDB::commit_tx] respectively [RelationalDB::commit_tx_downgrade]
-/// may be called from multiple threads. Because those methods are not
-/// synchronized, and release the transaction lock before requesting durability,
-/// it is possible for [DurabilityRequest]s to appear slightly out-of-order on
-/// the worker channel.
-///
-/// To mitigate this, the worker keeps a window of up to `reorder_window_size`
-/// requests if out-of-order requests are detected, and flushes it to the
-/// underlying durability layer once it is able to linearize the offset sequence.
-///
-/// Since we expect out-of-order requests to happen very rarely, this measure
-/// should not negatively impact throughput in the common case, unlike holding
-/// the transaction lock until request submission is complete.
-///
-/// Note that the commitlog rejects out-of-order commits, so if a missing offset
-/// arrives outside `reorder_window_size` (or never), already committed
-/// transactions may be lost (by way of the durability worker crashing).
-/// Those transactions will not be confirmed, however, so this is safe.
+/// The durability worker is internal to [RelationalDB], which uses
+/// [DurabilityWorker::request_durability] while finalizing a transaction.
 ///
 /// [RelationalDB]: crate::db::relational_db::RelationalDB
 pub struct DurabilityWorker {
@@ -92,13 +63,7 @@ impl DurabilityWorker {
     /// Create a new [`DurabilityWorker`] using the given `durability` policy.
     ///
     /// Background tasks will be spawned onto to provided tokio `runtime`.
-    pub fn new(
-        database: Identity,
-        durability: Arc<Durability>,
-        runtime: runtime::Handle,
-        next_tx_offset: TxOffset,
-        reorder_window_size: NonZeroUsize,
-    ) -> Self {
+    pub fn new(database: Identity, durability: Arc<Durability>, runtime: runtime::Handle) -> Self {
         let (request_tx, request_rx) = channel(4 * 4096);
         let (shutdown_tx, shutdown_rx) = channel(1);
 
@@ -106,10 +71,6 @@ impl DurabilityWorker {
             request_rx,
             shutdown: shutdown_rx,
             durability: durability.clone(),
-            reorder_window: ReorderWindow::new(next_tx_offset, reorder_window_size),
-            reorder_window_len: WORKER_METRICS
-                .durability_worker_reorder_window_length
-                .with_label_values(&database),
         };
         let _enter = runtime.enter();
         tokio::spawn(
@@ -129,9 +90,7 @@ impl DurabilityWorker {
         }
     }
 
-    /// Create a [`DurabilityWorker`] that uses the local commitlog durability
-    /// actor directly. This removes the extra core durability actor so the
-    /// local path has only one queued background worker.
+    /// Create a [`DurabilityWorker`] that uses the local commitlog durability actor directly.
     pub fn new_local(database: Identity, durability: LocalDurability, runtime: runtime::Handle) -> Self {
         Self {
             database,
@@ -161,6 +120,15 @@ impl DurabilityWorker {
     /// - [Self::shutdown] was called
     ///
     pub fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
+        let Some(tx_offset) = tx_data.tx_offset() else {
+            let name = reducer_context.as_ref().map(|rcx| &rcx.name);
+            debug_assert!(
+                !tx_data.has_rows_or_connect_disconnect(name),
+                "tx_data has no rows but has connect/disconnect: `{name:?}`"
+            );
+            return;
+        };
+
         match &self.inner {
             DurabilityWorkerInner::Generic { request_tx, .. } => {
                 // We first try to send it without blocking.
@@ -199,20 +167,10 @@ impl DurabilityWorker {
                 }
             }
             DurabilityWorkerInner::Local { durability } => {
-                let Some(tx_offset) = tx_data.tx_offset() else {
-                    let name = reducer_context.as_ref().map(|rcx| &rcx.name);
-                    debug_assert!(
-                        !tx_data.has_rows_or_connect_disconnect(name),
-                        "tx_data has no rows but has connect/disconnect: `{name:?}`"
-                    );
-                    return;
-                };
-
                 let start = std::time::Instant::now();
                 let tx_data = tx_data.clone();
-                let blocked = durability.append_tx_deferred(tx_offset, move || {
-                    prepare_tx_data_for_durability(tx_offset, reducer_context, &tx_data)
-                });
+                let blocked = durability
+                    .append_tx_deferred(move || prepare_tx_data_for_durability(tx_offset, reducer_context, &tx_data));
                 if blocked {
                     WORKER_METRICS
                         .durability_blocking_send_duration
@@ -302,8 +260,6 @@ pub struct DurabilityWorkerActor {
     request_rx: mpsc::Receiver<DurabilityRequest>,
     shutdown: Receiver<ShutdownReply>,
     durability: Arc<Durability>,
-    reorder_window: ReorderWindow<DurabilityRequest>,
-    reorder_window_len: IntGauge,
 }
 
 impl DurabilityWorkerActor {
@@ -311,11 +267,8 @@ impl DurabilityWorkerActor {
     async fn run(mut self) {
         // When this future completes or is cancelled, ensure that:
         // - shutdown waiters are notified
-        // - metrics are reset
-        let done = scopeguard::guard(Arc::new(Notify::new()), |done| {
-            done.notify_waiters();
-            self.reorder_window_len.set(0);
-        });
+        let done = scopeguard::guard(Arc::new(Notify::new()), |done| done.notify_waiters());
+        let mut request_buf = Vec::with_capacity(4096);
 
         loop {
             tokio::select! {
@@ -328,35 +281,16 @@ impl DurabilityWorkerActor {
                     let _ = reply.send(done.clone().notified_owned());
                 },
 
-                req = self.request_rx.recv() => {
-                    let Some(request) = req else {
+                n = self.request_rx.recv_many(&mut request_buf, usize::MAX) => {
+                    if n == 0 {
                         break;
-                    };
-                    match request.tx_data.tx_offset() {
-                        // Drop the request if it doesn't have a tx offset.
-                        None => {
-                            let name = request.reducer_context.as_ref().map(|rcx| &rcx.name);
-                            debug_assert!(
-                                !request.tx_data.has_rows_or_connect_disconnect(name),
-                                "tx_data has no rows but has connect/disconnect: `{name:?}`"
-                            );
-                        },
-                        // Otherwise, push to the reordering window.
-                        Some(tx_offset) => {
-                            if let Err(e) = self.reorder_window.push(tx_offset, request) {
-                                error!("{e}");
-                                break;
-                            }
-                        },
                     }
                 }
             }
 
-            // Drain all requests that are properly ordered.
-            self.reorder_window
-                .drain()
+            request_buf
+                .drain(..)
                 .for_each(|request| Self::do_durability(&*self.durability, request.reducer_context, &request.tx_data));
-            self.reorder_window_len.set(self.reorder_window.len() as _);
         }
 
         info!("durability worker actor done");
@@ -483,13 +417,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn shutdown_waits_until_durable() {
         let durability = Arc::new(CountingDurability::default());
-        let worker = DurabilityWorker::new(
-            Identity::ONE,
-            durability.clone(),
-            runtime::Handle::current(),
-            0,
-            NonZeroUsize::new(1).unwrap(),
-        );
+        let worker = DurabilityWorker::new(Identity::ONE, durability.clone(), runtime::Handle::current());
         for i in 0..=10 {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
