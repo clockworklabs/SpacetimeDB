@@ -84,20 +84,43 @@ fn generate_template_files() {
         .push_str("pub fn get_template_files() -> HashMap<&'static str, HashMap<&'static str, &'static str>> {\n");
     generated_code.push_str("    let mut templates = HashMap::new();\n\n");
 
+    let mut binary_code = String::new();
+    binary_code.push_str("#[allow(unused_mut)]\n");
+    binary_code.push_str(
+        "pub fn get_template_binary_files() -> HashMap<&'static str, HashMap<&'static str, &'static [u8]>> {\n",
+    );
+    binary_code.push_str("    let mut templates = HashMap::new();\n\n");
+
     for template in &discovered_templates {
         if let Some(ref server_source) = template.server_source {
             let server_path = PathBuf::from(server_source);
-            generate_template_entry(&mut generated_code, &server_path, server_source, &manifest_dir);
+            generate_template_entry(
+                &mut generated_code,
+                &mut binary_code,
+                &server_path,
+                server_source,
+                &manifest_dir,
+            );
         }
 
         if let Some(ref client_source) = template.client_source {
             let client_path = PathBuf::from(client_source);
-            generate_template_entry(&mut generated_code, &client_path, client_source, &manifest_dir);
+            generate_template_entry(
+                &mut generated_code,
+                &mut binary_code,
+                &client_path,
+                client_source,
+                &manifest_dir,
+            );
         }
     }
 
     generated_code.push_str("    templates\n");
     generated_code.push_str("}\n\n");
+
+    binary_code.push_str("    templates\n");
+    binary_code.push_str("}\n\n");
+    generated_code.push_str(&binary_code);
 
     let repo_root = get_repo_root();
     let workspace_cargo = repo_root.join("Cargo.toml");
@@ -297,7 +320,17 @@ where
     serializer.serialize_str(value.as_deref().unwrap_or(""))
 }
 
-fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
+fn is_binary_file(path: &str) -> bool {
+    path.ends_with(".jar")
+}
+
+fn generate_template_entry(
+    code: &mut String,
+    binary_code: &mut String,
+    template_path: &Path,
+    source: &str,
+    manifest_dir: &Path,
+) {
     let (git_files, resolved_base) = get_git_tracked_files(template_path, manifest_dir);
 
     if git_files.is_empty() {
@@ -333,6 +366,9 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
 
     code.push_str("    {\n");
     code.push_str("        let mut files = HashMap::new();\n");
+
+    binary_code.push_str("    {\n");
+    binary_code.push_str("        let mut files = HashMap::new();\n");
 
     for file_path in git_files {
         // Example file_path: modules/chat-console-rs/src/lib.rs (relative to repo root)
@@ -386,15 +422,25 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
             // Example include_path (inside crate): "templates/basic-rs/server/src/lib.rs"
             // Example include_path (outside crate): ".templates/parent_parent_modules_chat-console-rs/src/lib.rs"
             // Example relative_str: "src/lib.rs"
-            code.push_str(&format!(
-                "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")));\n",
-                relative_str, include_path
-            ));
+            if is_binary_file(&relative_str) {
+                binary_code.push_str(&format!(
+                    "        files.insert(\"{}\", include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")).as_slice());\n",
+                    relative_str, include_path
+                ));
+            } else {
+                code.push_str(&format!(
+                    "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")));\n",
+                    relative_str, include_path
+                ));
+            }
         }
     }
 
     code.push_str(&format!("        templates.insert(\"{}\", files);\n", source));
     code.push_str("    }\n\n");
+
+    binary_code.push_str(&format!("        templates.insert(\"{}\", files);\n", source));
+    binary_code.push_str("    }\n\n");
 }
 
 /// Get a list of files tracked by git from a given directory

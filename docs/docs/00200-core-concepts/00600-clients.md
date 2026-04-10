@@ -12,6 +12,7 @@ SpacetimeDB provides client SDKs for multiple languages:
 - [Rust](./00600-clients/00500-rust-reference.md) - [(Quickstart)](../00100-intro/00200-quickstarts/00500-rust.md)
 - [C#](./00600-clients/00600-csharp-reference.md) - [(Quickstart)](../00100-intro/00200-quickstarts/00600-c-sharp.md)
 - [TypeScript](./00600-clients/00700-typescript-reference.md) - [(Quickstart)](../00100-intro/00200-quickstarts/00400-typescript.md)
+- [Kotlin](./00600-clients/00900-kotlin-reference.md) - [(Quickstart)](../00100-intro/00200-quickstarts/00800-kotlin.md)
 - [Unreal](./00600-clients/00800-unreal-reference.md) - [(Tutorial)](../00100-intro/00300-tutorials/00400-unreal-tutorial/index.md)
 
 ## Getting Started
