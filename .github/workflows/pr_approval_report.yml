@@ -1,0 +1,46 @@
+# This workflow only mirrors evaluator results back onto PR head SHAs.
+# See `pr_approval_check.yml` for more context on why this is required.
+name: Review Checks Reporter
+
+# SECURITY: This workflow runs with base-repository privileges after the
+# evaluator completes. It must not check out or execute PR code, and it must not
+# consume artifacts from the untrusted workflow. It only reads trusted workflow
+# metadata and returns a normal workflow result.
+
+on:
+  workflow_run:
+    workflows:
+      - Review Checks Evaluator
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  publish-approval-status:
+    name: PR approval check
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event != 'merge_group'
+
+    # SECURITY: Do not add a checkout step to this job. See comment at the top of this file.
+    steps:
+      - name: Evaluate approval status
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const workflowRun = context.payload.workflow_run;
+            const conclusion = workflowRun.conclusion;
+
+            if (conclusion === "success") {
+              core.info("Approval requirements satisfied.");
+              return;
+            }
+
+            if (conclusion === "cancelled" || conclusion === "timed_out") {
+              core.setFailed(`Approval evaluation ${conclusion}`);
+              return;
+            }
+
+            core.setFailed("Approval requirements not satisfied.");
