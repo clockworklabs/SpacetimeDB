@@ -385,7 +385,6 @@ pub struct SpacetimeAuthHeader {
     auth: Option<SpacetimeAuth>,
 }
 
-#[async_trait::async_trait]
 impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthHeader {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
@@ -461,7 +460,6 @@ impl SpacetimeAuthHeader {
 
 pub struct SpacetimeAuthRequired(pub SpacetimeAuth);
 
-#[async_trait::async_trait]
 impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthRequired {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
