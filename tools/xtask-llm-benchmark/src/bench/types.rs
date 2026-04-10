@@ -46,17 +46,23 @@ pub struct RunOutcome {
     pub vendor: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation_duration_ms: Option<u64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<DateTime<Utc>>,
 }
 
 impl RunOutcome {
-    /// Strip volatile fields that change every run (timestamps, ports, paths)
+    /// Strip volatile fields that change every run (ports, paths)
     /// to reduce git diff noise when committing results.
+    /// Timestamps (started_at, finished_at) are preserved for score history tracking.
     pub fn sanitize_for_commit(&mut self) {
-        self.started_at = None;
-        self.finished_at = None;
         self.work_dir_golden = None;
         self.work_dir_llm = None;
         self.golden_db = None;
@@ -104,6 +110,7 @@ pub enum RunOneError {
 pub struct RunContext<'a> {
     pub lang_name: &'a str,
     pub lang: Lang,
+    pub mode: &'a str,
     pub route: &'a ModelRoute,
     pub context: &'a str,
     pub hash: &'a str,
@@ -112,9 +119,11 @@ pub struct RunContext<'a> {
 }
 
 impl<'a> RunContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         lang_name: &'a str,
         lang: Lang,
+        mode: &'a str,
         route: &'a ModelRoute,
         context: &'a str,
         hash: &'a str,
@@ -124,6 +133,7 @@ impl<'a> RunContext<'a> {
         Self {
             lang_name,
             lang,
+            mode,
             route,
             context,
             hash,
@@ -144,6 +154,7 @@ pub struct BenchRunContext<'a> {
     pub selectors: Option<&'a [String]>,
     pub host: Option<String>,
     pub details_path: PathBuf,
+    pub dry_run: bool,
 }
 
 pub struct RunConfig {
@@ -159,4 +170,6 @@ pub struct RunConfig {
     pub host: Option<String>,
     /// Path to the details.json file where results will be merged
     pub details_path: PathBuf,
+    /// When true, run benchmarks but don't save results to disk
+    pub dry_run: bool,
 }

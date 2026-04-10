@@ -11,11 +11,11 @@ TYPES
 TABLE
 - drawing
   - Fields:
-    - id: number (i32, primary key)
+    - id: number (u64, primary key, autoInc)
     - a: Shape
     - b: Shape
 
 REDUCERS
-- seed: insert one row with two Shape values:
+- seed: insert one row with two Shape values (id is auto-assigned):
   - a: Shape.circle(10)
   - b: Shape.rectangle({ width: 4, height: 6 })

@@ -55,6 +55,7 @@ const [items, isLoading] = useTable(tables.item);
 
 | Wrong | Right | Error |
 |-------|-------|-------|
+| `export const Foo = table(...)` | `const Foo = table(...)` | "exporting something that is not a spacetime export" |
 | Missing `package.json` | Create `package.json` | "could not detect language" |
 | Missing `tsconfig.json` | Create `tsconfig.json` | "TsconfigNotFound" |
 | Entrypoint not at `src/index.ts` | Use `src/index.ts` | Module won't bundle |
@@ -98,17 +99,17 @@ const [items, isLoading] = useTable(tables.item);
 import { schema, table, t } from 'spacetimedb/server';
 
 // ❌ WRONG — indexes in COLUMNS causes "reading 'tag'" error
-export const Task = table({ name: 'task' }, {
+const Task = table({ name: 'task' }, {
   id: t.u64().primaryKey().autoInc(),
   ownerId: t.identity(),
-  indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]  // ❌ WRONG!
+  indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]  // ❌ WRONG!
 });
 
 // ✅ RIGHT — indexes in OPTIONS (first argument)
-export const Task = table({ 
+const Task = table({
   name: 'task',
   public: true,
-  indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
+  indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
 }, {
   id: t.u64().primaryKey().autoInc(),
   ownerId: t.identity(),
@@ -134,7 +135,7 @@ const Shape = t.enum('Shape', { circle: t.i32(), rectangle: Point });
 // Values use { tag: 'circle', value: 10 } or { tag: 'rectangle', value: { x: 1, y: 2 } }
 
 // Modifiers
-t.string().optional()           // Nullable
+t.option(t.string())            // Nullable (wrap with t.option, NOT .optional())
 t.u64().primaryKey()            // Primary key
 t.u64().primaryKey().autoInc()  // Auto-increment primary key
 ```
@@ -162,13 +163,17 @@ const newId = row.id;  // Extract .id from returned row
 
 ### Schema export (CRITICAL)
 ```typescript
-// At end of schema.ts — schema() takes exactly ONE argument: an object
+// At end of schema.ts — schema() takes ONE OBJECT containing all table references
 const spacetimedb = schema({ table1, table2, table3 });
 export default spacetimedb;
 
-// ❌ WRONG — never pass tables directly or as multiple args
-schema(myTable);      // WRONG!
-schema(t1, t2, t3);   // WRONG!
+// ❌ WRONG — do NOT use `export const` on tables. Only reducers and the default schema are exported.
+export const myTable = table(...);  // WRONG! Causes "exporting something that is not a spacetime export"
+
+// ✅ RIGHT — tables are plain const, only schema gets export default
+const myTable = table({ name: 'my_table' }, { ... });
+const spacetimedb = schema({ myTable });
+export default spacetimedb;
 ```
 
 ---
@@ -195,10 +200,10 @@ for (const m of ctx.db.roomMember.iter()) {
 
 ```typescript
 // In table OPTIONS (first argument), not columns
-export const Message = table({ 
+const Message = table({
   name: 'message',
   public: true,
-  indexes: [{ name: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
+  indexes: [{ accessor: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
 }, {
   id: t.u64().primaryKey().autoInc(),
   roomId: t.u64(),
@@ -215,7 +220,7 @@ export const Message = table({
 **Index names — NO transformation, use EXACTLY as defined:**
 ```typescript
 // Schema definition
-indexes: [{ name: 'canvas_member_canvas_id', algorithm: 'btree', columns: ['canvasId'] }]
+indexes: [{ accessor: 'canvas_member_canvas_id', algorithm: 'btree', columns: ['canvasId'] }]
 
 // ❌ WRONG — don't assume camelCase transformation
 ctx.db.canvasMember.canvasMember_canvas_id.filter(...)  // WRONG!
@@ -230,12 +235,12 @@ ctx.db.canvasMember.canvas_member_canvas_id.filter(...)
 **Index naming pattern — use `{tableName}_{columnName}`:**
 ```typescript
 // ✅ GOOD — unique names across entire module
-indexes: [{ name: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
-indexes: [{ name: 'reaction_message_id', algorithm: 'btree', columns: ['messageId'] }]
+indexes: [{ accessor: 'message_room_id', algorithm: 'btree', columns: ['roomId'] }]
+indexes: [{ accessor: 'reaction_message_id', algorithm: 'btree', columns: ['messageId'] }]
 
 // ❌ BAD — will collide if multiple tables use same index name
-indexes: [{ name: 'by_owner', ... }]  // in Task table
-indexes: [{ name: 'by_owner', ... }]  // in Note table — CONFLICT!
+indexes: [{ accessor: 'by_owner', ... }]  // in Task table
+indexes: [{ accessor: 'by_owner', ... }]  // in Note table — CONFLICT!
 ```
 
 **Client-side table names:**
@@ -247,19 +252,15 @@ indexes: [{ name: 'by_owner', ... }]  // in Note table — CONFLICT!
 // Filter takes VALUE directly, not object — returns iterator
 const rows = [...ctx.db.task.by_owner.filter(ownerId)];
 
-// Unique columns use .find() — returns single row or undefined
+// Unique columns use .find() — returns single row or null
 const row = ctx.db.player.identity.find(ctx.sender);
 ```
 
-### ⚠️ Multi-column indexes are BROKEN
+### Multi-column indexes
 ```typescript
-// ❌ DON'T — causes PANIC
-ctx.db.scores.by_player_level.filter(playerId);
-
-// ✅ DO — use single-column index + manual filter
-for (const row of ctx.db.scores.by_player.filter(playerId)) {
-  if (row.level === targetLevel) { /* ... */ }
-}
+// Multi-column indexes support partial prefix filtering
+ctx.db.scores.by_player_level.filter(playerId);  // filter by first column only
+ctx.db.scores.by_player_level.filter([playerId, targetLevel]);  // filter by both columns
 ```
 
 ---
@@ -267,20 +268,20 @@ for (const row of ctx.db.scores.by_player.filter(playerId)) {
 ## 4) Reducers
 
 ### Definition syntax (CRITICAL)
-**Reducer name comes from the export — NOT from a string argument.** Use `reducer(params, fn)` or `reducer(fn)`.
+**Reducer name comes from the EXPORT NAME.** Use `export const myReducer = spacetimedb.reducer(params, fn)`.
 
 ```typescript
 import spacetimedb from './schema';
 import { t, SenderError } from 'spacetimedb/server';
 
-// ✅ CORRECT — export const name = spacetimedb.reducer(params, fn)
-export const reducer_name = spacetimedb.reducer({ param1: t.string(), param2: t.u64() }, (ctx, { param1, param2 }) => {
+// ✅ CORRECT — export name becomes the reducer name (snake_cased automatically)
+export const reducerName = spacetimedb.reducer({ param1: t.string(), param2: t.u64() }, (ctx, { param1, param2 }) => {
   // Validation
   if (!param1) throw new SenderError('param1 required');
-  
+
   // Access tables via ctx.db
   const row = ctx.db.myTable.primaryKey.find(param2);
-  
+
   // Mutations
   ctx.db.myTable.insert({ ... });
   ctx.db.myTable.primaryKey.update({ ...row, newField: value });
@@ -291,8 +292,8 @@ export const reducer_name = spacetimedb.reducer({ param1: t.string(), param2: t.
 ```
 
 ```typescript
-// ❌ WRONG — reducer('name', params, fn) does NOT exist
-spacetimedb.reducer('reducer_name', { param1: t.string() }, (ctx, { param1 }) => { ... });
+// ❌ WRONG — do NOT pass a string name as first arg
+spacetimedb.reducer('reducer_name', { param1: t.string() }, (ctx, { param1 }) => { ... });  // WRONG! String is not ReducerOpts
 ```
 
 ### Update pattern (CRITICAL)
@@ -314,15 +315,20 @@ ctx.db.player.identity.delete(ctx.sender);  // delete by identity
 ```
 
 ### Lifecycle hooks
+**Must be `export const`. The export name determines the lifecycle reducer name.**
 ```typescript
-spacetimedb.clientConnected((ctx) => {
+// ✅ CORRECT — export const, NOT just a bare call
+export const onConnect = spacetimedb.clientConnected((ctx) => {
   // ctx.sender is the connecting identity
   // Create/update user record, set online status, etc.
 });
 
-spacetimedb.clientDisconnected((ctx) => {
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   // Clean up: set offline status, remove ephemeral data, etc.
 });
+
+// ❌ WRONG — bare call without export, hooks won't be registered
+spacetimedb.clientConnected((ctx) => { ... });  // NOT registered!
 ```
 
 ### Snake_case to camelCase conversion
@@ -344,7 +350,7 @@ conn.reducers.doSomething({ param: 'value' });
 
 ```typescript
 // 1. Define table first (scheduled: () => reducer — pass the exported reducer)
-export const CleanupJob = table({ 
+const CleanupJob = table({
   name: 'cleanup_job', 
   scheduled: () => run_cleanup  // reducer defined below
 }, {
@@ -449,9 +455,9 @@ conn.subscriptionBuilder()
 
 ```typescript
 // Private table with index on ownerId
-export const PrivateData = table(
+const PrivateData = table(
   { name: 'private_data',
-    indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
+    indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
   },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -460,15 +466,17 @@ export const PrivateData = table(
   }
 );
 
+// **Views MUST be `export const` — like reducers, they are registered via module exports.**
+
 // ❌ BAD — .iter() causes performance issues (re-evaluates on ANY row change)
-spacetimedb.view(
+export const myDataSlow = spacetimedb.view(
   { name: 'my_data_slow', public: true },
   t.array(PrivateData.rowType),
   (ctx) => [...ctx.db.privateData.iter()]  // Works but VERY slow at scale
 );
 
 // ✅ GOOD — index lookup enables targeted invalidation
-spacetimedb.view(
+export const myData = spacetimedb.view(
   { name: 'my_data', public: true },
   t.array(PrivateData.rowType),
   (ctx) => [...ctx.db.privateData.by_owner.filter(ctx.sender)]
@@ -480,7 +488,7 @@ spacetimedb.view(
 ```typescript
 // Query-builder views return a query; the SQL engine maintains the result incrementally.
 // This can scan the whole table if needed (e.g. leaderboard-style queries).
-spacetimedb.anonymousView(
+export const topPlayers = spacetimedb.anonymousView(
   { name: 'top_players', public: true },
   t.array(Player.rowType),
   (ctx) =>
@@ -492,12 +500,12 @@ spacetimedb.anonymousView(
 ### ViewContext vs AnonymousViewContext
 ```typescript
 // ViewContext — has ctx.sender, result varies per user (computed per-subscriber)
-spacetimedb.view({ name: 'my_items', public: true }, t.array(Item.rowType), (ctx) => {
+export const myItems = spacetimedb.view({ name: 'my_items', public: true }, t.array(Item.rowType), (ctx) => {
   return [...ctx.db.item.by_owner.filter(ctx.sender)];
 });
 
 // AnonymousViewContext — no ctx.sender, same result for everyone (shared, better perf)
-spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(LeaderboardRow), (ctx) => {
+export const leaderboard = spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(LeaderboardRow), (ctx) => {
   return [...ctx.db.player.by_score.filter(/* top scores */)];
 });
 ```
@@ -600,7 +608,7 @@ spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
 ```
 src/schema.ts   → Tables, export spacetimedb
 src/index.ts    → Reducers, lifecycle, import schema
-package.json    → { "type": "module", "dependencies": { "spacetimedb": "^1.11.0" } }
+package.json    → { "type": "module", "dependencies": { "spacetimedb": "^2.0.0" } }
 tsconfig.json   → Standard config
 ```
 
@@ -645,15 +653,17 @@ spacetime logs <module-name>
 
 **TypeScript-specific:**
 
-1. **`schema({ table })`** — takes exactly one object; never `schema(table)` or `schema(t1, t2, t3)`
-2. **Reducer/procedure names from exports** — `export const name = spacetimedb.reducer(params, fn)`; never `reducer('name', ...)`
-3. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
+1. **`schema({ t1, t2, t3 })`** — takes ONE object with all tables; never `schema(t1, t2)` (spread args)
+2. **Reducer name comes from the export name** — `export const myReducer = spacetimedb.reducer(params, fn)`; never pass a string name as first arg
+3. **Lifecycle hooks MUST be `export const`** — `export const onConnect = spacetimedb.clientConnected(fn)`; bare calls without export are silently ignored
+4. **Index definitions use `accessor:` not `name:`** — `{ accessor: 'my_idx', algorithm: 'btree', columns: [...] }`
+5. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
 4. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
-5. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
-6. **Indexes go in OPTIONS (1st arg)** — not in COLUMNS (2nd arg) of `table()`
-7. **Use BigInt for u64/i64 fields** — `0n`, `1n`, not `0`, `1`
-8. **Reducers are transactional** — they do not return data
-9. **Reducers must be deterministic** — no filesystem, network, timers, random
-10. **Views should use index lookups** — `.iter()` causes severe performance issues
-11. **Procedures need `ctx.withTx()`** — `ctx.db` doesn't exist in procedures
-12. **Sum type values** — use `{ tag: 'variant', value: payload }` not `{ variant: payload }`
+6. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
+7. **Indexes go in OPTIONS (1st arg)** — not in COLUMNS (2nd arg) of `table()`
+8. **Use BigInt for u64/i64 fields** — `0n`, `1n`, not `0`, `1`
+9. **Reducers are transactional** — they do not return data
+10. **Reducers must be deterministic** — no filesystem, network, timers, random
+11. **Views should use index lookups** — `.iter()` causes severe performance issues
+12. **Procedures need `ctx.withTx()`** — `ctx.db` doesn't exist in procedures
+13. **Sum type values** — use `{ tag: 'variant', value: payload }` not `{ variant: payload }`

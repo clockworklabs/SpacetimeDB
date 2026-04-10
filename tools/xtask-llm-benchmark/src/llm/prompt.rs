@@ -15,11 +15,14 @@ pub struct BuiltPrompt {
     pub system: Option<String>,
     pub static_prefix: Option<String>,
     pub segments: Vec<Segment<'static>>,
+    /// When true, the provider should enable web search (OpenRouter :online).
+    pub search_enabled: bool,
 }
 
 impl PromptBuilder {
-    pub fn build_segmented(&self, context: &str) -> BuiltPrompt {
+    pub fn build_segmented(&self, mode: &str, context: &str) -> BuiltPrompt {
         let version = "1.6";
+        let search_enabled = mode == "search";
 
         // SYSTEM: hygiene-only for Knowledge; hygiene + stricter output rules for Conformance.
         let system = Some(format!(
@@ -32,13 +35,29 @@ Rules:\n\
             lang = self.lang
         ));
 
-        let static_prefix = Some(if context.trim().is_empty() {
-            "<<<DOCS START>>>\nNo documentation provided. You must rely on your knowledge of SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n".to_string()
+        let static_prefix = Some(if search_enabled {
+            "<<<DOCS START>>>\nYou MUST search the web for SpacetimeDB documentation and examples before writing any code. Do not write code until you have searched.\n<<<DOCS END>>>\n".to_string()
+        } else if context.trim().is_empty() {
+            "<<<DOCS START>>>\nUse your knowledge of the latest SpacetimeDB syntax and conventions.\n<<<DOCS END>>>\n"
+                .to_string()
         } else {
-            format!(
-                "<<<DOCS START>>>Context:\n{context}\n<<<DOCS END>>>\n",
-                context = context,
-            )
+            let preamble = match mode {
+                "cursor_rules" => format!(
+                    "The following are SpacetimeDB coding rules for {}. \
+                     Read ALL rules carefully before writing any code. \
+                     They contain ❌ WRONG examples showing common mistakes to AVOID \
+                     and ✅ CORRECT examples showing the right patterns to follow. \
+                     Focus on the ✅ patterns. Write SERVER-SIDE module code only.",
+                    self.lang
+                ),
+                "guidelines" => format!(
+                    "The following are SpacetimeDB {} guidelines. \
+                     All examples shown are correct patterns to follow.",
+                    self.lang
+                ),
+                _ => "Reference documentation:".to_string(),
+            };
+            format!("<<<DOCS START>>>\n{preamble}\n\n{context}\n<<<DOCS END>>>\n",)
         });
 
         // TASK: identical in both modes; API details must come from DOCS in Knowledge mode.
@@ -62,6 +81,7 @@ HARD CONSTRAINTS:\n\
             system,
             static_prefix,
             segments: vec![Segment::new("user", dynamic).keep().min_chars(0).weight(8.0)],
+            search_enabled,
         }
     }
 }
