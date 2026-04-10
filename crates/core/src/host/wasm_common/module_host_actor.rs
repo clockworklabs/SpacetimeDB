@@ -37,7 +37,6 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
-use spacetimedb_datastore::system_tables::st_inbound_msg_result_status;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::buffer::DecodeError;
@@ -467,7 +466,29 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.call_reducer_with_tx(None, params);
+        let (res, trapped) = self.call_reducer_with_tx(None, params, |_tx, _ret| Ok(()));
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn call_reducer_from_database(
+        &mut self,
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    ) -> ReducerCallResult {
+        let info = self.common.info.clone();
+        let db = self.instance.replica_ctx().relational_db().clone();
+        let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            crate::host::idc_actor::call_reducer_from_database(
+                info.as_ref(),
+                db.as_ref(),
+                params,
+                sender_identity,
+                sender_msg_id,
+                |tx, params, on_success| self.call_reducer_with_tx(tx, params, on_success),
+            )
+        });
         self.trapped = trapped;
         res
     }
@@ -477,11 +498,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         params: CallReducerParams,
         msg_id: u64,
     ) -> ReducerCallResult {
+        let info = self.common.info.clone();
+        let db = self.instance.replica_ctx().relational_db().clone();
         let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common
-                .call_reducer_with_tx_and_success_action(None, params, &mut self.instance, |tx| {
-                    tx.delete_outbound_msg(msg_id).map_err(anyhow::Error::from)
-                })
+            crate::host::idc_actor::call_reducer_delete_outbound_on_success(
+                info.as_ref(),
+                db.as_ref(),
+                params,
+                msg_id,
+                |tx, params, on_success| self.call_reducer_with_tx(tx, params, on_success),
+            )
         });
         self.trapped = trapped;
         res
@@ -498,7 +524,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
         let module = &self.common.info.clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params, |_tx, _ret| Ok(()));
         let mut trapped = false;
         let res = call_identity_connected(caller_auth, caller_connection_id, module, call_reducer, &mut trapped);
         self.trapped = trapped;
@@ -511,7 +537,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         caller_connection_id: ConnectionId,
     ) -> Result<(), ReducerCallError> {
         let module = &self.common.info.clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params, |_tx, _ret| Ok(()));
         let mut trapped = false;
         let res = ModuleHost::call_identity_disconnected_inner(
             caller_identity,
@@ -526,7 +552,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     pub fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
         let module = &self.common.info.clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params, |_tx, _ret| Ok(()));
         let mut trapped = false;
         let res = ModuleHost::disconnect_client_inner(client_id, module, call_reducer, &mut trapped);
         self.trapped = trapped;
@@ -536,7 +562,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params, |_tx, _ret| Ok(()));
         let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
         self.trapped = trapped;
         res
@@ -560,9 +586,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+    fn call_reducer_with_tx<F>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        on_success: F,
+    ) -> (ReducerCallResult, bool)
+    where
+        F: FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>,
+    {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common.call_reducer_with_tx(tx, params, &mut self.instance, on_success)
         })
     }
 
@@ -826,16 +860,7 @@ impl InstanceCommon {
     ///
     /// The `bool` in the return type signifies whether there was an "outer error".
     /// For WASM, this should be interpreted as a trap occurring.
-    pub(crate) fn call_reducer_with_tx<I: WasmInstance>(
-        &mut self,
-        tx: Option<MutTxId>,
-        params: CallReducerParams,
-        inst: &mut I,
-    ) -> (ReducerCallResult, bool) {
-        self.call_reducer_with_tx_and_success_action(tx, params, inst, |_tx| Ok(()))
-    }
-
-    pub(crate) fn call_reducer_with_tx_and_success_action<I: WasmInstance, F>(
+    pub(crate) fn call_reducer_with_tx<I: WasmInstance, F>(
         &mut self,
         tx: Option<MutTxId>,
         params: CallReducerParams,
@@ -843,7 +868,7 @@ impl InstanceCommon {
         on_success: F,
     ) -> (ReducerCallResult, bool)
     where
-        F: FnOnce(&mut MutTxId) -> anyhow::Result<()>,
+        F: FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>,
     {
         let CallReducerParams {
             timestamp,
@@ -854,7 +879,6 @@ impl InstanceCommon {
             reducer_id,
             args,
             timer,
-            dedup_sender,
         } = params;
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
@@ -927,21 +951,9 @@ impl InstanceCommon {
                     }
                     _ => Ok(()),
                 };
-                // Atomically update the dedup index so this sender's tx_offset is recorded
-                // as delivered. This prevents re-processing if the message is retried.
-                let dedup_res = match dedup_sender {
-                    Some((sender_identity, sender_msg_id)) => tx.upsert_inbound_last_msg(
-                        sender_identity,
-                        sender_msg_id,
-                        st_inbound_msg_result_status::SUCCESS,
-                        return_value.clone().unwrap_or_default(),
-                    ),
-                    None => Ok(()),
-                };
                 let res = lifecycle_res
                     .map_err(anyhow::Error::from)
-                    .and(dedup_res.map_err(anyhow::Error::from))
-                    .and_then(|_| on_success(&mut tx));
+                    .and_then(|_| on_success(&mut tx, &return_value));
                 match res {
                     Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
@@ -1002,26 +1014,6 @@ impl InstanceCommon {
         let committed = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
         let tx_offset = committed.tx_offset;
         let event = committed.event;
-
-        // For IDC (database-to-database) calls: if the reducer failed with a user error,
-        // record the failure in st_inbound_msg in a separate tx (since the reducer tx
-        // was rolled back). This allows the sending database to receive the error on dedup
-        // rather than re-running the reducer.
-        if let (Some((sender_identity, sender_msg_id)), EventStatus::FailedUser(err)) = (dedup_sender, &event.status) {
-            let err_msg = err.clone();
-            let mut dedup_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-            if let Err(e) = dedup_tx.upsert_inbound_last_msg(
-                sender_identity,
-                sender_msg_id,
-                st_inbound_msg_result_status::REDUCER_ERROR,
-                err_msg.into(),
-            ) {
-                log::error!("IDC: failed to record reducer error in dedup table for sender {sender_identity}: {e}");
-                let _ = stdb.rollback_mut_tx(dedup_tx);
-            } else if let Err(e) = stdb.commit_tx(dedup_tx) {
-                log::error!("IDC: failed to commit dedup error record for sender {sender_identity}: {e}");
-            }
-        }
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),

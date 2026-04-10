@@ -11,10 +11,13 @@
 ///    `on_result_reducer` (read from the outbox table's schema) and deletes the st_outbound_msg row.
 /// 6. Enforces sequential delivery per target database: msg N+1 is only delivered after N is done.
 use crate::db::relational_db::RelationalDB;
-use crate::host::module_host::WeakModuleHost;
-use crate::host::FunctionArgs;
+use crate::energy::EnergyQuanta;
+use crate::host::module_host::{CallReducerParams, ModuleInfo, WeakModuleHost};
+use crate::host::{FunctionArgs, ReducerCallResult, ReducerOutcome};
+use anyhow::anyhow;
 use bytes::Bytes;
-use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload};
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{st_inbound_msg_result_status, StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{AlgebraicValue, Identity, ProductValue};
@@ -222,6 +225,119 @@ fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, Bytes) {
         ),
         DeliveryOutcome::TransportError(_) => unreachable!("transport errors never finalize"),
     }
+}
+
+pub(crate) type ReducerSuccessAction = Box<dyn FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()> + Send>;
+
+fn reducer_workload(module: &ModuleInfo, params: &CallReducerParams) -> Workload {
+    let reducer_def = module.module_def.reducer_by_id(params.reducer_id);
+    Workload::Reducer(ReducerContext {
+        name: reducer_def.name.clone(),
+        caller_identity: params.caller_identity,
+        caller_connection_id: params.caller_connection_id,
+        timestamp: params.timestamp,
+        arg_bsatn: params.args.get_bsatn().clone(),
+    })
+}
+
+fn duplicate_result_from_row(row: spacetimedb_datastore::system_tables::StInboundMsgRow) -> ReducerCallResult {
+    let outcome = match row.result_status {
+        st_inbound_msg_result_status::SUCCESS => ReducerOutcome::Committed,
+        st_inbound_msg_result_status::REDUCER_ERROR => ReducerOutcome::Failed(Box::new(
+            String::from_utf8_lossy(&row.result_payload).into_owned().into_boxed_str(),
+        )),
+        status => {
+            log::warn!(
+                "IDC: unexpected inbound dedup result_status={} for sender {}",
+                status,
+                Identity::from(row.database_identity)
+            );
+            ReducerOutcome::Failed(Box::new("unexpected inbound dedup result status".into()))
+        }
+    };
+
+    ReducerCallResult {
+        outcome,
+        reducer_return_value: (row.result_status == st_inbound_msg_result_status::SUCCESS).then_some(row.result_payload),
+        energy_used: EnergyQuanta::ZERO,
+        execution_duration: Duration::ZERO,
+        tx_offset: None,
+    }
+}
+
+fn record_failed_inbound_result(db: &RelationalDB, sender_identity: Identity, sender_msg_id: u64, error: &str) {
+    let mut dedup_tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    if let Err(e) = dedup_tx.upsert_inbound_last_msg(
+        sender_identity,
+        sender_msg_id,
+        st_inbound_msg_result_status::REDUCER_ERROR,
+        error.to_string().into(),
+    ) {
+        log::error!("IDC: failed to record reducer error in dedup table for sender {sender_identity}: {e}");
+        let _ = db.rollback_mut_tx(dedup_tx);
+    } else if let Err(e) = db.commit_tx(dedup_tx) {
+        log::error!("IDC: failed to commit dedup error record for sender {sender_identity}: {e}");
+    }
+}
+
+pub(crate) fn call_reducer_from_database<F>(
+    module: &ModuleInfo,
+    db: &RelationalDB,
+    params: CallReducerParams,
+    sender_identity: Identity,
+    sender_msg_id: u64,
+    call_reducer: F,
+) -> (ReducerCallResult, bool)
+where
+    F: FnOnce(Option<MutTxId>, CallReducerParams, ReducerSuccessAction) -> (ReducerCallResult, bool),
+{
+    let tx = db.begin_mut_tx(IsolationLevel::Serializable, reducer_workload(module, &params));
+    if let Some(row) = tx.get_inbound_msg_row(sender_identity)
+        && sender_msg_id <= row.last_outbound_msg
+    {
+        let _ = db.rollback_mut_tx(tx);
+        return (duplicate_result_from_row(row), false);
+    }
+
+    let (result, trapped) = call_reducer(
+        Some(tx),
+        params,
+        Box::new(move |tx, reducer_return_value| {
+            tx.upsert_inbound_last_msg(
+                sender_identity,
+                sender_msg_id,
+                st_inbound_msg_result_status::SUCCESS,
+                reducer_return_value.clone().unwrap_or_default(),
+            )
+            .map_err(anyhow::Error::from)
+        }),
+    );
+
+    if let ReducerOutcome::Failed(err) = &result.outcome {
+        record_failed_inbound_result(db, sender_identity, sender_msg_id, err);
+    }
+
+    (result, trapped)
+}
+
+pub(crate) fn call_reducer_delete_outbound_on_success<F>(
+    module: &ModuleInfo,
+    db: &RelationalDB,
+    params: CallReducerParams,
+    msg_id: u64,
+    call_reducer: F,
+) -> (ReducerCallResult, bool)
+where
+    F: FnOnce(Option<MutTxId>, CallReducerParams, ReducerSuccessAction) -> (ReducerCallResult, bool),
+{
+    let tx = db.begin_mut_tx(IsolationLevel::Serializable, reducer_workload(module, &params));
+    call_reducer(
+        Some(tx),
+        params,
+        Box::new(move |tx, _reducer_return_value| {
+            tx.delete_outbound_msg(msg_id).map_err(|e| anyhow!(e))
+        }),
+    )
 }
 
 /// Finalize a delivered message: call the on_result reducer (if any), then delete from ST_OUTBOUND_MSG.

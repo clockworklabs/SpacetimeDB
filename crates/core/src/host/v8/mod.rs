@@ -586,6 +586,13 @@ enum JsWorkerRequest {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
     },
+    /// See [`JsInstance::call_reducer_from_database`].
+    CallReducerFromDatabase {
+        reply_tx: JsReplyTx<ReducerCallResult>,
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    },
     /// See [`JsInstance::call_reducer_delete_outbound_on_success`].
     CallReducerDeleteOutboundOnSuccess {
         reply_tx: JsReplyTx<ReducerCallResult>,
@@ -633,7 +640,7 @@ enum JsWorkerRequest {
     },
 }
 
-static_assert_size!(CallReducerParams, 256);
+static_assert_size!(CallReducerParams, 192);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T, trapped: bool) {
     if reply_tx.send(JsWorkerReply { value, trapped }).is_err() {
@@ -908,6 +915,25 @@ impl JsInstanceLane {
         .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
     }
 
+    pub async fn call_reducer_from_database(
+        &self,
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.run_once("call_reducer", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallReducerFromDatabase {
+                reply_tx,
+                params,
+                sender_identity,
+                sender_msg_id,
+            })
+            .await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
+    }
+
     pub async fn call_reducer_delete_outbound_on_success(
         &self,
         params: CallReducerParams,
@@ -1166,7 +1192,15 @@ async fn spawn_instance_worker(
         let mut requests_since_heap_check = 0u64;
         let mut last_heap_check_at = Instant::now();
         for request in request_rx.iter() {
-            let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
+            let info_for_idc = instance_common.info();
+            let db_for_idc = inst.replica_ctx().relational_db().clone();
+            let mut call_reducer_with_success =
+                |tx, params, on_success: crate::host::idc_actor::ReducerSuccessAction| {
+                    instance_common.call_reducer_with_tx(tx, params, &mut inst, on_success)
+                };
+            let mut call_reducer = |tx, params| {
+                call_reducer_with_success(tx, params, Box::new(|_tx, _ret| Ok(())))
+            };
             let mut should_exit = false;
 
             core_pinner.pin_if_changed();
@@ -1188,15 +1222,36 @@ async fn spawn_instance_worker(
                     send_worker_reply("call_reducer", reply_tx, res, trapped);
                     should_exit = trapped;
                 }
+                JsWorkerRequest::CallReducerFromDatabase {
+                    reply_tx,
+                    params,
+                    sender_identity,
+                    sender_msg_id,
+                } => {
+                    let (res, trapped) = crate::host::idc_actor::call_reducer_from_database(
+                        info_for_idc.as_ref(),
+                        db_for_idc.as_ref(),
+                        params,
+                        sender_identity,
+                        sender_msg_id,
+                        |tx, params, on_success| call_reducer_with_success(tx, params, on_success),
+                    );
+                    worker_trapped.store(trapped, Ordering::Relaxed);
+                    send_worker_reply("call_reducer", reply_tx, res, trapped);
+                    should_exit = trapped;
+                }
                 JsWorkerRequest::CallReducerDeleteOutboundOnSuccess {
                     reply_tx,
                     params,
                     msg_id,
                 } => {
-                    let (res, trapped) =
-                        instance_common.call_reducer_with_tx_and_success_action(None, params, &mut inst, |tx| {
-                            tx.delete_outbound_msg(msg_id).map_err(anyhow::Error::from)
-                        });
+                    let (res, trapped) = crate::host::idc_actor::call_reducer_delete_outbound_on_success(
+                        info_for_idc.as_ref(),
+                        db_for_idc.as_ref(),
+                        params,
+                        msg_id,
+                        |tx, params, on_success| call_reducer_with_success(tx, params, on_success),
+                    );
                     worker_trapped.store(trapped, Ordering::Relaxed);
                     send_worker_reply("call_reducer", reply_tx, res, trapped);
                     should_exit = trapped;

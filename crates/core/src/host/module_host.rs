@@ -624,16 +624,6 @@ pub struct CallReducerParams {
     pub timer: Option<Instant>,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
-    /// If set, enables at-most-once delivery semantics for database-to-database calls.
-    ///
-    /// The tuple is `(sender_database_identity, sender_msg_id)`.
-    /// Before running the reducer, `st_inbound_msg` is consulted:
-    /// if `sender_msg_id` ≤ the stored last-delivered msg_id for the sender,
-    /// the call is a duplicate and returns the stored committed or failed result
-    /// without running the reducer again.
-    /// Otherwise the reducer runs, and the stored msg_id is updated atomically
-    /// within the same transaction.
-    pub dedup_sender: Option<(Identity, u64)>,
 }
 
 impl CallReducerParams {
@@ -654,7 +644,6 @@ impl CallReducerParams {
             timer: None,
             reducer_id,
             args,
-            dedup_sender: None,
         }
     }
 }
@@ -1578,7 +1567,6 @@ impl ModuleHost {
             timer,
             reducer_id,
             args,
-            dedup_sender: None,
         })
     }
 
@@ -1606,7 +1594,6 @@ impl ModuleHost {
             timer,
             reducer_id,
             args,
-            dedup_sender: None,
         };
 
         self.call(
@@ -1643,7 +1630,6 @@ impl ModuleHost {
             timer,
             reducer_id,
             args,
-            dedup_sender: None,
         };
 
         self.call(
@@ -1793,27 +1779,28 @@ impl ModuleHost {
                 return Err(ReducerCallError::NoSuchReducer);
             }
 
-            let args = args
-                .into_tuple_for_def(&self.info.module_def, reducer_def)
-                .map_err(InvalidReducerArguments)?;
-            let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-            let call_reducer_params = CallReducerParams {
-                timestamp: Timestamp::now(),
+            let call_reducer_params = Self::call_reducer_params(
+                &self.info,
                 caller_identity,
                 caller_connection_id,
                 client,
                 request_id,
                 timer,
                 reducer_id,
+                reducer_def,
                 args,
-                dedup_sender: Some((sender_database_identity, sender_msg_id)),
-            };
+            )?;
 
             self.call(
                 &reducer_def.name,
-                call_reducer_params,
-                async |p, inst| Ok(inst.call_reducer(p)),
-                async |p, inst| inst.call_reducer(p).await,
+                (call_reducer_params, sender_database_identity, sender_msg_id),
+                async |(p, sender_database_identity, sender_msg_id), inst| {
+                    Ok(inst.call_reducer_from_database(p, sender_database_identity, sender_msg_id))
+                },
+                async |(p, sender_database_identity, sender_msg_id), inst| {
+                    inst.call_reducer_from_database(p, sender_database_identity, sender_msg_id)
+                        .await
+                },
             )
             .await?
         }
