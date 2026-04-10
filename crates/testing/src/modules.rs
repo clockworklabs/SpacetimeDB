@@ -230,7 +230,7 @@ impl CompiledModule {
         .unwrap();
 
         let database = env.get_database_by_identity(&db_identity).await.unwrap().unwrap();
-        let instance = env.get_leader_replica_by_database(database.id).await.unwrap();
+        let instance = env.get_leader_replica_by_database(database.id).await.unwrap().unwrap();
 
         let client_id = ClientActorId {
             identity,

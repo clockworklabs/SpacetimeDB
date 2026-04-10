@@ -279,7 +279,7 @@ pub trait ControlStateReadAccess {
     // Replicas
     async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
     async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
-    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> anyhow::Result<Option<Replica>>;
 
     // Energy
     async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
@@ -378,7 +378,7 @@ impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAc
         (**self).get_replicas().await
     }
 
-    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> anyhow::Result<Option<Replica>> {
         (**self).get_leader_replica_by_database(database_id).await
     }
 
