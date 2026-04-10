@@ -2630,13 +2630,12 @@ impl MutTxId {
     /// Update the last delivered msg_id for `sender_identity` in `st_inbound_msg`.
     ///
     /// If an entry already exists, it is replaced; otherwise a new entry is inserted.
-    /// `result_status` and `result_payload` store the outcome of the reducer call
-    /// (see [st_inbound_msg_result_status]).
+    /// `result_status` and `result_payload` store the outcome of the reducer call.
     pub fn upsert_inbound_last_msg(
         &mut self,
         sender_identity: Identity,
         last_outbound_msg: u64,
-        result_status: u8,
+        result_status: crate::system_tables::StInboundMsgResultStatus,
         result_payload: Bytes,
     ) -> Result<()> {
         // Delete the existing row if present.

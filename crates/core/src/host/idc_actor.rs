@@ -13,12 +13,14 @@
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::host::module_host::{CallReducerParams, ModuleInfo, WeakModuleHost};
-use crate::host::{FunctionArgs, ReducerCallResult, ReducerOutcome};
+use crate::host::{FunctionArgs, ReducerCallError, ReducerCallResult, ReducerOutcome};
 use anyhow::anyhow;
 use bytes::Bytes;
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_datastore::system_tables::{st_inbound_msg_result_status, StOutboundMsgRow, ST_OUTBOUND_MSG_ID};
+use spacetimedb_datastore::system_tables::{
+    StInboundMsgResultStatus, StOutboundMsgRow, ST_OUTBOUND_MSG_ID,
+};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{AlgebraicValue, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
@@ -215,12 +217,12 @@ async fn run_idc_loop(
 }
 
 /// Decode the delivery outcome into `(result_status, result_payload)` for recording.
-fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, Bytes) {
+fn outcome_to_result(outcome: &DeliveryOutcome) -> (StInboundMsgResultStatus, Bytes) {
     match outcome {
-        DeliveryOutcome::Success(payload) => (st_inbound_msg_result_status::SUCCESS, payload.clone()),
-        DeliveryOutcome::ReducerError(msg) => (st_inbound_msg_result_status::REDUCER_ERROR, Bytes::from(msg.clone())),
+        DeliveryOutcome::Success(payload) => (StInboundMsgResultStatus::Success, payload.clone()),
+        DeliveryOutcome::ReducerError(msg) => (StInboundMsgResultStatus::ReducerError, Bytes::from(msg.clone())),
         DeliveryOutcome::BudgetExceeded => (
-            st_inbound_msg_result_status::REDUCER_ERROR,
+            StInboundMsgResultStatus::ReducerError,
             Bytes::from("budget exceeded".to_string()),
         ),
         DeliveryOutcome::TransportError(_) => unreachable!("transport errors never finalize"),
@@ -228,6 +230,11 @@ fn outcome_to_result(outcome: &DeliveryOutcome) -> (u8, Bytes) {
 }
 
 pub(crate) type ReducerSuccessAction = Box<dyn FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()> + Send>;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReducerSuccessActionKind {
+    DeleteOutboundMsg(u64),
+}
 
 fn reducer_workload(module: &ModuleInfo, params: &CallReducerParams) -> Workload {
     let reducer_def = module.module_def.reducer_by_id(params.reducer_id);
@@ -242,23 +249,15 @@ fn reducer_workload(module: &ModuleInfo, params: &CallReducerParams) -> Workload
 
 fn duplicate_result_from_row(row: spacetimedb_datastore::system_tables::StInboundMsgRow) -> ReducerCallResult {
     let outcome = match row.result_status {
-        st_inbound_msg_result_status::SUCCESS => ReducerOutcome::Committed,
-        st_inbound_msg_result_status::REDUCER_ERROR => ReducerOutcome::Failed(Box::new(
+        StInboundMsgResultStatus::Success => ReducerOutcome::Committed,
+        StInboundMsgResultStatus::ReducerError => ReducerOutcome::Failed(Box::new(
             String::from_utf8_lossy(&row.result_payload).into_owned().into_boxed_str(),
         )),
-        status => {
-            log::warn!(
-                "IDC: unexpected inbound dedup result_status={} for sender {}",
-                status,
-                Identity::from(row.database_identity)
-            );
-            ReducerOutcome::Failed(Box::new("unexpected inbound dedup result status".into()))
-        }
     };
 
     ReducerCallResult {
         outcome,
-        reducer_return_value: (row.result_status == st_inbound_msg_result_status::SUCCESS).then_some(row.result_payload),
+        reducer_return_value: (row.result_status == StInboundMsgResultStatus::Success).then_some(row.result_payload),
         energy_used: EnergyQuanta::ZERO,
         execution_duration: Duration::ZERO,
         tx_offset: None,
@@ -270,7 +269,7 @@ fn record_failed_inbound_result(db: &RelationalDB, sender_identity: Identity, se
     if let Err(e) = dedup_tx.upsert_inbound_last_msg(
         sender_identity,
         sender_msg_id,
-        st_inbound_msg_result_status::REDUCER_ERROR,
+        StInboundMsgResultStatus::ReducerError,
         error.to_string().into(),
     ) {
         log::error!("IDC: failed to record reducer error in dedup table for sender {sender_identity}: {e}");
@@ -287,16 +286,25 @@ pub(crate) fn call_reducer_from_database<F>(
     sender_identity: Identity,
     sender_msg_id: u64,
     call_reducer: F,
-) -> (ReducerCallResult, bool)
+) -> Result<(ReducerCallResult, bool), ReducerCallError>
 where
     F: FnOnce(Option<MutTxId>, CallReducerParams, ReducerSuccessAction) -> (ReducerCallResult, bool),
 {
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, reducer_workload(module, &params));
-    if let Some(row) = tx.get_inbound_msg_row(sender_identity)
-        && sender_msg_id <= row.last_outbound_msg
-    {
-        let _ = db.rollback_mut_tx(tx);
-        return (duplicate_result_from_row(row), false);
+    if let Some(row) = tx.get_inbound_msg_row(sender_identity) {
+        if sender_msg_id == row.last_outbound_msg {
+            let _ = db.rollback_mut_tx(tx);
+            return Ok((duplicate_result_from_row(row), false));
+        }
+        if sender_msg_id < row.last_outbound_msg {
+            let expected = row.last_outbound_msg + 1;
+            let _ = db.rollback_mut_tx(tx);
+            return Err(ReducerCallError::OutOfOrderInboundMessage {
+                sender: sender_identity,
+                expected,
+                received: sender_msg_id,
+            });
+        }
     }
 
     let (result, trapped) = call_reducer(
@@ -306,7 +314,7 @@ where
             tx.upsert_inbound_last_msg(
                 sender_identity,
                 sender_msg_id,
-                st_inbound_msg_result_status::SUCCESS,
+                StInboundMsgResultStatus::Success,
                 reducer_return_value.clone().unwrap_or_default(),
             )
             .map_err(anyhow::Error::from)
@@ -317,14 +325,14 @@ where
         record_failed_inbound_result(db, sender_identity, sender_msg_id, err);
     }
 
-    (result, trapped)
+    Ok((result, trapped))
 }
 
-pub(crate) fn call_reducer_delete_outbound_on_success<F>(
+pub(crate) fn call_reducer_with_success_action<F>(
     module: &ModuleInfo,
     db: &RelationalDB,
     params: CallReducerParams,
-    msg_id: u64,
+    action: ReducerSuccessActionKind,
     call_reducer: F,
 ) -> (ReducerCallResult, bool)
 where
@@ -335,7 +343,11 @@ where
         Some(tx),
         params,
         Box::new(move |tx, _reducer_return_value| {
-            tx.delete_outbound_msg(msg_id).map_err(|e| anyhow!(e))
+            match action {
+                ReducerSuccessActionKind::DeleteOutboundMsg(msg_id) => {
+                    tx.delete_outbound_msg(msg_id).map_err(|e| anyhow!(e))
+                }
+            }
         }),
     )
 }
@@ -348,7 +360,7 @@ async fn finalize_message(
     db: &RelationalDB,
     module_host: &WeakModuleHost,
     msg: &PendingMessage,
-    result_status: u8,
+    result_status: StInboundMsgResultStatus,
     result_payload: Bytes,
 ) {
     // Call the on_result reducer if configured.
@@ -373,11 +385,11 @@ async fn finalize_message(
             return;
         }
         match result_status {
-            st_inbound_msg_result_status::SUCCESS => {
+            StInboundMsgResultStatus::Success => {
                 args_bytes.push(0);
                 args_bytes.extend_from_slice(&result_payload);
             }
-            st_inbound_msg_result_status::REDUCER_ERROR => {
+            StInboundMsgResultStatus::ReducerError => {
                 let err = String::from_utf8_lossy(&result_payload).into_owned();
                 if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &Err::<(), String>(err)) {
                     log::error!(
@@ -388,16 +400,11 @@ async fn finalize_message(
                     return;
                 }
             }
-            status => {
-                log::error!("idc_actor: unexpected result status {status} for msg_id={}", msg.msg_id);
-                delete_message(db, msg.msg_id);
-                return;
-            }
         }
 
         let caller_identity = Identity::ZERO; // system call
         let result = host
-            .call_reducer_delete_outbound_on_success(
+            .call_reducer_with_success_action(
                 caller_identity,
                 None, // no connection_id
                 None, // no client sender
@@ -405,7 +412,7 @@ async fn finalize_message(
                 None, // no timer
                 on_result_reducer,
                 FunctionArgs::Bsatn(bytes::Bytes::from(args_bytes)),
-                msg.msg_id,
+                ReducerSuccessActionKind::DeleteOutboundMsg(msg.msg_id),
             )
             .await;
 

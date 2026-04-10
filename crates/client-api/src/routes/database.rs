@@ -103,6 +103,7 @@ fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String)
             log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
             StatusCode::BAD_REQUEST
         }
+        ReducerCallError::OutOfOrderInboundMessage { .. } => StatusCode::BAD_REQUEST,
     };
 
     log::debug!("Error while invoking reducer {e:#}");
@@ -244,7 +245,7 @@ pub struct CallFromDatabaseQuery {
 /// - `msg_id`          — the inter-database message ID from the sender's st_outbound_msg.
 ///
 /// Before invoking the reducer, the receiver checks `st_inbound_msg`.
-/// If the incoming `msg_id` is ≤ the last delivered msg_id for `sender_identity`,
+/// If the incoming `msg_id` is the last delivered msg_id for `sender_identity`,
 /// the call is a duplicate and 200 OK is returned immediately without running the reducer.
 /// Otherwise the reducer is invoked, the dedup index is updated atomically in the same
 /// transaction, and an acknowledgment is returned on success.

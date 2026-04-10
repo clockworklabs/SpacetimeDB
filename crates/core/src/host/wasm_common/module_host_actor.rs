@@ -476,7 +476,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         params: CallReducerParams,
         sender_identity: Identity,
         sender_msg_id: u64,
-    ) -> ReducerCallResult {
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         let info = self.common.info.clone();
         let db = self.instance.replica_ctx().relational_db().clone();
         let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
@@ -488,24 +488,24 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 sender_msg_id,
                 |tx, params, on_success| self.call_reducer_with_tx(tx, params, on_success),
             )
-        });
+        })?;
         self.trapped = trapped;
-        res
+        Ok(res)
     }
 
-    pub fn call_reducer_delete_outbound_on_success(
+    pub fn call_reducer_with_success_action(
         &mut self,
         params: CallReducerParams,
-        msg_id: u64,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
     ) -> ReducerCallResult {
         let info = self.common.info.clone();
         let db = self.instance.replica_ctx().relational_db().clone();
         let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            crate::host::idc_actor::call_reducer_delete_outbound_on_success(
+            crate::host::idc_actor::call_reducer_with_success_action(
                 info.as_ref(),
                 db.as_ref(),
                 params,
-                msg_id,
+                action,
                 |tx, params, on_success| self.call_reducer_with_tx(tx, params, on_success),
             )
         });

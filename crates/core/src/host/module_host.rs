@@ -946,6 +946,12 @@ pub enum ReducerCallError {
     ScheduleReducerNotFound,
     #[error("can't directly call special {0:?} lifecycle reducer")]
     LifecycleReducer(Lifecycle),
+    #[error("out-of-order inbound message id {received} from {sender}; expected {expected}")]
+    OutOfOrderInboundMessage {
+        sender: Identity,
+        expected: u64,
+        received: u64,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1605,7 +1611,7 @@ impl ModuleHost {
         .await?
     }
 
-    async fn call_reducer_delete_outbound_on_success_inner(
+    async fn call_reducer_with_success_action_inner(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
@@ -1615,7 +1621,7 @@ impl ModuleHost {
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
         args: FunctionArgs,
-        msg_id: u64,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let args = args
             .into_tuple_for_def(&self.info.module_def, reducer_def)
@@ -1634,9 +1640,9 @@ impl ModuleHost {
 
         self.call(
             &reducer_def.name,
-            (call_reducer_params, msg_id),
-            async |(p, msg_id), inst| Ok(inst.call_reducer_delete_outbound_on_success(p, msg_id)),
-            async |(p, msg_id), inst| inst.call_reducer_delete_outbound_on_success(p, msg_id).await,
+            (call_reducer_params, action),
+            async |(p, action), inst| Ok(inst.call_reducer_with_success_action(p, action)),
+            async |(p, action), inst| inst.call_reducer_with_success_action(p, action).await,
         )
         .await?
     }
@@ -1691,7 +1697,7 @@ impl ModuleHost {
         res
     }
 
-    pub async fn call_reducer_delete_outbound_on_success(
+    pub async fn call_reducer_with_success_action(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
@@ -1700,7 +1706,7 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_name: &str,
         args: FunctionArgs,
-        msg_id: u64,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
             let (reducer_id, reducer_def) = self
@@ -1716,7 +1722,7 @@ impl ModuleHost {
                 return Err(ReducerCallError::NoSuchReducer);
             }
 
-            self.call_reducer_delete_outbound_on_success_inner(
+            self.call_reducer_with_success_action_inner(
                 caller_identity,
                 caller_connection_id,
                 client,
@@ -1725,7 +1731,7 @@ impl ModuleHost {
                 reducer_id,
                 reducer_def,
                 args,
-                msg_id,
+                action,
             )
             .await
         }
@@ -1795,7 +1801,7 @@ impl ModuleHost {
                 &reducer_def.name,
                 (call_reducer_params, sender_database_identity, sender_msg_id),
                 async |(p, sender_database_identity, sender_msg_id), inst| {
-                    Ok(inst.call_reducer_from_database(p, sender_database_identity, sender_msg_id))
+                    inst.call_reducer_from_database(p, sender_database_identity, sender_msg_id)
                 },
                 async |(p, sender_database_identity, sender_msg_id), inst| {
                     inst.call_reducer_from_database(p, sender_database_identity, sender_msg_id)

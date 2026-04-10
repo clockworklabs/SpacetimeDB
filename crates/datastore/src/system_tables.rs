@@ -1930,13 +1930,48 @@ impl From<StColumnAccessorRow> for ProductValue {
 /// System Table [ST_INBOUND_MSG_NAME]
 /// Tracks the last message id received from each sender database for deduplication.
 /// Also stores the result of the reducer call for returning on subsequent duplicate requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum StInboundMsgResultStatus {
+    /// Reducer ran and committed successfully.
+    Success = 1,
+    /// Reducer ran and returned a user-visible error.
+    ReducerError = 2,
+}
+
+impl TryFrom<u8> for StInboundMsgResultStatus {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Success),
+            2 => Ok(Self::ReducerError),
+            _ => Err("invalid st_inbound_msg result status"),
+        }
+    }
+}
+
+impl From<StInboundMsgResultStatus> for u8 {
+    fn from(value: StInboundMsgResultStatus) -> Self {
+        value as u8
+    }
+}
+
+impl_st!([] StInboundMsgResultStatus, AlgebraicType::U8);
+impl<'de> Deserialize<'de> for StInboundMsgResultStatus {
+    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = u8::deserialize(deserializer)?;
+        Self::try_from(value).map_err(D::Error::custom)
+    }
+}
+impl_serialize!([] StInboundMsgResultStatus, (self, ser) => u8::from(*self).serialize(ser));
+
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StInboundMsgRow {
     pub database_identity: IdentityViaU256,
     pub last_outbound_msg: u64,
-    /// See [st_inbound_msg_result_status] for values.
-    pub result_status: u8,
+    pub result_status: StInboundMsgResultStatus,
     /// Reducer return payload encoded as raw bytes.
     /// For `SUCCESS`, this stores the committed reducer return value.
     /// For `REDUCER_ERROR`, this stores the error message bytes.
@@ -1948,16 +1983,6 @@ impl TryFrom<RowRef<'_>> for StInboundMsgRow {
     fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
-}
-
-/// Result status values stored in [ST_INBOUND_MSG_NAME] rows.
-pub mod st_inbound_msg_result_status {
-    /// Reducer has been delivered but result not yet received.
-    pub const NOT_YET_RECEIVED: u8 = 0;
-    /// Reducer ran and returned Ok(()).
-    pub const SUCCESS: u8 = 1;
-    /// Reducer ran and returned Err(...).
-    pub const REDUCER_ERROR: u8 = 2;
 }
 
 /// System Table [ST_OUTBOUND_MSG_NAME]
