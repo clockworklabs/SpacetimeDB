@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "add_player_reducer.rs" = '''
@@ -1603,7 +1604,7 @@ impl<Ctx: __sdk::DbContext<
 
 
 /// An [`__sdk::DbContext`] augmented with a [`__sdk::Event`],
-/// passed to [`__sdk::Table::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks.
+/// passed to [`__sdk::TableLike::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks.
 pub struct EventContext {
     /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,

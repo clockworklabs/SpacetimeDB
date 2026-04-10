@@ -1877,7 +1877,7 @@ impl<Ctx: __sdk::DbContext<
         out,
         "EventContext",
         Some("__sdk::Event<Reducer>"),
-        "[`__sdk::Table::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks",
+        "[`__sdk::TableLike::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks",
         Some("[`__sdk::Event`]"),
     );
 
