@@ -1,5 +1,0 @@
-error: outbox requires the `spacetimedb` `stable-idc` feature
- --> tests/ui/outbox.rs:1:43
-  |
-1 | #[spacetimedb::table(accessor = messages, outbox(send_message))]
-  |                                           ^^^^^^
