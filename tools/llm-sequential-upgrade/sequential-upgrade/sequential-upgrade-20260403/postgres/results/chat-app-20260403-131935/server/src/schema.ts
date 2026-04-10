@@ -3,6 +3,7 @@ import { pgTable, serial, text, timestamp, integer, boolean, primaryKey, unique 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   username: text('username').notNull().unique(),
+  isAnonymous: boolean('is_anonymous').notNull().default(false),
   status: text('status').notNull().default('online'),
   lastActiveAt: timestamp('last_active_at').defaultNow().notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),

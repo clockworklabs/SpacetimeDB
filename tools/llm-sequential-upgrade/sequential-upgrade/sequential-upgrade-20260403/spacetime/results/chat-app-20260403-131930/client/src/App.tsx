@@ -60,6 +60,7 @@ export default function App() {
   const [activeRoomId, setActiveRoomId] = useState<bigint | null>(null);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [kickedFromRoom, setKickedFromRoom] = useState<string | null>(null);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [, setActivityTick] = useState(0);
   const pendingDmNameRef = useRef<string | null>(null);
   const confirmedMemberRef = useRef(false);
@@ -123,6 +124,7 @@ export default function App() {
         'SELECT * FROM thread_reply',
         'SELECT * FROM room_invitation',
         'SELECT * FROM message_draft',
+        'SELECT * FROM room_ban',
       ]);
     return () => { sub.unsubscribe(); };
   }, [conn, isActive]);
@@ -175,7 +177,6 @@ export default function App() {
   }, [members, activeRoomId, myHex, isActive]);
 
   const me = myHex ? users.find((u: User) => u.identity.toHexString() === myHex) : null;
-  const isRegistered = !!me;
 
   // Keep currentStatusRef in sync with actual user status
   useEffect(() => {
@@ -183,21 +184,12 @@ export default function App() {
   }, [me?.status]);
 
   // --- Loading state ---
-  if (!isActive || !subscribed) {
+  if (!isActive || !subscribed || !me) {
     return (
       <div className="loading-screen">
         <div className="spinner" />
         Connecting to SpacetimeDB…
       </div>
-    );
-  }
-
-  // --- Register ---
-  if (!isRegistered) {
-    return (
-      <RegisterScreen
-        conn={conn}
-      />
     );
   }
 
@@ -299,22 +291,37 @@ export default function App() {
         </div>
         <div className="sidebar-user">
           <StatusDot status={getEffectiveStatus(me)} />
-          <span style={{ fontWeight: 600, flex: 1 }}>{me.name}</span>
-          <select
-            value={me.status || 'online'}
-            onChange={(e) => {
-              const s = e.target.value;
-              currentStatusRef.current = s;
-              conn?.reducers.setStatus({ status: s });
-            }}
-            style={{ fontSize: 11, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', cursor: 'pointer' }}
-            title="Set your status"
-          >
-            <option value="online">Online</option>
-            <option value="away">Away</option>
-            <option value="dnd">Do Not Disturb</option>
-            <option value="invisible">Invisible</option>
-          </select>
+          <span style={{ fontWeight: 600, flex: 1 }}>
+            {me.name}
+            {me.isGuest && (
+              <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--border)', color: 'var(--text-muted)', borderRadius: 4, padding: '1px 5px' }}>
+                guest
+              </span>
+            )}
+          </span>
+          {me.isGuest ? (
+            <button
+              className="primary"
+              style={{ fontSize: 11, padding: '2px 8px', whiteSpace: 'nowrap' }}
+              onClick={() => setShowRegisterModal(true)}
+            >Sign Up</button>
+          ) : (
+            <select
+              value={me.status || 'online'}
+              onChange={(e) => {
+                const s = e.target.value;
+                currentStatusRef.current = s;
+                conn?.reducers.setStatus({ status: s });
+              }}
+              style={{ fontSize: 11, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', cursor: 'pointer' }}
+              title="Set your status"
+            >
+              <option value="online">Online</option>
+              <option value="away">Away</option>
+              <option value="dnd">Do Not Disturb</option>
+              <option value="invisible">Invisible</option>
+            </select>
+          )}
         </div>
         <div className="sidebar-section">
           {/* Pending Invitations */}
@@ -466,7 +473,10 @@ export default function App() {
             return (
               <div key={u.identity.toHexString()} className="online-user-item" title={lastActive || effectiveStatus}>
                 <StatusDot status={effectiveStatus} />
-                <span style={{ flex: 1 }}>{u.name}{isMe ? ' (you)' : ''}</span>
+                <span style={{ flex: 1 }}>
+                  {u.name}{isMe ? ' (you)' : ''}
+                  {u.isGuest && <span style={{ marginLeft: 5, fontSize: 9, background: 'var(--border)', color: 'var(--text-muted)', borderRadius: 3, padding: '1px 4px' }}>guest</span>}
+                </span>
                 {!isMe && (
                   <button
                     className="secondary"
@@ -525,9 +535,26 @@ export default function App() {
           />
         ) : (
           <div className="empty-state">
-            <h3>Welcome, {me.name}!</h3>
-            <p>Select a room from the sidebar to start chatting,<br/>or create a new room.</p>
-            <button className="primary" onClick={() => setShowCreateRoom(true)}>+ Create Room</button>
+            {me.isGuest ? (
+              <>
+                <h3>Welcome, {me.name}!</h3>
+                <p style={{ color: 'var(--text-muted)' }}>
+                  You're chatting as a <strong style={{ color: 'var(--warning)' }}>guest</strong>.<br/>
+                  Your messages and room memberships are saved to your session.<br/>
+                  <strong>Register to keep your history permanently</strong> — no data is lost.
+                </p>
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button className="primary" onClick={() => setShowRegisterModal(true)}>Create Account</button>
+                  <button className="secondary" onClick={() => setShowCreateRoom(true)}>+ Create Room</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>Welcome, {me.name}!</h3>
+                <p>Select a room from the sidebar to start chatting,<br/>or create a new room.</p>
+                <button className="primary" onClick={() => setShowCreateRoom(true)}>+ Create Room</button>
+              </>
+            )}
           </div>
         )}
       </main>
@@ -540,12 +567,19 @@ export default function App() {
         />
       )}
 
+      {showRegisterModal && (
+        <RegisterModal
+          conn={conn}
+          onClose={() => setShowRegisterModal(false)}
+        />
+      )}
+
     </div>
   );
 }
 
-// ---- Register Screen ----
-function RegisterScreen({ conn }: { conn: DbConnection | null }) {
+// ---- Register Modal (for guest → registered migration) ----
+function RegisterModal({ conn, onClose }: { conn: DbConnection | null; onClose: () => void }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
 
@@ -554,27 +588,41 @@ function RegisterScreen({ conn }: { conn: DbConnection | null }) {
     if (!trimmed) { setError('Please enter a name'); return; }
     if (trimmed.length > 32) { setError('Name too long (max 32)'); return; }
     setError('');
-    conn?.reducers.register({ name: trimmed });
+    try {
+      conn?.reducers.register({ name: trimmed });
+      onClose();
+    } catch (e: any) {
+      setError(e?.message ?? 'Registration failed');
+    }
   };
 
   return (
-    <div className="login-screen">
-      <div className="login-card">
-        <div className="login-title">SpacetimeDB Chat</div>
-        <div className="login-subtitle">Enter a display name to get started</div>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>
+        <div className="modal-header">
+          <span style={{ fontWeight: 700, fontSize: 16 }}>Create Your Account</span>
+          <button className="icon-btn" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ background: 'rgba(76,244,144,0.08)', border: '1px solid rgba(76,244,144,0.3)', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: 'var(--text-muted)' }}>
+          Your messages, rooms, and history are already saved to your session.
+          Registering keeps them permanently under your chosen username.
+        </div>
         <div className="form-group">
           <input
             type="text"
-            placeholder="Enter your name"
+            placeholder="Choose a username"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') onClose(); }}
             autoFocus
             maxLength={32}
           />
           {error && <div className="error-msg">{error}</div>}
         </div>
-        <button className="primary" onClick={handleSubmit} type="submit">Join Chat</button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="secondary" onClick={onClose}>Stay as Guest</button>
+          <button className="primary" onClick={handleSubmit}>Register</button>
+        </div>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ const user = table(
     online: t.bool(),
     status: t.string(),        // 'online' | 'away' | 'dnd' | 'invisible'
     lastActiveAt: t.timestamp(),
+    isGuest: t.bool(),         // true = anonymous/guest user, false = registered
   }
 );
 

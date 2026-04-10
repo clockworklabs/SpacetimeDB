@@ -16,4 +16,5 @@ export default __t.row({
   online: __t.bool(),
   status: __t.string(),
   lastActiveAt: __t.timestamp().name("last_active_at"),
+  isGuest: __t.bool().name("is_guest"),
 });

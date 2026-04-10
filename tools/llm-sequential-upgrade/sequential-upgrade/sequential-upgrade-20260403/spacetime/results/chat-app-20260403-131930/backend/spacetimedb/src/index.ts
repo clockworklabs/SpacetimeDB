@@ -10,6 +10,17 @@ export const onConnect = spacetimedb.clientConnected((ctx) => {
     // Restore online=true, but only if not invisible
     const online = existing.status !== 'invisible';
     ctx.db.user.identity.update({ ...existing, online });
+  } else {
+    // Auto-create a guest user with a temporary name
+    const shortHex = ctx.sender.toHexString().slice(0, 5).toUpperCase();
+    ctx.db.user.insert({
+      identity: ctx.sender,
+      name: `Guest-${shortHex}`,
+      online: true,
+      status: 'online',
+      lastActiveAt: ctx.timestamp,
+      isGuest: true,
+    });
   }
 });
 
@@ -25,18 +36,23 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   }
 });
 
-// Register / set name
+// Register / set name (also promotes guest users to registered)
 export const register = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new SenderError('Name cannot be empty');
     if (trimmed.length > 32) throw new SenderError('Name too long (max 32 characters)');
+    // Prevent registering with a name already taken by another registered user
+    const taken = [...ctx.db.user.iter()].find(
+      u => u.name === trimmed && u.identity.toHexString() !== ctx.sender.toHexString() && !u.isGuest
+    );
+    if (taken) throw new SenderError('That username is already taken');
     const existing = ctx.db.user.identity.find(ctx.sender);
     if (existing) {
-      ctx.db.user.identity.update({ ...existing, name: trimmed, online: true, status: existing.status || 'online' });
+      ctx.db.user.identity.update({ ...existing, name: trimmed, online: true, status: existing.status || 'online', isGuest: false });
     } else {
-      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, online: true, status: 'online', lastActiveAt: ctx.timestamp });
+      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, online: true, status: 'online', lastActiveAt: ctx.timestamp, isGuest: false });
     }
   }
 );

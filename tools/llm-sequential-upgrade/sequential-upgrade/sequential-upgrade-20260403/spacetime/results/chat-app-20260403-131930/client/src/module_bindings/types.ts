@@ -129,6 +129,7 @@ export const User = __t.object("User", {
   online: __t.bool(),
   status: __t.string(),
   lastActiveAt: __t.timestamp(),
+  isGuest: __t.bool(),
 });
 export type User = __Infer<typeof User>;
 

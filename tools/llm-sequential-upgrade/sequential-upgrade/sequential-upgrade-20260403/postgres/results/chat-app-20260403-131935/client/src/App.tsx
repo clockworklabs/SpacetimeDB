@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 interface User {
   id: number;
   username: string;
+  isAnonymous?: boolean;
   status?: string;
   lastActiveAt?: string;
 }
@@ -75,6 +76,9 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loginName, setLoginName] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registerName, setRegisterName] = useState('');
+  const [registerError, setRegisterError] = useState('');
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [currentRoomId, setCurrentRoomId] = useState<number | null>(null);
@@ -340,6 +344,19 @@ function App() {
       setJoinedRooms(prev => new Set([...prev, room.id]));
     });
 
+    socket.on('user_identity_updated', (data: { userId: number; oldUsername: string; newUsername: string; isAnonymous: boolean }) => {
+      // Update messages that reference the old username
+      setMessages(prev => prev.map(m =>
+        m.userId === data.userId ? { ...m, username: data.newUsername } : m
+      ));
+      setKnownUsers(prev => ({ ...prev, [data.userId]: data.newUsername }));
+      // Update current user if it's us
+      setCurrentUser(prev => {
+        if (!prev || prev.id !== data.userId) return prev;
+        return { ...prev, username: data.newUsername, isAnonymous: data.isAnonymous };
+      });
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -406,6 +423,53 @@ function App() {
       loadDrafts(user.id);
     } catch {
       setLoginError('Connection error');
+    }
+  };
+
+  const handleJoinAsGuest = async () => {
+    try {
+      const res = await fetch('/api/users/anonymous', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        setLoginError(err.error || 'Failed to join as guest');
+        return;
+      }
+      const user: User = await res.json();
+      setCurrentUser(user);
+      socketRef.current?.emit('user_connected', { userId: user.id, username: user.username });
+      loadRooms(user.id);
+      loadScheduledMessages(user.id);
+      loadDrafts(user.id);
+    } catch {
+      setLoginError('Connection error');
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!currentUser) return;
+    const name = registerName.trim();
+    if (!name) { setRegisterError('Enter a username'); return; }
+    if (name.length > 32) { setRegisterError('Name too long (max 32 chars)'); return; }
+    try {
+      const res = await fetch(`/api/users/${currentUser.id}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setRegisterError(err.error || 'Failed to register');
+        return;
+      }
+      const updated: User = await res.json();
+      setCurrentUser(updated);
+      setShowRegisterModal(false);
+      setRegisterName('');
+      setRegisterError('');
+      // Update socket user info
+      socketRef.current?.emit('user_connected', { userId: updated.id, username: updated.username });
+    } catch {
+      setRegisterError('Connection error');
     }
   };
 
@@ -1052,6 +1116,16 @@ function App() {
             autoFocus
           />
           <button onClick={handleLogin}>Join Chat</button>
+          <div style={{ margin: '12px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>or</div>
+          <button
+            onClick={handleJoinAsGuest}
+            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', width: '100%' }}
+          >
+            Join as Guest
+          </button>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center' }}>
+            Guest sessions are temporary. You can register later to preserve your history.
+          </p>
         </div>
       </div>
     );
@@ -1082,19 +1156,65 @@ function App() {
           <div className="user-info">
             <span className="status-dot" style={{ background: getStatusColor(myStatus) }} />
             <span>{currentUser.username}</span>
+            {currentUser.isAnonymous && (
+              <span style={{ fontSize: '0.7rem', background: 'var(--warning)', color: '#fff', borderRadius: '4px', padding: '1px 5px', marginLeft: '4px' }}>Guest</span>
+            )}
           </div>
-          <select
-            value={myStatus}
-            onChange={e => handleStatusChange(e.target.value)}
-            style={{ marginTop: '6px', width: '100%', padding: '4px 6px', borderRadius: '6px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: '0.8rem' }}
-            aria-label="Set your status"
-          >
-            <option value="online">Online</option>
-            <option value="away">Away</option>
-            <option value="dnd">Do Not Disturb</option>
-            <option value="invisible">Invisible</option>
-          </select>
+          {currentUser.isAnonymous && (
+            <button
+              onClick={() => { setShowRegisterModal(true); setRegisterError(''); setRegisterName(''); }}
+              style={{ marginTop: '6px', width: '100%', padding: '5px', borderRadius: '6px', background: 'var(--primary)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
+            >
+              Register Account
+            </button>
+          )}
+          {!currentUser.isAnonymous && (
+            <select
+              value={myStatus}
+              onChange={e => handleStatusChange(e.target.value)}
+              style={{ marginTop: '6px', width: '100%', padding: '4px 6px', borderRadius: '6px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: '0.8rem' }}
+              aria-label="Set your status"
+            >
+              <option value="online">Online</option>
+              <option value="away">Away</option>
+              <option value="dnd">Do Not Disturb</option>
+              <option value="invisible">Invisible</option>
+            </select>
+          )}
         </div>
+
+        {/* Registration modal */}
+        {showRegisterModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={e => { if (e.target === e.currentTarget) setShowRegisterModal(false); }}
+          >
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '28px', width: '340px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <h3 style={{ margin: 0 }}>Register Account</h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Your messages, rooms, and history will be preserved.
+              </p>
+              {registerError && <div className="error-msg">{registerError}</div>}
+              <input
+                type="text"
+                placeholder="Choose a username"
+                value={registerName}
+                onChange={e => { setRegisterName(e.target.value); setRegisterError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                maxLength={32}
+                autoFocus
+                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: '0.95rem' }}
+              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={handleRegister} style={{ flex: 1, padding: '8px', borderRadius: '6px', background: 'var(--primary)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                  Register
+                </button>
+                <button onClick={() => setShowRegisterModal(false)} style={{ flex: 1, padding: '8px', borderRadius: '6px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {pendingInvites.length > 0 && (
           <div style={{ padding: '8px', borderBottom: '1px solid var(--border)' }}>

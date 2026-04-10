@@ -327,3 +327,35 @@ The shared PostgreSQL database had tables from a prior run with a different sche
 **Server status:** API server verified at http://localhost:6001 (returns rooms list, `/api/users` returns all 4 users), Client dev server at http://localhost:6273 (HTTP 200).
 
 ---
+
+---
+
+## Iteration 17 — Upgrade to Level 12 (18:25)
+
+**Category:** Feature Implementation
+
+**What was added:** Anonymous to Registered Migration
+- Users can join as a guest (auto-generated "Guest-XXXX" username) without creating an account
+- Guest identity persists for the session (stored in DB with `is_anonymous=true`)
+- Guests can register a real username via "Register Account" button — all messages, room memberships, reactions, and history are preserved because the same user record is updated in place
+- UI shows a "Guest" badge next to anonymous user's name in the sidebar
+
+**Root cause:** Level 12 feature not yet implemented.
+
+**What I fixed:**
+1. (schema): Added `isAnonymous: boolean('is_anonymous').notNull().default(false)` to `users` table
+2. (server): Added `POST /api/users/anonymous` — creates a user with a random `Guest-XXXX` name and `isAnonymous: true`
+3. (server): Added `POST /api/users/:userId/register` — upgrades anonymous user to registered (updates `username`, sets `isAnonymous: false`); broadcasts `user_identity_updated` socket event so all clients update displayed names in real-time
+4. (client): Added `isAnonymous?: boolean` to `User` interface
+5. (client): Added `handleJoinAsGuest` and `handleRegister` handlers
+6. (client): Login screen: added "Join as Guest" button alongside the regular name entry
+7. (client): Sidebar: added "Guest" badge, "Register Account" button (only shown when anonymous), and registration modal
+8. (client): Added `user_identity_updated` socket handler to update message usernames and known-users map in real-time
+
+Also: dropped stale DB tables (wrong column names from a prior run) and ran `drizzle-kit push` to apply the correct schema.
+
+**Files changed:** `server/src/schema.ts`, `server/src/index.ts`, `client/src/App.tsx`
+
+**Redeploy:** Schema re-pushed (`drizzle-kit push` — clean). Server restarted (`npm run dev`). Client rebuilt — 56 modules, 0 errors.
+
+**Server verified:** Client at http://localhost:6273 ✓ | API at http://localhost:6001 ✓

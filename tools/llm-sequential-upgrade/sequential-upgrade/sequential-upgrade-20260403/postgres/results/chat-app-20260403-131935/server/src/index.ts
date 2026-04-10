@@ -13,6 +13,7 @@ const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const db = drizzle(pool, { schema });
 
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -89,6 +90,72 @@ app.put('/api/users/:userId/status', async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// Create anonymous user (guest)
+app.post('/api/users/anonymous', async (req, res) => {
+  try {
+    let username = '';
+    let attempts = 0;
+    while (attempts < 20) {
+      const suffix = Math.random().toString(16).slice(2, 6).toUpperCase();
+      username = `Guest-${suffix}`;
+      const existing = await db.select().from(schema.users).where(eq(schema.users.username, username));
+      if (existing.length === 0) break;
+      attempts++;
+    }
+    if (!username) return res.status(500).json({ error: 'Could not generate guest name' });
+    const [user] = await db.insert(schema.users).values({ username, isAnonymous: true }).returning();
+    return res.json(user);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to create guest user' });
+  }
+});
+
+// Register (upgrade anonymous user to registered)
+app.post('/api/users/:userId/register', async (req, res) => {
+  const userId = parseInt(req.params.userId);
+  const { username } = req.body as { username?: string };
+  if (!username || username.trim().length < 1 || username.trim().length > 32) {
+    return res.status(400).json({ error: 'Username must be 1-32 characters' });
+  }
+  const name = username.trim();
+  try {
+    const [currentUser] = await db.select().from(schema.users).where(eq(schema.users.id, userId));
+    if (!currentUser) return res.status(404).json({ error: 'User not found' });
+    if (!currentUser.isAnonymous) return res.status(400).json({ error: 'User is already registered' });
+
+    // Check if target username is taken by a registered user
+    const existing = await db.select().from(schema.users).where(eq(schema.users.username, name));
+    if (existing.length > 0 && existing[0].id !== userId && !existing[0].isAnonymous) {
+      return res.status(409).json({ error: 'Username already taken' });
+    }
+
+    // If target username belongs to another anonymous user, delete that ghost
+    if (existing.length > 0 && existing[0].id !== userId && existing[0].isAnonymous) {
+      await db.delete(schema.users).where(eq(schema.users.id, existing[0].id));
+    }
+
+    const [updated] = await db.update(schema.users)
+      .set({ username: name, isAnonymous: false })
+      .where(eq(schema.users.id, userId))
+      .returning();
+
+    // Update in-memory online users map
+    const entry = onlineUsers.get(userId);
+    if (entry) {
+      entry.username = name;
+      socketToUser.set(entry.socketId, { userId, username: name });
+    }
+
+    // Broadcast identity change
+    io.emit('user_identity_updated', { userId, oldUsername: currentUser.username, newUsername: name, isAnonymous: false });
+    broadcastOnlineUsers();
+
+    return res.json(updated);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to register user' });
   }
 });
 
