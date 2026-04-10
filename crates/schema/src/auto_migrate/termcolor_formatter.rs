@@ -2,6 +2,7 @@ use std::io::Write;
 use std::{fmt, io};
 
 use spacetimedb_lib::{db::raw_def::v9::TableAccess, AlgebraicType};
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use termcolor::{Buffer, Color, ColorChoice, ColorSpec, WriteColor};
 
@@ -313,6 +314,24 @@ impl MigrationFormatter for TermColorFormatter {
         self.buffer.write_all(b" (")?;
         self.write_colored(direction, Some(self.colors.access), false)?;
         self.buffer.write_all(b")\n")
+    }
+
+    fn format_change_primary_key(
+        &mut self,
+        table_name: &str,
+        old_pk: Option<ColId>,
+        new_pk: Option<ColId>,
+    ) -> io::Result<()> {
+        let description = match (old_pk, new_pk) {
+            (Some(_), None) => "removed".to_string(),
+            (None, Some(col)) => format!("added on column {col}"),
+            (Some(_), Some(col)) => format!("changed to column {col}"),
+            (None, None) => return Ok(()),
+        };
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" primary key on table ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(format!(" ({description})\n").as_bytes())
     }
 
     fn format_schedule(&mut self, s: &ScheduleInfo, action: Action) -> io::Result<()> {

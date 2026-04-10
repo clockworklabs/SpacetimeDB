@@ -269,6 +269,11 @@ fn auto_migrate_database(
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name) => {
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
+                log!(logger, "Changing primary key for table `{table_name}`");
+                stdb.alter_table_primary_key(tx, table_name, table_def.primary_key)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");
             }
@@ -323,7 +328,7 @@ mod test {
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
-    use spacetimedb_sats::{product, AlgebraicType::U64};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
@@ -402,6 +407,77 @@ mod test {
             tx.pending_schema_changes(),
             [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
         );
+
+        Ok(())
+    }
+
+    /// Regression test for #3934: removing a primary key annotation and then
+    /// re-publishing causes "Primary key mismatch" on the NEXT publish.
+    #[test]
+    fn update_db_remove_primary_key_issue_3934() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        // Step 1: Table with a primary key (requires unique constraint + index).
+        let module_v1 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_primary_key(0)
+                .with_unique_constraint(0)
+                .with_index(btree(0), "person_name_idx")
+                .with_access(TableAccess::Public)
+                .finish();
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Step 2: Same table, but primary key removed.
+        let module_v2 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Step 3: Trivially different module (same as v2 — simulates "change anything").
+        let module_v3 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            builder.add_reducer("noop", spacetimedb_sats::ProductType::unit(), None);
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Publish v1.
+        let mut tx = begin_mut_tx(&stdb);
+        for def in module_v1.tables() {
+            create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        // Migrate v1 → v2 (remove primary key). Should succeed.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
+        assert!(matches!(res, UpdateResult::Success), "v1 → v2 migration failed");
+        stdb.commit_tx(tx)?;
+
+        // Migrate v2 → v3 (trivial change). This is where #3934 crashes.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v2, &module_v3)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        assert!(
+            matches!(res, UpdateResult::Success),
+            "v2 → v3 migration failed (issue #3934)"
+        );
+        stdb.commit_tx(tx)?;
 
         Ok(())
     }

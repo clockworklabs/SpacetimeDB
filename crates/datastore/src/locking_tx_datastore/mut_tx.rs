@@ -1082,6 +1082,26 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Change the primary key of the table identified by `table_id`.
+    ///
+    /// Updates both the in-memory schema and the `st_table` system table.
+    /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
+    pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
+
+        // Update system tables.
+        let new_pk_col_list = new_primary_key.map(|col| col.into());
+        let old_pk =
+            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,

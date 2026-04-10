@@ -409,3 +409,79 @@ fn test_add_table_columns() {
         logs2
     );
 }
+
+// --- Issue #3934: Removing a primary key breaks subsequent publishes ---
+
+const MODULE_CODE_WITH_PK: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    #[primary_key]
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+"#;
+
+const MODULE_CODE_WITHOUT_PK: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+"#;
+
+const MODULE_CODE_WITHOUT_PK_V2: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+
+#[spacetimedb::reducer]
+pub fn noop(_ctx: &ReducerContext) {}
+"#;
+
+/// Regression test for <https://github.com/clockworklabs/SpacetimeDB/issues/3934>.
+///
+/// Removing a `#[primary_key]` annotation and re-publishing succeeds,
+/// but the stored schema retains the stale primary key. On the *next*
+/// publish, `check_compatible` sees the mismatch and fails with:
+///
+///   "Primary key mismatch: self.primary_key: Some(ColId(0)), def.primary_key: None"
+///
+/// The fix adds a `ChangePrimaryKey` auto-migration step that updates
+/// `table_primary_key` in `st_table`.
+#[test]
+fn test_remove_primary_key_issue_3934() {
+    let mut test = Smoketest::builder().module_code(MODULE_CODE_WITH_PK).build();
+
+    // Step 1: Publish with primary key.
+    let identity = test.identity().to_string();
+
+    // Step 2: Remove primary key. Should succeed.
+    test.write_module_code(MODULE_CODE_WITHOUT_PK).unwrap();
+    test.publish_module_with_options(&identity, false, true)
+        .expect("Removing primary key should succeed");
+
+    // Step 3: Trivial change (add a reducer). This is where #3934 crashes.
+    test.write_module_code(MODULE_CODE_WITHOUT_PK_V2).unwrap();
+    test.publish_module_with_options(&identity, false, true)
+        .expect("Publish after PK removal should succeed (issue #3934)");
+}

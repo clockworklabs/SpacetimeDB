@@ -10,6 +10,7 @@ use crate::{
 };
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
 use thiserror::Error;
@@ -69,6 +70,11 @@ fn format_step<F: MigrationFormatter>(
         AutoMigrateStep::ChangeAccess(table) => {
             let access_info = extract_access_change_info(*table, plan)?;
             f.format_change_access(&access_info)
+        }
+        AutoMigrateStep::ChangePrimaryKey(table) => {
+            let old_table = plan.old.lookup_expect::<TableDef>(*table);
+            let new_table = plan.new.lookup_expect::<TableDef>(*table);
+            f.format_change_primary_key(table, old_table.primary_key, new_table.primary_key)
         }
         AutoMigrateStep::AddSchedule(schedule) => {
             let schedule_info = extract_schedule_info(*schedule, plan.new)?;
@@ -145,6 +151,12 @@ pub trait MigrationFormatter {
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_change_primary_key(
+        &mut self,
+        table_name: &str,
+        old_pk: Option<ColId>,
+        new_pk: Option<ColId>,
+    ) -> io::Result<()>;
     fn format_schedule(&mut self, schedule_info: &ScheduleInfo, action: Action) -> io::Result<()>;
     fn format_rls(&mut self, rls_info: &RlsInfo, action: Action) -> io::Result<()>;
     fn format_change_columns(&mut self, column_changes: &ColumnChanges) -> io::Result<()>;
