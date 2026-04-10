@@ -1,8 +1,8 @@
 use super::{Index, KeySize, RangedIndex};
 use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
-use core::{borrow::Borrow, ops::RangeBounds, option::IntoIter};
+use core::{borrow::Borrow, iter::Copied, ops::RangeBounds, option::IntoIter};
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use std::collections::btree_map::{BTreeMap, Entry, Range};
+use std::collections::btree_map::{BTreeMap, Entry, Range, Values};
 
 /// A "unique map" that relates a `K` to a `RowPointer`.
 ///
@@ -68,6 +68,15 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
 
     fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
         self.seek_point(point)
+    }
+
+    type Iter<'a>
+        = Copied<Values<'a, K, RowPointer>>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        self.map.values().copied()
     }
 
     /// Deletes all entries from the map, leaving it empty.

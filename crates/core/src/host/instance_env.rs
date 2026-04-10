@@ -600,6 +600,20 @@ impl InstanceEnv {
         Ok(stdb.delete_by_rel(tx, table_id, relation))
     }
 
+    /// Deletes all rows in the table identified by `table_id`.
+    pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
+
+        let rows_deleted = stdb.clear_table(tx, table_id).map_err(NodesError::from)?;
+
+        // To clear a table, we must find all the row pointers,
+        // so we have scanned that many rows.
+        tx.metrics.rows_scanned += rows_deleted as usize;
+
+        Ok(rows_deleted)
+    }
+
     /// Returns the `table_id` associated with the given `table_name`.
     ///
     /// Errors with `GetTxError` if not in a transaction
