@@ -84,6 +84,49 @@ fn router() -> Router {
 }
 "#;
 
+const EXAMPLE_MODULE_CODE: &str = r#"
+use std::str::FromStr;
+
+use spacetimedb::http::{Body, Request, Response, Router};
+use spacetimedb::{HandlerContext, Table};
+
+#[spacetimedb::table(accessor = data)]
+struct Data {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    body: Vec<u8>,
+}
+
+#[spacetimedb::http::handler]
+fn insert(ctx: &mut HandlerContext, request: Request) -> Response {
+    let body: Vec<u8> = request.into_body().into_bytes().into();
+    let id = ctx.with_tx(|tx| tx.db.data().insert(Data { id: 0, body: body.clone() }).id);
+    Response::new(Body::from_bytes(format!("{id}")))
+}
+
+#[spacetimedb::http::handler]
+fn retrieve(ctx: &mut HandlerContext, request: Request) -> Response {
+    let id = request
+        .uri()
+        .query()
+        .and_then(|query| query.strip_prefix("id="))
+        .and_then(|id| u64::from_str(id).ok())
+        .unwrap();
+    let body = ctx.with_tx(|tx| tx.db.data().id().find(id).map(|data| data.body));
+    if let Some(body) = body {
+        Response::new(Body::from_bytes(body))
+    } else {
+        Response::builder().status(404).body(Body::empty()).unwrap()
+    }
+}
+
+#[spacetimedb::http::router]
+fn router() -> Router {
+    Router::new().post("/insert", insert).get("/retrieve", retrieve)
+}
+"#;
+
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
 #[test]
@@ -161,4 +204,41 @@ fn http_routes_end_to_end() {
         .send()
         .expect("route request failed");
     assert!(resp.status().is_success());
+}
+
+#[test]
+fn http_routes_pr_example_round_trip() {
+    let test = Smoketest::builder().module_code(EXAMPLE_MODULE_CODE).build();
+    let identity = test.database_identity.as_ref().expect("database identity missing");
+
+    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+    let payload = b"hello from the PR example".to_vec();
+
+    let resp = client
+        .post(format!("{base}/insert"))
+        .body(payload.clone())
+        .send()
+        .expect("insert failed");
+    assert!(resp.status().is_success());
+    let inserted_id = resp.text().expect("insert id body");
+
+    let resp = client
+        .get(format!("{base}/retrieve?id={inserted_id}"))
+        .send()
+        .expect("retrieve existing failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.bytes().expect("retrieve existing body").as_ref(), payload.as_slice());
+
+    let resp = client
+        .get(format!("{base}/retrieve?id=999999999"))
+        .send()
+        .expect("retrieve missing failed");
+    assert_eq!(resp.status().as_u16(), 404);
+
+    let resp = client
+        .get(format!("{base}/retrieve?id=not-a-u64"))
+        .send()
+        .expect("retrieve invalid failed");
+    assert!(resp.status().is_server_error());
 }
