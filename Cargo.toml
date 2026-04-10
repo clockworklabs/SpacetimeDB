@@ -44,7 +44,6 @@ members = [
   "modules/module-test",
   "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
-  "templates/keynote-2/spacetimedb-rust-client",
   "modules/sdk-test",
   "modules/sdk-test-connect-disconnect",
   "modules/sdk-test-procedure",
