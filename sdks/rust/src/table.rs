@@ -1,4 +1,5 @@
-//! The [`Table`] and [`TableWithPrimaryKey`] traits,
+//! The [`TableLike`], [`Table`], [`TableWithPrimaryKey`], and [`EventTable`] traits,
+//! together with the [`WithInsert`], [`WithDelete`], and [`WithUpdate`] capability traits,
 //! which allow certain simple queries of the client cache,
 //! and expose row callbacks which run when subscribed rows are inserted, deleted or updated.
 //!
@@ -22,9 +23,16 @@ pub trait TableLike {
 
     /// An iterator over all the subscribed rows in the client cache.
     fn iter(&self) -> impl Iterator<Item = Self::Row> + '_;
+}
 
+/// Capability trait for table-like handles which support insert callbacks.
+pub trait WithInsert: TableLike {
     type InsertCallbackId;
-    /// Register a callback to run whenever a subscribed row is inserted into the client cache.
+
+    /// Register a callback to run whenever a row is observed as inserted by this table handle.
+    ///
+    /// For persistent tables, this means a subscribed row is inserted into the client cache.
+    /// For event tables, this means an event row is delivered.
     ///
     /// The returned [`Self::InsertCallbackId`] can be passed to [`Self::remove_on_insert`]
     /// to cancel the callback.
@@ -32,17 +40,15 @@ pub trait TableLike {
         &self,
         callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
     ) -> Self::InsertCallbackId;
+
     /// Cancel a callback previously registered by [`Self::on_insert`], causing it not to run in the future.
     fn remove_on_insert(&self, callback: Self::InsertCallbackId);
 }
 
-/// Trait implemented by table handles, which mediate access to tables in the client cache.
-///
-/// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
-///
-/// For persistent (non-event) tables only. See [`EventTable`] for transient event tables.
-pub trait Table: TableLike {
+/// Capability trait for table-like handles which support delete callbacks.
+pub trait WithDelete: TableLike {
     type DeleteCallbackId;
+
     /// Register a callback to run whenever a subscribed row is deleted from the client cache.
     ///
     /// The returned [`Self::DeleteCallbackId`] can be passed to [`Self::remove_on_delete`]
@@ -51,22 +57,15 @@ pub trait Table: TableLike {
         &self,
         callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
     ) -> Self::DeleteCallbackId;
+
     /// Cancel a callback previously registered by [`Self::on_delete`], causing it not to run in the future.
     fn remove_on_delete(&self, callback: Self::DeleteCallbackId);
 }
 
-/// Subtrait of [`Table`] implemented only by tables with a column designated as a primary key,
-/// which allows the SDK to identify updates.
-///
-/// SpacetimeDB does not have a special notion of updates as a primitive operation.
-/// Instead, an update is a delete followed by an insert
-/// of rows with the same primary key within the same transaction.
-/// This means that the module's calls to `ctx.db.some_table().unique_column().update(...)`
-/// may not result in an update event on the client if `unique_column` is not the primary key,
-/// and that clients may observe update events resulting from deletes and inserts by the module
-/// without going through such an `update` method.
-pub trait TableWithPrimaryKey: Table {
+/// Capability trait for table-like handles which support update callbacks.
+pub trait WithUpdate: TableLike {
     type UpdateCallbackId;
+
     /// Register a callback to run whenever a subscribed row is updated within a transaction,
     /// with an old version deleted and a new version inserted with the same primary key.
     ///
@@ -79,9 +78,29 @@ pub trait TableWithPrimaryKey: Table {
         &self,
         callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
     ) -> Self::UpdateCallbackId;
+
     /// Cancel a callback previously registered by [`Self::on_update`], causing it not to run in the future.
     fn remove_on_update(&self, callback: Self::UpdateCallbackId);
 }
+
+/// Trait implemented by persistent table handles, which mediate access to tables in the client cache.
+///
+/// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
+///
+/// For persistent (non-event) tables only. See [`EventTable`] for transient event tables.
+pub trait Table: TableLike + WithInsert + WithDelete {}
+
+/// Subtrait of [`Table`] implemented only by tables with a column designated as a primary key,
+/// which allows the SDK to identify updates.
+///
+/// SpacetimeDB does not have a special notion of updates as a primitive operation.
+/// Instead, an update is a delete followed by an insert
+/// of rows with the same primary key within the same transaction.
+/// This means that the module's calls to `ctx.db.some_table().unique_column().update(...)`
+/// may not result in an update event on the client if `unique_column` is not the primary key,
+/// and that clients may observe update events resulting from deletes and inserts by the module
+/// without going through such an `update` method.
+pub trait TableWithPrimaryKey: Table + WithUpdate {}
 
 /// Trait for event tables, whose rows are transient and never persisted in the client cache.
 ///
@@ -89,4 +108,4 @@ pub trait TableWithPrimaryKey: Table {
 /// only `on_insert` callbacks fire, and `count`/`iter` always reflect an empty table.
 ///
 /// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
-pub trait EventTable: TableLike {}
+pub trait EventTable: TableLike + WithInsert {}
