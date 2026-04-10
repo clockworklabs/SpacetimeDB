@@ -8,11 +8,11 @@ use rand::RngCore;
 #[cfg(not(target_arch = "wasm32"))]
 use spacetimedb_sdk::credentials;
 use spacetimedb_sdk::error::InternalError;
-use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{
     i256, u256, Compression, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, Status,
     SubscriptionHandle, Table, TimeDuration, Timestamp, Uuid,
 };
+use spacetimedb_sdk::{TableLike, WithDelete, WithInsert, WithUpdate};
 use test_counter::TestCounter;
 
 use crate::simple_test_table::{insert_one, on_insert_one, SimpleTestTable};
