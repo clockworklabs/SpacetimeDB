@@ -126,7 +126,7 @@ void AGameManager::BeginPlay()
     FOnConnectErrorDelegate ConnectErrorDelegate;
     BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnectError);
 
-    UCredentials::Init(*TEXT(".spacetime_token"));
+    UCredentials::Init(TEXT(".spacetime_token"));
     FString Token = UCredentials::LoadToken();
 
     UDbConnectionBuilder* Builder = UDbConnection::Builder()
@@ -191,7 +191,7 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 
 ## FrameTick -- Critical
 
-**`Conn->FrameTick()` must be called every frame in `Tick()`.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it, no callbacks fire and the client appears frozen.
+**You must either call `Conn->FrameTick()` every frame in your Actor's `Tick()`, or call `Conn->SetAutoTicking(true)` once at startup.** The SDK queues all network messages and only processes them on tick. Without one of these, no callbacks fire and the client appears frozen.
 
 ---
 
@@ -259,8 +259,8 @@ Handle->GetQuerySqls();  // get the SQL queries
 Access tables through `Conn->Db`:
 
 ```cpp
-// Find by unique/primary key
-FUserType* User = Conn->Db->User->Identity->Find(SomeIdentity);
+// Find by unique/primary key (returns by value; default-constructed if not found)
+FUserType User = Conn->Db->User->Identity->Find(SomeIdentity);
 
 // Filter by BTree index
 TArray<FPlayerType> LevelFive = Conn->Db->Player->Level->Filter(5);
@@ -354,7 +354,7 @@ This is the recommended pattern for all SpacetimeDB delegate bindings in C++.
 ```cpp
 // FSpacetimeDBIdentity -- 256-bit unique user identifier, persists across connections
 FSpacetimeDBIdentity Identity;
-Identity.ToHexString();
+Identity.ToHex();
 
 // FSpacetimeDBConnectionId -- 128-bit per-session connection identifier
 FSpacetimeDBConnectionId ConnId = Conn->GetConnectionId();
@@ -372,7 +372,7 @@ FSpacetimeDBConnectionId CId = Context.GetConnectionId();
 Use the built-in `UCredentials` helper to save and load tokens:
 
 ```cpp
-UCredentials::Init(*TEXT(".spacetime_token"));
+UCredentials::Init(TEXT(".spacetime_token"));
 FString Token = UCredentials::LoadToken();
 // ... after connect:
 UCredentials::SaveToken(Token);
@@ -417,9 +417,19 @@ This means you can build the entire connection and callback flow in Blueprints w
 
 ## Unreal-Specific Considerations
 
-### No Manual FrameTick (SDK v2)
+### Auto Ticking Alternative
 
-The Unreal SDK's `UDbConnection` inherits from `FTickableGameObject` and processes messages automatically via WebSocket callbacks. However, calling `FrameTick()` in your Actor's `Tick()` ensures deterministic callback processing on the game thread. Always call it.
+`UDbConnection` inherits from `FTickableGameObject`, but auto ticking is **off by default**. You have two options:
+
+```cpp
+// Option 1: Call FrameTick() manually in your Actor's Tick() (shown in GameManager above)
+void Tick(float DeltaTime) { Conn->FrameTick(); }
+
+// Option 2: Enable auto ticking — the SDK then processes messages every frame automatically
+Conn->SetAutoTicking(true);
+```
+
+Pick one. Without either, no callbacks fire.
 
 ### Compression
 
