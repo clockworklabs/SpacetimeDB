@@ -1898,9 +1898,13 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
             ServerLanguage::Csharp => "csharp-server",
             ServerLanguage::Cpp => "cpp-server",
         };
-        if !name.is_empty() {
-            if let Some(content) = embedded::get_skill(name) {
-                skills.push((name, content));
+        if let Some(content) = embedded::get_skill(name) {
+            skills.push((name, content));
+        }
+        // C++ server projects use Unreal as their client SDK
+        if server_lang == ServerLanguage::Cpp {
+            if let Some(content) = embedded::get_skill("unreal") {
+                skills.push(("unreal", content));
             }
         }
     }
