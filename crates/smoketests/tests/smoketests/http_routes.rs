@@ -228,7 +228,10 @@ fn http_routes_pr_example_round_trip() {
         .send()
         .expect("retrieve existing failed");
     assert!(resp.status().is_success());
-    assert_eq!(resp.bytes().expect("retrieve existing body").as_ref(), payload.as_slice());
+    assert_eq!(
+        resp.bytes().expect("retrieve existing body").as_ref(),
+        payload.as_slice()
+    );
 
     let resp = client
         .get(format!("{base}/retrieve?id=999999999"))
