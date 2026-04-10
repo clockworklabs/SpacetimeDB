@@ -31,6 +31,7 @@ const personTable = table(
     name: t.string(),
     age: t.u32(),
     active: t.bool(),
+    createdAt: t.timestamp(),
   }
 );
 
@@ -169,6 +170,26 @@ describe('TableScan.toSql', () => {
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."id" = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
+    );
+  });
+
+  it('renders Timestamp literals as RFC3339 strings', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const timestamp = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
+    const sql = toSql(qb.person.where(row => row.createdAt.eq(timestamp)).build());
+
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE "person"."createdAt" = '2024-01-01T00:00:00.123000Z'`
+    );
+  });
+
+  it('supports Timestamp comparisons in where predicates', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const timestamp = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
+    const sql = toSql(qb.person.where(row => row.createdAt.gt(timestamp)).build());
+
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE "person"."createdAt" > '2024-01-01T00:00:00.123000Z'`
     );
   });
 
