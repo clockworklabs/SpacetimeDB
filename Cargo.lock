@@ -7692,6 +7692,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-bindings-cpp-ffi"
+version = "2.1.0"
+dependencies = [
+ "bytemuck",
+ "spacetimedb-lib 2.1.0",
+ "spacetimedb-primitives 2.1.0",
+ "spacetimedb-sats 2.1.0",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "spacetimedb-bindings-macro"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
