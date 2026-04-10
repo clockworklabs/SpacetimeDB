@@ -359,3 +359,19 @@ Also: dropped stale DB tables (wrong column names from a prior run) and ran `dri
 **Redeploy:** Schema re-pushed (`drizzle-kit push` — clean). Server restarted (`npm run dev`). Client rebuilt — 56 modules, 0 errors.
 
 **Server verified:** Client at http://localhost:6273 ✓ | API at http://localhost:6001 ✓
+
+---
+
+## Iteration 18 — Fix (14:50)
+
+**Category:** Feature Broken
+**What broke:** Guest identity not persisted across page refresh — refreshing created a new `Guest-XXXX` identity, orphaning previous messages and room memberships.
+**Root cause:** `currentUser` was held only in React state (no localStorage). On every page load the app started with `currentUser = null` and showed the login screen. Clicking "Join as Guest" always called `POST /api/users/anonymous`, creating a brand-new DB row. No `GET /api/users/:id` endpoint existed to look up an existing user by id.
+**What I fixed:**
+1. (server) Added `GET /api/users/:userId` endpoint — returns the user row or 404. Placed between `GET /api/users` and `PUT /api/users/:userId/status`.
+2. (client) Added a `useEffect` that writes `currentUser.id` to `localStorage.setItem('chat_user_id', ...)` whenever `currentUser` changes.
+3. (client) Added a mount-time `useEffect` that reads `chat_user_id` from localStorage, calls `GET /api/users/:id` to rehydrate the full user object, calls `setCurrentUser` + `loadRooms` + `loadScheduledMessages` + `loadDrafts`, and emits `user_connected` once the socket is ready. On 404 it clears the stored key and shows the login screen normally. This fix applies equally to registered users and guests.
+**Files changed:** `server/src/index.ts` (new GET /api/users/:userId endpoint), `client/src/App.tsx` (localStorage sync effect + mount rehydration effect)
+**Redeploy:** Both — Express server restarted (`npm run dev`), Vite client restarted.
+
+**Server verified:** Client at http://localhost:6273 ✓ | API at http://localhost:6001 ✓ | GET /api/users/1 returns user ✓ | GET /api/users/99999 returns 404 ✓
