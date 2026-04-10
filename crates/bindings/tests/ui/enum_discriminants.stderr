@@ -1,0 +1,11 @@
+error: explicit discriminant values are not supported by SpacetimeDB; SATS assigns variant tags by declaration order, so discriminant values would be silently ignored
+ --> tests/ui/enum_discriminants.rs:6:7
+  |
+6 |     A = 1,
+  |       ^
+
+error: explicit discriminant values are not supported by SpacetimeDB; SATS assigns variant tags by declaration order, so discriminant values would be silently ignored
+  --> tests/ui/enum_discriminants.rs:13:7
+   |
+13 |     Y = 5,
+   |       ^
