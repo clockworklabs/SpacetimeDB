@@ -217,7 +217,7 @@ pub(crate) struct ExceptionThrown {
 
 impl ExceptionThrown {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    pub(crate) fn into_error(self, scope: &mut PinTryCatch) -> JsError {
+    pub(crate) fn into_error(self, scope: &mut PinTryCatch) -> Result<JsError, UnknownJsError> {
         JsError::from_caught(scope)
     }
 }
@@ -254,12 +254,15 @@ pub(super) enum ErrorOrException<Exc> {
     Exception(Exc),
 }
 
-impl<Exc> ErrorOrException<Exc> {
-    pub(super) fn map_exception<Exc2>(self, f: impl FnOnce(Exc) -> Exc2) -> ErrorOrException<Exc2> {
-        match self {
+impl ErrorOrException<ExceptionThrown> {
+    pub(super) fn exc_into_error(
+        self,
+        scope: &mut PinTryCatch<'_, '_, '_, '_>,
+    ) -> Result<ErrorOrException<JsError>, UnknownJsError> {
+        Ok(match self {
             ErrorOrException::Err(e) => ErrorOrException::Err(e),
-            ErrorOrException::Exception(exc) => ErrorOrException::Exception(f(exc)),
-        }
+            ErrorOrException::Exception(exc) => ErrorOrException::Exception(exc.into_error(scope)?),
+        })
     }
 }
 
@@ -271,6 +274,12 @@ impl<E> From<anyhow::Error> for ErrorOrException<E> {
 
 impl From<ExceptionThrown> for ErrorOrException<ExceptionThrown> {
     fn from(e: ExceptionThrown) -> Self {
+        Self::Exception(e)
+    }
+}
+
+impl From<JsError> for ErrorOrException<JsError> {
+    fn from(e: JsError) -> Self {
         Self::Exception(e)
     }
 }
@@ -528,20 +537,38 @@ fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnc
 
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    fn from_caught(scope: &mut PinTryCatch<'_, '_, '_, '_>) -> Self {
-        match scope.message() {
-            Some(message) => Self {
-                trace: message
-                    .get_stack_trace(scope)
-                    .map(|trace| JsStackTrace::from_trace(scope, trace))
-                    .unwrap_or_default(),
-                msg: message.get(scope).to_rust_string_lossy(scope),
-            },
-            None => Self {
-                trace: JsStackTrace::default(),
-                msg: "unknown error".to_owned(),
-            },
+    fn from_caught(scope: &mut PinTryCatch<'_, '_, '_, '_>) -> Result<Self, UnknownJsError> {
+        let message = scope.message().ok_or(UnknownJsError)?;
+        Ok(Self {
+            trace: message
+                .get_stack_trace(scope)
+                .map(|trace| JsStackTrace::from_trace(scope, trace))
+                .unwrap_or_default(),
+            msg: message.get(scope).to_rust_string_lossy(scope),
+        })
+    }
+}
+
+pub(super) struct UnknownJsError;
+
+impl From<UnknownJsError> for JsError {
+    fn from(_: UnknownJsError) -> Self {
+        Self {
+            trace: JsStackTrace::default(),
+            msg: "unknown error".to_owned(),
         }
+    }
+}
+
+impl From<UnknownJsError> for ErrorOrException<JsError> {
+    fn from(e: UnknownJsError) -> Self {
+        Self::Exception(e.into())
+    }
+}
+
+impl From<UnknownJsError> for anyhow::Error {
+    fn from(e: UnknownJsError) -> Self {
+        JsError::from(e).into()
     }
 }
 
@@ -573,7 +600,7 @@ pub(super) fn catch_exception<'scope, T>(
     body: impl FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
 ) -> Result<T, ErrorOrException<JsError>> {
     tc_scope!(scope, scope);
-    body(scope).map_err(|e| e.map_exception(|exc| exc.into_error(scope)))
+    body(scope).map_err(|e| e.exc_into_error(scope).unwrap_or_else(Into::into))
 }
 
 pub(super) type PinTryCatch<'scope, 'iso, 'x, 's> = PinnedRef<'x, TryCatch<'s, 'scope, HandleScope<'iso>>>;

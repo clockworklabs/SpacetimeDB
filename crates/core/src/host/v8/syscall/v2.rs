@@ -426,7 +426,7 @@ fn hooks_symbol<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, v8::Symbo
 /// Calls the `__call_reducer__` function `fun`.
 pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinTryCatch<'scope, '_, '_, '_>,
-    hooks: &HookFunctions<'scope>,
+    hooks: &HookFunctions<'_>,
     op: ReducerOp<'_>,
     reducer_args_buf: Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {

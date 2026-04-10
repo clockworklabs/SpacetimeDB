@@ -185,8 +185,12 @@ pub struct V8HeapPolicyConfig {
     pub heap_gc_trigger_fraction: f64,
     #[serde(default = "def_retire", deserialize_with = "de_fraction")]
     pub heap_retire_fraction: f64,
-    #[serde(default, rename = "heap-limit-mb", deserialize_with = "de_limit_mb")]
-    pub heap_limit_bytes: Option<usize>,
+    #[serde(
+        default = "def_heap_limit",
+        rename = "heap-limit-mb",
+        deserialize_with = "de_limit_mb"
+    )]
+    pub heap_limit_bytes: usize,
 }
 
 impl Default for V8HeapPolicyConfig {
@@ -196,7 +200,7 @@ impl Default for V8HeapPolicyConfig {
             heap_check_time_interval: def_time_interval(),
             heap_gc_trigger_fraction: def_gc_trigger(),
             heap_retire_fraction: def_retire(),
-            heap_limit_bytes: None,
+            heap_limit_bytes: def_heap_limit(),
         }
     }
 }
@@ -235,6 +239,12 @@ fn def_gc_trigger() -> f64 {
 /// Default heap fill fraction that retires the worker after a GC.
 fn def_retire() -> f64 {
     0.75
+}
+
+/// Default heap limit, in bytes
+fn def_heap_limit() -> usize {
+    // 1 GiB
+    1024 * 1024 * 1024
 }
 
 fn de_nz_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -289,22 +299,20 @@ where
     }
 }
 
-fn de_limit_mb<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+fn de_limit_mb<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = u64::deserialize(deserializer)?;
     if value == 0 {
-        return Ok(None);
+        return Ok(def_heap_limit());
     }
 
     let bytes = value
         .checked_mul(1024 * 1024)
         .ok_or_else(|| serde::de::Error::custom("heap-limit-mb is too large"))?;
 
-    usize::try_from(bytes)
-        .map(Some)
-        .map_err(|_| serde::de::Error::custom("heap-limit-mb does not fit in usize"))
+    usize::try_from(bytes).map_err(|_| serde::de::Error::custom("heap-limit-mb does not fit in usize"))
 }
 
 #[cfg(test)]
@@ -420,7 +428,7 @@ mod tests {
         );
         assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.67);
         assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.75);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, None);
+        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 1024 * 1024 * 1024);
     }
 
     #[test]
@@ -443,6 +451,6 @@ mod tests {
         );
         assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, Some(256 * 1024 * 1024));
+        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 256 * 1024 * 1024);
     }
 }
