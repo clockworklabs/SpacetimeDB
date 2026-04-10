@@ -22,7 +22,7 @@ use tokio::{
 };
 use tracing::{instrument, Span};
 
-use crate::{Close, Durability, DurableOffset, History, TxOffset};
+use crate::{Close, Durability, DurableOffset, History, PreparedTx, TxOffset};
 
 pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 
@@ -75,33 +75,6 @@ pub enum OpenError {
 
 type ShutdownReply = oneshot::Sender<OwnedNotified>;
 
-enum QueueItem<T> {
-    Ready(Transaction<Txdata<T>>),
-    Deferred { prepare: Box<dyn DeferredTx<T>> },
-}
-
-impl<T> QueueItem<T> {
-    fn prepare(self) -> Transaction<Txdata<T>> {
-        match self {
-            Self::Ready(tx) => tx,
-            Self::Deferred { prepare } => prepare.prepare(),
-        }
-    }
-}
-
-trait DeferredTx<T>: Send + Sync {
-    fn prepare(self: Box<Self>) -> Transaction<Txdata<T>>;
-}
-
-impl<T, F> DeferredTx<T> for F
-where
-    F: FnOnce() -> Transaction<Txdata<T>> + Send + Sync + 'static,
-{
-    fn prepare(self: Box<Self>) -> Transaction<Txdata<T>> {
-        self()
-    }
-}
-
 /// [`Durability`] implementation backed by a [`Commitlog`] on local storage.
 ///
 /// The commitlog is constrained to store the canonical [`Txdata`] payload,
@@ -124,7 +97,7 @@ pub struct Local<T> {
     ///
     /// The queue is bounded to
     /// `Options::QUEUE_CAPACITY_MULTIPLIER * Options::batch_capacity`.
-    queue: mpsc::Sender<QueueItem<T>>,
+    queue: mpsc::Sender<PreparedTx<Txdata<T>>>,
     /// How many transactions are pending durability, including items buffered
     /// in the queue and items currently being written by the actor.
     ///
@@ -245,7 +218,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
         self,
-        mut transactions_rx: mpsc::Receiver<QueueItem<T>>,
+        mut transactions_rx: mpsc::Receiver<PreparedTx<Txdata<T>>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
@@ -282,9 +255,9 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     let clog = self.clog.clone();
                     let ready_len = tx_buf.len();
                     self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
-                    tx_buf = spawn_blocking(move || -> io::Result<Vec<QueueItem<T>>> {
-                        for item in tx_buf.drain(..) {
-                            clog.commit([item.prepare()])?;
+                    tx_buf = spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
+                        for tx in tx_buf.drain(..) {
+                            clog.commit([tx.into_transaction()])?;
                         }
                         Ok(tx_buf)
                     })
@@ -370,8 +343,30 @@ impl Drop for Lock {
 impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
-    fn append_tx(&self, tx: Transaction<Self::TxData>) {
-        let _ = self.send_item(QueueItem::Ready(tx));
+    fn append_tx(&self, tx: PreparedTx<Self::TxData>) {
+        let mut tx = Some(tx);
+        let blocked = match self.queue.try_reserve() {
+            Ok(permit) => {
+                permit.send(tx.take().expect("tx already sent"));
+                false
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                panic!("durability actor crashed");
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let mut send = || self.queue.blocking_send(tx.take().expect("tx already sent"));
+                if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(send)
+                } else {
+                    send()
+                }
+                .expect("durability actor crashed");
+                true
+            }
+        };
+
+        self.queue_depth.fetch_add(1, Relaxed);
+        let _ = blocked;
     }
 
     fn durable_tx_offset(&self) -> DurableOffset {
@@ -407,39 +402,6 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
             durable_offset.last_seen()
         }
         .boxed()
-    }
-}
-
-impl<T: Send + Sync + 'static> Local<T> {
-    fn send_item(&self, item: QueueItem<T>) -> bool {
-        let blocked = match self.queue.try_reserve() {
-            Ok(permit) => {
-                permit.send(item);
-                false
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                panic!("durability actor crashed");
-            }
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                let send = || self.queue.blocking_send(item);
-                if tokio::runtime::Handle::try_current().is_ok() {
-                    tokio::task::block_in_place(send)
-                } else {
-                    send()
-                }
-                .expect("durability actor crashed");
-                true
-            }
-        };
-
-        self.queue_depth.fetch_add(1, Relaxed);
-        blocked
-    }
-
-    pub fn append_tx_deferred(&self, prepare: impl FnOnce() -> Transaction<Txdata<T>> + Send + Sync + 'static) -> bool {
-        self.send_item(QueueItem::Deferred {
-            prepare: Box::new(prepare),
-        })
     }
 }
 

@@ -1900,7 +1900,7 @@ mod tests {
     use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use spacetimedb_durability::{Durability, EmptyHistory, Transaction, TxOffset};
+    use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
@@ -1987,7 +1987,8 @@ mod tests {
     impl Durability for ManualDurability {
         type TxData = Txdata;
 
-        fn append_tx(&self, tx: Transaction<Self::TxData>) {
+        fn append_tx(&self, tx: spacetimedb_durability::PreparedTx<Self::TxData>) {
+            let tx = tx.into_transaction();
             let mut commitlog = self.commitlog.write().unwrap();
             commitlog.commit([tx]).expect("commit failed");
             commitlog.flush().expect("error flushing commitlog");
@@ -2043,7 +2044,6 @@ mod tests {
             EmptyHistory::new(),
             Some(Persistence {
                 durability: durability.clone(),
-                local_durability: None,
                 disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
                 runtime: rt,

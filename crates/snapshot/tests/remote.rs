@@ -233,7 +233,6 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     let (mut watch, _db) = spawn_blocking(|| {
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
-            local_durability: None,
             disk_size: Arc::new(|| Ok(<_>::default())),
             snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
             runtime: rt,
