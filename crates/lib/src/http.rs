@@ -18,6 +18,7 @@
 //! Instead, if/when we want to add new functionality which requires sending additional information,
 //! we'll define a new versioned ABI call which uses new types for interchange.
 
+use bytes::Bytes;
 use spacetimedb_sats::{time_duration::TimeDuration, SpacetimeType};
 
 /// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
@@ -45,7 +46,7 @@ impl Request {
 }
 
 /// Represents an HTTP method.
-#[derive(Clone, SpacetimeType, PartialEq, Eq)]
+#[derive(Clone, Debug, SpacetimeType, PartialEq, Eq, PartialOrd, Ord)]
 #[sats(crate = crate, name = "HttpMethod")]
 pub enum Method {
     Get,
@@ -164,4 +165,20 @@ impl Response {
     pub fn size_in_bytes(&self) -> usize {
         self.headers.size_in_bytes()
     }
+}
+
+/// An HTTP request plus a body, used for host <-> module interchange in HTTP handlers.
+#[derive(Clone, SpacetimeType)]
+#[sats(crate = crate, name = "HttpRequestAndBody")]
+pub struct RequestAndBody {
+    pub request: Request,
+    pub body: Bytes,
+}
+
+/// An HTTP response plus a body, used for host <-> module interchange in HTTP handlers.
+#[derive(Clone, SpacetimeType)]
+#[sats(crate = crate, name = "HttpResponseAndBody")]
+pub struct ResponseAndBody {
+    pub response: Response,
+    pub body: Bytes,
 }

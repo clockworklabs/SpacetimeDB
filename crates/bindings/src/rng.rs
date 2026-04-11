@@ -1,6 +1,6 @@
-#[cfg(feature = "unstable")]
-use crate::ProcedureContext;
 use crate::{rand, ReducerContext};
+#[cfg(feature = "unstable")]
+use crate::{HandlerContext, ProcedureContext};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use rand::distributions::{Distribution, Standard};
@@ -90,6 +90,31 @@ impl ProcedureContext {
     /// ```
     ///
     /// For more information, see [`StdbRng`] and [`rand::Rng`].
+    #[cfg(feature = "unstable")]
+    pub fn rng(&self) -> &StdbRng {
+        self.rng.get_or_init(|| StdbRng::seed_from_ts(self.timestamp))
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl HandlerContext {
+    /// Generates a random value.
+    ///
+    /// Similar to [`rand::random()`], but using [`StdbRng`] instead.
+    ///
+    /// See also [`HandlerContext::rng()`].
+    #[cfg(feature = "unstable")]
+    pub fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        Standard.sample(&mut self.rng())
+    }
+
+    /// Retrieve the random number generator for this handler invocation,
+    /// seeded by the handler timestamp.
+    ///
+    /// If you only need a single random value, you can use [`HandlerContext::random()`].
     #[cfg(feature = "unstable")]
     pub fn rng(&self) -> &StdbRng {
         self.rng.get_or_init(|| StdbRng::seed_from_ts(self.timestamp))

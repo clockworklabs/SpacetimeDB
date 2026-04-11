@@ -17,6 +17,11 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-memory-usage.workspace = true
 spacetimedb-sql-parser.workspace = true
 
+# Used only for a call to `PathAndQuery::from_str(path_str).is_err()`
+# in `src/def/validate/v10.rs#validate_http_route_path`.
+# Possibly would be nice to eliminate this dependency.
+http.workspace = true
+
 anyhow.workspace = true
 derive_more.workspace = true
 indexmap.workspace = true

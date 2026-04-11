@@ -16,6 +16,8 @@ pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
 
 pub const CALL_PROCEDURE_DUNDER: &str = "__call_procedure__";
 
+pub const CALL_HTTP_HANDLER_DUNDER: &str = "__call_http_handler__";
+
 pub const CALL_VIEW_DUNDER: &str = "__call_view__";
 
 pub const CALL_VIEW_ANON_DUNDER: &str = "__call_view_anon__";

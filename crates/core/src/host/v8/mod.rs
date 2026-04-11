@@ -22,9 +22,9 @@ use crate::host::module_host::{
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
-    InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
-    WasmInstance,
+    AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
+    HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
+    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
@@ -1728,6 +1728,22 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
             .instance_env
             .take_procedure_tx_offset();
         (result, tx_offset)
+    }
+
+    async fn call_http_handler(
+        &mut self,
+        _op: HttpHandlerOp,
+        _budget: FunctionBudget,
+    ) -> (HttpHandlerExecuteResult, Option<TransactionOffset>) {
+        let result = ExecutionResult {
+            stats: ExecutionStats {
+                energy: EnergyStats::ZERO,
+                timings: ExecutionTimings::zero(),
+                memory_allocation: 0,
+            },
+            call_result: Err(anyhow::anyhow!("HTTP handlers are not supported for JS modules")),
+        };
+        (result, None)
     }
 }
 

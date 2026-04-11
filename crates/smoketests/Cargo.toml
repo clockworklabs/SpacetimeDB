@@ -21,6 +21,7 @@ assert_cmd = "2"
 predicates = "3"
 tokio.workspace = true
 tokio-postgres.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
 
 [lints]
 workspace = true

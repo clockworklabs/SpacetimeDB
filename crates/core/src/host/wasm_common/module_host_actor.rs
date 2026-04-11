@@ -8,9 +8,9 @@ use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
-    ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance,
-    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, ModuleEvent,
+    ModuleFunctionCall, ModuleInfo, RefInstance, ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
@@ -44,8 +44,8 @@ use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{bsatn, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
+use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
@@ -97,6 +97,12 @@ pub trait WasmInstance {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> impl Future<Output = (ProcedureExecuteResult, Option<TransactionOffset>)>;
+
+    fn call_http_handler(
+        &mut self,
+        op: HttpHandlerOp,
+        budget: FunctionBudget,
+    ) -> impl Future<Output = (HttpHandlerExecuteResult, Option<TransactionOffset>)>;
 }
 
 pub struct EnergyStats {
@@ -312,6 +318,8 @@ pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
 
 pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
 
+pub type HttpHandlerExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
+
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     common: ModuleCommon,
@@ -523,6 +531,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
         let (res, trapped) = self.common.call_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
+    }
+
+    pub async fn call_http_handler(
+        &mut self,
+        params: CallHttpHandlerParams,
+    ) -> Result<st_http::ResponseAndBody, HttpHandlerCallError> {
+        let (res, trapped) = self.common.call_http_handler(params, &mut self.instance).await;
         self.trapped = trapped;
         res
     }
@@ -784,6 +801,85 @@ impl InstanceCommon {
         };
 
         (CallProcedureReturn { result, tx_offset }, trapped)
+    }
+
+    pub(crate) async fn call_http_handler<I: WasmInstance>(
+        &mut self,
+        params: CallHttpHandlerParams,
+        inst: &mut I,
+    ) -> (Result<st_http::ResponseAndBody, HttpHandlerCallError>, bool) {
+        let CallHttpHandlerParams {
+            timestamp,
+            handler_id,
+            request,
+        } = params;
+
+        let Some(handler_def) = self.info.module_def.get_http_handler_by_id(handler_id) else {
+            return (Err(HttpHandlerCallError::NoSuchHandler), false);
+        };
+        let handler_name = &handler_def.name;
+
+        let request_bytes = match bsatn::to_vec(&request) {
+            Ok(bytes) => bytes.into(),
+            Err(err) => {
+                return (
+                    Err(HttpHandlerCallError::InternalError(format!(
+                        "failed to serialize request: {err}"
+                    ))),
+                    false,
+                )
+            }
+        };
+
+        let op = HttpHandlerOp {
+            id: handler_id,
+            name: handler_name.clone(),
+            timestamp,
+            request_bytes,
+        };
+
+        let energy_fingerprint = FunctionFingerprint {
+            module_hash: self.info.module_hash,
+            module_identity: self.info.owner_identity,
+            caller_identity: self.info.owner_identity,
+            function_name: handler_name,
+        };
+
+        let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
+
+        let (result, _tx_offset) = inst.call_http_handler(op, budget).await;
+
+        let HttpHandlerExecuteResult {
+            stats:
+                ExecutionStats {
+                    memory_allocation,
+                    // TODO(http-handler-energy): Do something with timing and energy.
+                    ..
+                },
+            call_result,
+        } = result;
+
+        if self.allocated_memory != memory_allocation {
+            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
+            self.allocated_memory = memory_allocation;
+        }
+
+        let trapped = call_result.is_err();
+
+        let result = match call_result {
+            Err(err) => {
+                inst.log_traceback("http handler", handler_name, &err);
+                WORKER_METRICS
+                    .wasm_instance_errors
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, handler_name)
+                    .inc();
+                Err(HttpHandlerCallError::InternalError(format!("{err}")))
+            }
+            Ok(return_val) => bsatn::from_slice::<st_http::ResponseAndBody>(&return_val[..])
+                .map_err(|err| HttpHandlerCallError::InternalError(format!("{err}"))),
+        };
+
+        (result, trapped)
     }
 
     /// Execute a reducer.
@@ -1727,6 +1823,27 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
+    fn name(&self) -> &Identifier {
+        &self.name
+    }
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::Procedure
+    }
+}
+
+/// Describes an HTTP handler call in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct HttpHandlerOp {
+    pub id: HttpHandlerId,
+    pub name: Identifier,
+    pub timestamp: Timestamp,
+    pub request_bytes: Bytes,
+}
+
+impl InstanceOp for HttpHandlerOp {
     fn name(&self) -> &Identifier {
         &self.name
     }

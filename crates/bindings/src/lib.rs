@@ -1444,6 +1444,122 @@ impl ProcedureContext {
     }
 }
 
+/// The context that any HTTP handler is provided with.
+///
+/// Each HTTP handler must accept `&mut HandlerContext` as its first argument.
+///
+/// Includes the time of invocation and exposes methods for running transactions
+/// and performing side-effecting operations.
+#[non_exhaustive]
+#[cfg(feature = "unstable")]
+pub struct HandlerContext {
+    /// The time at which the handler was started.
+    pub timestamp: Timestamp,
+
+    /// Methods for performing HTTP requests.
+    pub http: crate::http::HttpClient,
+
+    #[cfg(feature = "rand08")]
+    rng: std::cell::OnceCell<StdbRng>,
+
+    /// A counter used for generating UUIDv7 values.
+    /// **Note:** must be 0..=u32::MAX
+    #[cfg(feature = "rand")]
+    counter_uuid: Cell<u32>,
+}
+
+#[cfg(feature = "unstable")]
+impl HandlerContext {
+    fn new(timestamp: Timestamp) -> Self {
+        Self {
+            timestamp,
+            http: http::HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn identity(&self) -> Identity {
+        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Acquire a mutable transaction and execute `body` with read-write access.
+    #[cfg(feature = "unstable")]
+    pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        use core::convert::Infallible;
+        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+            Ok(v) => v,
+            Err(e) => match e {},
+        }
+    }
+
+    /// Acquire a mutable transaction and execute `body` with read-write access.
+    #[cfg(feature = "unstable")]
+    pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        let abort = || {
+            sys::procedure::procedure_abort_mut_tx()
+                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
+        };
+
+        let run = || {
+            let timestamp = sys::procedure::procedure_start_mut_tx()
+                .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
+            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+            // Use the internal auth context (no external caller identity).
+            let tx = ReducerContext::new(Local {}, Identity::ZERO, None, timestamp);
+            let tx = TxContext(tx);
+
+            struct DoOnDrop<F: Fn()>(F);
+            impl<F: Fn()> Drop for DoOnDrop<F> {
+                fn drop(&mut self) {
+                    (self.0)();
+                }
+            }
+            let abort_guard = DoOnDrop(abort);
+            let res = body(&tx);
+            core::mem::forget(abort_guard);
+            res
+        };
+
+        let mut res = run();
+
+        match res {
+            Ok(_) if sys::procedure::procedure_commit_mut_tx().is_err() => {
+                log::warn!("committing anonymous transaction failed");
+                res = run();
+                match res {
+                    Ok(_) => sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
+                    Err(_) => abort(),
+                }
+            }
+            Ok(_) => {}
+            Err(_) => abort(),
+        }
+
+        res
+    }
+
+    /// Create a new random [`Uuid`] `v4` using the built-in RNG.
+    #[cfg(all(feature = "unstable", feature = "rand"))]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
+    #[cfg(all(feature = "unstable", feature = "rand"))]
+    pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
+        let mut random_bytes = [0u8; 4];
+        self.rng().try_fill_bytes(&mut random_bytes)?;
+        Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
+    }
+}
+
 /// A handle on a database with a particular table schema.
 pub trait DbContext {
     /// A view into the tables of a database.

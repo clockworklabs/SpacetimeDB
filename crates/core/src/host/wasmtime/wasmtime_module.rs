@@ -266,6 +266,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         let call_procedure = get_call_procedure(&mut store, &instance);
         let call_view = get_call_view(&mut store, &instance);
         let call_view_anon = get_call_view_anon(&mut store, &instance);
+        let call_http_handler = get_call_http_handler(&mut store, &instance);
         store
             .data_mut()
             .set_call_view_exports(call_view.clone(), call_view_anon.clone());
@@ -277,6 +278,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
             call_procedure,
             call_view,
             call_view_anon,
+            call_http_handler,
         })
     }
 }
@@ -334,6 +336,20 @@ fn get_call_view_anon(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -
             .unwrap_or_else(|| panic!("{CALL_VIEW_ANON_DUNDER} export is not a function"))
             .typed(store)
             .unwrap_or_else(|err| panic!("{CALL_VIEW_ANON_DUNDER} export is a function with incorrect type: {err}")),
+    )
+}
+
+/// Look up the `instance`'s export named by [`CALL_HTTP_HANDLER_DUNDER`].
+///
+/// Similar to [`get_call_procedure`], but for HTTP handlers.
+fn get_call_http_handler(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallHttpHandlerType> {
+    let export = instance.get_export(store.as_context_mut(), CALL_HTTP_HANDLER_DUNDER)?;
+    Some(
+        export
+            .into_func()
+            .unwrap_or_else(|| panic!("{CALL_HTTP_HANDLER_DUNDER} export is not a function"))
+            .typed(store)
+            .unwrap_or_else(|err| panic!("{CALL_HTTP_HANDLER_DUNDER} export is a function with incorrect type: {err}")),
     )
 }
 
@@ -401,6 +417,21 @@ pub(super) type CallViewAnonType = TypedFunc<
     i32,
 >;
 
+/// The function signature of `__call_http_handler__`
+pub(super) type CallHttpHandlerType = TypedFunc<
+    (
+        // HttpHandlerId
+        u32,
+        // timestamp
+        u64,
+        // byte source id for request
+        u32,
+        // byte sink id for response
+        u32,
+    ),
+    i32,
+>;
+
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
@@ -408,6 +439,7 @@ pub struct WasmtimeInstance {
     call_procedure: Option<CallProcedureType>,
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
+    call_http_handler: Option<CallHttpHandlerType>,
 }
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
@@ -630,6 +662,64 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         // Take the last tx offset.
         // Only commits for anonymous transactions currently cause this to advance.
+        let tx_offset = store.data_mut().take_procedure_tx_offset();
+
+        (res, tx_offset)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn call_http_handler(
+        &mut self,
+        op: module_host_actor::HttpHandlerOp,
+        budget: FunctionBudget,
+    ) -> (module_host_actor::HttpHandlerExecuteResult, Option<TransactionOffset>) {
+        let store = &mut self.store;
+        prepare_store_for_call(store, budget);
+
+        let call_type = op.call_type();
+        let (request_source, result_sink) =
+            store
+                .data_mut()
+                .start_funcall(op.name.clone(), op.request_bytes, op.timestamp, call_type);
+
+        let Some(call_http_handler) = self.call_http_handler.as_ref() else {
+            let res = module_host_actor::HttpHandlerExecuteResult {
+                stats: zero_execution_stats(store),
+                call_result: Err(anyhow::anyhow!(
+                    "Module defines http handler {} but does not export `{}`",
+                    op.name,
+                    CALL_HTTP_HANDLER_DUNDER,
+                )),
+            };
+            return (res, None);
+        };
+
+        let call_result = call_http_handler
+            .call_async(
+                &mut *store,
+                (
+                    op.id.0,
+                    op.timestamp.to_micros_since_unix_epoch() as u64,
+                    request_source.0,
+                    result_sink,
+                ),
+            )
+            .await;
+
+        store.data_mut().terminate_dangling_anon_tx();
+
+        let (stats, result_bytes) = finish_opcall(store, budget);
+
+        let call_result = call_result.and_then(|code| {
+            (code == 0).then_some(result_bytes.into()).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{CALL_HTTP_HANDLER_DUNDER} returned unexpected code {code}. HTTP handlers should return code 0 or trap."
+                )
+            })
+        });
+
+        let res = module_host_actor::HttpHandlerExecuteResult { stats, call_result };
+
         let tx_offset = store.data_mut().take_procedure_tx_offset();
 
         (res, tx_offset)
