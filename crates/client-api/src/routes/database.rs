@@ -319,6 +319,8 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
                 ),
                 // 422 = reducer ran but returned Err; the IDC actor uses this to distinguish
                 // reducer failures from other  errors (which it retries).
+                // This is inconsistent with `call` endpoint, which returns 523 status code if
+                // reducer fails
                 ReducerOutcome::Failed(errmsg) => (
                     StatusCode::UNPROCESSABLE_ENTITY,
                     axum::body::Body::from(errmsg.to_string()),
