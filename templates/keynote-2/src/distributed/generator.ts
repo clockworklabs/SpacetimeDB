@@ -4,6 +4,7 @@ import { hostname as getHostname } from 'node:os';
 import { spacetimedb } from '../connectors/spacetimedb.ts';
 import {
   getSharedRuntimeDefaults,
+  parseStdbCompression,
   type SpacetimeConnectorConfig,
 } from '../config.ts';
 import type { ReducerConnector } from '../core/connectors.ts';
@@ -58,8 +59,13 @@ async function main(): Promise<void> {
     process.env.STDB_MODULE ?? 'test-1',
   );
   const defaults = getSharedRuntimeDefaults();
+  const stdbCompression = parseStdbCompression(
+    getStringFlag(flags, 'stdb-compression', defaults.stdbCompression),
+    '--stdb-compression',
+  );
   const connectorConfig: SpacetimeConnectorConfig = {
     initialBalance: defaults.initialBalance,
+    stdbCompression,
     stdbConfirmedReads: defaults.stdbConfirmedReads,
     stdbModule: moduleName,
     stdbUrl,
@@ -82,6 +88,18 @@ async function main(): Promise<void> {
 
   let activeEpoch: number | null = null;
   let stopping = false;
+
+  const startActiveEpoch = async (epoch: number) => {
+    console.log(`[generator ${id}] starting epoch ${epoch}`);
+    await session.startEpoch(epoch);
+    activeEpoch = epoch;
+    await retryUntilSuccess('[generator] started', async () => {
+      await postJson<CoordinatorState>(coordinatorUrl, '/started', {
+        id,
+        epoch,
+      });
+    }, pollMs, controlRetries, () => !stopping);
+  };
 
   const stopActiveEpoch = async () => {
     if (activeEpoch == null) return;
@@ -123,7 +141,7 @@ async function main(): Promise<void> {
     }, pollMs, controlRetries, () => !stopping);
 
     console.log(
-      `[generator ${id}] ready with ${session.openedConnections} connections to ${stdbUrl}/${moduleName}`,
+      `[generator ${id}] ready with ${session.openedConnections} connections to ${stdbUrl}/${moduleName} compression=${stdbCompression}`,
     );
 
     while (!stopping) {
@@ -141,17 +159,15 @@ async function main(): Promise<void> {
         state.participants.includes(id);
       const shouldKeepRunning =
         isParticipant &&
-        (state.phase === 'warmup' || state.phase === 'measure');
+        (state.phase === 'starting' || state.phase === 'measure');
 
       if (!activeEpoch) {
         if (
-          state.phase === 'warmup' &&
+          state.phase === 'starting' &&
           state.currentEpoch != null &&
           state.participants.includes(id)
         ) {
-          console.log(`[generator ${id}] starting epoch ${state.currentEpoch}`);
-          await session.startEpoch(state.currentEpoch);
-          activeEpoch = state.currentEpoch;
+          await startActiveEpoch(state.currentEpoch);
         }
       } else if (!shouldKeepRunning) {
         await stopActiveEpoch();
