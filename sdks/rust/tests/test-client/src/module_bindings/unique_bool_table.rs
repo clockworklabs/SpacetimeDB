@@ -40,7 +40,7 @@ impl UniqueBoolTableAccess for super::RemoteTables {
 pub struct UniqueBoolInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueBoolDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for UniqueBoolTableHandle<'ctx> {
     type Row = UniqueBool;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = UniqueBool> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for UniqueBoolTableHandle<'ctx> {
     type InsertCallbackId = UniqueBoolInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: UniqueBoolInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for UniqueBoolTableHandle<'ctx> {
     type DeleteCallbackId = UniqueBoolDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {}
 
 /// Access to the `b` unique index on the table `unique_bool`,
 /// which allows point queries on the field of the same name

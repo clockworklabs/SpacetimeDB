@@ -1,6 +1,6 @@
 use crate::module_bindings::*;
 
-use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
+use spacetimedb_sdk::{DbConnectionBuilder, DbContext, TableLike};
 
 use test_counter::TestCounter;
 

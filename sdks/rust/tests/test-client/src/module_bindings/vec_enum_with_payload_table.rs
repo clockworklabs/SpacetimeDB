@@ -41,7 +41,7 @@ impl VecEnumWithPayloadTableAccess for super::RemoteTables {
 pub struct VecEnumWithPayloadInsertCallbackId(__sdk::CallbackId);
 pub struct VecEnumWithPayloadDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for VecEnumWithPayloadTableHandle<'ctx> {
     type Row = VecEnumWithPayload;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = VecEnumWithPayload> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for VecEnumWithPayloadTableHandle<'ctx> {
     type InsertCallbackId = VecEnumWithPayloadInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: VecEnumWithPayloadInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for VecEnumWithPayloadTableHandle<'ctx> {
     type DeleteCallbackId = VecEnumWithPayloadDeleteCallbackId;
 
     fn on_delete(
@@ -78,6 +82,8 @@ impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

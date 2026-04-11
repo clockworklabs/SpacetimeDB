@@ -40,7 +40,7 @@ impl ViewPkMembershipTableAccess for super::RemoteTables {
 pub struct ViewPkMembershipInsertCallbackId(__sdk::CallbackId);
 pub struct ViewPkMembershipDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for ViewPkMembershipTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for ViewPkMembershipTableHandle<'ctx> {
     type Row = ViewPkMembership;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for ViewPkMembershipTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = ViewPkMembership> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for ViewPkMembershipTableHandle<'ctx> {
     type InsertCallbackId = ViewPkMembershipInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for ViewPkMembershipTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: ViewPkMembershipInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for ViewPkMembershipTableHandle<'ctx> {
     type DeleteCallbackId = ViewPkMembershipDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for ViewPkMembershipTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for ViewPkMembershipTableHandle<'ctx> {}
+
 pub struct ViewPkMembershipUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for ViewPkMembershipTableHandle<'ctx> {
     type UpdateCallbackId = ViewPkMembershipUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipTableHandle<'ctx> {}
 
 /// Access to the `id` unique index on the table `view_pk_membership`,
 /// which allows point queries on the field of the same name

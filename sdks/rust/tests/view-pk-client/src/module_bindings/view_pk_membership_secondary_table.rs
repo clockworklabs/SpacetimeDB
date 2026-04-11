@@ -42,7 +42,7 @@ impl ViewPkMembershipSecondaryTableAccess for super::RemoteTables {
 pub struct ViewPkMembershipSecondaryInsertCallbackId(__sdk::CallbackId);
 pub struct ViewPkMembershipSecondaryDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for ViewPkMembershipSecondaryTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for ViewPkMembershipSecondaryTableHandle<'ctx> {
     type Row = ViewPkMembershipSecondary;
     type EventContext = super::EventContext;
 
@@ -52,7 +52,9 @@ impl<'ctx> __sdk::Table for ViewPkMembershipSecondaryTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = ViewPkMembershipSecondary> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for ViewPkMembershipSecondaryTableHandle<'ctx> {
     type InsertCallbackId = ViewPkMembershipSecondaryInsertCallbackId;
 
     fn on_insert(
@@ -65,7 +67,9 @@ impl<'ctx> __sdk::Table for ViewPkMembershipSecondaryTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: ViewPkMembershipSecondaryInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for ViewPkMembershipSecondaryTableHandle<'ctx> {
     type DeleteCallbackId = ViewPkMembershipSecondaryDeleteCallbackId;
 
     fn on_delete(
@@ -80,9 +84,11 @@ impl<'ctx> __sdk::Table for ViewPkMembershipSecondaryTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for ViewPkMembershipSecondaryTableHandle<'ctx> {}
+
 pub struct ViewPkMembershipSecondaryUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipSecondaryTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for ViewPkMembershipSecondaryTableHandle<'ctx> {
     type UpdateCallbackId = ViewPkMembershipSecondaryUpdateCallbackId;
 
     fn on_update(
@@ -96,6 +102,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipSecondaryTableHandle<'
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipSecondaryTableHandle<'ctx> {}
 
 /// Access to the `id` unique index on the table `view_pk_membership_secondary`,
 /// which allows point queries on the field of the same name

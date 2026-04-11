@@ -40,7 +40,7 @@ impl PlayersAtLevel0TableAccess for super::RemoteTables {
 pub struct PlayersAtLevel0InsertCallbackId(__sdk::CallbackId);
 pub struct PlayersAtLevel0DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PlayersAtLevel0TableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PlayersAtLevel0TableHandle<'ctx> {
     type Row = Player;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PlayersAtLevel0TableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = Player> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PlayersAtLevel0TableHandle<'ctx> {
     type InsertCallbackId = PlayersAtLevel0InsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PlayersAtLevel0TableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PlayersAtLevel0InsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PlayersAtLevel0TableHandle<'ctx> {
     type DeleteCallbackId = PlayersAtLevel0DeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for PlayersAtLevel0TableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for PlayersAtLevel0TableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

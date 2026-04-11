@@ -43,7 +43,7 @@ impl VecEveryPrimitiveStructTableAccess for super::RemoteTables {
 pub struct VecEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
 pub struct VecEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for VecEveryPrimitiveStructTableHandle<'ctx> {
     type Row = VecEveryPrimitiveStruct;
     type EventContext = super::EventContext;
 
@@ -53,7 +53,9 @@ impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = VecEveryPrimitiveStruct> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for VecEveryPrimitiveStructTableHandle<'ctx> {
     type InsertCallbackId = VecEveryPrimitiveStructInsertCallbackId;
 
     fn on_insert(
@@ -66,7 +68,9 @@ impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: VecEveryPrimitiveStructInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for VecEveryPrimitiveStructTableHandle<'ctx> {
     type DeleteCallbackId = VecEveryPrimitiveStructDeleteCallbackId;
 
     fn on_delete(
@@ -80,6 +84,8 @@ impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

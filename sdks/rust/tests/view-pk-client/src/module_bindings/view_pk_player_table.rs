@@ -40,7 +40,7 @@ impl ViewPkPlayerTableAccess for super::RemoteTables {
 pub struct ViewPkPlayerInsertCallbackId(__sdk::CallbackId);
 pub struct ViewPkPlayerDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for ViewPkPlayerTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for ViewPkPlayerTableHandle<'ctx> {
     type Row = ViewPkPlayer;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for ViewPkPlayerTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = ViewPkPlayer> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for ViewPkPlayerTableHandle<'ctx> {
     type InsertCallbackId = ViewPkPlayerInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for ViewPkPlayerTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: ViewPkPlayerInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for ViewPkPlayerTableHandle<'ctx> {
     type DeleteCallbackId = ViewPkPlayerDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for ViewPkPlayerTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for ViewPkPlayerTableHandle<'ctx> {}
+
 pub struct ViewPkPlayerUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkPlayerTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for ViewPkPlayerTableHandle<'ctx> {
     type UpdateCallbackId = ViewPkPlayerUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkPlayerTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkPlayerTableHandle<'ctx> {}
 
 /// Access to the `id` unique index on the table `view_pk_player`,
 /// which allows point queries on the field of the same name

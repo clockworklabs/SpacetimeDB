@@ -40,7 +40,7 @@ impl PkU256TableAccess for super::RemoteTables {
 pub struct PkU256InsertCallbackId(__sdk::CallbackId);
 pub struct PkU256DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkU256TableHandle<'ctx> {
     type Row = PkU256;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkU256> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkU256TableHandle<'ctx> {
     type InsertCallbackId = PkU256InsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkU256InsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkU256TableHandle<'ctx> {
     type DeleteCallbackId = PkU256DeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {}
+
 pub struct PkU256UpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkU256TableHandle<'ctx> {
     type UpdateCallbackId = PkU256UpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {}
 
 /// Access to the `n` unique index on the table `pk_u_256`,
 /// which allows point queries on the field of the same name

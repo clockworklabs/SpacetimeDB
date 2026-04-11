@@ -40,7 +40,7 @@ impl OneStringTableAccess for super::RemoteTables {
 pub struct OneStringInsertCallbackId(__sdk::CallbackId);
 pub struct OneStringDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OneStringTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OneStringTableHandle<'ctx> {
     type Row = OneString;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for OneStringTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OneString> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OneStringTableHandle<'ctx> {
     type InsertCallbackId = OneStringInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for OneStringTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OneStringInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OneStringTableHandle<'ctx> {
     type DeleteCallbackId = OneStringDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for OneStringTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OneStringTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

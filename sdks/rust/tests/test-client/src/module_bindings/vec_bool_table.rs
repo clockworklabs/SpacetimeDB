@@ -40,7 +40,7 @@ impl VecBoolTableAccess for super::RemoteTables {
 pub struct VecBoolInsertCallbackId(__sdk::CallbackId);
 pub struct VecBoolDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for VecBoolTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for VecBoolTableHandle<'ctx> {
     type Row = VecBool;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for VecBoolTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = VecBool> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for VecBoolTableHandle<'ctx> {
     type InsertCallbackId = VecBoolInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for VecBoolTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: VecBoolInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for VecBoolTableHandle<'ctx> {
     type DeleteCallbackId = VecBoolDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for VecBoolTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for VecBoolTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

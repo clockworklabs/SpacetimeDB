@@ -40,7 +40,7 @@ impl PkStringTableAccess for super::RemoteTables {
 pub struct PkStringInsertCallbackId(__sdk::CallbackId);
 pub struct PkStringDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkStringTableHandle<'ctx> {
     type Row = PkString;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkString> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkStringTableHandle<'ctx> {
     type InsertCallbackId = PkStringInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkStringInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkStringTableHandle<'ctx> {
     type DeleteCallbackId = PkStringDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {}
+
 pub struct PkStringUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkStringTableHandle<'ctx> {
     type UpdateCallbackId = PkStringUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {}
 
 /// Access to the `s` unique index on the table `pk_string`,
 /// which allows point queries on the field of the same name

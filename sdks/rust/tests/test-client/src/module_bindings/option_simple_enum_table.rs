@@ -41,7 +41,7 @@ impl OptionSimpleEnumTableAccess for super::RemoteTables {
 pub struct OptionSimpleEnumInsertCallbackId(__sdk::CallbackId);
 pub struct OptionSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OptionSimpleEnumTableHandle<'ctx> {
     type Row = OptionSimpleEnum;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OptionSimpleEnum> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OptionSimpleEnumTableHandle<'ctx> {
     type InsertCallbackId = OptionSimpleEnumInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OptionSimpleEnumInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OptionSimpleEnumTableHandle<'ctx> {
     type DeleteCallbackId = OptionSimpleEnumDeleteCallbackId;
 
     fn on_delete(
@@ -78,6 +82,8 @@ impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

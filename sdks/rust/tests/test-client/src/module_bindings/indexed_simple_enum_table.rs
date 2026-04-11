@@ -41,7 +41,7 @@ impl IndexedSimpleEnumTableAccess for super::RemoteTables {
 pub struct IndexedSimpleEnumInsertCallbackId(__sdk::CallbackId);
 pub struct IndexedSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for IndexedSimpleEnumTableHandle<'ctx> {
     type Row = IndexedSimpleEnum;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = IndexedSimpleEnum> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for IndexedSimpleEnumTableHandle<'ctx> {
     type InsertCallbackId = IndexedSimpleEnumInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: IndexedSimpleEnumInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for IndexedSimpleEnumTableHandle<'ctx> {
     type DeleteCallbackId = IndexedSimpleEnumDeleteCallbackId;
 
     fn on_delete(
@@ -78,6 +82,8 @@ impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

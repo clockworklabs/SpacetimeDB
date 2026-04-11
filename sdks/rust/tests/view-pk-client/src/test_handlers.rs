@@ -1,5 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::TableWithPrimaryKey;
+use spacetimedb_sdk::WithUpdate;
 use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext};
 use test_counter::TestCounter;
 

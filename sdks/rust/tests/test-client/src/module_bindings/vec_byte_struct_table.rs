@@ -41,7 +41,7 @@ impl VecByteStructTableAccess for super::RemoteTables {
 pub struct VecByteStructInsertCallbackId(__sdk::CallbackId);
 pub struct VecByteStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for VecByteStructTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for VecByteStructTableHandle<'ctx> {
     type Row = VecByteStruct;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for VecByteStructTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = VecByteStruct> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for VecByteStructTableHandle<'ctx> {
     type InsertCallbackId = VecByteStructInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for VecByteStructTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: VecByteStructInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for VecByteStructTableHandle<'ctx> {
     type DeleteCallbackId = VecByteStructDeleteCallbackId;
 
     fn on_delete(
@@ -78,6 +82,8 @@ impl<'ctx> __sdk::Table for VecByteStructTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for VecByteStructTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

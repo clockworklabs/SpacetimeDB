@@ -40,7 +40,7 @@ impl OptionStringTableAccess for super::RemoteTables {
 pub struct OptionStringInsertCallbackId(__sdk::CallbackId);
 pub struct OptionStringDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OptionStringTableHandle<'ctx> {
     type Row = OptionString;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OptionString> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OptionStringTableHandle<'ctx> {
     type InsertCallbackId = OptionStringInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OptionStringInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OptionStringTableHandle<'ctx> {
     type DeleteCallbackId = OptionStringDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

@@ -40,7 +40,7 @@ impl PkU32TwoTableAccess for super::RemoteTables {
 pub struct PkU32TwoInsertCallbackId(__sdk::CallbackId);
 pub struct PkU32TwoDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkU32TwoTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkU32TwoTableHandle<'ctx> {
     type Row = PkU32Two;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PkU32TwoTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkU32Two> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkU32TwoTableHandle<'ctx> {
     type InsertCallbackId = PkU32TwoInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PkU32TwoTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkU32TwoInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkU32TwoTableHandle<'ctx> {
     type DeleteCallbackId = PkU32TwoDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PkU32TwoTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkU32TwoTableHandle<'ctx> {}
+
 pub struct PkU32TwoUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkU32TwoTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkU32TwoTableHandle<'ctx> {
     type UpdateCallbackId = PkU32TwoUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU32TwoTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkU32TwoTableHandle<'ctx> {}
 
 /// Access to the `n` unique index on the table `pk_u_32_two`,
 /// which allows point queries on the field of the same name

@@ -40,7 +40,7 @@ impl VecU64TableAccess for super::RemoteTables {
 pub struct VecU64InsertCallbackId(__sdk::CallbackId);
 pub struct VecU64DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for VecU64TableHandle<'ctx> {
     type Row = VecU64;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = VecU64> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for VecU64TableHandle<'ctx> {
     type InsertCallbackId = VecU64InsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {
     fn remove_on_insert(&self, callback: VecU64InsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for VecU64TableHandle<'ctx> {
     type DeleteCallbackId = VecU64DeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

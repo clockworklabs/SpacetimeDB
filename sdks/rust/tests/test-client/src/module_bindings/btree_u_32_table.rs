@@ -40,7 +40,7 @@ impl BtreeU32TableAccess for super::RemoteTables {
 pub struct BtreeU32InsertCallbackId(__sdk::CallbackId);
 pub struct BtreeU32DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for BtreeU32TableHandle<'ctx> {
     type Row = BTreeU32;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = BTreeU32> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for BtreeU32TableHandle<'ctx> {
     type InsertCallbackId = BtreeU32InsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {
     fn remove_on_insert(&self, callback: BtreeU32InsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for BtreeU32TableHandle<'ctx> {
     type DeleteCallbackId = BtreeU32DeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
