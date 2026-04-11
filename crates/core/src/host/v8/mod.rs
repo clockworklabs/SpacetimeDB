@@ -651,6 +651,20 @@ impl JsInstance {
             .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
     }
 
+    pub async fn call_reducer_with_success_action(
+        &self,
+        params: CallReducerParams,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
+    ) -> ReducerCallResult {
+        self.send_request(|reply_tx| JsWorkerRequest::CallReducerWithSuccessAction {
+            reply_tx,
+            params,
+            action,
+        })
+        .await
+        .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
+    }
+
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.send_request(JsWorkerRequest::ClearAllClients)
             .await
@@ -749,6 +763,19 @@ enum JsWorkerRequest {
     CallReducer {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
+    },
+    /// See [`JsInstance::call_reducer_from_database`].
+    CallReducerFromDatabase {
+        reply_tx: JsReplyTx<Result<ReducerCallResult, ReducerCallError>>,
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    },
+    /// See [`JsInstance::call_reducer_with_success_action`].
+    CallReducerWithSuccessAction {
+        reply_tx: JsReplyTx<ReducerCallResult>,
+        params: CallReducerParams,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
     },
     /// See [`JsInstance::call_view`].
     CallView {
@@ -1157,6 +1184,42 @@ impl JsInstanceLane {
         .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
     }
 
+    pub async fn call_reducer_from_database(
+        &self,
+        params: CallReducerParams,
+        sender_identity: Identity,
+        sender_msg_id: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.run_once("call_reducer", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallReducerFromDatabase {
+                reply_tx,
+                params,
+                sender_identity,
+                sender_msg_id,
+            })
+            .await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))?
+    }
+
+    pub async fn call_reducer_with_success_action(
+        &self,
+        params: CallReducerParams,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.run_once("call_reducer", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallReducerWithSuccessAction {
+                reply_tx,
+                params,
+                action,
+            })
+            .await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
+    }
+
     /// Clear all instance-lane client state exactly once.
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.run_once("clear_all_clients", |inst: JsInstance| async move {
@@ -1337,11 +1400,11 @@ async fn spawn_instance_worker(
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         // Setup the instance environment.
-        let (replica_ctx, scheduler) = match &module_or_mcc {
-            Either::Left(module) => (module.replica_ctx(), module.scheduler()),
-            Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
+        let (replica_ctx, scheduler, idc_sender) = match &module_or_mcc {
+            Either::Left(module) => (module.replica_ctx(), module.scheduler(), module.idc_sender()),
+            Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler, mcc.idc_sender.clone()),
         };
-        let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+        let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
         scope.set_slot(JsInstanceEnv::new(instance_env));
 
         catch_exception(scope, |scope| Ok(builtins::evaluate_builtins(scope)?))
@@ -1404,10 +1467,17 @@ async fn spawn_instance_worker(
         let mut requests_since_heap_check = 0u64;
         let mut last_heap_check_at = Instant::now();
         for request in request_rx.iter() {
+            let info_for_idc = instance_common.info();
+            let db_for_idc = inst.replica_ctx().relational_db().clone();
             if let Some(metric) = &worker_queue_metric {
                 metric.dec();
             }
-            let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
+
+            let mut call_reducer_with_success =
+                |tx, params, on_success: crate::host::idc_actor::ReducerSuccessAction| {
+                    instance_common.call_reducer_with_tx(tx, params, &mut inst, on_success)
+                };
+            let mut call_reducer = |tx, params| call_reducer_with_success(tx, params, Box::new(|_tx, _ret| Ok(())));
             let mut should_exit = false;
 
             core_pinner.pin_if_changed();
@@ -1428,6 +1498,50 @@ async fn spawn_instance_worker(
                     if trapped {
                         worker_state_in_thread.mark_trapped();
                     }
+                    send_worker_reply("call_reducer", reply_tx, res);
+                    should_exit = trapped;
+                }
+                JsWorkerRequest::CallReducerFromDatabase {
+                    reply_tx,
+                    params,
+                    sender_identity,
+                    sender_msg_id,
+                } => {
+                    let res = crate::host::idc_actor::call_reducer_from_database(
+                        info_for_idc.as_ref(),
+                        db_for_idc.as_ref(),
+                        params,
+                        sender_identity,
+                        sender_msg_id,
+                        |tx, params, on_success| call_reducer_with_success(tx, params, on_success),
+                    );
+                    let (res, trapped) = match res {
+                        Ok((rcr, trapped)) => (Ok(rcr), trapped),
+                        Err(err) => (Err(err), false),
+                    };
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+
+                    send_worker_reply("call_reducer", reply_tx, res);
+                    should_exit = trapped;
+                }
+                JsWorkerRequest::CallReducerWithSuccessAction {
+                    reply_tx,
+                    params,
+                    action,
+                } => {
+                    let (res, trapped) = crate::host::idc_actor::call_reducer_with_success_action(
+                        info_for_idc.as_ref(),
+                        db_for_idc.as_ref(),
+                        params,
+                        action,
+                        |tx, params, on_success| call_reducer_with_success(tx, params, on_success),
+                    );
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
+
                     send_worker_reply("call_reducer", reply_tx, res);
                     should_exit = trapped;
                 }

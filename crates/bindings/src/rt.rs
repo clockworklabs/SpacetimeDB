@@ -533,6 +533,21 @@ impl<T: SpacetimeType> TableColumn for T {}
 /// Assert that the primary_key column of a scheduled table is a u64.
 pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
 
+/// Assert that the primary_key column of an outbox table is a u64.
+pub const fn assert_outbox_table_primary_key<T: OutboxTablePrimaryKey>() {}
+
+/// Verify at compile time that a function has the correct signature for an outbox `on_result` reducer.
+///
+/// The reducer must accept `(OutboxRow, Result<T, String>)` as its user-supplied arguments:
+/// `fn on_result(ctx: &ReducerContext, request: OutboxRow, result: Result<T, String>)`
+pub const fn outbox_typecheck<'de, OutboxRow, T>(_x: impl Reducer<'de, (OutboxRow, Result<T, String>)>)
+where
+    OutboxRow: spacetimedb_lib::SpacetimeType + Serialize + Deserialize<'de>,
+    T: spacetimedb_lib::SpacetimeType + Serialize + Deserialize<'de>,
+{
+    core::mem::forget(_x);
+}
+
 mod sealed {
     pub trait Sealed {}
 }
@@ -543,6 +558,13 @@ mod sealed {
 pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
 impl sealed::Sealed for u64 {}
 impl ScheduledTablePrimaryKey for u64 {}
+
+#[diagnostic::on_unimplemented(
+    message = "outbox table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait OutboxTablePrimaryKey: sealed::Sealed {}
+impl OutboxTablePrimaryKey for u64 {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -762,6 +784,12 @@ pub fn register_table<T: Table>() {
         }
 
         table.finish();
+
+        if let Some(outbox) = T::OUTBOX {
+            module
+                .inner
+                .add_outbox(T::TABLE_NAME, outbox.remote_reducer_name, outbox.on_result_reducer_name);
+        }
 
         module.inner.add_explicit_names(T::explicit_names());
     })
