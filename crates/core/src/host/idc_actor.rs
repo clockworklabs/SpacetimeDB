@@ -150,7 +150,19 @@ async fn run_idc_loop(
     module_host: WeakModuleHost,
     mut notify_rx: mpsc::UnboundedReceiver<()>,
 ) {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .http2_prior_knowledge()
+        .http2_keep_alive_interval(Some(Duration::from_millis(200)))
+        .http2_keep_alive_timeout(Duration::from_secs(5))
+        .http2_keep_alive_while_idle(true)
+        // Both stram and connection window sizes are 64KB by default,
+        // increasing the connection window to handle single stream blocking the entire connection.
+        .http2_initial_connection_window_size(Some(2 * 64 * 1024))
+        .http2_initial_stream_window_size(Some(64 * 1024))
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+
 
     // Per-target-database delivery state.
     let mut db_queues: HashMap<Identity, DatabaseQueue> = HashMap::new();
