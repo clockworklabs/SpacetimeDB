@@ -720,6 +720,14 @@ SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
 }
 
+// Perform a generic filter using the query builder.
+// Equivalent to `SELECT * FROM player WHERE score < 1000`.
+SPACETIMEDB_VIEW(Query<Player>, bottom_players, Public, ViewContext ctx) {
+    return ctx.from[player].where([](const auto& p) {
+        return p.score.lt(int32_t(1000));
+    });
+}
+
 struct PlayerCount {
     uint64_t count;
 };

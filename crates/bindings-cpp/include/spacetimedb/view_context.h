@@ -3,6 +3,7 @@
 
 #include <spacetimedb/bsatn/types.h> // For Identity
 #include <spacetimedb/bsatn/timestamp.h> // For Timestamp
+#include <spacetimedb/query_builder.h>
 #include <spacetimedb/readonly_database_context.h> // For ReadOnlyDatabaseContext
 #include <array>
 
@@ -40,6 +41,7 @@ private:
 public:
     // Read-only database access - no mutations allowed
     ReadOnlyDatabaseContext db;
+    QueryBuilder from;
     
     // Constructors
     ViewContext() = default;
@@ -74,6 +76,7 @@ public:
 struct AnonymousViewContext {
     // Read-only database access - no mutations allowed
     ReadOnlyDatabaseContext db;
+    QueryBuilder from;
     
     // Constructors
     AnonymousViewContext() = default;
