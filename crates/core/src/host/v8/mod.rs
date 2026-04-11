@@ -651,6 +651,13 @@ impl JsInstance {
             .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
     }
 
+    async fn call_reducer_detached(&self, params: CallReducerParams) -> Result<(), WorkerDisconnected> {
+        self.request_queue
+            .send_async(JsWorkerRequest::CallReducerDetached { params })
+            .await
+            .map_err(|_| WorkerDisconnected)
+    }
+
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.send_request(JsWorkerRequest::ClearAllClients)
             .await
@@ -750,6 +757,8 @@ enum JsWorkerRequest {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
     },
+    /// See [`JsInstanceLane::call_reducer_detached`].
+    CallReducerDetached { params: CallReducerParams },
     /// See [`JsInstance::call_view`].
     CallView {
         reply_tx: JsReplyTx<ViewCommandResult>,
@@ -1157,6 +1166,14 @@ impl JsInstanceLane {
         .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
     }
 
+    pub async fn call_reducer_detached(&self, params: CallReducerParams) -> Result<(), ReducerCallError> {
+        self.run_once("call_reducer_detached", |inst: JsInstance| async move {
+            inst.call_reducer_detached(params).await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer_detached")))
+    }
+
     /// Clear all instance-lane client state exactly once.
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.run_once("clear_all_clients", |inst: JsInstance| async move {
@@ -1429,6 +1446,18 @@ async fn spawn_instance_worker(
                         worker_state_in_thread.mark_trapped();
                     }
                     send_worker_reply("call_reducer", reply_tx, res);
+                    should_exit = trapped;
+                }
+                JsWorkerRequest::CallReducerDetached { params } => {
+                    let client = params.client.clone();
+                    let request_id = params.request_id;
+                    let (_res, trapped) = call_reducer(None, params);
+                    if let (Some(client), Some(request_id)) = (client, request_id) {
+                        client.complete_v2_reducer_barrier(request_id);
+                    }
+                    if trapped {
+                        worker_state_in_thread.mark_trapped();
+                    }
                     should_exit = trapped;
                 }
                 JsWorkerRequest::CallView { reply_tx, cmd } => {

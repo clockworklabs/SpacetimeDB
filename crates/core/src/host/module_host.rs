@@ -1056,6 +1056,10 @@ pub struct RefInstance<'a, I: WasmInstance> {
 }
 
 impl ModuleHost {
+    pub fn is_js(&self) -> bool {
+        matches!(&*self.inner, ModuleHostInner::Js(_))
+    }
+
     pub(super) fn new(
         module: ModuleWithInstance,
         on_panic: impl Fn() + Send + Sync + 'static,
@@ -1640,6 +1644,61 @@ impl ModuleHost {
                 args,
             )
             .await
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+
+        res
+    }
+
+    pub async fn call_reducer_detached(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<(), ReducerCallError> {
+        let res = async {
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+
+            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
+
+            let params = Self::call_reducer_params(
+                &self.info,
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                reducer_def,
+                args,
+            )?;
+
+            match &*self.inner {
+                ModuleHostInner::Js(js) => js.instance_lane.call_reducer_detached(params).await,
+                ModuleHostInner::Wasm(_) => unreachable!("detached reducer submission is only used for JS modules"),
+            }
         }
         .await;
 

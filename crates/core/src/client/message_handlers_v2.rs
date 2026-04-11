@@ -28,6 +28,10 @@ pub(super) async fn handle_decoded_message(
     message: ws_v2::ClientMessage,
     timer: Instant,
 ) -> Result<(), MessageHandleError> {
+    if !matches!(message, ws_v2::ClientMessage::CallReducer(_)) {
+        client.flush_pending_v2_reducers().await;
+    }
+
     let module = client.module();
     let mod_info = module.info();
     let mod_metrics = &mod_info.metrics;
@@ -74,7 +78,9 @@ pub(super) async fn handle_decoded_message(
             request_id,
             flags,
         }) => {
-            let res = client.call_reducer_v2(reducer, args, request_id, timer, flags).await;
+            let res = client
+                .call_reducer_v2_detached(reducer, args, request_id, timer, flags)
+                .await;
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
@@ -86,6 +92,7 @@ pub(super) async fn handle_decoded_message(
                 }
                 Err(e) => {
                     let err_msg = format!("{e:#}");
+                    client.complete_v2_reducer_barrier(request_id);
                     let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
                         request_id,
                         // Maybe we should use the same timestamp that was used for the reducer context, but this is probably fine for now.

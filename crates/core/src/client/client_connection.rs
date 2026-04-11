@@ -1,9 +1,9 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::future::poll_fn;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
@@ -33,7 +33,7 @@ use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
 use tokio::sync::mpsc::error::{SendError, TrySendError};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch, Notify};
 use tokio::task::AbortHandle;
 use tracing::{trace, warn};
 
@@ -277,6 +277,80 @@ pub struct ClientConnectionSender {
     /// or [`ClientConnectionSender::dummy`], which are used in tests.
     /// Will be `Some` whenever this `ClientConnectionSender` is wired up to an actual client connection.
     metrics: Option<ClientConnectionMetrics>,
+    reducer_barrier: ReducerBarrier,
+}
+
+#[derive(Debug, Default)]
+struct ReducerBarrierState {
+    next_seq: u64,
+    completed_seq: u64,
+    waiting_for: Option<u64>,
+    pending_by_request_id: HashMap<RequestId, VecDeque<u64>>,
+}
+
+#[derive(Debug, Default)]
+struct ReducerBarrier {
+    state: Mutex<ReducerBarrierState>,
+    notify: Notify,
+}
+
+impl ReducerBarrier {
+    fn begin(&self, request_id: RequestId) {
+        let mut state = self.state.lock().expect("reducer barrier mutex should not be poisoned");
+        state.next_seq += 1;
+        let seq = state.next_seq;
+        state
+            .pending_by_request_id
+            .entry(request_id)
+            .or_default()
+            .push_back(seq);
+    }
+
+    fn complete(&self, request_id: RequestId) {
+        let should_notify = {
+            let mut state = self.state.lock().expect("reducer barrier mutex should not be poisoned");
+            let Some(queue) = state.pending_by_request_id.get_mut(&request_id) else {
+                return;
+            };
+            let seq = queue
+                .pop_front()
+                .expect("pending reducer queue should contain a sequence");
+            if queue.is_empty() {
+                state.pending_by_request_id.remove(&request_id);
+            }
+            debug_assert!(
+                seq > state.completed_seq,
+                "reducer completions should be observed in submission order for a single client"
+            );
+            state.completed_seq = state.completed_seq.max(seq);
+            state.waiting_for.is_some_and(|target| state.completed_seq >= target)
+        };
+
+        if should_notify {
+            self.notify.notify_one();
+        }
+    }
+
+    async fn flush(&self) {
+        loop {
+            let notified = self.notify.notified();
+            let should_wait = {
+                let mut state = self.state.lock().expect("reducer barrier mutex should not be poisoned");
+                let target = state.next_seq;
+                if state.completed_seq >= target {
+                    state.waiting_for = None;
+                    false
+                } else {
+                    state.waiting_for = Some(target);
+                    true
+                }
+            };
+            if !should_wait {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -355,6 +429,7 @@ impl ClientConnectionSender {
             abort_handle,
             cancelled,
             metrics: None,
+            reducer_barrier: ReducerBarrier::default(),
         };
         (sender, receiver)
     }
@@ -390,6 +465,18 @@ impl ClientConnectionSender {
             "attempted to send message variant that does not match client websocket version"
         );
         self.send(ClientUpdate { tx_offset, message })
+    }
+
+    pub fn begin_v2_reducer_barrier(&self, request_id: RequestId) {
+        self.reducer_barrier.begin(request_id);
+    }
+
+    pub fn complete_v2_reducer_barrier(&self, request_id: RequestId) {
+        self.reducer_barrier.complete(request_id);
+    }
+
+    pub async fn flush_pending_v2_reducers(&self) {
+        self.reducer_barrier.flush().await;
     }
 
     fn send(&self, message: ClientUpdate) -> Result<(), ClientSendError> {
@@ -754,6 +841,7 @@ impl ClientConnection {
             abort_handle,
             cancelled: AtomicBool::new(false),
             metrics: Some(metrics),
+            reducer_barrier: ReducerBarrier::default(),
         });
         let this = Self {
             sender,
@@ -872,6 +960,36 @@ impl ClientConnection {
     ) -> Result<ReducerCallResult, ReducerCallError> {
         self.module()
             .call_reducer(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(self.sender()),
+                Some(request_id),
+                Some(timer),
+                reducer,
+                FunctionArgs::Bsatn(args),
+            )
+            .await
+    }
+
+    pub async fn call_reducer_v2_detached(
+        &self,
+        reducer: &str,
+        args: Bytes,
+        request_id: RequestId,
+        timer: Instant,
+        _flags: ws_v2::CallReducerFlags,
+    ) -> Result<(), ReducerCallError> {
+        let module = self.module();
+        if !module.is_js() {
+            return self
+                .call_reducer_v2(reducer, args, request_id, timer, _flags)
+                .await
+                .map(|_| ());
+        }
+
+        self.begin_v2_reducer_barrier(request_id);
+        module
+            .call_reducer_detached(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(self.sender()),
