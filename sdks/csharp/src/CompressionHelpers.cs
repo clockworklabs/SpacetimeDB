@@ -49,13 +49,12 @@ namespace SpacetimeDB
         /// </summary>
         /// <param name="bytes">The compressed and encoded server message as a byte array.</param>
         /// <returns>The deserialized <see cref="ServerMessage"/> object.</returns>
-        internal static ServerMessage DecompressDecodeMessage(byte[] bytes)
+        internal static byte[] DecompressMessagePayload(byte[] bytes)
         {
             using var stream = new MemoryStream(bytes);
 
             // The stream will never be empty. It will at least contain the compression algo.
             var compression = (CompressionAlgos)stream.ReadByte();
-            // Conditionally decompress and decode.
             Stream decompressedStream = compression switch
             {
                 CompressionAlgos.None => stream,
@@ -67,10 +66,21 @@ namespace SpacetimeDB
             // TODO: consider pooling these.
             // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
             // PER BYTE READ. You have to do it all at once to avoid that problem.
-            MemoryStream memoryStream = new MemoryStream();
+            using var memoryStream = new MemoryStream();
             decompressedStream.CopyTo(memoryStream);
-            memoryStream.Seek(0, SeekOrigin.Begin);
-            return new ServerMessage.BSATN().Read(new BinaryReader(memoryStream));
+            return memoryStream.ToArray();
+        }
+
+        internal static ServerMessage DecodeServerMessage(byte[] bytes)
+        {
+            using var stream = new MemoryStream(bytes);
+            using var reader = new BinaryReader(stream);
+            return new ServerMessage.BSATN().Read(reader);
+        }
+
+        internal static ServerMessage DecompressDecodeMessage(byte[] bytes)
+        {
+            return DecodeServerMessage(DecompressMessagePayload(bytes));
         }
 
         /// <summary>
