@@ -467,8 +467,12 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
             (HashSet::new(), HashSet::new()),
             |(mut added, mut removed), diff| {
                 match diff {
-                    Diff::Add { new } => { added.insert(&new.name); }
-                    Diff::Remove { old } => { removed.insert(&old.name); }
+                    Diff::Add { new } => {
+                        added.insert(&new.name);
+                    }
+                    Diff::Remove { old } => {
+                        removed.insert(&old.name);
+                    }
                     Diff::MaybeChange { .. } => {}
                 }
                 (added, removed)
@@ -933,7 +937,11 @@ fn ensure_old_ty_upgradable_to_new(
     }
 }
 
-fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Identifier>, removed_tables: &HashSet<&Identifier>) -> Result<()> {
+fn auto_migrate_indexes(
+    plan: &mut AutoMigratePlan<'_>,
+    new_tables: &HashSet<&Identifier>,
+    removed_tables: &HashSet<&Identifier>,
+) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::indexes)
         .map(|index_diff| -> Result<()> {
             match index_diff {
@@ -970,7 +978,11 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Id
         .collect_all_errors()
 }
 
-fn auto_migrate_sequences(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>, removed_tables: &HashSet<&Identifier>) -> Result<()> {
+fn auto_migrate_sequences(
+    plan: &mut AutoMigratePlan,
+    new_tables: &HashSet<&Identifier>,
+    removed_tables: &HashSet<&Identifier>,
+) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::sequences)
         .map(|sequence_diff| -> Result<()> {
             match sequence_diff {
@@ -1003,7 +1015,11 @@ fn auto_migrate_sequences(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Iden
         .collect_all_errors()
 }
 
-fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>, removed_tables: &HashSet<&Identifier>) -> Result<()> {
+fn auto_migrate_constraints(
+    plan: &mut AutoMigratePlan,
+    new_tables: &HashSet<&Identifier>,
+    removed_tables: &HashSet<&Identifier>,
+) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::constraints)
         .map(|constraint_diff| -> Result<()> {
             match constraint_diff {
