@@ -2,7 +2,6 @@ mod sdk_unreal_harness;
 use sdk_unreal_harness::{make_test_with_suite, TestSuite};
 
 use serial_test::serial;
-use std::env;
 
 const SDK_TEST_SUITE: TestSuite = TestSuite {
     module: "sdk-test",
@@ -308,4 +307,16 @@ fn unreal_overlapping_subscriptions() {
 #[serial(Group6)]
 fn unreal_insert_result_okay() {
     make_test("InsertResultOkTest").run();
+}
+
+#[test]
+#[serial(Group6)]
+fn unreal_websocket_v3_protocol_happy_path() {
+    make_test("WebsocketV3ProtocolHappyPathTest").run();
+}
+
+#[test]
+#[serial(Group6)]
+fn unreal_websocket_v3_inbound_ordering() {
+    make_test("WebsocketV3InboundOrderingTest").run();
 }

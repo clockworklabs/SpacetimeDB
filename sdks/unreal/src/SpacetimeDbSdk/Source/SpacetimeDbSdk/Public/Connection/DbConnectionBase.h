@@ -132,6 +132,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
 	bool IsActive() const;
 
+	/** Returns the websocket transport currently in use for this connection. */
+	ESpacetimeDBWsProtocol GetActiveWebSocketProtocol() const
+	{
+		return WebSocket ? WebSocket->GetActiveProtocol() : ESpacetimeDBWsProtocol::V2;
+	}
+
 	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
 	void FrameTick();
 
@@ -286,14 +292,19 @@ protected:
 
 	/** Internal handler that processes a single server message. */
 	void ProcessServerMessage(const FServerMessageType& Message);
+	void PreProcessDecodedServerMessage(const FServerMessageType& Message);
 	void PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update);
 	/** Decompress and parse a raw message. */
-	bool PreProcessMessage(const TArray<uint8>& Message, FServerMessageType& OutMessage);
+	bool PreProcessMessage(ESpacetimeDBWsProtocol Protocol, const TArray<uint8>& Message, TArray<FServerMessageType>& OutMessages);
 	bool DecompressPayload(uint8 Variant, const TArray<uint8>& In, TArray<uint8>& Out);
 	bool DecompressGzip(const TArray<uint8>& InData, TArray<uint8>& OutData);
 	bool DecompressBrotli(const TArray<uint8>& InData, TArray<uint8>& OutData);
 	void ClearPendingOperations(const FString& Reason);
 	void HandleProtocolViolation(const FString& ErrorMessage);
+	void QueueOutboundMessageV3(TArray<uint8> Message);
+	void FlushOutboundQueueV3();
+	void ScheduleOutboundFlush();
+	void ClearOutboundQueue();
 
 	/** Pending messages awaiting processing on the game thread. */
 	TArray<FServerMessageType> PendingMessages;
@@ -301,8 +312,8 @@ protected:
 	/** Mutex protecting access to PendingMessages. */
 	FCriticalSection PendingMessagesMutex;
 
-	/** Map of preprocessed messages keyed by their sequential id. */
-	TMap<int32, FServerMessageType> PreprocessedMessages;
+	/** Map of preprocessed websocket frames keyed by their sequential id. */
+	TMap<int32, TArray<FServerMessageType>> PreprocessedMessages;
 
 	/** Protects PreprocessedMessages and PendingMessages ordering state. */
 	FCriticalSection PreprocessMutex;
@@ -312,6 +323,11 @@ protected:
 
 	/** Id of the next message expected to be released. */
 	int32 NextReleaseId = 0;
+
+	/** Already-serialized v2 client messages waiting to be wrapped in v3 frames. */
+	TArray<TArray<uint8>> PendingOutboundMessages;
+	FCriticalSection PendingOutboundMessagesMutex;
+	FThreadSafeBool bIsOutboundFlushScheduled = false;
 
 	// Map of table name to row deserializer
 	TMap<FString, TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer>> TableDeserializers;

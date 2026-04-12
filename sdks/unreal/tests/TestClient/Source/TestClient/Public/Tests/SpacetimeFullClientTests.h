@@ -132,3 +132,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FOverlappingSubscriptionsTest, "SpacetimeDB.Tes
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertCallUuidV4Test, "SpacetimeDB.TestClient.InsertCallUuidV4Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertCallUuidV7Test, "SpacetimeDB.TestClient.InsertCallUuidV7Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/** Tests that the Unreal client prefers the v3 websocket transport when available. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWebsocketV3ProtocolHappyPathTest, "SpacetimeDB.TestClient.WebsocketV3ProtocolHappyPathTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+/** Tests that inbound messages remain ordered when the client is running over the v3 websocket transport. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWebsocketV3InboundOrderingTest, "SpacetimeDB.TestClient.WebsocketV3InboundOrderingTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

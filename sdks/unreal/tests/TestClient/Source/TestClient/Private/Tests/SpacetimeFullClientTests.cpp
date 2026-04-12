@@ -16,6 +16,7 @@
 #include "Tests/PrimitiveHandlerList.def"
 
 #include "Connection/Credentials.h"
+#include "Connection/Websocket.h"
 #include "ModuleBindings/Tables/ResultEveryPrimitiveStructStringTable.g.h"
 #include "ModuleBindings/Tables/ResultI32StringTable.g.h"
 #include "ModuleBindings/Tables/ResultIdentityStringTable.g.h"
@@ -2427,4 +2428,80 @@ bool FInsertCallUuidV7Test::RunTest(const FString &Parameters)
     
     ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
     return true;
+}
+
+bool FWebsocketV3ProtocolHappyPathTest::RunTest(const FString& Parameters)
+{
+	TestName = "WebsocketV3ProtocolHappyPath";
+
+	if (!ValidateParameterConfig(this))
+	{
+		return false;
+	}
+
+	TSharedPtr<FTestCounter> Counter = MakeShared<FTestCounter>();
+	Counter->Register(TEXT("protocol_is_v3"));
+
+	UDbConnection* Connection = ConnectThen(Counter, TestName, [Counter](UDbConnection* Conn)
+	{
+		if (Conn->GetActiveWebSocketProtocol() == ESpacetimeDBWsProtocol::V3)
+		{
+			Counter->MarkSuccess(TEXT("protocol_is_v3"));
+		}
+		else
+		{
+			Counter->MarkFailure(TEXT("protocol_is_v3"), TEXT("Expected connection to negotiate websocket v3"));
+		}
+	});
+
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Counter, FPlatformTime::Seconds()));
+	return true;
+}
+
+bool FWebsocketV3InboundOrderingTest::RunTest(const FString& Parameters)
+{
+	TestName = "WebsocketV3InboundOrdering";
+
+	if (!ValidateParameterConfig(this))
+	{
+		return false;
+	}
+
+	UOrderedInsertHandler* Handler = CreateTestHandler<UOrderedInsertHandler>();
+	Handler->ExpectedValues = { 1, 2, 3, 4 };
+	Handler->Counter->Register(TEXT("protocol_is_v3"));
+	Handler->Counter->Register(TEXT("OrderedU8Inserts"));
+
+	UDbConnection* Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection* Conn)
+	{
+		if (Conn->GetActiveWebSocketProtocol() != ESpacetimeDBWsProtocol::V3)
+		{
+			Handler->Counter->MarkFailure(TEXT("protocol_is_v3"), TEXT("Expected connection to negotiate websocket v3"));
+			Handler->Counter->Abort();
+			return;
+		}
+		Handler->Counter->MarkSuccess(TEXT("protocol_is_v3"));
+
+		Conn->Db->OneU8->OnInsert.AddDynamic(Handler, &UOrderedInsertHandler::OnInsertOneU8);
+
+		SubscribeAllThen(Conn, [this, Handler](FSubscriptionEventContext Ctx)
+		{
+			if (Ctx.Db->OneU8->Count() != 0)
+			{
+				Handler->Counter->MarkFailure(TEXT("OrderedU8Inserts"), TEXT("Expected OneU8 to be empty before ordered insert test"));
+				Handler->Counter->Abort();
+				return;
+			}
+
+			// Issue a same-turn burst so the client receives ordered inbound work
+			// while the v3 transport is active.
+			Ctx.Reducers->InsertOneU8(1);
+			Ctx.Reducers->InsertOneU8(2);
+			Ctx.Reducers->InsertOneU8(3);
+			Ctx.Reducers->InsertOneU8(4);
+		});
+	});
+
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+	return true;
 }

@@ -16,6 +16,33 @@ void UInsertPrimitiveHandler::OnInsertOne##Suffix(const FEventContext& Context, 
 FOREACH_PRIMITIVE(DEFINE_UFUNC)
 #undef DEFINE_UFUNC
 
+void UOrderedInsertHandler::OnInsertOneU8(const FEventContext& Context, const FOneU8Type& Value)
+{
+	static const FString Name(TEXT("OrderedU8Inserts"));
+
+	const int32 NextIndex = ReceivedValues.Num();
+	if (NextIndex >= ExpectedValues.Num())
+	{
+		Counter->MarkFailure(Name, TEXT("Received more inserts than expected"));
+		return;
+	}
+
+	ReceivedValues.Add(Value.N);
+	if (Value.N != ExpectedValues[NextIndex])
+	{
+		Counter->MarkFailure(
+			Name,
+			FString::Printf(TEXT("Out-of-order insert at index %d: expected %d, got %d"), NextIndex, ExpectedValues[NextIndex], Value.N)
+		);
+		return;
+	}
+
+	if (ReceivedValues.Num() == ExpectedValues.Num())
+	{
+		Counter->MarkSuccess(Name);
+	}
+}
+
 /* DeletePrimitive handler functions ------------------------------------ */
 #define DEFINE_DELETE_UNIQUE(Suffix, Field, Literal, Expected, RowStructType) \
 void UDeletePrimitiveHandler::OnInsertUnique##Suffix(const FEventContext& Context, const RowStructType& Value) \
