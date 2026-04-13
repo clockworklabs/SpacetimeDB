@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 
+use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_database_arg};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -14,23 +16,17 @@ pub fn cli() -> clap::Command {
         .about("Prints logs from a SpacetimeDB database")
         .arg(
             Arg::new("database")
-                .required(true)
-                .help("The domain or address of the database to print logs from"),
+                .required(false)
+                .help("The name or identity of the database to print logs from"),
         )
         .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
+            common_args::server()
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
         .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
-                .help("The identity to use for printing logs from this database"),
-        )
-        .arg(
             Arg::new("num_lines")
+                .long("num-lines")
+                .short('n')
                 .value_parser(clap::value_parser!(u32))
                 .help("The number of lines to print from the start of the log of this database")
                 .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."),
@@ -45,16 +41,46 @@ pub fn cli() -> clap::Command {
                 .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
         )
         .arg(
-            Arg::new("json")
-                .long("json")
+            Arg::new("format")
+                .long("format")
+                .default_value("text")
                 .required(false)
+                .value_parser(clap::value_parser!(Format))
+                .help("Output format for the logs")
+        )
+        .arg(
+            Arg::new("level")
+                .long("level")
+                .short('l')
+                .value_parser(clap::value_parser!(LogLevel))
+                .help("Minimum log level to display")
+                .long_help(
+                    "Filter logs by severity level. Only messages at the specified level or higher \
+                     will be shown. Levels from least to most severe: trace, debug, info, warn, error, panic.",
+                ),
+        )
+        .arg(
+            Arg::new("level_exact")
+                .long("level-exact")
+                .requires("level")
                 .action(ArgAction::SetTrue)
-                .help("Output raw json log records"),
+                .help("Show only logs at exactly the specified level")
+                .long_help(
+                    "When combined with --level, show only logs at exactly the specified level \
+                     instead of that level and above.",
+                ),
+        )
+        .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
         )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, Copy, serde::Deserialize)]
 pub enum LogLevel {
     Error,
     Warn,
@@ -64,6 +90,49 @@ pub enum LogLevel {
     Panic,
 }
 
+impl LogLevel {
+    /// Returns a numeric severity value. Higher means more severe.
+    fn severity(self) -> u8 {
+        match self {
+            LogLevel::Trace => 0,
+            LogLevel::Debug => 1,
+            LogLevel::Info => 2,
+            LogLevel::Warn => 3,
+            LogLevel::Error => 4,
+            LogLevel::Panic => 5,
+        }
+    }
+}
+
+impl clap::ValueEnum for LogLevel {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self::Trace,
+            Self::Debug,
+            Self::Info,
+            Self::Warn,
+            Self::Error,
+            Self::Panic,
+        ]
+    }
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Trace => Some(clap::builder::PossibleValue::new("trace")),
+            Self::Debug => Some(clap::builder::PossibleValue::new("debug")),
+            Self::Info => Some(clap::builder::PossibleValue::new("info")),
+            Self::Warn => Some(clap::builder::PossibleValue::new("warn")),
+            Self::Error => Some(clap::builder::PossibleValue::new("error")),
+            Self::Panic => Some(clap::builder::PossibleValue::new("panic")),
+        }
+    }
+}
+
+/// Sentinel value used for injected system logs.
+///
+/// Keep this in sync with the constants in `spacetimedb_core::database_logger::Record`.
+const SENTINEL: &str = "__spacetimedb__";
+
+/// Keep this in sync with `spacetimedb_core::database_logger::Record`.
 #[serde_with::serde_as]
 #[derive(serde::Deserialize)]
 struct Record<'a> {
@@ -76,6 +145,8 @@ struct Record<'a> {
     #[serde(borrow)]
     filename: Option<Cow<'a, str>>,
     line_number: Option<u32>,
+    #[serde(borrow)]
+    function: Option<Cow<'a, str>>,
     #[serde(borrow)]
     message: Cow<'a, str>,
     trace: Option<Vec<BacktraceFrame<'a>>>,
@@ -95,24 +166,57 @@ struct LogsParams {
     follow: bool,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Format {
+    Text,
+    Json,
+}
+
+impl clap::ValueEnum for Format {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Text, Self::Json]
+    }
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
+            Self::Json => Some(clap::builder::PossibleValue::new("json")),
+        }
+    }
+}
+
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = args.get_one::<String>("identity");
-    let num_lines = args.get_one::<u32>("num_lines").copied();
-    let database = args.get_one::<String>("database").unwrap();
+    let server_from_cli = args.get_one::<String>("server").map(|s| s.as_ref());
+    let no_config = args.get_flag("no_config");
+    let database_arg = args.get_one::<String>("database").map(|s| s.as_str());
+    let config_targets = load_config_db_targets(no_config)?;
+    let resolved = resolve_database_arg(
+        database_arg,
+        config_targets.as_deref(),
+        "spacetime logs [database] [--no-config]",
+    )?;
+    let server = server_from_cli.or(resolved.server.as_deref());
+    let force = args.get_flag("force");
+    let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let follow = args.get_flag("follow");
-    let json = args.get_flag("json");
+    let format = *args.get_one::<Format>("format").unwrap();
+    let min_level = args.get_one::<LogLevel>("level").copied();
+    let level_exact = args.get_flag("level_exact");
 
-    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
+    let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = database_identity(&config, &resolved.database, server).await?;
 
-    // TODO: num_lines should default to like 10 if follow is specified?
-    let query_parms = LogsParams { num_lines, follow };
+    if follow && num_lines.is_none() {
+        // We typically don't want logs from the very beginning if we're also following.
+        num_lines = Some(10);
+    }
+    let query_params = LogsParams { num_lines, follow };
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(server)?, address));
+    let host_url = config.get_host_url(server)?;
+
+    let builder = reqwest::Client::new().get(format!("{host_url}/v1/database/{database_identity}/logs"));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let mut res = builder.query(&query_parms).send().await?;
+    let mut res = builder.query(&query_params).send().await?;
     let status = res.status();
 
     if status.is_client_error() || status.is_server_error() {
@@ -120,10 +224,24 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         anyhow::bail!(err)
     }
 
-    if json {
+    if format == Format::Json {
         let mut stdout = tokio::io::stdout();
-        while let Some(chunk) = res.chunk().await? {
-            stdout.write_all(&chunk).await?;
+        if min_level.is_none() {
+            // Fast path: no filtering, stream raw bytes.
+            while let Some(chunk) = res.chunk().await? {
+                stdout.write_all(&chunk).await?;
+            }
+        } else {
+            // Parse each line to apply level filtering, then re-emit as JSON.
+            let mut rdr = res.bytes_stream().map_err(io::Error::other).into_async_read();
+            let mut line = String::new();
+            while rdr.read_line(&mut line).await? != 0 {
+                let record = serde_json::from_str::<Record<'_>>(&line)?;
+                if should_display(record.level, min_level, level_exact) {
+                    stdout.write_all(line.as_bytes()).await?;
+                }
+                line.clear();
+            }
         }
         return Ok(());
     }
@@ -136,13 +254,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let out = termcolor::StandardStream::stdout(term_color);
     let mut out = out.lock();
 
-    let mut rdr = res
-        .bytes_stream()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-        .into_async_read();
+    let mut rdr = res.bytes_stream().map_err(io::Error::other).into_async_read();
     let mut line = String::new();
     while rdr.read_line(&mut line).await? != 0 {
         let record = serde_json::from_str::<Record<'_>>(&line)?;
+
+        // Apply log level filtering.
+        if !should_display(record.level, min_level, level_exact) {
+            line.clear();
+            continue;
+        }
 
         if let Some(ts) = record.ts {
             out.set_color(ColorSpec::new().set_dimmed(true))?;
@@ -178,16 +299,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         out.set_color(&color)?;
         write!(out, "{level:>5}: ")?;
         out.reset()?;
+        let mut need_space_before_filename = false;
+        let mut need_colon_sep = false;
         let dimmed = ColorSpec::new().set_dimmed(true).clone();
-        if let Some(filename) = record.filename {
+        if let Some(function) = record.function
+            && function != SENTINEL
+        {
             out.set_color(&dimmed)?;
+            write!(out, "{function}")?;
+            out.reset()?;
+            need_space_before_filename = true;
+            need_colon_sep = true;
+        }
+        if let Some(filename) = record.filename
+            && filename != SENTINEL
+        {
+            out.set_color(&dimmed)?;
+            if need_space_before_filename {
+                write!(out, " ")?;
+            }
             write!(out, "{filename}")?;
             if let Some(line) = record.line_number {
                 write!(out, ":{line}")?;
             }
             out.reset()?;
+            need_colon_sep = true;
         }
-        writeln!(out, ": {}", record.message)?;
+        if need_colon_sep {
+            write!(out, ": ")?;
+        }
+        writeln!(out, "{}", record.message)?;
         if let Some(trace) = &record.trace {
             for frame in trace {
                 write!(out, "    in ")?;
@@ -209,4 +350,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     Ok(())
+}
+
+/// Returns true if the record should be displayed given the filter settings.
+fn should_display(record_level: LogLevel, min_level: Option<LogLevel>, level_exact: bool) -> bool {
+    match min_level {
+        None => true,
+        Some(min) => {
+            if level_exact {
+                record_level.severity() == min.severity()
+            } else {
+                record_level.severity() >= min.severity()
+            }
+        }
+    }
 }

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3e55b94365a0ae7698bb9e89259f3f5b84227b1c5ba2f0737be0360f55256c26 # shrinks to (ty, val) = (ProductType { elements: [ProductTypeElement { name: None, algebraic_type: Sum(SumType { variants: [SumTypeVariant { name: None, algebraic_type: Builtin(Bool) }] }) }] }, ProductValue { elements: [Sum(SumValue { tag: 0, value: Bool(false) })] })
+cc aedcfc0fa45005cb11fa8b47f668a8b68c99adadfb50fdc6219840aa8ffd83f6 # shrinks to (ty, val) = (ProductType { elements: [ProductTypeElement { name: None, algebraic_type: Sum(SumType { variants: [SumTypeVariant { name: None, algebraic_type: Builtin(I32) }, SumTypeVariant { name: None, algebraic_type: Builtin(F64) }, SumTypeVariant { name: None, algebraic_type: Builtin(String) }, SumTypeVariant { name: None, algebraic_type: Builtin(U16) }, SumTypeVariant { name: None, algebraic_type: Builtin(U16) }, SumTypeVariant { name: None, algebraic_type: Builtin(String) }, SumTypeVariant { name: None, algebraic_type: Builtin(Bool) }, SumTypeVariant { name: None, algebraic_type: Builtin(I16) }, SumTypeVariant { name: None, algebraic_type: Builtin(I16) }, SumTypeVariant { name: None, algebraic_type: Builtin(I64) }, SumTypeVariant { name: None, algebraic_type: Builtin(I128) }, SumTypeVariant { name: None, algebraic_type: Builtin(U64) }] }) }] }, ProductValue { elements: [Sum(SumValue { tag: 2, value: String("יּ/Ⱥ🂠છrÔ") })] })

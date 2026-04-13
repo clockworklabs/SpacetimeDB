@@ -1,20 +1,17 @@
-use axum::extract::{Path, Query, State};
-use axum::response::{IntoResponse, Response};
+use std::time::Duration;
+
+use axum::extract::{Path, State};
+use axum::response::IntoResponse;
+use axum::routing::MethodRouter;
+use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use spacetimedb::auth::identity::encode_token_with_expiry;
-use spacetimedb::messages::control_db::IdentityEmail;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::Identity;
 
-use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
-use crate::{log_and_500, ControlStateDelegate, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
-
-#[derive(Deserialize)]
-pub struct CreateIdentityQueryParams {
-    email: Option<email_address::EmailAddress>,
-}
+use crate::auth::{JwtAuthProvider, SpacetimeAuth, SpacetimeAuthRequired};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIdentityResponse {
@@ -24,56 +21,13 @@ pub struct CreateIdentityResponse {
 
 pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
     State(ctx): State<S>,
-    Query(CreateIdentityQueryParams { email }): Query<CreateIdentityQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = SpacetimeAuth::alloc(&ctx).await?;
-    if let Some(email) = email {
-        ctx.add_email(&auth.identity, email.as_str())
-            .await
-            .map_err(log_and_500)?;
-    }
 
     let identity_response = CreateIdentityResponse {
-        identity: auth.identity,
+        identity: auth.claims.identity,
         token: auth.creds.token().to_owned(),
     };
-    Ok(axum::Json(identity_response))
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct GetIdentityResponse {
-    identities: Vec<GetIdentityResponseEntry>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct GetIdentityResponseEntry {
-    identity: Identity,
-    email: String,
-}
-
-#[derive(Deserialize)]
-pub struct GetIdentityQueryParams {
-    email: Option<String>,
-}
-pub async fn get_identity<S: ControlStateDelegate>(
-    State(ctx): State<S>,
-    Query(GetIdentityQueryParams { email }): Query<GetIdentityQueryParams>,
-) -> axum::response::Result<impl IntoResponse> {
-    let lookup = match email {
-        None => None,
-        Some(email) => {
-            let identities = ctx.get_identities_for_email(email.as_str()).map_err(log_and_500)?;
-            let identities = identities
-                .into_iter()
-                .map(|identity_email| GetIdentityResponseEntry {
-                    identity: identity_email.identity,
-                    email: identity_email.email,
-                })
-                .collect::<Vec<_>>();
-            (!identities.is_empty()).then_some(GetIdentityResponse { identities })
-        }
-    };
-    let identity_response = lookup.ok_or(StatusCode::NOT_FOUND)?;
     Ok(axum::Json(identity_response))
 }
 
@@ -88,72 +42,35 @@ pub async fn get_identity<S: ControlStateDelegate>(
 /// This newtype around `Identity` implements `Deserialize`
 /// directly from the inner identity bytes,
 /// without the enclosing `ProductValue` wrapper.
-#[derive(derive_more::Into)]
+#[derive(derive_more::Into, Clone, Debug, Copy)]
 pub struct IdentityForUrl(Identity);
+
+impl From<Identity> for IdentityForUrl {
+    fn from(i: Identity) -> Self {
+        IdentityForUrl(i)
+    }
+}
+
+impl IdentityForUrl {
+    pub fn into_inner(&self) -> Identity {
+        self.0
+    }
+}
 
 impl<'de> serde::Deserialize<'de> for IdentityForUrl {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_byte_array(b)))
+        <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_be_byte_array(b)))
     }
-}
-
-#[derive(Deserialize)]
-pub struct SetEmailParams {
-    identity: IdentityForUrl,
-}
-
-#[derive(Deserialize)]
-pub struct SetEmailQueryParams {
-    email: email_address::EmailAddress,
-}
-
-pub async fn set_email<S: ControlStateWriteAccess>(
-    State(ctx): State<S>,
-    Path(SetEmailParams { identity }): Path<SetEmailParams>,
-    Query(SetEmailQueryParams { email }): Query<SetEmailQueryParams>,
-    auth: SpacetimeAuthHeader,
-) -> axum::response::Result<impl IntoResponse> {
-    let identity = identity.into();
-    let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
-
-    if auth.identity != identity {
-        return Err(StatusCode::UNAUTHORIZED.into());
-    }
-    ctx.add_email(&identity, email.as_str()).await.map_err(log_and_500)?;
-
-    Ok(())
-}
-
-pub async fn check_email<S: ControlStateReadAccess>(
-    State(ctx): State<S>,
-    Path(SetEmailParams { identity }): Path<SetEmailParams>,
-    auth: SpacetimeAuthHeader,
-) -> axum::response::Result<impl IntoResponse> {
-    let identity = identity.into();
-    let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
-
-    if auth.identity != identity {
-        return Err(StatusCode::UNAUTHORIZED.into());
-    }
-
-    let emails = ctx
-        .get_emails_for_identity(&identity)
-        .map_err(log_and_500)?
-        .into_iter()
-        .map(|IdentityEmail { email, .. }| email)
-        .collect::<Vec<_>>();
-
-    Ok(axum::Json(emails))
 }
 
 #[derive(Deserialize)]
 pub struct GetDatabasesParams {
-    identity: IdentityForUrl,
+    pub identity: IdentityForUrl,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetDatabasesResponse {
-    addresses: Vec<Address>,
+    pub identities: Vec<Identity>,
 }
 
 pub async fn get_databases<S: ControlStateDelegate>(
@@ -161,17 +78,17 @@ pub async fn get_databases<S: ControlStateDelegate>(
     Path(GetDatabasesParams { identity }): Path<GetDatabasesParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = identity.into();
-    // Linear scan for all databases that have this identity, and return their addresses
-    let all_dbs = ctx.get_databases().map_err(|e| {
-        log::error!("Failure when retrieving databases for search: {}", e);
+    // Linear scan for all databases that have this owner, and return their identities
+    let all_dbs = ctx.get_databases().await.map_err(|e| {
+        log::error!("Failure when retrieving databases for search: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let addresses = all_dbs
+    let identities = all_dbs
         .iter()
-        .filter(|db| db.identity == identity)
-        .map(|db| db.address)
+        .filter(|db| db.owner_identity == identity)
+        .map(|db| db.database_identity)
         .collect();
-    Ok(axum::Json(GetDatabasesResponse { addresses }))
+    Ok(axum::Json(GetDatabasesResponse { identities }))
 }
 
 #[derive(Debug, Serialize)]
@@ -179,17 +96,19 @@ pub struct WebsocketTokenResponse {
     pub token: String,
 }
 
+// This endpoint takes a token from a client and sends a newly signed token with a 60s expiry.
+// Note that even if the token has a different issuer, we will sign it with our key.
+// This is ok because `FullTokenValidator` checks if we signed the token before worrying about the issuer.
 pub async fn create_websocket_token<S: NodeDelegate>(
     State(ctx): State<S>,
-    auth: SpacetimeAuthHeader,
+    SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
-    match auth.auth {
-        Some(auth) => {
-            let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(60)).map_err(log_and_500)?;
-            Ok(axum::Json(WebsocketTokenResponse { token }))
-        }
-        None => Err(StatusCode::UNAUTHORIZED)?,
-    }
+    let expiry = Duration::from_secs(60);
+    let (_, token) = auth
+        .re_sign_with_expiry(ctx.jwt_auth_provider(), expiry)
+        .map_err(log_and_500)?;
+    // let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
+    Ok(axum::Json(WebsocketTokenResponse { token }))
 }
 
 #[derive(Deserialize)]
@@ -199,39 +118,64 @@ pub struct ValidateTokenParams {
 
 pub async fn validate_token(
     Path(ValidateTokenParams { identity }): Path<ValidateTokenParams>,
-    auth: SpacetimeAuthHeader,
+    SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = Identity::from(identity);
-    if let Some(auth) = auth.auth {
-        if auth.identity == identity {
-            Ok(StatusCode::NO_CONTENT)
-        } else {
-            Err(StatusCode::BAD_REQUEST.into())
-        }
-    } else {
-        Err(StatusCode::UNAUTHORIZED.into())
+
+    if auth.claims.identity != identity {
+        return Err(StatusCode::BAD_REQUEST.into());
     }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::response::Result<impl IntoResponse> {
-    let res = Response::builder()
-        .header("Content-Type", "application/pem-certificate-chain")
-        .body(())
-        .map_err(log_and_500)?;
-    Ok((res, ctx.public_key_bytes().to_owned()))
+    Ok((
+        [(CONTENT_TYPE, "application/pem-certificate-chain")],
+        ctx.jwt_auth_provider().public_key_bytes().to_owned(),
+    ))
 }
 
-pub fn router<S>() -> axum::Router<S>
+/// A struct to allow customization of the `/identity` routes.
+pub struct IdentityRoutes<S> {
+    /// POST /identity
+    pub create_post: MethodRouter<S>,
+    /// GET /identity/public-key
+    pub public_key_get: MethodRouter<S>,
+    /// POST /identity/websocket-tocken
+    pub websocket_token_post: MethodRouter<S>,
+    /// GET /identity/:identity/verify
+    pub verify_get: MethodRouter<S>,
+    /// GET /identity/:identity/databases
+    pub databases_get: MethodRouter<S>,
+}
+
+impl<S> Default for IdentityRoutes<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
-    use axum::routing::{get, post};
-    axum::Router::new()
-        .route("/", get(get_identity::<S>).post(create_identity::<S>))
-        .route("/public-key", get(get_public_key::<S>))
-        .route("/websocket_token", post(create_websocket_token::<S>))
-        .route("/:identity/verify", get(validate_token))
-        .route("/:identity/set-email", post(set_email::<S>))
-        .route("/:identity/emails", get(check_email::<S>))
-        .route("/:identity/databases", get(get_databases::<S>))
+    fn default() -> Self {
+        use axum::routing::{get, post};
+        Self {
+            create_post: post(create_identity::<S>),
+            public_key_get: get(get_public_key::<S>),
+            websocket_token_post: post(create_websocket_token::<S>),
+            verify_get: get(validate_token),
+            databases_get: get(get_databases::<S>),
+        }
+    }
+}
+
+impl<S> IdentityRoutes<S>
+where
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+{
+    pub fn into_router(self) -> axum::Router<S> {
+        axum::Router::new()
+            .route("/", self.create_post)
+            .route("/public-key", self.public_key_get)
+            .route("/websocket-token", self.websocket_token_post)
+            .route("/:identity/verify", self.verify_get)
+            .route("/:identity/databases", self.databases_get)
+    }
 }

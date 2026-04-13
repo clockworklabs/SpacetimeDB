@@ -1,24 +1,12 @@
-use spacetimedb_lib::Hash;
-
-use crate::database_instance_context::DatabaseInstanceContext;
 use crate::energy::EnergyMonitor;
-use crate::host::scheduler::{Scheduler, SchedulerStarter};
-use crate::messages::control_db::HostType;
-use crate::util::AnyBytes;
+use crate::host::scheduler::Scheduler;
+use crate::replica_context::ReplicaContext;
+use spacetimedb_sats::hash::Hash;
 use std::sync::Arc;
 
-pub struct ModuleHostContext {
-    pub dbic: Arc<DatabaseInstanceContext>,
-    pub scheduler: Scheduler,
-    pub scheduler_starter: SchedulerStarter,
-    pub host_type: HostType,
-    pub program_bytes: AnyBytes,
-}
-
 pub struct ModuleCreationContext {
-    pub dbic: Arc<DatabaseInstanceContext>,
+    pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
-    pub program_bytes: AnyBytes,
     pub program_hash: Hash,
     pub energy_monitor: Arc<dyn EnergyMonitor>,
 }

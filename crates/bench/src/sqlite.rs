@@ -7,6 +7,8 @@ use lazy_static::lazy_static;
 use rusqlite::Connection;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
+use spacetimedb_primitives::ColId;
+use spacetimedb_schema::table_name::TableName;
 use std::{
     fmt::Write,
     hint::black_box,
@@ -22,11 +24,11 @@ pub struct SQLite {
 }
 
 impl BenchDatabase for SQLite {
-    fn name() -> &'static str {
-        "sqlite"
+    fn name() -> String {
+        "sqlite".to_owned()
     }
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {
@@ -36,13 +38,9 @@ impl BenchDatabase for SQLite {
         } else {
             Connection::open(temp_dir.path().join("test.db"))?
         };
-        // For sqlite benchmarks we should set synchronous to either full or off which more
-        // closely aligns with wal_fsync=true and wal_fsync=false respectively in stdb.
-        db.execute_batch(if fsync {
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = full;"
-        } else {
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = off;"
-        })?;
+        // For sqlite benchmarks we should set synchronous to off which more
+        // closely aligns with wal_fsync=false in stdb.
+        db.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = off;")?;
 
         Ok(SQLite {
             db,
@@ -50,7 +48,7 @@ impl BenchDatabase for SQLite {
         })
     }
 
-    type TableId = String;
+    type TableId = TableName;
 
     /// We derive the SQLite schema from the AlgebraicType of the table.
     fn create_table<T: BenchTable>(
@@ -171,11 +169,11 @@ impl BenchDatabase for SQLite {
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_index: u32,
+        col_id: impl Into<ColId>,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let statement = memo_query(BenchName::Filter, table_id, || {
-            let column: Box<str> = T::product_type().elements[column_index as usize].name.take().unwrap();
+            let column = T::product_type().elements[col_id.into().idx()].name.clone().unwrap();
             format!("SELECT * FROM {table_id} WHERE {column} = ?")
         });
 
@@ -229,10 +227,10 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
     // fast path
     let queries = QUERIES.read().unwrap();
 
-    if let Some(bench_queries) = queries.get(&bench_name) {
-        if let Some(query) = bench_queries.get(table_id) {
-            return query.clone();
-        }
+    if let Some(bench_queries) = queries.get(&bench_name)
+        && let Some(query) = bench_queries.get(table_id)
+    {
+        return query.clone();
     }
 
     // slow path

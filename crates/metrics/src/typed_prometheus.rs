@@ -82,6 +82,11 @@ macro_rules! metrics_histogram_vec {
                 use $crate::typed_prometheus::AsPrometheusLabel as _;
                 self.0.with_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
             }
+
+            pub fn remove_label_values(&self, $($labels: &$labelty),+) -> prometheus::Result<()> {
+                use $crate::typed_prometheus::AsPrometheusLabel as _;
+                self.0.remove_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
+            }
         }
 
         impl prometheus::core::Collector for $name {
@@ -110,6 +115,10 @@ macro_rules! metrics_vec {
             pub fn with_label_values(&self, $($labels: &$labelty),+) -> <$vecty as $crate::typed_prometheus::ExtractMetricVecT>::M {
                 use $crate::typed_prometheus::AsPrometheusLabel as _;
                 self.0.with_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
+            }
+            pub fn remove_label_values(&self, $($labels: &$labelty),+) -> prometheus::Result<()> {
+                use $crate::typed_prometheus::AsPrometheusLabel as _;
+                self.0.remove_label_values(&[ $($labels.as_prometheus_str().as_ref()),+ ])
             }
         }
 

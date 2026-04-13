@@ -9,4 +9,4 @@ select * from inventory
 ----
 1	'health1'
 
-#TODO: It fails with many sperate inserts
+#TODO: It fails with many separate inserts

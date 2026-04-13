@@ -4,16 +4,25 @@ use criterion::{
     Bencher, BenchmarkGroup, Criterion,
 };
 use lazy_static::lazy_static;
-use mimalloc::MiMalloc;
 use spacetimedb_bench::{
     database::BenchDatabase,
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, IndexStrategy, RandomTable},
     spacetime_module, spacetime_raw, sqlite, ResultBench,
 };
 use spacetimedb_lib::sats::AlgebraicType;
+use spacetimedb_primitives::ColId;
+use spacetimedb_testing::modules::{Csharp, Rust};
 
+#[cfg(target_env = "msvc")]
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 lazy_static! {
     static ref RUN_ONE_MILLION: bool = std::env::var("RUN_ONE_MILLION").is_ok();
@@ -22,16 +31,18 @@ lazy_static! {
 fn criterion_benchmark(c: &mut Criterion) {
     bench_suite::<sqlite::SQLite>(c, true).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, true).unwrap();
-    bench_suite::<spacetime_module::SpacetimeModule>(c, true).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Rust>>(c, true).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Csharp>>(c, true).unwrap();
 
     bench_suite::<sqlite::SQLite>(c, false).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, false).unwrap();
-    bench_suite::<spacetime_module::SpacetimeModule>(c, false).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Rust>>(c, false).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Csharp>>(c, false).unwrap();
 }
 
 #[inline(never)]
 fn bench_suite<DB: BenchDatabase>(c: &mut Criterion, in_memory: bool) -> ResultBench<()> {
-    let mut db = DB::build(in_memory, false)?; // don't need fsync benchmarks anymore
+    let mut db = DB::build(in_memory)?;
     let param_db_name = DB::name();
     let param_in_memory = if in_memory { "mem" } else { "disk" };
     let db_params = format!("{param_db_name}/{param_in_memory}");
@@ -262,11 +273,13 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db: &mut DB,
     table_id: &DB::TableId,
     index_strategy: &IndexStrategy,
-    column_index: u32,
+    col_id: impl Into<ColId>,
     load: u32,
     buckets: u32,
 ) -> ResultBench<()> {
-    let filter_column_type = match T::product_type().elements[column_index as usize].algebraic_type {
+    let col_id = col_id.into();
+
+    let filter_column_type = match T::product_type().elements[col_id.idx()].algebraic_type {
         AlgebraicType::String => "string",
         AlgebraicType::U32 => "u32",
         AlgebraicType::U64 => "u64",
@@ -298,12 +311,12 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
             db,
             |_| {
                 // pick something to look for
-                let value = data[i].clone().into_product_value().elements[column_index as usize].clone();
+                let value = data[i].clone().into_product_value().elements[col_id.idx()].clone();
                 i = (i + 1) % load as usize;
                 Ok(value)
             },
             |db, value| {
-                db.filter::<T>(table_id, column_index, value)?;
+                db.filter::<T>(table_id, col_id, value)?;
                 Ok(())
             },
         )

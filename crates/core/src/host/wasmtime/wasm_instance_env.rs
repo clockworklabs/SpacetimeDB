@@ -1,31 +1,72 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::ops::DerefMut;
-use std::time::Instant;
-
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::db::db_metrics::DB_METRICS;
-use crate::execution_context::ExecutionContext;
-use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
-use crate::host::timestamp::Timestamp;
-use crate::host::wasm_common::instrumentation;
-use crate::host::wasm_common::module_host_actor::ExecutionTimings;
-use crate::host::wasm_common::{
-    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers,
-    TimingSpan, TimingSpanIdx, TimingSpanSet,
+use super::wasmtime_module::{
+    call_view_export, decode_view_result_sink_code, CallViewAnonType, CallViewType, ViewResultSinkError,
 };
+use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::error::NodesError;
+use crate::host::instance_env::{ChunkPool, InstanceEnv};
+use crate::host::wasm_common::instrumentation::{span, CallTimes};
+use crate::host::wasm_common::module_host_actor::{
+    deserialize_view_rows, run_query_for_view, ExecutionTimings, ViewResult, ViewReturnData,
+};
+use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
-use anyhow::{anyhow, Context};
+use crate::subscription::module_subscription_manager::TransactionOffset;
+use anyhow::{anyhow, Context as _};
+use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
+use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::Identifier;
+use std::future::Future;
+use std::num::NonZeroU32;
+use std::sync::Arc;
+use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
-use crate::host::instance_env::InstanceEnv;
+/// A stream of bytes which the WASM module can read from
+/// using [`WasmInstanceEnv::bytes_source_read`].
+///
+/// These are managed in the `bytes_sources` of [`WasmInstanceEnv`],
+/// where each one is paired with an integer ID.
+/// This is basically a massively-simplified version of Unix read files and file descriptors.
+///
+/// Unlike Unix read files, we implicitly close `BytesSource`s once they are read to the end.
+/// This is sensible because we don't provide a seek operation,
+/// so the `BytesSource` becomes useless once read to the end.
+struct BytesSource {
+    /// The actual bytes which will be returned by calls to `byte_source_read`.
+    ///
+    /// When this becomes empty, this `ByteSource` is expended and should be discarded.
+    bytes: bytes::Bytes,
+}
 
-use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
+/// Identifier for a [`BytesSource`] stored in the `bytes_sources` of a [`WasmInstanceEnv`].
+///
+/// The special sentinel [`Self::INVALID`] (zero) is used for a never-readable [`BytesSource`].
+/// We pass this to guests for a [`BytesSource`] with a length of zero
+/// so that they can avoid host calls.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(super) struct BytesSourceId(pub(super) u32);
 
-#[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
-use instrumentation::noop as span;
-#[cfg(feature = "spacetimedb-wasm-instance-env-times")]
-use instrumentation::op as span;
+// `nohash_hasher` recommends impling `Hash` explicitly rather than using the derive macro,
+// as the derive macro is not technically guaranteed to only call `hasher.write_{int}` for an integer newtype,
+// even though any other behavior would be deranged.
+impl std::hash::Hash for BytesSourceId {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_u32(self.0)
+    }
+}
+
+impl nohash_hasher::IsEnabled for BytesSourceId {}
+
+impl BytesSourceId {
+    const INVALID: Self = Self(0);
+}
 
 /// A `WasmInstanceEnv` provides the connection between a module
 /// and the database.
@@ -45,23 +86,43 @@ pub(super) struct WasmInstanceEnv {
     /// The database `InstanceEnv` associated to this instance.
     instance_env: InstanceEnv,
 
+    /// A validated `ModuleDef` for this instance used by procedures to refresh views.
+    module_def: Option<Arc<ModuleDef>>,
+
+    /// A cached `__call_view__` export used by procedures to refresh views.
+    call_view: Option<CallViewType>,
+
+    /// A cached `__call_view_anon__` export used by procedures to refresh views.
+    call_view_anon: Option<CallViewAnonType>,
+
     /// The `Mem` associated to this instance. At construction time,
     /// this is always `None`. The `Mem` instance is extracted from the
     /// instance exports, and after instantiation is complete, this will
     /// always be `Some`.
     mem: Option<Mem>,
 
-    /// The slab of `Buffers` created for this instance.
-    buffers: Buffers,
+    /// `File`-like [`BytesSource`]s which guest code can read via [`Self::bytes_source_read`].
+    ///
+    /// These are essentially simplified versions of Unix read files,
+    /// with [`BytesSourceId`] being file descriptors.
+    ///
+    /// Unlike Unix files, we implicitly close a [`BytesSource`] when it is read to the end.
+    /// This is because we don't provide a seek operation and a [`BytesSource`] never grows after initialization.
+    bytes_sources: IntMap<BytesSourceId, BytesSource>,
+
+    /// Counter as a source of [`BytesSourceId`] values.
+    ///
+    /// Recall that zero is [`BytesSourceId::INVALID`], so we have to start at 1.
+    next_bytes_source_id: NonZeroU32,
+
+    /// The standard sink used for [`Self::bytes_sink_write`].
+    standard_bytes_sink: Option<Vec<u8>>,
 
     /// The slab of `BufferIters` created for this instance.
-    iters: BufferIters,
+    iters: RowIters,
 
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
-
-    /// The point in time the last reducer call started at.
-    reducer_start: Instant,
 
     /// Track time spent in all wasm instance env calls (aka syscall time).
     ///
@@ -69,9 +130,12 @@ pub(super) struct WasmInstanceEnv {
     /// to this tracker.
     call_times: CallTimes,
 
-    /// The last, including current, reducer to be executed by this environment.
-    reducer_name: String,
+    /// A pool of unused allocated chunks that can be reused.
+    // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
+    chunk_pool: ChunkPool,
 }
+
+const STANDARD_BYTES_SINK: u32 = 1;
 
 type WasmResult<T> = Result<T, WasmError>;
 type RtResult<T> = anyhow::Result<T>;
@@ -81,16 +145,59 @@ type RtResult<T> = anyhow::Result<T>;
 impl WasmInstanceEnv {
     /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
     pub fn new(instance_env: InstanceEnv) -> Self {
-        let reducer_start = Instant::now();
         Self {
             instance_env,
+            module_def: None,
+            call_view: None,
+            call_view_anon: None,
             mem: None,
-            buffers: Default::default(),
+            bytes_sources: IntMap::default(),
+            next_bytes_source_id: NonZeroU32::new(1).unwrap(),
+            standard_bytes_sink: None,
             iters: Default::default(),
             timing_spans: Default::default(),
-            reducer_start,
             call_times: CallTimes::new(),
-            reducer_name: String::from(""),
+            chunk_pool: <_>::default(),
+        }
+    }
+
+    fn alloc_bytes_source_id(&mut self) -> RtResult<BytesSourceId> {
+        let id = self.next_bytes_source_id;
+        self.next_bytes_source_id = id
+            .checked_add(1)
+            .context("Allocating next `BytesSourceId` overflowed `u32`")?;
+        Ok(BytesSourceId(id.into()))
+    }
+
+    /// Binds `bytes` to the environment and assigns it an ID.
+    ///
+    /// If `bytes` is empty, `BytesSourceId::INVALID` is returned.
+    fn create_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+        // Pass an invalid source when the bytes were empty.
+        // This allows the module to avoid allocating and make a system call in those cases.
+        if bytes.is_empty() {
+            Ok(BytesSourceId::INVALID)
+        } else if bytes.len() > u32::MAX as usize {
+            // There's no inherent reason we need to error here,
+            // other than that it makes it impossible to report the length in `bytes_source_remaining_length`
+            // and that all of our usage of `BytesSource`s as of writing (pgoldman 2025-09-26)
+            // are to immediately slurp the whole thing into a buffer in guest memory,
+            // which can't hold buffers this big because it's WASM32.
+            Err(anyhow::anyhow!(
+                "`create_bytes_source`: `Bytes` has length {}, which is greater than `u32::MAX` {}",
+                bytes.len(),
+                u32::MAX,
+            ))
+        } else {
+            let id = self.alloc_bytes_source_id()?;
+            self.bytes_sources.insert(id, BytesSource { bytes });
+            Ok(id)
+        }
+    }
+
+    fn free_bytes_source(&mut self, id: BytesSourceId) {
+        if self.bytes_sources.remove(&id).is_none() {
+            log::warn!("`free_bytes_source` on non-existent source {id:?}");
         }
     }
 
@@ -98,6 +205,15 @@ impl WasmInstanceEnv {
     pub fn instantiate(&mut self, mem: Mem) {
         assert!(self.mem.is_none());
         self.mem = Some(mem);
+    }
+
+    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        self.module_def = Some(module_def)
+    }
+
+    pub fn set_call_view_exports(&mut self, call_view: Option<CallViewType>, call_view_anon: Option<CallViewAnonType>) {
+        self.call_view = call_view;
+        self.call_view_anon = call_view_anon;
     }
 
     /// Returns a reference to the memory, assumed to be initialized.
@@ -116,98 +232,159 @@ impl WasmInstanceEnv {
         &self.instance_env
     }
 
-    /// Take ownership of a particular `Buffer` from this instance.
-    pub fn take_buffer(&mut self, idx: BufferIdx) -> Option<bytes::Bytes> {
-        self.buffers.take(idx)
+    /// Setup the standard bytes sink and return a handle to it for writing.
+    pub fn setup_standard_bytes_sink(&mut self) -> u32 {
+        self.standard_bytes_sink = Some(Vec::new());
+        STANDARD_BYTES_SINK
     }
 
-    /// Take ownership of the given `data` and give back a `BufferIdx`
-    /// as a handle to that data.
-    pub fn insert_buffer(&mut self, data: bytes::Bytes) -> BufferIdx {
-        self.buffers.insert(data)
+    /// Extract all the bytes written to the standard bytes sink
+    /// and prevent further writes to it.
+    pub fn take_standard_bytes_sink(&mut self) -> Vec<u8> {
+        self.standard_bytes_sink.take().unwrap_or_default()
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self, name: &str) {
-        self.reducer_start = Instant::now();
-        self.reducer_name = name.to_owned();
+    /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is beginning.
+    ///
+    /// Returns the handle used by reducers and procedures to read from `args`
+    /// as well as the handle used to write the reducer error message or procedure return value.
+    pub fn start_funcall(
+        &mut self,
+        name: Identifier,
+        args: bytes::Bytes,
+        ts: Timestamp,
+        func_type: FuncCallType,
+    ) -> (BytesSourceId, u32) {
+        // Create the output sink.
+        // Reducers which fail will write their error message here.
+        // Procedures will write their result here.
+        let errors = self.setup_standard_bytes_sink();
+
+        let args = self.create_bytes_source(args).unwrap();
+
+        self.instance_env.start_funcall(name, ts, func_type);
+
+        (args, errors)
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
-    /// This resets all of the state associated to a single reducer call,
-    /// and returns instrumentation records.
-    pub fn finish_reducer(&mut self) -> ExecutionTimings {
-        // For the moment, we only explicitly clear the set of buffers and the
-        // "syscall" times.
+    /// Returns the name of the most recent reducer or procedure to be run in this environment,
+    /// or `None` if no reducer or procedure is actively being invoked.
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.instance_env.log_record_function()
+    }
+
+    /// Returns the start time of the most recent reducer or procedure to be run in this environment.
+    pub fn funcall_start(&self) -> Instant {
+        self.instance_env.start_instant
+    }
+
+    /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is over.
+    ///
+    /// Returns time measurements which can be recorded as metrics,
+    /// and the errors written by the WASM code to the standard error sink.
+    ///
+    /// This resets the call times and clears the arguments source and error sink.
+    pub fn finish_funcall(&mut self) -> (ExecutionTimings, Vec<u8>) {
+        // For the moment,
+        // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
-        self.buffers.clear();
 
-        let total_duration = self.reducer_start.elapsed();
+        let total_duration = self.instance_env.start_instant.elapsed();
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();
 
-        ExecutionTimings {
+        let timings = ExecutionTimings {
             total_duration,
             wasm_instance_env_call_times,
+        };
+
+        // Drop any outstanding bytes sources and reset the ID counter,
+        // so that we don't leak either the IDs or the buffers themselves.
+        self.bytes_sources = IntMap::default();
+        self.next_bytes_source_id = NonZeroU32::new(1).unwrap();
+
+        (timings, self.take_standard_bytes_sink())
+    }
+
+    /// After a procedure has finished, take its known last tx offset, if any.
+    pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
+        self.instance_env.take_procedure_tx_offset()
+    }
+
+    /// Record a span with `start`.
+    fn end_span(mut caller: Caller<'_, Self>, start: span::CallSpanStart) {
+        let span = start.end();
+        span::record_span(&mut caller.data_mut().call_times, span);
+    }
+
+    fn with_span<R>(mut caller: Caller<'_, Self>, func: AbiCall, run: impl FnOnce(&mut Caller<'_, Self>) -> R) -> R {
+        let span_start = span::CallSpanStart::new(func);
+
+        // Call `run` with the caller and a handle to the memory.
+        let result = run(&mut caller);
+
+        Self::end_span(caller, span_start);
+
+        result
+    }
+
+    fn async_with_span<'caller, R, F: Send + 'caller + Future<Output = (Caller<'caller, Self>, R)>>(
+        caller: Caller<'caller, Self>,
+        func: AbiCall,
+        run: impl Send + 'caller + FnOnce(Caller<'caller, Self>) -> F,
+    ) -> Fut<'caller, R> {
+        Box::new(async move {
+            let span_start = span::CallSpanStart::new(func);
+
+            // Call `run` with the caller and a handle to the memory.
+            let (caller, result) = run(caller).await;
+
+            Self::end_span(caller, span_start);
+            result
+        })
+    }
+
+    fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
+        match err {
+            WasmError::Db(err) => err_to_errno_and_log(func, err).map(|(code, _)| code),
+            WasmError::BufferTooSmall => Ok(errno::BUFFER_TOO_SMALL.get().into()),
+            WasmError::Wasm(err) => Err(err),
         }
     }
 
-    /// Returns an execution context for a reducer call.
-    fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
-        self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
+    /// Call the function `run` with the name `func`.
+    /// The function `run` is provided with the callers environment and the host's memory.
+    ///
+    /// One of `cvt_custom`, `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
+    /// host call, to provide consistent error handling and instrumentation.
+    ///
+    /// Some database errors are logged but are otherwise regarded as `Ok(_)`.
+    /// See `err_to_errno` for a list.
+    ///
+    /// This variant should be used when more control is needed over the success value.
+    fn cvt_custom<T: From<u16>>(
+        caller: Caller<'_, Self>,
+        func: AbiCall,
+        run: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<T>,
+    ) -> RtResult<T> {
+        Self::with_span(caller, func, run).or_else(|err| Self::convert_wasm_result(func, err))
     }
 
-    // TODO: make this part of cvt(), maybe?
-    /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
-    #[allow(unused)]
-    fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
-        let db = self.instance_env().dbic.address;
-
-        DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(&db, &self.reducer_name, &call)
-            .start_timer()
-    }
-
-    /// Call the function `f` with the name `func`.
-    /// The function `f` is provided with the callers environment and the host's memory.
+    /// Call the function `run` with the name `func`.
+    /// The function `run` is provided with the callers environment and the host's memory.
     ///
     /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
     /// host call, to provide consistent error handling and instrumentation.
     ///
     /// Some database errors are logged but are otherwise regarded as `Ok(_)`.
     /// See `err_to_errno` for a list.
-    fn cvt(
-        mut caller: Caller<'_, Self>,
+    fn cvt<T: From<u16>>(
+        caller: Caller<'_, Self>,
         func: AbiCall,
-        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<()>,
-    ) -> RtResult<u32> {
-        let span_start = span::CallSpanStart::new(func);
-
-        // Call `f` with the caller and a handle to the memory.
-        let result = f(&mut caller);
-
-        // Track the span of this call.
-        let span = span_start.end();
-        span::record_span(&mut caller.data_mut().call_times, span);
-
-        // Bail if there were no errors.
-        let Err(err) = result else {
-            return Ok(0);
-        };
-
-        // Handle any errors.
-        Err(match err {
-            WasmError::Db(err) => match err_to_errno(&err) {
-                Some(errno) => {
-                    log::debug!("abi call to {func} returned a normal error: {err:#}");
-                    return Ok(errno.into());
-                }
-                None => anyhow::Error::from(AbiRuntimeError { func, err }),
-            },
-            WasmError::Wasm(err) => err,
-        })
+        run: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<()>,
+    ) -> RtResult<T> {
+        Self::cvt_custom(caller, func, |c| run(c).map(|()| 0u16.into()))
     }
 
     /// Call the function `f` with any return value being written to the pointer `out`.
@@ -221,16 +398,16 @@ impl WasmInstanceEnv {
     /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
     ///
     /// Returns an error if writing `T` to `out` errors.
-    fn cvt_ret<T: WasmPointee>(
+    fn cvt_ret<O: WasmPointee>(
         caller: Caller<'_, Self>,
         call: AbiCall,
-        out: WasmPtr<T>,
-        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<T>,
+        out: WasmPtr<O>,
+        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<O>,
     ) -> RtResult<u32> {
         Self::cvt(caller, call, |caller| {
             f(caller).and_then(|ret| {
                 let (mem, _) = Self::mem_env(caller);
-                ret.write_to(mem, out)
+                ret.write_to(mem, out).map_err(|e| e.into())
             })
         })
     }
@@ -240,74 +417,982 @@ impl WasmInstanceEnv {
     /// This is the version of `cvt` or `cvt_ret` for functions with no return value.
     /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
     /// host call, to provide consistent error handling and instrumentation.
-    fn cvt_noret(mut caller: Caller<'_, Self>, call: AbiCall, f: impl FnOnce(&mut Caller<'_, Self>)) {
-        let span_start = span::CallSpanStart::new(call);
-
-        // Call `f` with the caller and a handle to the memory.
-        f(&mut caller);
-
-        let span = span_start.end();
-        span::record_span(&mut caller.data_mut().call_times, span);
+    fn cvt_noret(caller: Caller<'_, Self>, call: AbiCall, f: impl FnOnce(&mut Caller<'_, Self>)) {
+        Self::with_span(caller, call, f)
     }
 
-    /// Schedules a reducer to be called asynchronously at `time`.
+    fn convert_u32_to_col_id(col_id: u32) -> WasmResult<ColId> {
+        let col_id: u16 = col_id
+            .try_into()
+            .context("ABI violation, a `ColId` must be a `u16`")
+            .map_err(WasmError::Wasm)?;
+        Ok(col_id.into())
+    }
+
+    /// Queries the `table_id` associated with the given (table) `name`
+    /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
     ///
-    /// The reducer is named as the valid UTF-8 slice `(name, name_len)`,
-    /// and is passed the slice `(args, args_len)` as its argument.
+    /// The table id is written into the `out` pointer.
     ///
-    /// A generated schedule id is assigned to the reducer.
-    /// This id is written to the pointer `out`.
+    /// # Traps
     ///
-    /// Returns an error if
-    /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
-    /// - `name` does not point to valid UTF-8
-    /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
-    /// - writing to `out` overflows a 64-bit integer
-    #[tracing::instrument(skip_all)]
-    pub fn schedule_reducer(
+    /// Traps if:
+    /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+    /// - `name` is not valid UTF-8.
+    /// - `out` is NULL or `out[..size_of::<TableId>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn table_id_from_name(
+        caller: Caller<'_, Self>,
+        name: WasmPtr<u8>,
+        name_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret::<u32>(caller, AbiCall::TableIdFromName, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the table name from WASM memory.
+            let name = mem.deref_str(name, name_len)?;
+
+            // Query the table id.
+            Ok(env.instance_env.table_id_from_name(name)?.into())
+        })
+    }
+
+    /// Queries the `index_id` associated with the given (index) `name`
+    /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
+    ///
+    /// The index id is written into the `out` pointer.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+    /// - `name` is not valid UTF-8.
+    /// - `out` is NULL or `out[..size_of::<IndexId>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn index_id_from_name(
+        caller: Caller<'_, Self>,
+        name: WasmPtr<u8>,
+        name_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret::<u32>(caller, AbiCall::IndexIdFromName, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the index name from WASM memory.
+            let name = mem.deref_str(name, name_len)?;
+
+            // Query the index id.
+            Ok(env.instance_env.index_id_from_name(name)?.into())
+        })
+    }
+
+    /// Writes the number of rows currently in table identified by `table_id` to `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_table_row_count(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::cvt_ret::<u64>(caller, AbiCall::DatastoreTableRowCount, out, |caller| {
+            let (_, env) = Self::mem_env(caller);
+            Ok(env.instance_env.datastore_table_row_count(table_id.into())?)
+        })
+    }
+
+    /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    // #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_table_scan_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreTableScanBsatn, out, |caller| {
+            let env = caller.data_mut();
+            // Collect the iterator chunks.
+            let chunks = env
+                .instance_env
+                .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id.into())?;
+            // Register the iterator and get back the index to write to `out`.
+            // Calls to the iterator are done through dynamic dispatch.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
+    }
+
+    /// Finds all rows in the index identified by `index_id`,
+    /// according to `point = point_ptr[..point_len]` in WASM memory.
+    ///
+    /// The index itself has a schema/type.
+    /// Matching defined by first BSATN-decoding `point` to that `AlgebraicType`
+    /// and then comparing the decoded `point` to the keys in the index
+    /// using `Ord for AlgebraicValue`.
+    /// to the keys in the index.
+    /// The `point` is BSATN-decoded to that `AlgebraicType`.
+    /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+    /// This occurs exactly when the row's BSATN-encoding
+    /// is equal to the encoding of the `AlgebraicValue`.
+    ///
+    /// This ABI is not limited to single column indices.
+    /// Multi-column indices can be queried by providing
+    /// a BSATN-encoded `ProductValue`
+    /// that is typed at the `ProductType` of the index.
+    ///
+    /// The relevant table for the index is found implicitly via the `index_id`,
+    /// which is unique for the module.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+    ///   typed at the index's key type (`AlgebraicType`).
+    pub fn datastore_index_scan_point_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        point_ptr: WasmPtr<u8>, // AlgebraicValue
+        point_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreIndexScanPointBsatn, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the `point` from WASM memory.
+            let point = mem.deref_slice(point_ptr, point_len)?;
+
+            // Find the relevant rows.
+            let chunks = env.instance_env.datastore_index_scan_point_bsatn_chunks(
+                &mut env.chunk_pool,
+                index_id.into(),
+                point,
+            )?;
+
+            // Insert the encoded + concatenated rows into a new buffer and return its id.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
+    }
+
+    /// Finds all rows in the index identified by `index_id`,
+    /// according to the:
+    /// - `prefix = prefix_ptr[..prefix_len]`,
+    /// - `rstart = rstart_ptr[..rstart_len]`,
+    /// - `rend = rend_ptr[..rend_len]`,
+    ///
+    /// in WASM memory.
+    ///
+    /// The index itself has a schema/type.
+    /// The `prefix` is decoded to the initial `prefix_elems` `AlgebraicType`s
+    /// whereas `rstart` and `rend` are decoded to the `prefix_elems + 1` `AlgebraicType`
+    /// where the `AlgebraicValue`s are wrapped in `Bound`.
+    /// That is, `rstart, rend` are BSATN-encoded `Bound<AlgebraicValue>`s.
+    ///
+    /// Matching is then defined by equating `prefix`
+    /// to the initial `prefix_elems` columns of the index
+    /// and then imposing `rstart` as the starting bound
+    /// and `rend` as the ending bound on the `prefix_elems + 1` column of the index.
+    /// Remaining columns of the index are then unbounded.
+    /// Note that the `prefix` in this case can be empty (`prefix_elems = 0`),
+    /// in which case this becomes a ranged index scan on a single-col index
+    /// or even a full table scan if `rstart` and `rend` are both unbounded.
+    ///
+    /// The relevant table for the index is found implicitly via the `index_id`,
+    /// which is unique for the module.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Non-obvious queries
+    ///
+    /// For an index on columns `[a, b, c]`:
+    ///
+    /// - `a = x, b = y` is encoded as a prefix `[x, y]`
+    ///   and a range `Range::Unbounded`,
+    ///   or as a  prefix `[x]` and a range `rstart = rend = Range::Inclusive(y)`.
+    /// - `a = x, b = y, c = z` is encoded as a prefix `[x, y]`
+    ///   and a  range `rstart = rend = Range::Inclusive(z)`.
+    /// - A sorted full scan is encoded as an empty prefix
+    ///   and a range `Range::Unbounded`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `prefix_elems > 0`
+    ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+    /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+    ///   a `prefix_elems` number of `AlgebraicValue`
+    ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///   where the inner `AlgebraicValue`s are
+    ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    pub fn datastore_index_scan_range_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreIndexScanRangeBsatn, out, |caller| {
+            let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
+
+            let (mem, env) = Self::mem_env(caller);
+            // Read the prefix and range start & end from WASM memory.
+            let prefix = if prefix_elems.idx() == 0 {
+                &[]
+            } else {
+                mem.deref_slice(prefix_ptr, prefix_len)?
+            };
+            let rstart = mem.deref_slice(rstart_ptr, rstart_len)?;
+            let rend = mem.deref_slice(rend_ptr, rend_len)?;
+
+            // Find the relevant rows.
+            let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
+                &mut env.chunk_pool,
+                index_id.into(),
+                prefix,
+                prefix_elems,
+                rstart,
+                rend,
+            )?;
+
+            // Insert the encoded + concatenated rows into a new buffer and return its id.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
+    }
+
+    /// Deprecated name for [`Self::datastore_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_index_scan_range_bsatn` instead"]
+    pub fn datastore_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::datastore_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
+    }
+
+    /// Reads rows from the given iterator registered under `iter`.
+    ///
+    /// Takes rows from the iterator
+    /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`,
+    /// encoded in BSATN format.
+    ///
+    /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+    /// On success (`0` or `-1` is returned),
+    /// `buffer_len` is set to the combined length of the encoded rows.
+    /// When `-1` is returned, the iterator has been exhausted
+    /// and there are no more rows to read,
+    /// leading to the iterator being immediately destroyed.
+    /// Note that the host is free to reuse allocations in a pool,
+    /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+    /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
+    /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
+    ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
+    ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
+    // #[tracing::instrument(level = "trace", skip_all)]
+    pub fn row_iter_bsatn_advance(
+        caller: Caller<'_, Self>,
+        iter: u32,
+        buffer_ptr: WasmPtr<u8>,
+        buffer_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<i32> {
+        let row_iter_idx = RowIterIdx(iter);
+        Self::cvt_custom(caller, AbiCall::RowIterBsatnAdvance, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Retrieve the iterator by `row_iter_idx`, or error.
+            let Some(iter) = env.iters.get_mut(row_iter_idx) else {
+                return Ok(errno::NO_SUCH_ITER.get().into());
+            };
+
+            // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+            let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+            let write_buffer_len = |mem, len| u32::try_from(len).unwrap().write_to(mem, buffer_len_ptr);
+
+            // Get a mutable view to the `buffer`.
+            let buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
+
+            // Fill the buffer as much as possible.
+            let written = InstanceEnv::fill_buffer_from_iter(iter, buffer, &mut env.chunk_pool);
+
+            let ret = match (written, iter.as_slice().first()) {
+                // Nothing was written and the iterator is not exhausted.
+                (0, Some(chunk)) => {
+                    write_buffer_len(mem, chunk.len())?;
+                    return Ok(errno::BUFFER_TOO_SMALL.get().into());
+                }
+                // The iterator is exhausted, destroy it, and tell the caller.
+                (_, None) => {
+                    env.iters.take(row_iter_idx);
+                    -1
+                }
+                // Something was written, but the iterator is not exhausted.
+                (_, Some(_)) => 0,
+            };
+            write_buffer_len(mem, written)?;
+            Ok(ret)
+        })
+    }
+
+    /// Destroys the iterator registered under `iter`.
+    ///
+    /// Once `row_iter_bsatn_close` is called on `iter`, the `iter` is invalid.
+    /// That is, `row_iter_bsatn_close(iter)` the second time will yield `NO_SUCH_ITER`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
+    // #[tracing::instrument(level = "trace", skip_all)]
+    pub fn row_iter_bsatn_close(caller: Caller<'_, Self>, iter: u32) -> RtResult<u32> {
+        let row_iter_idx = RowIterIdx(iter);
+        Self::cvt_custom(caller, AbiCall::RowIterBsatnClose, |caller| {
+            let (_, env) = Self::mem_env(caller);
+
+            // Retrieve the iterator by `row_iter_idx`, or error.
+            Ok(match env.iters.take(row_iter_idx) {
+                None => errno::NO_SUCH_ITER.get().into(),
+                // TODO(Centril): consider putting these into a pool for reuse.
+                Some(_) => 0,
+            })
+        })
+    }
+
+    /// Inserts a row into the table identified by `table_id`,
+    /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+    /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+    ///
+    /// The byte string `row` must be a BSATN-encoded `ProductValue`
+    /// typed at the table's `ProductType` row-schema.
+    ///
+    /// To handle auto-incrementing columns,
+    /// when the call is successful,
+    /// the `row` is written back to with the generated sequence values.
+    /// These values are written as a BSATN-encoded `pv: ProductValue`.
+    /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+    /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+    /// When the table has no sequences,
+    /// this implies that the `pv`, and thus `row`, will be empty.
+    /// The `row_len` is set to the length of `bsatn(pv)`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+    /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`.
+    ///   typed at the `ProductType` the table's schema specifies.
+    /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+    /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_insert_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        row_ptr: WasmPtr<u8>,
+        row_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::DatastoreInsertBsatn, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
+            let row_len = u32::read_from(mem, row_len_ptr)?;
+            // Get a mutable view to the `row`.
+            let row = mem.deref_slice_mut(row_ptr, row_len)?;
+
+            // Insert the row into the DB and write back the generated column values.
+            let row_len = env.instance_env.insert(table_id.into(), row)?;
+            u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
+            Ok(())
+        })
+    }
+
+    /// Updates a row in the table identified by `table_id` to `row`
+    /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+    /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+    ///
+    /// The byte string `row` must be a BSATN-encoded `ProductValue`
+    /// typed at the table's `ProductType` row-schema.
+    ///
+    /// The row to update is found by projecting `row`
+    /// to the type of the *unique* index identified by `index_id`.
+    /// If no row is found, the error `NO_SUCH_ROW` is returned.
+    ///
+    /// To handle auto-incrementing columns,
+    /// when the call is successful,
+    /// the `row` is written back to with the generated sequence values.
+    /// These values are written as a BSATN-encoded `pv: ProductValue`.
+    /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+    /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+    /// When the table has no sequences,
+    /// this implies that the `pv`, and thus `row`, will be empty.
+    /// The `row_len` is set to the length of `bsatn(pv)`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+    /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `INDEX_NOT_UNIQUE`, when the index was not unique.
+    /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
+    ///    typed at the `ProductType` the table's schema specifies
+    ///    or when it cannot be projected to the index identified by `index_id`.
+    /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
+    /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+    /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_update_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        index_id: u32,
+        row_ptr: WasmPtr<u8>,
+        row_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::DatastoreUpdateBsatn, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
+            let row_len = u32::read_from(mem, row_len_ptr)?;
+            // Get a mutable view to the `row`.
+            let row = mem.deref_slice_mut(row_ptr, row_len)?;
+
+            // Update the row in the DB and write back the generated column values.
+            let row_len = env.instance_env.update(table_id.into(), index_id.into(), row)?;
+            u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
+            Ok(())
+        })
+    }
+
+    /// Deletes all rows found in the index identified by `index_id`,
+    /// according to `point = point_ptr[..point_len]` in WASM memory.
+    ///
+    /// This syscall will delete all the rows found by
+    /// [`datastore_index_scan_point_bsatn`] with the same arguments passed.
+    /// See `datastore_index_scan_point_bsatn` for details.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+    ///   typed at the index's key type (`AlgebraicType`).
+    pub fn datastore_delete_by_index_scan_point_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        point_ptr: WasmPtr<u8>, // AlgebraicValue
+        point_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByIndexScanPointBsatn, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the `point` from WASM memory.
+            let point = mem.deref_slice(point_ptr, point_len)?;
+
+            // Delete the relevant rows.
+            Ok(env
+                .instance_env
+                .datastore_delete_by_index_scan_point_bsatn(index_id.into(), point)?)
+        })
+    }
+
+    /// Deletes all rows found in the index identified by `index_id`,
+    /// according to the:
+    /// - `prefix = prefix_ptr[..prefix_len]`,
+    /// - `rstart = rstart_ptr[..rstart_len]`,
+    /// - `rend = rend_ptr[..rend_len]`,
+    ///
+    /// in WASM memory.
+    ///
+    /// This syscall will delete all the rows found by
+    /// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
+    /// including `prefix_elems`.
+    /// See `datastore_index_scan_range_bsatn` for details.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `prefix_elems > 0`
+    ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+    /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+    ///   a `prefix_elems` number of `AlgebraicValue`
+    ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///   where the inner `AlgebraicValue`s are
+    ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    pub fn datastore_delete_by_index_scan_range_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByIndexScanRangeBsatn, out, |caller| {
+            let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
+
+            let (mem, env) = Self::mem_env(caller);
+            // Read the prefix and range start & end from WASM memory.
+            let prefix = if prefix_elems.idx() == 0 {
+                &[]
+            } else {
+                mem.deref_slice(prefix_ptr, prefix_len)?
+            };
+            let rstart = mem.deref_slice(rstart_ptr, rstart_len)?;
+            let rend = mem.deref_slice(rend_ptr, rend_len)?;
+
+            // Delete the relevant rows.
+            Ok(env.instance_env.datastore_delete_by_index_scan_range_bsatn(
+                index_id.into(),
+                prefix,
+                prefix_elems,
+                rstart,
+                rend,
+            )?)
+        })
+    }
+
+    /// Deprecated name for [`Self::datastore_delete_by_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_delete_by_index_scan_range_bsatn` instead"]
+    pub fn datastore_delete_by_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::datastore_delete_by_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
+    }
+
+    /// Deletes those rows, in the table identified by `table_id`,
+    /// that match any row in the byte string `rel = rel_ptr[..rel_len]` in WASM memory.
+    ///
+    /// Matching is defined by first BSATN-decoding
+    /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
+    /// according to the row schema of the table
+    /// and then using `Ord for AlgebraicValue`.
+    /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+    /// This occurs exactly when the row's BSATN-encoding is equal to the encoding of the `ProductValue`.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `rel_ptr` is NULL or `rel` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
+    ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_delete_all_by_eq_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        rel_ptr: WasmPtr<u8>,
+        rel_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteAllByEqBsatn, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let relation = mem.deref_slice(rel_ptr, rel_len)?;
+            Ok(env
+                .instance_env
+                .datastore_delete_all_by_eq_bsatn(table_id.into(), relation)?)
+        })
+    }
+
+    /// Deletes all rows in the table identified by `table_id`.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_clear(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreClear, out, |caller| {
+            let (_, env) = Self::mem_env(caller);
+            Ok(env.instance_env.clear(table_id.into())?)
+        })
+    }
+
+    pub fn volatile_nonatomic_schedule_immediate(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
         name_len: u32,
         args: WasmPtr<u8>,
         args_len: u32,
-        time: u64,
-        out: WasmPtr<u64>,
     ) -> RtResult<()> {
-        Self::cvt_ret(caller, AbiCall::ScheduleReducer, out, |caller| {
+        Self::with_span(caller, AbiCall::VolatileNonatomicScheduleImmediate, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            // Read the index name as a string from `(name, name_len)`.
-            let name = mem.deref_str(name, name_len)?.to_owned();
+            let name = mem.deref_str(name, name_len)?;
+            let args = mem.deref_slice(args, args_len)?;
+            env.instance_env.scheduler.volatile_nonatomic_schedule_immediate(
+                name.to_owned(),
+                crate::host::FunctionArgs::Bsatn(args.to_vec().into()),
+            );
 
-            // Read the reducer's arguments as a byte slice.
-            let args = mem.deref_slice(args, args_len)?.to_vec();
-
-            // Schedule it!
-            let ScheduledReducerId(id) =
-                env.instance_env
-                    .schedule(name, args, Timestamp(time))
-                    .map_err(|e| match e {
-                        ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
-                        ScheduleError::IdTransactionError(_) => {
-                            anyhow!("transaction to acquire ScheduleReducerId failed")
-                        }
-                    })?;
-            Ok(id)
+            Ok(())
         })
-        .map(|_| ())
     }
 
-    /// Unschedule a reducer using the same `id` generated as when it was scheduled.
+    /// Reads bytes from `source`, registered in the host environment,
+    /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`.
     ///
-    /// This assumes that the reducer hasn't already been executed.
-    #[tracing::instrument(skip_all)]
-    pub fn cancel_reducer(caller: Caller<'_, Self>, id: u64) {
-        Self::cvt_noret(caller, AbiCall::CancelReducer, |caller| {
-            caller.data().instance_env.cancel_reducer(ScheduledReducerId(id))
+    /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+    /// On success (`0` or `-1` is returned),
+    /// `buffer_len` is set to the number of bytes written to `buffer`.
+    /// When `-1` is returned, the resource has been exhausted
+    /// and there are no more bytes to read,
+    /// leading to the resource being immediately destroyed.
+    /// Note that the host is free to reuse allocations in a pool,
+    /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+    /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_BYTES`, when `source` is not a valid bytes source.
+    ///
+    /// # Example
+    ///
+    /// The typical use case for this ABI is in `__call_reducer__`,
+    /// to read and deserialize the `args`.
+    /// An example definition, dealing with `args` might be:
+    /// ```rust,ignore
+    /// /// #[no_mangle]
+    /// extern "C" fn __call_reducer__(..., args: BytesSource, ...) -> i16 {
+    ///     // ...
+    ///
+    ///     let mut buf = Vec::<u8>::with_capacity(1024);
+    ///     loop {
+    ///         // Write into the spare capacity of the buffer.
+    ///         let buf_ptr = buf.spare_capacity_mut();
+    ///         let spare_len = buf_ptr.len();
+    ///         let mut buf_len = buf_ptr.len();
+    ///         let buf_ptr = buf_ptr.as_mut_ptr().cast();
+    ///         let ret = unsafe { bytes_source_read(args, buf_ptr, &mut buf_len) };
+    ///         // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
+    ///         unsafe { buf.set_len(buf.len() + spare_len) };
+    ///         match ret {
+    ///             // Host side source exhausted, we're done.
+    ///             -1 => break,
+    ///             // Wrote the entire spare capacity.
+    ///             // Need to reserve more space in the buffer.
+    ///             0 if spare_len == buf_len => buf.reserve(1024),
+    ///             // Host didn't write as much as possible.
+    ///             // Try to read some more.
+    ///             // The host will likely not trigger this branch,
+    ///             // but a module should be prepared for it.
+    ///             0 => {}
+    ///             _ => unreachable!(),
+    ///         }
+    ///     }
+    ///
+    ///     // ...
+    /// }
+    /// ```
+    pub fn bytes_source_read(
+        caller: Caller<'_, Self>,
+        source: u32,
+        buffer_ptr: WasmPtr<u8>,
+        buffer_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<i32> {
+        Self::cvt_custom(caller, AbiCall::BytesSourceRead, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            let source = BytesSourceId(source);
+
+            // Retrieve the reducer args if available and requested, or error.
+            let Some(bytes_source) = env.bytes_sources.get_mut(&source) else {
+                return Ok(errno::NO_SUCH_BYTES.get().into());
+            };
+
+            // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+            let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+            // Get a mutable view to the `buffer`.
+            let buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
+            let buffer_len = buffer_len as usize;
+
+            // Derive the portion that we can read and what remains,
+            // based on what is left to read and the capacity.
+            let can_read_len = buffer_len.min(bytes_source.bytes.len());
+            let can_read = bytes_source.bytes.split_to(can_read_len);
+            // Copy to the `buffer` and write written bytes count to `buffer_len`.
+            buffer[..can_read_len].copy_from_slice(&can_read);
+            (can_read_len as u32).write_to(mem, buffer_len_ptr)?;
+
+            // Destroy the source if exhausted, or advance `cursor`.
+            if bytes_source.bytes.is_empty() {
+                env.free_bytes_source(source);
+                Ok(-1i32)
+            } else {
+                Ok(0)
+            }
         })
     }
 
-    /// Log at `level` a `message` message occuring in `filename:line_number`
-    /// with [`target`] being the module path at the `log!` invocation site.
+    /// Read the remaining length of a [`BytesSource`] and write it to `out`.
+    ///
+    /// Note that the host automatically frees byte sources which are exhausted.
+    /// Such sources are invalid, and this method will return an error when passed one.
+    /// Callers of [`Self::bytes_source_read`] should check for a return of -1
+    /// before invoking this function on the same `source`.
+    ///
+    /// Also note that the special [`BytesSourceId::INVALID`] (zero) is always invalid.
+    /// Callers should check for that value before invoking this function.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `out` is NULL or `out` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_BYTES`, when `source` is not a valid bytes source.
+    ///
+    /// If this function returns an error, `out` is not written.
+    pub fn bytes_source_remaining_length(caller: Caller<'_, Self>, source: u32, out: WasmPtr<u32>) -> RtResult<i32> {
+        Self::cvt_custom(caller, AbiCall::BytesSourceRemainingLength, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            let Some(bytes_source) = env.bytes_sources.get(&BytesSourceId(source)) else {
+                return Ok(errno::NO_SUCH_BYTES.get().into());
+            };
+
+            let remaining: u32 = bytes_source
+                .bytes
+                .len()
+                .try_into()
+                // TODO: Change this into an `errno::BYTES_SOURCE_LENGTH_UNKNOWN` rather than a trap,
+                // so that we can support very large `BytesSource`s, streams, and other file-like things that aren't just `Bytes`.
+                // This is not currently (pgoldman 2025-09-26) a useful thing to do,
+                // as all of our uses of `BytesSource` are to slurp the whole source into a single buffer in guest memory,
+                // `File::read_to_end`-style, and we don't have any use for large or streaming `BytesSource`s.
+                .context("Bytes object in `BytesSource` had length greater than range of u32")?;
+
+            u32::write_to(remaining, mem, out)
+                .context("Failed to write output from `bytes_source_remaining_length`")?;
+
+            Ok(0)
+        })
+    }
+
+    /// Writes up to `buffer_len` bytes from `buffer = buffer_ptr[..buffer_len]`,
+    /// to the `sink`, registered in the host environment.
+    ///
+    /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+    /// On success (`0` is returned),
+    /// `buffer_len` is set to the number of bytes written to `sink`.
+    ///
+    /// # Traps
+    ///
+    /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+    /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_BYTES`, when `sink` is not a valid bytes sink.
+    /// - `NO_SPACE`, when there is no room for more bytes in `sink`.
+    ///   (Doesn't currently happen.)
+    pub fn bytes_sink_write(
+        caller: Caller<'_, Self>,
+        sink: u32,
+        buffer_ptr: WasmPtr<u8>,
+        buffer_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::BytesSinkWrite, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Retrieve the reducer args if available and requested, or error.
+            let Some(sink) = env.standard_bytes_sink.as_mut().filter(|_| sink == STANDARD_BYTES_SINK) else {
+                return Ok(errno::NO_SUCH_BYTES.get().into());
+            };
+
+            // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+            let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+            // Write `buffer` to `sink`.
+            let buffer = mem.deref_slice(buffer_ptr, buffer_len)?;
+            sink.extend(buffer);
+
+            Ok(0)
+        })
+    }
+
+    /// Logs at `level` a `message` message occurring in `filename:line_number`
+    /// with [`target`](target) being the module path at the `log!` invocation site.
     ///
     /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
     ///
@@ -319,17 +1404,24 @@ impl WasmInstanceEnv {
     /// - `filename != NULL && filename + filename_len > u64::MAX`
     /// - `message + message_len > u64::MAX`
     ///
-    /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-    #[tracing::instrument(skip_all)]
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `target` is not NULL and `target_ptr[..target_len]` is not in bounds of WASM memory.
+    /// - `filename` is not NULL and `filename_ptr[..filename_len]` is not in bounds of WASM memory.
+    /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
+    ///
+    /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn console_log(
         caller: Caller<'_, Self>,
         level: u32,
-        target: WasmPtr<u8>,
+        target_ptr: WasmPtr<u8>,
         target_len: u32,
-        filename: WasmPtr<u8>,
+        filename_ptr: WasmPtr<u8>,
         filename_len: u32,
         line_number: u32,
-        message: WasmPtr<u8>,
+        message_ptr: WasmPtr<u8>,
         message_len: u32,
     ) {
         let do_console_log = |caller: &mut Caller<'_, Self>| -> WasmResult<()> {
@@ -337,23 +1429,25 @@ impl WasmInstanceEnv {
             let mem = env.get_mem().view(&caller);
 
             // Read the `target`, `filename`, and `message` strings from WASM memory.
-            let target = mem.deref_str_lossy(target, target_len).check_nullptr()?;
-            let filename = mem.deref_str_lossy(filename, filename_len).check_nullptr()?;
-            let message = mem.deref_str_lossy(message, message_len)?;
+            let target = mem.deref_str_lossy(target_ptr, target_len).check_nullptr()?;
+            let filename = mem.deref_str_lossy(filename_ptr, filename_len).check_nullptr()?;
+            let message = mem.deref_str_lossy(message_ptr, message_len)?;
 
             // The line number cannot be `u32::MAX` as this represents `Option::None`.
             let line_number = (line_number != u32::MAX).then_some(line_number);
 
+            let function = env.log_record_function();
+
             let record = Record {
-                // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
-                ts: chrono::Utc::now(),
+                ts: InstanceEnv::now_for_logging(),
                 target: target.as_deref(),
                 filename: filename.as_deref(),
                 line_number,
+                function,
                 message: &message,
             };
 
-            // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
+            // Write the log record to the `DatabaseLogger` in the database instance context (replica_ctx).
             env.instance_env
                 .console_log((level as u8).into(), &record, &caller.as_context());
             Ok(())
@@ -363,421 +1457,518 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Inserts a row into the table identified by `table_id`,
-    /// where the row is read from the byte slice `row` in WASM memory,
-    /// lasting `row_len` bytes.
+    /// Begins a timing span with `name = name_ptr[..name_len]`.
     ///
-    /// The `(row, row_len)` slice must be a BSATN-encoded `ProductValue`
-    /// matching the table's `ProductType` row-schema.
-    /// The `row` pointer is written to with the inserted row re-encoded.
-    /// This is due to auto-incrementing columns.
+    /// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
+    /// the duration between the calls will be printed to the module's logs.
     ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - there were unique constraint violations
-    /// - `row + row_len` overflows a 64-bit integer
-    /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
-    ///   according to the `ProductType` that the table's schema specifies.
-    #[tracing::instrument(skip_all)]
-    pub fn insert(caller: Caller<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
-
-        Self::cvt(caller, AbiCall::Insert, |caller| {
+    /// The `name` is interpreted lossily as a UTF-8 string.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+    pub fn console_timer_start(caller: Caller<'_, Self>, name_ptr: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ConsoleTimerStart, |caller| {
             let (mem, env) = Self::mem_env(caller);
+            let name = mem.deref_str_lossy(name_ptr, name_len)?.into_owned();
+            Ok(env.timing_spans.insert(TimingSpan::new(name)).0)
+        })
+    }
 
-            // Read the row from WASM memory into a buffer.
-            let row_buffer = mem.deref_slice_mut(row, row_len)?;
+    pub fn console_timer_end(caller: Caller<'_, Self>, span_id: u32) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::ConsoleTimerEnd, |caller| {
+            let Some(span) = caller.data_mut().timing_spans.take(TimingSpanIdx(span_id)) else {
+                return Ok(errno::NO_SUCH_CONSOLE_TIMER.get().into());
+            };
+            let function = caller.data().log_record_function();
+            caller.data().instance_env.console_timer_end(&span, function);
+            Ok(0)
+        })
+    }
 
-            // Insert the row into the DB. We get back the decoded version.
-            // Then re-encode and write that back into WASM memory at `row`.
-            // We're doing this because of autoinc.
-            let ctx = env.reducer_context()?;
-            let new_row = env.instance_env.insert(&ctx, table_id.into(), row_buffer)?;
-            new_row.encode(&mut { row_buffer });
+    /// Finds the JWT payload associated with `connection_id`.
+    /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
+    /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+    ///
+    /// This must be called inside a transaction (because it reads from a system table).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+    /// - `target_ptr` is NULL or `target_ptr[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///  - The `ByteSourceId` to be written to `target_ptr` would overflow [`u32::MAX`].
+    pub fn get_jwt(
+        caller: Caller<'_, Self>,
+        connection_id: WasmPtr<ConnectionId>,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::GetJwt, target_ptr, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let cid = ConnectionId::read_from(mem, connection_id)?;
+            let jwt = env.instance_env.get_jwt_payload(cid)?;
+            let jwt = match jwt {
+                None => {
+                    // We should consider logging a warning here, since we don't expect any
+                    // connection ids to not have a JWT after we migrate.
+                    return Ok(0u32);
+                }
+                Some(jwt) => jwt,
+            };
+            let b = bytes::Bytes::from(jwt);
+            let source_id = env.create_bytes_source(b)?;
+            Ok(source_id.0)
+        })
+    }
+
+    /// Writes the identity of the module into `out = out_ptr[..32]`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
+    pub fn identity(caller: Caller<'_, Self>, out_ptr: WasmPtr<u8>) -> RtResult<()> {
+        // Use `with_span` rather than one of the `cvt_*` functions,
+        // as we want to possibly trap, but not to return an error code.
+        Self::with_span(caller, AbiCall::Identity, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let identity = env.instance_env.database_identity();
+            // We're implicitly casting `out_ptr` to `WasmPtr<Identity>` here.
+            // (Both types are actually `u32`.)
+            // This works because `Identity::write_to` does not require an aligned pointer,
+            // as it gets a `&mut [u8]` from WASM memory and does `copy_from_slice` with it.
+            identity.write_to(mem, out_ptr)?;
             Ok(())
         })
     }
 
-    /// Deletes all rows in the table identified by `table_id`
-    /// where the column identified by `cols` matches the byte string,
-    /// in WASM memory, pointed to at by `value`.
+    /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
     ///
-    /// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
+    /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
     ///
-    /// The number of rows deleted is written to the WASM pointer `out`.
+    /// Upon resuming, returns the current timestamp as microseconds since the Unix epoch.
     ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - no columns were deleted
-    /// - `col_id` does not identify a column of the table,
-    /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
-    ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
-    /// - `value + value_len` overflows a 64-bit integer
-    /// - writing to `out` would overflow a 32-bit integer
-    pub fn delete_by_col_eq(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        col_id: u32,
-        value: WasmPtr<u8>,
-        value_len: u32,
-        out: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
+    /// Not particularly useful, except for testing SpacetimeDB internals related to suspending procedure execution.
+    ///
+    /// In our public module-facing interfaces, this function is marked as unstable.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - The calling WASM instance is holding open a transaction.
+    /// - The calling WASM instance is not executing a procedure.
+    // TODO(procedure-sleep-until): remove this
+    pub fn procedure_sleep_until<'caller>(
+        caller: Caller<'caller, Self>,
+        (wake_at_micros_since_unix_epoch,): (i64,),
+    ) -> Fut<'caller, i64> {
+        Self::async_with_span(caller, AbiCall::ProcedureSleepUntil, move |caller| async move {
+            use std::time::SystemTime;
+            let get_current_time = || (caller, Timestamp::now().to_micros_since_unix_epoch());
 
-        Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            let ctx = env.reducer_context()?;
-            let value = mem.deref_slice(value, value_len)?;
-            let count = env
-                .instance_env
-                .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
-            Ok(count)
+            if wake_at_micros_since_unix_epoch < 0 {
+                return get_current_time();
+            }
+
+            let wake_at = Timestamp::from_micros_since_unix_epoch(wake_at_micros_since_unix_epoch);
+            let Ok(duration) = SystemTime::from(wake_at).duration_since(SystemTime::now()) else {
+                return get_current_time();
+            };
+
+            tokio::time::sleep(duration).await;
+
+            get_current_time()
         })
     }
 
-    /// Deletes those rows, in the table identified by `table_id`,
-    /// that match any row in `relation`.
+    /// Starts a mutable transaction,
+    /// blocking until a mutable transaction lock is acquired.
     ///
-    /// Matching is defined by first BSATN-decoding
-    /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
-    /// according to the row schema of the table
-    /// and then using `Ord for AlgebraicValue`.
+    /// Returns `0` on success,
+    /// enabling further calls that require a pending transaction,
+    /// or an error code otherwise.
     ///
-    /// The number of rows deleted is written to the WASM pointer `out`.
+    /// # Traps
     ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
-    ///   according to the `ProductValue` that the table's schema specifies for rows.
-    /// - `relation + relation_len` overflows a 64-bit integer
-    /// - writing to `out` would overflow a 32-bit integer
-    #[tracing::instrument(skip_all)]
-    pub fn delete_by_rel(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        relation: WasmPtr<u8>,
-        relation_len: u32,
-        out: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DeleteByRel, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            let relation = mem.deref_slice(relation, relation_len)?;
-            Ok(env.instance_env.delete_by_rel(table_id.into(), relation)?)
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<i64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
+    pub fn procedure_start_mut_tx<'caller>(caller: Caller<'caller, Self>, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureStartMutTransaction, |mut caller| {
+            let (mem, env) = Self::mem_env(&mut caller);
+            let res = env.instance_env.start_mutable_tx().map_err(WasmError::from);
+            let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+            let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
+
+            res.map(|()| 0u16.into())
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err))
         })
     }
 
-    /// Queries the `table_id` associated with the given (table) `name`
-    /// where `name` points to a UTF-8 slice in WASM memory of `name_len` bytes.
+    /// Commits a mutable transaction,
+    /// blocking until the transaction has been committed
+    /// and subscription queries have been run and broadcast.
     ///
-    /// The table id is written into the `out` pointer.
+    /// Once complete, it returns `0` on success, or an error code otherwise.
     ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - the slice `(name, name_len)` is not valid UTF-8
-    /// - `name + name_len` overflows a 64-bit address.
-    /// - writing to `out` overflows a 32-bit integer
-    #[tracing::instrument(skip_all)]
-    pub fn get_table_id(
-        caller: Caller<'_, Self>,
-        name: WasmPtr<u8>,
-        name_len: u32,
-        out: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret::<u32>(caller, AbiCall::GetTableId, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Read the table name from WASM memory.
-            let name = mem.deref_str(name, name_len)?;
-
-            // Query the table id.
-            Ok(env.instance_env.get_table_id(name)?.into())
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `TRANSACTION_NOT_ANONYMOUS`,
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
+    ///   This can happen if this syscall is erroneously called by a reducer.
+    ///   The code `NOT_IN_TRANSACTION` does not happen,
+    ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+    /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+    ///   This currently does not happen as anonymous read transactions
+    ///   are not exposed to modules.
+    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |caller| {
+            let res: Result<u32, WasmError> = (|| {
+                let tx = {
+                    let env = caller.data_mut();
+                    env.instance_env.take_mutable_tx_for_commit().map_err(WasmError::from)?
+                };
+                let tx = Self::refresh_views(caller, tx)?;
+                caller
+                    .data_mut()
+                    .instance_env
+                    .commit_procedure_tx(tx)
+                    .map_err(WasmError::from)?;
+                Ok(0u16.into())
+            })();
+            res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
         })
     }
 
-    /// Creates an index with the name `index_name` and type `index_type`,
-    /// on a product of the given columns in `col_ids`
-    /// in the table identified by `table_id`.
+    /// Refresh all views made stale by a procedure `tx`.
     ///
-    /// Here `index_name` points to a UTF-8 slice in WASM memory
-    /// and `col_ids` points to a byte slice in WASM memory with each element being a column.
+    /// This runs each pending view call in the same mutable transaction and writes the refreshed rows
+    /// into the corresponding backing view tables. If any step fails (missing metadata, view execution,
+    /// row decoding, SQL execution, or materialization), this method rolls back `tx` and returns an error.
     ///
-    /// Currently only single-column-indices are supported
-    /// and they may only be of the btree index type.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - the slice `(index_name, index_name_len)` is not valid UTF-8
-    /// - `index_name + index_name_len` or `col_ids + col_len` overflow a 64-bit integer
-    /// - `index_type > 1`
-    ///
-    /// Panics if `index_type == 1` or `col_ids.len() != 1`.
-    #[tracing::instrument(skip_all)]
-    pub fn create_index(
-        caller: Caller<'_, Self>,
-        index_name: WasmPtr<u8>,
-        index_name_len: u32,
-        table_id: u32,
-        index_type: u32,
-        col_ids: WasmPtr<u8>,
-        col_len: u32,
-    ) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::CreateIndex, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Read the index name from WASM memory.
-            let index_name = mem.deref_str(index_name, index_name_len)?.into();
-
-            // Read the column ids on which to create an index from WASM memory.
-            // This may be one column or an index on several columns.
-            let cols = mem.deref_slice(col_ids, col_len)?.to_vec();
-
-            env.instance_env
-                .create_index(index_name, table_id.into(), index_type as u8, cols)?;
-            Ok(())
-        })
-    }
-
-    /// Finds all rows in the table identified by `table_id`,
-    /// where the row has a column, identified by `cols`,
-    /// with data matching the byte string, in WASM memory, pointed to at by `val`.
-    ///
-    /// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// The rows found are BSATN-encoded and then concatenated.
-    /// The resulting byte string from the concatenation is written
-    /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `col_id` does not identify a column of the table,
-    /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
-    ///   typed at the `AlgebraicType` of the column,
-    /// - `val + val_len` overflows a 64-bit integer
-    pub fn iter_by_col_eq(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        col_id: u32,
-        val: WasmPtr<u8>,
-        val_len: u32,
-        out: WasmPtr<BufferIdx>,
-    ) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
-
-        Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Read the test value from WASM memory.
-            let value = mem.deref_slice(val, val_len)?;
-
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
-
-            // Find the relevant rows.
-            let data = env
-                .instance_env
-                .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
-
-            // Release the immutable borrow of `env.buffers` by dropping `ctx`.
-            drop(ctx);
-
-            // Insert the encoded + concatenated rows into a new buffer and return its id.
-            Ok(env.buffers.insert(data.into()))
-        })
-    }
-
-    /// Start iteration on each row, as bytes, of a table identified by `table_id`.
-    ///
-    /// The iterator is registered in the host environment
-    /// under an assigned index which is written to the `out` pointer provided.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    // #[tracing::instrument(skip_all)]
-    pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
-
-        Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
-            let env = caller.data_mut();
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
-            // Collect the iterator chunks.
-            let chunks = env.instance_env.iter_chunks(&ctx, table_id.into())?;
-            drop(ctx);
-            // Register the iterator and get back the index to write to `out`.
-            // Calls to the iterator are done through dynamic dispatch.
-            Ok(env.iters.insert(chunks.into_iter()))
-        })
-    }
-
-    /// Like [`WasmInstanceEnv::iter_start`], start iteration on each row,
-    /// as bytes, of a table identified by `table_id`.
-    ///
-    /// The rows are filtered through `filter`, which is read from WASM memory
-    /// and is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.
-    ///
-    /// The iterator is registered in the host environment
-    /// under an assigned index which is written to the `out` pointer provided.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `(filter, filter_len)` doesn't decode to a filter expression
-    /// - `filter + filter_len` overflows a 64-bit integer
-    pub fn iter_start_filtered(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        filter: WasmPtr<u8>,
-        filter_len: u32,
-        out: WasmPtr<BufferIterIdx>,
-    ) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
-
-        Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
-
-            // Read the slice `(filter, filter_len)`.
-            let filter = mem.deref_slice(filter, filter_len)?;
-
-            // Construct the iterator.
-            let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
-            drop(ctx);
-            // Register the iterator and get back the index to write to `out`.
-            // Calls to the iterator are done through dynamic dispatch.
-            Ok(env.iters.insert(chunks.into_iter()))
-        })
-    }
-
-    /// Advances the registered iterator with the index given by `iter_key`.
-    ///
-    /// On success, the next element (the row as bytes) is written to a buffer.
-    /// The buffer's index is returned and written to the `out` pointer.
-    /// If there are no elements left, an invalid buffer index is written to `out`.
-    /// On failure however, the error is returned.
-    ///
-    /// Returns an error if
-    /// - `iter` does not identify a registered `BufferIter`
-    /// - writing to `out` would overflow a 32-bit integer
-    /// - advancing the iterator resulted in an error
-    // #[tracing::instrument(skip_all)]
-    pub fn iter_next(caller: Caller<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterNext, out, |caller| {
-            let env = caller.data_mut();
-
-            // Retrieve the iterator by `iter_key`.
-            let iter = env.iters.get_mut(BufferIterIdx(iter_key)).context("no such iterator")?;
-
-            // Advance the iterator.
-            Ok(iter
-                .next()
-                .map_or(BufferIdx::INVALID, |buf| env.insert_buffer(buf.into())))
-        })
-    }
-
-    /// Drops the entire registered iterator with the index given by `iter_key`.
-    /// The iterator is effectively de-registered.
-    ///
-    /// Returns an error if the iterator does not exist.
-    // #[tracing::instrument(skip_all)]
-    pub fn iter_drop(caller: Caller<'_, Self>, iter_key: u32) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::IterDrop, |caller| {
-            caller
-                .data_mut()
-                .iters
-                .take(BufferIterIdx(iter_key))
-                .context("no such iterator")?;
-            Ok(())
-        })
-    }
-
-    /// Returns the length (number of bytes) of buffer `bufh` without
-    /// transferring ownership of the data into the function.
-    ///
-    /// The `bufh` must have previously been allocating using `_buffer_alloc`.
-    ///
-    /// Returns an error if the buffer does not exist.
-    // #[tracing::instrument(skip_all)]
-    pub fn buffer_len(caller: Caller<'_, Self>, buffer: u32) -> RtResult<u32> {
-        caller
-            .data()
-            .buffers
-            .get(BufferIdx(buffer))
-            .map(|b| b.len() as u32)
-            .context("no such buffer")
-    }
-
-    /// Consumes the `buffer`,
-    /// moving its contents to the slice `(dst, dst_len)`.
-    ///
-    /// Returns an error if
-    /// - the buffer does not exist
-    /// - `dst + dst_len` overflows a 64-bit integer
-    // #[tracing::instrument(skip_all)]
-    pub fn buffer_consume(mut caller: Caller<'_, Self>, buffer: u32, dst: WasmPtr<u8>, dst_len: u32) -> RtResult<()> {
-        let (mem, env) = Self::mem_env(&mut caller);
-        let buf = env.take_buffer(BufferIdx(buffer)).context("no such buffer")?;
-        anyhow::ensure!(dst_len as usize == buf.len(), "bad length passed to buffer_consume");
-        mem.deref_slice_mut(dst, dst_len)?.copy_from_slice(&buf);
-        Ok(())
-    }
-
-    /// Creates a buffer of size `data_len` in the host environment.
-    ///
-    /// The contents of the byte slice pointed to by `data`
-    /// and lasting `data_len` bytes
-    /// is written into the newly initialized buffer.
-    ///
-    /// The buffer is registered in the host environment and is indexed by the returned `u32`.
-    ///
-    /// Returns an error if `data + data_len` overflows a 64-bit integer.
-    // #[tracing::instrument(skip_all)]
-    pub fn buffer_alloc(mut caller: Caller<'_, Self>, data: WasmPtr<u8>, data_len: u32) -> RtResult<u32> {
-        let (mem, env) = Self::mem_env(&mut caller);
-        let buf = mem.deref_slice(data, data_len)?;
-        Ok(env.buffers.insert(buf.to_vec().into()).0)
-    }
-
-    pub fn span_start(mut caller: Caller<'_, Self>, name: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
-        let (mem, env) = Self::mem_env(&mut caller);
-        let name = mem.deref_slice(name, name_len)?.to_vec();
-        Ok(env.timing_spans.insert(TimingSpan::new(name)).0)
-    }
-
-    pub fn span_end(mut caller: Caller<'_, Self>, span_id: u32) -> RtResult<()> {
-        let span = caller
-            .data_mut()
-            .timing_spans
-            .take(TimingSpanIdx(span_id))
-            .context("no such timing span")?;
-
-        let elapsed = span.start.elapsed();
-
-        let name = String::from_utf8_lossy(&span.name);
-        let message = format!("Timing span {:?}: {:?}", name, elapsed);
-
-        let record = Record {
-            ts: chrono::Utc::now(),
-            target: None,
-            filename: None,
-            line_number: None,
-            message: &message,
+    /// On success, it returns the same transaction handle so the caller can commit it.
+    fn refresh_views<'a>(caller: &mut Caller<'a, Self>, tx: MutTxId) -> Result<MutTxId, WasmError> {
+        let Some(module_def) = caller.data().module_def.clone() else {
+            caller.data_mut().instance_env.rollback_procedure_tx(tx);
+            return Err(WasmError::Wasm(anyhow!(
+                "module definition is unavailable while committing a procedure transaction"
+            )));
         };
-        caller
-            .data()
+
+        let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
+        let mut tx = Some(tx);
+        let mut tx_slot = caller.data().instance_env.tx.clone();
+
+        for view_call in views_for_refresh {
+            let res: anyhow::Result<()> = (|| {
+                let view_def = module_def
+                    .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
+                    .ok_or_else(|| anyhow!("view with fn_ptr `{}` not found", view_call.fn_ptr))?;
+
+                let current_tx = tx.take().expect("procedure tx missing during view refresh");
+                let (next_tx, call_result) =
+                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, &view_def.name));
+                tx = Some(next_tx);
+                let return_data = call_result?;
+
+                let typespace = module_def.typespace();
+                let row_product_type = typespace
+                    .resolve(view_def.product_type_ref)
+                    .resolve_refs()?
+                    .into_product()
+                    .map_err(|_| anyhow!("Error resolving row type for view"))?;
+
+                let rows = match ViewResult::from_return_data(return_data)? {
+                    ViewResult::Rows(bytes) => deserialize_view_rows(view_def.product_type_ref, bytes, typespace)
+                        .map_err(|err| anyhow!(err.to_string()))?,
+                    ViewResult::RawSql(query) => run_query_for_view(
+                        tx.as_mut().expect("procedure tx missing while running view query"),
+                        &query,
+                        &row_product_type,
+                        &view_call,
+                        *caller.data().instance_env.database_identity(),
+                    )?,
+                };
+
+                let stdb = caller.data().instance_env.relational_db().clone();
+                match view_call.sender {
+                    Some(sender) => stdb.materialize_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing authenticated view"),
+                        view_call.table_id,
+                        sender,
+                        rows,
+                    )?,
+                    None => stdb.materialize_anonymous_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing anonymous view"),
+                        view_call.table_id,
+                        rows,
+                    )?,
+                }
+
+                Ok(())
+            })();
+
+            if let Err(err) = res {
+                let tx = tx.expect("procedure tx missing while rolling back failed view refresh");
+                caller.data_mut().instance_env.rollback_procedure_tx(tx);
+                return Err(WasmError::Wasm(err));
+            }
+        }
+
+        Ok(tx.expect("procedure tx missing after view refresh"))
+    }
+
+    /// Execute a view and return its payload.
+    ///
+    /// This helper is used by [`Self::refresh_views`] while a procedure transaction is being committed.
+    /// It temporarily sets the active function type to the target view for dependency tracking,
+    /// invokes the cached typed view export, restores the previous function type, and decodes the
+    /// result sink into [`ViewReturnData`].
+    fn call_view<'a>(
+        caller: &mut Caller<'a, Self>,
+        view_call: &ViewCallInfo,
+        view_name: &Identifier,
+    ) -> anyhow::Result<ViewReturnData> {
+        // Preserve the procedure's result/error sink so this view does not overwrite it.
+        let previous_standard_sink = {
+            let env = caller.data_mut();
+            env.standard_bytes_sink.take()
+        };
+
+        let prev_func_type = caller
+            .data_mut()
             .instance_env
-            .console_log(crate::database_logger::LogLevel::Info, &record, &caller.as_context());
-        Ok(())
+            .swap_func_type(FuncCallType::View(view_call.clone()));
+
+        let call_result = (|| -> anyhow::Result<i32> {
+            let (args_source, result_sink) = {
+                let env = caller.data_mut();
+                let args_source = env.create_bytes_source(bytes::Bytes::new())?;
+                let result_sink = env.setup_standard_bytes_sink();
+                (args_source, result_sink)
+            };
+
+            let (call_view, call_view_anon) = {
+                let env = caller.data();
+                (env.call_view.clone(), env.call_view_anon.clone())
+            };
+
+            let code = call_view_export(
+                &mut *caller,
+                call_view,
+                call_view_anon,
+                view_name,
+                view_call.fn_ptr.0,
+                view_call.sender,
+                args_source.0,
+                result_sink,
+            )?;
+
+            Ok(code)
+        })();
+
+        caller.data_mut().instance_env.swap_func_type(prev_func_type);
+
+        let result_bytes = {
+            let env = caller.data_mut();
+            // Restore the outer sink of the procedure before propagating any trap/user error from the call.
+            let result = env.take_standard_bytes_sink();
+            env.standard_bytes_sink = previous_standard_sink;
+            result
+        };
+        let code = call_result?;
+
+        decode_view_result_sink_code(code, result_bytes).map_err(|err| match err {
+            ViewResultSinkError::User(err) => anyhow!("view call failed: {err}"),
+            ViewResultSinkError::UnexpectedCode(code) => anyhow!(
+                "unexpected return code {code} from view call, expected 0, 2, or {failure}",
+                failure = HOST_CALL_FAILURE.get()
+            ),
+        })
+    }
+
+    /// Aborts a mutable transaction,
+    /// blocking until the transaction has been aborted.
+    ///
+    /// Returns `0` on success, or an error code otherwise.
+    ///
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `TRANSACTION_NOT_ANONYMOUS`,
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
+    ///   This can happen if this syscall is erroneously called by a reducer.
+    ///   The code `NOT_IN_TRANSACTION` does not happen,
+    ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+    /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+    ///   This currently does not happen as anonymous read transactions
+    ///   are not exposed to modules.
+    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| {
+            let (_, env) = Self::mem_env(&mut caller);
+            env.procedure_abort_mut_tx_inner()
+        })
+    }
+
+    /// See [`WasmInstanceEnv::procedure_abort_mut_tx`] for details.
+    pub fn procedure_abort_mut_tx_inner(&mut self) -> RtResult<u32> {
+        self.instance_env
+            .abort_mutable_tx()
+            .map(|()| 0u16.into())
+            .map_err(WasmError::from)
+            .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureAbortMutTransaction, err))
+    }
+
+    /// In-case there is a anonymous tx at the end of a procedure,
+    /// it must be terminated.
+    ///
+    /// This represents a misuse by the module author of the module ABI.
+    pub fn terminate_dangling_anon_tx(&mut self) {
+        self.instance_env.terminate_dangling_anon_tx();
+    }
+
+    /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
+    /// suspending execution until the request is complete,
+    /// then return its response details via a [`BytesSource`] written to `out[0]`
+    /// and its response body via another [`BytesSource`] written to `out[1]`.
+    ///
+    /// `request_ptr[..request_len]` should store a BSATN-serialized [`spacetimedb_lib::http::Request`] object
+    /// containing the details of the request to be performed.
+    ///
+    /// `body_ptr[..body_len]` should store a byte array, which will be treated as the body of the request.
+    /// `body_ptr` should be non-null and within the bounds of linear memory even when `body_len` is 0.
+    ///
+    /// If the request is successful, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object,
+    /// another [`BytesSource`] containing the bytes of the response body are written to `out[1]`,
+    /// and this function returns 0.
+    ///
+    /// "Successful" in this context includes any connection which results in any HTTP status code,
+    /// regardless of the specified meaning of that code.
+    /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
+    ///
+    /// If the request fails, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded `String` describing the failure,
+    /// and this function returns `HTTP_ERROR`.
+    /// In this case, `out[1]` is not written.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `WOULD_BLOCK_TRANSACTION` if there is currently a transaction open.
+    ///   In this case, `out` is not written.
+    /// - `BSATN_DECODE_ERROR` if `request_ptr[..request_len]` does not contain
+    ///   a valid BSATN-serialized [`spacetimedb_lib::http::Request`] object.
+    ///   In this case, `out` is not written.
+    /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
+    ///   In this case, a [`BytesSource`] is written to `out`
+    ///   containing a BSATN-encoded [`String`].
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
+    /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
+    pub fn procedure_http_request<'caller>(
+        caller: Caller<'caller, Self>,
+        (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),
+    ) -> Fut<'caller, RtResult<u32>> {
+        use spacetimedb_lib::http as st_http;
+
+        Self::async_with_span(caller, AbiCall::ProcedureHttpRequest, move |mut caller| async move {
+            let (mem, env) = Self::mem_env(&mut caller);
+
+            // Yes clippy, I'm calling a closure at its definition site *on purpose*,
+            // as a hacky-but-stable `try` block.
+            #[allow(clippy::redundant_closure_call)]
+            let res = (async move || {
+                // TODO(procedure-metrics): record size in bytes of request.
+
+                // Read the request from memory as a `spacetimedb_lib::http::Request`,
+                // our bespoke type with a stable layout and BSATN encoding.
+                let request_buf = mem.deref_slice(request_ptr, request_len)?;
+                let request = bsatn::from_slice::<st_http::Request>(request_buf).map_err(|err| {
+                    // This goes to `errno::BSATN_DECODE_ERROR` in `Self::convert_wasm_result`.
+                    NodesError::DecodeValue(err)
+                })?;
+
+                let body_buf = mem.deref_slice(body_ptr, body_len)?;
+                let body = bytes::Bytes::copy_from_slice(body_buf);
+
+                let result = async { env.instance_env.http_request(request, body)?.await }
+                    // TODO(perf): Evaluate whether it's better to run this future on the "global" I/O Tokio executor,
+                    // rather than the thread-local database executors.
+                    .await;
+
+                match result {
+                    Ok((response, body)) => {
+                        let result = bsatn::to_vec(&response)
+                            .with_context(|| "Failed to BSATN serialize `st_http::Response` object".to_string())?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                        bytes_source
+                            .0
+                            .write_to(mem, out.saturating_add(size_of::<u32>() as u32))?;
+
+                        Ok(0u32)
+                    }
+                    Err(NodesError::HttpError(err)) => {
+                        let result = bsatn::to_vec(&err).with_context(|| {
+                            format!("Failed to BSATN serialize `spacetimedb_lib::http::Error` object {err:#?}")
+                        })?;
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+                        Ok(errno::HTTP_ERROR.get() as u32)
+                    }
+                    Err(e) => Err(WasmError::Db(e)),
+                }
+            })()
+            .await;
+
+            (
+                caller,
+                res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureHttpRequest, err)),
+            )
+        })
     }
 }
+
+type Fut<'caller, T> = Box<dyn Send + 'caller + Future<Output = T>>;
 
 impl<T> BacktraceProvider for wasmtime::StoreContext<'_, T> {
     fn capture(&self) -> Box<dyn ModuleBacktrace> {

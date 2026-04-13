@@ -5,12 +5,13 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
-    util::{range_move, slice_assume_init_ref},
+    static_layout::StaticLayout,
+    util::range_move,
     var_len::VarLenRef,
 };
+use spacetimedb_sats::layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout};
 
 /// Equates row `a` in `page_a` with its fixed part starting at `fixed_offset_a`
 /// to row `b` in `page_b` with its fixed part starting at `fixed_offset_b`.
@@ -23,43 +24,62 @@ use super::{
 ///
 /// 1. `fixed_offset_a/b` are valid offsets for rows typed at `ty` in `page_a/b`.
 /// 2. for any `vlr_a/b: VarLenRef` in the fixed parts of row `a` and `b`,
-///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+/// 3. the `static_bsatn_layout` must be derived from `ty`.
 pub unsafe fn eq_row_in_page(
     page_a: &Page,
     page_b: &Page,
     fixed_offset_a: PageOffset,
     fixed_offset_b: PageOffset,
     ty: &RowTypeLayout,
+    static_layout: Option<&StaticLayout>,
 ) -> bool {
-    // Context for a row at `offset` in `page`.
-    let bytes_page = |page, offset| BytesPage {
-        page,
-        bytes: page.get_row_data(offset, ty.size()),
-    };
-    // Context for the whole comparison.
-    let mut ctx = EqCtx {
-        a: bytes_page(page_a, fixed_offset_a),
-        b: bytes_page(page_b, fixed_offset_b),
-        curr_offset: 0,
-    };
-    // Test for equality!
-    // SAFETY:
-    // 1. Per requirement 1., rows `a/b` are valid at type `ty` and properly aligned for `ty`.
-    //    Their fixed parts are defined as:
-    //    `value_a/b = ctx.a/b.bytes[range_move(0..fixed_row_size, fixed_offset_a/b)]`
-    //    as needed.
-    // 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
-    //   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-    unsafe { eq_product(&mut ctx, ty.product()) }
+    // Contexts for rows `a` and `b`.
+    let a = BytesPage::new(page_a, fixed_offset_a, ty);
+    let b = BytesPage::new(page_b, fixed_offset_b, ty);
+
+    // If there are only fixed parts in the layout,
+    // there are no pointers to anywhere,
+    // So it is sound to simply check for byte-wise equality while ignoring padding.
+    match static_layout {
+        None => {
+            // Context for the whole comparison.
+            let mut ctx = EqCtx { a, b, curr_offset: 0 };
+
+            // Test for equality!
+            // SAFETY:
+            // 1. Per requirement 1., rows `a/b` are valid at type `ty` and properly aligned for `ty`.
+            //    Their fixed parts are defined as:
+            //    `value_a/b = ctx.a/b.bytes[range_move(0..fixed_row_size, fixed_offset_a/b)]`
+            //    as needed.
+            // 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
+            //   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+            unsafe { eq_product(&mut ctx, ty.product()) }
+        }
+        Some(static_bsatn_layout) => {
+            // SAFETY: caller promised that `a/b` are valid BFLATN representations matching `ty`
+            // and as `static_bsatn_layout` was promised to be derived from `ty`,
+            // so too are `a/b` valid for `static_bsatn_layout`.
+            unsafe { static_bsatn_layout.eq(a.bytes, b.bytes) }
+        }
+    }
 }
 
 /// A view into the fixed part of a row combined with the page it belongs to.
 #[derive(Clone, Copy)]
-struct BytesPage<'page> {
+pub(crate) struct BytesPage<'page> {
     /// The `Bytes` of the fixed part of a row in `page`.
-    bytes: &'page Bytes,
+    pub(crate) bytes: &'page Bytes,
     /// The `Page` which has the fixed part `bytes` and associated var-len objects.
-    page: &'page Page,
+    pub(crate) page: &'page Page,
+}
+
+impl<'page> BytesPage<'page> {
+    /// Returns a view into the bytes of the row at `offset` in `page` typed at `ty`.
+    pub(crate) fn new(page: &'page Page, offset: PageOffset, ty: &RowTypeLayout) -> Self {
+        let bytes = page.get_row_data(offset, ty.size());
+        Self { page, bytes }
+    }
 }
 
 /// Comparison context used in the functions below.
@@ -81,8 +101,8 @@ struct EqCtx<'page_a, 'page_b> {
 /// SAFETY:
 /// 1. `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
-///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
+///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: ProductTypeLayoutView<'_>) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.iter().all(|elem_ty| {
         ctx.curr_offset = base_offset + elem_ty.offset as usize;
@@ -102,7 +122,7 @@ unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
 /// SAFETY:
 /// 1. `value_a/b` must both be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
-///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
 unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
     debug_assert_eq!(
         ctx.curr_offset,
@@ -112,13 +132,11 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         ty
     );
 
-    let res = match ty {
+    match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // Read the tags of the sum values.
-            // SAFETY: `ctx.a.bytes[curr_offset..]` hold a sum value at `ty`.
-            let (tag_a, data_ty) = unsafe { read_tag(ctx.a.bytes, ty, ctx.curr_offset) };
-            // SAFETY: `ctx.b.bytes[curr_offset..]` hold a sum value at `ty`.
-            let (tag_b, _) = unsafe { read_tag(ctx.b.bytes, ty, ctx.curr_offset) };
+            let (tag_a, data_ty) = read_tag(ctx.a.bytes, ty, ctx.curr_offset);
+            let (tag_b, _) = read_tag(ctx.b.bytes, ty, ctx.curr_offset);
 
             // The tags must match!
             if tag_a != tag_b {
@@ -137,7 +155,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value_a/b` are valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { eq_product(ctx, ty) }
+            unsafe { eq_product(ctx, ty.view()) }
         }
 
         // The primitive types:
@@ -152,12 +170,10 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         | &AlgebraicTypeLayout::U64
         | &AlgebraicTypeLayout::I128
         | &AlgebraicTypeLayout::U128
+        | &AlgebraicTypeLayout::I256
+        | &AlgebraicTypeLayout::U256
         | &AlgebraicTypeLayout::F32
-        | &AlgebraicTypeLayout::F64 => {
-            // SAFETY: `value_a/b` are valid,
-            // so `&ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]` contains init bytes.
-            unsafe { eq_byte_array(ctx, ty.size()) }
-        }
+        | &AlgebraicTypeLayout::F64 => eq_byte_array(ctx, ty.size()),
 
         // The var-len cases.
         &AlgebraicTypeLayout::String | AlgebraicTypeLayout::VarLen(_) => {
@@ -168,8 +184,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
             // to either be `NULL` or point to a valid granule in `page_a/page_b`.
             unsafe { eq_vlo(ctx) }
         }
-    };
-    res
+    }
 }
 
 /// Equates the bytes of two var-len objects
@@ -205,15 +220,56 @@ unsafe fn eq_vlo(ctx: &mut EqCtx<'_, '_>) -> bool {
 
 /// Equates the byte arrays `data_a/data_b = ctx.a/b.bytes[range_move(0..len, ctx.curr_offset)]`
 /// and advances the offset.
-///
-/// SAFETY: `data_a/b` must both be initialized as valid `&[u8]`s.
-unsafe fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
+fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
     let data_a = &ctx.a.bytes[range_move(0..len, ctx.curr_offset)];
     let data_b = &ctx.b.bytes[range_move(0..len, ctx.curr_offset)];
     ctx.curr_offset += len;
-    // SAFETY: Caller promised that `data_a` was initialized.
-    let data_a = unsafe { slice_assume_init_ref(data_a) };
-    // SAFETY: Caller promised that `data_b` was initialized.
-    let data_b = unsafe { slice_assume_init_ref(data_b) };
     data_a == data_b
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{blob_store::NullBlobStore, page_pool::PagePool};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
+
+    #[test]
+    fn sum_with_variant_with_distinct_layout() {
+        // This is a type where the layout of the sum variants differ,
+        // with the latter having some padding bytes due to alignment.
+        let ty = ProductType::from([AlgebraicType::sum([
+            AlgebraicType::U64,                                              // xxxxxxxx
+            AlgebraicType::product([AlgebraicType::U8, AlgebraicType::U32]), // xpppxxxx
+        ])]);
+
+        let pool = PagePool::new_for_test();
+        let bs = &mut NullBlobStore;
+        let mut table_a = crate::table::test::table(ty.clone());
+        let mut table_b = crate::table::test::table(ty);
+
+        // Insert u64::MAX with tag 0 and then delete it.
+        let a0 = product![AlgebraicValue::sum(0, u64::MAX.into())];
+        let (_, a0_rr) = table_a.insert(&pool, bs, &a0).unwrap();
+        let a0_ptr = a0_rr.pointer();
+        assert!(table_a.delete(bs, a0_ptr, |_| {}).is_some());
+
+        // Insert u64::ALTERNATING_BIT_PATTERN with tag 0 and then delete it.
+        let b0 = 0b01010101_01010101_01010101_01010101_01010101_01010101_01010101_01010101u64;
+        let b0 = product![AlgebraicValue::sum(0, b0.into())];
+        let (_, b0_rr) = table_b.insert(&pool, bs, &b0).unwrap();
+        let b0_ptr = b0_rr.pointer();
+        assert!(table_b.delete(bs, b0_ptr, |_| {}).is_some());
+
+        // Insert two identical rows `a1` and `b2` into the tables.
+        // They should occupy the spaces of the previous rows.
+        let v1 = product![AlgebraicValue::sum(1, product![0u8, 0u32].into())];
+        let (_, a1_rr) = table_a.insert(&pool, bs, &v1).unwrap();
+        let bs = &mut NullBlobStore;
+        let (_, b1_rr) = table_b.insert(&pool, bs, &v1).unwrap();
+        assert_eq!(a0_ptr, a1_rr.pointer());
+        assert_eq!(b0_ptr, b1_rr.pointer());
+
+        // Check that the rows are considered equal
+        // and that padding does not mess this up.
+        assert_eq!(a1_rr, b1_rr);
+    }
 }

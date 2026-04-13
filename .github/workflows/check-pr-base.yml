@@ -1,0 +1,20 @@
+name: Git tree checks
+
+on:
+  pull_request:
+    types: [opened, edited]
+  merge_group:
+permissions: read-all
+
+jobs:
+  check_base_ref:
+    name: Based on `master`
+    runs-on: ubuntu-latest
+    steps:
+      - id: not_based_on_master
+        if: |
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.base.ref != 'master'
+        run: |
+          echo "This PR is not based on master. Please wait until the base PR merges."
+          exit 1

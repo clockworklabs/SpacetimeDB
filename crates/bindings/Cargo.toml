@@ -14,18 +14,36 @@ path = "src/lib.rs"    # The source file of the target.
 bench = false
 
 [features]
-getrandom = ["spacetimedb-bindings-sys/getrandom"]
+default = ["rand"]
+rand = ["rand08"]
+rand08 = ["dep:rand08", "dep:getrandom02"]
+unstable = ["spacetimedb-bindings-sys/unstable"]
 
 [dependencies]
 spacetimedb-bindings-sys.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-query-builder.workspace = true
 
+anyhow.workspace = true
+bytemuck.workspace = true
+bytes.workspace = true
 derive_more.workspace = true
+http.workspace = true
 log.workspace = true
 scoped-tls.workspace = true
 
+rand08 = { workspace = true, optional = true }
+# we depend on getrandom and enable the `custom` feature, so that
+# if someone tries to use rand's ThreadRng, it will fail to link
+# because no one defined __getrandom_custom
+getrandom02 = { workspace = true, optional = true, features = ["custom"] }
+serde_json.workspace = true
+
 [dev-dependencies]
-rand.workspace = true
-bytes.workspace = true
+insta.workspace = true
+trybuild.workspace = true
+
+[lints]
+workspace = true

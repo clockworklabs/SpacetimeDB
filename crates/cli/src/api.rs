@@ -1,40 +1,43 @@
-use reqwest::header::IntoHeaderName;
+use std::iter::Sum;
+use std::ops::Add;
+
 use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
-use serde_json::value::RawValue;
 
-use spacetimedb_lib::sats::ProductType;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::de::serde::DeserializeWrapper;
+use spacetimedb_lib::Identity;
+
+use crate::util::{AuthHeader, ResponseExt};
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 #[derive(Debug, Clone)]
 pub struct Connection {
     pub(crate) host: String,
-    pub(crate) address: Address,
+    pub(crate) database_identity: Identity,
     pub(crate) database: String,
-    pub(crate) auth_header: Option<String>,
+    pub(crate) auth_header: AuthHeader,
 }
 
-pub fn build_headers<'a, K, I>(iter: I) -> header::HeaderMap
-where
-    K: IntoHeaderName,
-    I: IntoIterator<Item = (K, &'a str)>,
-{
-    let mut headers = header::HeaderMap::new();
-
-    for (k, v) in iter.into_iter() {
-        headers.insert(k, header::HeaderValue::from_str(v).unwrap());
+impl Connection {
+    pub fn db_uri(&self, endpoint: &str) -> String {
+        [
+            &self.host,
+            "/v1/database/",
+            &self.database_identity.to_hex(),
+            "/",
+            endpoint,
+        ]
+        .concat()
     }
-
-    headers
 }
 
 pub fn build_client(con: &Connection) -> Client {
     let mut builder = Client::builder().user_agent(APP_USER_AGENT);
 
-    if let Some(auth_header) = &con.auth_header {
-        let headers = build_headers([("Authorization", auth_header.as_str())]);
+    if let Some(auth_header) = con.auth_header.to_header() {
+        let headers = http::HeaderMap::from_iter([(header::AUTHORIZATION, auth_header)]);
 
         builder = builder.default_headers(headers);
     }
@@ -43,7 +46,7 @@ pub fn build_client(con: &Connection) -> Client {
 }
 
 pub struct ClientApi {
-    con: Connection,
+    pub con: Connection,
     client: Client,
 }
 
@@ -54,16 +57,74 @@ impl ClientApi {
     }
 
     pub fn sql(&self) -> RequestBuilder {
-        self.client
-            .post(format!("{}/database/sql/{}", self.con.host, self.con.address))
+        self.client.post(self.con.db_uri("sql"))
+    }
+
+    /// Reads the `ModuleDef` from the `schema` endpoint.
+    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV9> {
+        let res = self
+            .client
+            .get(self.con.db_uri("schema"))
+            .query(&[("version", "9")])
+            .send()
+            .await?;
+        let DeserializeWrapper(module_def) = res.json_or_error().await?;
+        Ok(module_def)
+    }
+
+    pub async fn call(&self, reducer_name: &str, arg_json: String) -> anyhow::Result<reqwest::Response> {
+        Ok(self
+            .client
+            .post(self.con.db_uri("call") + "/" + reducer_name)
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(arg_json)
+            .send()
+            .await?)
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct StmtResultJson<'a> {
-    pub schema: ProductType,
-    #[serde(borrow)]
-    pub rows: Vec<&'a RawValue>,
+pub(crate) type SqlStmtResult<'a> =
+    spacetimedb_client_api_messages::http::SqlStmtResult<&'a serde_json::value::RawValue>;
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct StmtStats {
+    pub total_duration_micros: u64,
+    pub rows_inserted: u64,
+    pub rows_updated: u64,
+    pub rows_deleted: u64,
+    pub total_rows: usize,
+}
+
+impl Sum<StmtStats> for StmtStats {
+    fn sum<I: Iterator<Item = StmtStats>>(iter: I) -> Self {
+        iter.fold(StmtStats::default(), Add::add)
+    }
+}
+
+impl Add for StmtStats {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            total_duration_micros: self.total_duration_micros + rhs.total_duration_micros,
+            rows_inserted: self.rows_inserted + rhs.rows_inserted,
+            rows_deleted: self.rows_deleted + rhs.rows_deleted,
+            rows_updated: self.rows_updated + rhs.rows_updated,
+            total_rows: self.total_rows + rhs.total_rows,
+        }
+    }
+}
+
+impl From<&SqlStmtResult<'_>> for StmtStats {
+    fn from(value: &SqlStmtResult<'_>) -> Self {
+        Self {
+            total_duration_micros: value.total_duration_micros,
+            rows_inserted: value.stats.rows_inserted,
+            rows_deleted: value.stats.rows_deleted,
+            rows_updated: value.stats.rows_updated,
+            total_rows: value.rows.len(),
+        }
+    }
 }
 
 pub fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(

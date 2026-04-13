@@ -2,98 +2,127 @@ from .. import Smoketest
 
 class Filtering(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb, Identity};
+use spacetimedb::{log, Identity, ReducerContext, Table};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     #[unique]
     id: i32,
 
     name: String,
+
     #[unique]
     nick: String,
 }
 
-#[spacetimedb(reducer)]
-pub fn insert_person(id: i32, name: String, nick: String) {
-    Person::insert(Person { id, name, nick} );
+#[spacetimedb::reducer]
+pub fn insert_person(ctx: &ReducerContext, id: i32, name: String, nick: String) {
+    ctx.db.person().insert(Person { id, name, nick} );
 }
 
-#[spacetimedb(reducer)]
-pub fn insert_person_twice(id: i32, name: String, nick: String) {
-    Person::insert(Person { id, name: name.clone(), nick: nick.clone()} );
-    match Person::insert(Person { id, name: name.clone(), nick: nick.clone()}) {
+#[spacetimedb::reducer]
+pub fn insert_person_twice(ctx: &ReducerContext, id: i32, name: String, nick: String) {
+    // We'd like to avoid an error due to a set-semantic error.
+    let name2 = format!("{name}2");
+    ctx.db.person().insert(Person { id, name, nick: nick.clone()} );
+    match ctx.db.person().try_insert(Person { id, name: name2, nick: nick.clone()}) {
         Ok(_) => {},
         Err(_) => {
-            println!("UNIQUE CONSTRAINT VIOLATION ERROR: id {}: {}", id, name)
+            log::info!("UNIQUE CONSTRAINT VIOLATION ERROR: id = {}, nick = {}", id, nick)
         }
     }
 }
 
-#[spacetimedb(reducer)]
-pub fn delete_person(id: i32) {
-    Person::delete_by_id(&id);
+#[spacetimedb::reducer]
+pub fn delete_person(ctx: &ReducerContext, id: i32) {
+    ctx.db.person().id().delete(&id);
 }
 
-#[spacetimedb(reducer)]
-pub fn find_person(id: i32) {
-    match Person::filter_by_id(&id) {
-        Some(person) => println!("UNIQUE FOUND: id {}: {}", id, person.name),
-        None => println!("UNIQUE NOT FOUND: id {}", id),
+#[spacetimedb::reducer]
+pub fn find_person(ctx: &ReducerContext, id: i32) {
+    match ctx.db.person().id().find(&id) {
+        Some(person) => log::info!("UNIQUE FOUND: id {}: {}", id, person.name),
+        None => log::info!("UNIQUE NOT FOUND: id {}", id),
     }
 }
 
-#[spacetimedb(reducer)]
-pub fn find_person_by_name(name: String) {
-    for person in Person::filter_by_name(&name) {
-        println!("UNIQUE FOUND: id {}: {} aka {}", person.id, person.name, person.nick);
+#[spacetimedb::reducer]
+pub fn find_person_read_only(ctx: &ReducerContext, id: i32) {
+    let ctx = ctx.as_read_only();
+    match ctx.db.person().id().find(&id) {
+        Some(person) => log::info!("UNIQUE FOUND: id {}: {}", id, person.name),
+        None => log::info!("UNIQUE NOT FOUND: id {}", id),
     }
 }
 
-#[spacetimedb(reducer)]
-pub fn find_person_by_nick(nick: String) {
-    match Person::filter_by_nick(&nick) {
-        Some(person) => println!("UNIQUE FOUND: id {}: {}", person.id, person.nick),
-        None => println!("UNIQUE NOT FOUND: nick {}", nick),
+#[spacetimedb::reducer]
+pub fn find_person_by_name(ctx: &ReducerContext, name: String) {
+    for person in ctx.db.person().iter().filter(|p| p.name == name) {
+        log::info!("UNIQUE FOUND: id {}: {} aka {}", person.id, person.name, person.nick);
     }
 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "by_id", id))]
+#[spacetimedb::reducer]
+pub fn find_person_by_nick(ctx: &ReducerContext, nick: String) {
+    match ctx.db.person().nick().find(&nick) {
+        Some(person) => log::info!("UNIQUE FOUND: id {}: {}", person.id, person.nick),
+        None => log::info!("UNIQUE NOT FOUND: nick {}", nick),
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn find_person_by_nick_read_only(ctx: &ReducerContext, nick: String) {
+    let ctx = ctx.as_read_only();
+    match ctx.db.person().nick().find(&nick) {
+        Some(person) => log::info!("UNIQUE FOUND: id {}: {}", person.id, person.nick),
+        None => log::info!("UNIQUE NOT FOUND: nick {}", nick),
+    }
+}
+
+#[spacetimedb::table(accessor = nonunique_person)]
 pub struct NonuniquePerson {
+    #[index(btree)]
     id: i32,
     name: String,
     is_human: bool,
 }
 
-#[spacetimedb(reducer)]
-pub fn insert_nonunique_person(id: i32, name: String, is_human: bool) {
-    NonuniquePerson::insert(NonuniquePerson { id, name, is_human } );
+#[spacetimedb::reducer]
+pub fn insert_nonunique_person(ctx: &ReducerContext, id: i32, name: String, is_human: bool) {
+    ctx.db.nonunique_person().insert(NonuniquePerson { id, name, is_human } );
 }
 
-#[spacetimedb(reducer)]
-pub fn find_nonunique_person(id: i32) {
-    for person in NonuniquePerson::filter_by_id(&id) {
-        println!("NONUNIQUE FOUND: id {}: {}", id, person.name)
+#[spacetimedb::reducer]
+pub fn find_nonunique_person(ctx: &ReducerContext, id: i32) {
+    for person in ctx.db.nonunique_person().id().filter(&id) {
+        log::info!("NONUNIQUE FOUND: id {}: {}", id, person.name)
     }
 }
 
-#[spacetimedb(reducer)]
-pub fn find_nonunique_humans() {
-    for person in NonuniquePerson::filter_by_is_human(&true) {
-        println!("HUMAN FOUND: id {}: {}", person.id, person.name);
+#[spacetimedb::reducer]
+pub fn find_nonunique_person_read_only(ctx: &ReducerContext, id: i32) {
+    let ctx = ctx.as_read_only();
+    for person in ctx.db.nonunique_person().id().filter(&id) {
+        log::info!("NONUNIQUE FOUND: id {}: {}", id, person.name)
     }
 }
 
-#[spacetimedb(reducer)]
-pub fn find_nonunique_non_humans() {
-    for person in NonuniquePerson::filter_by_is_human(&false) {
-        println!("NON-HUMAN FOUND: id {}: {}", person.id, person.name);
+#[spacetimedb::reducer]
+pub fn find_nonunique_humans(ctx: &ReducerContext) {
+    for person in ctx.db.nonunique_person().iter().filter(|p| p.is_human) {
+        log::info!("HUMAN FOUND: id {}: {}", person.id, person.name);
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn find_nonunique_non_humans(ctx: &ReducerContext) {
+    for person in ctx.db.nonunique_person().iter().filter(|p| !p.is_human) {
+        log::info!("NON-HUMAN FOUND: id {}: {}", person.id, person.name);
     }
 }
 
 // Ensure that [Identity] is filterable and a legal unique column.
-#[spacetimedb(table)]
+#[spacetimedb::table(accessor = identified_person)]
 struct IdentifiedPerson {
     #[unique]
     identity: Identity,
@@ -106,45 +135,53 @@ fn identify(id_number: u64) -> Identity {
     Identity::from_byte_array(bytes)
 }
 
-#[spacetimedb(reducer)]
-fn insert_identified_person(id_number: u64, name: String) {
+#[spacetimedb::reducer]
+fn insert_identified_person(ctx: &ReducerContext, id_number: u64, name: String) {
     let identity = identify(id_number);
-    IdentifiedPerson::insert(IdentifiedPerson { identity, name });
+    ctx.db.identified_person().insert(IdentifiedPerson { identity, name });
 }
 
-#[spacetimedb(reducer)]
-fn find_identified_person(id_number: u64) {
+#[spacetimedb::reducer]
+fn find_identified_person(ctx: &ReducerContext, id_number: u64) {
     let identity = identify(id_number);
-    match IdentifiedPerson::filter_by_identity(&identity) {
-        Some(person) => println!("IDENTIFIED FOUND: {}", person.name),
-        None => println!("IDENTIFIED NOT FOUND"),
+    match ctx.db.identified_person().identity().find(&identity) {
+        Some(person) => log::info!("IDENTIFIED FOUND: {}", person.name),
+        None => log::info!("IDENTIFIED NOT FOUND"),
     }
 }
 
 // Ensure that indices on non-unique columns behave as we expect.
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name="person_surname", surname))]
+#[spacetimedb::table(accessor = indexed_person)]
 struct IndexedPerson {
     #[unique]
     id: i32,
     given_name: String,
+    #[index(btree)]
     surname: String,
 }
 
-#[spacetimedb(reducer)]
-fn insert_indexed_person(id: i32, given_name: String, surname: String) {
-    IndexedPerson::insert(IndexedPerson { id, given_name, surname });
+#[spacetimedb::reducer]
+fn insert_indexed_person(ctx: &ReducerContext, id: i32, given_name: String, surname: String) {
+    ctx.db.indexed_person().insert(IndexedPerson { id, given_name, surname });
 }
 
-#[spacetimedb(reducer)]
-fn delete_indexed_person(id: i32) {
-    IndexedPerson::delete_by_id(&id);
+#[spacetimedb::reducer]
+fn delete_indexed_person(ctx: &ReducerContext, id: i32) {
+    ctx.db.indexed_person().id().delete(&id);
 }
 
-#[spacetimedb(reducer)]
-fn find_indexed_people(surname: String) {
-    for person in IndexedPerson::filter_by_surname(&surname) {
-        println!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
+#[spacetimedb::reducer]
+fn find_indexed_people(ctx: &ReducerContext, surname: String) {
+    for person in ctx.db.indexed_person().surname().filter(&surname) {
+        log::info!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
+    }
+}
+
+#[spacetimedb::reducer]
+fn find_indexed_people_read_only(ctx: &ReducerContext, surname: String) {
+    let ctx = ctx.as_read_only();
+    for person in ctx.db.indexed_person().surname().filter(&surname) {
+        log::info!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
     }
 }
 """
@@ -170,17 +207,25 @@ fn find_indexed_people(surname: String) {
         # Fail to find a person who is not there.
         self.call("find_person", 43)
         self.assertIn("UNIQUE NOT FOUND: id 43", self.logs(2))
+        self.call("find_person_read_only", 43)
+        self.assertIn("UNIQUE NOT FOUND: id 43", self.logs(2))
 
         # Find a person by nickname.
         self.call("find_person_by_nick", "al")
+        self.assertIn("UNIQUE FOUND: id 23: al", self.logs(2))
+        self.call("find_person_by_nick_read_only", "al")
         self.assertIn("UNIQUE FOUND: id 23: al", self.logs(2))
 
         # Remove a person, and then fail to find them.
         self.call("delete_person", 23)
         self.call("find_person", 23)
         self.assertIn("UNIQUE NOT FOUND: id 23", self.logs(2))
+        self.call("find_person_read_only", 23)
+        self.assertIn("UNIQUE NOT FOUND: id 23", self.logs(2))
         # Also fail by nickname
         self.call("find_person_by_nick", "al")
+        self.assertIn("UNIQUE NOT FOUND: nick al", self.logs(2))
+        self.call("find_person_by_nick_read_only", "al")
         self.assertIn("UNIQUE NOT FOUND: nick al", self.logs(2))
 
         # Add some nonunique people.
@@ -189,11 +234,14 @@ fn find_indexed_people(surname: String) {
 
         # Find a nonunique person who is there.
         self.call("find_nonunique_person", 23)
-        # run_test cargo run logs "$IDENT" 100
+        self.assertIn('NONUNIQUE FOUND: id 23: Alice', self.logs(2))
+        self.call("find_nonunique_person_read_only", 23)
         self.assertIn('NONUNIQUE FOUND: id 23: Alice', self.logs(2))
 
         # Fail to find a nonunique person who is not there.
         self.call("find_nonunique_person", 43)
+        self.assertNotIn("NONUNIQUE NOT FOUND: id 43", self.logs(2))
+        self.call("find_nonunique_person_read_only", 43)
         self.assertNotIn("NONUNIQUE NOT FOUND: id 43", self.logs(2))
 
         # Insert a non-human, then find humans, then find non-humans
@@ -209,6 +257,9 @@ fn find_indexed_people(surname: String) {
         self.call("find_nonunique_person", 23)
         self.assertIn('NONUNIQUE FOUND: id 23: Alice', self.logs(2))
         self.assertIn('NONUNIQUE FOUND: id 23: Claire', self.logs(2))
+        self.call("find_nonunique_person_read_only", 23)
+        self.assertIn('NONUNIQUE FOUND: id 23: Alice', self.logs(2))
+        self.assertIn('NONUNIQUE FOUND: id 23: Claire', self.logs(2))
 
         # Check for issues with things present in index but not DB
         self.call("insert_person", 101, "Fee", "fee")
@@ -218,6 +269,8 @@ fn find_indexed_people(surname: String) {
         self.call("delete_person", 103)
         self.call("find_person", 104)
         self.assertIn('UNIQUE FOUND: id 104: Fum', self.logs(2))
+        self.call("find_person_read_only", 104)
+        self.assertIn('UNIQUE FOUND: id 104: Fum', self.logs(2))
 
         # As above, but for non-unique indices: check for consistency between index and DB
         self.call("insert_indexed_person", 7, "James", "Bond")
@@ -226,6 +279,12 @@ fn find_indexed_people(surname: String) {
         self.call("insert_indexed_person", 100, "Whiskey", "Bond")
         self.call("delete_indexed_person", 100)
         self.call("find_indexed_people", "Bond")
+        logs = self.logs(10)
+        self.assertIn('INDEXED FOUND: id 7: Bond, James', logs)
+        self.assertIn('INDEXED FOUND: id 79: Bond, Gold', logs)
+        self.assertIn('INDEXED FOUND: id 1: Bond, Hydrogen', logs)
+        self.assertNotIn('INDEXED FOUND: id 100: Bond, Whiskey', logs)
+        self.call("find_indexed_people_read_only", "Bond")
         logs = self.logs(10)
         self.assertIn('INDEXED FOUND: id 7: Bond, James', logs)
         self.assertIn('INDEXED FOUND: id 79: Bond, Gold', logs)
@@ -245,6 +304,8 @@ fn find_indexed_people(surname: String) {
         self.call("find_identified_person", 23)
         self.assertIn('IDENTIFIED FOUND: Alice', self.logs(2))
 
-        # Insert row with unique columns twice should fail
+        # Inserting into a table with unique constraints fails
+        # when the second row has the same value in the constrained columns as the first row.
+        # In this case, the table has `#[unique] id` and `#[unique] nick` but not `#[unique] name`.
         self.call("insert_person_twice", 23, "Alice", "al")
-        self.assertIn('UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice', self.logs(2))
+        self.assertIn('UNIQUE CONSTRAINT VIOLATION ERROR: id = 23, nick = al', self.logs(2))

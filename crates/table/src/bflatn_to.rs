@@ -5,20 +5,29 @@
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset, RowPointer, SquashedOffset},
-    layout::{
-        align_to, bsatn_len, required_var_len_granules_for_row, AlgebraicTypeLayout, HasLayout, ProductTypeLayout,
-        RowTypeLayout, SumTypeLayout, VarLenType,
-    },
     page::{GranuleOffsetIter, Page, VarView},
+    page_pool::PagePool,
     pages::Pages,
-    util::{maybe_uninit_write_slice, range_move},
-    var_len::{visit_var_len_assume_init, VarLenGranule, VarLenMembers, VarLenRef},
+    table::BlobNumBytes,
+    util::range_move,
+    var_len::{VarLenGranule, VarLenMembers, VarLenRef},
 };
-use spacetimedb_sats::{bsatn::to_writer, buffer::BufWriter, AlgebraicType, AlgebraicValue, ProductValue, SumValue};
+use spacetimedb_sats::{
+    bsatn::{self, to_writer, DecodeError},
+    buffer::BufWriter,
+    de::DeserializeSeed as _,
+    i256,
+    layout::{
+        align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+    },
+    u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
+};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
+    #[error(transparent)]
+    Decode(#[from] DecodeError),
     #[error("Expected a value of type {0:?}, but found {1:?}")]
     WrongType(AlgebraicType, AlgebraicValue),
     #[error(transparent)]
@@ -38,17 +47,48 @@ pub enum Error {
 /// This includes that its `visitor` must be prepared to visit var-len members within `ty`,
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
+pub unsafe fn write_row_to_pages_bsatn(
+    pool: &PagePool,
+    pages: &mut Pages,
+    visitor: &impl VarLenMembers,
+    blob_store: &mut dyn BlobStore,
+    ty: &RowTypeLayout,
+    mut bytes: &[u8],
+    squashed_offset: SquashedOffset,
+) -> Result<(RowPointer, BlobNumBytes), Error> {
+    let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
+    unsafe { write_row_to_pages(pool, pages, visitor, blob_store, ty, &val, squashed_offset) }
+}
+
+/// Writes `row` typed at `ty` to `pages`
+/// using `blob_store` as needed to write large blobs.
+///
+/// Panics if `val` is not of type `ty`.
+///
+/// # Safety
+///
+/// `pages` must be specialized to store rows of `ty`.
+/// This includes that its `visitor` must be prepared to visit var-len members within `ty`,
+/// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
+/// i.e. by monotonically increasing offsets.
 pub unsafe fn write_row_to_pages(
+    pool: &PagePool,
     pages: &mut Pages,
     visitor: &impl VarLenMembers,
     blob_store: &mut dyn BlobStore,
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
-) -> Result<RowPointer, Error> {
-    let num_granules = required_var_len_granules_for_row(val);
+) -> Result<(RowPointer, BlobNumBytes), Error> {
+    let num_granules = if ty.layout().fixed {
+        // Fast-path: The row type doesn't contain var-len members,
+        // so 0 granules are needed.
+        0
+    } else {
+        required_var_len_granules_for_row(val)
+    };
 
-    match pages.with_page_to_insert_row(ty.size(), num_granules, |page| {
+    match pages.with_page_to_insert_row(pool, ty.size(), num_granules, |page| {
         // SAFETY:
         // - Caller promised that `pages` is suitable for storing instances of `ty`
         //   so `page` is also suitable.
@@ -57,7 +97,9 @@ pub unsafe fn write_row_to_pages(
         // - `visitor` came from `pages` which we can trust to visit in the right order.
         unsafe { write_row_to_page(page, blob_store, visitor, ty, val) }
     })? {
-        (page, Ok(offset)) => Ok(RowPointer::new(false, page, offset, squashed_offset)),
+        (page, Ok((offset, blob_inserted))) => {
+            Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
+        }
         (_, Err(e)) => Err(e),
     }
 }
@@ -83,7 +125,7 @@ pub unsafe fn write_row_to_page(
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
-) -> Result<PageOffset, Error> {
+) -> Result<(PageOffset, BlobNumBytes), Error> {
     let fixed_row_size = ty.size();
     // SAFETY: We've used the right `row_size` and we trust that others have too.
     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
@@ -110,10 +152,16 @@ pub unsafe fn write_row_to_page(
         return Err(e);
     }
 
-    // Haven't stored large blobs or init those granules with blob hashes yet, so do it now.
-    serialized.write_large_blobs(blob_store);
+    let blob_store_inserted_bytes = if ty.layout.fixed {
+        // The layout is fixed, so there are no large blobs to write.
+        <_>::default()
+    } else {
+        // Haven't stored large blobs or init those granules with blob hashes yet,
+        // so do it now.
+        serialized.write_large_blobs(blob_store)
+    };
 
-    Ok(fixed_offset)
+    Ok((fixed_offset, blob_store_inserted_bytes))
 }
 
 /// The writing / serialization context used by the function [`write_row_to_page`].
@@ -151,25 +199,30 @@ impl BflatnSerializedRowBuffer<'_> {
         //    and `fixed_buf.len()` matches exactly the size of the row type.
         // - `fixed_buf`'s `VarLenRef`s are initialized up to `last_allocated_var_len_index`.
         // - `visitor` is proper for the row type.
-        let visitor_iter = unsafe { visit_var_len_assume_init(visitor, self.fixed_buf) };
+        let visitor_iter = unsafe { visitor.visit_var_len(self.fixed_buf) };
         for vlr in visitor_iter.take(self.last_allocated_var_len_index) {
             // SAFETY: The `vlr` came from the allocation in `write_var_len_obj`
             // which wrote it to the fixed part using `write_var_len_ref`.
             // Thus, it points to a valid `VarLenGranule`.
-            unsafe { self.var_view.free_object_ignore_blob(vlr) };
+            unsafe { self.var_view.free_object_ignore_blob(*vlr) };
         }
     }
 
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
-    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) {
+    #[cold]
+    #[inline(never)]
+    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+        let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (vlr, value) in self.large_blob_insertions {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
-            // However, as it was added to `self.large_blob_insertion`, it is also uninit.
+            // However, as it was added to `self.large_blob_insertions`,
+            // we have not yet written the hash to that granule.
             unsafe {
-                self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
+                blob_store_inserted_bytes += self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
             }
         }
+        blob_store_inserted_bytes
     }
 
     /// Write an `val`, an [`AlgebraicValue`], typed at `ty`, to the buffer.
@@ -188,7 +241,7 @@ impl BflatnSerializedRowBuffer<'_> {
             // and finally write the tag.
             (AlgebraicTypeLayout::Sum(ty), AlgebraicValue::Sum(val)) => self.write_sum(ty, val)?,
             // For products, write every element in order.
-            (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty, val)?,
+            (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty.view(), val)?,
 
             // For primitive types, write their contents by LE-encoding.
             (&AlgebraicTypeLayout::Bool, AlgebraicValue::Bool(val)) => self.write_bool(*val),
@@ -203,6 +256,8 @@ impl BflatnSerializedRowBuffer<'_> {
             (&AlgebraicTypeLayout::U64, AlgebraicValue::U64(val)) => self.write_u64(*val),
             (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(val.0),
             (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(val.0),
+            (&AlgebraicTypeLayout::I256, AlgebraicValue::I256(val)) => self.write_i256(**val),
+            (&AlgebraicTypeLayout::U256, AlgebraicValue::U256(val)) => self.write_u256(**val),
             // Float types:
             (&AlgebraicTypeLayout::F32, AlgebraicValue::F32(val)) => self.write_f32((*val).into()),
             (&AlgebraicTypeLayout::F64, AlgebraicValue::F64(val)) => self.write_f64((*val).into()),
@@ -213,8 +268,7 @@ impl BflatnSerializedRowBuffer<'_> {
 
             // For array and maps, we reserve space for a `VarLenRef`
             // and push the bytes, after BSATN encoding, as a var-len object.
-            (AlgebraicTypeLayout::VarLen(VarLenType::Array(_)), val @ AlgebraicValue::Array(_))
-            | (AlgebraicTypeLayout::VarLen(VarLenType::Map(_)), val @ AlgebraicValue::Map(_)) => {
+            (AlgebraicTypeLayout::VarLen(VarLenType::Array(_)), val @ AlgebraicValue::Array(_)) => {
                 self.write_av_bsatn(val)?
             }
 
@@ -245,12 +299,13 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Write an `val`, a [`ProductValue`], typed at `ty`, to the buffer.
-    fn write_product(&mut self, ty: &ProductTypeLayout, val: &ProductValue) -> Result<(), Error> {
+    fn write_product(&mut self, ty: ProductTypeLayoutView<'_>, val: &ProductValue) -> Result<(), Error> {
         // `Iterator::zip` silently drops elements if the two iterators have different lengths,
         // so we need to check that our `ProductValue` has the same number of elements
         // as our `ProductTypeLayout` to be sure it's typed correctly.
         // Otherwise, if the value is too long, we'll discard its fields (whatever),
-        // or if it's too long, we'll leave some fields in the page uninit (very bad).
+        // or if it's too long, we'll leave some fields in the page "uninit"
+        // (actually valid-unconstrained) (very bad).
         if ty.elements.len() != val.elements.len() {
             return Err(Error::WrongType(
                 ty.algebraic_type(),
@@ -302,7 +357,9 @@ impl BflatnSerializedRowBuffer<'_> {
         } else {
             // Write directly to the page.
             // SAFETY: `vlr.first_granule` points to a granule
-            // even though the granule's data is uninit as of yet.
+            // even though the granule's data is not initialized as of yet.
+            // Note that the granule stores valid-unconstrained bytes (i.e. they are not uninit),
+            // but they may be leftovers from a previous allocation.
             let iter = unsafe { self.var_view.granule_offset_iter(vlr.first_granule) };
             let mut writer = GranuleBufWriter { buf: None, iter };
             to_writer(&mut writer, val).unwrap();
@@ -347,7 +404,7 @@ impl BflatnSerializedRowBuffer<'_> {
 
                     // Write to the granule.
                     for (to, byte) in write_to.iter_mut().zip(extend_with) {
-                        to.write(*byte);
+                        *to = *byte;
                     }
 
                     slice = rest;
@@ -377,7 +434,7 @@ impl BflatnSerializedRowBuffer<'_> {
     /// Write `bytes: &[u8; N]` starting at the current offset
     /// and advance the offset by `N`.
     fn write_bytes<const N: usize>(&mut self, bytes: &[u8; N]) {
-        maybe_uninit_write_slice(&mut self.fixed_buf[range_move(0..N, self.curr_offset)], bytes);
+        self.fixed_buf[range_move(0..N, self.curr_offset)].copy_from_slice(bytes);
         self.curr_offset += N;
     }
 
@@ -436,6 +493,16 @@ impl BflatnSerializedRowBuffer<'_> {
         self.write_bytes(&val.to_le_bytes());
     }
 
+    /// Write a `u256` to the fixed buffer and advance the `curr_offset`.
+    fn write_u256(&mut self, val: u256) {
+        self.write_bytes(&val.to_le_bytes());
+    }
+
+    /// Write an `i256` to the fixed buffer and advance the `curr_offset`.
+    fn write_i256(&mut self, val: i256) {
+        self.write_bytes(&val.to_le_bytes());
+    }
+
     /// Write a `f32` to the fixed buffer and advance the `curr_offset`.
     fn write_f32(&mut self, val: f32) {
         self.write_bytes(&val.to_le_bytes());
@@ -447,18 +514,55 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 }
 
+/// Counts the number of [`VarLenGranule`] allocations required to store `val` in a page.
+fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
+    fn traverse_av(val: &AlgebraicValue, count: &mut usize) {
+        match val {
+            AlgebraicValue::Product(val) => traverse_product(val, count),
+            AlgebraicValue::Sum(val) => traverse_av(&val.value, count),
+            AlgebraicValue::Array(_) => add_for_bytestring(bsatn_len(val), count),
+            AlgebraicValue::String(val) => add_for_bytestring(val.len(), count),
+            _ => (),
+        }
+    }
+
+    fn traverse_product(val: &ProductValue, count: &mut usize) {
+        for elt in val {
+            traverse_av(elt, count);
+        }
+    }
+
+    fn add_for_bytestring(len_in_bytes: usize, count: &mut usize) {
+        *count += VarLenGranule::bytes_to_granules(len_in_bytes).0;
+    }
+
+    let mut required_granules: usize = 0;
+    traverse_product(val, &mut required_granules);
+    required_granules
+}
+
+/// Computes the size of `val` when BSATN encoding without actually encoding.
+fn bsatn_len(val: &AlgebraicValue) -> usize {
+    // We store arrays and maps BSATN-encoded,
+    // so we need to go through BSATN encoding to determine the size of the resulting byte blob,
+    // but we don't actually need that byte blob in this calculation,
+    // instead, we can just count them as a serialization format.
+    bsatn::to_len(val).unwrap()
+}
+
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::proptest_sats::generate_typed_row;
     use crate::{
-        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, row_type_visitor::row_type_visitor,
+        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, page::tests::hash_unmodified_save_get,
+        row_type_visitor::row_type_visitor,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+    use spacetimedb_sats::proptest::generate_typed_row;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
         #[test]
         fn av_serde_round_trip_through_page((ty, val) in generate_typed_row()) {
             let ty: RowTypeLayout = ty.into();
@@ -466,12 +570,18 @@ pub mod test {
             let visitor = row_type_visitor(&ty);
             let blob_store = &mut HashMapBlobStore::default();
 
-            let offset = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+            let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+            let (offset, _) = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+
+            let hash_pre_ser = hash_unmodified_save_get(&mut page);
+            assert_ne!(hash_pre_ins, hash_pre_ser);
 
             let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, blob_store, offset, &ty) }
                 .unwrap().into_product().unwrap();
 
             prop_assert_eq!(val, read_val);
+            assert_eq!(hash_pre_ser, *page.unmodified_hash().unwrap());
         }
     }
 }

@@ -1,38 +1,7 @@
-from .. import Smoketest, run_cmd, requires_docker
-from urllib.request import urlopen, URLError
-
-
-def restart_docker():
-    # Behold!
-    #
-    # You thought stop/start restarts? How wrong. Restart restarts.
-    run_cmd("docker", "compose", "restart")
-    # The suspense!
-    #
-    # Wait until compose believes the health probe succeeds.
-    #
-    # The container may decide to recompile, or grab a coffee at crates.io, or
-    # whatever. In any case, restart doesn't mean the server is up yet.
-    run_cmd("docker", "compose", "up", "--no-recreate", "--detach", "--wait-timeout", "60")
-    # Belts and suspenders!
-    #
-    # The health probe runs inside the container, but that doesn't mean we can
-    # reach it from outside. Ping until we get through.
-    ping()
-
-def ping():
-    tries = 0
-    host = "127.0.0.1:3000"
-    while tries < 5:
-        tries += 1
-        try:
-            urlopen(f"http://{host}/database/ping")
-            break
-        except URLError:
-            print("Server down")
-    else:
-        raise Exception(f"Server at {host} not responding")
-    print(f"Server up after {tries} try")
+from .. import Smoketest, requires_docker
+from ..docker import restart_docker
+from urllib.request import urlopen
+from .add_remove_index import AddRemoveIndex
 
 
 @requires_docker
@@ -40,31 +9,30 @@ class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u32,
     name: String,
 }
 
-#[spacetimedb(reducer)]
-pub fn add(name: String) {
-Person::insert(Person { id: 0, name }).unwrap();
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
-#[spacetimedb(reducer)]
-pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
+#[spacetimedb::reducer]
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
-    
+
     def test_restart_module(self):
         """This tests to see if SpacetimeDB can be queried after a restart"""
 
@@ -87,31 +55,30 @@ class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u32,
     name: String,
 }
 
-#[spacetimedb(reducer)]
-pub fn add(name: String) {
-Person::insert(Person { id: 0, name }).unwrap();
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
-#[spacetimedb(reducer)]
-pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
+#[spacetimedb::reducer]
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
-    
+
     def test_restart_module(self):
         """This tests to see if SpacetimeDB can be queried after a restart"""
 
@@ -127,9 +94,83 @@ pub fn say_hello() {
 
         restart_docker()
 
-        sql_out = self.spacetime("sql", self.address, "SELECT name FROM Person WHERE id = 3")
-        self.assertMultiLineEqual(sql_out, """\
- name     
-----------
- Samantha 
-""")
+        sql_out = self.spacetime("sql", self.database_identity, "SELECT name FROM person WHERE id = 3")
+        self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
+
+@requires_docker
+class DockerRestartAutoDisconnect(Smoketest):
+    MODULE_CODE = """
+use log::info;
+use spacetimedb::{ConnectionId, Identity, ReducerContext, Table};
+
+#[spacetimedb::table(accessor = connected_client)]
+pub struct ConnectedClient {
+    identity: Identity,
+    connection_id: ConnectionId,
+}
+
+#[spacetimedb::reducer(client_connected)]
+fn on_connect(ctx: &ReducerContext) {
+    ctx.db.connected_client().insert(ConnectedClient {
+        identity: ctx.sender(),
+        connection_id: ctx.connection_id().expect("sender connection id unset"),
+    });
+}
+
+#[spacetimedb::reducer(client_disconnected)]
+fn on_disconnect(ctx: &ReducerContext) {
+    let sender_identity = &ctx.sender();
+    let connection_id = ctx.connection_id();
+    let sender_connection_id = connection_id.as_ref().expect("sender connection id unset");
+    let match_client = |row: &ConnectedClient| {
+        &row.identity == sender_identity && &row.connection_id == sender_connection_id
+    };
+    if let Some(client) = ctx.db.connected_client().iter().find(match_client) {
+        ctx.db.connected_client().delete(client);
+    }
+}
+
+#[spacetimedb::reducer]
+fn print_num_connected(ctx: &ReducerContext) {
+    let n = ctx.db.connected_client().count();
+    info!("CONNECTED CLIENTS: {n}")
+}
+"""
+
+    def test_restart_disconnects(self):
+        """Tests if clients are automatically disconnected after a restart"""
+
+        # Start two subscribers
+        self.subscribe("SELECT * FROM connected_client", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
+
+        # Assert that we have two clients + the reducer call
+        self.call("print_num_connected")
+        logs = self.logs(10)
+        self.assertEqual("CONNECTED CLIENTS: 3", logs.pop())
+
+        restart_docker()
+
+        # After restart, only the current call should be connected
+        self.call("print_num_connected")
+        logs = self.logs(10)
+        self.assertEqual("CONNECTED CLIENTS: 1", logs.pop())
+
+@requires_docker
+class AddRemoveIndexAfterRestart(AddRemoveIndex):
+    """
+        `AddRemoveIndex` from `add_remove_index.py`,
+        but restarts docker between each publish.
+
+        This detects a bug we once had, hopefully fixed now,
+        where the system autoinc sequences were borked after restart,
+        leading newly-created database objects to re-use IDs.
+
+        First publish the module without the indices,
+        then restart docker, then add the indices and publish.
+        Then restart docker, and publish again.
+        There should be no errors from publishing,
+        and the unindexed versions should reject subscriptions.
+    """
+    def between_publishes(self):
+        restart_docker()

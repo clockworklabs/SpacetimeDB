@@ -1,4 +1,5 @@
 use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_primitives::ColId;
 
 use crate::schemas::{BenchTable, IndexStrategy};
 use crate::ResultBench;
@@ -9,11 +10,11 @@ use crate::ResultBench;
 ///
 /// Not all benchmarks have to go through this trait.
 pub trait BenchDatabase: Sized {
-    fn name() -> &'static str;
+    fn name() -> String;
 
     type TableId: Clone + 'static;
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool) -> ResultBench<Self>
     where
         Self: Sized;
 
@@ -42,11 +43,11 @@ pub trait BenchDatabase: Sized {
     /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
 
-    /// Filter the table on the specified column index for the specified value.
+    /// Filter the table on the specified column id for the specified value.
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_index: u32,
+        col_id: impl Into<ColId>,
         value: AlgebraicValue,
     ) -> ResultBench<()>;
 }

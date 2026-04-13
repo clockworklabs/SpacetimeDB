@@ -12,31 +12,42 @@
 //! Technical terms:
 //!
 //! - `valid` refers to, when referring to a type, granule, or row,
-//!    depending on the context, a memory location that holds a *safe* object.
-//!    When "valid for writes" is used, it refers to the `MaybeUninit` case.
+//!   depending on the context, a memory location that holds a *safe* object.
+//!   When "valid for writes" is used, the location must be properly aligned
+//!   and none of its bytes may be uninit,
+//!   but the value need not be valid at the type in question.
+//!   "Valid for writes" is equivalent to valid-unconstrained.
 //!
-//!    See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
-//!    for a discussion on safety and validity invariants.
+//! - `valid-unconstrained`, when referring to a memory location with a given type,
+//!   that the location stores a byte pattern which Rust/LLVM's memory model recognizes as valid,
+//!   and therefore must not contain any uninit,
+//!   but the value is not required to be logically meaningful,
+//!   and no code may depend on the data within it to uphold any invariants.
+//!   E.g. an unallocated [`VarLenGranule`] within a page stores valid-unconstrained bytes,
+//!   because the bytes are either 0 from the initial [`alloc_zeroed`] of the page,
+//!   or contain stale data from a previously freed [`VarLenGranule`].
+//!
+//! - `unused` means that it is safe to overwrite a block of memory without cleaning up its previous value.
+//!
+//!   See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
+//!   for a discussion on safety and validity invariants.
 
 use super::{
-    blob_store::BlobStore,
-    indexes::{Byte, Bytes, PageOffset, Size, PAGE_HEADER_SIZE, PAGE_SIZE},
-    layout::MIN_ROW_SIZE,
-    util::maybe_uninit_write_slice,
-    var_len::{
-        is_granule_offset_aligned, visit_var_len_assume_init, VarLenGranule, VarLenGranuleHeader, VarLenMembers,
-        VarLenRef,
-    },
+    blob_store::{BlobHash, BlobStore},
+    fixed_bit_set::FixedBitSet,
+    fixed_bit_set::IterSet,
+    indexes::{max_rows_in_page, Byte, Bytes, PageOffset, PAGE_HEADER_SIZE, PAGE_SIZE},
+    static_assert_size,
+    table::BlobNumBytes,
+    var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::static_assert_size;
-use core::{
-    mem::{self, MaybeUninit},
-    ops::ControlFlow,
-    ptr,
-};
+use core::{mem, ops::ControlFlow};
+use spacetimedb_sats::layout::{Size, MIN_ROW_SIZE};
+use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_sats::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("Want to allocate a var-len object of {need} granules, but have only {have} granules available")]
     InsufficientVarLenSpace { need: u16, have: u16 },
@@ -47,12 +58,19 @@ pub enum Error {
 /// A cons-cell in a freelist either
 /// for an unused fixed-len cell or a variable-length granule.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, bytemuck::NoUninit, Serialize, Deserialize)]
 struct FreeCellRef {
     /// The address of the next free cell in a freelist.
     ///
     /// The `PageOffset::PAGE_END` is used as a sentinel to signal "`None`".
     next: PageOffset,
+}
+
+impl MemoryUsage for FreeCellRef {
+    fn heap_usage(&self) -> usize {
+        let Self { next } = self;
+        next.heap_usage()
+    }
 }
 
 impl FreeCellRef {
@@ -110,15 +128,15 @@ impl FreeCellRef {
         let next = self.replace(new_head);
         let new_head = adjust_free(new_head);
         // SAFETY: Per caller contract, `new_head` is in bounds of `row_data`.
-        // SAFETY: Moreover, `new_head` points to an uninit `FreeCellRef` so we can write to it.
-        let next_slot: &mut MaybeUninit<FreeCellRef> = unsafe { get_mut(row_data, new_head) };
-        next_slot.write(next);
+        // Moreover, `new_head` points to an unused `FreeCellRef`, so we can write to it.
+        let next_slot: &mut FreeCellRef = unsafe { get_mut(row_data, new_head) };
+        *next_slot = next;
     }
 }
 
 /// All the fixed size header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 struct FixedHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) fixed row cells.
@@ -140,42 +158,39 @@ struct FixedHeader {
 
     // TODO(stable-module-abi): should this be inlined into the page?
     /// For each fixed-length row slot, true if a row is stored there,
-    /// false if the slot is uninit.
-    present_rows: bit_vec::BitVec,
-
-    #[cfg(debug_assertions)]
-    fixed_row_size: Size,
+    /// false if the slot is unallocated.
+    ///
+    /// Unallocated row slots store valid-unconstrained bytes, i.e. are never uninit.
+    present_rows: FixedBitSet,
 }
 
-#[cfg(debug_assertions)]
-static_assert_size!(FixedHeader, 48);
+impl MemoryUsage for FixedHeader {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            next_free,
+            last,
+            num_rows,
+            present_rows,
+        } = self;
+        next_free.heap_usage() + last.heap_usage() + num_rows.heap_usage() + present_rows.heap_usage()
+    }
+}
 
-#[cfg(not(debug_assertions))]
-static_assert_size!(FixedHeader, 40);
+static_assert_size!(FixedHeader, 16);
 
 impl FixedHeader {
     /// Returns a new `FixedHeader`
-    /// using the provided `fixed_row_size` to compute the `present_rows` bitvec.
+    /// using the provided `max_rows_in_page` to decide how many rows `present_rows` can represent.
     #[inline]
-    fn new(fixed_row_size: Size) -> Self {
+    fn new(max_rows_in_page: usize) -> Self {
         Self {
             next_free: FreeCellRef::NIL,
             // Points one after the last allocated fixed-length row, or `NULL` for an empty page.
             last: PageOffset::VAR_LEN_NULL,
             num_rows: 0,
-            present_rows: bit_vec::BitVec::from_elem(PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len()), false),
-            #[cfg(debug_assertions)]
-            fixed_row_size,
+            present_rows: FixedBitSet::new(max_rows_in_page),
         }
     }
-
-    #[cfg(debug_assertions)]
-    fn debug_check_fixed_row_size(&self, fixed_row_size: Size) {
-        assert_eq!(self.fixed_row_size, fixed_row_size);
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn debug_check_fixed_row_size(&self, _: Size) {}
 
     /// Set the (fixed) row starting at `offset`
     /// and lasting `fixed_row_size` as `present`.
@@ -189,7 +204,6 @@ impl FixedHeader {
     /// and lasting `fixed_row_size` is `present` or not.
     #[inline]
     fn set_row_presence(&mut self, offset: PageOffset, fixed_row_size: Size, present: bool) {
-        self.debug_check_fixed_row_size(fixed_row_size);
         self.present_rows.set(offset / fixed_row_size, present);
     }
 
@@ -197,8 +211,17 @@ impl FixedHeader {
     /// and lasting `fixed_row_size` is present or not.
     #[inline]
     fn is_row_present(&self, offset: PageOffset, fixed_row_size: Size) -> bool {
-        self.debug_check_fixed_row_size(fixed_row_size);
-        self.present_rows.get(offset / fixed_row_size).unwrap()
+        self.present_rows.get(offset / fixed_row_size)
+    }
+
+    /// Resets the header information to its state
+    /// when it was first created in [`FixedHeader::new`]
+    /// but with `max_rows_in_page` instead of the value passed on creation.
+    fn reset_for(&mut self, max_rows_in_page: usize) {
+        self.next_free = FreeCellRef::NIL;
+        self.last = PageOffset::VAR_LEN_NULL;
+        self.num_rows = 0;
+        self.present_rows.reset_for(max_rows_in_page);
     }
 
     /// Resets the header information to its state
@@ -216,7 +239,7 @@ impl FixedHeader {
 
 /// All the var-len header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Debug)]
+#[derive(bytemuck::NoUninit, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct VarHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) var-len granules.
@@ -238,9 +261,27 @@ struct VarHeader {
     /// pre-decrement this index.
     // TODO(perf,future-work): determine how to "lower" the high water mark when freeing the "top"-most granule.
     first: PageOffset,
+
+    /// The number of granules currently used by rows within this page.
+    ///
+    /// [`Page::bytes_used_by_rows`] needs this information.
+    /// Stored here because otherwise counting it would require traversing all the present rows.
+    num_granules: u16,
 }
 
-static_assert_size!(VarHeader, 6);
+impl MemoryUsage for VarHeader {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            next_free,
+            freelist_len,
+            first,
+            num_granules,
+        } = self;
+        next_free.heap_usage() + freelist_len.heap_usage() + first.heap_usage() + num_granules.heap_usage()
+    }
+}
+
+static_assert_size!(VarHeader, 8);
 
 impl Default for VarHeader {
     fn default() -> Self {
@@ -248,6 +289,7 @@ impl Default for VarHeader {
             next_free: FreeCellRef::NIL,
             freelist_len: 0,
             first: PageOffset::PAGE_END,
+            num_granules: 0,
         }
     }
 }
@@ -269,22 +311,51 @@ impl VarHeader {
 /// as the whole [`Page`] is `Box`ed.
 #[repr(C)] // Required for a stable ABI.
 #[repr(align(64))] // Alignment must be same as `VarLenGranule::SIZE`.
-struct PageHeader {
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
+pub(super) struct PageHeader {
     /// The header data relating to the fixed component of a row.
     fixed: FixedHeader,
     /// The header data relating to the var-len component of a row.
     var: VarHeader,
+    /// The content-addressed hash of the page on disk,
+    /// if unmodified since the last snapshot,
+    /// and `None` otherwise.
+    ///
+    /// This means that modifications to the page always sets this field to `None`.
+    unmodified_hash: Option<blake3::Hash>,
+}
+
+impl MemoryUsage for PageHeader {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            fixed,
+            var,
+            // MEMUSE: no allocation, ok to ignore
+            unmodified_hash: _,
+        } = self;
+        fixed.heap_usage() + var.heap_usage()
+    }
 }
 
 static_assert_size!(PageHeader, PAGE_HEADER_SIZE);
 
 impl PageHeader {
-    /// Returns a new `PageHeader` proper for fixed-len rows of `fixed_row_size`.
-    fn new(fixed_row_size: Size) -> Self {
+    /// Returns a new `PageHeader` proper a [`Page`] for holding at most `max_rows_in_page` rows.
+    fn new(max_rows_in_page: usize) -> Self {
         Self {
-            fixed: FixedHeader::new(fixed_row_size),
+            fixed: FixedHeader::new(max_rows_in_page),
             var: VarHeader::default(),
+            unmodified_hash: None,
         }
+    }
+
+    /// Resets the header information to its state
+    /// when it was first created in [`PageHeader::new`]
+    /// but with `max_rows_in_page` instead of the value passed on creation.
+    fn reset_for(&mut self, max_rows_in_page: usize) {
+        self.fixed.reset_for(max_rows_in_page);
+        self.var.clear();
+        self.unmodified_hash = None;
     }
 
     /// Resets the header information to its state
@@ -294,6 +365,22 @@ impl PageHeader {
     fn clear(&mut self) {
         self.fixed.clear();
         self.var.clear();
+        self.unmodified_hash = None;
+    }
+
+    /// Returns the maximum number of rows the page can hold.
+    ///
+    /// Note that this number can be bigger
+    /// than the value provided in [`Self::new`] due to rounding up.
+    pub(super) fn max_rows_in_page(&self) -> usize {
+        self.fixed.present_rows.bits()
+    }
+
+    /// Returns a pointer to the `present_rows` bitset.
+    /// This is exposed for testing only.
+    #[cfg(test)]
+    pub(super) fn present_rows_storage_ptr_for_test(&self) -> *const () {
+        self.fixed.present_rows.storage().as_ptr().cast()
     }
 }
 
@@ -305,7 +392,11 @@ const _VLG_CAN_STORE_FCR: () = assert!(VarLenGranule::SIZE.len() >= MIN_ROW_SIZE
 
 /// Pointers properly aligned for a [`VarLenGranule`] must be properly aligned for [`FreeCellRef`].
 /// This is the case as the former's alignment is a multiple of the latter's alignment.
-const _VLG_ALIGN_MULTIPLE_OF_FCR: () = assert!(mem::align_of::<VarLenGranule>() % mem::align_of::<FreeCellRef>() == 0);
+const _VLG_ALIGN_MULTIPLE_OF_FCR: () =
+    assert!(mem::align_of::<VarLenGranule>().is_multiple_of(mem::align_of::<FreeCellRef>()));
+
+/// The actual row data of a [`Page`].
+type RowData = [Byte; PageOffset::PAGE_END.idx()];
 
 /// A page of row data with an associated `header` and the raw `row_data` itself.
 ///
@@ -344,12 +435,19 @@ const _VLG_ALIGN_MULTIPLE_OF_FCR: () = assert!(mem::align_of::<VarLenGranule>() 
 // ^-- Must have align at least that of `VarLenGranule`,
 // so that `row_data[PageOffset::PAGE_END - VarLenGranule::SIZE]` is an aligned pointer to `VarLenGranule`.
 // TODO(bikeshedding): consider raising the alignment. We may want this to be OS page (4096) aligned.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 pub struct Page {
     /// The header containing metadata on how to interpret and modify the `row_data`.
     header: PageHeader,
     /// The actual bytes stored in the page.
     /// This contains row data, fixed and variable, and freelists.
-    row_data: [Byte; PageOffset::PAGE_END.idx()],
+    row_data: RowData,
+}
+
+impl MemoryUsage for Page {
+    fn heap_usage(&self) -> usize {
+        self.header.heap_usage()
+    }
 }
 
 static_assert_size!(Page, PAGE_SIZE);
@@ -371,13 +469,11 @@ impl FixedView<'_> {
     /// in an expected state, i.e. initialized where required by the row type,
     /// and with `VarLenRef`s that point to valid granules and with correct lengths.
     pub fn get_row_mut(&mut self, start: PageOffset, fixed_row_size: Size) -> &mut Bytes {
-        self.header.debug_check_fixed_row_size(fixed_row_size);
         &mut self.fixed_row_data[start.range(fixed_row_size)]
     }
 
     /// Returns a shared view of the row from `start` lasting `fixed_row_size` number of bytes.
     fn get_row(&mut self, start: PageOffset, fixed_row_size: Size) -> &Bytes {
-        self.header.debug_check_fixed_row_size(fixed_row_size);
         &self.fixed_row_data[start.range(fixed_row_size)]
     }
 
@@ -439,7 +535,7 @@ impl<'page> VarView<'page> {
     ///
     /// This has to be done due to `page.row_data.split_at_mut(last_fixed)`.
     #[inline(always)]
-    fn adjuster(&self) -> impl FnOnce(PageOffset) -> PageOffset {
+    fn adjuster(&self) -> impl FnOnce(PageOffset) -> PageOffset + use<> {
         let lf = self.last_fixed;
         move |offset| offset - lf
     }
@@ -568,6 +664,7 @@ impl<'page> VarView<'page> {
     ///    b. For each `(_, len) ∈ cs`, caller must ensure that
     ///       the relevant granule is initialized with data for at least `len`
     ///       before the granule's data is read from / assumed to be initialized.
+    #[expect(clippy::doc_overindented_list_items)]
     fn alloc_for_obj_common<'chunk, Cs: Iterator<Item = (&'chunk [u8], usize)>>(
         &mut self,
         obj_len: usize,
@@ -607,7 +704,7 @@ impl<'page> VarView<'page> {
             //
             // 2. `next` is either NULL or was initialized in the previous loop iteration.
             //
-            // 3. `granule` points to uninit data as the space was just allocated.
+            // 3. `granule` points to an unused slot as the space was just allocated.
             unsafe { self.write_chunk_to_granule(chunk, len, granule, next) };
             next = granule;
         }
@@ -624,7 +721,7 @@ impl<'page> VarView<'page> {
     /// Allocates a granule for a large blob object
     /// and returns a [`VarLenRef`] pointing to that granule.
     ///
-    /// The granule is left completely uninitialized.
+    /// The granule is not initialized by this method, and contains valid-unconstrained bytes.
     /// It is the caller's responsibility to initialize it with a [`BlobHash`](super::blob_hash::BlobHash).
     #[cold]
     fn alloc_blob_hash(&mut self) -> Result<VarLenRef, Error> {
@@ -639,24 +736,26 @@ impl<'page> VarView<'page> {
     ///
     /// # Safety
     ///
-    /// `vlr.first_granule` must point to an uninit `VarLenGranule` in bounds of this page.
+    /// `vlr.first_granule` must point to an unused `VarLenGranule` in bounds of this page,
+    /// which must be valid for writes.
     pub unsafe fn write_large_blob_hash_to_granule(
         &mut self,
         blob_store: &mut dyn BlobStore,
         var_len_obj: &impl AsRef<[u8]>,
         vlr: VarLenRef,
-    ) {
+    ) -> BlobNumBytes {
         let hash = blob_store.insert_blob(var_len_obj.as_ref());
 
         let granule = vlr.first_granule;
         // SAFETY:
         // 1. `granule` is properly aligned for `VarLenGranule` and is in bounds of the page.
         // 2. The null granule is trivially initialized.
-        // 3. The caller promised that `granule` is uninit.
+        // 3. The caller promised that `granule` is safe to overwrite.
         unsafe { self.write_chunk_to_granule(&hash.data, hash.data.len(), granule, PageOffset::VAR_LEN_NULL) };
+        var_len_obj.as_ref().len().into()
     }
 
-    /// Write the `chunk` (data) to the uninit [`VarLenGranule`] pointed to by `granule`,
+    /// Write the `chunk` (data) to the [`VarLenGranule`] pointed to by `granule`,
     /// set the granule's length to be `len`,
     /// and set the next granule in the list to `next`.
     ///
@@ -669,8 +768,8 @@ impl<'page> VarView<'page> {
     ///    before the granule-list is read from (e.g., iterated on).
     ///    The null granule is considered trivially initialized.
     ///
-    /// 3. The space pointed to by `granule`
-    ///    must be unused/freed/uninit as it will be overwritten here.
+    /// 3. The space pointed to by `granule` must be unused and valid for writes,
+    ///    and will be overwritten here.
     unsafe fn write_chunk_to_granule(&mut self, chunk: &[u8], len: usize, granule: PageOffset, next: PageOffset) {
         let granule = self.adjuster()(granule);
         // SAFETY: A `PageOffset` is always in bounds of the page.
@@ -683,7 +782,7 @@ impl<'page> VarView<'page> {
         // We need to initialize `Page::header`
         // without materializing a `&mut` as that is instant UB.
         // SAFETY: `ptr` isn't NULL as `&mut self.row_data` itself is a non-null pointer.
-        let header = unsafe { ptr::addr_of_mut!((*ptr).header) };
+        let header = unsafe { &raw mut (*ptr).header };
 
         // SAFETY: `header` is valid for writes as only we have exclusive access.
         //          (1) The `ptr` was also promised as aligned
@@ -695,32 +794,38 @@ impl<'page> VarView<'page> {
             header.write(VarLenGranuleHeader::new(len as u8, next));
         }
 
-        // Copy the data into the granule.
         // SAFETY: We can treat any part of `row_data` as `.data`. Also (1) and (2).
-        maybe_uninit_write_slice(unsafe { &mut (*ptr).data }, chunk);
+        let data = unsafe { &mut (*ptr).data };
+
+        // Copy the data into the granule.
+        data[0..chunk.len()].copy_from_slice(chunk);
     }
 
-    /// Allocate a [`MaybeUninit<VarLenGranule>`](VarLenGranule) at the returned [`PageOffset`].
+    /// Allocate a [`VarLenGranule`] at the returned [`PageOffset`].
+    ///
+    /// The allocated storage is not initialized by this method,
+    /// and will be valid-unconstrained at [`VarLenGranule`].
     ///
     /// This offset will be properly aligned for `VarLenGranule` when converted to a pointer.
     ///
     /// Returns an error when there are neither free granules nor space in the gap left.
     fn alloc_granule(&mut self) -> Result<PageOffset, Error> {
-        let uninit_granule = self
+        let granule = self
             .alloc_from_freelist()
             .or_else(|| self.alloc_from_gap())
             .ok_or(Error::InsufficientVarLenSpace { need: 1, have: 0 })?;
 
         debug_assert!(
-            is_granule_offset_aligned(uninit_granule),
-            "Allocated an unaligned var-len granule: {:x}",
-            uninit_granule,
+            is_granule_offset_aligned(granule),
+            "Allocated an unaligned var-len granule: {granule:x}",
         );
 
-        Ok(uninit_granule)
+        self.header.num_granules += 1;
+
+        Ok(granule)
     }
 
-    /// Allocate a [`MaybeUninit<VarLenGranule>`](VarLenGranule) at the returned [`PageOffset`]
+    /// Allocate a [`VarLenGranule`] at the returned [`PageOffset`]
     /// taken from the freelist, if any.
     #[inline]
     fn alloc_from_freelist(&mut self) -> Option<PageOffset> {
@@ -734,7 +839,7 @@ impl<'page> VarView<'page> {
         Some(free)
     }
 
-    /// Allocate a [`MaybeUninit<VarLenGranule>`](VarLenGranule) at the returned [`PageOffset`]
+    /// Allocate a [`VarLenGranule`] at the returned [`PageOffset`]
     /// taken from the gap, if there is space left, or `None` if there is insufficient space.
     #[inline]
     fn alloc_from_gap(&mut self) -> Option<PageOffset> {
@@ -756,8 +861,9 @@ impl<'page> VarView<'page> {
         // TODO(perf,future-work): if `chunk` is at the HWM, return it to the gap.
         //       Returning a single chunk to the gap is easy,
         //       but we want to return a whole "run" of sequential freed chunks,
-        //       which requries some bookkeeping (or an O(> n) linked list traversal).
+        //       which requires some bookkeeping (or an O(> n) linked list traversal).
         self.header.freelist_len += 1;
+        self.header.num_granules -= 1;
         let adjuster = self.adjuster();
 
         // SAFETY: Per caller contract, `offset` is a valid `VarLenGranule`,
@@ -789,7 +895,7 @@ impl<'page> VarView<'page> {
     /// SAFETY: `offset` must point to a valid [`VarLenGranule`] or be NULL.
     #[cold]
     #[inline(never)]
-    unsafe fn free_blob(&self, offset: PageOffset, blob_store: &mut dyn BlobStore) {
+    unsafe fn free_blob(&self, offset: PageOffset, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
         assert!(!offset.is_var_len_null());
 
         // SAFETY: Per caller contract + the assertion above,
@@ -798,7 +904,20 @@ impl<'page> VarView<'page> {
 
         // Actually free the blob.
         let hash = granule.blob_hash();
+
+        // The size of `deleted_bytes` is calculated here instead of requesting it from `blob_store`.
+        // This is because the actual number of bytes deleted depends on the `blob_store`'s logic.
+        // We prefer to measure it from the datastore's point of view.
+        let blob_store_deleted_bytes = blob_store
+            .retrieve_blob(&hash)
+            .expect("failed to free var-len blob")
+            .len()
+            .into();
+
+        // Actually free the blob.
         blob_store.free_blob(&hash).expect("failed to free var-len blob");
+
+        blob_store_deleted_bytes
     }
 
     /// Frees an entire var-len linked-list object.
@@ -837,13 +956,14 @@ impl<'page> VarView<'page> {
     /// Frees an entire var-len linked-list object.
     ///
     /// SAFETY: `var_len_obj.first_granule` must point to a valid [`VarLenGranule`] or be NULL.
-    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blob_store: &mut dyn BlobStore) {
+    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+        let mut blob_store_deleted_bytes = BlobNumBytes::default();
         // For large blob objects, extract the hash and tell `blob_store` to discard it.
         if var_len_obj.is_large_blob() {
             // SAFETY: `var_len_obj.first_granule` was promised to
             // point to a valid [`VarLenGranule`] or be NULL, as required.
             unsafe {
-                self.free_blob(var_len_obj.first_granule, blob_store);
+                blob_store_deleted_bytes = self.free_blob(var_len_obj.first_granule, blob_store);
             }
         }
 
@@ -851,6 +971,8 @@ impl<'page> VarView<'page> {
         unsafe {
             self.free_object_ignore_blob(var_len_obj);
         }
+
+        blob_store_deleted_bytes
     }
 }
 
@@ -1005,15 +1127,29 @@ fn gap_enough_size_for_row(first_var: PageOffset, last_fixed: PageOffset, fixed_
 impl Page {
     /// Returns a new page allocated on the heap.
     ///
-    /// The new page supports fixed rows of size `fixed_row_size`.
+    /// The new page supports a rows with `fixed_row_size`.
     pub fn new(fixed_row_size: Size) -> Box<Self> {
+        Self::new_with_max_row_count(max_rows_in_page(fixed_row_size))
+    }
+
+    /// Returns a new page allocated on the heap.
+    ///
+    /// The new page supports `max_rows_in_page` at most.
+    pub fn new_with_max_row_count(max_rows_in_page: usize) -> Box<Self> {
         // TODO(perf): mmap? allocator may do so already.
         // mmap may be more efficient as we save allocator metadata.
-        use std::alloc::{alloc, handle_alloc_error, Layout};
+        use std::alloc::{alloc_zeroed, handle_alloc_error, Layout};
 
         let layout = Layout::new::<Page>();
+
+        // Allocate with `alloc_zeroed` so that the bytes are initially 0, rather than uninit.
+        // We will never write an uninit byte into the page except in the `PageHeader`,
+        // so it is safe for `row_data` to have type `[u8; _]` rather than `[MaybeUninit<u8>; _]`.
+        // `alloc_zeroed` may be more efficient than `alloc` + `memset`;
+        // in particular, it may `mmap` pages directly from the OS, which are always zeroed for security reasons.
+        // TODO: use Box::new_zeroed() once stabilized.
         // SAFETY: The layout's size is non-zero.
-        let raw: *mut Page = unsafe { alloc(layout) }.cast();
+        let raw: *mut Page = unsafe { alloc_zeroed(layout) }.cast();
 
         if raw.is_null() {
             handle_alloc_error(layout);
@@ -1022,21 +1158,106 @@ impl Page {
         // We need to initialize `Page::header`
         // without materializing a `&mut` as that is instant UB.
         // SAFETY: `raw` isn't NULL.
-        let header = unsafe { ptr::addr_of_mut!((*raw).header) };
+        let header = unsafe { &raw mut (*raw).header };
 
         // SAFETY: `header` is valid for writes as only we have exclusive access.
         //          The pointer is also aligned.
-        unsafe { header.write(PageHeader::new(fixed_row_size)) };
+        unsafe { header.write(PageHeader::new(max_rows_in_page)) };
 
         // SAFETY: We used the global allocator with a layout for `Page`.
-        //         We have initialized the `header`
+        //         We have initialized the `header`,
+        //         and the `row_bytes` are initially 0 by `alloc_zeroed`,
         //         making the pointee a `Page` valid for reads and writes.
         unsafe { Box::from_raw(raw) }
     }
 
     /// Returns the number of rows stored in this page.
+    ///
+    /// This method runs in constant time.
     pub fn num_rows(&self) -> usize {
         self.header.fixed.num_rows as usize
+    }
+
+    #[cfg(test)]
+    /// Use this page's present rows bitvec to compute the number of present rows.
+    ///
+    /// This can be compared with [`Self::num_rows`] as a consistency check during tests.
+    pub fn reconstruct_num_rows(&self) -> usize {
+        // If we cared, we could rewrite this to `u64::count_ones` on each block of the bitset.
+        // We do not care. This method is slow.
+        self.header.fixed.present_rows.iter_set().count()
+    }
+
+    /// Returns the number of var-len granules allocated in this page.
+    ///
+    /// This method runs in constant time.
+    pub fn num_var_len_granules(&self) -> usize {
+        self.header.var.num_granules as usize
+    }
+
+    #[cfg(test)]
+    /// # Safety
+    ///
+    /// - `var_len_visitor` must be a valid [`VarLenMembers`] visitor
+    ///   specialized to the type and layout of rows within this [`Page`].
+    /// - `fixed_row_size` must be exactly the length in bytes of fixed rows in this page,
+    ///   which must further be the length of rows expected by the `var_len_visitor`.
+    pub unsafe fn reconstruct_num_var_len_granules(
+        &self,
+        fixed_row_size: Size,
+        var_len_visitor: &impl VarLenMembers,
+    ) -> usize {
+        self.iter_fixed_len(fixed_row_size)
+            .flat_map(|row| unsafe {
+                // Safety: `row` came out of `iter_fixed_len`,
+                // which, due to caller requirements on `fixed_row_size`,
+                // is giving us valid, aligned, initialized rows of the row type.
+                var_len_visitor.visit_var_len(self.get_row_data(row, fixed_row_size))
+            })
+            .flat_map(|var_len_obj| unsafe {
+                // Safety: We believe `row` to be valid
+                // and `var_len_visitor` to be correctly visiting its var-len members.
+                // Therefore, `var_len_obj` is a valid var-len object.
+                self.iter_var_len_object(var_len_obj.first_granule)
+            })
+            .count()
+    }
+
+    /// Returns the number of bytes used by rows stored in this page.
+    ///
+    /// This is necessarily an overestimate of live data bytes, as it includes:
+    /// - Padding bytes within the fixed-length portion of the rows.
+    /// - [`VarLenRef`] pointer-like portions of rows.
+    /// - Unused trailing parts of partially-filled [`VarLenGranule`]s.
+    /// - [`VarLenGranule`]s used to store [`BlobHash`]es.
+    ///
+    /// Note that large blobs themselves are not counted.
+    /// The caller should obtain a count of the bytes used by large blobs
+    /// from the [`super::blob_store::BlobStore`].
+    ///
+    /// This method runs in constant time.
+    pub fn bytes_used_by_rows(&self, fixed_row_size: Size) -> usize {
+        let fixed_row_bytes = self.num_rows() * fixed_row_size.len();
+        let var_len_bytes = self.num_var_len_granules() * VarLenGranule::SIZE.len();
+        fixed_row_bytes + var_len_bytes
+    }
+
+    #[cfg(test)]
+    /// # Safety
+    ///
+    /// - `var_len_visitor` must be a valid [`VarLenMembers`] visitor
+    ///   specialized to the type and layout of rows within this [`Page`].
+    /// - `fixed_row_size` must be exactly the length in bytes of fixed rows in this page,
+    ///   which must further be the length of rows expected by the `var_len_visitor`.
+    pub unsafe fn reconstruct_bytes_used_by_rows(
+        &self,
+        fixed_row_size: Size,
+        var_len_visitor: &impl VarLenMembers,
+    ) -> usize {
+        let fixed_row_bytes = self.reconstruct_num_rows() * fixed_row_size.len();
+        let var_len_bytes = unsafe { self.reconstruct_num_var_len_granules(fixed_row_size, var_len_visitor) }
+            * VarLenGranule::SIZE.len();
+        fixed_row_bytes + var_len_bytes
     }
 
     /// Returns the range of row data starting at `offset` and lasting `size` bytes.
@@ -1077,6 +1298,21 @@ impl Page {
         (fixed, var)
     }
 
+    /// Returns a mutable view of the row from `start` lasting `fixed_row_size` number of bytes.
+    ///
+    /// This method is safe, but callers should take care that `start` and `fixed_row_size`
+    /// are correct for this page, and that `start` is aligned.
+    /// Callers should further ensure that mutations to the row leave the row bytes
+    /// in an expected state, i.e. initialized where required by the row type,
+    /// and with `VarLenRef`s that point to valid granules and with correct lengths.
+    ///
+    /// This call will clear the unmodified hash
+    /// as it is expected that the caller will alter the the page.
+    pub fn get_fixed_row_data_mut(&mut self, start: PageOffset, fixed_row_size: Size) -> &mut Bytes {
+        self.header.unmodified_hash = None;
+        &mut self.row_data[start.range(fixed_row_size)]
+    }
+
     /// Return the total required var-len granules to store `objects`.
     pub fn total_granules_required_for_objects(objects: &[impl AsRef<[u8]>]) -> usize {
         objects
@@ -1097,19 +1333,27 @@ impl Page {
     /// where the fixed size part is `fixed_row_size` bytes large,
     /// and the variable part requires `num_granules`.
     pub fn has_space_for_row(&self, fixed_row_size: Size, num_granules: usize) -> bool {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
+        let has_fixed_free = self.header.fixed.next_free.has();
+        let var_first = self.header.var.first;
+        let fixed_last = self.header.fixed.last;
+
+        if num_granules == 0 {
+            // No granules needed. Just verify that there's space for the fixed part.
+            return has_fixed_free || gap_enough_size_for_row(var_first, fixed_last, fixed_row_size);
+        }
 
         // Determine the gap remaining after allocating for the fixed part.
-        let gap_remaining = gap_remaining_size(self.header.var.first, self.header.fixed.last);
-        let gap_avail_for_granules = if self.header.fixed.next_free.has() {
+        let gap_remaining = gap_remaining_size(var_first, fixed_last);
+        let gap_avail_for_granules = if has_fixed_free {
             // If we have a free fixed length block, then we can use the whole gap for var-len granules.
             gap_remaining
         } else {
             // If we need to grow the fixed-length store into the gap,
             if gap_remaining < fixed_row_size {
-                // if the gap is too small for fixed-length row, fail.
+                // If the gap is too small for fixed-length row, fail.
                 return false;
             }
+
             // Otherwise, the space available in the gap for var-len granules
             // is the current gap size less the fixed-len row size.
             gap_remaining - fixed_row_size
@@ -1156,7 +1400,6 @@ impl Page {
     ) -> Result<PageOffset, Error> {
         // Allocate the fixed-len row.
         let fixed_row_size = Size(fixed_row.len() as u16);
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
 
         // SAFETY: Caller promised that `fixed_row.len()` uses the right `fixed_row_size`
         // and we trust that others have too.
@@ -1169,7 +1412,7 @@ impl Page {
 
         // Store all var-len refs into their appropriate slots in the fixed-len row.
         // SAFETY:
-        // - The `fixed_len_offset` given by `alloc_fixed_len` resuls in `row`
+        // - The `fixed_len_offset` given by `alloc_fixed_len` results in `row`
         //   being properly aligned for the row type.
         // - Caller promised that `fixed_row.len()` matches the row type size exactly.
         // - `var_len_visitor` is suitable for `fixed_row`.
@@ -1180,13 +1423,13 @@ impl Page {
                 // The blob store insertion will never fail.
                 // SAFETY: `alloc_for_slice` always returns a pointer
                 // to a `VarLenGranule` in bounds of this page.
-                // As `in_blob` holds, it is also uninit, as required.
+                // As `in_blob` holds, it is also unused, as required.
                 // We'll now make that granule valid.
                 unsafe {
                     var.write_large_blob_hash_to_granule(blob_store, var_len_obj, var_len_ref);
                 }
             }
-            var_len_ref_slot.write(var_len_ref);
+            *var_len_ref_slot = var_len_ref;
         }
 
         Ok(fixed_len_offset)
@@ -1199,27 +1442,36 @@ impl Page {
     /// `fixed_row_size` must be equal to the value passed
     /// to all other methods ever invoked on `self`.
     pub unsafe fn alloc_fixed_len(&mut self, fixed_row_size: Size) -> Result<PageOffset, Error> {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         self.alloc_fixed_len_from_freelist(fixed_row_size)
             .or_else(|| self.alloc_fixed_len_from_gap(fixed_row_size))
             .ok_or(Error::InsufficientFixedLenSpace { need: fixed_row_size })
     }
 
     /// Allocates a space for a fixed size row of `fixed_row_size` in the freelist, if possible.
+    ///
+    /// This call will clear the unmodified hash.
     #[inline]
     fn alloc_fixed_len_from_freelist(&mut self, fixed_row_size: Size) -> Option<PageOffset> {
         let header = &mut self.header.fixed;
         // SAFETY: `header.next_free` points to a `FreeCellRef` when the former `.has()`.
         let free = unsafe { header.next_free.take_freelist_head(&self.row_data, |x| x) }?;
         header.set_row_present(free, fixed_row_size);
+
+        // We are and have modified the page, so clear the unmodified hash.
+        self.header.unmodified_hash = None;
+
         Some(free)
     }
 
     /// Allocates a space for a fixed size row of `fixed_row_size` in the freelist, if possible.
+    ///
+    /// This call will clear the unmodified hash.
     #[inline]
     fn alloc_fixed_len_from_gap(&mut self, fixed_row_size: Size) -> Option<PageOffset> {
         if gap_enough_size_for_row(self.header.var.first, self.header.fixed.last, fixed_row_size) {
+            // We're modifying the page, so clear the unmodified hash.
+            self.header.unmodified_hash = None;
+
             // Enough space in the gap; move the high water mark and return the old HWM.
             // `fixed.last` points *after* the highest-indexed fixed-len row,
             // so post-increment.
@@ -1244,12 +1496,10 @@ impl Page {
     /// It is the caller's responsibility to ensure that `PageOffset`s derived from
     /// this iterator are valid when used to do anything `unsafe`.
     fn iter_fixed_len_from(&self, fixed_row_size: Size, starting_from: PageOffset) -> FixedLenRowsIter<'_> {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
+        let idx = starting_from / fixed_row_size;
         FixedLenRowsIter {
-            next_row: starting_from,
-            header: &self.header.fixed,
+            idx_iter: self.header.fixed.present_rows.iter_set_from(idx),
             fixed_row_size,
-            rows_traversed_so_far: 0,
         }
     }
 
@@ -1262,7 +1512,10 @@ impl Page {
     /// It is the caller's responsibility to ensure that `PageOffset`s derived from
     /// this iterator are valid when used to do anything `unsafe`.
     pub fn iter_fixed_len(&self, fixed_row_size: Size) -> FixedLenRowsIter<'_> {
-        self.iter_fixed_len_from(fixed_row_size, PageOffset::VAR_LEN_NULL)
+        FixedLenRowsIter {
+            idx_iter: self.header.fixed.present_rows.iter_set(),
+            fixed_row_size,
+        }
     }
 
     /// Returns an iterator over all the `VarLenGranule`s of the var-len object
@@ -1296,6 +1549,8 @@ impl Page {
 
     /// Free a row, marking its fixed-len and var-len storage granules as available for re-use.
     ///
+    /// This call will clear the unmodified hash.
+    ///
     /// # Safety
     ///
     /// - `fixed_row` must point to a valid row in this page.
@@ -1304,32 +1559,31 @@ impl Page {
     ///   of all past, present, and future rows in this page and future rows in this page.
     ///
     /// - The `var_len_visitor` must visit the same set of `VarLenRef`s in the row
-    /// as the visitor provided to `insert_row`.
+    ///   as the visitor provided to `insert_row`.
     pub unsafe fn delete_row(
         &mut self,
         fixed_row: PageOffset,
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
         blob_store: &mut dyn BlobStore,
-    ) {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
+    ) -> BlobNumBytes {
+        // We're modifying the page, so clear the unmodified hash.
+        self.header.unmodified_hash = None;
 
         let (mut fixed, mut var) = self.split_fixed_var_mut();
 
+        let mut blob_store_deleted_bytes = BlobNumBytes::default();
+
         // Visit the var-len members of the fixed row and free them.
         let row = fixed.get_row(fixed_row, fixed_row_size);
-        // SAFETY: Allocation initializes the `VarLenRef`s in the row,
-        //         so a row that has been allocated and is live
-        //         will have initialized `VarLenRef` members.
-        let var_len_refs = unsafe { visit_var_len_assume_init(var_len_visitor, row) };
+        // SAFETY: `row` is derived from `fixed_row`, which is known by caller requirements to be valid.
+        let var_len_refs = unsafe { var_len_visitor.visit_var_len(row) };
         for var_len_ref in var_len_refs {
-            // SAFETY: A sound call to `visit_var_len_assume_init`,
+            // SAFETY: A sound call to `visit_var_len` on a fully initialized valid row,
             // which we've justified that the above is,
             // returns an iterator, that will only yield `var_len_ref`s,
-            // where `var_len_ref.first_granule` points to a valid `VarLenGranule` or be NULL.
-            unsafe {
-                var.free_object(var_len_ref, blob_store);
-            }
+            // where `var_len_ref.first_granule` points to a valid `VarLenGranule` or is NULL.
+            blob_store_deleted_bytes += unsafe { var.free_object(*var_len_ref, blob_store) }
         }
 
         // SAFETY: Caller promised that `fixed_row` points to a valid row in the page.
@@ -1340,6 +1594,8 @@ impl Page {
         unsafe {
             fixed.free(fixed_row, fixed_row_size);
         }
+
+        blob_store_deleted_bytes
     }
 
     /// Returns the total number of granules used by the fixed row at `fixed_row_offset`
@@ -1349,24 +1605,22 @@ impl Page {
     /// # Safety
     ///
     /// - `fixed_row_offset` must refer to a previously-allocated and initialized row in `self`,
-    /// and must not have been de-allocated. In other words, the fixed row must be *valid*.
+    ///   and must not have been de-allocated. In other words, the fixed row must be *valid*.
     ///
     /// - `fixed_row_size` and `var_len_visitor` must be consistent with each other
-    /// and with all other calls to any methods on `self`.
+    ///   and with all other calls to any methods on `self`.
     pub unsafe fn row_total_granules(
         &self,
         fixed_row_offset: PageOffset,
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
     ) -> usize {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         let fixed_row = self.get_row_data(fixed_row_offset, fixed_row_size);
         // SAFETY:
         // - Caller promised that `fixed_row_offset` is a valid row.
         // - Caller promised consistency of `var_len_visitor` wrt. `fixed_row_size` and this page.
-        let vlr_iter = unsafe { visit_var_len_assume_init(var_len_visitor, fixed_row) };
-        vlr_iter.map(|slot| slot.granules_used()).sum()
+        let vlr_iter = unsafe { var_len_visitor.visit_var_len(fixed_row) };
+        vlr_iter.copied().map(|slot| slot.granules_used()).sum()
     }
 
     /// Copy as many rows from `self` for which `filter` returns `true` into `dst` as will fit,
@@ -1398,21 +1652,20 @@ impl Page {
         dst: &mut Page,
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
-        blob_store: &mut dyn BlobStore,
+        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
         mut filter: impl FnMut(&Page, PageOffset) -> bool,
     ) -> ControlFlow<(), PageOffset> {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         for row_offset in self
             .iter_fixed_len_from(fixed_row_size, starting_from)
             // Only copy rows satisfying the predicate `filter`.
             .filter(|o| filter(self, *o))
         {
+            let blob_policy = blob_policy.as_mut();
             // SAFETY:
             // - `starting_from` points to a valid row and thus `row_offset` also does.
             // - `var_len_visitor` will visit the right `VarLenRef`s and is consistent with other calls.
             // - `fixed_row_size` is consistent with `var_len_visitor` and `self`.
-            if !unsafe { self.copy_row_into(row_offset, dst, fixed_row_size, var_len_visitor, blob_store) } {
+            if !unsafe { self.copy_row_into(row_offset, dst, fixed_row_size, var_len_visitor, blob_policy) } {
                 // Target doesn't have enough space for row;
                 // stop here and return the offset of the uncopied row
                 // so a later call to `copy_filter_into` can start there.
@@ -1444,10 +1697,8 @@ impl Page {
         dst: &mut Page,
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
-        blob_store: &mut dyn BlobStore,
+        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
     ) -> bool {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         // SAFETY: Caller promised that `starting_from` points to a valid row
         // consistent with `fixed_row_size` which was also
         // claimed to be consistent with `var_len_visitor` and `self`.
@@ -1475,14 +1726,11 @@ impl Page {
         // SAFETY: `src_row` is valid because it came from `self.iter_fixed_len_from`.
         //
         //         Forward our safety requirements re: `var_len_visitor` to `visit_var_len`.
-        //
-        // SAFETY: Every `VarLenRef` in `src_vlr_iter` is initialized
-        //         because to reach this point without violating any above safety invariants,
-        //         it must have been allocated and its ref stored in the `src_row`.
-        let src_vlr_iter = unsafe { visit_var_len_assume_init(var_len_visitor, src_row) };
+        let src_vlr_iter = unsafe { var_len_visitor.visit_var_len(src_row) };
         // SAFETY: forward our requirement on `var_len_visitor` to `visit_var_len_mut`.
         let target_vlr_iter = unsafe { var_len_visitor.visit_var_len_mut(dst_row) };
         for (src_vlr, target_vlr_slot) in src_vlr_iter.zip(target_vlr_iter) {
+            let blob_policy = blob_policy.as_mut();
             // SAFETY:
             //
             // - requirements of `visit_var_len_assume_init` were met,
@@ -1490,10 +1738,10 @@ impl Page {
             //
             // - the call to `dst.has_space_for_row` above ensures
             //   that the allocation will not fail part-way through.
-            let target_vlr_fixup = unsafe { self.copy_var_len_into(src_vlr, &mut dst_var, blob_store) }
+            let target_vlr_fixup = unsafe { self.copy_var_len_into(*src_vlr, &mut dst_var, blob_policy) }
                 .expect("Failed to allocate var-len object in dst page after checking for available space");
 
-            target_vlr_slot.write(target_vlr_fixup);
+            *target_vlr_slot = target_vlr_fixup;
         }
 
         true
@@ -1511,13 +1759,13 @@ impl Page {
     /// - `src_vlr.first_granule` must point to a valid granule or be NULL.
     ///
     /// - To avoid leaving dangling uninitialized allocations in `dst_var`,
-    ///  `dst_var` must already be checked to have enough size to store `src_vlr`
+    ///   `dst_var` must already be checked to have enough size to store `src_vlr`
     ///   using `Self::has_space_for_row`.
     unsafe fn copy_var_len_into(
         &self,
         src_vlr: VarLenRef,
         dst_var: &mut VarView<'_>,
-        blob_store: &mut dyn BlobStore,
+        blob_policy: Option<&mut impl FnMut(BlobHash)>,
     ) -> Result<VarLenRef, Error> {
         // SAFETY: Caller promised that `src_vlr.first_granule` points to a valid granule is be NULL.
         let mut iter = unsafe { self.iter_var_len_object(src_vlr.first_granule) };
@@ -1547,7 +1795,7 @@ impl Page {
             // 2. `next_dst_chunk` will be initialized
             //    either in the next iteration or after the loop ends.
             //
-            // 3. `dst_chunk` points to uninit data as the space was allocated before the loop
+            // 3. `dst_chunk` points to unused data as the space was allocated before the loop
             //    or was `next_dst_chunk` in the previous iteration and hasn't been written to yet.
             unsafe { dst_var.write_chunk_to_granule(data, data.len(), dst_chunk, next_dst_chunk) };
             dst_chunk = next_dst_chunk;
@@ -1565,16 +1813,16 @@ impl Page {
         //
         // 2. `next` is NULL which is trivially init.
         //
-        // 3. `dst_chunk` points to uninit data as the space was allocated before the loop
+        // 3. `dst_chunk` points to unused data as the space was allocated before the loop
         //    or was `next_dst_chunk` in the previous iteration and hasn't been written to yet.
         unsafe { dst_var.write_chunk_to_granule(data, data.len(), dst_chunk, PageOffset::VAR_LEN_NULL) };
 
-        // For a large blob object,
-        // notify the `blob_store` that we've taken a reference to the blob hash.
-        if src_vlr.is_large_blob() {
-            blob_store
-                .clone_blob(&src_chunk.blob_hash())
-                .expect("blob_store could not mark hash as used");
+        // For a large blob object, run the blob policy, if we have one.
+        // This could, for example:
+        // - increment the refcount in the blob store
+        // - clone the blob object and the bytes to a new blob store.
+        if let Some(blob_policy) = blob_policy.filter(|_| src_vlr.is_large_blob()) {
+            blob_policy(src_chunk.blob_hash());
         }
 
         Ok(VarLenRef {
@@ -1584,18 +1832,98 @@ impl Page {
     }
 
     /// Make `self` empty, removing all rows from it and resetting the high water marks to zero.
+    ///
+    /// This also clears the `unmodified_hash`.
     pub fn clear(&mut self) {
         self.header.clear();
     }
 
     /// Zeroes every byte of row data in this page.
     ///
-    /// This is only used for benchmarks right now.
-    #[doc(hidden)]
+    /// # Safety
+    ///
+    /// Causes the page header to no longer match the contents, invalidating many assumptions.
+    /// Should be called in conjunction with [`Self::clear`].
     pub unsafe fn zero_data(&mut self) {
-        for byte in &mut self.row_data {
-            unsafe { ptr::write(byte.as_mut_ptr(), 0) };
-        }
+        self.row_data.fill(0);
+    }
+
+    /// Resets this page for reuse of its allocation.
+    ///
+    /// The reset page supports `max_rows_in_page` at most.
+    pub fn reset_for(&mut self, max_rows_in_page: usize) {
+        self.header.reset_for(max_rows_in_page);
+
+        // NOTE(centril): We previously zeroed pages when resetting.
+        // This had an adverse performance impact.
+        // The reason why we previously zeroed was for security under a multi-tenant setup
+        // when exposing a module ABI that allows modules to memcpy whole pages over.
+        // However, we have no such ABI for the time being, so we can soundly avoid zeroing.
+        // If we ever decide to add such an ABI, we must start zeroing again.
+        //
+        // // SAFETY: We just reset the page header.
+        // unsafe { self.zero_data() };
+    }
+
+    /// Sets the header and the row data.
+    ///
+    /// # Safety
+    ///
+    /// The `header` and `row_data` must be consistent with each other.
+    pub(super) unsafe fn set_raw(&mut self, header: PageHeader, row_data: RowData) {
+        self.header = header;
+        self.row_data = row_data;
+    }
+
+    /// Returns the page header, for testing.
+    #[cfg(test)]
+    pub(super) fn page_header_for_test(&self) -> &PageHeader {
+        &self.header
+    }
+
+    /// Computes the content hash of this page.
+    pub fn content_hash(&self) -> blake3::Hash {
+        let mut hasher = blake3::Hasher::new();
+
+        // Hash the page contents.
+        hasher.update(&self.row_data);
+
+        // Hash the `FixedHeader`, first copy out the fixed part save for the bitset into an array.
+        let fixed = &self.header.fixed;
+        let mut fixed_bytes = [0u8; 6];
+        fixed_bytes[0..2].copy_from_slice(&fixed.next_free.next.0.to_le_bytes());
+        fixed_bytes[2..4].copy_from_slice(&fixed.last.0.to_le_bytes());
+        fixed_bytes[4..6].copy_from_slice(&fixed.num_rows.to_le_bytes());
+        hasher.update(&fixed_bytes);
+
+        // Hash the fixed bit set.
+        hasher.update(bytemuck::must_cast_slice(fixed.present_rows.storage()));
+
+        // Hash the `VarHeader`.
+        hasher.update(bytemuck::bytes_of(&self.header.var));
+
+        // We're done.
+        // Note that `unmodified_hash` itself must not be hashed to avoid a recursive dependency.
+        hasher.finalize()
+    }
+
+    /// Computes the content hash of this page and saves it to [`PageHeader::unmodified_hash`].
+    pub fn save_content_hash(&mut self) {
+        let hash = self.content_hash();
+        self.header.unmodified_hash = Some(hash);
+    }
+
+    /// Return the page's content hash, computing and saving it if it is not already stored.
+    pub fn save_or_get_content_hash(&mut self) -> blake3::Hash {
+        self.unmodified_hash().copied().unwrap_or_else(|| {
+            self.save_content_hash();
+            self.header.unmodified_hash.unwrap()
+        })
+    }
+
+    /// Returns the stored unmodified hash, if any.
+    pub fn unmodified_hash(&self) -> Option<&blake3::Hash> {
+        self.header.unmodified_hash.as_ref()
     }
 }
 
@@ -1604,52 +1932,18 @@ pub struct FixedLenRowsIter<'page> {
     /// The fixed header of the page,
     /// used to determine where the last fixed row is
     /// and whether the fixed row slot is actually a fixed row.
-    header: &'page FixedHeader,
-    /// Location of the next fixed row slot, not necessarily the next row.
-    next_row: PageOffset,
+    idx_iter: IterSet<'page>,
     /// The size of a row in bytes.
     fixed_row_size: Size,
-    /// Stored so we can implement `Iterator::size_hint` efficiently.
-    rows_traversed_so_far: usize,
 }
 
 impl Iterator for FixedLenRowsIter<'_> {
     type Item = PageOffset;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO(perf): can we use the bitmap with count leading zeros (or similar)
-        //       to skip ahead to the next present row?
-        //       `BitVec` does not provide this interface,
-        //       so we'd have to consider alternative crates or roll our own.
-        //
-        //       If `next_row` points to a zero bit in the present? bitvec,
-        //       it should be possible to do some masks and CLZs
-        //       to determine that the next N bits in the bitvec are also zero,
-        //       and thus to skip ahead to the next present row.
-        //
-        //       First step: determine overhead.
-
-        // As long as we haven't reached the high water mark,
-        while self.next_row != self.header.last {
-            // Wish we could do `self.next_row.post_increment(1)`...
-            let this_row = self.next_row;
-            self.next_row += self.fixed_row_size;
-            // If `this_row` is present, i.e. has not been deleted,
-            // return it.
-            // Otherwise, continue the loop to search the next row.
-            if self.header.is_row_present(this_row, self.fixed_row_size) {
-                self.rows_traversed_so_far += 1;
-                return Some(this_row);
-            }
-        }
-
-        // When we reach the high water mark, there are no more rows.
-        None
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let num_remaining = self.header.num_rows as usize - self.rows_traversed_so_far;
-        (num_remaining, Some(num_remaining))
+        self.idx_iter
+            .next()
+            .map(|idx| PageOffset(idx as u16 * self.fixed_row_size.0))
     }
 }
 
@@ -1690,22 +1984,12 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use crate::{
-        blob_store::NullBlobStore,
-        layout::row_size_for_type,
-        util::{slice_assume_init_ref, uninit_array},
-        var_len::AlignedVarLenOffsets,
-    };
+    use crate::{blob_store::NullBlobStore, page_pool::PagePool, var_len::AlignedVarLenOffsets};
     use proptest::{collection::vec, prelude::*};
-    use std::slice::from_raw_parts;
-
-    fn as_uninit(slice: &[u8]) -> &Bytes {
-        let ptr = slice.as_ptr();
-        let len = slice.len();
-        unsafe { from_raw_parts(ptr.cast::<Byte>(), len) }
-    }
+    use spacetimedb_sats::bsatn;
+    use spacetimedb_sats::layout::row_size_for_type;
 
     fn u64_row_size() -> Size {
         let fixed_row_size = row_size_for_type::<u64>();
@@ -1720,8 +2004,7 @@ mod tests {
 
     fn insert_u64(page: &mut Page, val: u64) -> PageOffset {
         let val_slice = val.to_le_bytes();
-        let val_slice = as_uninit(&val_slice);
-        unsafe { page.insert_row(val_slice, &[] as &[&[u8]], u64_var_len_visitor(), &mut NullBlobStore) }
+        unsafe { page.insert_row(&val_slice, &[] as &[&[u8]], u64_var_len_visitor(), &mut NullBlobStore) }
             .expect("Failed to insert first row")
     }
 
@@ -1731,16 +2014,25 @@ mod tests {
 
     fn read_u64(page: &Page, offset: PageOffset) -> u64 {
         let row = page.get_row_data(offset, u64_row_size());
-        u64::from_le_bytes(unsafe { slice_assume_init_ref(row) }.try_into().unwrap())
+        u64::from_le_bytes(row.try_into().unwrap())
     }
 
     fn data_sub_n_vlg(n: usize) -> usize {
         PageOffset::PAGE_END.idx() - (VarLenGranule::SIZE * n).len()
     }
 
+    pub(crate) fn hash_unmodified_save_get(page: &mut Page) -> blake3::Hash {
+        assert_eq!(page.header.unmodified_hash, None);
+        page.save_content_hash();
+        page.header.unmodified_hash.unwrap()
+    }
+
     #[test]
     fn insert_one_u64() {
         let mut page = Page::new(u64_row_size());
+
+        // First the hash is not saved, so compute it.
+        let hash = hash_unmodified_save_get(&mut page);
 
         let val: u64 = 0xa5a5_a5a5_a5a5_a5a5;
 
@@ -1751,6 +2043,9 @@ mod tests {
         let row_val = read_u64(&page, offset);
 
         assert_eq!(row_val, val);
+
+        // The hash should have been cleared.
+        assert_ne!(hash, hash_unmodified_save_get(&mut page));
     }
 
     fn insert_while(
@@ -1778,8 +2073,7 @@ mod tests {
             let row_val = read_u64(&page, row_idx);
             assert_eq!(
                 row_val, expected_val,
-                "row_val {:x} /= expected_val {:x}",
-                row_val, expected_val
+                "row_val {row_val:x} /= expected_val {expected_val:x}"
             );
         }
     }
@@ -1788,6 +2082,10 @@ mod tests {
     fn fill_delete_iter_fixed_len_u64() {
         let mut page = Page::new(u64_row_size());
 
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert rows.
         let mut odds: Vec<PageOffset> = Vec::new();
         let last_val = insert_while(&mut page, 2, u64_row_size(), 0, |page, val| {
             let offset = insert_u64(page, val);
@@ -1796,14 +2094,28 @@ mod tests {
             }
         });
 
+        // The hash should have been cleared.
+        let hash_pre_del = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_del);
+
+        // Delete rows.
         for row_offset in odds {
             unsafe { page.delete_row(row_offset, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
         }
 
+        // The hash should have been cleared.
+        let hash_pre_iter = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_iter);
+        assert_ne!(hash_pre_del, hash_pre_iter);
+
+        // Iterate the rows.
         for (row_offset, expected_val) in page.iter_fixed_len(u64_row_size()).zip((2..last_val).step_by(2)) {
             let found_val = read_u64(&page, row_offset);
             assert_eq!(found_val, expected_val);
         }
+
+        // Hash is unchanged.
+        assert_eq!(page.header.unmodified_hash, Some(hash_pre_iter));
     }
 
     #[test]
@@ -1813,6 +2125,10 @@ mod tests {
     fn reuse_fixed_len_space() {
         let mut page = Page::new(u64_row_size());
 
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert two rows.
         let offset_0 = insert_u64(&mut page, 0xa5a5a5a5_a5a5a5a5);
         assert_eq!(offset_0.idx(), 0);
         let offset_1 = insert_u64(&mut page, 0xbeefbeef_beefbeef);
@@ -1820,16 +2136,33 @@ mod tests {
 
         assert_eq!(page.header.fixed.last, u64_row_size() * 2);
 
+        // Hash has been cleared after inserts.
+        let hash_pre_del = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_del);
+
+        // Delete first row.
         unsafe { page.delete_row(offset_0, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
 
         assert_eq!(page.header.fixed.last, u64_row_size() * 2);
 
+        // Hash has been cleared after deletes.
+        let hash_pre_ins2 = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_ins2);
+        assert_ne!(hash_pre_del, hash_pre_ins2);
+
+        // Insert first row again, re-using memory.
         let offset_0_again = insert_u64(&mut page, 0xffffffff_ffffffff);
 
         assert_eq!(offset_0_again.idx(), 0);
         assert_eq!(offset_0.idx(), offset_0_again.idx());
 
         assert_eq!(page.header.fixed.last, u64_row_size() * 2);
+
+        // Hash has been cleared after last insert, despite re-using memory.
+        let hash_post_ins2 = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_post_ins2);
+        assert_ne!(hash_pre_del, hash_post_ins2);
+        assert_ne!(hash_pre_ins2, hash_post_ins2);
     }
 
     const STR_ROW_SIZE: Size = row_size_for_type::<VarLenRef>();
@@ -1842,7 +2175,7 @@ mod tests {
     }
 
     fn insert_str(page: &mut Page, data: &[u8]) -> PageOffset {
-        let fixed_len_data = uninit_array::<u8, { STR_ROW_SIZE.len() }>();
+        let fixed_len_data = [0u8; STR_ROW_SIZE.len()];
         unsafe { page.insert_row(&fixed_len_data, &[data], str_var_len_visitor(), &mut NullBlobStore) }
             .expect("Failed to insert row")
     }
@@ -1855,13 +2188,20 @@ mod tests {
     fn insert_empty_str() {
         let mut page = Page::new(STR_ROW_SIZE);
 
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert the empty string.
         let offset = insert_str(&mut page, &[]);
 
+        // No granules were used.
         let extracted = read_str_ref(&page, offset);
-
         let mut granules_iter = unsafe { page.iter_var_len_object(extracted.first_granule) };
-
         assert!(granules_iter.next().is_none());
+        drop(granules_iter);
+
+        // Hash is cleared even though the string was empty.
+        assert_ne!(hash_pre_ins, hash_unmodified_save_get(&mut page));
     }
 
     proptest! {
@@ -1869,22 +2209,42 @@ mod tests {
         fn insert_one_short_str(data in vec(any::<u8>(), 1..VarLenGranule::DATA_SIZE)) {
             let mut page = Page::new(STR_ROW_SIZE);
 
+            // First the hash is not saved, so compute it.
+            let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+            // Insert the row.
             let offset = insert_str(&mut page, &data);
 
+            // Hash was cleared by the insert.
+            let hash_pre_iter = hash_unmodified_save_get(&mut page);
+            assert_ne!(hash_pre_ins, hash_pre_iter);
+
+            // Confirm we inserted correctly.
             let extracted = read_str_ref(&page, offset);
-
             let mut data_iter = unsafe { page.iter_vlo_data(extracted.first_granule) };
-
             let (first, next) = (data_iter.next(), data_iter.next());
             assert_eq!(first, Some(&*data));
             assert_eq!(next, None);
+
+            // Iteration and reading did not change the hash.
+            assert_eq!(hash_pre_iter, page.header.unmodified_hash.unwrap());
         }
 
         #[test]
         fn insert_one_long_str(data in vec(any::<u8>(), (VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD / 2)..VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD)) {
             let mut page = Page::new(STR_ROW_SIZE);
+
+            // First the hash is not saved, so compute it.
+            let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+            // Insert the long string.
             let offset = insert_str(&mut page, &data);
 
+            // The hash was cleared, and the new one is different.
+            let hash_post_ins = hash_unmodified_save_get(&mut page);
+            assert_ne!(hash_pre_ins, hash_post_ins);
+
+            // Check that we inserted correctly.
             let extracted = read_str_ref(&page, offset);
 
             let mut data_iter = unsafe { page.iter_vlo_data(extracted.first_granule) };
@@ -1894,14 +2254,16 @@ mod tests {
                 assert_eq!(
                     data,
                     chunk,
-                    "Chunk {} does not match. Left is found, right is expected.",
-                    i,
+                    "Chunk {i} does not match. Left is found, right is expected.",
                 );
             }
 
             // Both iterators must be finished, i.e. they must have the same length.
             assert!(data_iter.next().is_none());
             assert!(chunks_iter.next().is_none());
+
+            // Reading did not alter the hash.
+            assert_eq!(hash_post_ins, page.header.unmodified_hash.unwrap());
         }
     }
 
@@ -1929,9 +2291,18 @@ mod tests {
         assert_eq!(var_len_1.length_in_bytes as usize, data_1.len());
         assert_eq!(var_len_1.first_granule.idx(), data_sub_n_vlg(2));
 
+        let hash_pre_del = hash_unmodified_save_get(&mut page);
+
         unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
 
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
         let offset_2 = insert_str(&mut page, data_2);
+
+        let hash_post_ins = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_del, hash_pre_ins);
+        assert_ne!(hash_pre_del, hash_post_ins);
+        assert_ne!(hash_pre_ins, hash_post_ins);
 
         assert_eq!(page.header.var.first.idx(), data_sub_n_vlg(2));
 
@@ -1998,17 +2369,40 @@ mod tests {
         let data_2 = data_2.as_ref();
 
         let mut page = Page::new(STR_ROW_SIZE);
+
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert two string rows.
         let offset_0 = insert_str(&mut page, data_0);
         let _offset_1 = insert_str(&mut page, data_1);
 
         assert_eq!(page.header.var.first.idx(), data_sub_n_vlg(2));
 
+        // Hash is cleared by inserting and the new one is different.
+        let hash_pre_del = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_del);
+
+        // Delete the first row.
         unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
 
+        // Hash is cleared by deleting.
+        let hash_post_del = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_post_del);
+        assert_ne!(hash_pre_del, hash_post_del);
+
+        // Insert again, re-using memory.
         let offset_2 = insert_str(&mut page, data_2);
 
         assert_eq!(page.header.var.first.idx(), data_sub_n_vlg(3));
 
+        // Hash is cleared by inserting again, even though we re-used memory.
+        let hash_post_ins2 = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_post_ins2);
+        assert_ne!(hash_pre_del, hash_post_ins2);
+        assert_ne!(hash_post_del, hash_post_ins2);
+
+        // Check that we inserted correctly.
         let var_len_2 = read_str_ref(&page, offset_2);
 
         let mut data_iter = unsafe { page.iter_vlo_data(var_len_2.first_granule) };
@@ -2017,8 +2411,7 @@ mod tests {
         for (i, (data, chunk)) in (&mut data_iter).zip(&mut chunks_iter).enumerate() {
             assert_eq!(
                 data, chunk,
-                "Chunk {} does not match. Left is found, right is expected.",
-                i,
+                "Chunk {i} does not match. Left is found, right is expected.",
             );
         }
 
@@ -2043,10 +2436,19 @@ mod tests {
     fn fill_then_iter_var_len_str() {
         let mut page = Page::new(STR_ROW_SIZE);
 
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert the strings.
         let last_val = insert_while(&mut page, 0, STR_ROW_SIZE, 1, |page, val| {
             insert_str(page, &val.to_le_bytes());
         });
 
+        // Hash is cleared by inserting and the new one is different.
+        let hash_pre_iter = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_iter);
+
+        // Check that we inserted correctly.
         let size_per_row = STR_ROW_SIZE + VarLenGranule::SIZE;
 
         assert_eq!(last_val, (PageOffset::PAGE_END / size_per_row) as u64);
@@ -2054,12 +2456,19 @@ mod tests {
         for (row_idx, expected_val) in page.iter_fixed_len(STR_ROW_SIZE).zip(0..last_val) {
             check_u64_in_str(&page, row_idx, expected_val);
         }
+
+        // Reading does not alter the hash.
+        assert_eq!(hash_pre_iter, page.header.unmodified_hash.unwrap());
     }
 
     #[test]
     fn fill_delete_iter_var_len_str() {
         let mut page = Page::new(STR_ROW_SIZE);
 
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert the string rows.
         let mut odds = Vec::new();
         let last_val = insert_while(&mut page, 0, STR_ROW_SIZE, 1, |page, val| {
             let offset = insert_str(page, &val.to_le_bytes());
@@ -2072,10 +2481,21 @@ mod tests {
         let num_rows_inserted = (PageOffset::PAGE_END / size_per_row) as u64;
         assert_eq!(last_val, num_rows_inserted);
 
+        // Hash was cleared by inserting and is different now.
+        let hash_pre_del = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_del);
+
+        // Delete the rows.
         for row_offset in odds {
             unsafe { page.delete_row(row_offset, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
         }
 
+        // Hash was cleared by deleting and is different now.
+        let hash_pre_iter = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash_pre_iter);
+        assert_ne!(hash_pre_del, hash_pre_iter);
+
+        // Check that we deleted correctly.
         let num_rows_retained = num_rows_inserted.div_ceil(2);
         let num_rows_removed = num_rows_inserted / 2;
 
@@ -2086,5 +2506,66 @@ mod tests {
         for (row_idx, expected_val) in page.iter_fixed_len(STR_ROW_SIZE).zip((0..last_val).step_by(2)) {
             check_u64_in_str(&page, row_idx, expected_val);
         }
+
+        // Reading did not alter the hash.
+        assert_eq!(hash_pre_iter, page.header.unmodified_hash.unwrap());
+    }
+
+    #[test]
+    fn serde_round_trip_whole_page() {
+        let pool = PagePool::new_for_test();
+        let mut page = Page::new(u64_row_size());
+
+        // Construct an empty page, ser/de it, and assert that it's still empty.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+        let ser_pre_ins = bsatn::to_vec(&page).unwrap();
+        let de_pre_ins = pool.take_deserialize_from(&ser_pre_ins).unwrap();
+        assert_eq!(de_pre_ins.content_hash(), hash_pre_ins);
+        assert_eq!(de_pre_ins.header.fixed.num_rows, 0);
+        assert!(de_pre_ins.header.fixed.present_rows == page.header.fixed.present_rows);
+
+        // Insert some rows into the page.
+        let offsets = (0..64)
+            .map(|val| insert_u64(&mut page, val))
+            .collect::<Vec<PageOffset>>();
+
+        let hash_ins = hash_unmodified_save_get(&mut page);
+
+        // Ser/de the page and assert that it contains the same rows.
+        let ser_ins = bsatn::to_vec(&page).unwrap();
+        let de_ins = pool.take_deserialize_from(&ser_ins).unwrap();
+        assert_eq!(de_ins.content_hash(), hash_ins);
+        assert_eq!(de_ins.header.fixed.num_rows, 64);
+        assert!(de_ins.header.fixed.present_rows == page.header.fixed.present_rows);
+        assert_eq!(
+            de_ins.iter_fixed_len(u64_row_size()).collect::<Vec<PageOffset>>(),
+            offsets
+        );
+
+        // Delete the even-numbered rows, leaving the odds.
+        let offsets = offsets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, offset)| {
+                if i % 2 == 0 {
+                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
+                    None
+                } else {
+                    Some(offset)
+                }
+            })
+            .collect::<Vec<PageOffset>>();
+
+        // Ser/de the page again and assert that it contains only the odd-numbered rows.
+        let hash_del = hash_unmodified_save_get(&mut page);
+        let ser_del = bsatn::to_vec(&page).unwrap();
+        let de_del = pool.take_deserialize_from(&ser_del).unwrap();
+        assert_eq!(de_del.content_hash(), hash_del);
+        assert_eq!(de_del.header.fixed.num_rows, 32);
+        assert!(de_del.header.fixed.present_rows == page.header.fixed.present_rows);
+        assert_eq!(
+            de_del.iter_fixed_len(u64_row_size()).collect::<Vec<PageOffset>>(),
+            offsets
+        );
     }
 }

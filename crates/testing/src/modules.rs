@@ -1,21 +1,29 @@
+use std::env;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use bytes::{Bytes, BytesMut};
+use futures::TryStreamExt as _;
+use spacetimedb::config::CertificateAuthority;
+use spacetimedb::messages::control_db::HostType;
+use spacetimedb::util::jobs::JobCores;
+use spacetimedb::Identity;
+use spacetimedb_client_api::auth::SpacetimeAuth;
+use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
+use spacetimedb_paths::{RootDir, SpacetimePaths};
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
+use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
-use spacetimedb::address::Address;
-
-use prost::Message;
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
-use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::protobuf::client_api;
+use spacetimedb::host::FunctionArgs;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
-use spacetimedb_lib::sats;
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
 
@@ -44,25 +52,33 @@ pub struct ModuleHandle {
     // Needs to hold a reference to the standalone env.
     _env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
-    pub db_address: Address,
+    pub db_identity: Identity,
 }
 
 impl ModuleHandle {
-    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let args = serde_json::to_string(&args)?;
-        let args = format!("{{\"call\": {{\"fn\": \"{reducer}\", \"args\": {args} }} }}");
-        self.send(args).await
+    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+        let result = self
+            .client
+            .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
+            .await;
+        let result = match result {
+            Ok(result) => result.into(),
+            Err(err) => Err(err.into()),
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(err) => Err(err.context(format!("Logs:\n{}", self.read_log(None).await))),
+        }
     }
 
-    pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let message = client_api::Message {
-            r#type: Some(client_api::message::Type::FunctionCall(client_api::FunctionCall {
-                reducer: reducer.to_string(),
-                arg_bytes: sats::bsatn::to_vec(&args)?,
-                request_id: 0,
-            })),
-        };
-        self.send(message.encode_to_vec()).await
+    pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
+        let args = serde_json::to_string(&args).unwrap();
+        self.call_reducer(reducer, FunctionArgs::Json(args.into())).await
+    }
+
+    pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
+        let args = bsatn::to_vec(&args).unwrap();
+        self.call_reducer(reducer, FunctionArgs::Bsatn(args.into())).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
@@ -71,15 +87,25 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.database_instance_id);
-        DatabaseLogger::read_latest(&filepath, size).await
+        let bytes = self
+            .client
+            .module()
+            .database_logger()
+            .tail(size, false)
+            .await
+            .unwrap()
+            .try_collect::<BytesMut>()
+            .await
+            .expect("failed to collect log stream");
+        String::from_utf8(bytes.into()).unwrap()
     }
 }
 
 pub struct CompiledModule {
     name: String,
     path: PathBuf,
-    program_bytes: OnceLock<Vec<u8>>,
+    pub(super) host_type: HostType,
+    program_bytes: OnceLock<Bytes>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -90,16 +116,41 @@ pub enum CompilationMode {
 
 impl CompiledModule {
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
-        let path = spacetimedb_cli::build(&module_path(name), false, mode == CompilationMode::Debug).unwrap();
+        let (path, host_type) = spacetimedb_cli::build(
+            &module_path(name),
+            Some(PathBuf::from("src")).as_deref(),
+            mode == CompilationMode::Debug,
+            None,
+        )
+        .expect("Module compilation failed");
         Self {
             name: name.to_owned(),
             path,
+            host_type: host_type.parse().unwrap(),
             program_bytes: OnceLock::new(),
         }
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn program_bytes(&self) -> Bytes {
+        self.program_bytes
+            .get_or_init(|| std::fs::read(&self.path).unwrap().into())
+            .clone()
+    }
+
+    pub async fn extract_schema(&self) -> ModuleDef {
+        // TODO: extract_schema should accept &[u8]
+        let boxed_bytes: Box<[u8]> = self.program_bytes()[..].into();
+        spacetimedb::host::extract_schema(boxed_bytes, self.host_type)
+            .await
+            .unwrap()
+    }
+
+    pub fn extract_schema_blocking(&self) -> ModuleDef {
+        start_runtime().block_on(self.extract_schema())
     }
 
     pub fn with_module_async<O, R, F>(&self, config: Config, routine: R)
@@ -131,52 +182,64 @@ impl CompiledModule {
     /// If "reuse_db_path" is set, the module will be loaded in the given path,
     /// without resetting the database.
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
-    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&Path>) -> ModuleHandle {
+    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&RootDir>) -> ModuleHandle {
         let paths = match reuse_db_path {
-            Some(path) => FilesLocal::hidden(path),
+            Some(path) => SpacetimePaths::from_root_dir(path),
             None => {
-                let paths = FilesLocal::temp(&self.name);
+                let root_dir = RootDir(env::temp_dir().join("stdb").join(&self.name));
 
                 // The database created in the `temp` folder can't be randomized,
                 // so it persists after running the test.
-                std::fs::remove_dir(paths.db_path()).ok();
-                paths
+                std::fs::remove_dir(&root_dir).ok();
+
+                SpacetimePaths::from_root_dir(&root_dir)
             }
         };
 
-        crate::set_key_env_vars(&paths);
-        let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
-        let identity = env.create_identity().await.unwrap();
-        let db_address = env.create_address().await.unwrap();
-        let client_address = env.create_address().await.unwrap();
-
-        let program_bytes = self
-            .program_bytes
-            .get_or_init(|| std::fs::read(&self.path).unwrap())
-            .clone();
+        let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
+        let env = spacetimedb_standalone::StandaloneEnv::init(
+            spacetimedb_standalone::StandaloneOptions {
+                db_config: config,
+                websocket: WebSocketOptions::default(),
+                v8_heap_policy: Default::default(),
+            },
+            &certs,
+            paths.data_dir.into(),
+            JobCores::without_pinned_cores(),
+        )
+        .await
+        .unwrap();
+        // TODO: Fix this when we update identity generation.
+        let identity = Identity::ZERO;
+        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
+        let connection_id = generate_random_connection_id();
 
         env.publish_database(
             &identity,
-            Some(client_address),
             DatabaseDef {
-                address: db_address,
-                program_bytes,
-                num_replicas: 1,
+                database_identity: db_identity,
+                program_bytes: self.program_bytes(),
+                num_replicas: None,
+                host_type: self.host_type,
+                parent: None,
+                organization: None,
             },
+            MigrationPolicy::Compatible,
         )
         .await
         .unwrap();
 
-        let database = env.get_database_by_address(&db_address).unwrap().unwrap();
-        let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
+        let database = env.get_database_by_identity(&db_identity).await.unwrap().unwrap();
+        let instance = env.get_leader_replica_by_database(database.id).await.unwrap();
 
         let client_id = ClientActorId {
             identity,
-            address: client_address,
+            connection_id,
             name: env.client_actor_index().next_client_name(),
         };
 
-        let module = env.host_controller().get_module_host(instance.id).unwrap();
+        let host = env.leader(database.id).await.expect("host should be running");
+        let module_rx = host.module_watcher().await.unwrap();
 
         // TODO: it might be neat to add some functionality to module handle to make
         // it easier to interact with the database. For example it could include
@@ -184,18 +247,28 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
-            db_address,
+            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
+            db_identity,
         }
     }
 }
 
 /// For testing, persist to disk by default, as many tests
 /// exercise functionality like restarting the database.
-pub static DEFAULT_CONFIG: Config = Config { storage: Storage::Disk };
+pub static DEFAULT_CONFIG: Config = Config {
+    storage: Storage::Disk,
+    page_pool_max_size: None,
+};
 
 /// For performance tests, do not persist to disk.
-pub static IN_MEMORY_CONFIG: Config = Config { storage: Storage::Disk };
+pub static IN_MEMORY_CONFIG: Config = Config {
+    storage: Storage::Disk,
+    // For some reason, a large page pool capacity causes `test_index_scans` to slow down,
+    // and makes the perf test for `chunk` go over 1ms.
+    // The threshold for failure on i7-7700K, 64GB RAM seems to be at 1 << 26.
+    // TODO(centril): investigate further why this size affects the benchmark.
+    page_pool_max_size: Some(1 << 16),
+};
 
 /// Used to parse output from module logs.
 ///
@@ -209,4 +282,72 @@ pub struct LoggerRecord {
     pub filename: Option<String>,
     pub line_number: Option<u32>,
     pub message: String,
+}
+
+const COMPILATION_MODE: CompilationMode = if cfg!(debug_assertions) {
+    CompilationMode::Debug
+} else {
+    CompilationMode::Release
+};
+
+pub trait ModuleLanguage {
+    const NAME: &'static str;
+
+    fn get_module() -> &'static CompiledModule;
+}
+
+pub struct Csharp;
+
+impl ModuleLanguage for Csharp {
+    const NAME: &'static str = "csharp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cs", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct Rust;
+
+impl ModuleLanguage for Rust {
+    const NAME: &'static str = "rust";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct TypeScript;
+
+impl ModuleLanguage for TypeScript {
+    const NAME: &'static str = "typescript";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-ts", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct Cpp;
+
+impl ModuleLanguage for Cpp {
+    const NAME: &'static str = "cpp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cpp", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
 }

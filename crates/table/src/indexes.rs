@@ -5,13 +5,19 @@ use super::util::range_move;
 use crate::static_assert_size;
 use ahash::RandomState;
 use core::fmt;
-use core::mem::MaybeUninit;
-use core::ops::{AddAssign, Div, Mul, Range, SubAssign};
+use core::ops::{AddAssign, Div, Range, SubAssign};
 use derive_more::{Add, Sub};
 use spacetimedb_data_structures::map::ValidAsIdentityHash;
+use spacetimedb_sats::layout::Size;
+use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
-/// A byte is a possibly uninit `u8`.
-pub type Byte = MaybeUninit<u8>;
+/// A byte is a `u8`.
+///
+/// Previous implementations used `MaybeUninit<u8>` here,
+/// but it became necessary to serialize pages to enable snapshotting,
+/// so we require that all bytes in a page be valid `u8`s, never uninit.
+pub type Byte = u8;
 
 /// A slice of [`Byte`]s.
 pub type Bytes = [Byte];
@@ -49,6 +55,8 @@ pub const PAGE_DATA_SIZE: usize = PAGE_SIZE - PAGE_HEADER_SIZE;
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 pub struct RowHash(pub u64);
 
+impl MemoryUsage for RowHash {}
+
 static_assert_size!(RowHash, 8);
 
 /// `RowHash` is already a hash, so no need to hash again.
@@ -62,36 +70,21 @@ impl RowHash {
     }
 }
 
-/// The size of something in page storage in bytes.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Add, Sub)]
-pub struct Size(pub u16);
-
-impl Size {
-    /// Returns the size for use in `usize` computations.
-    #[inline]
-    #[allow(clippy::len_without_is_empty)]
-    pub const fn len(self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl Mul<usize> for Size {
-    type Output = Size;
-
-    #[inline]
-    fn mul(self, rhs: usize) -> Self::Output {
-        Size((self.len() * rhs) as u16)
-    }
-}
-
 /// An offset into a [`Page`].
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Add, Sub)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Add, Sub, bytemuck::NoUninit)]
+#[repr(transparent)]
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 pub struct PageOffset(
     #[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..PageOffset::PAGE_END.0"))] pub u16,
 );
 
+impl MemoryUsage for PageOffset {}
+
 static_assert_size!(PageOffset, 2);
+
+// We need to ser/de `PageOffset`s because they appear within the `PageHeader`.
+impl_serialize!([] PageOffset, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] PageOffset, de => u16::deserialize(de).map(PageOffset));
 
 impl PageOffset {
     /// Returns the offset as a `usize` index.
@@ -183,10 +176,18 @@ impl fmt::LowerHex for PageOffset {
     }
 }
 
+/// Returns the maximum number of rows with `fixed_row_size` that a page can hold.
+#[inline]
+pub fn max_rows_in_page(fixed_row_size: Size) -> usize {
+    PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())
+}
+
 /// The index of a [`Page`] within a [`Pages`].
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PageIndex(#[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..MASK_PI"))] pub u64);
+
+impl MemoryUsage for PageIndex {}
 
 static_assert_size!(PageIndex, 8);
 
@@ -217,6 +218,8 @@ impl PageIndex {
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 pub struct SquashedOffset(pub u8);
 
+impl MemoryUsage for SquashedOffset {}
+
 static_assert_size!(SquashedOffset, 1);
 
 impl SquashedOffset {
@@ -243,7 +246,10 @@ impl SquashedOffset {
 /// to the index of a specific page
 /// and the offset within the page.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct RowPointer(pub u64);
+
+impl MemoryUsage for RowPointer {}
 
 static_assert_size!(RowPointer, 8);
 

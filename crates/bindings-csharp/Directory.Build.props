@@ -1,0 +1,34 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Authors>RReverser</Authors>
+    <Company>Clockwork Labs</Company>
+    <Product>SpacetimeDB</Product>
+    <Copyright>2024</Copyright>
+    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
+    <PackageIcon>logo.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AnalysisLevel>latest-Minimum</AnalysisLevel>
+    <AnalysisModeStyle>Recommended</AnalysisModeStyle>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <!-- Detect unused usings; see https://github.com/dotnet/roslyn/issues/41640. -->
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1574</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)/logo.png" Pack="true" PackagePath="" />
+    <None Include="$(MSBuildThisFileDirectory)/LICENSE" Pack="true" PackagePath="" />
+  </ItemGroup>
+</Project>

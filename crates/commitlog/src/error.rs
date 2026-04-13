@@ -19,6 +19,13 @@ pub enum Traversal {
         #[source]
         prev_error: Option<Box<Self>>,
     },
+    /// The log is considered forked iff a commit with the same `min_tx_offset`
+    /// but a different crc32 than the previous commit is encountered.
+    ///
+    /// This may happen in rare circumstances where a write was considered
+    /// failed (e.g. due to a failed `fsync(2)`), when it was actually successful.
+    #[error("forked history: offset={offset}")]
+    Forked { offset: u64 },
     #[error("failed to decode tx record at offset={offset}")]
     Decode {
         offset: u64,
@@ -55,7 +62,7 @@ pub struct Append<T> {
 pub struct ChecksumMismatch;
 
 #[derive(Debug, Error)]
-pub(crate) enum SegmentMetadata {
+pub enum SegmentMetadata {
     #[error("invalid commit encountered")]
     InvalidCommit {
         sofar: segment::Metadata,
@@ -64,4 +71,18 @@ pub(crate) enum SegmentMetadata {
     },
     #[error(transparent)]
     Io(#[from] io::Error),
+}
+
+/// Recursively concatenate `e.source()`, separated by ": ".
+pub(crate) fn source_chain(e: &impl std::error::Error) -> String {
+    let mut s = String::new();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        s.push(':');
+        s.push(' ');
+        s.push_str(&cause.to_string());
+        source = cause.source()
+    }
+
+    s
 }

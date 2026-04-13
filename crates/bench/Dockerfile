@@ -3,10 +3,10 @@
 # See the README for commands to run.
 
 # sync with: ../../rust-toolchain.toml
-FROM rust:1.77.0
+FROM rust:1.93.0
 
 RUN apt-get update && \
-    apt-get install -y valgrind protobuf-compiler bash && \
+    apt-get install -y valgrind bash && \
     rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_TARGET_DIR=/projects/SpacetimeDB/linux-target

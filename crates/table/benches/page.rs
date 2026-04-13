@@ -1,5 +1,5 @@
 use core::hash::BuildHasher;
-use core::mem::{self, MaybeUninit};
+use core::mem;
 use core::time::Duration;
 use criterion::measurement::{Measurement, WallTime};
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
@@ -7,17 +7,17 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
 use spacetimedb_table::bflatn_from::serialize_row_from_page;
 use spacetimedb_table::bflatn_to::write_row_to_page;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
-use spacetimedb_table::indexes::{PageOffset, RowHash};
-use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
+use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
-use spacetimedb_table::util;
+use spacetimedb_table::static_layout::StaticLayout;
 use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -51,8 +51,11 @@ fn clear_zero(page: &mut Page) {
     unsafe { page.zero_data() };
 }
 
-fn as_bytes<T>(t: &T) -> &[MaybeUninit<u8>] {
-    let ptr = (t as *const T).cast::<MaybeUninit<u8>>();
+// Strictly this would be unsafe,
+// since it causes UB when applied to types that contain padding/`poison`,
+// but it's a benchmark so who cares.
+fn as_bytes<T>(t: &T) -> &Bytes {
+    let ptr = (t as *const T).cast::<Byte>();
     unsafe { std::slice::from_raw_parts(ptr, mem::size_of::<T>()) }
 }
 
@@ -66,12 +69,15 @@ unsafe trait Row {
 }
 
 #[allow(clippy::missing_safety_doc)] // It's a benchmark, clippy. Who cares.
+/// Apply only to types which:
+/// - Contain no padding bytes.
+/// - Contain no members which are stored BFLATN as var-len.
 unsafe trait FixedLenRow: Row + Sized {
-    fn as_bytes(&self) -> &[MaybeUninit<u8>] {
+    fn as_bytes(&self) -> &Bytes {
         as_bytes(self)
     }
 
-    unsafe fn from_bytes(bytes: &[MaybeUninit<u8>]) -> &Self {
+    unsafe fn from_bytes(bytes: &Bytes) -> &Self {
         let ptr = bytes.as_ptr();
         debug_assert_eq!(ptr as usize % mem::align_of::<Self>(), 0);
         debug_assert_eq!(bytes.len(), mem::size_of::<Self>());
@@ -105,7 +111,7 @@ struct U32x8 {
 
 unsafe impl Row for U32x8 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 8].into()
+        [const { AlgebraicType::U32 }; 8].into()
     }
 }
 
@@ -122,7 +128,7 @@ struct U32x64 {
 
 unsafe impl Row for U32x64 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 64].into()
+        [const { AlgebraicType::U32 }; 64].into()
     }
 }
 
@@ -228,7 +234,7 @@ const VL_SIZES: [usize; 6] = [
 ];
 
 fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/clean_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/clean_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -241,6 +247,7 @@ fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
             |b, &len_in_bytes| {
                 let mut page = Page::new(row_size_for_type::<VarLenRef>());
                 unsafe { page.zero_data() };
+                // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
                 let data = [0xa5u8].repeat(len_in_bytes);
                 iter_time_with_page(b, &mut page, clear_zero, |_, _, page| {
                     fill_with_var_len(page, &data, visitor)
@@ -251,7 +258,7 @@ fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
 }
 
 fn insert_var_len_dirty_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/dirty_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/dirty_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -263,6 +270,7 @@ fn insert_var_len_dirty_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
             &len_in_bytes,
             |b, &len_in_bytes| {
                 let mut page = Page::new(row_size_for_type::<VarLenRef>());
+                // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
                 let data = [0xa5u8].repeat(len_in_bytes);
                 fill_with_var_len(&mut page, &data, visitor);
 
@@ -294,11 +302,13 @@ fn insert_opt_str(c: &mut Criterion) {
     assert!(fixed_row_size.len() == 6);
     let mut clean_page_group = c.benchmark_group("insert_optional_str/clean_page");
 
-    let mut variant_none = util::uninit_array::<u8, 6>();
-    variant_none[4].write(1);
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
+    let mut variant_none = [0xa5u8; 6];
+    variant_none[0] = 1;
 
-    let mut variant_some = util::uninit_array::<u8, 6>();
-    variant_some[4].write(0);
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
+    let mut variant_some = [0xa5u8; 6];
+    variant_some[0] = 0;
 
     for some_ratio in [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
         for &data_length_in_bytes in if some_ratio == 0.0 { &[0][..] } else { &VL_SIZES } {
@@ -311,11 +321,12 @@ fn insert_opt_str(c: &mut Criterion) {
 
             clean_page_group.throughput(Throughput::Bytes((rows_per_page * avg_row_useful_size) as u64));
 
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             let var_len_data = [0xa5].repeat(data_length_in_bytes);
             clean_page_group.bench_with_input(
                 BenchmarkId::new(
                     "(some_ratio, length_in_bytes)",
-                    format!("({}, {})", some_ratio, data_length_in_bytes),
+                    format!("({some_ratio}, {data_length_in_bytes})"),
                 ),
                 &input,
                 |b, &(some_ratio, _)| {
@@ -324,7 +335,7 @@ fn insert_opt_str(c: &mut Criterion) {
                     unsafe { page.zero_data() };
 
                     let body = |_, _, page: &mut Page| loop {
-                        let insert_none = rng.gen_bool(some_ratio);
+                        let insert_none = rng.random_bool(some_ratio);
                         if !insert_none {
                             if !page.has_space_for_row(fixed_row_size, 0) {
                                 break;
@@ -363,7 +374,7 @@ fn delete_to_approx_fullness_ratio<Row: FixedLenRow>(page: &mut Page, fullness: 
     let row_offsets = page.iter_fixed_len(row_size_for_type::<Row>()).collect::<Vec<_>>();
     let visitor = Row::var_len_visitor();
     for row in row_offsets.into_iter() {
-        let should_keep = rng.gen_bool(fullness);
+        let should_keep = rng.random_bool(fullness);
         if !should_keep {
             unsafe { page.delete_row(row, row_size_for_type::<Row>(), &visitor, &mut NullBlobStore) };
         }
@@ -391,6 +402,7 @@ fn iter_read_fixed_len<Row: FixedLenRow>(c: &mut Criterion) {
         // Construct a page which is approximately `fullness_ratio` full,
         // i.e. contains approximately `fullness_ratio * U64S_PER_PAGE` rows.
         let mut partial_page = Page::new(row_size_for_type::<Row>());
+        // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
         fill_with_fixed_len::<Row>(&mut partial_page, Row::from_u64(0xa5a5a5a5_a5a5a5a5), &visitor);
         // `delete_u64s_to_approx_fullness_ratio` uses a seeded `StdRng`,
         // so this should be consistent-ish.
@@ -414,6 +426,7 @@ fn iter_read_fixed_len<Row: FixedLenRow>(c: &mut Criterion) {
     }
 
     let mut full_page = Page::new(row_size_for_type::<Row>());
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
     fill_with_fixed_len(&mut full_page, Row::from_u64(0xa5a5a5a5_a5a5a5a5), &visitor);
     group.throughput(Throughput::Bytes((full_page.num_rows() * mem::size_of::<Row>()) as u64));
     group.bench_with_input(
@@ -436,6 +449,7 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
     let mut target_page = Page::new(row_size_for_type::<Row>());
 
     let mut src_page = Page::new(row_size_for_type::<Row>());
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
     fill_with_fixed_len::<Row>(&mut src_page, Row::from_u64(0xa5a5a5a5_a5a5a5a5), &visitor);
 
     let mut rng = StdRng::seed_from_u64(0xa5a5a5a5_a5a5a5a5);
@@ -447,8 +461,8 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
                 target_page,
                 row_size_for_type::<Row>(),
                 &visitor,
-                &mut NullBlobStore,
-                |_page, _row| rng.gen_bool(*keep_ratio),
+                None::<&mut Box<dyn FnMut(_)>>,
+                |_page, _row| rng.random_bool(*keep_ratio),
             )
         };
     });
@@ -482,11 +496,11 @@ criterion_group!(
 );
 
 fn u32x2_type() -> ProductType {
-    [AlgebraicType::U32; 2].into()
+    [const { AlgebraicType::U32 }; 2].into()
 }
 
 fn u32x4_type() -> ProductType {
-    [AlgebraicType::U32; 4].into()
+    [const { AlgebraicType::U32 }; 4].into()
 }
 
 fn string_row_type() -> ProductType {
@@ -525,6 +539,7 @@ fn product_value_test_cases() -> impl Iterator<
         (
             "U32",
             [AlgebraicType::U32].into(),
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             product![0xa5a5_a5a5u32],
             Some(NullVarLenVisitor),
             Some(AlignedVarLenOffsets::from_offsets(&[])),
@@ -539,6 +554,7 @@ fn product_value_test_cases() -> impl Iterator<
         (
             "Option<U32>/Some",
             [AlgebraicType::option(AlgebraicType::U32)].into(),
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             product![AlgebraicValue::OptionSome(AlgebraicValue::U32(0xa5a5_a5a5))],
             Some(NullVarLenVisitor),
             Some(AlignedVarLenOffsets::from_offsets(&[])),
@@ -559,7 +575,7 @@ fn product_value_test_cases() -> impl Iterator<
         ),
         (
             "U32x8",
-            [AlgebraicType::U32; 8].into(),
+            [const { AlgebraicType::U32 }; 8].into(),
             product![0u32, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32, 7u32],
             Some(NullVarLenVisitor),
             Some(AlignedVarLenOffsets::from_offsets(&[])),
@@ -692,7 +708,7 @@ fn ty_page_visitor(ty: ProductType) -> (RowTypeLayout, Box<Page>, VarLenVisitorP
 #[inline(never)]
 fn insert_product_value_into_page(c: &mut Criterion) {
     for (name, ty, value, null_visitor, aligned_offsets_visitor) in product_value_test_cases() {
-        let mut group = c.benchmark_group(format!("insert_product_value/{}", name));
+        let mut group = c.benchmark_group(format!("insert_product_value/{name}"));
         let (ty, mut page, program_visitor) = ty_page_visitor(ty);
 
         if let Some(null_visitor) = null_visitor {
@@ -724,7 +740,7 @@ fn extract_product_value_from_page(c: &mut Criterion) {
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let mut group = c.benchmark_group("extract_product_value");
         let (ty, mut page, visitor) = ty_page_visitor(ty);
-        let offset = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
         group.bench_function(name, |b| time_extract_one(b, &mut page, offset, &ty));
     }
 }
@@ -737,9 +753,10 @@ fn eq_in_page_same(c: &mut Criterion) {
     let mut group = c.benchmark_group("eq_in_page");
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
+        let static_bsatn_layout = StaticLayout::for_row_type(&ty);
 
-        let offset_0 = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
-        let offset_1 = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset_0, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset_1, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
 
         group.bench_function(name, |b| {
             b.iter(|| {
@@ -750,6 +767,7 @@ fn eq_in_page_same(c: &mut Criterion) {
                         black_box(offset_0),
                         black_box(offset_1),
                         black_box(&ty),
+                        black_box(static_bsatn_layout.as_ref()),
                     )
                 })
             });
@@ -766,11 +784,19 @@ fn hash_in_page(c: &mut Criterion) {
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
 
-        let offset = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
         group.bench_function(name, |b| {
             let mut hasher = RowHash::hasher_builder().build_hasher();
             b.iter(|| {
-                unsafe { hash_row_in_page(&mut hasher, black_box(&page), black_box(offset), black_box(&ty)) };
+                unsafe {
+                    hash_row_in_page(
+                        &mut hasher,
+                        black_box(&page),
+                        black_box(&NullBlobStore),
+                        black_box(offset),
+                        black_box(&ty),
+                    )
+                };
                 black_box(&mut hasher);
             });
         });

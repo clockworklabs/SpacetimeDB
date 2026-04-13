@@ -8,8 +8,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
 use rand::rngs::ThreadRng;
-use rand::seq::SliceRandom;
-use rand::{thread_rng, Rng};
+use rand::seq::IndexedRandom;
+use rand::Rng;
 use spacetimedb_table::indexes::{PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset};
 use spacetimedb_table::pointer_map::PointerMap;
 use std::time::{Duration, Instant};
@@ -17,13 +17,13 @@ use std::time::{Duration, Instant};
 type RngMut<'r> = &'r mut ThreadRng;
 
 fn gen_ptr(rng: RngMut<'_>) -> RowPointer {
-    let page = PageIndex(rng.gen::<u64>());
-    let page_offset = PageOffset(rng.gen::<u16>());
+    let page = PageIndex(rng.random::<u64>());
+    let page_offset = PageOffset(rng.random::<u16>());
     RowPointer::new(false, page, page_offset, SquashedOffset::TX_STATE)
 }
 
 fn gen_row_hash(rng: RngMut<'_>, max_range: u64) -> RowHash {
-    RowHash(rng.gen_range(0..max_range))
+    RowHash(rng.random_range(0..max_range))
 }
 
 fn gen_hash_and_ptrs(rng: RngMut<'_>, max: u64, count: usize) -> impl '_ + Iterator<Item = (RowHash, RowPointer)> {
@@ -52,7 +52,7 @@ fn bench_insert(c: &mut Criterion) {
         let preload_amt = 10_000;
         let max_range = max_range(preload_amt + NUM_INSERTS_PER_MAP, *collision_ratio);
 
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let map = gen_hash_and_ptrs(&mut rng, max_range, preload_amt).collect::<PointerMap>();
         let to_insert = gen_hash_and_ptrs(&mut rng, max_range, NUM_INSERTS_PER_MAP).collect::<Vec<_>>();
 
@@ -100,7 +100,7 @@ fn bench_pointers_for(c: &mut Criterion) {
         let preload_amt = 10_000;
         let max_range = max_range(preload_amt, *collision_ratio);
 
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let mut map = PointerMap::default();
         let preloaded = gen_hash_and_ptrs(&mut rng, max_range, preload_amt).collect::<Vec<_>>();
         let queries = preloaded

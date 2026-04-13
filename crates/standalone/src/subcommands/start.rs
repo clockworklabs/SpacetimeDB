@@ -1,227 +1,452 @@
-use crate::routes::router;
-use crate::util::{create_dir_or_err, create_file_with_contents};
-use crate::StandaloneEnv;
+use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
+use spacetimedb_client_api::routes::identity::IdentityRoutes;
+use spacetimedb_pg::pg_server;
+use std::io::{self, Write};
+use std::net::IpAddr;
+use std::sync::Arc;
+
+use crate::{StandaloneEnv, StandaloneOptions};
+use anyhow::Context;
+use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
-use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
-use spacetimedb::db::{Config, Storage};
-use spacetimedb::startup;
+use spacetimedb::config::{parse_config, CertificateAuthority};
+use spacetimedb::db::{self, Storage};
+use spacetimedb::startup::{self, TracingOptions};
+use spacetimedb::util::jobs::JobCores;
+use spacetimedb::worker_metrics;
+use spacetimedb_client_api::routes::database::DatabaseRoutes;
+use spacetimedb_client_api::routes::router;
+use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
+use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
+use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
 
-#[cfg(feature = "string")]
-impl From<std::string::String> for OsStr {
-    fn from(name: std::string::String) -> Self {
-        Self::from_string(name.into())
-    }
-}
-
-pub enum ProgramMode {
-    Standalone,
-    CLI,
-}
-
-impl ProgramMode {
-    /// The address mask and port to listen on
-    /// based on the mode we're running the program in.
-    fn listen_addr(&self) -> &'static str {
-        match self {
-            ProgramMode::Standalone => "0.0.0.0:80",
-            ProgramMode::CLI => "127.0.0.1:3000",
-        }
-    }
-
-    /// Help string for the address mask and port option,
-    /// based on the mode we're running the program in.
-    fn listen_addr_help(&self) -> &'static str {
-        match self {
-            ProgramMode::Standalone => "The address and port where SpacetimeDB should listen for connections. This defaults to to listen on all IP addresses on port 80.",
-            ProgramMode::CLI => "The address and port where SpacetimeDB should listen for connections. This defaults to local connections only on port 3000. Use an IP address or 0.0.0.0 in order to allow remote connections to SpacetimeDB.",
-        }
-    }
-
-    // We still want to keep the executable name `spacetimedb` when we're executing as a standalone, but
-    // we want the executable name to be `spacetime` when we're executing this from the CLI. We have to
-    // pass these strings with static lifetimes so we can't do any dynamic string manipulation here.
-    fn after_help(&self) -> &'static str {
-        match self {
-            ProgramMode::Standalone => "Run `spacetimedb help start` for more detailed information.",
-            ProgramMode::CLI => "Run `spacetime help start` for more information.",
-        }
-    }
-}
-
-pub fn cli(mode: ProgramMode) -> clap::Command {
-    let mut log_conf_path_arg = Arg::new("log_conf_path")
-        .long("log-conf-path")
-        .help("The path of the file that contains the log configuration for SpacetimeDB (SPACETIMEDB_LOG_CONFIG)");
-    let mut log_dir_path_arg = Arg::new("log_dir_path")
-        .long("log-dir-path")
-        .help("The path to the directory that should contain logs for SpacetimeDB (SPACETIMEDB_LOGS_PATH)");
-    let mut database_path_arg = Arg::new("database_path")
-        .help("The path to the directory that should contain the database files for SpacetimeDB (STDB_PATH)");
-    let mut jwt_pub_key_path_arg = Arg::new("jwt_pub_key_path")
-        .long("jwt-pub-key-path")
-        .help("The path to the public jwt key for verifying identities (SPACETIMEDB_JWT_PUB_KEY)");
-    let mut jwt_priv_key_path_arg = Arg::new("jwt_priv_key_path")
-        .long("jwt-priv-key-path")
-        .help("The path to the private jwt key for issuing identities (SPACETIMEDB_JWT_PRIV_KEY)");
-
-    let in_memory_arg = Arg::new("in_memory")
-        .long("in-memory")
-        .action(SetTrue)
-        .help("If specified the database will run entirely in memory. After the process exits all data will be lost.");
-
-    // the default root for files, this *should* be the home directory unless it cannot be determined.
-    let default_root = if let Some(dir) = dirs::home_dir() {
-        dir
-    } else {
-        println!("Warning: home directory not found, using current directory.");
-        std::env::current_dir().unwrap()
-    }
-    .to_str()
-    .unwrap()
-    .to_string();
-
-    // The CLI defaults to starting in, and getting configuration from, the user's home directory.
-    // The standalone mode instead uses global directories.
-    match mode {
-        ProgramMode::CLI => {
-            let paths = FilesLocal::hidden(default_root);
-
-            log_conf_path_arg = log_conf_path_arg.default_value(paths.log_config().into_os_string());
-            log_dir_path_arg = log_dir_path_arg.default_value(paths.logs().into_os_string());
-            database_path_arg = database_path_arg.default_value(paths.db_path().into_os_string());
-            jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value(paths.public_key().into_os_string());
-            jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(paths.private_key().into_os_string());
-        }
-        ProgramMode::Standalone => {
-            let paths = FilesGlobal;
-
-            log_conf_path_arg = log_conf_path_arg.default_value(paths.log_config().into_os_string());
-            log_dir_path_arg = log_dir_path_arg.default_value(paths.logs().into_os_string());
-            database_path_arg = database_path_arg.default_value(paths.db_path().into_os_string());
-            jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value(paths.public_key().into_os_string());
-            jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(paths.private_key().into_os_string());
-        }
-    }
-
+pub fn cli() -> clap::Command {
     clap::Command::new("start")
         .about("Starts a standalone SpacetimeDB instance")
-        .long_about("Starts a standalone SpacetimeDB instance. This command recognizes the following environment variables: \
-                \n\tSPACETIMEDB_LOG_CONFIG: The path to the log configuration file. \
-                \n\tSPACETIMEDB_LOGS_PATH: The path to the directory that should contain logs for SpacetimeDB. \
-                \n\tSTDB_PATH: The path to the directory that should contain the database files for SpacetimeDB. \
-                \n\tSPACETIMEDB_JWT_PUB_KEY: The path to the public jwt key for verifying identities. \
-                \n\tSPACETIMEDB_JWT_PRIV_KEY: The path to the private jwt key for issuing identities. \
-                \n\tSPACETIMEDB_TRACY: Set to 1 to enable Tracy profiling.\
-                \n\nWarning: If you set a value on the command line, it will override the value set in the environment variable.")
+        .args_override_self(true)
+        .override_usage("spacetime start [OPTIONS]")
         .arg(
             Arg::new("listen_addr")
                 .long("listen-addr")
                 .short('l')
-                .default_value(mode.listen_addr())
-                .help(mode.listen_addr_help())
+                .default_value("0.0.0.0:3000")
+                .help(
+                    "The address and port where SpacetimeDB should listen for connections. \
+                     This defaults to to listen on all IP addresses on port 80.",
+                ),
         )
-        .arg(log_conf_path_arg)
-        .arg(log_dir_path_arg)
-        .arg(database_path_arg)
+        .arg(
+            Arg::new("data_dir")
+                .long("data-dir")
+                .help("The path to the data directory for the database")
+                .required(true)
+                .value_parser(clap::value_parser!(ServerDataDir)),
+        )
         .arg(
             Arg::new("enable_tracy")
                 .long("enable-tracy")
                 .action(SetTrue)
-                .help("Enable Tracy profiling (SPACETIMEDB_TRACY)"),
+                .help("Enable Tracy profiling"),
         )
-        .arg(jwt_pub_key_path_arg)
-        .arg(jwt_priv_key_path_arg)
-        .arg(in_memory_arg)
-        .after_help(mode.after_help())
+        .arg(
+            Arg::new("jwt_key_dir")
+                .hide(true)
+                .long("jwt-key-dir")
+                .help("The directory with id_ecdsa and id_ecdsa.pub")
+                .value_parser(clap::value_parser!(spacetimedb_paths::cli::ConfigDir)),
+        )
+        .arg(
+            Arg::new("jwt_pub_key_path")
+                .long("jwt-pub-key-path")
+                .requires("jwt_priv_key_path")
+                .help("The path to the public jwt key for verifying identities")
+                .value_parser(clap::value_parser!(PubKeyPath)),
+        )
+        .arg(
+            Arg::new("jwt_priv_key_path")
+                .long("jwt-priv-key-path")
+                .requires("jwt_pub_key_path")
+                .help("The path to the private jwt key for issuing identities")
+                .value_parser(clap::value_parser!(PrivKeyPath)),
+        )
+        .arg(Arg::new("in_memory").long("in-memory").action(SetTrue).help(
+            "If specified the database will run entirely in memory. After the process exits all data will be lost.",
+        ))
+        .arg(
+            Arg::new("page_pool_max_size").long("page_pool_max_size").help(
+                "The maximum size of the page pool in bytes. Should be a multiple of 64KiB. The default is 8GiB.",
+            ),
+        )
+        .arg(
+            Arg::new("pg_port")
+                .long("pg-port")
+                .help("If specified, enables the built-in PostgreSQL wire protocol server on the given port.")
+                .value_parser(clap::value_parser!(u16).range(1024..65535)),
+        )
+        .arg(
+            Arg::new("non_interactive")
+                .long("non-interactive")
+                .action(SetTrue)
+                .help("Run in non-interactive mode (fail immediately if port is in use)"),
+        )
+    // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
-/// Sets an environment variable. Print a warning if already set.
-fn set_env_with_warning(env_name: &str, env_value: &str) {
-    if std::env::var(env_name).is_ok() {
-        println!("Warning: {} is set in the environment, but was also passed on the command line. The value passed on the command line will be used.", env_name);
+#[derive(Default, serde::Deserialize)]
+struct ConfigFile {
+    #[serde(flatten)]
+    common: spacetimedb::config::ConfigFile,
+    #[serde(default)]
+    websocket: WebSocketOptions,
+}
+
+impl ConfigFile {
+    fn read(path: &ConfigToml) -> anyhow::Result<Option<Self>> {
+        parse_config(path.as_ref())
     }
-    std::env::set_var(env_name, env_value);
 }
 
-/// Reads an argument from the `ArgMatches`.
-///
-/// If the argument is the default and the environment variable is already set,
-/// then we don't want to use the default value.
-/// This function will return `None` in that case.
-fn read_argument<'a>(args: &'a ArgMatches, arg_name: &str, env_name: &str) -> Option<&'a String> {
-    let env_is_set = std::env::var(env_name).is_ok();
-    let is_default = args.value_source(arg_name) == Some(clap::parser::ValueSource::DefaultValue);
-
-    if env_is_set && is_default {
-        None
-    } else {
-        args.get_one::<String>(arg_name)
-    }
-}
-
-pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
-    let log_conf_path = read_argument(args, "log_conf_path", "SPACETIMEDB_LOG_CONFIG");
-    let log_dir_path = read_argument(args, "log_dir_path", "SPACETIMEDB_LOGS_PATH");
-    let stdb_path = read_argument(args, "database_path", "STDB_PATH");
-    let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
-    let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
-    let enable_tracy = args.get_flag("enable_tracy");
+    let pg_port = args.get_one::<u16>("pg_port");
+    let non_interactive = args.get_flag("non_interactive");
+    let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
+    let certs = Option::zip(
+        args.get_one::<PubKeyPath>("jwt_pub_key_path").cloned(),
+        args.get_one::<PrivKeyPath>("jwt_priv_key_path").cloned(),
+    )
+    .map(|(jwt_pub_key_path, jwt_priv_key_path)| CertificateAuthority {
+        jwt_pub_key_path,
+        jwt_priv_key_path,
+    });
+    let data_dir = args.get_one::<ServerDataDir>("data_dir").unwrap();
+    let enable_tracy = args.get_flag("enable_tracy") || std::env::var_os("SPACETIMEDB_TRACY").is_some();
     let storage = if args.get_flag("in_memory") {
         Storage::Memory
     } else {
         Storage::Disk
     };
-    let config = Config { storage };
+    let page_pool_max_size = args
+        .get_one::<String>("page_pool_max_size")
+        .map(|size| parse_size::Config::new().with_binary().parse_size(size))
+        .transpose()
+        .context("unrecognized format in `page_pool_max_size`")?
+        .map(|size| size as usize);
+    let db_config = db::Config {
+        storage,
+        page_pool_max_size,
+    };
 
     banner();
     let exe_name = std::env::current_exe()?;
     let exe_name = exe_name.file_name().unwrap().to_str().unwrap();
     println!("{} version: {}", exe_name, env!("CARGO_PKG_VERSION"));
     println!("{} path: {}", exe_name, std::env::current_exe()?.display());
+    println!("database running in data directory {}", data_dir.display());
 
-    if let Some(log_conf_path) = log_conf_path {
-        create_file_with_contents(log_conf_path, include_str!("../../log.conf"))?;
-        set_env_with_warning("SPACETIMEDB_LOG_CONFIG", log_conf_path);
-    }
+    let config_path = data_dir.config_toml();
+    let config = match ConfigFile::read(&data_dir.config_toml())? {
+        Some(config) => config,
+        None => {
+            let default_config = include_str!("../../config.toml");
+            data_dir.create()?;
+            config_path.write(default_config)?;
+            toml::from_str(default_config).unwrap()
+        }
+    };
 
-    if let Some(log_dir_path) = log_dir_path {
-        create_dir_or_err(log_dir_path)?;
-        set_env_with_warning("SPACETIMEDB_LOGS_PATH", log_dir_path);
-    }
+    startup::configure_tracing(TracingOptions {
+        config: config.common.logs,
+        reload_config: cfg!(debug_assertions).then_some(config_path),
+        disk_logging: std::env::var_os("SPACETIMEDB_DISABLE_DISK_LOGGING")
+            .is_none()
+            .then(|| data_dir.logs()),
+        edition: "standalone".to_owned(),
+        tracy: enable_tracy || std::env::var_os("SPACETIMEDB_TRACY").is_some(),
+        flamegraph: std::env::var_os("SPACETIMEDB_FLAMEGRAPH").map(|_| {
+            std::env::var_os("SPACETIMEDB_FLAMEGRAPH_PATH")
+                .unwrap_or("/var/log/flamegraph.folded".into())
+                .into()
+        }),
+    });
 
-    if let Some(stdb_path) = stdb_path {
-        create_dir_or_err(stdb_path)?;
-        set_env_with_warning("STDB_PATH", stdb_path);
-    }
+    let certs = certs
+        .or(config.common.certificate_authority)
+        .or_else(|| cert_dir.map(CertificateAuthority::in_cli_config_dir))
+        .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
-    // If this doesn't exist, we will create it later, just set the env variable for now
-    if let Some(jwt_pub_key_path) = jwt_pub_key_path {
-        set_env_with_warning("SPACETIMEDB_JWT_PUB_KEY", jwt_pub_key_path);
-    }
+    let data_dir = Arc::new(data_dir.clone());
+    let ctx = StandaloneEnv::init(
+        StandaloneOptions {
+            db_config,
+            websocket: config.websocket,
+            v8_heap_policy: config.common.v8_heap_policy,
+        },
+        &certs,
+        data_dir,
+        db_cores,
+    )
+    .await?;
+    worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
+    worker_metrics::spawn_tokio_stats(
+        listen_addr.clone(),
+        "main".to_string(),
+        tokio::runtime::Handle::current(),
+    );
+    worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
+    worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
+    let mut db_routes = DatabaseRoutes::default();
+    db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
+    db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
+    db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
+    let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
+    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
 
-    // If this doesn't exist, we will create it later, just set the env variable for now
-    if let Some(jwt_priv_key_path) = jwt_priv_key_path {
-        set_env_with_warning("SPACETIMEDB_JWT_PRIV_KEY", jwt_priv_key_path);
-    }
+    // Check if the requested port is available on both IPv4 and IPv6.
+    // If not, offer to find an available port by incrementing (unless non-interactive).
+    let listen_addr = if let Some((host, port_str)) = listen_addr.rsplit_once(':') {
+        if let Ok(requested_port) = port_str.parse::<u16>() {
+            if !is_port_available(host, requested_port) {
+                if non_interactive {
+                    anyhow::bail!(
+                        "Port {} is already in use. Please free up the port or specify a different port with --listen-addr.",
+                        requested_port
+                    );
+                }
+                // Port is in use, try to find an alternative
+                match find_available_port(host, requested_port.saturating_add(1), 100) {
+                    Some(available_port) => {
+                        let question = format!(
+                            "Port {} is already in use. Would you like to use port {} instead?",
+                            requested_port, available_port
+                        );
+                        if prompt_yes_no(&question) {
+                            format!("{}:{}", host, available_port)
+                        } else {
+                            anyhow::bail!(
+                                "Port {} is already in use. Please free up the port or specify a different port with --listen-addr.",
+                                requested_port
+                            );
+                        }
+                    }
+                    None => {
+                        anyhow::bail!(
+                            "Port {} is already in use and could not find an available port nearby. \
+                             Please free up the port or specify a different port with --listen-addr.",
+                            requested_port
+                        );
+                    }
+                }
+            } else {
+                listen_addr.to_string()
+            }
+        } else {
+            listen_addr.to_string()
+        }
+    } else {
+        listen_addr.to_string()
+    };
 
-    if enable_tracy {
-        set_env_with_warning("SPACETIMEDB_TRACY", "1");
-    }
-
-    startup::StartupOptions::default().configure();
-
-    let ctx = StandaloneEnv::init(config).await?;
-
-    let service = router().with_state(ctx);
-
-    let tcp = TcpListener::bind(listen_addr).await?;
+    let tcp = TcpListener::bind(&listen_addr).await.context(format!(
+        "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
+    ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
-    axum::serve(tcp, service).await?;
+    log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+
+    if let Some(pg_port) = pg_port {
+        let server_addr = listen_addr.split(':').next().unwrap();
+        let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await.context(format!(
+            "failed to bind the SpacetimeDB PostgreSQL wire protocol server to {server_addr}:{pg_port}, please check that the port is valid and not already in use"
+        ))?;
+
+        let notify = Arc::new(tokio::sync::Notify::new());
+        let shutdown_notify = notify.clone();
+        tokio::select! {
+            _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
+            _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
+                shutdown_notify.notified().await;
+            }) => {},
+            _ = tokio::signal::ctrl_c() => {
+                println!("Shutting down servers...");
+                notify.notify_waiters(); // Notify all tasks
+            }
+        }
+    } else {
+        log::warn!("PostgreSQL wire protocol server disabled");
+        axum::serve(tcp, service)
+            .with_graceful_shutdown(async {
+                tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+                log::info!("Shutting down server...");
+            })
+            .await?;
+    }
+
     Ok(())
+}
+
+/// Check if a port is available on the requested host for both IPv4 and IPv6.
+///
+/// On macOS (and some other systems), `localhost` can resolve to both IPv4 (127.0.0.1)
+/// and IPv6 (::1). If SpacetimeDB binds only to IPv4 but another service is using the
+/// same port on IPv6, browsers may connect to the wrong service depending on which
+/// address they try first.
+///
+/// This function checks both the requested IPv4 address and its IPv6 equivalent:
+/// - 127.0.0.1 -> also checks ::1
+/// - 0.0.0.0 -> also checks ::
+/// - 10.1.1.1 -> also checks ::ffff:10.1.1.1 (IPv4-mapped IPv6)
+///
+/// Note: There is a small race condition between this check and the actual bind -
+/// another process could grab the port in between. This is unlikely in practice
+/// and the actual bind will fail with a clear error if it happens.
+pub fn is_port_available(host: &str, port: u16) -> bool {
+    let requested = match parse_host(host) {
+        Some(r) => r,
+        None => return false, // invalid host string => treat as not available
+    };
+
+    let sockets = match get_sockets_info(AddressFamilyFlags::IPV4 | AddressFamilyFlags::IPV6, ProtocolFlags::TCP) {
+        Ok(s) => s,
+        Err(_) => return false, // if we can't inspect sockets, fail closed
+    };
+
+    for si in sockets {
+        let tcp = match si.protocol_socket_info {
+            ProtocolSocketInfo::Tcp(tcp_si) => tcp_si,
+            _ => continue,
+        };
+
+        if tcp.state != TcpState::Listen {
+            continue;
+        }
+
+        if tcp.local_port != port {
+            continue;
+        }
+
+        if conflicts(requested, tcp.local_addr) {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RequestedHost {
+    Localhost,
+    Ip(IpAddr),
+}
+
+fn parse_host(host: &str) -> Option<RequestedHost> {
+    let host = host.trim();
+
+    // Allow common bracketed IPv6 formats like "[::1]"
+    let host = host.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(host);
+
+    if host.eq_ignore_ascii_case("localhost") {
+        return Some(RequestedHost::Localhost);
+    }
+
+    host.parse::<IpAddr>().ok().map(RequestedHost::Ip)
+}
+
+fn conflicts(requested: RequestedHost, listener_addr: IpAddr) -> bool {
+    match requested {
+        RequestedHost::Localhost => match listener_addr {
+            // localhost should conflict with loopback and wildcards in each family
+            IpAddr::V4(v4) => v4.is_loopback() || v4.is_unspecified(),
+            IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
+        },
+
+        RequestedHost::Ip(IpAddr::V4(req_v4)) => match listener_addr {
+            IpAddr::V4(l_v4) => {
+                if req_v4.is_unspecified() {
+                    // 0.0.0.0 conflicts with any IPv4 listener
+                    true
+                } else if req_v4.is_loopback() {
+                    // 127.0.0.1 conflicts with 127.0.0.1 and 0.0.0.0
+                    l_v4 == req_v4 || l_v4.is_unspecified()
+                } else {
+                    // specific IPv4 conflicts with that IPv4 and 0.0.0.0
+                    l_v4 == req_v4 || l_v4.is_unspecified()
+                }
+            }
+            IpAddr::V6(l_v6) => {
+                if req_v4.is_unspecified() {
+                    // special case: 0.0.0.0 conflicts with :: (and vice versa)
+                    l_v6.is_unspecified()
+                } else if req_v4.is_loopback() {
+                    // special case: 127.0.0.1 conflicts with ::1 (and vice versa)
+                    l_v6.is_loopback()
+                        // and treat IPv6 wildcard as conflicting with IPv4 loopback per your table
+                        || l_v6.is_unspecified()
+                        // also consider rare IPv4-mapped IPv6 listeners
+                        || l_v6.to_ipv4_mapped() == Some(req_v4)
+                } else {
+                    // specific IPv4 should conflict with IPv6 wildcard (::) per your table
+                    l_v6.is_unspecified() || l_v6.to_ipv4_mapped() == Some(req_v4)
+                }
+            }
+        },
+
+        RequestedHost::Ip(IpAddr::V6(req_v6)) => match listener_addr {
+            IpAddr::V6(l_v6) => {
+                if req_v6.is_unspecified() {
+                    // :: conflicts with any IPv6 listener
+                    true
+                } else if req_v6.is_loopback() {
+                    // ::1 conflicts with ::1 and :: (and also with 127.0.0.1 via IPv4 branch below)
+                    l_v6 == req_v6 || l_v6.is_unspecified()
+                } else {
+                    // specific IPv6 conflicts with itself and ::
+                    l_v6 == req_v6 || l_v6.is_unspecified()
+                }
+            }
+            IpAddr::V4(l_v4) => {
+                if req_v6.is_unspecified() {
+                    // :: conflicts with any IPv4 listener (matches your table)
+                    true
+                } else if req_v6.is_loopback() {
+                    // special case: ::1 conflicts with 127.0.0.1 (and vice versa)
+                    l_v4.is_loopback()
+                } else {
+                    // Not required by your rules: specific IPv6 does NOT conflict with IPv4 listeners.
+                    false
+                }
+            }
+        },
+    }
+}
+
+/// Find an available port starting from the requested port.
+/// Returns the first port that is available on both IPv4 and IPv6.
+fn find_available_port(host: &str, requested_port: u16, max_attempts: u16) -> Option<u16> {
+    for offset in 0..max_attempts {
+        let port = requested_port.saturating_add(offset);
+        if port == 0 || port == u16::MAX {
+            break;
+        }
+        if is_port_available(host, port) {
+            return Some(port);
+        }
+    }
+    None
+}
+
+/// Prompt the user with a yes/no question. Returns true if they answer yes.
+fn prompt_yes_no(question: &str) -> bool {
+    print!("{} [y/N] ", question);
+    io::stdout().flush().ok();
+
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        return false;
+    }
+
+    matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
 }
 
 fn banner() {
@@ -268,4 +493,55 @@ fn banner() {
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
     "#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn options_from_partial_toml() {
+        let toml = r#"
+            [logs]
+            directives = [
+                "banana_shake=strawberry",
+            ]
+
+            [websocket]
+            idle-timeout = "1min"
+            close-handshake-timeout = "500ms"
+
+            [v8-heap-policy]
+            heap-check-request-interval = 0
+            heap-check-time-interval = "45s"
+            heap-gc-trigger-fraction = 0.6
+            heap-retire-fraction = 0.8
+            heap-limit-mb = 128
+"#;
+
+        let config: ConfigFile = toml::from_str(toml).unwrap();
+
+        // `spacetimedb::config::ConfigFile` doesn't implement `PartialEq`,
+        // so check `common` in a pedestrian way.
+        assert_eq!(&config.common.logs.directives, &["banana_shake=strawberry"]);
+        assert!(config.common.certificate_authority.is_none());
+        assert_eq!(config.common.v8_heap_policy.heap_check_request_interval, None);
+        assert_eq!(
+            config.common.v8_heap_policy.heap_check_time_interval,
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(config.common.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
+        assert_eq!(config.common.v8_heap_policy.heap_retire_fraction, 0.8);
+        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, Some(128 * 1024 * 1024));
+
+        assert_eq!(
+            config.websocket,
+            WebSocketOptions {
+                idle_timeout: Duration::from_secs(60),
+                close_handshake_timeout: Duration::from_millis(500),
+                ..<_>::default()
+            }
+        );
+    }
 }

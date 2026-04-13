@@ -1,6 +1,6 @@
 use crate::buffer::{BufReader, DecodeError};
-
-use crate::de::{self, SeqProductAccess, SumAccess, VariantAccess};
+use crate::de::{self, Deserializer as _, SeqProductAccess, SumAccess, VariantAccess};
+use crate::{i256, u256};
 
 /// Deserializer from the BSATN data format.
 pub struct Deserializer<'a, R> {
@@ -16,45 +16,70 @@ impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
 
     /// Reborrows the deserializer.
     #[inline]
-    fn reborrow(&mut self) -> Deserializer<'_, R> {
+    pub(crate) fn reborrow(&mut self) -> Deserializer<'_, R> {
         Deserializer { reader: self.reader }
+    }
+
+    /// Reads a length as a `u32` then converted to `usize`.
+    pub(crate) fn deserialize_len(self) -> Result<usize, DecodeError> {
+        Ok(self.deserialize_u32()? as usize)
+    }
+
+    /// Reads a slice of `len` elements.
+    #[inline]
+    #[doc(hidden)]
+    pub fn get_slice(&mut self, len: usize) -> Result<&'de [u8], DecodeError> {
+        self.reader.get_slice(len)
+    }
+
+    /// Reads a byte slice from the `reader`.
+    fn deserialize_bytes_inner(mut self) -> Result<&'de [u8], DecodeError> {
+        let len = self.reborrow().deserialize_len()?;
+        self.get_slice(len)
     }
 }
 
 impl de::Error for DecodeError {
     fn custom(msg: impl std::fmt::Display) -> Self {
-        DecodeError::Other(msg.to_string())
+        Self::Other(msg.to_string())
     }
 
-    fn unknown_variant_tag<'de, T: de::SumVisitor<'de>>(_tag: u8, _expected: &T) -> Self {
-        DecodeError::InvalidTag
+    fn unknown_variant_tag<'de, T: de::SumVisitor<'de>>(tag: u8, expected: &T) -> Self {
+        let sum_name = expected.sum_name().map(|x| x.to_owned());
+        Self::InvalidTag { tag, sum_name }
+    }
+
+    fn allocation_failed(size: usize) -> Self {
+        Self::AllocationFailed(size)
     }
 }
 
-/// Read a length as a `u32` then converted to `usize`.
-fn get_len<'de>(reader: &mut impl BufReader<'de>) -> Result<usize, DecodeError> {
-    Ok(reader.get_u32()? as usize)
-}
-
-/// Read a byte slice from the `reader`.
-fn read_bytes<'a, 'de: 'a>(reader: &'a mut impl BufReader<'de>) -> Result<&'de [u8], DecodeError> {
-    let len = get_len(reader)?;
-    reader.get_slice(len)
-}
-
-impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
 
     fn deserialize_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, DecodeError> {
         visitor.visit_seq_product(self)
     }
 
+    fn validate_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        visitor.validate_seq_product(self)
+    }
+
     fn deserialize_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, DecodeError> {
         visitor.visit_sum(self)
     }
 
+    fn validate_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        visitor.validate_sum(self)
+    }
+
     fn deserialize_bool(self) -> Result<bool, Self::Error> {
-        self.reader.get_u8().map(|x| x != 0)
+        let byte = self.reader.get_u8()?;
+        match byte {
+            0 => Ok(false),
+            1 => Ok(true),
+            b => Err(DecodeError::InvalidBool(b)),
+        }
     }
     fn deserialize_u8(self) -> Result<u8, DecodeError> {
         self.reader.get_u8()
@@ -71,6 +96,9 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     fn deserialize_u128(self) -> Result<u128, DecodeError> {
         self.reader.get_u128()
     }
+    fn deserialize_u256(self) -> Result<u256, DecodeError> {
+        self.reader.get_u256()
+    }
     fn deserialize_i8(self) -> Result<i8, DecodeError> {
         self.reader.get_i8()
     }
@@ -86,6 +114,9 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     fn deserialize_i128(self) -> Result<i128, DecodeError> {
         self.reader.get_i128()
     }
+    fn deserialize_i256(self) -> Result<i256, DecodeError> {
+        self.reader.get_i256()
+    }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
         self.reader.get_u32().map(f32::from_bits)
     }
@@ -94,64 +125,66 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
 
     fn deserialize_str<V: de::SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let slice = read_bytes(self.reader)?;
+        let slice = self.deserialize_bytes_inner()?;
         let slice = core::str::from_utf8(slice)?;
         visitor.visit_borrowed(slice)
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let slice = read_bytes(self.reader)?;
+        let slice = self.deserialize_bytes_inner()?;
         visitor.visit_borrowed(slice)
     }
 
     fn deserialize_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
-        self,
+        mut self,
         visitor: V,
         seed: T,
     ) -> Result<V::Output, Self::Error> {
-        let len = get_len(self.reader)?;
+        let len = self.reborrow().deserialize_len()?;
         let seeds = itertools::repeat_n(seed, len);
         visitor.visit(ArrayAccess { de: self, seeds })
     }
 
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
-        self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let len = get_len(self.reader)?;
-        let seeds = itertools::repeat_n((kseed, vseed), len);
-        visitor.visit(MapAccess { de: self, seeds })
+    fn validate_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
+        mut self,
+        visitor: V,
+        seed: T,
+    ) -> Result<(), Self::Error> {
+        let len = self.reborrow().deserialize_len()?;
+        let seeds = itertools::repeat_n(seed, len);
+        visitor.validate(ArrayAccess { de: self, seeds })
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
 
     fn next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, DecodeError> {
         seed.deserialize(self.reborrow()).map(Some)
     }
+
+    fn validate_next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<()>, Self::Error> {
+        seed.validate(self.reborrow()).map(Some)
+    }
 }
 
-impl<'de, 'a, R: BufReader<'de>> SumAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> SumAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
     type Variant = Self;
 
-    fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let tag = self.reader.get_u8()?;
         visitor.visit_tag(tag).map(|variant| (variant, self))
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
     fn deserialize_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self)
+    }
+    fn validate_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        seed.validate(self)
     }
 }
 
@@ -161,7 +194,7 @@ pub struct ArrayAccess<'a, R, T> {
     seeds: itertools::RepeatN<T>,
 }
 
-impl<'de, 'a, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'a, R, T> {
+impl<'de, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'_, R, T> {
     type Element = T::Output;
     type Error = DecodeError;
 
@@ -172,33 +205,10 @@ impl<'de, 'a, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayA
             .transpose()
     }
 
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.seeds.len())
-    }
-}
-
-/// Deserializer for map elements.
-pub struct MapAccess<'a, R, K, V> {
-    de: Deserializer<'a, R>,
-    seeds: itertools::RepeatN<(K, V)>,
-}
-
-impl<'de, 'a, R: BufReader<'de>, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone>
-    de::MapAccess<'de> for MapAccess<'a, R, K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = DecodeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
+    fn validate_next_element(&mut self) -> Result<Option<()>, Self::Error> {
         self.seeds
             .next()
-            .map(|(kseed, vseed)| {
-                Ok((
-                    kseed.deserialize(self.de.reborrow())?,
-                    vseed.deserialize(self.de.reborrow())?,
-                ))
-            })
+            .map(|seed| seed.validate(self.de.reborrow()))
             .transpose()
     }
 

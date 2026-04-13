@@ -60,7 +60,7 @@ mod callgrind_benches {
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
             assert_eq!(self.schema, T::name(), "provided metadata has incorrect db name");
 
-            let mut db = DB::build(self.in_memory, false).unwrap();
+            let mut db = DB::build(self.in_memory).unwrap();
 
             let table_id = db.create_table::<T>(self.indices).unwrap();
             let mut data = create_sequential::<T>(0xdeadbeef, self.count + self.preload, 64);
@@ -134,7 +134,7 @@ mod callgrind_benches {
                 "provided metadata has incorrect index strategy"
             );
 
-            let mut db = DB::build(self.in_memory, false).unwrap();
+            let mut db = DB::build(self.in_memory).unwrap();
 
             let table_id = db.create_table::<T>(self.indices).unwrap();
             let data = create_sequential::<T>(0xdeadbeef, self.preload, 64);
@@ -198,7 +198,7 @@ mod callgrind_benches {
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
             assert_eq!(self.schema, T::name(), "provided metadata has incorrect db name");
 
-            let mut db = DB::build(self.in_memory, false).unwrap();
+            let mut db = DB::build(self.in_memory).unwrap();
 
             let table_id = db.create_table::<T>(self.indices).unwrap();
             let data = create_sequential::<T>(0xdeadbeef, self.count, 64);
@@ -271,7 +271,7 @@ mod callgrind_benches {
         preload: u32,
         // Underscore here cause it's an implementation detail.
         // The only thing downstream cares about is data_type
-        _column: u32,
+        _column: u16,
         data_type: String,
         #[serde(skip)]
         _marker: std::marker::PhantomData<(DB, T)>,
@@ -294,7 +294,7 @@ mod callgrind_benches {
                 "provided metadata has incorrect data type"
             );
 
-            let mut db = DB::build(self.in_memory, false).unwrap();
+            let mut db = DB::build(self.in_memory).unwrap();
 
             let table_id = db.create_table::<T>(self.indices).unwrap();
             let data = create_partly_identical::<T>(0xdeadbeef, self.count as u64, self.preload as u64);
@@ -408,6 +408,7 @@ mod callgrind_benches {
     // ========================= FIND =========================
 
     #[derive(Deserialize)]
+    #[expect(unused)] // TODO
     struct FindBenchmark<DB: BenchDatabase, T: BenchTable + RandomTable> {
         bench: String,
         db: String,
@@ -429,7 +430,7 @@ mod callgrind_benches {
                 "primary key in tuple slot 0 must be u32"
             );
 
-            let mut db = DB::build(false, false).unwrap();
+            let mut db = DB::build(false).unwrap();
 
             let table_id = db.create_table::<T>(self.indices).unwrap();
 
@@ -470,7 +471,7 @@ mod callgrind_benches {
             );
             assert_eq!(self.db, DB::name(), "provided metadata has incorrect db name");
 
-            let mut db = DB::build(self.in_memory, false).unwrap();
+            let mut db = DB::build(self.in_memory).unwrap();
 
             // warm up
             db.empty_transaction().unwrap();

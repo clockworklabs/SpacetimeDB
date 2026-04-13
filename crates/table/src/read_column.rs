@@ -3,16 +3,13 @@
 //! we are interested in only a single column (or a small set of columns),
 //! and would like to avoid the allocation required by a `ProductValue`.
 
-use crate::{
-    bflatn_from,
-    indexes::{PageOffset, Size},
-    layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
-    table::RowRef,
-    util::slice_assume_init_ref,
-};
+use crate::{bflatn_from, indexes::PageOffset, table::RowRef};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, Size, VarLenType};
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
-    AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue,
+    i256,
+    sum_value::SumTag,
+    u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue, F32, F64,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -186,7 +183,8 @@ unsafe impl ReadColumn for bool {
         let data: *const bool = data.as_ptr().cast();
         // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
         // and that the `offset_in_bytes` refers to a column of type `Bool` within that row.
-        // A valid row can never have an uninitialized column or a column of an invalid value,
+        // A valid row can never have a column of an invalid value,
+        // and no byte in `Page.row_data` is ever uninit,
         // so `data` must be initialized as either 0 or 1.
         unsafe { *data }
     }
@@ -209,11 +207,6 @@ macro_rules! impl_read_column_number {
                 let col_offset = offset + PageOffset(layout.offset);
 
                 let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
-                // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
-                // and that the `offset_in_bytes` refers to a column of type `Self` within that row.
-                // A valid row can never have an uninitialized column,
-                // so `data` must be initialized.
-                let data = unsafe { slice_assume_init_ref(data) };
                 let data: Result<[u8; mem::size_of::<Self>()], _> = data.try_into();
                 // SAFETY: `<[u8; N] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `N`.
                 // We used `mem::size_of::<Self>()` as both the length of the slice and the array,
@@ -241,6 +234,8 @@ impl_read_column_number! {
     U64 => u64;
     I128 => i128;
     U128 => u128;
+    I256 => i256;
+    U256 => u256;
     F32 => f32;
     F64 => f64;
 }
@@ -308,7 +303,6 @@ macro_rules! impl_read_column_via_av {
 impl_read_column_via_av! {
     AlgebraicTypeLayout::VarLen(VarLenType::String) => into_string => Box<str>;
     AlgebraicTypeLayout::VarLen(VarLenType::Array(_)) => into_array => ArrayValue;
-    AlgebraicTypeLayout::VarLen(VarLenType::Map(_)) => into_map => Box<MapValue>;
     AlgebraicTypeLayout::Sum(_) => into_sum => SumValue;
     AlgebraicTypeLayout::Product(_) => into_product => ProductValue;
 }
@@ -331,35 +325,55 @@ macro_rules! impl_read_column_via_from {
 }
 
 impl_read_column_via_from! {
-    u32 => spacetimedb_primitives::ColId;
+    u64 => spacetimedb_primitives::ArgId;
+    u16 => spacetimedb_primitives::ColId;
+    u32 => spacetimedb_primitives::ViewId;
     u32 => spacetimedb_primitives::TableId;
     u32 => spacetimedb_primitives::IndexId;
     u32 => spacetimedb_primitives::ConstraintId;
     u32 => spacetimedb_primitives::SequenceId;
+    u32 => spacetimedb_primitives::ScheduleId;
     u128 => Packed<u128>;
     i128 => Packed<i128>;
+    u256 => Box<u256>;
+    i256 => Box<i256>;
+    f32 => F32;
+    f64 => F64;
+}
+
+/// SAFETY: `is_compatible_type` only returns true for sum types,
+/// and any sum value stores the tag first in BFLATN.
+unsafe impl ReadColumn for SumTag {
+    fn is_compatible_type(ty: &AlgebraicTypeLayout) -> bool {
+        matches!(ty, AlgebraicTypeLayout::Sum(_))
+    }
+
+    unsafe fn unchecked_read_column(row_ref: RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
+        debug_assert!(Self::is_compatible_type(&layout.ty));
+
+        let (page, offset) = row_ref.page_and_offset();
+        let col_offset = offset + PageOffset(layout.offset);
+
+        let data = page.get_row_data(col_offset, Size(1));
+        let data: Result<[u8; 1], _> = data.try_into();
+        // SAFETY: `<[u8; 1] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `1`.
+        // We used `1` as both the length of the slice and the array, so we know them to be equal.
+        let [data] = unsafe { data.unwrap_unchecked() };
+
+        Self(data)
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        blob_store::HashMapBlobStore, indexes::SquashedOffset, proptest_sats::generate_typed_row, table::Table,
-    };
+    use crate::table::test::table;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
-    use spacetimedb_sats::{
-        db::def::{TableDef, TableSchema},
-        product,
-    };
-
-    fn table(ty: ProductType) -> Table {
-        let def = TableDef::from_product("", ty);
-        let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
-    }
+    use spacetimedb_sats::{product, proptest::generate_typed_row};
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
 
         #[test]
         /// Test that `AlgebraicValue::read_column` returns expected values.
@@ -368,12 +382,11 @@ mod test {
         /// inserting the row, then doing `AlgebraicValue::read_column` on each column of the row
         /// returns the expected value.
         fn read_column_same_value((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
 
             for (idx, orig_col_value) in val.into_iter().enumerate() {
                 let read_col_value = row_ref.read_col::<AlgebraicValue>(idx).unwrap();
@@ -386,12 +399,11 @@ mod test {
         /// which does not match the actual column type
         /// returns an appropriate error.
         fn read_column_wrong_type((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
 
             for (idx, col_ty) in ty.elements.iter().enumerate() {
                 assert_wrong_type_error::<u8>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U8)?;
@@ -404,6 +416,8 @@ mod test {
                 assert_wrong_type_error::<i64>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::I64)?;
                 assert_wrong_type_error::<u128>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U128)?;
                 assert_wrong_type_error::<i128>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::I128)?;
+                assert_wrong_type_error::<u256>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U256)?;
+                assert_wrong_type_error::<i256>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::I256)?;
                 assert_wrong_type_error::<f32>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::F32)?;
                 assert_wrong_type_error::<f64>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::F64)?;
                 assert_wrong_type_error::<bool>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::Bool)?;
@@ -416,12 +430,11 @@ mod test {
         /// i.e. with an out-of-bounds index,
         /// returns an appropriate error.
         fn read_column_out_of_bounds((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
 
             let oob = ty.elements.len();
 
@@ -438,8 +451,8 @@ mod test {
                         prop_assert_eq!(&found_col.algebraic_type, &ty_col.algebraic_type);
                     }
                 }
-                Err(e) => panic!("Expected TypeError::IndexOutOfBounds but found {:?}", e),
-                Ok(val) => panic!("Expected error but found Ok({:?})", val),
+                Err(e) => panic!("Expected TypeError::IndexOutOfBounds but found {e:?}"),
+                Ok(val) => panic!("Expected error but found Ok({val:?})"),
             }
         }
     }
@@ -460,14 +473,14 @@ mod test {
                     prop_assert_eq!(desired, std::any::type_name::<Col>());
                     prop_assert_eq!(&found, col_ty);
                 }
-                Err(e) => panic!("Expected TypeError::WrongType but found {:?}", e),
-                Ok(val) => panic!("Expected error but found Ok({:?})", val),
+                Err(e) => panic!("Expected TypeError::WrongType but found {e:?}"),
+                Ok(val) => panic!("Expected error but found Ok({val:?})"),
             }
         }
         Ok(())
     }
 
-    /// Define a test or tests which construct a row containing a known value of a known type,
+    /// Define a test or tests which constructs a row containing a known value of a known type,
     /// then uses `ReadColumn::read_column` to extract that type as a native type,
     /// e.g. a Rust integer,
     /// and asserts that the extracted value is as expected.
@@ -475,12 +488,12 @@ mod test {
         ($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr }) => {
             #[test]
             fn $name() {
+                let pool = PagePool::new_for_test();
                 let mut blob_store = HashMapBlobStore::default();
                 let mut table = table(ProductType::from_iter([$algebraic_type]));
 
                 let val: $rust_type = $val;
-                let (_, ptr) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
-                let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+                let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![val.clone()]).unwrap();
 
                 assert_eq!(val, row_ref.read_col::<$rust_type>(0).unwrap());
             }
@@ -505,6 +518,13 @@ mod test {
         read_column_u64 { AlgebraicType::U64 => u64 = 0xa5a5a5a5_a5a5a5a5 };
         read_column_i128 { AlgebraicType::I128 => i128 = i128::MAX };
         read_column_u128 { AlgebraicType::U128 => u128 = 0xa5a5a5a5_a5a5a5a5_a5a5a5a5_a5a5a5a5 };
+        read_column_i256 { AlgebraicType::I256 => i256 = i256::MAX };
+        read_column_u256 { AlgebraicType::U256 => u256 =
+            u256::from_words(
+                0xa5a5a5a5_a5a5a5a5_a5a5a5a5_a5a5a5a5,
+                0xa5a5a5a5_a5a5a5a5_a5a5a5a5_a5a5a5a5
+            )
+        };
 
         read_column_f32 { AlgebraicType::F32 => f32 = 1.0 };
         read_column_f64 { AlgebraicType::F64 => f64 = 1.0 };
@@ -521,5 +541,22 @@ mod test {
 
         // Use a long string which will hit the blob store.
         read_column_long_string { AlgebraicType::String => Box<str> = "long string. ".repeat(2048).into() };
+
+        read_sum_value_plain { AlgebraicType::simple_enum(["a", "b"].into_iter()) => SumValue = SumValue::new_simple(1) };
+        read_sum_tag_plain { AlgebraicType::simple_enum(["a", "b"].into_iter()) => SumTag = SumTag(1) };
+    }
+
+    #[test]
+    fn read_sum_tag_from_sum_with_payload() {
+        let algebraic_type = AlgebraicType::sum([("a", AlgebraicType::U8), ("b", AlgebraicType::U16)]);
+
+        let pool = PagePool::new_for_test();
+        let mut blob_store = HashMapBlobStore::default();
+        let mut table = table(ProductType::from([algebraic_type]));
+
+        let val = SumValue::new(1, 42u16);
+        let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![val.clone()]).unwrap();
+
+        assert_eq!(val.tag, row_ref.read_col::<SumTag>(0).unwrap().0);
     }
 }

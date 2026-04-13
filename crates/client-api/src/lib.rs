@@ -1,25 +1,36 @@
+use std::fmt;
+use std::future::Future;
+use std::num::NonZeroU8;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use axum::response::ErrorResponse;
+use bytes::Bytes;
 use http::StatusCode;
 
-use spacetimedb::address::Address;
-use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, UpdateDatabaseResult};
-use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
-use spacetimedb::module_host_context::ModuleHostContext;
-use spacetimedb::sendgrid_controller::SendGridController;
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
-use spacetimedb_client_api_messages::recovery::RecoveryCode;
+use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::identity::{AuthCtx, Identity};
+use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
+use spacetimedb::sql;
+use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_lib::{ProductTypeElement, ProductValue};
+use spacetimedb_paths::server::ModuleLogsDir;
+use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use thiserror::Error;
+use tokio::sync::watch;
 
 pub mod auth;
 pub mod routes;
 pub mod util;
+
+/// The default value for the `confirmed` reads parameter when the client does
+/// not specify it explicitly. When `true`, the server waits for durability
+/// confirmation before sending subscription updates and SQL results.
+pub const DEFAULT_CONFIRMED_READS: bool = true;
 
 /// Defines the state / environment of a SpacetimeDB node from the PoV of the
 /// client API.
@@ -28,46 +39,206 @@ pub mod util;
 /// surfaced to the API.
 #[async_trait]
 pub trait NodeDelegate: Send + Sync {
+    /// Error returned by [Self::leader].
+    ///
+    /// Must satisfy [MaybeMisdirected] to indicate whether the method would
+    /// never succeed on this node due to the database not being scheduled on it.
+    ///
+    /// The [Into<axum::response::ErrorResponse] shall convert the error into an
+    /// HTTP response, providing an error message suitable for API clients.
+    /// The [fmt::Display] impl is used for logging the error, and may provide
+    /// additional context useful for debugging purposes.
+    type GetLeaderHostError: MaybeMisdirected + Into<axum::response::ErrorResponse> + fmt::Display + Send + Sync;
+
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
-    fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController;
-    fn host_controller(&self) -> &Arc<HostController>;
     fn client_actor_index(&self) -> &ClientActorIndex;
-    fn sendgrid_controller(&self) -> Option<&SendGridController>;
 
-    /// Return a JWT decoding key for verifying credentials.
-    fn public_key(&self) -> &DecodingKey;
-
-    /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
+    type JwtAuthProviderT: auth::JwtAuthProvider;
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
+    /// Return the leader [`Host`] of `database_id`.
     ///
-    /// The `/identity/public-key` route calls this method to return the public key to callers.
-    fn public_key_bytes(&self) -> &[u8];
-
-    /// Return a JWT encoding key for signing credentials.
-    fn private_key(&self) -> &EncodingKey;
-
-    /// Load the [`ModuleHostContext`] for instance `instance_id` of
-    /// [`Database`] `db`.
-    ///
-    /// This method is defined as `async`, as that obliges the implementer to
-    /// ensure that any necessary blocking I/O is made async-safe. In other
-    /// words, it is the responsibility of the implementation to make use of
-    /// `spawn_blocking` or `block_in_place` as appropriate, while the
-    /// `client-api` assumes that `await`ing the method never blocks.
-    async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext>;
+    /// The [`Host`] is spawned implicitly if not already running.
+    async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError>;
+    fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
 }
 
+/// Predicate on the [NodeDelegate::GetLeaderHostError].
+///
+/// Normally, the routing layer determines the cluster node hosting the current
+/// leader. In between the routing decision and actually executing the API
+/// handler on the node, the database's state can, however, change, so that the
+/// [NodeDelegate::leader] method is unable to provide the current leader [Host].
+///
+/// This trait allows to detect this case.
+//
+// Used in the logs endpoint to allow serving module logs even if
+// the database is not currently running.
+pub trait MaybeMisdirected {
+    /// Return `true` if the current node is not responsible for the leader
+    /// replica of the requested database.
+    ///
+    /// This could be the case if:
+    ///
+    /// - the current or most-recently-known leader is not assigned to the node
+    /// - no leader is currently known
+    /// - the database does not exist
+    ///
+    /// Note that a database may not be running (e.g. due to being in a
+    /// suspended state). If its last leader is known and assigned to the
+    /// current node, this method shall return `true`.
+    fn is_misdirected(&self) -> bool;
+}
+
+/// Client view of a running module.
+pub struct Host {
+    pub replica_id: u64,
+    host_controller: HostController,
+}
+
+impl Host {
+    pub fn new(replica_id: u64, host_controller: HostController) -> Self {
+        Self {
+            replica_id,
+            host_controller,
+        }
+    }
+
+    pub async fn module(&self) -> Result<ModuleHost, NoSuchModule> {
+        self.host_controller.get_module_host(self.replica_id).await
+    }
+
+    /// Wait for the module host to become available, retrying with backoff.
+    ///
+    /// This is useful for routes like `/schema` that may be called while the
+    /// database is still loading. Instead of returning an immediate 500, we
+    /// poll for up to `timeout` before giving up.
+    pub async fn wait_for_module(&self, timeout: std::time::Duration) -> Result<ModuleHost, NoSuchModule> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut interval = tokio::time::Duration::from_millis(100);
+        loop {
+            match self.host_controller.get_module_host(self.replica_id).await {
+                Ok(module) => return Ok(module),
+                Err(NoSuchModule) => {
+                    if tokio::time::Instant::now() >= deadline {
+                        return Err(NoSuchModule);
+                    }
+                    tokio::time::sleep(interval).await;
+                    // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1s, 1s, ...
+                    interval = (interval * 2).min(tokio::time::Duration::from_secs(1));
+                }
+            }
+        }
+    }
+
+    pub async fn module_watcher(&self) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
+        self.host_controller.watch_module_host(self.replica_id).await
+    }
+
+    pub async fn exec_sql(
+        &self,
+        auth: AuthCtx,
+        database: Database,
+        confirmed_read: bool,
+        body: String,
+    ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
+        let module_host = self
+            .module()
+            .await
+            .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
+
+        let (tx_offset, durable_offset, json) = self
+            .host_controller
+            .using_database(database, self.replica_id, move |db| async move {
+                tracing::info!(sql = body);
+                let mut header = vec![];
+                let sql_start = std::time::Instant::now();
+                let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
+                let _guard = sql_span.enter();
+
+                let result = sql::execute::run(
+                    db.clone(),
+                    body,
+                    auth,
+                    Some(module_host.info.subscriptions.clone()),
+                    Some(module_host),
+                    &mut header,
+                )
+                .await
+                .map_err(|e| {
+                    log::warn!("{e}");
+                    (StatusCode::BAD_REQUEST, e.to_string())
+                })?;
+
+                let total_duration = sql_start.elapsed();
+                drop(_guard);
+                sql_span.record("total_duration", tracing::field::debug(total_duration));
+
+                let schema = header
+                    .into_iter()
+                    .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
+                    .collect();
+
+                Ok::<_, (StatusCode, String)>((
+                    result.tx_offset,
+                    db.durable_tx_offset(),
+                    vec![SqlStmtResult {
+                        schema,
+                        rows: result.rows,
+                        total_duration_micros: total_duration.as_micros() as u64,
+                        stats: SqlStmtStats::from_metrics(&result.metrics),
+                    }],
+                ))
+            })
+            .await
+            .map_err(log_and_500)??;
+
+        if confirmed_read && let Some(mut durable_offset) = durable_offset {
+            let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+        }
+
+        Ok(json)
+    }
+
+    pub async fn update(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
+            .await
+    }
+}
 /// Parameters for publishing a database.
 ///
 /// See [`ControlStateDelegate::publish_database`].
 pub struct DatabaseDef {
-    /// The [`Address`] the database shall have.
-    ///
-    /// Addresses are allocated via [`ControlStateDelegate::create_address`].
-    pub address: Address,
+    /// The [`Identity`] the database shall have.
+    pub database_identity: Identity,
     /// The compiled program of the database module.
-    pub program_bytes: Vec<u8>,
+    pub program_bytes: Bytes,
     /// The desired number of replicas the database shall have.
-    pub num_replicas: u32,
+    ///
+    /// If `None`, the edition default is used.
+    pub num_replicas: Option<NonZeroU8>,
+    /// The host type of the supplied program.
+    pub host_type: HostType,
+    /// The optional identity of an existing database the database shall be a
+    /// child of.
+    pub parent: Option<Identity>,
+    /// The optional identity of an organization the database shall belong to.
+    pub organization: Option<Identity>,
+}
+
+/// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
+pub struct DatabaseResetDef {
+    pub database_identity: Identity,
+    pub program_bytes: Option<Bytes>,
+    pub num_replicas: Option<NonZeroU8>,
+    pub host_type: Option<HostType>,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -93,44 +264,38 @@ pub trait ControlStateDelegate: ControlStateReadAccess + ControlStateWriteAccess
 impl<T: ControlStateReadAccess + ControlStateWriteAccess + Send + Sync> ControlStateDelegate for T {}
 
 /// Query API of the SpacetimeDB control plane.
+#[async_trait]
 pub trait ControlStateReadAccess {
     // Nodes
-    fn get_node_id(&self) -> Option<u64>;
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
+    async fn get_node_id(&self) -> Option<u64>;
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>>;
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
+    async fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
-    // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>>;
-    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>>;
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance>;
-
-    // Identities
-    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>>;
-    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>>;
-    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>>;
+    // Replicas
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>>;
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
 #[async_trait]
 pub trait ControlStateWriteAccess: Send + Sync {
-    // Databases
-    async fn create_address(&self) -> anyhow::Result<Address>;
-
     /// Publish a database acc. to [`DatabaseDef`].
     ///
-    /// If the database with the given address was successfully published before,
+    /// If the database with the given identity was successfully published before,
     /// it is updated acc. to the module lifecycle conventions. `Some` result is
     /// returned in that case.
     ///
@@ -138,17 +303,18 @@ pub trait ControlStateWriteAccess: Send + Sync {
     /// initialized.
     async fn publish_database(
         &self,
-        identity: &Identity,
-        publisher_address: Option<Address>,
+        publisher: &Identity,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()>;
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
-    // Identities
-    async fn create_identity(&self) -> anyhow::Result<Identity>;
-    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()>;
-    async fn insert_recovery_code(&self, identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()>;
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
+
+    /// Remove all data from a database, and reset it according to the
+    /// given [DatabaseResetDef].
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -158,101 +324,104 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult>;
     async fn create_dns_record(
         &self,
-        identity: &Identity,
+        owner_identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
+
+    /// Replace all dns records pointing to `database_identity` with `domain_names`.
+    ///
+    /// All existing names in the database and in `domain_names` must be
+    /// owned by `owner_identity` (i.e. their TLD must belong to `owner_identity`).
+    ///
+    /// The `owner_identity` is typically also the owner of the database.
+    ///
+    /// Note that passing an empty slice is legal, and will just remove any
+    /// existing dns records.
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult>;
 }
 
-impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
+#[async_trait]
+impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAccess for Arc<T> {
     // Nodes
-    fn get_node_id(&self) -> Option<u64> {
-        (**self).get_node_id()
+    async fn get_node_id(&self) -> Option<u64> {
+        (**self).get_node_id().await
     }
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
-        (**self).get_node_by_id(node_id)
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
+        (**self).get_node_by_id(node_id).await
     }
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
-        (**self).get_nodes()
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
+        (**self).get_nodes().await
     }
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_id(id)
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_id(id).await
     }
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_address(address)
+    async fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity).await
     }
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
-        (**self).get_databases()
-    }
-
-    // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>> {
-        (**self).get_database_instance_by_id(id)
-    }
-    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>> {
-        (**self).get_database_instances()
-    }
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        (**self).get_leader_database_instance_by_database(database_id)
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+        (**self).get_databases().await
     }
 
-    // Identities
-    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>> {
-        (**self).get_identities_for_email(email)
+    // Replicas
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+        (**self).get_replica_by_id(id).await
     }
-    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>> {
-        (**self).get_emails_for_identity(identity)
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+        (**self).get_replicas().await
     }
-    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>> {
-        (**self).get_recovery_codes(email)
+
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id).await
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
-        (**self).get_energy_balance(identity)
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+        (**self).get_energy_balance(identity).await
     }
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
-        (**self).lookup_address(domain)
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_database_identity(domain).await
     }
 
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(address)
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity).await
+    }
+
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_namespace_owner(name).await
     }
 }
 
 #[async_trait]
 impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
-    async fn create_address(&self) -> anyhow::Result<Address> {
-        (**self).create_address().await
-    }
-
     async fn publish_database(
         &self,
         identity: &Identity,
-        publisher_address: Option<Address>,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, publisher_address, spec).await
+        (**self).publish_database(identity, spec, policy).await
     }
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
-        (**self).delete_database(identity, address).await
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult> {
+        (**self).migrate_plan(spec, style).await
     }
 
-    async fn create_identity(&self) -> anyhow::Result<Identity> {
-        (**self).create_identity().await
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        (**self).delete_database(caller_identity, database_identity).await
     }
 
-    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()> {
-        (**self).add_email(identity, email).await
-    }
-
-    async fn insert_recovery_code(&self, identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()> {
-        (**self).insert_recovery_code(identity, email, code).await
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+        (**self).reset_database(caller_identity, spec).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -270,48 +439,183 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
-        (**self).create_dns_record(identity, domain, address).await
+        (**self).create_dns_record(identity, domain, database_identity).await
+    }
+
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult> {
+        (**self)
+            .replace_dns_records(database_identity, owner_identity, domain_names)
+            .await
     }
 }
 
 #[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
+    type JwtAuthProviderT = T::JwtAuthProviderT;
+    type GetLeaderHostError = T::GetLeaderHostError;
+
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
-    }
-
-    fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController {
-        (**self).database_instance_context_controller()
-    }
-
-    fn host_controller(&self) -> &Arc<HostController> {
-        (**self).host_controller()
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {
         (**self).client_actor_index()
     }
 
-    fn public_key(&self) -> &DecodingKey {
-        (**self).public_key()
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
+        (**self).jwt_auth_provider()
     }
 
-    fn public_key_bytes(&self) -> &[u8] {
-        (**self).public_key_bytes()
+    async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
+        (**self).leader(database_id).await
     }
 
-    fn private_key(&self) -> &EncodingKey {
-        (**self).private_key()
+    fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
+        (**self).module_logs_dir(replica_id)
+    }
+}
+
+/// Result of an authorization check performed by an implementation of the
+/// [Authorization] trait.
+///
+/// [Unauthorized::Unauthorized] means that the subject was denied the
+/// permission to perform the requested action.
+///
+/// [Unauthorized::InternalError] indicates an error to perform the check in
+/// the first place. It may succeed when retried.
+///
+/// The [axum::response::IntoResponse] impl maps the variants to HTTP responses
+/// as follows:
+///
+/// * [Unauthorized::InternalError] is mapped to a 503 Internal Server Error
+///   response with the inner error sent as a string in the response body.
+///
+/// * [Unauthorized::Unauthorized] is mapped to a 403 Forbidden response with
+///   the [fmt::Display] form of the variant sent as the response body.
+///
+///   NOTE: [401 Unauthorized] means something different in HTTP, namely that
+///   the provided credentials are missing or invalid.
+///
+/// [401 Unauthorized]: https://datatracker.ietf.org/doc/html/rfc7235#section-3.1
+#[derive(Debug, Error)]
+pub enum Unauthorized {
+    #[error(
+        "{} is not authorized to perform action{}: {}",
+        subject,
+        database.map(|ident| format!(" on database {ident}")).unwrap_or_default(),
+        action
+    )]
+    Unauthorized {
+        subject: Identity,
+        action: Action,
+        // `Option` for future, non-database-bound actions.
+        database: Option<Identity>,
+        #[source]
+        source: Option<anyhow::Error>,
+    },
+    #[error("authorization failed due to internal error")]
+    InternalError(#[from] anyhow::Error),
+}
+
+impl axum::response::IntoResponse for Unauthorized {
+    fn into_response(self) -> axum::response::Response {
+        let (status, e) = match self {
+            unauthorized @ Self::Unauthorized { .. } => (StatusCode::FORBIDDEN, anyhow!(unauthorized)),
+            Self::InternalError(e) => {
+                log::error!("internal error: {e:#}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
+            }
+        };
+
+        (status, format!("{e:#}")).into_response()
+    }
+}
+
+/// Action to be authorized via [Authorization::authorize_action].
+#[derive(Clone, Copy, Debug)]
+pub enum Action {
+    CreateDatabase {
+        parent: Option<Identity>,
+        organization: Option<Identity>,
+    },
+    UpdateDatabase,
+    ResetDatabase,
+    DeleteDatabase,
+    RenameDatabase,
+    ViewModuleLogs,
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CreateDatabase { parent, organization } => match (parent, organization) {
+                (Some(parent), Some(org)) => {
+                    write!(f, "create database with parent {} and organization {}", parent, org)
+                }
+                (Some(parent), None) => write!(f, "create database with parent {}", parent),
+                (None, Some(org)) => write!(f, "create database with organization {}", org),
+                (None, None) => f.write_str("create database"),
+            },
+            Self::UpdateDatabase => f.write_str("update database"),
+            Self::ResetDatabase => f.write_str("reset database"),
+            Self::DeleteDatabase => f.write_str("delete database"),
+            Self::RenameDatabase => f.write_str("rename database"),
+            Self::ViewModuleLogs => f.write_str("view module logs"),
+        }
+    }
+}
+
+/// Trait to delegate authorization of "actions" performed through the
+/// client API to an external, edition-specific implementation.
+pub trait Authorization {
+    /// Authorize `subject` to perform [Action] `action` on `database`.
+    ///
+    /// Return `Ok(())` if permission is granted, `Err(Unauthorized)` if denied.
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send;
+
+    /// Obtain an attenuated [AuthCtx] for `subject` to evaluate SQL against
+    /// `database`.
+    ///
+    /// "SQL" includes the sql endpoint, pg wire connections, as well as
+    /// subscription queries.
+    ///
+    /// If any SQL should be rejected outright, or the authorization database
+    /// is not available, return `Err(Unauthorized)`.
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send;
+}
+
+impl<T: Authorization> Authorization for Arc<T> {
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send {
+        (**self).authorize_action(subject, database, action)
     }
 
-    fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        (**self).sendgrid_controller()
-    }
-
-    async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
-        (**self).load_module_host_context(db, instance_id).await
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send {
+        (**self).authorize_sql(subject, database)
     }
 }
 

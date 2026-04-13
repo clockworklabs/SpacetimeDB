@@ -32,6 +32,12 @@ impl NotifyOnce {
     }
 }
 
+impl Default for NotifyOnce {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pin_project_lite::pin_project! {
     pub struct NotifiedOnce<'a> {
         #[pin]

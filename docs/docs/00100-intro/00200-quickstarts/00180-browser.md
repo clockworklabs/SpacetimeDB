@@ -1,0 +1,126 @@
+---
+title: Browser Quickstart
+sidebar_label: Browser
+slug: /quickstarts/browser
+hide_table_of_contents: true
+pagination_next: intro/quickstarts/typescript
+---
+
+import { InstallCardLink } from "@site/src/components/InstallCardLink";
+import { StepByStep, Step, StepText, StepCode } from "@site/src/components/Steps";
+
+Get a SpacetimeDB app running in the browser with inline JavaScript.
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 18+ installed
+- [SpacetimeDB CLI](https://spacetimedb.com/install) installed
+
+<InstallCardLink />
+
+---
+
+<StepByStep>
+  <Step title="Create your project">
+    <StepText>
+      Run the `spacetime dev` command to create a new project with a TypeScript SpacetimeDB module.
+
+      This will start the local SpacetimeDB server, publish your module, and generate TypeScript client bindings.
+    </StepText>
+    <StepCode>
+```bash
+spacetime dev --template browser-ts
+```
+    </StepCode>
+  </Step>
+
+  <Step title="Build the client bindings">
+    <StepText>
+      The generated TypeScript bindings need to be bundled into a JavaScript file that can be loaded in the browser via a script tag.
+    </StepText>
+    <StepCode>
+```bash
+cd my-spacetime-app
+npm install
+npm run build
+```
+    </StepCode>
+  </Step>
+
+  <Step title="Open in browser">
+    <StepText>
+      Open `index.html` directly in your browser. The app connects to SpacetimeDB and displays data in real-time.
+
+      The JavaScript code runs inline in a script tag, using the bundled `DbConnection` class.
+
+      :::tip
+      The browser IIFE bundle also exposes the generated `tables` query builders, so you can use query-builder subscriptions here too.
+      :::
+    </StepText>
+    <StepCode>
+```html
+<!-- Load the bundled bindings -->
+<script src="dist/bindings.iife.js"></script>
+
+<script>
+  const HOST = 'ws://localhost:3000';
+  const DB_NAME = 'my-spacetime-app';
+  const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
+
+  const conn = DbConnection.builder()
+    .withUri(HOST)
+    .withDatabaseName(DB_NAME)
+    .withToken(localStorage.getItem(TOKEN_KEY))
+    .onConnect((conn, identity, token) => {
+      localStorage.setItem(TOKEN_KEY, token);
+      console.log('Connected:', identity.toHexString());
+
+      // Subscribe to tables
+      conn.subscriptionBuilder()
+        .onApplied(() => {
+          for (const person of conn.db.person.iter()) {
+            console.log(person.name);
+          }
+        })
+        .subscribe(tables.person);
+    })
+    .build();
+</script>
+```
+    </StepCode>
+  </Step>
+
+  <Step title="Call reducers">
+    <StepText>
+      Reducers are functions that modify data — they're the only way to write to the database.
+    </StepText>
+    <StepCode>
+```javascript
+// Call a reducer with named arguments
+conn.reducers.add({ name: 'Alice' });
+```
+    </StepCode>
+  </Step>
+
+  <Step title="React to changes">
+    <StepText>
+      Register callbacks to update your UI when data changes.
+    </StepText>
+    <StepCode>
+```javascript
+conn.db.person.onInsert((ctx, person) => {
+  console.log('New person:', person.name);
+});
+
+conn.db.person.onDelete((ctx, person) => {
+  console.log('Removed:', person.name);
+});
+```
+    </StepCode>
+  </Step>
+</StepByStep>
+
+## Next steps
+
+- See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
+- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs

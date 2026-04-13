@@ -10,6 +10,11 @@ rust-version.workspace = true
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
+[features]
+unstable = []
+
 [dependencies]
-getrandom = {workspace = true, optional = true}
 spacetimedb-primitives.workspace = true
+
+[lints]
+workspace = true

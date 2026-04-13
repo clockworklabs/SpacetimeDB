@@ -41,7 +41,7 @@ impl Encode for () {
 ///
 /// Unlike [`Encode`], this is not a datatype: the canonical commitlog format
 /// requires to look up row types during log traversal in order to be able to
-/// decode (see also [`RowDecoder`]).
+/// decode.
 pub trait Decoder {
     /// The type of records this decoder can decode.
     /// This is also the type which can be appended to a commitlog, and so must
@@ -53,7 +53,7 @@ pub trait Decoder {
     /// Decode one [`Self::Record`] from the given buffer.
     ///
     /// The `version` argument corresponds to the log format version of the
-    /// current segment (see [`segment::Header::log_format_version`]).
+    /// current segment (see [`crate::segment::Header::log_format_version`]).
     ///
     /// The `tx_argument` is the transaction offset of the current record
     /// relative to the start of the log.
@@ -63,6 +63,28 @@ pub trait Decoder {
         tx_offset: u64,
         reader: &mut R,
     ) -> Result<Self::Record, Self::Error>;
+
+    /// Variant of [`Self::decode_record`] which discards the decoded
+    /// [`Self::Record`].
+    ///
+    /// Useful for folds which don't need to yield or collect record values.
+    ///
+    /// The default implementation just drops the record returned from
+    /// [`Self::decode_record`]. Implementations may want to override this, such
+    /// that the record is not allocated in the first place.
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> Result<(), Self::Error> {
+        self.decode_record(version, tx_offset, reader).map(drop)
+    }
+
+    /// Advance `reader` past the next [`Self::Record`], without returning it
+    /// or including it in a fold.
+    fn skip_record<'a, R: BufReader<'a>>(&self, version: u8, tx_offset: u64, reader: &mut R)
+        -> Result<(), Self::Error>;
 }
 
 impl<const N: usize> Encode for [u8; N] {
@@ -93,6 +115,15 @@ impl<const N: usize> Decoder for ArrayDecoder<N> {
         _tx_offset: u64,
         reader: &mut R,
     ) -> Result<Self::Record, Self::Error> {
-        Ok(reader.get_array()?)
+        Ok(*reader.get_array()?)
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> Result<(), Self::Error> {
+        self.decode_record(version, tx_offset, reader).map(drop)
     }
 }

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SpacetimeDB.Codegen.Tests</RootNamespace>
+    <DefaultItemExcludes>$(DefaultItemExcludes);fixtures/**/*</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <!-- A helper that allows to auto-accept all snapshots during test run via `dotnet test /p:AutoVerify=true`. -->
+  <PropertyGroup Condition="'$(AutoVerify)'=='true'">
+    <DefineConstants>$(DefineConstants);AUTO_VERIFY</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CSharpier.Core" Version="0.28.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.10.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.10.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.10.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
+    <PackageReference Include="Verify.SourceGenerators" Version="2.4.3" />
+    <PackageReference Include="Verify.XUnit" Version="26.4.5" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Codegen/Codegen.csproj" />
+  </ItemGroup>
+
+</Project>

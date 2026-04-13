@@ -1,8 +1,22 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
+use crate::raw_identifier::RawIdentifier;
+use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant, SumValue, Typespace};
+
+/// The tag used for the `Interval` variant of the special `ScheduleAt` sum type.
+pub const SCHEDULE_AT_INTERVAL_TAG: &str = "Interval";
+/// The tag used for the `Time` variant of the special `ScheduleAt` sum type.
+pub const SCHEDULE_AT_TIME_TAG: &str = "Time";
+/// The tag used for the `some` variant of the special `option` sum type.
+pub const OPTION_SOME_TAG: &str = "some";
+/// The tag used for the `none` variant of the special `option` sum type.
+pub const OPTION_NONE_TAG: &str = "none";
+/// The tag used for the `ok` variant of the special `result` sum type.
+pub const RESULT_OK_TAG: &str = "ok";
+/// The tag used for the `err` variant of the special `result` sum type.
+pub const RESULT_ERR_TAG: &str = "err";
 
 /// A structural sum type.
 ///
@@ -16,25 +30,40 @@ use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
 /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
 ///
 /// These structures are known as sum types because the number of possible values a sum
-/// ```ignore
+/// ```text
 /// { N_0(T_0), N_1(T_1), ..., N_n(T_n) }
 /// ```
 /// is:
-/// ```ignore
+/// ```text
 /// Σ (i ∈ 0..n). values(T_i)
 /// ```
 /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
 ///
-/// See also: https://ncatlab.org/nlab/show/sum+type.
+/// See also:
+/// - <https://en.wikipedia.org/wiki/Tagged_union>
+/// - <https://ncatlab.org/nlab/show/sum+type>
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
     pub variants: Box<[SumTypeVariant]>,
+}
+
+impl std::fmt::Debug for SumType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SumType ")?;
+        f.debug_map()
+            .entries(
+                self.variants
+                    .iter()
+                    .map(|variant| (crate::dbg_aggregate_name(&variant.name), &variant.algebraic_type)),
+            )
+            .finish()
+    }
 }
 
 impl SumType {
@@ -49,21 +78,124 @@ impl SumType {
         Self { variants }
     }
 
-    /// Returns whether this sum type looks like an option type.
+    /// Check whether this sum type is a structural option type.
     ///
-    /// An option type has `some(T)` as its first variant and `none` as its second.
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
     /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural option type, returns the type `T`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {
         match &*self.variants {
-            [first, second]
-                if second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
-                    && first.has_name("some")
-                    && second.has_name("none") =>
-            {
-                Some(&first.algebraic_type)
+            [first, second] if Self::are_variants_option(first, second) => Some(&first.algebraic_type),
+            _ => None,
+        }
+    }
+
+    /// Check whether this sum type is a structural option type.
+    ///
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
+    /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural option type, returns the type `T`.
+    pub fn as_option_mut(&mut self) -> Option<&mut AlgebraicType> {
+        match &mut *self.variants {
+            [first, second] if Self::are_variants_option(first, second) => Some(&mut first.algebraic_type),
+            _ => None,
+        }
+    }
+
+    fn are_variants_option(first: &SumTypeVariant, second: &SumTypeVariant) -> bool {
+        second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
+        && first.has_name(OPTION_SOME_TAG)
+        && second.has_name(OPTION_NONE_TAG)
+    }
+
+    /// Check whether this sum type is a structural option type.
+    ///
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
+    /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    pub fn is_option(&self) -> bool {
+        self.as_option().is_some()
+    }
+
+    /// Check whether this sum type is a structural result type.
+    ///
+    /// A structural result type has `ok(T)` as its first variant and `err(E)` as its second.
+    /// That is, `{ ok(T), err(E) }` or `ok: T | err: E` depending on your notation.
+    /// Note that `ok` and `err` are lowercase, unlike Rust's `Result`.
+    /// Order matters, and a result type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural result type, returns the types `T` and `E`.
+    pub fn as_result(&self) -> Option<(&AlgebraicType, &AlgebraicType)> {
+        match &*self.variants {
+            [first, second] if Self::are_variants_result(first, second) => {
+                Some((&first.algebraic_type, &second.algebraic_type))
             }
             _ => None,
         }
+    }
+
+    /// Check whether this sum type is a structural result type.
+    ///
+    /// A structural result type has `ok(T)` as its first variant and `err(E)` as its second.
+    /// That is, `{ ok(T), err(E) }` or `ok: T | err: E` depending on your notation.
+    /// Note that `ok` and `err` are lowercase, unlike Rust's `Result`.
+    /// Order matters, and a result type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural result type, returns the types `T` and `E`.
+    pub fn as_result_mut(&mut self) -> Option<(&mut AlgebraicType, &mut AlgebraicType)> {
+        match &mut *self.variants {
+            [first, second] if Self::are_variants_result(first, second) => {
+                Some((&mut first.algebraic_type, &mut second.algebraic_type))
+            }
+            _ => None,
+        }
+    }
+
+    fn are_variants_result(first: &SumTypeVariant, second: &SumTypeVariant) -> bool {
+        first.has_name(RESULT_OK_TAG) && second.has_name(RESULT_ERR_TAG)
+    }
+
+    /// Check whether this sum type is a structural result type.
+    ///
+    /// A structural result type has `ok(T)` as its first variant and `err(E)` as its second.
+    /// That is, `{ ok(T), err(E) }` or `ok: T | err: E` depending on your notation.
+    /// Note that `ok` and `err` are lowercase, unlike Rust's `Result`.
+    ///
+    /// Order matters, and a result type with these variants in the opposite order will not be recognized.
+    pub fn is_result(&self) -> bool {
+        self.as_result().is_some()
+    }
+
+    /// Return whether this sum type is empty, that is, has no variants.
+    pub fn is_empty(&self) -> bool {
+        self.variants.is_empty()
+    }
+
+    /// Return whether this sum type is the special `ScheduleAt` type,
+    /// `Interval(u64) | Time(u64)`.
+    /// Does not follow `Ref`s.
+    pub fn is_schedule_at(&self) -> bool {
+        match &*self.variants {
+            [first, second] => {
+                first.has_name(SCHEDULE_AT_INTERVAL_TAG)
+                    && first.algebraic_type.is_time_duration()
+                    && second.has_name(SCHEDULE_AT_TIME_TAG)
+                    && second.algebraic_type.is_timestamp()
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns whether this sum type is a special known type, currently `Option`, `ScheduleAt`, or `Result`.
+    pub fn is_special(&self) -> bool {
+        self.is_option() || self.is_schedule_at() || self.is_result()
     }
 
     /// Returns whether this sum type is like on in C without data attached to the variants.
@@ -90,6 +222,16 @@ impl SumType {
             None
         }
     }
+
+    /// Returns the sum type variant with the given `tag`.
+    pub fn get_variant_by_tag(&self, tag: u8) -> Option<&SumTypeVariant> {
+        self.variants.get(tag as usize)
+    }
+
+    pub fn type_check(&self, sv: &SumValue, typespace: &Typespace) -> bool {
+        self.get_variant_by_tag(sv.tag)
+            .is_some_and(|var| var.algebraic_type.type_check(&sv.value, typespace))
+    }
 }
 
 impl From<Box<[SumTypeVariant]>> for SumType {
@@ -102,13 +244,13 @@ impl<const N: usize> From<[SumTypeVariant; N]> for SumType {
         SumType::new(fields.into())
     }
 }
-impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for SumType {
-    fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
-        fields.map(|(s, t)| SumTypeVariant::new(t, s.map(<_>::into))).into()
+impl<const N: usize> From<[(Option<&'static str>, AlgebraicType); N]> for SumType {
+    fn from(fields: [(Option<&'static str>, AlgebraicType); N]) -> Self {
+        fields.map(|(s, t)| SumTypeVariant::new(t, s.map(Into::into))).into()
     }
 }
-impl<const N: usize> From<[(&str, AlgebraicType); N]> for SumType {
-    fn from(fields: [(&str, AlgebraicType); N]) -> Self {
+impl<Id: Into<RawIdentifier>, const N: usize> From<[(Id, AlgebraicType); N]> for SumType {
+    fn from(fields: [(Id, AlgebraicType); N]) -> Self {
         fields.map(|(s, t)| SumTypeVariant::new_named(t, s)).into()
     }
 }

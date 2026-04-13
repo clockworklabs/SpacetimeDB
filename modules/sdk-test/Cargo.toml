@@ -2,6 +2,7 @@
 name = "sdk-test-module"
 version = "0.1.0"
 edition.workspace = true
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,6 +10,10 @@ edition.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb.workspace = true
 log.workspace = true
 anyhow.workspace = true
+paste.workspace = true
+
+[dependencies.spacetimedb]
+workspace = true
+features = ["unstable"]

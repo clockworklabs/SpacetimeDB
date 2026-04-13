@@ -1,5 +1,5 @@
 use core::iter;
-use core::mem::{self, MaybeUninit};
+use core::mem;
 use core::time::Duration;
 use criterion::measurement::{Measurement, WallTime};
 use criterion::{
@@ -7,13 +7,19 @@ use criterion::{
 };
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use spacetimedb_sats::layout::{row_size_for_bytes, row_size_for_type, Size};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::def::BTreeAlgorithm;
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::blob_store::NullBlobStore;
-use spacetimedb_table::btree_index::BTreeIndex;
-use spacetimedb_table::indexes::{PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
-use spacetimedb_table::layout::{row_size_for_bytes, row_size_for_type};
+use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset, PAGE_DATA_SIZE};
+use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
 use spacetimedb_table::table::Table;
@@ -45,8 +51,11 @@ fn iter_time_with<P, B, X>(
     })
 }
 
-fn as_bytes<T>(t: &T) -> &[MaybeUninit<u8>] {
-    let ptr = (t as *const T).cast::<MaybeUninit<u8>>();
+// Strictly this would be unsafe,
+// since it causes UB when applied to types that contain padding/`poison`,
+// but it's a benchmark so who cares.
+fn as_bytes<T>(t: &T) -> &Bytes {
+    let ptr = (t as *const T).cast::<Byte>();
     unsafe { std::slice::from_raw_parts(ptr, mem::size_of::<T>()) }
 }
 
@@ -54,26 +63,32 @@ fn as_bytes<T>(t: &T) -> &[MaybeUninit<u8>] {
 unsafe trait Row {
     fn row_type() -> ProductType;
 
+    fn row_type_for_schema() -> ProductType {
+        let mut ty = Self::row_type();
+        // Ensure that we have names for every column,
+        // so that its accepted when used in a `ModuleDef` as a row type.
+        for (idx, elem) in ty.elements.iter_mut().enumerate() {
+            if elem.name.is_none() {
+                elem.name = Some(RawIdentifier::new(format!("col_{idx}")));
+            }
+        }
+        ty
+    }
+
     fn var_len_visitor() -> VarLenVisitorProgram {
         row_type_visitor(&Self::row_type().into())
     }
-
-    fn from_product(prod: ProductValue) -> Self;
 
     fn to_product(self) -> ProductValue;
 }
 
 #[allow(clippy::missing_safety_doc)] // It's a benchmark, clippy. Who cares.
+/// Apply only to types which:
+/// - Contain no padding bytes.
+/// - Contain no members which are stored BFLATN as var-len.
 unsafe trait FixedLenRow: Row + Sized {
-    fn as_bytes(&self) -> &[MaybeUninit<u8>] {
+    fn as_bytes(&self) -> &Bytes {
         as_bytes(self)
-    }
-
-    unsafe fn from_bytes(bytes: &[MaybeUninit<u8>]) -> &Self {
-        let ptr = bytes.as_ptr();
-        debug_assert_eq!(ptr as usize % mem::align_of::<Self>(), 0);
-        debug_assert_eq!(bytes.len(), mem::size_of::<Self>());
-        unsafe { &*ptr.cast::<Self>() }
     }
 
     fn from_u64(u: u64) -> Self;
@@ -82,13 +97,6 @@ unsafe trait FixedLenRow: Row + Sized {
 unsafe impl Row for u64 {
     fn row_type() -> ProductType {
         [AlgebraicType::U64].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        match prod.elements[..] {
-            [AlgebraicValue::U64(n)] => n,
-            _ => panic!("Invalid product value for u64"),
-        }
     }
 
     fn to_product(self) -> ProductValue {
@@ -107,20 +115,12 @@ struct U32x8 {
     vals: [u32; 8],
 }
 
+// TODO: get rid of this once we change to >= Rust 1.79.
+const TY_U32: AlgebraicType = AlgebraicType::U32;
+
 unsafe impl Row for U32x8 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 8].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        match prod.elements[..] {
-            [AlgebraicValue::U32(n0), AlgebraicValue::U32(n1), AlgebraicValue::U32(n2), AlgebraicValue::U32(n3), AlgebraicValue::U32(n4), AlgebraicValue::U32(n5), AlgebraicValue::U32(n6), AlgebraicValue::U32(n7)] => {
-                U32x8 {
-                    vals: [n0, n1, n2, n3, n4, n5, n6, n7],
-                }
-            }
-            _ => panic!("Invalid product value for U32x8"),
-        }
+        [TY_U32; 8].into()
     }
 
     fn to_product(self) -> ProductValue {
@@ -141,16 +141,7 @@ struct U32x64 {
 
 unsafe impl Row for U32x64 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 64].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        let vals: Vec<u32> = prod
-            .into_iter()
-            .map(|val| *val.as_u32().expect("Invalid product value for U32x64"))
-            .collect();
-        let vals: [u32; 64] = vals.try_into().expect("Invalid product value for U32x64");
-        U32x64 { vals }
+        [TY_U32; 64].into()
     }
 
     fn to_product(self) -> ProductValue {
@@ -167,14 +158,6 @@ unsafe impl FixedLenRow for U32x64 {
 unsafe impl Row for Box<str> {
     fn row_type() -> ProductType {
         [AlgebraicType::String].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        prod.into_iter()
-            .next()
-            .expect("Invalid ProductValue for String: not enough elements")
-            .into_string()
-            .expect("Invalid ProductValue for String: not a string")
     }
 
     fn to_product(self) -> ProductValue {
@@ -199,14 +182,16 @@ fn reserve_empty_page(c: &mut Criterion) {
     let mut group = c.benchmark_group("reserve_empty_page");
     group.throughput(Throughput::Bytes(PAGE_DATA_SIZE as _));
     group.bench_function("leave_uninit", |b| {
+        let pool = PagePool::new_for_test();
         let mut pages = Pages::default();
         b.iter(|| {
-            let _ = black_box(pages.reserve_empty_page(RESERVE_SIZE));
+            let _ = black_box(pages.reserve_empty_page(&pool, RESERVE_SIZE));
         });
     });
 
     let fill_with_zeros = |_, _, pages: &mut Pages| {
-        let page = pages.reserve_empty_page(RESERVE_SIZE).unwrap();
+        let pool = PagePool::new_for_test();
+        let page = pages.reserve_empty_page(&pool, RESERVE_SIZE).unwrap();
         let page = pages.get_page_mut(page);
         unsafe { page.zero_data() };
     };
@@ -215,11 +200,16 @@ fn reserve_empty_page(c: &mut Criterion) {
     });
 }
 
-fn insert_one_page_worth_fixed_len<R: FixedLenRow>(pages: &mut Pages, visitor: &impl VarLenMembers, val: &R) {
+fn insert_one_page_worth_fixed_len<R: FixedLenRow>(
+    pool: &PagePool,
+    pages: &mut Pages,
+    visitor: &impl VarLenMembers,
+    val: &R,
+) {
     let size = row_size_for_type::<R>();
     for _ in 0..rows_per_page::<R>() {
         let _ = black_box(unsafe {
-            black_box(&mut *pages).insert_row(visitor, size, val.as_bytes(), &[], &mut NullBlobStore)
+            black_box(&mut *pages).insert_row(pool, visitor, size, val.as_bytes(), &[], &mut NullBlobStore)
         });
     }
 }
@@ -233,11 +223,13 @@ fn insert_one_page_fixed_len(c: &mut Criterion) {
             rows_per_page::<R>() as u64 * mem::size_of::<R>() as u64,
         ));
         group.bench_function(name, |b| {
+            let pool = PagePool::new_for_test();
             let mut pages = Pages::default();
-            insert_one_page_worth_fixed_len(&mut pages, visitor, &R::from_u64(0xa5a5a5a5_a5a5a5a5));
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
+            insert_one_page_worth_fixed_len(&pool, &mut pages, visitor, &R::from_u64(0xa5a5a5a5_a5a5a5a5));
             let pre = |_, pages: &mut Pages| pages.clear();
             iter_time_with(b, &mut pages, pre, |_, _, pages| {
-                insert_one_page_worth_fixed_len(pages, visitor, &R::from_u64(0xdeadbeef_0badbeef))
+                insert_one_page_worth_fixed_len(&pool, pages, visitor, &R::from_u64(0xdeadbeef_0badbeef))
             });
         });
     }
@@ -254,6 +246,7 @@ fn insert_one_page_fixed_len(c: &mut Criterion) {
 }
 
 fn fill_page_with_fixed_len_collect_row_pointers<R: FixedLenRow>(
+    pool: &PagePool,
     pages: &mut Pages,
     visitor: &impl VarLenMembers,
     val: &R,
@@ -262,6 +255,7 @@ fn fill_page_with_fixed_len_collect_row_pointers<R: FixedLenRow>(
     for _ in 0..rows_per_page::<R>() {
         let (page, offset) = unsafe {
             pages.insert_row(
+                pool,
                 visitor,
                 row_size_for_type::<R>(),
                 val.as_bytes(),
@@ -284,15 +278,22 @@ fn delete_one_page_fixed_len(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(rows_per_page as u64 * mem::size_of::<R>() as u64));
 
         group.bench_function(name, |b| {
-            let pre = |i, pages: &mut _| {
+            let pre = |i, (pages, pool): &mut _| {
                 let val = R::from_u64(i);
-                fill_page_with_fixed_len_collect_row_pointers::<R>(pages, visitor, &val)
+                fill_page_with_fixed_len_collect_row_pointers::<R>(pool, pages, visitor, &val)
             };
-            iter_time_with(b, &mut Pages::default(), pre, |ptrs, _, pages| {
-                for ptr in ptrs {
-                    unsafe { pages.delete_row(visitor, row_size_for_type::<R>(), black_box(ptr), &mut NullBlobStore) };
-                }
-            });
+            iter_time_with(
+                b,
+                &mut (Pages::default(), PagePool::new_for_test()),
+                pre,
+                |ptrs, _, (pages, _)| {
+                    for ptr in ptrs {
+                        unsafe {
+                            pages.delete_row(visitor, row_size_for_type::<R>(), black_box(ptr), &mut NullBlobStore)
+                        };
+                    }
+                },
+            );
         });
     }
 
@@ -315,10 +316,15 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(rows_per_page as u64 * mem::size_of::<R>() as u64));
 
         group.bench_function(name, |b| {
+            let pool = PagePool::new_for_test();
             let mut pages = Pages::default();
 
-            let ptrs =
-                fill_page_with_fixed_len_collect_row_pointers(&mut pages, visitor, &R::from_u64(0xdeadbeef_0badbeef));
+            let ptrs = fill_page_with_fixed_len_collect_row_pointers(
+                &pool,
+                &mut pages,
+                visitor,
+                &R::from_u64(0xdeadbeef_0badbeef),
+            );
 
             b.iter(|| {
                 for &ptr in &ptrs {
@@ -348,7 +354,7 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
 // then time to insert into those holes
 fn insert_with_holes_fixed_len(c: &mut Criterion) {
     fn bench_insert_with_holes<R: FixedLenRow>(c: &mut Criterion, var_len_visitor: &impl VarLenMembers, name: &str) {
-        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{name}"));
         let val = R::from_u64(0xdeadbeef_0badbeef);
         for delete_ratio in [0.1f64, 0.25, 0.5, 0.75, 0.9, 1.0] {
             let num_pages = 16;
@@ -362,27 +368,28 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
             group.throughput(Throughput::Bytes(num_to_delete_in_bytes as u64));
 
             group.bench_function(delete_ratio.to_string(), |b| {
+                let pool = PagePool::new_for_test();
                 let mut pages = Pages::default();
 
                 let mut rng = StdRng::seed_from_u64(0xa5a5a5a5_a5a5a5a5);
 
                 for _ in 0..num_pages {
-                    let page = pages.reserve_empty_page(row_size).unwrap();
+                    let page = pages.reserve_empty_page(&pool, row_size).unwrap();
                     let page = pages.get_page_mut(page);
 
                     unsafe { page.zero_data() };
                 }
 
-                let pre = |_, pages: &mut Pages| {
+                let pre = |_, (pages, pool): &mut (Pages, PagePool)| {
                     pages.clear();
                     let mut ptrs_to_delete = Vec::with_capacity(num_to_delete);
                     for _ in 0..total_num_rows {
                         let (page_idx, offset) = unsafe {
-                            pages.insert_row(var_len_visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore)
+                            pages.insert_row(pool, var_len_visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore)
                         }
                         .unwrap();
 
-                        if rng.gen_bool(delete_ratio) {
+                        if rng.random_bool(delete_ratio) {
                             ptrs_to_delete.push(RowPointer::new(
                                 false,
                                 page_idx,
@@ -399,14 +406,14 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
                     }
                     actual_num_deleted
                 };
-                let body = |actual_num_deleted, _, pages: &mut Pages| {
+                let body = |actual_num_deleted, _, (pages, pool): &mut (Pages, PagePool)| {
                     for _ in 0..actual_num_deleted {
                         let _ = black_box(unsafe {
-                            pages.insert_row(var_len_visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore)
+                            pages.insert_row(pool, var_len_visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore)
                         });
                     }
                 };
-                iter_time_with(b, &mut pages, pre, body);
+                iter_time_with(b, &mut (pages, pool), pre, body);
             });
         }
     }
@@ -425,19 +432,20 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
 
 fn copy_filter_fixed_len(c: &mut Criterion) {
     fn bench_copy_filter<R: FixedLenRow>(c: &mut Criterion, name: &str) {
-        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{name}"));
         let row_size = black_box(row_size_for_type::<R>());
 
         let val = R::from_u64(0xdeadbeef_0badbeef);
         for keep_ratio in [0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
             let visitor = &NullVarLenVisitor;
+            let pool = PagePool::new_for_test();
             let mut pages = Pages::default();
 
             let num_pages = 16;
             let total_num_rows = rows_per_page::<R>() * num_pages;
 
             for _ in 0..total_num_rows {
-                unsafe { pages.insert_row(visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore) }.unwrap();
+                unsafe { pages.insert_row(&pool, visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore) }.unwrap();
             }
 
             let num_to_keep = (total_num_rows as f64 * keep_ratio) as usize;
@@ -449,12 +457,12 @@ fn copy_filter_fixed_len(c: &mut Criterion) {
 
             // To avoid advancing RNG in the benchmark,
             // precompute a big vec of bools, with one bool for each value that we may or may not keep.
-            let keep_seq: Vec<bool> = (0..total_num_rows).map(|_| rng.gen_bool(keep_ratio)).collect();
+            let keep_seq: Vec<bool> = (0..total_num_rows).map(|_| rng.random_bool(keep_ratio)).collect();
 
             group.bench_function(keep_ratio.to_string(), |b| {
                 b.iter_with_large_drop(|| unsafe {
                     let mut keep_iter = keep_seq.iter().copied();
-                    black_box(&pages).copy_filter(visitor, row_size, &mut NullBlobStore, |_, _| {
+                    black_box(&pages).copy_filter(visitor, row_size, None::<&mut Box<dyn FnMut(_)>>, |_, _| {
                         black_box(keep_iter.next().unwrap_or_default())
                     })
                 });
@@ -483,12 +491,14 @@ criterion_group!(
 );
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
-    TableSchema::from_def(TableId(0), TableDef::from_product(name, ty))
+    let mut result = TableSchema::from_product_type(ty);
+    result.table_name = TableName::for_test(name);
+    result
 }
 
 fn make_table(c: &mut Criterion) {
     fn bench_make_table<R: Row>(group: Group<'_, '_>, name: &str) {
-        let ty = R::row_type();
+        let ty = R::row_type_for_schema();
         let schema = schema_from_ty(ty.clone(), name);
         group.bench_function(name, |b| {
             b.iter_custom(|num_iters| {
@@ -513,7 +523,7 @@ fn make_table(c: &mut Criterion) {
 }
 
 fn make_table_for_row_type<R: Row>(name: &str) -> Table {
-    let ty = R::row_type();
+    let ty = R::row_type_for_schema();
     let schema = schema_from_ty(ty.clone(), name);
     Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
 }
@@ -524,16 +534,20 @@ fn use_type_throughput<T>(group: &mut BenchmarkGroup<'_, impl Measurement>) {
 
 fn table_insert_one_row(c: &mut Criterion) {
     fn bench_insert_row<R: Row>(group: Group<'_, '_>, val: R, name: &str) {
-        let mut table = make_table_for_row_type::<R>(name);
+        let table = make_table_for_row_type::<R>(name);
         let val = black_box(val.to_product());
 
         // Insert before benching to alloc and fault in a page.
-        let ptr = table.insert(&mut NullBlobStore, &val).unwrap().1;
-        let pre = |_, table: &mut Table| {
-            table.delete(&mut NullBlobStore, ptr).unwrap();
+        let pool = PagePool::new_for_test();
+        let mut ctx = (table, NullBlobStore);
+        let ptr = ctx.0.insert(&pool, &mut ctx.1, &val).unwrap().1.pointer();
+        let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
+            table.delete(bs, ptr, |_| ()).unwrap();
         };
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut table, pre, |_, _, table| table.insert(&mut NullBlobStore, &val));
+            iter_time_with(b, &mut ctx, pre, |_, _, (table, bs)| {
+                table.insert(&pool, bs, &val).map(|r| r.1.pointer())
+            });
         });
     }
 
@@ -571,15 +585,18 @@ fn table_insert_one_row(c: &mut Criterion) {
 
 fn table_delete_one_row(c: &mut Criterion) {
     fn bench_delete_row<R: Row>(group: Group<'_, '_>, val: R, name: &str) {
-        let mut table = make_table_for_row_type::<R>(name);
+        let table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
         // Insert before benching to alloc and fault in a page.
-        let insert = |_, table: &mut Table| table.insert(&mut NullBlobStore, &val).unwrap().1;
+        let mut ctx = (table, NullBlobStore, PagePool::new_for_test());
+        let insert = |_: u64, (table, bs, pool): &mut (Table, NullBlobStore, PagePool)| {
+            table.insert(pool, bs, &val).unwrap().1.pointer()
+        };
 
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut table, insert, |ptr, _, table| {
-                table.delete(&mut NullBlobStore, ptr)
+            iter_time_with(b, &mut ctx, insert, |row, _, (table, bs, _)| {
+                table.delete(bs, row, |_| ())
             });
         });
     }
@@ -621,16 +638,11 @@ fn table_extract_one_row(c: &mut Criterion) {
         let mut table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
-        let ptr = table.insert(&mut NullBlobStore, &val).unwrap().1;
+        let pool = PagePool::new_for_test();
+        let mut blob_store = NullBlobStore;
+        let row = black_box(table.insert(&pool, &mut blob_store, &val).unwrap().1);
         group.bench_function(name, |b| {
-            b.iter_with_large_drop(|| {
-                black_box(
-                    black_box(&table)
-                        .get_row_ref(&NullBlobStore, black_box(ptr))
-                        .unwrap()
-                        .to_product_value(),
-                )
-            });
+            b.iter_with_large_drop(|| black_box(row.to_product_value()));
         });
     }
 
@@ -686,12 +698,26 @@ trait IndexedRow: Row + Sized {
     fn indexed_columns() -> ColList {
         0.into()
     }
-    fn make_table_def() -> TableDef {
-        TableDef::from_product(std::any::type_name::<Self>(), Self::row_type())
-            .with_column_index(Self::indexed_columns(), false)
+    fn table_name() -> String {
+        std::any::type_name::<Self>()
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .collect()
     }
+    /// Don't call this in a loop, it runs validation code.
     fn make_schema() -> TableSchema {
-        TableSchema::from_def(TableId(0), Self::make_table_def())
+        let name = RawIdentifier::new(Self::table_name());
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(name.clone(), Self::row_type_for_schema(), true)
+            .with_index(
+                RawIndexAlgorithm::BTree {
+                    columns: Self::indexed_columns(),
+                },
+                "accessor_name_doesnt_matter",
+            );
+        let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
+        def.table_schema(&*name, TableId::SENTINEL).unwrap()
     }
     fn throughput() -> Throughput {
         Throughput::Bytes(mem::size_of::<Self>() as u64)
@@ -728,15 +754,18 @@ impl IndexedRow for Box<str> {
     }
 }
 
-fn make_table_with_indexes<R: IndexedRow>() -> Table {
+fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
     let schema = R::make_schema();
     let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
-    let idx = BTreeIndex::new(IndexId(0), &R::row_type().into(), &cols, false, "idx").unwrap();
-    tbl.insert_index(&NullBlobStore, cols, idx);
+    let index_id = IndexId::SENTINEL;
+    let algo = BTreeAlgorithm { columns: cols }.into();
+    let idx = tbl.new_index(&algo, unique).unwrap();
+    // SAFETY: index was derived from the table.
+    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) };
 
-    tbl
+    (tbl, index_id)
 }
 
 #[cfg(not(debug_assertions))]
@@ -749,61 +778,64 @@ fn powers<const N: usize>(ps: [u64; N]) -> [u64; N] {
 }
 
 fn insert_num_same<R: IndexedRow>(
+    pool: &PagePool,
     tbl: &mut Table,
     mut make_row: impl FnMut() -> R,
     num_same: usize,
 ) -> Option<RowPointer> {
-    iter::repeat(make_row().to_product())
-        .take(num_same)
+    iter::repeat_n(make_row().to_product(), num_same)
         .zip(0u32..)
         .map(|(mut row, n)| {
             if let Some(slot) = row.elements.get_mut(1) {
                 *slot = n.into();
             }
-            tbl.insert(&mut NullBlobStore, &row).map(|(_, ptr)| ptr).ok()
+            tbl.insert(pool, &mut NullBlobStore, &row)
+                .map(|(_, row)| row.pointer())
+                .ok()
         })
         .last()
         .flatten()
 }
 
-fn clear_all_same<R: IndexedRow>(tbl: &mut Table, val_same: u64) {
-    let ptrs = tbl
-        .index_seek(
-            &NullBlobStore,
-            &R::indexed_columns(),
-            &R::column_value_from_u64(val_same),
-        )
-        .unwrap()
-        .map(|r| r.pointer())
-        .collect::<Vec<_>>();
+fn clear_all_same<R: IndexedRow>(tbl: &mut Table, index_id: IndexId, val_same: u64) {
+    let index = tbl.get_index_by_id(index_id).unwrap();
+    let key = R::column_value_from_u64(val_same);
+    let key = index.key_from_algebraic_value(&key);
+    let ptrs = index.seek_point(&key).collect::<Vec<_>>();
     for ptr in ptrs {
-        tbl.delete(&mut NullBlobStore, ptr).unwrap();
+        tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
     }
 }
 
-fn bench_id_for_index(name: &str, num_rows: u64, same_ratio: f64, num_same: usize) -> BenchmarkId {
+fn bench_id_for_index(name: &str, num_rows: u64, same_ratio: f64, num_same: usize, unique: bool) -> BenchmarkId {
     BenchmarkId::new(
         name,
-        format_args!("(rows = {num_rows}, sratio = {same_ratio}, snum = {num_same})"),
+        format_args!("(rows = {num_rows}, sratio = {same_ratio}, snum = {num_same}, unique = {unique})"),
     )
 }
 
 fn make_table_with_same_ratio<R: IndexedRow>(
+    pool: &PagePool,
     mut make_row: impl FnMut(u64) -> R,
     num_rows: u64,
     same_ratio: f64,
-) -> (Table, usize, u64) {
-    let mut tbl = make_table_with_indexes::<R>();
+    unique: bool,
+) -> (Table, IndexId, usize, u64) {
+    let (mut tbl, index_id) = make_table_with_index::<R>(unique);
 
-    let num_same = (num_rows as f64 * same_ratio) as usize;
-    let num_same = num_same.max(1);
+    let num_same = if unique {
+        1
+    } else {
+        let num_same = (num_rows as f64 * same_ratio) as usize;
+        num_same.max(1)
+    };
     let num_diff = num_rows / num_same as u64;
 
     for i in 0..num_diff {
-        insert_num_same(&mut tbl, || make_row(i), num_same);
+        insert_num_same(pool, &mut tbl, || make_row(i), num_same);
     }
 
-    (tbl, num_same, num_diff)
+    (tbl, index_id, num_same, num_diff)
 }
 
 fn index_insert(c: &mut Criterion) {
@@ -815,18 +847,23 @@ fn index_insert(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let (mut tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let pool = PagePool::new_for_test();
+        let (tbl, index_id, num_same, _) =
+            make_table_with_same_ratio::<R>(&pool, make_row_move, num_rows, same_ratio, false);
+        let mut ctx = (tbl, NullBlobStore, pool);
 
         group.bench_with_input(
-            bench_id_for_index(name, num_rows, same_ratio, num_same),
+            bench_id_for_index(name, num_rows, same_ratio, num_same, false),
             &num_rows,
             |b, &num_rows| {
-                let pre = |_, tbl: &mut Table| {
-                    clear_all_same::<R>(tbl, num_rows);
-                    insert_num_same(tbl, || make_row(num_rows), num_same - 1);
+                let pre = |_, (tbl, _, pool): &mut (Table, NullBlobStore, PagePool)| {
+                    clear_all_same::<R>(tbl, index_id, num_rows);
+                    insert_num_same(pool, tbl, || make_row(num_rows), num_same - 1);
                     make_row(num_rows).to_product()
                 };
-                iter_time_with(b, &mut tbl, pre, |row, _, tbl| tbl.insert(&mut NullBlobStore, &row));
+                iter_time_with(b, &mut ctx, pre, |row, _, (tbl, bs, pool)| {
+                    tbl.insert(pool, bs, &row).map(|r| r.1.pointer())
+                });
             },
         );
     }
@@ -863,23 +900,25 @@ fn index_seek(c: &mut Criterion) {
         name: &str,
         num_rows: u64,
         same_ratio: f64,
+        unique: bool,
     ) {
         let make_row_move = &mut make_row;
-        let (tbl, num_same, num_diff) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let (tbl, index_id, num_same, num_diff) =
+            make_table_with_same_ratio::<R>(&PagePool::new_for_test(), make_row_move, num_rows, same_ratio, unique);
 
         group.bench_with_input(
-            bench_id_for_index(name, num_rows, same_ratio, num_same),
+            bench_id_for_index(name, num_rows, same_ratio, num_same, unique),
             &num_diff,
             |b, &num_diff| {
                 let col_to_seek = black_box(R::column_value_from_u64(num_diff / 2));
-                let col_ids = black_box(R::indexed_columns());
+                let index = black_box(&tbl)
+                    .get_index_by_id_with_table(&NullBlobStore, index_id)
+                    .unwrap();
                 b.iter_custom(|num_iters| {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
                         let (row, none) = time(&mut elapsed, || {
-                            let mut iter = black_box(&tbl)
-                                .index_seek(&NullBlobStore, &col_ids, &col_to_seek)
-                                .unwrap();
+                            let mut iter = index.seek_point_via_algebraic_value(&col_to_seek);
                             (iter.next(), iter.next())
                         });
                         assert!(
@@ -900,25 +939,27 @@ fn index_seek(c: &mut Criterion) {
         group: Group<'_, '_>,
         name: &str,
         same_ratio: f64,
+        unique: bool,
     ) {
         group.throughput(Throughput::Elements(1));
         for num_rows in powers(TABLE_SIZE_POWERS) {
-            bench_index_seek(&mut make_row, group, name, num_rows, same_ratio);
+            bench_index_seek(&mut make_row, group, name, num_rows, same_ratio, unique);
         }
     }
 
     let mut group = c.benchmark_group("index_seek");
 
-    bench_many_table_sizes::<u64>(FixedLenRow::from_u64, &mut group, "u64", 0.0);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.00);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.01);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.05);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.10);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.25);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.50);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 1.00);
-    bench_many_table_sizes::<U32x64>(FixedLenRow::from_u64, &mut group, "U32x64", 0.0);
-    bench_many_table_sizes::<Box<str>>(|i| i.to_string().into(), &mut group, "String", 0.0);
+    bench_many_table_sizes::<u64>(FixedLenRow::from_u64, &mut group, "u64", 0.0, false);
+    bench_many_table_sizes::<u64>(FixedLenRow::from_u64, &mut group, "u64", 0.0, true);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.00, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.01, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.05, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.10, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.25, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.50, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 1.00, false);
+    bench_many_table_sizes::<U32x64>(FixedLenRow::from_u64, &mut group, "U32x64", 0.0, false);
+    bench_many_table_sizes::<Box<str>>(|i| i.to_string().into(), &mut group, "String", 0.0, false);
 }
 
 fn index_delete(c: &mut Criterion) {
@@ -930,17 +971,21 @@ fn index_delete(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let (mut tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let pool = PagePool::new_for_test();
+        let (mut tbl, index_id, num_same, _) =
+            make_table_with_same_ratio::<R>(&pool, make_row_move, num_rows, same_ratio, false);
 
         group.bench_with_input(
-            bench_id_for_index(name, num_rows, same_ratio, num_same),
+            bench_id_for_index(name, num_rows, same_ratio, num_same, false),
             &num_rows,
             |b, &num_rows| {
                 let pre = |_, tbl: &mut Table| {
-                    clear_all_same::<R>(tbl, num_rows);
-                    insert_num_same(tbl, || make_row(num_rows), num_same).unwrap()
+                    clear_all_same::<R>(tbl, index_id, num_rows);
+                    insert_num_same(&pool, tbl, || make_row(num_rows), num_same).unwrap()
                 };
-                iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| tbl.delete(&mut NullBlobStore, ptr));
+                iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| {
+                    tbl.delete(&mut NullBlobStore, ptr, |_| ())
+                });
             },
         );
     }

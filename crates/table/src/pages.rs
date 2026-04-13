@@ -1,13 +1,18 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use super::blob_store::BlobStore;
-use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
+use super::blob_store::{BlobHash, BlobStore};
+use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer};
 use super::page::Page;
+use super::page_pool::PagePool;
+use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use spacetimedb_sats::layout::Size;
+use spacetimedb_sats::memory_usage::MemoryUsage;
+use std::ops::DerefMut;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("Attempt to allocate more than {} pages.", PageIndex::MAX.idx())]
     TooManyPages,
@@ -30,12 +35,19 @@ impl IndexMut<PageIndex> for Pages {
 }
 
 /// A manager of [`Page`]s.
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct Pages {
     /// The collection of pages under management.
     pages: Vec<Box<Page>>,
     /// The set of pages that aren't yet full.
     non_full_pages: Vec<PageIndex>,
+}
+
+impl MemoryUsage for Pages {
+    fn heap_usage(&self) -> usize {
+        let Self { pages, non_full_pages } = self;
+        pages.heap_usage() + non_full_pages.heap_usage()
+    }
 }
 
 impl Pages {
@@ -53,13 +65,12 @@ impl Pages {
     ///
     /// Used in benchmarks. Internal operators will prefer directly indexing into `self.pages`,
     /// as that allows split borrows.
-    #[doc(hidden)] // Used in benchmarks.
     pub fn get_page_mut(&mut self, page: PageIndex) -> &mut Page {
         &mut self.pages[page.idx()]
     }
 
     /// Make all pages within `self` clear,
-    /// deallocating all rows.
+    /// deleting all rows.
     #[doc(hidden)] // Used in benchmarks.
     pub fn clear(&mut self) {
         // Clear every page.
@@ -84,17 +95,18 @@ impl Pages {
     ///
     /// The new page is initially empty, but is not added to the non-full set.
     /// Callers should call [`Pages::maybe_mark_page_non_full`] after operating on the new page.
-    fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, Error> {
+    fn allocate_new_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
         let new_idx = self.can_allocate_new_page()?;
 
-        self.pages.push(Page::new(fixed_row_size));
+        let page = pool.take_with_fixed_row_size(fixed_row_size);
+        self.pages.push(page);
 
         Ok(new_idx)
     }
 
     /// Reserve a new, initially empty page.
-    pub fn reserve_empty_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, Error> {
-        let idx = self.allocate_new_page(fixed_row_size)?;
+    pub fn reserve_empty_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
+        let idx = self.allocate_new_page(pool, fixed_row_size)?;
         self.mark_page_non_full(idx);
         Ok(idx)
     }
@@ -116,11 +128,12 @@ impl Pages {
     /// `page.has_space_for_row(fixed_row_size, num_var_len_granules)`.
     pub fn with_page_to_insert_row<Res>(
         &mut self,
+        pool: &PagePool,
         fixed_row_size: Size,
         num_var_len_granules: usize,
         f: impl FnOnce(&mut Page) -> Res,
     ) -> Result<(PageIndex, Res), Error> {
-        let page_index = self.find_page_with_space_for_row(fixed_row_size, num_var_len_granules)?;
+        let page_index = self.find_page_with_space_for_row(pool, fixed_row_size, num_var_len_granules)?;
         let res = f(&mut self[page_index]);
         self.maybe_mark_page_non_full(page_index, fixed_row_size);
         Ok((page_index, res))
@@ -134,6 +147,7 @@ impl Pages {
     /// to restore the page to the non-full set.
     fn find_page_with_space_for_row(
         &mut self,
+        pool: &PagePool,
         fixed_row_size: Size,
         num_var_len_granules: usize,
     ) -> Result<PageIndex, Error> {
@@ -148,7 +162,7 @@ impl Pages {
             return Ok(page_idx);
         }
 
-        self.allocate_new_page(fixed_row_size)
+        self.allocate_new_page(pool, fixed_row_size)
     }
 
     /// Superseded by `write_av_to_pages`, but exposed for benchmarking
@@ -162,11 +176,12 @@ impl Pages {
     /// - `var_len_visitor` must be suitable for visiting var-len refs in `fixed_row`.
     /// - `fixed_row.len()` matches the row type size exactly.
     /// - `fixed_row.len()` is consistent
-    ///    with what has been passed to the manager in all other ops
-    ///    and must be consistent with the `var_len_visitor` the manager was made with.
+    ///   with what has been passed to the manager in all other ops
+    ///   and must be consistent with the `var_len_visitor` the manager was made with.
     // TODO(bikeshedding): rename to make purpose as bench interface clear?
     pub unsafe fn insert_row(
         &mut self,
+        pool: &PagePool,
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
         fixed_len: &Bytes,
@@ -176,6 +191,7 @@ impl Pages {
         debug_assert!(fixed_len.len() == fixed_row_size.len());
 
         match self.with_page_to_insert_row(
+            pool,
             fixed_row_size,
             Page::total_granules_required_for_objects(var_len),
             |page| {
@@ -215,7 +231,7 @@ impl Pages {
         fixed_row_size: Size,
         row_ptr: RowPointer,
         blob_store: &mut dyn BlobStore,
-    ) {
+    ) -> BlobNumBytes {
         let page = &mut self[row_ptr.page_index()];
         let full_before = page.is_full(fixed_row_size);
         // SAFETY:
@@ -224,15 +240,15 @@ impl Pages {
         //
         // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
         //   The size is also conistent with `var_len_visitor`.
-        unsafe {
-            page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store);
-        }
+        let blob_store_deleted_bytes =
+            unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store) };
 
         // If the page was previously full, mark it as non-full now,
         // since we just opened a space in it.
         if full_before {
             self.mark_page_non_full(row_ptr.page_index());
         }
+        blob_store_deleted_bytes
     }
 
     /// Materialize a view of rows in `self` for which the  `filter` returns `true`.
@@ -248,7 +264,7 @@ impl Pages {
         &self,
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
-        blob_store: &mut dyn BlobStore,
+        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
         mut filter: impl FnMut(&Page, PageOffset) -> bool,
     ) -> Self {
         // Build a new container to hold the materialized view.
@@ -295,7 +311,7 @@ impl Pages {
                         &mut to_page,
                         fixed_row_size,
                         var_len_visitor,
-                        blob_store,
+                        blob_policy.as_mut(),
                         &mut filter,
                     )
                 };
@@ -326,6 +342,31 @@ impl Pages {
 
         partial_copied_pages
     }
+
+    /// Set this [`Pages`]' contents to be the `pages`.
+    ///
+    /// Used when restoring from a snapshot.
+    ///
+    /// Each page in the `pages` must be consistent with the schema for this [`Pages`],
+    /// i.e. the schema for the [`crate::table::Table`] which contains `self`.
+    ///
+    /// Should only ever be called when `self.is_empty()`.
+    ///
+    /// Also populates `self.non_full_pages`.
+    pub fn set_contents(&mut self, pages: Vec<Box<Page>>, fixed_row_size: Size) {
+        debug_assert!(self.is_empty());
+        self.non_full_pages = pages
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, page)| (!page.is_full(fixed_row_size)).then_some(PageIndex(idx as _)))
+            .collect();
+        self.pages = pages;
+    }
+
+    /// Consumes the page manager, returning all the pages it held.
+    pub fn into_page_iter(self) -> impl Iterator<Item = Box<Page>> {
+        self.pages.into_iter()
+    }
 }
 
 impl Deref for Pages {
@@ -333,5 +374,11 @@ impl Deref for Pages {
 
     fn deref(&self) -> &Self::Target {
         &self.pages
+    }
+}
+
+impl DerefMut for Pages {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pages
     }
 }

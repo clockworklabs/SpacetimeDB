@@ -1,0 +1,55 @@
+namespace SpacetimeDB.BSATN;
+
+public interface ITypeRegistrar
+{
+    AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> type);
+}
+
+[SpacetimeDB.Type]
+public partial struct AggregateElement(string name, AlgebraicType algebraicType)
+{
+    public string? Name = name;
+
+    public AlgebraicType AlgebraicType = algebraicType;
+}
+
+[SpacetimeDB.Type]
+public partial record AlgebraicType
+    : SpacetimeDB.TaggedEnum<(
+        int Ref,
+        AggregateElement[] Sum,
+        AggregateElement[] Product,
+        AlgebraicType Array,
+        Unit String,
+        Unit Bool,
+        Unit I8,
+        Unit U8,
+        Unit I16,
+        Unit U16,
+        Unit I32,
+        Unit U32,
+        Unit I64,
+        Unit U64,
+        Unit I128,
+        Unit U128,
+        Unit I256,
+        Unit U256,
+        Unit F32,
+        Unit F64
+    )>
+{
+    public static readonly AlgebraicType Unit = new Product([]);
+    public const string QueryBuilderProductTypeTag = "__query__";
+
+    // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as an Option<T>.
+    internal static AlgebraicType MakeOption(AlgebraicType someType) =>
+        new Sum([new("some", someType), new("none", Unit)]);
+
+    // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as a Result<T, E>.
+    internal static AlgebraicType MakeResult(AlgebraicType okType, AlgebraicType errType) =>
+        new Sum([new("ok", okType), new("err", errType)]);
+
+    // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as Query<T>.
+    public static AlgebraicType MakeQueryBuilderProductType(Ref rowProductTypeRef) =>
+        new Product([new(QueryBuilderProductTypeTag, rowProductTypeRef)]);
+}

@@ -1,0 +1,37 @@
+# [certificate-authority]
+# jwt-priv-key-path = "~/.config/spacetime/id_ecdsa"
+# jwt-pub-key-path = "~/.config/spacetime/id_ecdsa.pub"
+
+[logs]
+# The default level filter for logging
+# level = "ERROR"
+
+# directives for logging, see link for syntax:
+# https://docs.rs/tracing-subscriber/latest/tracing_subscriber/struct.EnvFilter.html#directives
+directives = [
+    "spacetimedb=debug",
+    "spacetimedb_client_api=debug",
+    "spacetimedb_lib=debug",
+    "spacetimedb_standalone=debug",
+    "spacetimedb_commitlog=info",
+    "spacetimedb_durability=info",
+    "axum::rejection=trace",
+]
+
+[v8-heap-policy]
+# Check the V8 heap after this many requests. Set to 0 to disable.
+# heap-check-request-interval = 65536
+
+# Also check the V8 heap after this much wall-clock time. Set to "0s" to disable.
+# heap-check-time-interval = "30s"
+
+# Trigger a GC when the heap reaches this fraction of the limit.
+# heap-gc-trigger-fraction = 0.67
+
+# Retire the worker if the heap is still this full after GC.
+# heap-retire-fraction = 0.75
+
+# Apply a V8 heap limit in MiB. Set to 0 to use V8's default limit.
+# heap-limit-mb = 0
+
+# vim: set nowritebackup: << otherwise triggers cargo-watch

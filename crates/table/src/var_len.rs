@@ -32,18 +32,19 @@
 
 use super::{
     blob_store::BlobHash,
-    indexes::{Byte, Bytes, PageOffset, Size},
-    util::slice_assume_init_ref,
+    indexes::{Byte, Bytes, PageOffset},
 };
 use crate::{static_assert_align, static_assert_size};
 use core::iter;
 use core::marker::PhantomData;
-use core::mem::{self, MaybeUninit};
+use core::mem::{self};
+use spacetimedb_sats::layout::{Size, VAR_LEN_REF_LAYOUT};
 
 /// Reference to var-len object within a page.
 // TODO: make this larger and do short-string optimization?
 // - Or store a few elts inline and then a `VarLenRef`?
-// - Or first store `VarLenRef` that records num inline elements (remaining inline are uninit)
+// - Or first store `VarLenRef` that records num inline elements
+//   (remaining inline "uninit," actually valid-unconstrained)
 //  (bitfield; only need 10 bits for `len_in_bytes`)?
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(C)]
@@ -62,6 +63,9 @@ pub struct VarLenRef {
 // `size = 4` and `align = 2` of `VarLenRef`.
 static_assert_size!(VarLenRef, 4);
 static_assert_align!(VarLenRef, 2);
+
+const _: () = assert!(VAR_LEN_REF_LAYOUT.size as usize == mem::size_of::<VarLenRef>());
+const _: () = assert!(VAR_LEN_REF_LAYOUT.align as usize == mem::align_of::<VarLenRef>());
 
 impl VarLenRef {
     /// Does this refer to a large blob object
@@ -167,8 +171,7 @@ impl VarLenGranuleHeader {
         let capped_len = (len as u16) & Self::LEN_BITMASK;
         debug_assert_eq!(
             capped_len, len as u16,
-            "Len {} overflows the length of a `VarLenGranule`",
-            len
+            "Len {len} overflows the length of a `VarLenGranule`",
         );
 
         // Insert the truncated `len`.
@@ -196,7 +199,7 @@ impl VarLenGranuleHeader {
         // Ensure that the `next` is aligned,
         // and therefore doesn't overwrite any of the `len`.
         let aligned_next = next & Self::NEXT_BITMASK;
-        debug_assert_eq!(aligned_next, next, "Next {:x} is unaligned", next);
+        debug_assert_eq!(aligned_next, next, "Next {next:x} is unaligned");
 
         // Insert the aligned `next`.
         new.0 |= aligned_next;
@@ -284,11 +287,7 @@ impl VarLenGranule {
     /// Returns the data from the var-len object in this granule.
     pub fn data(&self) -> &[u8] {
         let len = self.header.len() as usize;
-        let slice = &self.data[0..len];
-
-        // SAFETY: Because we never store `uninit` padding bytes in a var-len object,
-        //         the paths that construct a `VarLenGranule` always initialize the bytes up to the length.
-        unsafe { slice_assume_init_ref(slice) }
+        &self.data[0..len]
     }
 
     /// Assumes that the granule stores a [`BlobHash`] and returns it.
@@ -320,17 +319,22 @@ const _VLG_CAN_STORE_BLOB_HASH: () = assert!(VarLenGranule::DATA_SIZE >= BlobHas
 ///   Various consumers in `Page` and friends depend on this and the previous requirement.
 pub unsafe trait VarLenMembers {
     /// The iterator type returned by [`VarLenMembers::visit_var_len`].
-    type Iter<'this, 'row>: Iterator<Item = &'row MaybeUninit<VarLenRef>>
+    type Iter<'this, 'row>: Iterator<Item = &'row VarLenRef>
     where
         Self: 'this;
 
     /// The iterator type returned by [`VarLenMembers::visit_var_len_mut`].
-    type IterMut<'this, 'row>: Iterator<Item = &'row mut MaybeUninit<VarLenRef>>
+    type IterMut<'this, 'row>: Iterator<Item = &'row mut VarLenRef>
     where
         Self: 'this;
 
     /// Treats `row` as storage for a row of the particular type handled by `self`,
-    /// and iterates over the (possibly uninitialized) `VarLenRef`s within it.
+    /// and iterates over the (possibly stale) `VarLenRef`s within it.
+    ///
+    /// Visited `VarLenRef`s are valid-unconstrained
+    /// and will always be valid from Rust/LLVM's perspective,
+    /// i.e. will never be uninit,
+    /// but will not necessarily point to properly-allocated `VarLenGranule`s.
     ///
     /// Callers are responsible for maintaining whether var-len members have been initialized.
     ///
@@ -357,7 +361,12 @@ pub unsafe trait VarLenMembers {
     unsafe fn visit_var_len_mut<'this, 'row>(&'this self, row: &'row mut Bytes) -> Self::IterMut<'this, 'row>;
 
     /// Treats `row` as storage for a row of the particular type handled by `self`,
-    /// and iterates over the (possibly uninitialized) `VarLenRef`s within it.
+    /// and iterates over the (possibly stale) `VarLenRef`s within it.
+    ///
+    /// Visited `VarLenRef`s are valid-unconstrained
+    /// and will always be valid from Rust/LLVM's perspective,
+    /// i.e. will never be uninit,
+    /// but will not necessarily point to properly-allocated `VarLenGranule`s.
     ///
     /// Callers are responsible for maintaining whether var-len members have been initialized.
     ///
@@ -382,25 +391,6 @@ pub unsafe trait VarLenMembers {
     ///   then later read from it using a hypothetical optimized JITted visitor,
     ///   provided the JITted visitor visited the same set of offsets.
     unsafe fn visit_var_len<'this, 'row>(&'this self, row: &'row Bytes) -> Self::Iter<'this, 'row>;
-}
-
-/// Treat `init_row` as storage for a row of the particular type handled by `visitor`,
-/// and iterate over the assumed-to-be initialized `VarLenRef`s within it.
-///
-/// # Safety
-///
-/// - Callers must satisfy the contract of [`VarLenMembers::visit_var_len`]
-///   with respect to `visitor` and `init_row`.
-///
-/// - `init_row` must be initialized and each `VarLenRef`
-///   in `visitor.visit_var_len(init_row)` must also be initialized.
-pub unsafe fn visit_var_len_assume_init<'row>(
-    visitor: &'row impl VarLenMembers,
-    init_row: &'row Bytes,
-) -> impl 'row + Iterator<Item = VarLenRef> {
-    // SAFETY: `init_row` is valid per safety requirements.
-    // SAFETY: `vlr` is initialized in `init_row` per safety requirements.
-    unsafe { visitor.visit_var_len(init_row) }.map(move |vlr| unsafe { vlr.assume_init_read() })
 }
 
 /// Slice of offsets to var-len members, in units of 2-byte words.
@@ -437,12 +427,16 @@ impl<'a> AlignedVarLenOffsets<'a> {
 
 // SAFETY: `visit_var_len` and `visit_var_len_mut` are only different
 // in that they yield `&` vs. `&mut` and are otherwise identical.
-unsafe impl<'a> VarLenMembers for AlignedVarLenOffsets<'a> {
-    type Iter<'this, 'row> = AlignedVarLenOffsetsIter<'this, 'row>
-        where Self: 'this;
+unsafe impl VarLenMembers for AlignedVarLenOffsets<'_> {
+    type Iter<'this, 'row>
+        = AlignedVarLenOffsetsIter<'this, 'row>
+    where
+        Self: 'this;
 
-    type IterMut<'this, 'row> = AlignedVarLenOffsetsIterMut<'this, 'row>
-        where Self: 'this;
+    type IterMut<'this, 'row>
+        = AlignedVarLenOffsetsIterMut<'this, 'row>
+    where
+        Self: 'this;
 
     /// # Safety
     ///
@@ -496,8 +490,8 @@ pub struct AlignedVarLenOffsetsIter<'offsets, 'row> {
     next_offset_idx: usize,
 }
 
-impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIter<'offsets, 'row> {
-    type Item = &'row MaybeUninit<VarLenRef>;
+impl<'row> Iterator for AlignedVarLenOffsetsIter<'_, 'row> {
+    type Item = &'row VarLenRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_offset_idx >= self.offsets.0.len() {
@@ -512,12 +506,14 @@ impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIter<'offsets, 'row> {
             //         mean that `row` is always 2-byte aligned, so this will be too,
             //         and that `row` is large enough for all the `offsets`,
             //         so this `add` is always in-bounds.
-            let elt_ptr: *const MaybeUninit<VarLenRef> =
+            let elt_ptr: *const VarLenRef =
                 unsafe { self.row.add(curr_offset_idx * mem::align_of::<VarLenRef>()).cast() };
 
             // SAFETY: `elt_ptr` is aligned and inbounds.
-            //         `MaybeUninit<VarLenRef>` has no value restrictions,
-            //         so it's safe to create an `&mut` to `uninit` or garbage.
+            //         Any pattern of init bytes is valid at `VarLenRef`,
+            //         and the `row_data` in a `Page` is never uninit,
+            //         so it's safe to create an `&mut` to any value in the page,
+            //         though the resulting `VarLenRef` may be garbage.
             Some(unsafe { &*elt_ptr })
         }
     }
@@ -530,8 +526,8 @@ pub struct AlignedVarLenOffsetsIterMut<'offsets, 'row> {
     next_offset_idx: usize,
 }
 
-impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIterMut<'offsets, 'row> {
-    type Item = &'row mut MaybeUninit<VarLenRef>;
+impl<'row> Iterator for AlignedVarLenOffsetsIterMut<'_, 'row> {
+    type Item = &'row mut VarLenRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_offset_idx >= self.offsets.0.len() {
@@ -546,12 +542,14 @@ impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIterMut<'offsets, 'row> {
             //         mean that `row` is always 2-byte aligned, so this will be too,
             //         and that `row` is large enough for all the `offsets`,
             //         so this `add` is always in-bounds.
-            let elt_ptr: *mut MaybeUninit<VarLenRef> =
+            let elt_ptr: *mut VarLenRef =
                 unsafe { self.row.add(curr_offset_idx * mem::align_of::<VarLenRef>()).cast() };
 
             // SAFETY: `elt_ptr` is aligned and inbounds.
-            //         `MaybeUninit<VarLenRef>` has no value restrictions,
-            //         so it's safe to create an `&mut` to `uninit` or garbage.
+            //         Any pattern of init bytes is valid at `VarLenRef`,
+            //         and the `row_data` in a `Page` is never uninit,
+            //         so it's safe to create an `&mut` to any value in the page,
+            //         though the resulting `VarLenRef` may be garbage.
             Some(unsafe { &mut *elt_ptr })
         }
     }
@@ -564,8 +562,8 @@ pub struct NullVarLenVisitor;
 
 // SAFETY: Both `visit_var_len` and `visit_var_len_mut` visit the empty set.
 unsafe impl VarLenMembers for NullVarLenVisitor {
-    type Iter<'this, 'row> = iter::Empty<&'row MaybeUninit<VarLenRef>>;
-    type IterMut<'this, 'row> = iter::Empty<&'row mut MaybeUninit<VarLenRef>>;
+    type Iter<'this, 'row> = iter::Empty<&'row VarLenRef>;
+    type IterMut<'this, 'row> = iter::Empty<&'row mut VarLenRef>;
 
     unsafe fn visit_var_len<'this, 'row>(&'this self, _row: &'row Bytes) -> Self::Iter<'this, 'row> {
         iter::empty()

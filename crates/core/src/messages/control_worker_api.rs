@@ -19,7 +19,7 @@ pub enum ControlBoundMessage {
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScheduleState {
-    pub database_instances: Vec<DatabaseInstance>,
+    pub replicas: Vec<Replica>,
     pub databases: Vec<Database>,
     pub nodes: Vec<Node>,
 }
@@ -31,19 +31,19 @@ pub enum ScheduleUpdate {
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum InsertOperation {
-    DatabaseInstance(DatabaseInstance),
+    Replica(Replica),
     Database(Database),
     Node(Node),
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum UpdateOperation {
-    DatabaseInstance(DatabaseInstance),
+    Replica(Replica),
     Database(Database),
     Node(Node),
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum DeleteOperation {
-    DatabaseInstanceId(u64),
+    ReplicaId(u64),
     DatabaseId(u64),
     NodeId(u64),
 }
@@ -53,7 +53,7 @@ pub struct EnergyBalanceUpdate {
     pub identity: Identity,
     pub energy_balance: i128,
 }
-// A message to syncronize energy balances from control node to worker node.
+// A message to synchronize energy balances from control node to worker node.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnergyBalanceState {
     pub balances: Vec<EnergyBalance>,
