@@ -1,181 +1,251 @@
 namespace SpacetimeDB.Internal;
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
-using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
 
-public static partial class Module
+partial class RawModuleDefV10
 {
-    [SpacetimeDB.Type]
-    public enum IndexType : byte
+    private readonly Typespace typespace = new();
+    private readonly List<RawTypeDefV10> typeDefs = [];
+    private readonly List<RawTableDefV10> tableDefs = [];
+    private readonly List<RawScheduleDefV10> scheduleDefs = [];
+    private readonly List<RawReducerDefV10> reducerDefs = [];
+    private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
+    private readonly List<RawProcedureDefV10> procedureDefs = [];
+    private readonly List<RawViewDefV10> viewDefs = [];
+    private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
+    private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
+        new(StringComparer.Ordinal);
+
+    private SpacetimeDB.CaseConversionPolicy? caseConversionPolicy = null;
+    private readonly List<ExplicitNameEntry> explicitNames = [];
+
+    // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
+    // Fix it up to a different mangling scheme if it causes problems.
+    private static string GetFriendlyName(Type type) =>
+        type.IsGenericType
+            ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
+            : type.Name;
+
+    private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
+        new(new List<string>(), GetFriendlyName(type));
+
+    internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
     {
-        BTree,
-        Hash,
+        var typeList = typespace.Types;
+        var typeRef = new AlgebraicType.Ref(typeList.Count);
+        // Put a dummy self-reference just so that we get stable index even if `makeType` recursively adds more types.
+        typeList.Add(typeRef);
+        typeList[typeRef.Ref_] = makeType(typeRef);
+        typeDefs.Add(
+            new RawTypeDefV10(
+                SourceName: MakeScopedTypeName(typeof(T)),
+                Ty: (uint)typeRef.Ref_,
+                CustomOrdering: true
+            )
+        );
+        return typeRef;
     }
 
-    [SpacetimeDB.Type]
-    public partial struct IndexDef(string name, IndexType type, bool isUnique, ushort[] columnIds)
+    internal void RegisterReducer(RawReducerDefV10 reducer, Lifecycle? lifecycle)
     {
-        string IndexName = name;
-        bool IsUnique = isUnique;
-        IndexType Type = type;
-        ushort[] ColumnIds = columnIds;
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct ColumnDef(string name, AlgebraicType type)
-    {
-        internal string ColName = name;
-        AlgebraicType ColType = type;
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct ConstraintDef(string name, ColumnAttrs kind, ushort[] columnIds)
-    {
-        string ConstraintName = name;
-
-        // bitflags should be serialized as bytes rather than sum types
-        byte Kind = (byte)kind;
-        ushort[] ColumnIds = columnIds;
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct SequenceDef(
-        string sequenceName,
-        ushort colPos,
-        Int128? increment = null,
-        Int128? start = null,
-        Int128? min_value = null,
-        Int128? max_value = null,
-        Int128? allocated = null
-    )
-    {
-        string SequenceName = sequenceName;
-        ushort ColPos = colPos;
-        Int128 increment = increment ?? 1;
-        Int128? start = start;
-        Int128? min_value = min_value;
-        Int128? max_value = max_value;
-        Int128 allocated = allocated ?? 4_096;
-    }
-
-    // Not part of the database schema, just used by the codegen to group column definitions with their attributes.
-    public struct ColumnDefWithAttrs(ColumnDef columnDef, ColumnAttrs attrs)
-    {
-        public ColumnDef ColumnDef = columnDef;
-        public ColumnAttrs Attrs = attrs;
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct TableDef(
-        string tableName,
-        ColumnDefWithAttrs[] columns,
-        bool isPublic,
-        string? scheduledReducer
-    )
-    {
-        string TableName = tableName;
-        ColumnDef[] Columns = columns.Select(col => col.ColumnDef).ToArray();
-        IndexDef[] Indices = [];
-        ConstraintDef[] Constraints = columns
-            // Important: the position must be stored here, before filtering.
-            .Select((col, pos) => (col, pos))
-            .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
-            .Select(pair => new ConstraintDef(
-                $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
-                pair.col.Attrs,
-                [(ushort)pair.pos]
-            ))
-            .ToArray();
-        SequenceDef[] Sequences = [];
-
-        // "system" | "user"
-        string TableType = "user";
-
-        // "public" | "private"
-        string TableAccess = isPublic ? "public" : "private";
-
-        string? ScheduledReducer = scheduledReducer;
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct TableDesc(TableDef schema, AlgebraicType.Ref typeRef)
-    {
-        TableDef Schema = schema;
-        int TypeRef = typeRef.Ref_;
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct ReducerDef(string name, params AggregateElement[] args)
-    {
-        string Name = name;
-        AggregateElement[] Args = args;
-    }
-
-    [SpacetimeDB.Type]
-    internal partial struct TypeAlias(string name, AlgebraicType.Ref typeRef)
-    {
-        string Name = name;
-        int TypeRef = typeRef.Ref_;
-    }
-
-    [SpacetimeDB.Type]
-    internal partial record MiscModuleExport
-        : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
-
-    [SpacetimeDB.Type]
-    public partial struct RawModuleDefV8()
-    {
-        List<AlgebraicType> Types = [];
-        List<TableDesc> Tables = [];
-        List<ReducerDef> Reducers = [];
-        List<MiscModuleExport> MiscExports = [];
-
-        // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
-        // Fix it up to a different mangling scheme if it causes problems.
-        private static string GetFriendlyName(Type type) =>
-            type.IsGenericType
-                ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
-                : type.Name;
-
-        private void RegisterTypeName<T>(AlgebraicType.Ref typeRef)
+        reducerDefs.Add(reducer);
+        if (lifecycle is { } lifecycleSpec)
         {
-            // If it's a table, it doesn't need an alias as name will be registered automatically.
-            if (typeof(T).IsDefined(typeof(TableAttribute), false))
-            {
-                return;
-            }
-            MiscExports.Add(
-                new MiscModuleExport.TypeAlias(new(GetFriendlyName(typeof(T)), typeRef))
+            lifecycleReducerDefs.Add(
+                new RawLifeCycleReducerDefV10(lifecycleSpec, reducer.SourceName)
+            );
+            reducer.Visibility = FunctionVisibility.Private;
+        }
+    }
+
+    internal void RegisterProcedure(RawProcedureDefV10 procedure) => procedureDefs.Add(procedure);
+
+    internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
+    {
+        tableDefs.Add(table);
+        if (schedule is { } scheduleDef)
+        {
+            scheduleDefs.Add(scheduleDef);
+        }
+    }
+
+    internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
+
+    internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
+        rowLevelSecurityDefs.Add(rls);
+
+    internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
+    {
+        if (!defaultValuesByTable.TryGetValue(table, out var defaults))
+        {
+            defaults = [];
+            defaultValuesByTable.Add(table, defaults);
+        }
+        defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
+    }
+
+    internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
+        caseConversionPolicy = policy;
+
+    internal void RegisterExplicitTableName(string sourceName, string canonicalName) =>
+        explicitNames.Add(new ExplicitNameEntry.Table(new NameMapping(sourceName, canonicalName)));
+
+    internal void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
+        explicitNames.Add(
+            new ExplicitNameEntry.Function(new NameMapping(sourceName, canonicalName))
+        );
+
+    internal void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
+        explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
+
+    internal RawModuleDefV10 BuildModuleDefinition()
+    {
+        var builtTables = new List<RawTableDefV10>(tableDefs.Count);
+        foreach (var table in tableDefs)
+        {
+            defaultValuesByTable.TryGetValue(table.SourceName, out var defaults);
+            builtTables.Add(
+                new RawTableDefV10(
+                    SourceName: table.SourceName,
+                    ProductTypeRef: table.ProductTypeRef,
+                    PrimaryKey: table.PrimaryKey,
+                    Indexes: table.Indexes,
+                    Constraints: table.Constraints,
+                    Sequences: table.Sequences,
+                    TableType: table.TableType,
+                    TableAccess: table.TableAccess,
+                    DefaultValues: defaults is null
+                        ? []
+                        : new List<RawColumnDefaultValueV10>(defaults),
+                    IsEvent: table.IsEvent
+                )
             );
         }
 
-        internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
+        var internalFunctions = lifecycleReducerDefs
+            .Select(l => l.FunctionName)
+            .Concat(scheduleDefs.Select(s => s.FunctionName))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var reducer in reducerDefs)
         {
-            var typeRef = new AlgebraicType.Ref(Types.Count);
-            // Put a dummy self-reference just so that we get stable index even if `makeType` recursively adds more types.
-            Types.Add(typeRef);
-            // Now we can safely call `makeType` and assign the result to the reserved slot.
-            Types[typeRef.Ref_] = makeType(typeRef);
-            RegisterTypeName<T>(typeRef);
-            return typeRef;
+            if (internalFunctions.Contains(reducer.SourceName))
+            {
+                reducer.Visibility = FunctionVisibility.Private;
+            }
         }
 
-        internal void RegisterReducer(ReducerDef reducer) => Reducers.Add(reducer);
+        foreach (var procedure in procedureDefs)
+        {
+            if (internalFunctions.Contains(procedure.SourceName))
+            {
+                procedure.Visibility = FunctionVisibility.Private;
+            }
+        }
 
-        internal void RegisterTable(TableDesc table) => Tables.Add(table);
+        var sections = new List<RawModuleDefV10Section>
+        {
+            new RawModuleDefV10Section.Typespace(typespace),
+        };
+
+        if (typeDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Types(typeDefs));
+        }
+        if (builtTables.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Tables(builtTables));
+        }
+        if (reducerDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Reducers(reducerDefs));
+        }
+        if (procedureDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Procedures(procedureDefs));
+        }
+        if (viewDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Views(viewDefs));
+        }
+        if (scheduleDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Schedules(scheduleDefs));
+        }
+        if (lifecycleReducerDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.LifeCycleReducers(lifecycleReducerDefs));
+        }
+        // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
+        if (caseConversionPolicy is { } policy)
+        {
+            sections.Add(new RawModuleDefV10Section.CaseConversionPolicy(policy));
+        }
+        if (explicitNames.Count > 0)
+        {
+            sections.Add(
+                new RawModuleDefV10Section.ExplicitNames(
+                    new ExplicitNames(new List<ExplicitNameEntry>(explicitNames))
+                )
+            );
+        }
+        if (rowLevelSecurityDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.RowLevelSecurity(rowLevelSecurityDefs));
+        }
+
+        Sections = sections;
+        return this;
     }
+}
 
-    [SpacetimeDB.Type]
-    internal partial record RawModuleDef
-        : SpacetimeDB.TaggedEnum<(RawModuleDefV8 V8BackCompat, Unit _Reserved)>;
+public static class Module
+{
+    private static readonly RawModuleDefV10 moduleDef = new();
 
-    private static readonly RawModuleDefV8 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
+    private static readonly List<IProcedure> procedures = [];
+    private static readonly List<IView> viewDispatchers = [];
+    private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
 
-    struct TypeRegistrar() : ITypeRegistrar
+    private static Func<
+        Identity,
+        ConnectionId?,
+        Random,
+        Timestamp,
+        IReducerContext
+    >? newReducerContext = null;
+    private static Func<Identity, IViewContext>? newViewContext = null;
+    private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
+
+    private static Func<
+        Identity,
+        ConnectionId?,
+        Random,
+        Timestamp,
+        IProcedureContext
+    >? newProcedureContext = null;
+
+    public static void SetReducerContextConstructor(
+        Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
+    ) => newReducerContext = ctor;
+
+    public static void SetProcedureContextConstructor(
+        Func<Identity, ConnectionId?, Random, Timestamp, IProcedureContext> ctor
+    ) => newProcedureContext = ctor;
+
+    public static void SetViewContextConstructor(Func<Identity, IViewContext> ctor) =>
+        newViewContext = ctor;
+
+    public static void SetAnonymousViewContextConstructor(Func<IAnonymousViewContext> ctor) =>
+        newAnonymousViewContext = ctor;
+
+    public readonly struct TypeRegistrar() : ITypeRegistrar
     {
         private readonly Dictionary<Type, AlgebraicType.Ref> types = [];
 
@@ -211,111 +281,357 @@ public static partial class Module
     {
         var reducer = new R();
         reducers.Add(reducer);
-        moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar));
+        moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar), reducer.Lifecycle);
     }
 
-    public static void RegisterTable<T>()
-        where T : ITable<T>, new()
+    public static void RegisterProcedure<P>()
+        where P : IProcedure, new()
     {
-        moduleDef.RegisterTable(T.MakeTableDesc(typeRegistrar));
+        var procedure = new P();
+        procedures.Add(procedure);
+        moduleDef.RegisterProcedure(procedure.MakeProcedureDef(typeRegistrar));
     }
 
-    private static byte[] Consume(this BytesSource source)
+    public static void RegisterTable<T, View>()
+        where T : IStructuralReadWrite, new()
+        where View : ITableView<View, T>, new()
+    {
+        moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar), View.MakeScheduleDesc());
+    }
+
+    public static void RegisterView<TDispatcher>()
+        where TDispatcher : IView, new()
+    {
+        var dispatcher = new TDispatcher();
+        var def = dispatcher.MakeViewDef(typeRegistrar);
+        viewDispatchers.Add(dispatcher);
+        moduleDef.RegisterView(def);
+    }
+
+    public static void RegisterAnonymousView<TDispatcher>()
+        where TDispatcher : IAnonymousView, new()
+    {
+        var dispatcher = new TDispatcher();
+        var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
+        anonymousViewDispatchers.Add(dispatcher);
+        moduleDef.RegisterView(def);
+    }
+
+    public static void RegisterClientVisibilityFilter(Filter rlsFilter)
+    {
+        if (rlsFilter is Filter.Sql(var rlsSql))
+        {
+            moduleDef.RegisterRowLevelSecurity(new RawRowLevelSecurityDefV9 { Sql = rlsSql });
+        }
+        else
+        {
+            throw new Exception($"Unimplemented row level security type: {rlsFilter}");
+        }
+    }
+
+    public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
+        moduleDef.RegisterTableDefaultValue(table, colId, value);
+
+    public static void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
+        moduleDef.SetCaseConversionPolicy(policy);
+
+    public static void RegisterExplicitTableName(string sourceName, string canonicalName) =>
+        moduleDef.RegisterExplicitTableName(sourceName, canonicalName);
+
+    public static void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
+        moduleDef.RegisterExplicitFunctionName(sourceName, canonicalName);
+
+    public static void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
+        moduleDef.RegisterExplicitIndexName(sourceName, canonicalName);
+
+    public static byte[] Consume(this BytesSource source)
     {
         if (source == BytesSource.INVALID)
         {
             return [];
         }
-        var buffer = new byte[0x20_000];
+
+        var len = (uint)0;
+        var ret = FFI.bytes_source_remaining_length(source, ref len);
+        switch (ret)
+        {
+            case Errno.OK:
+                break;
+            case Errno.NO_SUCH_BYTES:
+                throw new NoSuchBytesException();
+            default:
+                throw new UnknownException(ret);
+        }
+
+        var buffer = new byte[len];
         var written = 0U;
+        // Because we've reserved space in our buffer already, this loop should be unnecessary.
+        // We expect the first call to `bytes_source_read` to always return `-1`.
+        // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
+        // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
+        // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
+        // at which point the loop will become useful again.
         while (true)
         {
             // Write into the spare capacity of the buffer.
             var spare = buffer.AsSpan((int)written);
             var buf_len = (uint)spare.Length;
-            var ret = FFI._bytes_source_read(source, spare, ref buf_len);
+            ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {
                 // Host side source exhausted, we're done.
-                case -1:
+                case Errno.EXHAUSTED:
                     Array.Resize(ref buffer, (int)written);
                     return buffer;
                 // Wrote the entire spare capacity.
                 // Need to reserve more space in the buffer.
-                case 0 when written == buffer.Length:
+                case Errno.OK when written == buffer.Length:
                     Array.Resize(ref buffer, buffer.Length + 1024);
                     break;
                 // Host didn't write as much as possible.
                 // Try to read some more.
                 // The host will likely not trigger this branch (current host doesn't),
                 // but a module should be prepared for it.
-                case 0:
+                case Errno.OK:
                     break;
+                case Errno.NO_SUCH_BYTES:
+                    throw new NoSuchBytesException();
                 default:
-                    throw new UnreachableException();
+                    throw new UnknownException(ret);
             }
+        }
+    }
+
+    private static void Write(this BytesSink sink, byte[] bytes)
+    {
+        var start = 0U;
+        while (start != bytes.Length)
+        {
+            var written = (uint)bytes.Length;
+            var buffer = bytes.AsSpan((int)start);
+            FFI.bytes_sink_write(sink, buffer, ref written);
+            start += written;
         }
     }
 
 #pragma warning disable IDE1006 // Naming Styles - methods below are meant for FFI.
 
-    public static Buffer __describe_module__()
+    public static void __describe_module__(BytesSink description)
     {
-        // replace `module` with a temporary internal module that will register RawModuleDefV8, AlgebraicType and other internal types
-        // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
-            // We need this explicit cast here to make `ToBytes` understand the types correctly.
-            RawModuleDef versioned = new RawModuleDef.V8BackCompat(moduleDef);
+            var module = moduleDef.BuildModuleDefinition();
+            RawModuleDef versioned = new RawModuleDef.V10(module);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
-            var res = FFI._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
-            return res;
+            description.Write(moduleBytes);
         }
         catch (Exception e)
         {
-            Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
-            return Buffer.INVALID;
+            Log.Error($"Error while describing the module: {e}");
         }
     }
 
-    public static Buffer __call_reducer__(
+    public static Errno __call_reducer__(
         uint id,
         ulong sender_0,
         ulong sender_1,
         ulong sender_2,
         ulong sender_3,
-        ulong address_0,
-        ulong address_1,
-        DateTimeOffsetRepr timestamp,
-        BytesSource args
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        BytesSource args,
+        BytesSink error
     )
     {
-        // Piece together the sender identity.
-        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray());
-
-        // Piece together the sender address.
-        var address = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
-
         try
         {
-            Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
+            var senderIdentity = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var connectionId = ConnectionId.From(
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+            );
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+            var time = timestamp.ToStd();
+
+            var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, new(sender, address, timestamp.ToStd()));
+            reducers[(int)id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
             }
-            return /* no exception */
-            Buffer.INVALID;
+            return Errno.OK; /* no exception */
         }
         catch (Exception e)
         {
-            var error_str = e.ToString();
+            var error_str = e.Message ?? e.GetType().FullName;
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
-            return FFI._buffer_alloc(error_bytes, (uint)error_bytes.Length);
+            error.Write(error_bytes);
+            return Errno.HOST_CALL_FAILURE;
         }
     }
+
+    public static Errno __call_procedure__(
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        BytesSource args,
+        BytesSink resultSink
+    )
+    {
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var connectionId = ConnectionId.From(
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+            );
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+            var time = timestamp.ToStd();
+
+            var ctx = newProcedureContext!(sender, connectionId, random, time);
+
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = procedures[(int)id].Invoke(reader, ctx);
+            if (stream.Position != stream.Length)
+            {
+                throw new Exception("Unrecognised extra bytes in the procedure arguments");
+            }
+            resultSink.Write(bytes);
+
+            return Errno.OK;
+        }
+        catch (Exception e)
+        {
+            // Host contract __call_procedure__ must either return Errno.OK or trap.
+            // Returning other errno values here can put the host/runtime in an unexpected state,
+            // so we log and rethrow to trap on any exception.
+            Log.Error($"Error while invoking procedure: {e}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Called by the host to execute a view when the sender calls the view identified by <paramref name="id" />.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The sender identity is passed as 4 <see cref="ulong" /> values (<paramref name="sender_0" /> through
+    /// <paramref name="sender_3" />) representing a little-endian <see cref="SpacetimeDB.Identity" />.
+    /// </para>
+    /// <para>
+    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
+    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
+    /// </para>
+    /// <para>
+    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
+    /// </para>
+    /// <para>
+    /// Note: a previous view ABI wrote the return rows directly to the sink.
+    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
+    /// between views that return row data and views that return queries.
+    /// </para>
+    /// <para>
+    /// The current ABI is identified by returning error code <c>2</c>.
+    /// </para>
+    /// </remarks>
+    public static Errno __call_view__(
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        BytesSource args,
+        BytesSink rows
+    )
+    {
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var ctx = newViewContext!(sender);
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
+            rows.Write(bytes);
+            return (Errno)2;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    /// <summary>
+    /// Called by the host to execute an anonymous view.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
+    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
+    /// </para>
+    /// <para>
+    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
+    /// </para>
+    /// <para>
+    /// Note: a previous view ABI wrote the return rows directly to the sink.
+    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
+    /// between views that return row data and views that return queries.
+    /// </para>
+    /// <para>
+    /// The current ABI is identified by returning error code <c>2</c>.
+    /// </para>
+    /// </remarks>
+    public static Errno __call_view_anon__(uint id, BytesSource args, BytesSink rows)
+    {
+        try
+        {
+            var ctx = newAnonymousViewContext!();
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
+            rows.Write(bytes);
+            return (Errno)2;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking anonymous view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+}
+
+/// <summary>
+/// Read-write database access for procedure contexts.
+/// The code generator will extend this partial class with table accessors.
+/// </summary>
+public partial class Local
+{
+    // Intentionally empty – generated code adds table handles here.
+}
+
+/// <summary>
+/// Read-only database access for view contexts.
+/// The code generator will extend this partial class to add table accessors.
+/// </summary>
+public sealed partial class LocalReadOnly
+{
+    // This class is intentionally empty - the code generator will add
+    // read-only table accessors for each table in the module.
+    // Example generated code:
+    // public Internal.ViewHandles.UserReadOnly User => new();
 }

@@ -3,8 +3,7 @@ use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductTypeElement, ProductValue, SumType};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
-use spacetimedb_sats::GroundSpacetimeType as _;
-use spacetimedb_sats::{satn::Satn, SumTypeVariant, Typespace, WithTypespace};
+use spacetimedb_sats::{satn::Satn, GroundSpacetimeType as _, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {
     ($schema:expr, $json:expr) => {
@@ -46,6 +45,21 @@ fn test_roundtrip() {
 }
 
 #[test]
+fn test_roundtrip_ron() {
+    let original = Sample {
+        identity: Identity::__dummy(),
+    };
+
+    let s = value_serialize(&original);
+    let result: Sample = spacetimedb_sats::de::Deserialize::deserialize(ValueDeserializer::new(s)).unwrap();
+    assert_eq!(&original, &result);
+
+    let s = ron::to_string(&original).unwrap();
+    let result: Sample = ron::from_str(&s).unwrap();
+    assert_eq!(&original, &result);
+}
+
+#[test]
 fn test_json_mappings() {
     let schema = tuple([
         ("foo", AlgebraicType::U32),
@@ -56,8 +70,13 @@ fn test_json_mappings() {
             enumm([("Hash", AlgebraicType::bytes()), ("Unit", AlgebraicType::unit())]).into(),
         ),
         ("and_peggy", AlgebraicType::option(AlgebraicType::F64)),
+        (
+            "result",
+            AlgebraicType::result(AlgebraicType::U32, AlgebraicType::String),
+        ),
         ("identity", Identity::get_type()),
     ]);
+
     let data = r#"
 {
     "foo": 42,
@@ -65,10 +84,12 @@ fn test_json_mappings() {
     "baz": ["heyyyyyy", "hooo"],
     "quux": { "Hash": "54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa" },
     "and_peggy": { "some": 3.141592653589793238426 },
-    "identity": ["0000000000000000000000000000000000000000000000000000000000000000"]
+    "result": { "ok": 1 },
+    "identity": ["0x0"]
 }
 "#; // all of those ^^^^^^ digits are from memory
     de_json_snapshot!(schema, data);
+
     let data = r#"
 {
     "foo": 5654,
@@ -76,13 +97,14 @@ fn test_json_mappings() {
     "baz": ["it's 🥶°C"],
     "quux": { "Unit": [] },
     "and_peggy": null,
-    "identity": ["0000000000000000000000000000000000000000000000000000000000000000"]
+    "result": { "err": "sorry" },
+    "identity": ["0x0"]
 }
 "#;
     de_json_snapshot!(schema, data);
 }
 
-fn tuple<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> ProductType {
+fn tuple(elems: impl IntoIterator<Item = (&'static str, AlgebraicType)>) -> ProductType {
     ProductType {
         elements: elems
             .into_iter()
@@ -90,7 +112,7 @@ fn tuple<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> Produ
             .collect(),
     }
 }
-fn enumm<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> SumType {
+fn enumm(elems: impl IntoIterator<Item = (&'static str, AlgebraicType)>) -> SumType {
     SumType {
         variants: elems
             .into_iter()

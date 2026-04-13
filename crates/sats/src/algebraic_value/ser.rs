@@ -1,6 +1,8 @@
+use crate::bsatn::decode;
+use crate::de::DeserializeSeed;
 use crate::ser::{self, ForwardNamedToSeqProduct, Serialize};
-use crate::{i256, u256};
-use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapValue, F32, F64};
+use crate::{i256, u256, WithTypespace};
+use crate::{AlgebraicValue, ArrayValue, F32, F64};
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -29,7 +31,6 @@ impl ser::Serializer for ValueSerializer {
     type Error = Infallible;
 
     type SerializeArray = SerializeArrayValue;
-    type SerializeMap = SerializeMapValue;
     type SerializeSeqProduct = SerializeProductValue;
     type SerializeNamedProduct = ForwardNamedToSeqProduct<SerializeProductValue>;
 
@@ -63,12 +64,6 @@ impl ser::Serializer for ValueSerializer {
         })
     }
 
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        Ok(SerializeMapValue {
-            entries: Vec::with_capacity(len),
-        })
-    }
-
     fn serialize_seq_product(self, len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
         Ok(SerializeProductValue {
             elements: Vec::with_capacity(len),
@@ -88,18 +83,25 @@ impl ser::Serializer for ValueSerializer {
         value.serialize(self).map(|v| AlgebraicValue::sum(tag, v))
     }
 
-    unsafe fn serialize_bsatn(self, ty: &AlgebraicType, mut bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        let res = AlgebraicValue::decode(ty, &mut bsatn);
+    unsafe fn serialize_bsatn<Ty>(self, ty: &Ty, mut bsatn: &[u8]) -> Result<Self::Ok, Self::Error>
+    where
+        for<'a, 'de> WithTypespace<'a, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
+        let res = decode(ty, &mut bsatn);
         // SAFETY: Caller promised that `res.is_ok()`.
-        Ok(unsafe { res.unwrap_unchecked() })
+        let val = unsafe { res.unwrap_unchecked() };
+        Ok(val.into())
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'a, Ty, I: Iterator<Item = &'a [u8]>>(
         self,
-        ty: &crate::AlgebraicType,
+        ty: &Ty,
         total_bsatn_len: usize,
         chunks: I,
-    ) -> Result<Self::Ok, Self::Error> {
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        for<'b, 'de> WithTypespace<'b, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
         // SAFETY: Caller promised `total_bsatn_len == chunks.map(|c| c.len()).sum() <= isize::MAX`.
         unsafe {
             concat_byte_chunks_buf(total_bsatn_len, chunks, |bsatn| {
@@ -213,8 +215,8 @@ unsafe fn write_byte_chunks<'a>(mut dst: *mut u8, chunks: impl Iterator<Item = &
 
 /// Convert a `[MaybeUninit<T>]` into a `[T]` by asserting all elements are initialized.
 ///
-/// Identitcal copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
-/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref
+/// Identical copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
+/// <https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref>
 ///
 /// # Safety
 ///
@@ -293,8 +295,6 @@ enum ArrayValueBuilder {
     String(Vec<Box<str>>),
     /// An array of arrays.
     Array(Vec<ArrayValue>),
-    /// An array of maps.
-    Map(Vec<MapValue>),
 }
 
 impl ArrayValueBuilder {
@@ -320,7 +320,6 @@ impl ArrayValueBuilder {
             Self::F64(v) => v.len(),
             Self::String(v) => v.len(),
             Self::Array(v) => v.len(),
-            Self::Map(v) => v.len(),
         }
     }
 
@@ -343,7 +342,6 @@ impl ArrayValueBuilder {
         match val {
             AlgebraicValue::Sum(x) => vec(x, capacity).into(),
             AlgebraicValue::Product(x) => vec(x, capacity).into(),
-            AlgebraicValue::Map(x) => vec(*x, capacity).into(),
             AlgebraicValue::Bool(x) => vec(x, capacity).into(),
             AlgebraicValue::I8(x) => vec(x, capacity).into(),
             AlgebraicValue::U8(x) => vec(x, capacity).into(),
@@ -361,6 +359,7 @@ impl ArrayValueBuilder {
             AlgebraicValue::F64(x) => vec(x, capacity).into(),
             AlgebraicValue::String(x) => vec(x, capacity).into(),
             AlgebraicValue::Array(x) => vec(x, capacity).into(),
+            AlgebraicValue::Min | AlgebraicValue::Max => panic!("not defined for Min/Max"),
         }
     }
 
@@ -373,7 +372,6 @@ impl ArrayValueBuilder {
         match (self, val) {
             (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
             (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
-            (Self::Map(v), AlgebraicValue::Map(val)) => v.push(*val),
             (Self::Bool(v), AlgebraicValue::Bool(val)) => v.push(val),
             (Self::I8(v), AlgebraicValue::I8(val)) => v.push(val),
             (Self::U8(v), AlgebraicValue::U8(val)) => v.push(val),
@@ -421,7 +419,6 @@ impl From<ArrayValueBuilder> for ArrayValue {
             F64(v) => Self::F64(v.into()),
             String(v) => Self::String(v.into()),
             Array(v) => Self::Array(v.into()),
-            Map(v) => Self::Map(v.into()),
         }
     }
 }
@@ -462,31 +459,6 @@ impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
 impl_from_array!(Box<str>, String);
 impl_from_array!(ArrayValue, Array);
-impl_from_array!(MapValue, Map);
-
-/// Continuation for serializing a map value.
-pub struct SerializeMapValue {
-    /// The entry pairs to collect and convert into a map.
-    entries: Vec<(AlgebraicValue, AlgebraicValue)>,
-}
-
-impl ser::SerializeMap for SerializeMapValue {
-    type Ok = AlgebraicValue;
-    type Error = <ValueSerializer as ser::Serializer>::Error;
-
-    fn serialize_entry<K: ser::Serialize + ?Sized, V: ser::Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error> {
-        self.entries.push((value_serialize(key), value_serialize(value)));
-        Ok(())
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::map(self.entries.into_iter().collect()))
-    }
-}
 
 /// Continuation for serializing a map value.
 pub struct SerializeProductValue {

@@ -99,7 +99,7 @@ mod criterion {
 
     /// `"{crit_dir}/"{name}.json"`
     fn packed_baseline_json_path(crit_dir: &Path, name: &str) -> PathBuf {
-        crit_dir.join(format!("{}.json", name))
+        crit_dir.join(format!("{name}.json"))
     }
 
     lazy_static::lazy_static! {
@@ -392,7 +392,7 @@ mod callgrind {
     }
 
     fn packed_json_path(iai_callgrind_dir: &Path, name: &str) -> PathBuf {
-        iai_callgrind_dir.join(format!("{}.json", name))
+        iai_callgrind_dir.join(format!("{name}.json"))
     }
 
     fn get_iai_callgrind_dir(target_dir: &Path) -> PathBuf {

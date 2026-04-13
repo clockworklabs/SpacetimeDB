@@ -1,11 +1,27 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, WithTypespace};
+use crate::product_value::InvalidFieldError;
+use crate::raw_identifier::RawIdentifier;
+use crate::{
+    AlgebraicType, AlgebraicValue, ProductTypeElement, ProductValue, SpacetimeType, Typespace, ValueWithType,
+    WithTypespace,
+};
+use core::ops::Deref;
+use spacetimedb_primitives::{ColId, ColList};
 
-pub const IDENTITY_TAG: &str = "__identity_bytes";
-pub const ADDRESS_TAG: &str = "__address_bytes";
+/// The tag used inside the special `Identity` product type.
+pub const IDENTITY_TAG: &str = "__identity__";
+/// The tag used inside the special `ConnectionId` product type.
+pub const CONNECTION_ID_TAG: &str = "__connection_id__";
+/// The tag used inside the special `Timestamp` product type.
+pub const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch__";
+/// The tag used inside the special `TimeDuration` product type.
+pub const TIME_DURATION_TAG: &str = "__time_duration_micros__";
+
+/// The tag used inside the special `UUID` product type.
+pub const UUID_TAG: &str = "__uuid__";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -17,20 +33,22 @@ pub const ADDRESS_TAG: &str = "__address_bytes";
 /// e.g., the names of its fields and their types in the case of a record.
 /// The name "product" comes from category theory.
 ///
-/// See also: https://ncatlab.org/nlab/show/product+type.
+/// See also:
+/// - <https://en.wikipedia.org/wiki/Record_(computer_science)>
+/// - <https://ncatlab.org/nlab/show/product+type>
 ///
 /// These structures are known as product types because the number of possible values in product
-/// ```ignore
+/// ```text
 /// { N_0: T_0, N_1: T_1, ..., N_n: T_n }
 /// ```
 /// is:
-/// ```ignore
+/// ```text
 /// Π (i ∈ 0..n). values(T_i)
 /// ```
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct ProductType {
     /// The factors of the product type.
@@ -40,41 +58,140 @@ pub struct ProductType {
     pub elements: Box<[ProductTypeElement]>,
 }
 
+impl Deref for ProductType {
+    type Target = [ProductTypeElement];
+
+    fn deref(&self) -> &Self::Target {
+        &self.elements
+    }
+}
+
+impl std::fmt::Debug for ProductType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProductType ")?;
+        f.debug_map()
+            .entries(
+                self.elements
+                    .iter()
+                    .map(|elem| (crate::dbg_aggregate_name(&elem.name), &elem.algebraic_type)),
+            )
+            .finish()
+    }
+}
+
 impl ProductType {
     /// Returns a product type with the given `elements` as its factors.
     pub const fn new(elements: Box<[ProductTypeElement]>) -> Self {
         Self { elements }
     }
 
-    /// Returns whether this is a "newtype" over bytes.
-    fn is_bytes_newtype(&self, check: &str) -> bool {
+    /// Returns the unit product type.
+    pub fn unit() -> Self {
+        Self::new([].into())
+    }
+
+    /// Returns whether this is a "newtype" with `label` and satisfying `inner`.
+    /// Does not follow `Ref`s.
+    fn is_newtype(&self, check: &str, inner: impl FnOnce(&AlgebraicType) -> bool) -> bool {
         match &*self.elements {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => &**name == check && algebraic_type.is_bytes(),
+            }] => &**name == check && inner(algebraic_type),
             _ => false,
         }
     }
 
     /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
+    /// Does not follow `Ref`s.
     pub fn is_identity(&self) -> bool {
-        self.is_bytes_newtype(IDENTITY_TAG)
+        self.is_newtype(IDENTITY_TAG, |i| i.is_u256())
     }
 
-    /// Returns whether this is the special case of `spacetimedb_lib::Address`.
-    pub fn is_address(&self) -> bool {
-        self.is_bytes_newtype(ADDRESS_TAG)
+    /// Returns whether this is the special case of `spacetimedb_lib::ConnectionId`.
+    /// Does not follow `Ref`s.
+    pub fn is_connection_id(&self) -> bool {
+        self.is_newtype(CONNECTION_ID_TAG, |i| i.is_u128())
     }
 
-    /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
+    fn is_newtype_of(&self, expected_tag: &str, of: AlgebraicType) -> bool {
+        match &*self.elements {
+            [ProductTypeElement {
+                name: Some(name),
+                algebraic_type,
+            }] => &**name == expected_tag && *algebraic_type == of,
+            _ => false,
+        }
+    }
+
+    fn is_i64_newtype(&self, expected_tag: &str) -> bool {
+        self.is_newtype_of(expected_tag, AlgebraicType::I64)
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::Timestamp`.
+    /// Does not follow `Ref`s.
+    pub fn is_timestamp(&self) -> bool {
+        self.is_i64_newtype(TIMESTAMP_TAG)
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::TimeDuration`.
+    /// Does not follow `Ref`s.
+    pub fn is_time_duration(&self) -> bool {
+        self.is_i64_newtype(TIME_DURATION_TAG)
+    }
+
+    /// Returns whether this is the special tag of `Identity`.
+    pub fn is_identity_tag(tag_name: &str) -> bool {
+        tag_name == IDENTITY_TAG
+    }
+
+    /// Returns whether this is the special tag of `ConnectionId`.
+    pub fn is_connection_id_tag(tag_name: &str) -> bool {
+        tag_name == CONNECTION_ID_TAG
+    }
+
+    /// Returns whether this is the special tag of [`crate::timestamp::Timestamp`].
+    pub fn is_timestamp_tag(tag_name: &str) -> bool {
+        tag_name == TIMESTAMP_TAG
+    }
+
+    /// Returns whether this is the special tag of [`crate::time_duration::TimeDuration`].
+    pub fn is_time_duration_tag(tag_name: &str) -> bool {
+        tag_name == TIME_DURATION_TAG
+    }
+
+    /// Returns whether this is the special tag of [`crate::uuid::Uuid`].
+    pub fn is_uuid_tag(tag_name: &str) -> bool {
+        tag_name == UUID_TAG
+    }
+
+    /// Returns whether this is the special case of  [`crate::uuid::Uuid`].
+    pub fn is_uuid(&self) -> bool {
+        self.is_newtype_of(UUID_TAG, AlgebraicType::U128)
+    }
+
+    /// Returns whether this is a special known `tag`,
+    /// currently `Address`, `Identity`, `Timestamp`, `TimeDuration`, `ConnectionId` or `UUID`.
     pub fn is_special_tag(tag_name: &str) -> bool {
-        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
+        [
+            IDENTITY_TAG,
+            CONNECTION_ID_TAG,
+            TIMESTAMP_TAG,
+            TIME_DURATION_TAG,
+            UUID_TAG,
+        ]
+        .contains(&tag_name)
     }
 
-    /// Returns whether this is a special known type, currently `Address` or `Identity`.
+    /// Returns whether this is a special known type,
+    /// currently `Identity`, `Timestamp`, `TimeDuration`, `ConnectionId` or `UUID`.
+    /// Does not follow `Ref`s.
     pub fn is_special(&self) -> bool {
-        self.is_identity() || self.is_address()
+        self.is_identity()
+            || self.is_connection_id()
+            || self.is_timestamp()
+            || self.is_time_duration()
+            || self.is_uuid()
     }
 
     /// Returns whether this is a unit type, that is, has no elements.
@@ -88,6 +205,42 @@ impl ProductType {
             .iter()
             .position(|field| field.name.as_deref() == Some(name))
     }
+
+    /// This utility function is designed to project fields based on the supplied `indexes`.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicType] will wrap into a [ProductType] when projecting multiple
+    /// (including zero) fields, otherwise it will consist of a single [AlgebraicType].
+    ///
+    /// **Parameters:**
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
+    pub fn project(&self, cols: &ColList) -> Result<AlgebraicType, InvalidFieldError> {
+        let get_field = |col_pos: ColId| {
+            self.elements
+                .get(col_pos.idx())
+                .ok_or(InvalidFieldError { col_pos, name: None })
+        };
+        if let Some(head) = cols.as_singleton() {
+            get_field(head).map(|f| f.algebraic_type.clone())
+        } else {
+            let mut fields = Vec::with_capacity(cols.len() as usize);
+            for col in cols.iter() {
+                fields.push(get_field(col)?.clone());
+            }
+            Ok(AlgebraicType::product(fields.into_boxed_slice()))
+        }
+    }
+
+    /// Returns whether `value` is compatible with this type.
+    pub fn type_check(&self, value: &ProductValue, typespace: &Typespace) -> bool {
+        value.elements.len() == self.elements.len()
+            && self
+                .elements
+                .iter()
+                .zip(&value.elements)
+                .all(|(ty, val)| ty.algebraic_type.type_check(val, typespace))
+    }
 }
 
 impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
@@ -95,16 +248,16 @@ impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
         Self::new(iter.into_iter().map(Into::into).collect())
     }
 }
-impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (&'a str, I)>>(iter: T) -> Self {
+impl<Id: Into<RawIdentifier>, I: Into<AlgebraicType>> FromIterator<(Id, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (Id, I)>>(iter: T) -> Self {
         iter.into_iter()
             .map(|(name, ty)| ProductTypeElement::new_named(ty.into(), name))
             .collect()
     }
 }
 
-impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
+impl<I: Into<AlgebraicType>> FromIterator<(Option<&'static str>, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (Option<&'static str>, I)>>(iter: T) -> Self {
         iter.into_iter()
             .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(Into::into)))
             .collect()
@@ -121,13 +274,13 @@ impl<const N: usize> From<[ProductTypeElement; N]> for ProductType {
         ProductType::new(fields.into())
     }
 }
-impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for ProductType {
-    fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
+impl<const N: usize> From<[(Option<&'static str>, AlgebraicType); N]> for ProductType {
+    fn from(fields: [(Option<&'static str>, AlgebraicType); N]) -> Self {
         fields.into_iter().collect()
     }
 }
-impl<const N: usize> From<[(&str, AlgebraicType); N]> for ProductType {
-    fn from(fields: [(&str, AlgebraicType); N]) -> Self {
+impl<Id: Into<RawIdentifier>, const N: usize> From<[(Id, AlgebraicType); N]> for ProductType {
+    fn from(fields: [(Id, AlgebraicType); N]) -> Self {
         fields.into_iter().collect()
     }
 }

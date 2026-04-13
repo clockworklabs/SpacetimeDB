@@ -3,12 +3,16 @@
 //! Nothing to do with Chrome.
 
 use crate::db::auth::{StAccess, StTableType};
-use crate::relation::FieldName;
-use crate::{AlgebraicType, ProductType};
+use crate::{AlgebraicType, ProductType, SpacetimeType};
 use derive_more::Display;
-use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::{de, ser};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+
+// TODO(1.0): move these definitions into this file,
+// along with the other structs contained in it,
+// which are currently in the crate root.
+pub use crate::ModuleDefBuilder as RawModuleDefV8Builder;
+pub use crate::RawModuleDefV8;
 
 /// The amount sequences allocate each time they over-run their allocation.
 ///
@@ -17,10 +21,11 @@ use spacetimedb_sats::{de, ser};
 pub const SEQUENCE_ALLOCATION_STEP: i128 = 4096;
 
 /// Represents a sequence definition for a database table column.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawSequenceDefV8 {
     /// The name of the sequence.
-    pub sequence_name: Box<str>,
+    pub sequence_name: RawIdentifier,
     /// The position of the column associated with this sequence.
     pub col_pos: ColId,
     /// The increment value for the sequence.
@@ -55,10 +60,10 @@ impl RawSequenceDefV8 {
     /// ```
     pub fn for_column(table: &str, column_or_name: &str, col_pos: ColId) -> Self {
         //removes the auto-generated suffix...
-        let seq_name = column_or_name.trim_start_matches(&format!("ct_{}_", table));
+        let seq_name = column_or_name.trim_start_matches(&format!("ct_{table}_"));
 
         RawSequenceDefV8 {
-            sequence_name: format!("seq_{}_{}", table, seq_name).into(),
+            sequence_name: RawIdentifier::new(format!("seq_{table}_{seq_name}")),
             col_pos,
             increment: 1,
             start: None,
@@ -74,7 +79,8 @@ impl RawSequenceDefV8 {
 /// Which type of index to create.
 ///
 /// Currently only `IndexType::BTree` is allowed.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, SpacetimeType)]
+#[sats(crate = crate)]
 pub enum IndexType {
     /// A BTree index.
     BTree = 0,
@@ -100,11 +106,12 @@ impl TryFrom<u8> for IndexType {
 }
 
 /// A struct representing the definition of a database index.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawIndexDefV8 {
     /// The name of the index.
     /// This should not be assumed to follow any particular format.
-    pub index_name: Box<str>,
+    pub index_name: RawIdentifier,
     /// Whether the index is unique.
     pub is_unique: bool,
     /// The type of the index.
@@ -114,16 +121,14 @@ pub struct RawIndexDefV8 {
 }
 
 impl RawIndexDefV8 {
-    /// Creates a new [IndexDef] with the provided parameters.
-    ///
-    /// WARNING: Only [IndexType::Btree] is supported for now...
+    /// Creates a new [RawIndexDefV8] with the provided parameters.
     ///
     /// # Parameters
     ///
     /// * `index_name`: The name of the index.
     /// * `columns`: List of column positions that compose the index.
     /// * `is_unique`: Indicates whether the index enforces uniqueness.
-    pub fn btree(index_name: Box<str>, columns: impl Into<ColList>, is_unique: bool) -> Self {
+    pub fn btree(index_name: RawIdentifier, columns: impl Into<ColList>, is_unique: bool) -> Self {
         Self {
             columns: columns.into(),
             index_name,
@@ -132,7 +137,7 @@ impl RawIndexDefV8 {
         }
     }
 
-    /// Creates an [IndexDef] of type [IndexType::BTree] for a specific column of a table.
+    /// Creates an [RawIndexDefV8] for a specific column of a table.
     ///
     /// This method generates an index name based on the table name, index name, column positions, and uniqueness constraint.
     ///
@@ -149,7 +154,7 @@ impl RawIndexDefV8 {
         let unique = if is_unique { "unique" } else { "non_unique" };
 
         // Removes the auto-generated suffix from the index name.
-        let name = index_or_name.trim_start_matches(&format!("ct_{}_", table));
+        let name = index_or_name.trim_start_matches(&format!("ct_{table}_"));
 
         // Constructs the index name using a predefined format.
         // No duplicate the `kind_name` that was added by an constraint
@@ -158,18 +163,19 @@ impl RawIndexDefV8 {
         } else {
             format!("idx_{table}_{name}_{unique}")
         };
-        Self::btree(name.into(), columns, is_unique)
+        Self::btree(RawIdentifier::new(name), columns, is_unique)
     }
 }
 
 /// A struct representing the definition of a database column.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawColumnDefV8 {
     /// The name of the column.
-    pub col_name: Box<str>,
+    pub col_name: RawIdentifier,
     /// The type of the column.
     ///
-    /// Must be in "nominal normal form", as determined by [AlgebraicType::is_nominal_normal_form].
+    /// Must satisfy [AlgebraicType::is_valid_for_client_type_use].
     pub col_type: AlgebraicType,
 }
 
@@ -183,7 +189,7 @@ impl RawColumnDefV8 {
                 let col_name = if let Some(name) = col.name {
                     name
                 } else {
-                    format!("col_{pos}").into()
+                    RawIdentifier::new(format!("col_{pos}"))
                 };
 
                 RawColumnDefV8 {
@@ -196,7 +202,7 @@ impl RawColumnDefV8 {
 }
 
 impl RawColumnDefV8 {
-    /// Creates a new [ColumnDef] for a system field with the specified data type.
+    /// Creates a new [RawColumnDefV8] for a system field with the specified data type.
     ///
     /// This method is typically used to define system columns with predefined names and data types.
     ///
@@ -208,7 +214,7 @@ impl RawColumnDefV8 {
     /// If `type_` is not `AlgebraicType::Builtin` or `AlgebraicType::Ref`, an error will result at validation time.
     pub fn sys(field_name: &str, col_type: AlgebraicType) -> Self {
         Self {
-            col_name: field_name.into(),
+            col_name: RawIdentifier::new(field_name),
             col_type,
         }
     }
@@ -216,10 +222,11 @@ impl RawColumnDefV8 {
 
 /// A struct representing the definition of a database constraint.
 /// Associated with a unique `TableDef`, the one that contains it.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawConstraintDefV8 {
     /// The name of the constraint.
-    pub constraint_name: Box<str>,
+    pub constraint_name: RawIdentifier,
     /// The constraints applied to the columns.
     pub constraints: Constraints,
     /// List of column positions associated with the constraint.
@@ -227,14 +234,14 @@ pub struct RawConstraintDefV8 {
 }
 
 impl RawConstraintDefV8 {
-    /// Creates a new [ConstraintDef] with the specified parameters.
+    /// Creates a new [RawConstraintDefV8] with the specified parameters.
     ///
     /// # Parameters
     ///
     /// * `constraint_name`: The name of the constraint.
     /// * `constraints`: The constraints.
     /// * `columns`: List of column positions associated with the constraint.
-    pub fn new(constraint_name: Box<str>, constraints: Constraints, columns: impl Into<ColList>) -> Self {
+    pub fn new(constraint_name: RawIdentifier, constraints: Constraints, columns: impl Into<ColList>) -> Self {
         Self {
             constraint_name,
             constraints,
@@ -269,15 +276,16 @@ impl RawConstraintDefV8 {
         columns: impl Into<ColList>,
     ) -> Self {
         //removes the auto-generated suffix...
-        let name = column_or_name.trim_start_matches(&format!("idx_{}_", table));
+        let name = column_or_name.trim_start_matches(&format!("idx_{table}_"));
 
         let kind_name = format!("{:?}", constraints.kind()).to_lowercase();
         // No duplicate the `kind_name` that was added by an index
-        if name.ends_with(&kind_name) {
-            Self::new(format!("ct_{table}_{name}").into(), constraints, columns)
+        let name = if name.ends_with(&kind_name) {
+            format!("ct_{table}_{name}")
         } else {
-            Self::new(format!("ct_{table}_{name}_{kind_name}").into(), constraints, columns)
-        }
+            format!("ct_{table}_{name}_{kind_name}")
+        };
+        Self::new(RawIdentifier::new(name), constraints, columns)
     }
 }
 
@@ -296,10 +304,11 @@ pub fn generate_cols_name<'a>(columns: &ColList, col_name: impl Fn(ColId) -> Opt
 ///
 /// This struct holds information about the table, including its name, columns, indexes,
 /// constraints, sequences, type, and access rights.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawTableDefV8 {
     /// The name of the table.
-    pub table_name: Box<str>,
+    pub table_name: RawIdentifier,
     /// The columns of the table.
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
     pub columns: Vec<RawColumnDefV8>,
@@ -314,7 +323,7 @@ pub struct RawTableDefV8 {
     /// The visibility of the table.
     pub table_access: StAccess,
     /// If this is a schedule table, the reducer it is scheduled for.
-    pub scheduled: Option<Box<str>>,
+    pub scheduled: Option<RawIdentifier>,
 }
 
 impl RawTableDefV8 {
@@ -325,7 +334,7 @@ impl RawTableDefV8 {
     /// - `table_name`: The name of the table.
     /// - `columns`: A `vec` of `ColumnDef` instances representing the columns of the table.
     ///
-    pub fn new(table_name: Box<str>, columns: Vec<RawColumnDefV8>) -> Self {
+    pub fn new(table_name: RawIdentifier, columns: Vec<RawColumnDefV8>) -> Self {
         Self {
             table_name,
             columns,
@@ -336,6 +345,11 @@ impl RawTableDefV8 {
             table_access: StAccess::Public,
             scheduled: None,
         }
+    }
+
+    #[cfg(feature = "test")]
+    pub fn new_for_tests(table_name: impl Into<RawIdentifier>, columns: ProductType) -> Self {
+        Self::new(table_name.into(), RawColumnDefV8::from_product_type(columns))
     }
 
     /// Set the type of the table and return a new `TableDef` instance with the updated type.
@@ -368,13 +382,13 @@ impl RawTableDefV8 {
         generate_cols_name(columns, |p| self.get_column(p.idx()).map(|c| &*c.col_name))
     }
 
-    /// Generate a [ConstraintDef] using the supplied `columns`.
+    /// Generate a [RawConstraintDefV8] using the supplied `columns`.
     pub fn with_column_constraint(mut self, kind: Constraints, columns: impl Into<ColList>) -> Self {
         self.constraints.push(self.gen_constraint_def(kind, columns));
         self
     }
 
-    fn gen_constraint_def(&self, kind: Constraints, columns: impl Into<ColList>) -> RawConstraintDefV8 {
+    pub fn gen_constraint_def(&self, kind: Constraints, columns: impl Into<ColList>) -> RawConstraintDefV8 {
         let columns = columns.into();
         RawConstraintDefV8::for_column(&self.table_name, &self.generate_cols_name(&columns), kind, columns)
     }
@@ -386,7 +400,7 @@ impl RawTableDefV8 {
         x
     }
 
-    /// Generate a [IndexDef] using the supplied `columns`.
+    /// Generate a [RawIndexDefV8] using the supplied `columns`.
     pub fn with_column_index(self, columns: impl Into<ColList>, is_unique: bool) -> Self {
         let mut x = self;
         let columns = columns.into();
@@ -419,7 +433,7 @@ impl RawTableDefV8 {
     }
 
     /// Set the reducer name for scheduled tables and return updated `TableDef`.
-    pub fn with_scheduled(mut self, scheduled: Option<Box<str>>) -> Self {
+    pub fn with_scheduled(mut self, scheduled: Option<RawIdentifier>) -> Self {
         self.scheduled = scheduled;
         self
     }
@@ -427,77 +441,18 @@ impl RawTableDefV8 {
     /// Create a `TableDef` from a product type and table name.
     ///
     /// NOTE: If the [ProductType.name] is `None` then it auto-generate a name like `col_{col_pos}`
-    pub fn from_product(table_name: &str, row: ProductType) -> Self {
+    pub fn from_product(table_name: RawIdentifier, row: ProductType) -> Self {
         Self::new(
-            table_name.into(),
+            table_name,
             Vec::from(row.elements)
                 .into_iter()
                 .enumerate()
                 .map(|(col_pos, e)| RawColumnDefV8 {
-                    col_name: e.name.unwrap_or_else(|| format!("col_{col_pos}").into()),
+                    col_name: e.name.unwrap_or_else(|| RawIdentifier::new(format!("col_{col_pos}"))),
                     col_type: e.algebraic_type,
                 })
                 .collect::<Vec<_>>(),
         )
-    }
-
-    /// Get an iterator deriving [IndexDef] from the constraints that require them like `UNIQUE`.
-    ///
-    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_indexes(&self) -> impl Iterator<Item = RawIndexDefV8> + '_ {
-        self.constraints
-            .iter()
-            // We are only interested in constraints implying an index.
-            .filter(|x| x.constraints.has_indexed())
-            // Create the `IndexDef`.
-            .map(|x| {
-                let is_unique = x.constraints.has_unique();
-                RawIndexDefV8::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique)
-            })
-            // Only keep those we don't yet have in the list of indices (checked by name).
-            .filter(|idx| self.indexes.iter().all(|x| x.index_name != idx.index_name))
-    }
-
-    /// Get an iterator deriving [RawSequenceDefV8] from the constraints that require them like `IDENTITY`.
-    ///
-    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_sequences(&self) -> impl Iterator<Item = RawSequenceDefV8> + '_ {
-        self.constraints
-            .iter()
-            // We are only interested in constraints implying a sequence.
-            .filter(|x| x.constraints.has_autoinc())
-            // Create the `SequenceDef`.
-            .map(|x| RawSequenceDefV8::for_column(&self.table_name, &x.constraint_name, x.columns.head().unwrap()))
-            // Only keep those we don't yet have in the list of sequences (checked by name).
-            .filter(|seq| self.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
-    }
-
-    /// Get an iterator deriving [ConstraintDef] from the indexes that require them like `UNIQUE`.
-    ///
-    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_constraints(&self) -> impl Iterator<Item = RawConstraintDefV8> + '_ {
-        // Collect the set of all col-lists with a constraint.
-        let cols: HashSet<_> = self
-            .constraints
-            .iter()
-            .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
-            .map(|x| &x.columns)
-            .collect();
-
-        // Those indices that are not present in the constraints above
-        // have constraints generated for them.
-        // When `idx.is_unique`, a unique constraint is generated rather than an indexed one.
-        self.indexes
-            .iter()
-            .filter(move |idx| !cols.contains(&idx.columns))
-            .map(|idx| self.gen_constraint_def(Constraints::from_is_unique(idx.is_unique), idx.columns.clone()))
-    }
-
-    /// Check if the `name` of the [FieldName] exist on this [TableDef]
-    ///
-    /// Warning: It ignores the `table_id`
-    pub fn get_column_by_field(&self, field: FieldName) -> Option<&RawColumnDefV8> {
-        self.get_column(field.col.idx())
     }
 
     /// Get a column by its position in the table.
@@ -505,7 +460,7 @@ impl RawTableDefV8 {
         self.columns.get(pos)
     }
 
-    /// Check if the `col_name` exist on this [TableSchema]
+    /// Check if the `col_name` exist on this [RawTableDefV8]
     ///
     /// Warning: It ignores the `table_name`
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&RawColumnDefV8> {

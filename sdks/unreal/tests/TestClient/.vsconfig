@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "components": [
+    "Component.Unreal.Debugger",
+    "Component.Unreal.Ide",
+    "Microsoft.Net.Component.4.6.2.TargetingPack",
+    "Microsoft.VisualStudio.Component.VC.14.38.17.8.ATL",
+    "Microsoft.VisualStudio.Component.VC.14.38.17.8.x86.x64",
+    "Microsoft.VisualStudio.Component.VC.Llvm.Clang",
+    "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+    "Microsoft.VisualStudio.Component.Windows11SDK.22621",
+    "Microsoft.VisualStudio.Workload.CoreEditor",
+    "Microsoft.VisualStudio.Workload.ManagedDesktop",
+    "Microsoft.VisualStudio.Workload.NativeDesktop",
+    "Microsoft.VisualStudio.Workload.NativeGame"
+  ]
+}

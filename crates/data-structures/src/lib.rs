@@ -4,4 +4,6 @@
 pub mod error_stream;
 pub mod map;
 pub mod nstr;
+pub mod object_pool;
 pub mod slim_slice;
+pub mod small_map;

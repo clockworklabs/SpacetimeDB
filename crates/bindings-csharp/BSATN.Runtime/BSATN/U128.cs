@@ -3,13 +3,13 @@
 
 namespace SpacetimeDB;
 
-using System.Diagnostics.CodeAnalysis;
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
+public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
 {
     internal const int Size = 16;
 
@@ -34,6 +34,33 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
 
     internal ulong Upper => _upper;
 
+    /// Returns a <see cref="U128" /> from a big-endian byte array.
+    public static U128 FromBytesBigEndian(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length != Size)
+        {
+            throw new ArgumentException(
+                $"Byte array must be exactly {Size} bytes long.",
+                nameof(bytes)
+            );
+        }
+
+        var upper = BinaryPrimitives.ReadUInt64BigEndian(bytes.Slice(0, 8));
+        var lower = BinaryPrimitives.ReadUInt64BigEndian(bytes.Slice(8, 8));
+
+        return new U128(upper, lower);
+    }
+
+    public byte[] ToBytesBigEndian()
+    {
+        var bytes = new byte[Size];
+
+        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(0, 8), _upper);
+        BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(8, 8), _lower);
+
+        return bytes;
+    }
+
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
     public int CompareTo(object? value)
     {
@@ -47,7 +74,7 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
         }
         else
         {
-            throw new ArgumentException();
+            throw new ArgumentException("Argument must be a U128", nameof(value));
         }
     }
 
@@ -82,30 +109,6 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
             || (left._upper == right._upper) && (left._lower > right._lower);
     }
 
-    //
-    // IEqualityOperators
-    //
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(U128 left, U128 right) =>
-        (left._lower == right._lower) && (left._upper == right._upper);
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(U128 left, U128 right) =>
-        (left._lower != right._lower) || (left._upper != right._upper);
-
-    /// <inheritdoc cref="object.Equals(object?)" />
-    public override bool Equals([NotNullWhen(true)] object? obj)
-    {
-        return (obj is U128 other) && Equals(other);
-    }
-
-    /// <inheritdoc cref="IEquatable{T}.Equals(T)" />
-    public bool Equals(U128 x) => _upper == x._upper && _lower == x._lower;
-
-    /// <inheritdoc cref="object.GetHashCode()" />
-    public override int GetHashCode() => HashCode.Combine(_lower, _upper);
-
     private BigInteger AsBigInt() =>
         new(
             MemoryMarshal.AsBytes(stackalloc[] { this }),
@@ -115,4 +118,11 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => AsBigInt().ToString();
+
+    public static U128 FromGuid(Guid guid)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        guid.TryWriteBytes(bytes);
+        return FromBytesBigEndian(bytes);
+    }
 }

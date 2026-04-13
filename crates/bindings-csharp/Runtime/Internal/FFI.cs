@@ -16,22 +16,32 @@ public readonly record struct BytesSource(uint Handle)
 // forwarding in the codegen for `__describe_module__` and `__call_reducer__` exports which both
 // use this type.
 [StructLayout(LayoutKind.Sequential)]
-[NativeMarshalling(typeof(Marshaller))]
-public readonly record struct Buffer(uint Handle)
+public readonly record struct BytesSink(uint Handle) { }
+
+public enum Errno : short
 {
-    public static readonly Buffer INVALID = new(uint.MaxValue);
-
-    // We need custom marshaller for `Buffer` because we return it by value
-    // instead of passing an `out` reference, and C# currently doesn't match
-    // the common Wasm C ABI in that a struct with a single field is supposed
-    // to have the same ABI as the field itself.
-    [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(Marshaller))]
-    internal static class Marshaller
-    {
-        public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
-
-        public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
-    }
+    EXHAUSTED = -1,
+    OK = 0,
+    HOST_CALL_FAILURE = 1,
+    NOT_IN_TRANSACTION = 2,
+    BSATN_DECODE_ERROR = 3,
+    NO_SUCH_TABLE = 4,
+    NO_SUCH_INDEX = 5,
+    NO_SUCH_ITER = 6,
+    NO_SUCH_CONSOLE_TIMER = 7,
+    NO_SUCH_BYTES = 8,
+    NO_SPACE = 9,
+    BUFFER_TOO_SMALL = 11,
+    UNIQUE_ALREADY_EXISTS = 12,
+    SCHEDULE_AT_DELAY_TOO_LONG = 13,
+    INDEX_NOT_UNIQUE = 14,
+    NO_SUCH_ROW = 15,
+    AUTO_INC_OVERFLOW = 16,
+    WOULD_BLOCK_TRANSACTION = 17,
+    TRANSACTION_NOT_ANONYMOUS = 18,
+    TRANSACTION_IS_READ_ONLY = 19,
+    TRANSACTION_IS_MUT = 20,
+    HTTP_ERROR = 21,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -40,9 +50,49 @@ internal static partial class FFI
     // For now this must match the name of the `.c` file (`bindings.c`).
     // In the future C# will allow to specify Wasm import namespace in
     // `LibraryImport` directly.
-    const string StdbNamespace =
+    const string StdbNamespace10_0 =
 #if EXPERIMENTAL_WASM_AOT
         "spacetime_10.0"
+#else
+        "bindings"
+#endif
+    ;
+
+    const string StdbNamespace10_1 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.1"
+#else
+        "bindings"
+#endif
+    ;
+
+    const string StdbNamespace10_2 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.2"
+#else
+        "bindings"
+#endif
+    ;
+
+    const string StdbNamespace10_3 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.3"
+#else
+        "bindings"
+#endif
+    ;
+
+    const string StdbNamespace10_4 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.4"
+#else
+        "bindings"
+#endif
+    ;
+
+    const string StdbNamespace10_5 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.5"
 #else
         "bindings"
 #endif
@@ -51,16 +101,6 @@ internal static partial class FFI
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {
-        public enum Errno : ushort
-        {
-            OK = 0,
-            NO_SUCH_TABLE = 1,
-            LOOKUP_NOT_FOUND = 2,
-            UNIQUE_ALREADY_EXISTS = 3,
-            BUFFER_TOO_SMALL = 4,
-            NO_SUCH_BYTES = 8,
-        }
-
         // This custom marshaller takes care of checking the status code
         // returned from the host and throwing an exception if it's not 0.
         // The only reason it doesn't return `void` is because the C# compiler
@@ -75,27 +115,59 @@ internal static partial class FFI
         {
             public static CheckedStatus ConvertToManaged(Errno status)
             {
-                if (status == 0)
-                {
-                    return default;
-                }
-                throw status switch
-                {
-                    Errno.NO_SUCH_TABLE => new NoSuchTableException(),
-                    Errno.LOOKUP_NOT_FOUND => new LookupNotFoundException(),
-                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
-                    Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
-                    Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
-                    _ => new UnknownException(status),
-                };
+                ErrnoHelpers.ThrowIfError(status);
+                return default;
             }
         }
+    }
+
+    internal static class ErrnoHelpers
+    {
+        public static void ThrowIfError(Errno status)
+        {
+            if (status == Errno.OK)
+            {
+                return;
+            }
+
+            throw ToException(status);
+        }
+
+        public static Exception ToException(Errno status) =>
+            status switch
+            {
+                Errno.NOT_IN_TRANSACTION => new NotInTransactionException(),
+                Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
+                Errno.NO_SUCH_TABLE => new NoSuchTableException(),
+                Errno.NO_SUCH_INDEX => new NoSuchIndexException(),
+                Errno.NO_SUCH_ITER => new NoSuchIterException(),
+                Errno.NO_SUCH_CONSOLE_TIMER => new NoSuchLogStopwatch(),
+                Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
+                Errno.NO_SPACE => new NoSpaceException(),
+                Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
+                Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
+                Errno.NO_SUCH_ROW => new NoSuchRowException(),
+                Errno.AUTO_INC_OVERFLOW => new AutoIncOverflowException(),
+                Errno.WOULD_BLOCK_TRANSACTION => new TransactionWouldBlockException(),
+                Errno.TRANSACTION_NOT_ANONYMOUS => new TransactionNotAnonymousException(),
+                Errno.TRANSACTION_IS_READ_ONLY => new TransactionIsReadOnlyException(),
+                Errno.TRANSACTION_IS_MUT => new TransactionIsMutableException(),
+                Errno.HTTP_ERROR => new HttpException(),
+                _ => new UnknownException(status),
+            };
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct TableId
     {
         private readonly uint table_id;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct IndexId
+    {
+        private readonly uint index_id;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -113,77 +185,139 @@ internal static partial class FFI
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct LogLevel(byte log_level)
-    {
-        private readonly byte log_level = log_level;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public readonly record struct RowIter(uint Handle)
     {
-        public static readonly RowIter INVALID = new(uint.MaxValue);
+        public static readonly RowIter INVALID = new(0);
     }
 
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _get_table_id(
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus table_id_from_name(
         [In] byte[] name,
         uint name_len,
         out TableId out_
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_by_col_eq(
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus index_id_from_name(
+        [In] byte[] name,
+        uint name_len,
+        out IndexId out_
+    );
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus datastore_table_row_count(TableId table_id, out ulong out_);
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus datastore_table_scan_bsatn(
         TableId table_id,
-        ColId col_id,
-        [In] byte[] value,
-        uint value_len,
         out RowIter out_
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _insert(TableId table_id, byte[] row, uint row_len);
+    [LibraryImport(StdbNamespace10_4)]
+    public static partial CheckedStatus datastore_index_scan_point_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> point,
+        uint point_len,
+        out RowIter out_
+    );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_col_eq(
-        TableId table_id,
-        ColId col_id,
-        [In] byte[] value,
-        uint value_len,
+    [LibraryImport(StdbNamespace10_4)]
+    public static partial CheckedStatus datastore_delete_by_index_scan_point_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> point,
+        uint point_len,
         out uint out_
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_rel(
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus datastore_index_scan_range_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> prefix,
+        uint prefix_len,
+        ColId prefix_elems,
+        ReadOnlySpan<byte> rstart,
+        uint rstart_len,
+        ReadOnlySpan<byte> rend,
+        uint rend_len,
+        out RowIter out_
+    );
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial Errno row_iter_bsatn_advance(
+        RowIter iter_handle,
+        [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
+        ref uint buffer_len
+    );
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus row_iter_bsatn_close(RowIter iter_handle);
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus datastore_insert_bsatn(
+        TableId table_id,
+        Span<byte> row,
+        ref uint row_len
+    );
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus datastore_update_bsatn(
+        TableId table_id,
+        IndexId index_id,
+        Span<byte> row,
+        ref uint row_len
+    );
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus datastore_delete_by_index_scan_range_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> prefix,
+        uint prefix_len,
+        ColId prefix_elems,
+        ReadOnlySpan<byte> rstart,
+        uint rstart_len,
+        ReadOnlySpan<byte> rend,
+        uint rend_len,
+        out uint out_
+    );
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
         [In] byte[] relation,
         uint relation_len,
         out uint out_
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start(TableId table_id, out RowIter out_);
+    [LibraryImport(StdbNamespace10_5)]
+    public static partial CheckedStatus datastore_clear(TableId table_id, out ulong out_);
 
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start_filtered(
-        TableId table_id,
-        [In] byte[] filter,
-        uint filter_len,
-        out RowIter out_
-    );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_advance(
-        RowIter iter_handle,
-        [MarshalUsing(CountElementName = nameof(buffer_len))][Out] byte[] buffer,
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial Errno bytes_source_read(
+        BytesSource source,
+        Span<byte> buffer,
         ref uint buffer_len
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial void _iter_drop(RowIter iter_handle);
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus bytes_sink_write(
+        BytesSink sink,
+        ReadOnlySpan<byte> buffer,
+        ref uint buffer_len
+    );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial void _console_log(
-        byte level,
+    public enum LogLevel : byte
+    {
+        Error = 0,
+        Warn = 1,
+        Info = 2,
+        Debug = 3,
+        Trace = 4,
+        Panic = 5,
+    }
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial void console_log(
+        LogLevel level,
         [In] byte[] target,
         uint target_len,
         [In] byte[] filename,
@@ -193,13 +327,85 @@ internal static partial class FFI
         uint message_len
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial short _bytes_source_read(
-        BytesSource source,
-        Span<byte> buffer,
-        ref uint buffer_len_ptr
+    [NativeMarshalling(typeof(ConsoleTimerIdMarshaller))]
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct ConsoleTimerId
+    {
+        private readonly uint timer_id;
+
+        private ConsoleTimerId(uint id)
+        {
+            timer_id = id;
+        }
+
+        //LayoutKind.Sequential is apparently not enough for this struct to be returnable in PInvoke, so we need a custom marshaller unfortunately
+        [CustomMarshaller(
+            typeof(ConsoleTimerId),
+            MarshalMode.Default,
+            typeof(ConsoleTimerIdMarshaller)
+        )]
+        internal static class ConsoleTimerIdMarshaller
+        {
+            public static ConsoleTimerId ConvertToManaged(uint id) => new ConsoleTimerId(id);
+
+            public static uint ConvertToUnmanaged(ConsoleTimerId id) => id.timer_id;
+        }
+    }
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial ConsoleTimerId console_timer_start([In] byte[] name, uint name_len);
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
+
+    [LibraryImport(StdbNamespace10_0)]
+    public static partial void volatile_nonatomic_schedule_immediate(
+        [In] byte[] name,
+        uint name_len,
+        [In] byte[] args,
+        uint args_len
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
+    // Note #1: our Identity type has the same layout as a fixed-size 32-byte little-endian buffer,
+    // so instead of working around C#'s lack of fixed-size arrays, we just accept the pointer to
+    // the Identity itself. In this regard it's different from Rust declaration, but is still
+    // functionally the same.
+    // Note #2: we can't use `LibraryImport` here due to https://github.com/dotnet/runtime/issues/98616
+    // which prevents source-generated PInvokes from working with types from other assemblies, and
+    // `Identity` lives in another assembly (`BSATN.Runtime`). Luckily, `DllImport` is enough here.
+#pragma warning disable SYSLIB1054 // Suppress "Use 'LibraryImportAttribute' instead of 'DllImportAttribute'" warning.
+    [DllImport(StdbNamespace10_0)]
+    public static extern void identity(out Identity dest);
+#pragma warning restore SYSLIB1054
+
+    [DllImport(StdbNamespace10_1)]
+    public static extern Errno bytes_source_remaining_length(BytesSource source, ref uint len);
+
+    [DllImport(StdbNamespace10_2)]
+    public static extern Errno get_jwt(ref ConnectionId connectionId, out BytesSource source);
+
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_start_mut_tx")]
+    public static partial Errno procedure_start_mut_tx(out long micros);
+
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_commit_mut_tx")]
+    public static partial Errno procedure_commit_mut_tx();
+
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_abort_mut_tx")]
+    public static partial Errno procedure_abort_mut_tx();
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct BytesSourcePair
+    {
+        public readonly BytesSource A;
+        public readonly BytesSource B;
+    }
+
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_http_request")]
+    public static partial Errno procedure_http_request(
+        ReadOnlySpan<byte> request,
+        uint request_len,
+        ReadOnlySpan<byte> body,
+        uint body_len,
+        out BytesSourcePair out_
+    );
 }

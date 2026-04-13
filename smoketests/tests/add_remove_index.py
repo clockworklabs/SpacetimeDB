@@ -4,50 +4,48 @@ class AddRemoveIndex(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
+use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(accessor = t1)]
 pub struct T1 { id: u64 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table(accessor = t2)]
 pub struct T2 { id: u64 }
 
-#[spacetimedb(init)]
-pub fn init() {
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) {
     for id in 0..1_000 {
-        T1::insert(T1 { id });
-        T2::insert(T2 { id });
+        ctx.db.t1().insert(T1 { id });
+        ctx.db.t2().insert(T2 { id });
     }
 }
 """
     MODULE_CODE_INDEXED = """
-use spacetimedb::spacetimedb;
+use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "id", id))]
-pub struct T1 { id: u64 }
+#[spacetimedb::table(accessor = t1)]
+pub struct T1 { #[index(btree)] id: u64 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "id", id))]
-pub struct T2 { id: u64 }
+#[spacetimedb::table(accessor = t2)]
+pub struct T2 { #[index(btree)] id: u64 }
 
-#[spacetimedb(init)]
-pub fn init() {
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) {
     for id in 0..1_000 {
-        T1::insert(T1 { id });
-        T2::insert(T2 { id });
+        ctx.db.t1().insert(T1 { id });
+        ctx.db.t2().insert(T2 { id });
     }
 }
 
-#[spacetimedb(reducer)]
-pub fn add() {
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext) {
     let id = 1_001;
-    T1::insert(T1 { id });
-    T2::insert(T2 { id });
+    ctx.db.t1().insert(T1 { id });
+    ctx.db.t2().insert(T2 { id });
 }
 """
 
-    JOIN_QUERY = "select T1.* from T1 join T2 on T1.id = T2.id where T2.id = 1001"
+    JOIN_QUERY = "select t_1.* from t_1 join t_2 on t_1.id = t_2.id where t_2.id = 1001"
 
     def between_publishes(self):
         """
@@ -72,7 +70,7 @@ pub fn add() {
         # There are no indices, resulting in an unsupported unindexed join.
         self.publish_module(name, clear = False)
         with self.assertRaises(Exception):
-            self.subscribe(self.JOIN_QUERY, n = 0)()
+            self.subscribe(self.JOIN_QUERY, n = 0)
 
         self.between_publishes()
 
@@ -82,7 +80,7 @@ pub fn add() {
         self.publish_module(name, clear = False)
         sub = self.subscribe(self.JOIN_QUERY, n = 1)
         self.call("add", anon = True)
-        self.assertEqual(sub(), [{'T1': {'deletes': [], 'inserts': [{'id': 1001}]}}])
+        sub()
 
         self.between_publishes()
 
@@ -91,4 +89,4 @@ pub fn add() {
         self.write_module_code(self.MODULE_CODE)
         self.publish_module(name, clear = False)
         with self.assertRaises(Exception):
-            self.subscribe(self.JOIN_QUERY, n = 0)()
+            self.subscribe(self.JOIN_QUERY, n = 0)

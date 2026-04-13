@@ -1,6 +1,6 @@
-using System.Runtime.CompilerServices;
-
 namespace SpacetimeDB.Internal;
+
+using System.Runtime.CompilerServices;
 
 // Note: this utility struct is used by the C# client SDK so it needs to be public.
 public readonly struct ByteArrayComparer : IEqualityComparer<byte[]>
@@ -25,7 +25,7 @@ public readonly struct ByteArrayComparer : IEqualityComparer<byte[]>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static bool EqualsUnvectorized(byte[] left, byte[] right)
     {
-        for (int i = 0; i < left.Length; i++)
+        for (var i = 0; i < left.Length; i++)
         {
             if (left[i] != right[i])
             {
@@ -38,8 +38,8 @@ public readonly struct ByteArrayComparer : IEqualityComparer<byte[]>
 
     public int GetHashCode(byte[] obj)
     {
-        int hash = 17;
-        foreach (byte b in obj)
+        var hash = 17;
+        foreach (var b in obj)
         {
             hash = hash * 31 + b;
         }

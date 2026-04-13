@@ -1,5 +1,9 @@
 This crate check the conformance of SpacetimeDB to SQL:2016
 
+> ⚠️ **Internal Crate** ⚠️
+>
+> This crate is intended for internal use only. It is **not** stable and may change without notice.
+
 # Setup PG
 
 Create a database called `TestSpace`

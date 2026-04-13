@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 50cf163ac81228385b27f96ba1801355e39bc722a937a0cf6ec0d4b27d23ef14 # shrinks to t = Typespace { types: [Bool, Bool, Bool, Product(ProductType { elements: [ProductTypeElement { name: None, algebraic_type: Bool }] }), Bool] }

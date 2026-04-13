@@ -1,0 +1,17 @@
+﻿# Dockerfile.bench
+FROM node:20.18.1-bookworm-slim
+
+WORKDIR /app
+RUN npm install -g pnpm@9.15.3
+
+# Install build tools for better-sqlite3
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+COPY package.json pnpm-lock.yaml* tsconfig.json* ./
+RUN pnpm install --frozen-lockfile || pnpm install
+
+COPY src ./src
+COPY modules ./modules
+
+# Correct: use bench script with passed args
+ENTRYPOINT ["pnpm", "tsx", "src/cli.ts"]

@@ -1,4 +1,5 @@
-from .. import Smoketest
+from .. import Smoketest, random_string
+import json
 
 class Permissions(Smoketest):
     AUTOPUBLISH = False
@@ -9,126 +10,157 @@ class Permissions(Smoketest):
     def test_call(self):
         """Ensure that anyone has the permission to call any standard reducer"""
 
-        identity = self.new_identity(email=None)
-        token = self.token(identity)
-
         self.publish_module()
 
-        # TODO: can a lot of the usage of reset_config be replaced with just passing -i ? or -a ?
-        self.reset_config()
-        self.new_identity(email=None)
-        self.call("say_hello")
+        self.call("say_hello", anon=True)
 
-        self.reset_config()
-        self.import_identity(identity, token, default=True)
         self.assertEqual("\n".join(self.logs(10000)).count("World"), 1)
 
     def test_delete(self):
         """Ensure that you cannot delete a database that you do not own"""
 
-        identity = self.new_identity(email=None, default=True)
-
         self.publish_module()
 
-        self.reset_config()
+        self.new_identity()
         with self.assertRaises(Exception):
-            self.spacetime("delete", self.address)
+            self.spacetime("delete", self.database_identity)
 
     def test_describe(self):
         """Ensure that anyone can describe any database"""
 
-        self.new_identity(email=None)
         self.publish_module()
 
-        self.reset_config()
-        self.new_identity(email=None)
-        self.spacetime("describe", self.address)
+        self.spacetime("describe", "--anonymous", "--json", self.database_identity)
 
-    def test_describe(self):
+    def test_logs(self):
         """Ensure that we are not able to view the logs of a module that we don't have permission to view"""
 
-        self.new_identity(email=None)
         self.publish_module()
 
         self.reset_config()
-        self.new_identity(email=None)
+        self.new_identity()
         self.call("say_hello")
 
         self.reset_config()
-        identity = self.new_identity(email=None, default=True)
+        self.new_identity()
         with self.assertRaises(Exception):
-            self.spacetime("logs", self.address, "10000")
-    
-    def test_publish(self):
-        """This test checks to make sure that you cannot publish to an address that you do not own."""
+            self.spacetime("logs", self.database_identity, "-n", "10000")
 
-        self.new_identity(email=None, default=True)
+    def test_publish(self):
+        """This test checks to make sure that you cannot publish to an identity that you do not own."""
+
         self.publish_module()
 
-        self.reset_config()
+        self.new_identity()
 
-        with self.assertRaises(Exception): 
-            self.spacetime("publish", self.address, "--project-path", self.project_path, "--clear-database", "--force")
+        with self.assertRaises(Exception):
+            self.spacetime("publish", self.database_identity, "--module-path", self.project_path, "--delete-data", "--yes")
 
-    
+        # Check that this holds without `--delete-data`, too.
+        with self.assertRaises(Exception):
+            self.spacetime("publish", self.database_identity, "--module-path", self.project_path, "--yes")
+
+    def test_replace_names(self):
+        """Test that you can't replace names of a database you don't own"""
+
+        name = random_string()
+        self.publish_module(name)
+
+        self.new_identity()
+
+        with self.assertRaises(Exception):
+            self.api_call(
+                "PUT",
+                f'/v1/database/{name}/names',
+                json.dumps(["post", "gres"]),
+                {"Content-type": "application/json"}
+            )
+
 class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
+use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(accessor = secret, private)]
 pub struct Secret {
     answer: u8,
 }
 
-#[spacetimedb(table(public))]
+#[spacetimedb::table(accessor = common_knowledge, public)]
 pub struct CommonKnowledge {
     thing: String,
 }
 
-#[spacetimedb(init)]
-pub fn init() {
-    Secret::insert(Secret { answer: 42 });
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    ctx.db.secret().insert(Secret { answer: 42 });
 }
 
-#[spacetimedb(reducer)]
-pub fn do_thing() {
-    Secret::insert(Secret { answer: 20 });
-    CommonKnowledge::insert(CommonKnowledge { thing: "howdy".to_owned() });
+#[spacetimedb::reducer]
+pub fn do_thing(ctx: &ReducerContext, thing: String) {
+    ctx.db.secret().insert(Secret { answer: 20 });
+    ctx.db.common_knowledge().insert(CommonKnowledge { thing });
 }
 """
 
     def test_private_table(self):
         """Ensure that a private table can only be queried by the database owner"""
 
-        out = self.spacetime("sql", self.address, "select * from Secret")
-        self.assertMultiLineEqual(out, """\
- answer 
---------
- 42     
-""")
+        out = self.spacetime("sql", self.database_identity, "select * from secret")
+        answer = "\n".join([
+            " answer ",
+            "--------",
+            " 42     ",
+            ""
+        ])
+        self.assertMultiLineEqual(str(out), answer)
 
         self.reset_config()
-        self.new_identity(email=None)
+        self.new_identity()
 
         with self.assertRaises(Exception):
-            self.spacetime("sql", self.address, "select * from Secret")
+            self.spacetime("sql", self.database_identity, "select * from secret")
 
+        # Subscribing to the private table failes.
         with self.assertRaises(Exception):
-            self.subscribe("SELECT * FROM Secret", n=0)()
+            self.subscribe("SELECT * FROM secret", n=0)
 
+        # Subscribing to the public table works.
+        sub = self.subscribe("SELECT * FROM common_knowledge", n = 1)
+        self.call("do_thing", "godmorgon")
+        self.assertEqual(sub(), [
+            {
+                'common_knowledge': {
+                    'deletes': [],
+                    'inserts': [{'thing': 'godmorgon'}]
+                }
+            }
+        ])
+
+        # Subscribing to both tables returns updates for the public one.
         sub = self.subscribe("SELECT * FROM *", n=1)
-        self.call("do_thing", anon=True)
-        self.assertEqual(sub(), [{'CommonKnowledge': {'deletes': [], 'inserts': [{'thing': 'howdy'}]}}])
+        self.call("do_thing", "howdy", anon=True)
+        self.assertEqual(sub(), [
+            {
+                'common_knowledge': {
+                    'deletes': [],
+                    'inserts': [{'thing': 'howdy'}]
+                }
+            }
+        ])
 
 
 class LifecycleReducers(Smoketest):
-    def test_lifecycle_reducers_cant_be_called(self):
-        """Ensure that reducers like __init__ can't be called"""
+    lifecycle_kinds = "init", "client_connected", "client_disconnected"
 
-        with self.assertRaises(Exception):
-            self.call("__init__")
-        with self.assertRaises(Exception):
-            self.call("__identity_connected__")
-        with self.assertRaises(Exception):
-            self.call("__identity_disconnected__")
+    MODULE_CODE = "\n".join(f"""
+#[spacetimedb::reducer({kind})]
+fn lifecycle_{kind}(_ctx: &spacetimedb::ReducerContext) {{}}
+""" for kind in lifecycle_kinds)
+
+    def test_lifecycle_reducers_cant_be_called(self):
+        """Ensure that lifecycle reducers (init, on_connect, etc) can't be called"""
+
+        for kind in self.lifecycle_kinds:
+            with self.assertRaises(Exception):
+                self.call(f"lifecycle_{kind}")
 

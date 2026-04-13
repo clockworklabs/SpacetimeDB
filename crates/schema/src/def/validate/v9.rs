@@ -1,0 +1,2436 @@
+use crate::def::validate::v10::{ExplicitNamesLookup, ValidationCase};
+use crate::def::*;
+use crate::error::{RawColumnName, ValidationError};
+use crate::type_for_generate::{ClientCodegenError, ProductTypeDef, TypespaceForGenerateBuilder};
+use crate::{def::validate::Result, error::TypeLocation};
+use convert_case::{Case, Casing};
+use lean_string::LeanString;
+use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
+use spacetimedb_data_structures::map::{HashMap, HashSet};
+use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
+use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer_default_ok_return_type};
+use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
+use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
+use spacetimedb_lib::ProductType;
+use spacetimedb_primitives::col_list;
+use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
+
+/// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
+/// or return a stream of errors if the definition is invalid.
+pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
+    let RawModuleDefV9 {
+        typespace,
+        tables,
+        reducers,
+        types,
+        misc_exports,
+        row_level_security,
+    } = def;
+
+    let known_type_definitions = types.iter().map(|def| def.ty);
+
+    let mut validator = ModuleValidatorV9 {
+        core: CoreValidator {
+            typespace: &typespace,
+            stored_in_table_def: Default::default(),
+            type_namespace: Default::default(),
+            lifecycle_reducers: Default::default(),
+            typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
+            case_policy: ValidationCase::None,
+            explicit_names: ExplicitNamesLookup::default(),
+        },
+    };
+
+    // Important general note:
+    // This file uses the `ErrorStream` combinator to return *multiple errors
+    // at once* when validating a definition.
+    // The general pattern is that we use `collect_all_errors` when building
+    // a collection, and `combine_errors` when we have multiple
+    // things to validate that are independent of each other.
+    // We try to avoid using `?` until the end of a function, after we've called
+    // `combine_errors` or `collect_all_errors` on all the things we need to validate.
+    // Sometimes it is unavoidable to use `?` early and this should be commented on.
+
+    let reducers = reducers
+        .into_iter()
+        .enumerate()
+        .map(|(idx, reducer)| validator.validate_reducer_def(reducer, ReducerId(idx as u32)))
+        // Collect into a `Vec` first to preserve duplicate names.
+        // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
+        .collect_all_errors::<Vec<_>>();
+
+    let (procedures, misc_exports) =
+        misc_exports
+            .into_iter()
+            .partition::<Vec<RawMiscModuleExportV9>, _>(|misc_export| {
+                matches!(misc_export, RawMiscModuleExportV9::Procedure(_))
+            });
+
+    let (views, misc_exports) = misc_exports
+        .into_iter()
+        .partition::<Vec<RawMiscModuleExportV9>, _>(|misc_export| {
+            matches!(misc_export, RawMiscModuleExportV9::View(_))
+        });
+
+    let procedures = procedures
+        .into_iter()
+        .map(|procedure| {
+            let RawMiscModuleExportV9::Procedure(procedure) = procedure else {
+                unreachable!("Already partitioned procedures separate from other `RawMiscModuleExportV9` variants");
+            };
+            procedure
+        })
+        .map(|procedure| {
+            validator
+                .validate_procedure_def(procedure)
+                .map(|procedure_def| (procedure_def.name.clone(), procedure_def))
+        })
+        // Collect into a `Vec` first to preserve duplicate names.
+        // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
+        .collect_all_errors::<Vec<_>>();
+
+    let views = views
+        .into_iter()
+        .map(|view| {
+            let RawMiscModuleExportV9::View(view) = view else {
+                unreachable!("Already partitioned views separate from other `RawMiscModuleExportV9` variants");
+            };
+            view
+        })
+        .map(|view| {
+            validator
+                .validate_view_def(view)
+                .map(|view_def| (view_def.name.clone(), view_def))
+        })
+        .collect_all_errors();
+
+    let tables = tables
+        .into_iter()
+        .map(|table| {
+            validator
+                .validate_table_def(table)
+                .map(|table_def| (table_def.name.clone(), table_def))
+        })
+        .collect_all_errors();
+
+    let row_level_security_raw = row_level_security
+        .into_iter()
+        .map(|rls| (rls.sql.clone(), rls))
+        .collect();
+
+    let mut refmap = HashMap::default();
+    let types = types
+        .into_iter()
+        .map(|ty| {
+            validator.core.validate_type_def(ty).map(|type_def| {
+                refmap.insert(type_def.ty, type_def.accessor_name.clone());
+                (type_def.accessor_name.clone(), type_def)
+            })
+        })
+        .collect_all_errors::<HashMap<_, _>>();
+
+    let tables_types_reducers_procedures_views = (tables, types, reducers, procedures, views)
+        .combine_errors()
+        .and_then(|(mut tables, types, reducers, procedures, views)| {
+            let ((reducers, procedures, views), ()) = (
+                check_function_names_are_unique(reducers, procedures, views),
+                check_non_procedure_misc_exports(misc_exports, &validator, &mut tables),
+            )
+                .combine_errors()?;
+            check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
+            Ok((tables, types, reducers, procedures, views))
+        });
+
+    let CoreValidator {
+        stored_in_table_def,
+        typespace_for_generate,
+        lifecycle_reducers,
+        ..
+    } = validator.core;
+
+    let (tables, types, reducers, procedures, views) =
+        (tables_types_reducers_procedures_views).map_err(|errors| errors.sort_deduplicate())?;
+
+    let typespace_for_generate = typespace_for_generate.finish();
+
+    Ok(ModuleDef {
+        tables,
+        reducers,
+        views,
+        types,
+        typespace,
+        typespace_for_generate,
+        stored_in_table_def,
+        refmap,
+        row_level_security_raw,
+        lifecycle_reducers,
+        procedures,
+        raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
+    })
+}
+
+struct ModuleValidatorV9<'a> {
+    core: CoreValidator<'a>,
+}
+
+impl ModuleValidatorV9<'_> {
+    fn validate_table_def(&mut self, table: RawTableDefV9) -> Result<TableDef> {
+        let RawTableDefV9 {
+            name: raw_table_name,
+            product_type_ref,
+            primary_key,
+            indexes,
+            constraints,
+            sequences,
+            schedule,
+            table_type,
+            table_access,
+        } = table;
+
+        // We exit early if we don't find the product type ref,
+        // since this breaks all the other checks.
+        let product_type: &ProductType = self
+            .core
+            .typespace
+            .get(product_type_ref)
+            .and_then(AlgebraicType::as_product)
+            .ok_or_else(|| {
+                ValidationErrors::from(ValidationError::InvalidProductTypeRef {
+                    table: raw_table_name.clone(),
+                    ref_: product_type_ref,
+                })
+            })?;
+
+        let mut table_in_progress =
+            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
+
+        let table_ident = table_in_progress.table_ident.clone();
+
+        let columns = (0..product_type.elements.len())
+            .map(|id| table_in_progress.validate_column_def(id.into(), product_type))
+            .collect_all_errors();
+
+        let indexes = indexes
+            .into_iter()
+            .map(|index| {
+                table_in_progress
+                    .validate_index_def_v9(index)
+                    .map(|index| (index.name.clone(), index))
+            })
+            .collect_all_errors::<StrMap<_>>();
+
+        // We can't validate the primary key without validating the unique constraints first.
+        let primary_key_head = primary_key.head();
+        let constraints_primary_key = constraints
+            .into_iter()
+            .map(|constraint| {
+                table_in_progress
+                    .validate_constraint_def(constraint, |name, cols| {
+                        name.unwrap_or_else(|| generate_unique_constraint_name(&table_ident, product_type, cols))
+                    })
+                    .map(|constraint| (constraint.name.clone(), constraint))
+            })
+            .collect_all_errors()
+            .and_then(|constraints: StrMap<ConstraintDef>| {
+                table_in_progress.validate_primary_key(constraints, primary_key)
+            });
+
+        // Now that we've validated indices and constraints separately,
+        // we can validate their interactions.
+        // More specifically, a direct index requires a unique constraint.
+        let constraints_backed_by_indices =
+            if let (Ok((constraints, _)), Ok(indexes)) = (&constraints_primary_key, &indexes) {
+                constraints
+                    .values()
+                    .filter_map(|c| c.data.unique_columns().map(|cols| (c, cols)))
+                    // TODO(centril): this check is actually too strict
+                    // and ends up unnecessarily inducing extra indices.
+                    //
+                    // It is sufficient for `unique_cols` to:
+                    // a) be a permutation of `index`'s columns,
+                    //    as a permutation of a set is still the same set,
+                    //    so when we use the index to check the constraint,
+                    //    the order in the index does not matter for the purposes of the constraint.
+                    //
+                    // b) for `unique_cols` to form a prefix of `index`'s columns,
+                    //    if the index provides efficient prefix scans.
+                    //
+                    // Currently, b) is unsupported,
+                    // as we cannot decouple unique constraints from indices in the datastore today,
+                    // and we cannot mark the entire index unique,
+                    // as that would not be a sound representation of what the user wanted.
+                    // If we wanted to, we could make the constraints merely use indices,
+                    // rather than be indices.
+                    .filter(|(_, unique_cols)| {
+                        !indexes
+                            .values()
+                            .any(|i| ColSet::from(i.algorithm.columns()) == **unique_cols)
+                    })
+                    .map(|(c, cols)| {
+                        let constraint = c.name.clone();
+                        let columns = cols.clone();
+                        Err(ValidationError::UniqueConstraintWithoutIndex { constraint, columns }.into())
+                    })
+                    .collect_all_errors()
+            } else {
+                Ok(())
+            };
+
+        let sequences = sequences
+            .into_iter()
+            .map(|sequence| {
+                table_in_progress
+                    .validate_sequence_def(sequence)
+                    .map(|sequence| (sequence.name.clone(), sequence))
+            })
+            .collect_all_errors();
+
+        let schedule = schedule
+            .map(|schedule| table_in_progress.validate_schedule_def(schedule, primary_key_head))
+            .transpose();
+
+        let name = table_in_progress
+            .add_to_global_namespace(raw_table_name.clone())
+            .and_then(|name| {
+                let name = identifier(name)?;
+                if table_type != TableType::System && name.starts_with("st_") {
+                    Err(ValidationError::TableNameReserved { table: name }.into())
+                } else {
+                    Ok(name)
+                }
+            });
+
+        let (name, columns, indexes, (constraints, primary_key), (), sequences, schedule) = (
+            name,
+            columns,
+            indexes,
+            constraints_primary_key,
+            constraints_backed_by_indices,
+            sequences,
+            schedule,
+        )
+            .combine_errors()?;
+
+        Ok(TableDef {
+            name: name.clone(),
+            product_type_ref,
+            primary_key,
+            columns,
+            indexes,
+            constraints,
+            sequences,
+            schedule,
+            table_type,
+            table_access,
+            is_event: false, // V9 does not support event tables
+            accessor_name: name,
+        })
+    }
+
+    /// Validate a reducer definition.
+    fn validate_reducer_def(
+        &mut self,
+        reducer_def: RawReducerDefV9,
+        reducer_id: ReducerId,
+    ) -> Result<(Identifier, ReducerDef)> {
+        let RawReducerDefV9 {
+            name,
+            params,
+            lifecycle,
+        } = reducer_def;
+
+        let params_for_generate: Result<_> =
+            self.core
+                .params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
+                    reducer_name: name.clone(),
+                    position,
+                    arg_name,
+                });
+
+        // Reducers share the "function namespace" with procedures.
+        // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
+        let name = identifier(name);
+
+        let lifecycle = lifecycle
+            .map(|lifecycle| match &mut self.core.lifecycle_reducers[lifecycle] {
+                x @ None => {
+                    *x = Some(reducer_id);
+                    Ok(lifecycle)
+                }
+                Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
+            })
+            .transpose();
+        let (reducer_name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
+        let name = ReducerName::new(reducer_name.clone());
+        let def = ReducerDef {
+            name: name.clone(),
+            accessor_name: name.clone(),
+            params: params.clone(),
+            params_for_generate: ProductTypeDef {
+                elements: params_for_generate,
+                recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
+            },
+            lifecycle,
+            visibility: FunctionVisibility::ClientCallable,
+            ok_return_type: reducer_default_ok_return_type(),
+            err_return_type: reducer_default_err_return_type(),
+        };
+        Ok((reducer_name, def))
+    }
+
+    fn validate_procedure_def(&mut self, procedure_def: RawProcedureDefV9) -> Result<ProcedureDef> {
+        let RawProcedureDefV9 {
+            name,
+            params,
+            return_type,
+        } = procedure_def;
+
+        let params_for_generate =
+            self.core
+                .params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
+                    procedure_name: name.clone(),
+                    position,
+                    arg_name,
+                });
+
+        let return_type_for_generate = self.core.validate_for_type_use(
+            || TypeLocation::ProcedureReturn {
+                procedure_name: name.clone(),
+            },
+            &return_type,
+        );
+
+        // Procedures share the "function namespace" with reducers.
+        // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
+        let name = identifier(name);
+
+        let (name, params_for_generate, return_type_for_generate) =
+            (name, params_for_generate, return_type_for_generate).combine_errors()?;
+
+        Ok(ProcedureDef {
+            name: name.clone(),
+            accessor_name: name,
+            params,
+            params_for_generate: ProductTypeDef {
+                elements: params_for_generate,
+                recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
+            },
+            return_type,
+            return_type_for_generate,
+            visibility: FunctionVisibility::ClientCallable,
+        })
+    }
+
+    /// Validate a view definition.
+    fn validate_view_def(&mut self, view_def: RawViewDefV9) -> Result<ViewDef> {
+        let RawViewDefV9 {
+            name,
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+            index,
+        } = view_def;
+
+        let invalid_return_type = || {
+            ValidationErrors::from(ValidationError::InvalidViewReturnType {
+                view: name.clone(),
+                ty: return_type.clone().into(),
+            })
+        };
+
+        // The possible return types of a view are `Vec<T>`, `Option<T>`, or `Query<T>`,
+        // where `T` is a `ProductType` in the `Typespace`.
+        // Here we extract the inner product type ref `T`.
+        // We exit early for errors since this breaks all the other checks.
+        let (product_type_ref, return_kind) =
+            extract_view_return_product_type_ref(&return_type).ok_or_else(invalid_return_type)?;
+
+        let product_type = self
+            .core
+            .typespace
+            .get(product_type_ref)
+            .and_then(AlgebraicType::as_product)
+            .ok_or_else(|| {
+                ValidationErrors::from(ValidationError::InvalidProductTypeRef {
+                    table: name.clone(),
+                    ref_: product_type_ref,
+                })
+            })?;
+
+        let params_for_generate =
+            self.core
+                .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
+                    view_name: name.clone(),
+                    position,
+                    arg_name,
+                })?;
+
+        let return_type_for_generate_input = match return_kind {
+            ViewKind::Procedural => return_type.clone(),
+            // Query-builder views still return rows from the client's perspective.
+            // For codegen purposes we model this as `Vec<T>`.
+            ViewKind::Query => AlgebraicType::array(product_type_ref.into()),
+        };
+
+        let return_type_for_generate = self.core.validate_for_type_use(
+            || TypeLocation::ViewReturn {
+                view_name: name.clone(),
+            },
+            &return_type_for_generate_input,
+        );
+
+        let mut view_in_progress = ViewValidator::new(
+            name.clone(),
+            product_type_ref,
+            product_type,
+            &params,
+            &params_for_generate,
+            &mut self.core,
+        )?;
+
+        // Views have the same interface as tables and therefore must be registered in the global namespace.
+        //
+        // Note, views also share the "function namespace" with reducers and procedures.
+        // While this isn't strictly necessary because reducers and views have different calling contexts,
+        // we may want to support calling views in the same context as reducers in the future (e.g. `spacetime call`).
+        // Hence we validate uniqueness among reducer, procedure, and view names in a later pass.
+        // See `check_function_names_are_unique`.
+        let name = view_in_progress.add_to_global_namespace(name).and_then(identifier);
+
+        let n = product_type.elements.len();
+        let return_columns = (0..n)
+            .map(|id| view_in_progress.validate_view_column_def(id.into(), product_type))
+            .collect_all_errors();
+
+        let n = params.elements.len();
+        let param_columns = (0..n)
+            .map(|id| view_in_progress.validate_param_column_def(id.into()))
+            .collect_all_errors();
+
+        let (name, return_type_for_generate, return_columns, param_columns) =
+            (name, return_type_for_generate, return_columns, param_columns).combine_errors()?;
+
+        Ok(ViewDef {
+            name: name.clone(),
+            is_anonymous,
+            is_public,
+            params,
+            fn_ptr: index.into(),
+            params_for_generate: ProductTypeDef {
+                elements: params_for_generate,
+                recursive: false, // A `ProductTypeDef` not stored in a `Typespace` cannot be recursive.
+            },
+            return_type,
+            return_type_for_generate,
+            product_type_ref,
+            primary_key: None,
+            return_columns,
+            param_columns,
+            accessor_name: name,
+        })
+    }
+
+    fn validate_column_default_value(
+        &self,
+        tables: &HashMap<Identifier, TableDef>,
+        cdv: &RawColumnDefaultValueV9,
+    ) -> Result<AlgebraicValue> {
+        let table_name = self.core.resolve_identifier_with_case(cdv.table.clone())?;
+
+        // Extract the table. We cannot make progress otherwise.
+        let table = tables.get(&table_name).ok_or_else(|| ValidationError::TableNotFound {
+            table: cdv.table.clone(),
+        })?;
+
+        // Get the column that a default is being added to.
+        let Some(col) = table.columns.get(cdv.col_id.idx()) else {
+            return Err(ValidationError::ColumnNotFound {
+                table: cdv.table.clone(),
+                def: cdv.table.clone(),
+                column: cdv.col_id,
+            }
+            .into());
+        };
+
+        // First time the type of the default value is known, so decode it.
+        let mut reader = &cdv.value[..];
+        let ty = WithTypespace::new(self.core.typespace, &col.ty);
+        let field_value: Result<AlgebraicValue> =
+            ty.deserialize(Deserializer::new(&mut reader)).map_err(|decode_error| {
+                ValidationError::ColumnDefaultValueMalformed {
+                    table: cdv.table.clone(),
+                    col_id: cdv.col_id,
+                    err: decode_error,
+                }
+                .into()
+            });
+
+        field_value
+    }
+}
+
+/// Collects state used during validation.
+pub(crate) struct CoreValidator<'a> {
+    /// The typespace of the module.
+    ///
+    /// Behind a reference to ensure we don't accidentally mutate it.
+    pub(crate) typespace: &'a Typespace,
+
+    /// The in-progress typespace used to generate client types.
+    pub(crate) typespace_for_generate: TypespaceForGenerateBuilder<'a>,
+
+    /// Names we have seen so far.
+    ///
+    /// It would be nice if we could have span information here, but currently it isn't passed
+    /// through the ABI boundary.
+    /// We could add it as a `MiscModuleExport` later without breaking the ABI.
+    pub(crate) stored_in_table_def: StrMap<Identifier>,
+
+    /// Module-scoped type names we have seen so far.
+    pub(crate) type_namespace: HashMap<ScopedTypeName, AlgebraicTypeRef>,
+
+    /// Reducers that play special lifecycle roles.
+    pub(crate) lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
+
+    pub(crate) case_policy: ValidationCase,
+
+    pub(crate) explicit_names: ExplicitNamesLookup,
+}
+
+pub(crate) fn identifier(raw: RawIdentifier) -> Result<Identifier> {
+    Identifier::new(RawIdentifier::new(LeanString::from_utf8(raw.as_bytes()).unwrap()))
+        .map_err(|error| ValidationError::IdentifierError { error }.into())
+}
+
+impl CoreValidator<'_> {
+    fn resolve_identifier(
+        &self,
+        source: RawIdentifier,
+        lookup: &HashMap<RawIdentifier, RawIdentifier>,
+    ) -> Result<Identifier> {
+        if let Some(canonical_name) = lookup.get(&source) {
+            Identifier::new(canonical_name.clone()).map_err(|error| ValidationError::IdentifierError { error }.into())
+        } else {
+            self.resolve_identifier_with_case(source)
+        }
+    }
+
+    pub(crate) fn resolve_table_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.tables)
+    }
+
+    pub(crate) fn resolve_function_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.functions)
+    }
+
+    pub(crate) fn resolve_index_ident(&self, source: RawIdentifier) -> Result<Identifier> {
+        self.resolve_identifier(source, &self.explicit_names.indexes)
+    }
+
+    /// Apply case conversion to an identifier.
+    pub(crate) fn resolve_identifier_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
+        let ident = convert(raw, self.case_policy);
+
+        Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
+    }
+
+    /// Convert a raw identifier to a canonical type name.
+    ///
+    /// IMPORTANT: For all policies except `None`, type names are converted to PascalCase,
+    /// unless explicitly specified by the user.
+    pub(crate) fn resolve_type_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
+        let mut ident = raw.to_string();
+        if !matches!(self.case_policy, ValidationCase::None) {
+            ident = ident.to_case(Case::Pascal);
+        }
+
+        Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
+    }
+
+    // Recursive function to change typenames in the typespace according to the case conversion
+    // policy.
+    pub(crate) fn typespace_case_conversion(case_policy: ValidationCase, typespace: &mut Typespace) {
+        let case_policy_for_enum_variants = if matches!(case_policy, ValidationCase::SnakeCase) {
+            ValidationCase::CamelCase
+        } else {
+            case_policy
+        };
+
+        for ty in &mut typespace.types {
+            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants);
+        }
+    }
+
+    // Recursively convert names in an AlgebraicType
+    fn convert_algebraic_type(
+        ty: &mut AlgebraicType,
+        case_policy: ValidationCase,
+        case_policy_for_enum_variants: ValidationCase,
+    ) {
+        if ty.is_special() {
+            return;
+        }
+        match ty {
+            AlgebraicType::Product(product) => {
+                for element in &mut product.elements.iter_mut() {
+                    // Convert the element name if it exists
+                    if let Some(name) = element.name() {
+                        let new_name = convert(name.clone(), case_policy);
+                        element.name = Some(new_name.into());
+                    }
+                    // Recursively convert the element's type
+                    Self::convert_algebraic_type(
+                        &mut element.algebraic_type,
+                        case_policy,
+                        case_policy_for_enum_variants,
+                    );
+                }
+            }
+            AlgebraicType::Sum(sum) => {
+                for variant in &mut sum.variants.iter_mut() {
+                    // Convert the variant name if it exists
+                    if let Some(name) = variant.name() {
+                        let new_name = convert(name.clone(), case_policy_for_enum_variants);
+                        variant.name = Some(new_name.into())
+                    }
+                    // Recursively convert the variant's type
+                    Self::convert_algebraic_type(
+                        &mut variant.algebraic_type,
+                        case_policy,
+                        case_policy_for_enum_variants,
+                    );
+                }
+            }
+            AlgebraicType::Array(array) => {
+                // Arrays contain a base type that might need conversion
+                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants);
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn params_for_generate(
+        &mut self,
+        params: &ProductType,
+        make_type_location: impl Fn(usize, Option<RawIdentifier>) -> TypeLocation,
+    ) -> Result<Box<[(Identifier, AlgebraicTypeUse)]>> {
+        params
+            .elements
+            .iter()
+            .enumerate()
+            .map(|(position, param)| {
+                let location = || make_type_location(position, param.name().cloned());
+                let param_name = param
+                    .name()
+                    .cloned()
+                    .ok_or_else(|| {
+                        ValidationError::ClientCodegenError {
+                            location: location(),
+                            error: ClientCodegenError::NamelessReducerParam,
+                        }
+                        .into()
+                    })
+                    .and_then(|s| self.resolve_identifier_with_case(s));
+                let ty_use = self.validate_for_type_use(location, &param.algebraic_type);
+                (param_name, ty_use).combine_errors()
+            })
+            .collect_all_errors()
+    }
+
+    /// Add a `name` to the global namespace.
+    ///
+    /// If it has already been added, return an error.
+    ///
+    /// This is not used for all `Def` types.
+    pub(crate) fn add_to_global_namespace(&mut self, name: RawIdentifier, ident: Identifier) -> Result<RawIdentifier> {
+        // This may report the table_name as invalid multiple times, but this will be removed
+        // when we sort and deduplicate the error stream.
+        if self.stored_in_table_def.contains_key(&name) {
+            Err(ValidationError::DuplicateName { name }.into())
+        } else {
+            self.stored_in_table_def.insert(name.clone(), ident);
+            Ok(name)
+        }
+    }
+
+    /// Validate a type definition.
+    pub(crate) fn validate_type_def(&mut self, type_def: RawTypeDefV9) -> Result<TypeDef> {
+        let RawTypeDefV9 {
+            name,
+            ty,
+            custom_ordering,
+        } = type_def;
+
+        // Do these together since they are related.
+        let ty_custom_ordering: Result<(AlgebraicTypeRef, bool)> = self
+            .typespace
+            .get(ty)
+            .ok_or_else(|| {
+                ValidationError::InvalidTypeRef {
+                    type_name: name.clone(),
+                    ref_: ty,
+                }
+                .into()
+            })
+            .and_then(|pointed_to| {
+                let ordering_ok = if custom_ordering {
+                    Ok(())
+                } else {
+                    let correct = match pointed_to {
+                        AlgebraicType::Sum(sum) => sum_type_has_default_ordering(sum),
+                        AlgebraicType::Product(product) => product_type_has_default_ordering(product),
+                        _ => true,
+                    };
+                    if correct {
+                        Ok(())
+                    } else {
+                        Err(ValidationError::TypeHasIncorrectOrdering {
+                            type_name: name.clone(),
+                            ref_: ty,
+                            bad_type: pointed_to.clone().into(),
+                        }
+                        .into())
+                    }
+                };
+
+                // Now check the definition is valid
+                let def_ok = self.validate_for_type_definition(ty);
+
+                let ((), ()) = (ordering_ok, def_ok).combine_errors()?;
+
+                // note: we return the reference `ty`, not the pointed-to type `pointed_to`.
+                // The reference is semantically important.
+                Ok((ty, custom_ordering))
+            });
+
+        let RawScopedTypeNameV9 {
+            name: unscoped_name,
+            scope,
+        } = name;
+
+        let unscoped_name = self.resolve_type_with_case(unscoped_name);
+        let scope = Vec::from(scope)
+            .into_iter()
+            .map(|t| self.resolve_type_with_case(t))
+            .collect();
+
+        let name = (unscoped_name, scope)
+            .combine_errors()
+            .and_then(|(unscoped_name, scope)| {
+                let result = ScopedTypeName {
+                    name: unscoped_name,
+                    scope,
+                };
+                match self.type_namespace.insert(result.clone(), ty) {
+                    Some(_) => Err(ValidationError::DuplicateTypeName { name: result.clone() }.into()),
+                    None => Ok(result),
+                }
+            });
+
+        let (name, (ty, custom_ordering)) = (name, ty_custom_ordering).combine_errors()?;
+
+        Ok(TypeDef {
+            accessor_name: name,
+            ty,
+            custom_ordering,
+        })
+    }
+
+    /// Validates that a type can be used to generate a client type use.
+    pub(crate) fn validate_for_type_use(
+        &mut self,
+        mut location: impl FnMut() -> TypeLocation,
+        ty: &AlgebraicType,
+    ) -> Result<AlgebraicTypeUse> {
+        self.typespace_for_generate.parse_use(ty).map_err(|err| {
+            ErrorStream::expect_nonempty(err.into_iter().map(|error| ValidationError::ClientCodegenError {
+                location: location(),
+                error,
+            }))
+        })
+    }
+
+    /// Validates that a type can be used to generate a client type definition.
+    pub(crate) fn validate_for_type_definition(&mut self, ref_: AlgebraicTypeRef) -> Result<()> {
+        self.typespace_for_generate.add_definition(ref_).map_err(|err| {
+            ErrorStream::expect_nonempty(err.into_iter().map(|error| ValidationError::ClientCodegenError {
+                location: TypeLocation::InTypespace { ref_ },
+                error,
+            }))
+        })
+    }
+
+    pub(crate) fn register_lifecycle(&mut self, lifecycle: Lifecycle, reducer_id: ReducerId) -> Result<()> {
+        match &mut self.lifecycle_reducers[lifecycle] {
+            x @ None => {
+                *x = Some(reducer_id);
+                Ok(())
+            }
+            Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
+        }
+    }
+
+    pub(crate) fn validate_schedule_def(
+        &mut self,
+        table_name: RawIdentifier,
+        name: RawIdentifier,
+        function_name: RawIdentifier,
+        product_type: &ProductType,
+        schedule_at_col: ColId,
+        primary_key: Option<ColId>,
+    ) -> Result<ScheduleDef> {
+        let at_column = product_type
+            .elements
+            .get(schedule_at_col.idx())
+            .is_some_and(|ty| ty.algebraic_type.is_schedule_at())
+            .then_some(schedule_at_col);
+
+        let id_column = primary_key.filter(|pk| {
+            product_type
+                .elements
+                .get(pk.idx())
+                .is_some_and(|ty| ty.algebraic_type == AlgebraicType::U64)
+        });
+
+        // Error if either column is missing.
+        let at_id = at_column.zip(id_column).ok_or_else(|| {
+            ValidationError::ScheduledIncorrectColumns {
+                table: table_name.clone(),
+                columns: product_type.clone(),
+            }
+            .into()
+        });
+        let table_name = self.resolve_table_ident(table_name)?;
+        let name_res = self.add_to_global_namespace(name.clone(), table_name);
+        let function_name = self.resolve_function_ident(function_name);
+
+        let (_, (at_column, id_column), function_name) = (name_res, at_id, function_name).combine_errors()?;
+
+        Ok(ScheduleDef {
+            name: Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error })?,
+            at_column,
+            id_column,
+            function_name,
+
+            // Fill this in as a placeholder now.
+            // It will be populated with the correct `FunctionKind` later,
+            // in `check_scheduled_functions_exist`.
+            function_kind: FunctionKind::Unknown,
+        })
+    }
+}
+
+/// A partially validated view.
+///
+/// This is just a small wrapper around [`TableValidator`] so that we can:
+/// 1. Validate column defs
+/// 2. Insert view names into the global namespace.
+pub(crate) struct ViewValidator<'a, 'b> {
+    inner: TableValidator<'a, 'b>,
+    params: &'a ProductType,
+    params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
+}
+
+impl<'a, 'b> ViewValidator<'a, 'b> {
+    pub(crate) fn new(
+        raw_name: RawIdentifier,
+        product_type_ref: AlgebraicTypeRef,
+        product_type: &'a ProductType,
+        params: &'a ProductType,
+        params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
+        module_validator: &'a mut CoreValidator<'b>,
+    ) -> Result<Self> {
+        Ok(Self {
+            inner: TableValidator::new(raw_name, product_type_ref, product_type, module_validator)?,
+            params,
+            params_for_generate,
+        })
+    }
+
+    pub(crate) fn validate_param_column_def(&mut self, col_id: ColId) -> Result<ViewParamDef> {
+        let column = &self
+            .params
+            .elements
+            .get(col_id.idx())
+            .expect("enumerate is generating an out-of-range index...");
+
+        let (_, ty_for_generate) = self
+            .params_for_generate
+            .get(col_id.idx())
+            .expect("enumerate is generating an out-of-range index...");
+
+        let name: Result<Identifier> = self.inner.module_validator.resolve_identifier_with_case(
+            column
+                .name()
+                .cloned()
+                .unwrap_or_else(|| RawIdentifier::new(format!("param_{}", col_id))),
+        );
+
+        // This error will be created multiple times if the view name is invalid,
+        // but we sort and deduplicate the error stream afterwards,
+        // so it isn't a huge deal.
+        //
+        // This is necessary because we require `ErrorStream` to be nonempty.
+        // We need to put something in there if the view name is invalid.
+        let view_name = self
+            .inner
+            .module_validator
+            .resolve_identifier_with_case(self.inner.raw_name.clone());
+
+        let (name, view_name) = (name, view_name).combine_errors()?;
+
+        Ok(ViewParamDef {
+            name,
+            ty: column.algebraic_type.clone(),
+            ty_for_generate: ty_for_generate.clone(),
+            col_id,
+            view_name,
+        })
+    }
+
+    pub(crate) fn validate_view_column_def(
+        &mut self,
+        col_id: ColId,
+        product_type: &'a ProductType,
+    ) -> Result<ViewColumnDef> {
+        self.inner
+            .validate_column_def(col_id, product_type)
+            .map(ViewColumnDef::from)
+    }
+
+    pub(crate) fn add_to_global_namespace(&mut self, name: RawIdentifier) -> Result<RawIdentifier> {
+        self.inner.add_to_global_namespace(name)
+    }
+}
+
+/// A partially validated table.
+pub(crate) struct TableValidator<'a, 'b> {
+    pub(crate) module_validator: &'a mut CoreValidator<'b>,
+    raw_name: RawIdentifier,
+    product_type_ref: AlgebraicTypeRef,
+    product_type: &'a ProductType,
+    has_sequence: HashSet<ColId>,
+    pub(crate) table_ident: Identifier,
+}
+
+impl<'a, 'b> TableValidator<'a, 'b> {
+    pub(crate) fn new(
+        raw_name: RawIdentifier,
+        product_type_ref: AlgebraicTypeRef,
+        product_type: &'a ProductType,
+        module_validator: &'a mut CoreValidator<'b>,
+    ) -> Result<Self> {
+        let table_ident = module_validator.resolve_table_ident(raw_name.clone())?;
+        Ok(Self {
+            raw_name,
+            product_type_ref,
+            product_type,
+            module_validator,
+            has_sequence: Default::default(),
+            table_ident,
+        })
+    }
+    /// Validate a column.
+    ///
+    /// Note that this accepts a `ProductTypeElement` rather than a `ColumnDef`,
+    /// because all information about columns is stored in the `Typespace` in ABI version 9.
+    pub(crate) fn validate_column_def(&mut self, col_id: ColId, product_type: &'a ProductType) -> Result<ColumnDef> {
+        let column = product_type
+            .elements
+            .get(col_id.idx())
+            .expect("enumerate is generating an out-of-range index...");
+
+        let accessor_name = column.name().cloned().ok_or_else(|| {
+            ValidationError::UnnamedColumn {
+                column: self.raw_column_name(col_id),
+            }
+            .into()
+        });
+
+        let ty_for_generate = self.module_validator.validate_for_type_use(
+            || TypeLocation::InTypespace {
+                ref_: self.product_type_ref,
+            },
+            &column.algebraic_type,
+        );
+
+        let (accessor_name, ty_for_generate) = (accessor_name, ty_for_generate).combine_errors()?;
+
+        Ok(ColumnDef {
+            accessor_name: identifier(accessor_name.clone())?,
+            name: self.module_validator.resolve_identifier_with_case(accessor_name)?,
+            ty: column.algebraic_type.clone(),
+            ty_for_generate,
+            col_id,
+            table_name: self.table_ident.clone(),
+            default_value: None, // filled in later
+        })
+    }
+
+    pub(crate) fn validate_primary_key(
+        &mut self,
+        validated_constraints: StrMap<ConstraintDef>,
+        primary_key: ColList,
+    ) -> Result<(StrMap<ConstraintDef>, Option<ColId>)> {
+        if primary_key.len() > 1 {
+            return Err(ValidationError::RepeatedPrimaryKey {
+                table: self.raw_name.clone(),
+            }
+            .into());
+        }
+        let pk = primary_key
+            .head()
+            .map(|pk| -> Result<ColId> {
+                let pk = self.validate_col_id(&self.raw_name, pk)?;
+                let pk_col_list = ColSet::from(pk);
+                if validated_constraints.values().any(|constraint| {
+                    let ConstraintData::Unique(UniqueConstraintData { columns }) = &constraint.data;
+                    columns == &pk_col_list
+                }) {
+                    Ok(pk)
+                } else {
+                    Err(ValidationError::MissingPrimaryKeyUniqueConstraint {
+                        column: self.raw_column_name(pk),
+                    }
+                    .into())
+                }
+            })
+            .transpose()?;
+        Ok((validated_constraints, pk))
+    }
+
+    pub(crate) fn validate_sequence_def(&mut self, sequence: RawSequenceDefV9) -> Result<SequenceDef> {
+        let RawSequenceDefV9 {
+            column,
+            min_value,
+            start,
+            max_value,
+            increment,
+            name,
+        } = sequence;
+
+        let name = name.unwrap_or_else(|| generate_sequence_name(&self.table_ident, self.product_type, column));
+
+        // The column for the sequence exists and is an appropriate type.
+        let column = self.validate_col_id(&name, column).and_then(|col_id| {
+            let ty = &self.product_type.elements[col_id.idx()].algebraic_type;
+
+            if !ty.is_integer() {
+                Err(ValidationError::InvalidSequenceColumnType {
+                    sequence: name.clone(),
+                    column: self.raw_column_name(col_id),
+                    column_type: ty.clone().into(),
+                }
+                .into())
+            } else if !self.has_sequence.insert(col_id) {
+                Err(ValidationError::OneAutoInc {
+                    column: self.raw_column_name(col_id),
+                }
+                .into())
+            } else {
+                Ok(col_id)
+            }
+        });
+
+        /// Compare two `Option<i128>` values, returning `true` if `lo <= hi`,
+        /// or if either is `None`.
+        pub(crate) fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
+            match (lo, hi) {
+                (Some(lo), Some(hi)) => lo <= hi,
+                _ => true,
+            }
+        }
+        let valid = le(min_value, start) && le(start, max_value) && le(min_value, max_value);
+
+        let min_start_max = if valid {
+            Ok((min_value, start, max_value))
+        } else {
+            Err(ValidationError::InvalidSequenceRange {
+                sequence: name.clone(),
+                min_value,
+                start,
+                max_value,
+            }
+            .into())
+        };
+
+        let name = self.add_to_global_namespace(name);
+
+        let (name, column, (min_value, start, max_value)) = (name, column, min_start_max).combine_errors()?;
+
+        Ok(SequenceDef {
+            name,
+            column,
+            min_value,
+            start,
+            max_value,
+            increment,
+        })
+    }
+
+    /// Validates an index definition for V9 and earlier versions
+    pub(crate) fn validate_index_def_v9(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
+        let RawIndexDefV9 {
+            name,
+            algorithm: algorithm_raw,
+            accessor_name,
+        } = index;
+
+        let name = name.unwrap_or_else(|| generate_index_name(&self.table_ident, self.product_type, &algorithm_raw));
+
+        let name = self.add_to_global_namespace(name)?;
+
+        let algorithm = self.validate_algorithm(&name, algorithm_raw)?;
+
+        // In V9, accessor_name is used for codegen
+        let codegen_name = accessor_name
+            .map(|s| self.module_validator.resolve_identifier_with_case(s))
+            .transpose()?;
+
+        Ok(IndexDef {
+            name: name.clone(),
+            accessor_name: codegen_name,
+            source_name: name,
+            algorithm,
+        })
+    }
+
+    /// Validates an index definition for V10 and later versions
+    pub(crate) fn validate_index_def_v10(&mut self, index: RawIndexDefV10) -> Result<IndexDef> {
+        let RawIndexDefV10 {
+            source_name,
+            algorithm: algorithm_raw,
+            accessor_name,
+        } = index;
+
+        //source_name will be used as alias, hence we need to add it to the global namespace as
+        //well.
+        let source_name = source_name.expect("source_name should be provided in V10, accessor_names inside module");
+        let source_name = self.add_to_global_namespace(source_name.clone())?;
+
+        let name = if self.module_validator.explicit_names.indexes.get(&source_name).is_some() {
+            self.module_validator.resolve_index_ident(source_name.clone())?
+        } else {
+            identifier(generate_index_name(
+                &self.table_ident,
+                self.product_type,
+                &algorithm_raw,
+            ))?
+        };
+
+        let name = if *name.as_raw() != source_name {
+            self.add_to_global_namespace(name.as_raw().clone())?
+        } else {
+            name.as_raw().clone()
+        };
+
+        let algorithm = self.validate_algorithm(&name, algorithm_raw.clone())?;
+
+        Ok(IndexDef {
+            name: name.clone(),
+            accessor_name: accessor_name.map(identifier).transpose()?,
+            source_name,
+            algorithm,
+        })
+    }
+
+    /// Common validation logic for index algorithms
+    fn validate_algorithm(&mut self, name: &RawIdentifier, algorithm_raw: RawIndexAlgorithm) -> Result<IndexAlgorithm> {
+        match algorithm_raw {
+            RawIndexAlgorithm::BTree { columns } => self
+                .validate_col_ids(name, columns)
+                .map(|columns| BTreeAlgorithm { columns }.into()),
+
+            RawIndexAlgorithm::Hash { columns } => self
+                .validate_col_ids(name, columns)
+                .map(|columns| HashAlgorithm { columns }.into()),
+
+            RawIndexAlgorithm::Direct { column } => self.validate_col_id(name, column).and_then(|column| {
+                let field = &self.product_type.elements[column.idx()];
+                let ty = &field.algebraic_type;
+                let is_bad_type = match ty {
+                    AlgebraicType::U8 | AlgebraicType::U16 | AlgebraicType::U32 | AlgebraicType::U64 => false,
+                    AlgebraicType::Ref(r) => self.module_validator.typespace[*r]
+                        .as_sum()
+                        .is_none_or(|s| !s.is_simple_enum()),
+                    AlgebraicType::Sum(sum) if sum.is_simple_enum() => false,
+                    _ => true,
+                };
+                if is_bad_type {
+                    return Err(ValidationError::DirectIndexOnBadType {
+                        index: name.clone(),
+                        column: field
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| RawIdentifier::new(format!("{}", column.idx()))),
+                        ty: ty.clone().into(),
+                    }
+                    .into());
+                }
+
+                Ok(DirectAlgorithm { column }.into())
+            }),
+
+            algo => unreachable!("unknown algorithm {algo:?}"),
+        }
+    }
+
+    /// Validate a unique constraint definition.
+    pub(crate) fn validate_constraint_def<F>(
+        &mut self,
+        constraint: RawConstraintDefV9,
+        make_name: F,
+    ) -> Result<ConstraintDef>
+    where
+        F: FnOnce(Option<RawIdentifier>, &ColList) -> RawIdentifier,
+    {
+        let RawConstraintDefV9 { name, data } = constraint;
+
+        if let RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }) = data {
+            let name = make_name(name, &columns);
+
+            let columns: Result<ColList> = self.validate_col_ids(&name, columns);
+            let name = self.add_to_global_namespace(name);
+
+            let (name, columns) = (name, columns).combine_errors()?;
+            let columns: ColSet = columns.into();
+            Ok(ConstraintDef {
+                name,
+                data: ConstraintData::Unique(UniqueConstraintData { columns }),
+            })
+        } else {
+            unimplemented!("Unknown constraint type")
+        }
+    }
+
+    /// Validate a schedule definition.
+    pub(crate) fn validate_schedule_def(
+        &mut self,
+        schedule: RawScheduleDefV9,
+        primary_key: Option<ColId>,
+    ) -> Result<ScheduleDef> {
+        let RawScheduleDefV9 {
+            // Despite the field name, a `RawScheduleDefV9` may refer to either a reducer or a function.
+            reducer_name: function_name,
+            scheduled_at_column,
+            name,
+        } = schedule;
+
+        let name = name.unwrap_or_else(|| generate_schedule_name(&self.table_ident.clone()));
+
+        self.module_validator.validate_schedule_def(
+            self.raw_name.clone(),
+            name,
+            function_name,
+            self.product_type,
+            scheduled_at_column,
+            primary_key,
+        )
+    }
+
+    /// Validate `name` as an `Identifier` and add it to the global namespace, registering the corresponding `Def` as being stored in a  particular `TableDef`.
+    ///
+    /// If it has already been added, return an error.
+    ///
+    /// This is not used for all `Def` types.
+    pub(crate) fn add_to_global_namespace(&mut self, name: RawIdentifier) -> Result<RawIdentifier> {
+        // This may report the table_name as invalid multiple times, but this will be removed
+        // when we sort and deduplicate the error stream.
+        self.module_validator
+            .add_to_global_namespace(name, self.table_ident.clone())
+    }
+
+    /// Validate a `ColId` for this table, returning it unmodified if valid.
+    /// `def_name` is the name of the definition being validated and is used in errors.
+    pub(crate) fn validate_col_id(&self, def_name: &RawIdentifier, col_id: ColId) -> Result<ColId> {
+        if self.product_type.elements.get(col_id.idx()).is_some() {
+            Ok(col_id)
+        } else {
+            Err(ValidationError::ColumnNotFound {
+                column: col_id,
+                table: self.raw_name.clone(),
+                def: def_name.clone(),
+            }
+            .into())
+        }
+    }
+
+    /// Validate a `ColList` for this table, returning it unmodified if valid.
+    /// `def_name` is the name of the definition being validated and is used in errors.
+    pub(crate) fn validate_col_ids(&self, def_name: &RawIdentifier, ids: ColList) -> Result<ColList> {
+        let mut collected: Vec<ColId> = ids
+            .iter()
+            .map(|column| self.validate_col_id(def_name, column))
+            .collect_all_errors()?;
+
+        collected.sort();
+        collected.dedup();
+
+        if collected.len() != ids.len() as usize {
+            Err(ValidationError::DuplicateColumns {
+                columns: ids,
+                def: def_name.clone(),
+            }
+            .into())
+        } else {
+            Ok(ids)
+        }
+    }
+
+    /// Return a best effort name for this column, to be used in errors.
+    /// If we can't find a string name for it, use an integer instead.
+    ///
+    /// (It's generally preferable to avoid integer names, since types using the default
+    /// ordering are implicitly shuffled!)
+    pub(crate) fn raw_column_name(&self, col_id: ColId) -> RawColumnName {
+        let column: RawIdentifier = self
+            .product_type
+            .elements
+            .get(col_id.idx())
+            .and_then(|col| col.name())
+            .cloned()
+            .unwrap_or_else(|| RawIdentifier::new(format!("{col_id}")));
+
+        RawColumnName {
+            table: self.raw_name.clone(),
+            column,
+        }
+    }
+}
+
+/// Get the name of a column in the typespace.
+///
+/// Only used for generating names for indexes, sequences, and unique constraints.
+///
+/// Generates `col_{column}` if the column has no name or if the `RawTableDef`'s `table_type_ref`
+/// was initialized incorrectly.
+fn column_name(table_type: &ProductType, column: ColId) -> String {
+    table_type
+        .elements
+        .get(column.idx())
+        .and_then(|column| column.name().map(ToString::to_string))
+        .unwrap_or_else(|| format!("col_{}", column.0))
+}
+
+/// Concatenate a list of column names.
+fn concat_column_names(table_type: &ProductType, selected: &ColList) -> String {
+    selected.iter().map(|col| column_name(table_type, col)).join("_")
+}
+
+/// All indexes have this name format.
+///
+/// Generated name should not go through case conversion.
+pub fn generate_index_name(
+    table_name: &Identifier,
+    table_type: &ProductType,
+    algorithm: &RawIndexAlgorithm,
+) -> RawIdentifier {
+    let (label, columns) = match algorithm {
+        RawIndexAlgorithm::BTree { columns } => ("btree", columns),
+        RawIndexAlgorithm::Direct { column } => ("direct", &col_list![*column]),
+        RawIndexAlgorithm::Hash { columns } => ("hash", columns),
+        _ => unimplemented!("Unknown index algorithm {:?}", algorithm),
+    };
+    let column_names = concat_column_names(table_type, columns);
+    RawIdentifier::new(format!("{table_name}_{column_names}_idx_{label}"))
+}
+
+/// All sequences have this name format.
+///
+/// Generated name should not go through case conversion.
+pub fn generate_sequence_name(table_name: &Identifier, table_type: &ProductType, column: ColId) -> RawIdentifier {
+    let column_name = column_name(table_type, column);
+    RawIdentifier::new(format!("{table_name}_{column_name}_seq"))
+}
+
+/// All schedules have this name format.
+///
+/// Generated name should not go through case conversion.
+pub fn generate_schedule_name(table_name: &Identifier) -> RawIdentifier {
+    RawIdentifier::new(format!("{table_name}_sched"))
+}
+
+/// All unique constraints have this name format.
+///
+/// Generated name should not go through case conversion.
+pub fn generate_unique_constraint_name(
+    table_name: &Identifier,
+    product_type: &ProductType,
+    columns: &ColList,
+) -> RawIdentifier {
+    let column_names = concat_column_names(product_type, columns);
+    RawIdentifier::new(format!("{table_name}_{column_names}_key"))
+}
+
+/// Helper to create an `Identifier` from a `RawIdentifier` with the appropriate error type.
+/// TODO: memoize this.
+//pub(crate) fn identifier(name: RawIdentifier) -> Result<Identifier> {
+//    Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
+//}
+pub(crate) fn convert(identifier: RawIdentifier, policy: ValidationCase) -> String {
+    let identifier = identifier.to_string();
+
+    match policy {
+        ValidationCase::SnakeCase => identifier.to_case(Case::Snake),
+        ValidationCase::CamelCase => identifier.to_case(Case::Camel),
+        ValidationCase::None => identifier,
+    }
+}
+
+/// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure
+/// and that the function's arguments are appropriate for the table,
+/// then record the scheduled function's [`FunctionKind`] in the [`ScheduleDef`].
+pub(crate) fn check_scheduled_functions_exist(
+    tables: &mut IdentifierMap<TableDef>,
+    reducers: &IndexMap<Identifier, ReducerDef>,
+    procedures: &IndexMap<Identifier, ProcedureDef>,
+) -> Result<()> {
+    let validate_params =
+        |params_from_function: &ProductType, table_row_type_ref: AlgebraicTypeRef, function_name: Identifier| {
+            if params_from_function.elements.len() == 1
+                && params_from_function.elements[0].algebraic_type == table_row_type_ref.into()
+            {
+                Ok(())
+            } else {
+                Err(ValidationError::IncorrectScheduledFunctionParams {
+                    function_name: function_name.into(),
+                    function_kind: FunctionKind::Reducer,
+                    expected: AlgebraicType::product([AlgebraicType::Ref(table_row_type_ref)]).into(),
+                    actual: params_from_function.clone().into(),
+                })
+            }
+        };
+
+    tables
+        .values_mut()
+        .map(|table| -> Result<()> {
+            if let Some(schedule) = &mut table.schedule {
+                if let Some(reducer) = reducers.get(&schedule.function_name) {
+                    schedule.function_kind = FunctionKind::Reducer;
+                    validate_params(&reducer.params, table.product_type_ref, reducer.name.clone().into())
+                        .map_err(Into::into)
+                } else if let Some(procedure) = procedures.get(&schedule.function_name) {
+                    schedule.function_kind = FunctionKind::Procedure;
+                    validate_params(&procedure.params, table.product_type_ref, procedure.name.clone())
+                        .map_err(Into::into)
+                } else {
+                    Err(ValidationError::MissingScheduledFunction {
+                        schedule: schedule.name.clone(),
+                        function: schedule.function_name.clone(),
+                    }
+                    .into())
+                }
+            } else {
+                Ok(())
+            }
+        })
+        .collect_all_errors()
+}
+
+/// Check that all function (reducer, procedure, or view) names are unique,
+/// then re-organize the reducers and procedures into [`IndexMap`]s
+/// for storage in the [`ModuleDef`].
+#[allow(clippy::type_complexity)]
+pub fn check_function_names_are_unique(
+    reducers: Vec<(Identifier, ReducerDef)>,
+    procedures: Vec<(Identifier, ProcedureDef)>,
+    views: Vec<(Identifier, ViewDef)>,
+) -> Result<(
+    IndexMap<Identifier, ReducerDef>,
+    IndexMap<Identifier, ProcedureDef>,
+    IndexMap<Identifier, ViewDef>,
+)> {
+    let mut errors = vec![];
+
+    let mut reducers_map = IndexMap::with_capacity(reducers.len());
+
+    for (name, def) in reducers {
+        if reducers_map.contains_key(&name) {
+            errors.push(ValidationError::DuplicateFunctionName { name });
+        } else {
+            reducers_map.insert(name, def);
+        }
+    }
+
+    let mut procedures_map = IndexMap::with_capacity(procedures.len());
+
+    for (name, def) in procedures {
+        if reducers_map.contains_key(&name) || procedures_map.contains_key(&name) {
+            errors.push(ValidationError::DuplicateFunctionName { name });
+        } else {
+            procedures_map.insert(name, def);
+        }
+    }
+
+    let mut views_map = IndexMap::with_capacity(views.len());
+
+    for (name, def) in views {
+        if reducers_map.contains_key(&name) || procedures_map.contains_key(&name) || views_map.contains_key(&name) {
+            errors.push(ValidationError::DuplicateFunctionName { name });
+        } else {
+            views_map.insert(name, def);
+        }
+    }
+
+    ErrorStream::add_extra_errors(Ok((reducers_map, procedures_map, views_map)), errors)
+}
+
+fn check_non_procedure_misc_exports(
+    misc_exports: Vec<RawMiscModuleExportV9>,
+    validator: &ModuleValidatorV9,
+    tables: &mut IdentifierMap<TableDef>,
+) -> Result<()> {
+    misc_exports
+        .into_iter()
+        .map(|export| match export {
+            RawMiscModuleExportV9::ColumnDefaultValue(cdv) => process_column_default_value(&cdv, validator, tables),
+            RawMiscModuleExportV9::Procedure(_proc) => {
+                unreachable!("Procedure defs should already have been sorted out of `misc_exports`")
+            }
+            _ => unimplemented!("unknown misc export"),
+        })
+        .collect_all_errors::<()>()
+}
+
+fn process_column_default_value(
+    cdv: &RawColumnDefaultValueV9,
+    validator: &ModuleValidatorV9,
+    tables: &mut IdentifierMap<TableDef>,
+) -> Result<()> {
+    // Validate the default value
+    let validated_value = validator.validate_column_default_value(tables, cdv)?;
+
+    let table_name = validator.core.resolve_identifier_with_case(cdv.table.clone())?;
+    let table = tables
+        .get_mut(&table_name)
+        .ok_or_else(|| ValidationError::TableNotFound {
+            table: cdv.table.clone(),
+        })?;
+
+    let column = table
+        .columns
+        .get_mut(cdv.col_id.idx())
+        .ok_or_else(|| ValidationError::ColumnNotFound {
+            table: cdv.table.clone(),
+            def: cdv.table.clone(),
+            column: cdv.col_id,
+        })?;
+
+    // Ensure there's only one default value.
+    if column.default_value.is_some() {
+        return Err(ValidationError::MultipleColumnDefaultValues {
+            table: cdv.table.clone(),
+            col_id: cdv.col_id,
+        }
+        .into());
+    }
+
+    // Set the default value
+    column.default_value = Some(validated_value);
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::def::validate::tests::{
+        check_product_type, expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name,
+    };
+    use crate::def::{validate::Result, ModuleDef};
+    use crate::def::{
+        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexAlgorithm, IndexDef,
+        SequenceDef, UniqueConstraintData,
+    };
+    use crate::error::*;
+    use crate::type_for_generate::ClientCodegenError;
+
+    use itertools::Itertools;
+    use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
+    use spacetimedb_lib::db::raw_def::*;
+    use spacetimedb_lib::ScheduleAt;
+    use spacetimedb_primitives::{ColId, ColList, ColSet};
+    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
+    use v9::{Lifecycle, RawModuleDefV9Builder, TableAccess, TableType};
+
+    /// This test attempts to exercise every successful path in the validation code.
+    #[test]
+    fn valid_definition() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let product_type = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::String)]);
+        let product_type_ref = builder.add_algebraic_type(
+            ["scope1".into(), "scope2".into()],
+            "ReferencedProduct",
+            product_type.clone(),
+            false,
+        );
+
+        let sum_type = AlgebraicType::simple_enum(["Gala", "GrannySmith", "RedDelicious"].into_iter());
+        let sum_type_ref = builder.add_algebraic_type([], "ReferencedSum", sum_type.clone(), false);
+
+        let schedule_at_type = builder.add_type::<ScheduleAt>();
+
+        let red_delicious = AlgebraicValue::Sum(SumValue::new(2, ()));
+
+        builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("name", AlgebraicType::String),
+                    ("count", AlgebraicType::U16),
+                    ("type", sum_type_ref.into()),
+                ]),
+                true,
+            )
+            .with_index(btree([1, 2]), "apples_id")
+            .with_index(direct(2), "Apples_count_direct")
+            .with_unique_constraint(2)
+            .with_index(btree(3), "Apples_type_btree")
+            .with_unique_constraint(3)
+            .with_default_column_value(2, AlgebraicValue::U16(37))
+            .with_default_column_value(3, red_delicious.clone())
+            .finish();
+
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([
+                    ("count", AlgebraicType::U16),
+                    ("id", AlgebraicType::U64),
+                    ("name", AlgebraicType::String),
+                    (
+                        "optional_product_column",
+                        AlgebraicType::option(product_type_ref.into()),
+                    ),
+                ]),
+                false,
+            )
+            .with_column_sequence(0)
+            .with_unique_constraint(ColId(0))
+            .with_primary_key(0)
+            .with_access(TableAccess::Private)
+            .with_index(btree(0), "bananas_count")
+            .with_index(btree([0, 1, 2]), "bananas_count_id_name")
+            .finish();
+
+        let deliveries_product_type = builder
+            .build_table_with_new_type(
+                "Deliveries",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("scheduled_at", schedule_at_type.clone()),
+                    ("scheduled_id", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(2)
+            .with_index(btree(2), "scheduled_id_index")
+            .with_schedule("check_deliveries", 1)
+            .with_type(TableType::System)
+            .finish();
+
+        builder.add_reducer("init", ProductType::unit(), Some(Lifecycle::Init));
+        builder.add_reducer("on_connect", ProductType::unit(), Some(Lifecycle::OnConnect));
+        builder.add_reducer("on_disconnect", ProductType::unit(), Some(Lifecycle::OnDisconnect));
+        builder.add_reducer("extra_reducer", ProductType::from([("a", AlgebraicType::U64)]), None);
+        builder.add_reducer(
+            "check_deliveries",
+            ProductType::from([("a", deliveries_product_type.into())]),
+            None,
+        );
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+
+        let apples = expect_identifier("Apples");
+        let bananas = expect_identifier("Bananas");
+        let deliveries = expect_identifier("Deliveries");
+
+        assert_eq!(def.tables.len(), 3);
+
+        let apples_def = &def.tables[&apples];
+
+        assert_eq!(apples_def.name, apples);
+        assert_eq!(apples_def.table_type, TableType::User);
+        assert_eq!(apples_def.table_access, TableAccess::Public);
+
+        assert_eq!(apples_def.columns.len(), 4);
+        assert_eq!(apples_def.columns[0].name, expect_identifier("id"));
+        assert_eq!(apples_def.columns[0].ty, AlgebraicType::U64);
+        assert_eq!(apples_def.columns[0].default_value, None);
+        assert_eq!(apples_def.columns[1].name, expect_identifier("name"));
+        assert_eq!(apples_def.columns[1].ty, AlgebraicType::String);
+        assert_eq!(apples_def.columns[1].default_value, None);
+        assert_eq!(apples_def.columns[2].name, expect_identifier("count"));
+        assert_eq!(apples_def.columns[2].ty, AlgebraicType::U16);
+        assert_eq!(apples_def.columns[2].default_value, Some(AlgebraicValue::U16(37)));
+        assert_eq!(apples_def.columns[3].name, expect_identifier("type"));
+        assert_eq!(apples_def.columns[3].ty, sum_type_ref.into());
+        assert_eq!(apples_def.columns[3].default_value, Some(red_delicious));
+        assert_eq!(expect_resolve(&def.typespace, &apples_def.columns[3].ty), sum_type);
+
+        assert_eq!(apples_def.primary_key, None);
+
+        assert_eq!(apples_def.constraints.len(), 2);
+        let apples_unique_constraint = "Apples_type_key";
+        assert_eq!(
+            apples_def.constraints[apples_unique_constraint].data,
+            ConstraintData::Unique(UniqueConstraintData {
+                columns: ColId(3).into()
+            })
+        );
+        assert_eq!(
+            &apples_def.constraints[apples_unique_constraint].name[..],
+            apples_unique_constraint
+        );
+
+        assert_eq!(apples_def.indexes.len(), 3);
+        assert_eq!(
+            apples_def
+                .indexes
+                .values()
+                .sorted_by_key(|id| &id.name)
+                .collect::<Vec<_>>(),
+            [
+                &IndexDef {
+                    name: "Apples_count_idx_direct".into(),
+                    accessor_name: Some(expect_identifier("Apples_count_direct")),
+                    algorithm: DirectAlgorithm { column: 2.into() }.into(),
+                    source_name: "Apples_count_idx_direct".into(),
+                },
+                &IndexDef {
+                    name: "Apples_name_count_idx_btree".into(),
+                    accessor_name: Some(expect_identifier("apples_id")),
+                    algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
+                    source_name: "Apples_name_count_idx_btree".into(),
+                },
+                &IndexDef {
+                    name: "Apples_type_idx_btree".into(),
+                    accessor_name: Some(expect_identifier("Apples_type_btree")),
+                    algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
+                    source_name: "Apples_type_idx_btree".into(),
+                }
+            ]
+        );
+
+        let bananas_def = &def.tables[&bananas];
+
+        assert_eq!(bananas_def.name, bananas);
+        assert_eq!(bananas_def.table_access, TableAccess::Private);
+        assert_eq!(bananas_def.table_type, TableType::User);
+        assert_eq!(bananas_def.columns.len(), 4);
+        assert_eq!(bananas_def.columns[0].name, expect_identifier("count"));
+        assert_eq!(bananas_def.columns[0].ty, AlgebraicType::U16);
+        assert_eq!(bananas_def.columns[1].name, expect_identifier("id"));
+        assert_eq!(bananas_def.columns[1].ty, AlgebraicType::U64);
+        assert_eq!(bananas_def.columns[2].name, expect_identifier("name"));
+        assert_eq!(bananas_def.columns[2].ty, AlgebraicType::String);
+        assert_eq!(
+            bananas_def.columns[3].name,
+            expect_identifier("optional_product_column")
+        );
+        assert_eq!(
+            bananas_def.columns[3].ty,
+            AlgebraicType::option(product_type_ref.into())
+        );
+        assert_eq!(bananas_def.primary_key, Some(0.into()));
+        assert_eq!(bananas_def.indexes.len(), 2);
+        assert_eq!(bananas_def.constraints.len(), 1);
+        let (bananas_constraint_name, bananas_constraint) = bananas_def.constraints.iter().next().unwrap();
+        assert_eq!(bananas_constraint_name, &bananas_constraint.name);
+        assert_eq!(
+            bananas_constraint.data,
+            ConstraintData::Unique(UniqueConstraintData {
+                columns: ColId(0).into()
+            })
+        );
+
+        let delivery_def = &def.tables[&deliveries];
+        assert_eq!(delivery_def.name, deliveries);
+        assert_eq!(delivery_def.table_access, TableAccess::Public);
+        assert_eq!(delivery_def.table_type, TableType::System);
+        assert_eq!(delivery_def.columns.len(), 3);
+        assert_eq!(delivery_def.columns[0].name, expect_identifier("id"));
+        assert_eq!(delivery_def.columns[0].ty, AlgebraicType::U64);
+        assert_eq!(delivery_def.columns[1].name, expect_identifier("scheduled_at"));
+        assert_eq!(delivery_def.columns[1].ty, schedule_at_type);
+        assert_eq!(delivery_def.columns[2].name, expect_identifier("scheduled_id"));
+        assert_eq!(delivery_def.columns[2].ty, AlgebraicType::U64);
+        assert_eq!(delivery_def.schedule.as_ref().unwrap().at_column, 1.into());
+        assert_eq!(
+            &delivery_def.schedule.as_ref().unwrap().function_name[..],
+            "check_deliveries"
+        );
+        assert_eq!(
+            delivery_def.schedule.as_ref().unwrap().function_kind,
+            FunctionKind::Reducer
+        );
+        assert_eq!(delivery_def.primary_key, Some(ColId(2)));
+
+        assert_eq!(def.typespace.get(product_type_ref), Some(&product_type));
+        assert_eq!(def.typespace.get(sum_type_ref), Some(&sum_type));
+
+        check_product_type(&def, apples_def);
+        check_product_type(&def, bananas_def);
+        check_product_type(&def, delivery_def);
+
+        let product_type_name = expect_type_name("scope1::scope2::ReferencedProduct");
+        let sum_type_name = expect_type_name("ReferencedSum");
+        let apples_type_name = expect_type_name("Apples");
+        let bananas_type_name = expect_type_name("Bananas");
+        let deliveries_type_name = expect_type_name("Deliveries");
+
+        assert_eq!(def.types[&product_type_name].ty, product_type_ref);
+        assert_eq!(def.types[&sum_type_name].ty, sum_type_ref);
+        assert_eq!(def.types[&apples_type_name].ty, apples_def.product_type_ref);
+        assert_eq!(def.types[&bananas_type_name].ty, bananas_def.product_type_ref);
+        assert_eq!(def.types[&deliveries_type_name].ty, delivery_def.product_type_ref);
+
+        let init_name = expect_identifier("init");
+        assert_eq!(&*def.reducers[&init_name].name, &*init_name);
+        assert_eq!(def.reducers[&init_name].lifecycle, Some(Lifecycle::Init));
+
+        let on_connect_name = expect_identifier("on_connect");
+        assert_eq!(&*def.reducers[&on_connect_name].name, &*on_connect_name);
+        assert_eq!(def.reducers[&on_connect_name].lifecycle, Some(Lifecycle::OnConnect));
+
+        let on_disconnect_name = expect_identifier("on_disconnect");
+        assert_eq!(&*def.reducers[&on_disconnect_name].name, &*on_disconnect_name);
+        assert_eq!(
+            def.reducers[&on_disconnect_name].lifecycle,
+            Some(Lifecycle::OnDisconnect)
+        );
+
+        let extra_reducer_name = expect_identifier("extra_reducer");
+        assert_eq!(&*def.reducers[&extra_reducer_name].name, &*extra_reducer_name);
+        assert_eq!(def.reducers[&extra_reducer_name].lifecycle, None);
+        assert_eq!(
+            def.reducers[&extra_reducer_name].params,
+            ProductType::from([("a", AlgebraicType::U64)])
+        );
+
+        let check_deliveries_name = expect_identifier("check_deliveries");
+        assert_eq!(&*def.reducers[&check_deliveries_name].name, &*check_deliveries_name);
+        assert_eq!(def.reducers[&check_deliveries_name].lifecycle, None);
+        assert_eq!(
+            def.reducers[&check_deliveries_name].params,
+            ProductType::from([("a", deliveries_product_type.into())])
+        );
+    }
+
+    #[test]
+    fn invalid_product_type_ref() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        // `build_table` does NOT initialize table.product_type_ref, which should result in an error.
+        builder.build_table("Bananas", AlgebraicTypeRef(1337)).finish();
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::InvalidProductTypeRef { table, ref_ } => {
+            &table[..] == "Bananas" && ref_ == &AlgebraicTypeRef(1337)
+        });
+    }
+
+    #[test]
+    fn not_canonically_ordered_columns() {
+        let mut builder = RawModuleDefV9Builder::new();
+        let product_type = ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]);
+        builder
+            .build_table_with_new_type("Bananas", product_type.clone(), false)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::TypeHasIncorrectOrdering { type_name, ref_, bad_type } => {
+            type_name == &expect_raw_type_name("Bananas") &&
+            ref_ == &AlgebraicTypeRef(0) &&
+            bad_type == &product_type.clone().into()
+        });
+    }
+
+    #[test]
+    fn invalid_table_name() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
+        });
+    }
+
+    #[test]
+    fn invalid_column_name() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
+        });
+    }
+
+    #[test]
+    fn invalid_index_column_ref() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_index(btree([0, 55]), "bananas_a_b")
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
+            &table[..] == "Bananas" &&
+            &def[..] == "Bananas_b_col_55_idx_btree" &&
+            column == &55.into()
+        });
+    }
+
+    #[test]
+    fn invalid_unique_constraint_column_ref() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_unique_constraint(ColId(55))
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
+            &table[..] == "Bananas" &&
+            &def[..] == "Bananas_col_55_key" &&
+            column == &55.into()
+        });
+    }
+
+    #[test]
+    fn invalid_sequence_column_ref() {
+        // invalid column id
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_column_sequence(55)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
+            &table[..] == "Bananas" &&
+            &def[..] == "Bananas_col_55_seq" &&
+            column == &55.into()
+        });
+
+        // incorrect column type
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::String)]),
+                false,
+            )
+            .with_column_sequence(1)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::InvalidSequenceColumnType { sequence, column, column_type } => {
+            &sequence[..] == "Bananas_a_seq" &&
+            column == &RawColumnName::new("Bananas", "a") &&
+            column_type.0 == AlgebraicType::String
+        });
+    }
+
+    #[test]
+    fn invalid_index_column_duplicates() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_index(btree([0, 0]), "bananas_b_b")
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
+            &def[..] == "Bananas_b_b_idx_btree" && columns == &ColList::from_iter([0, 0])
+        });
+    }
+
+    #[test]
+    fn invalid_unique_constraint_column_duplicates() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_unique_constraint(ColList::from_iter([1, 1]))
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
+            &def[..] == "Bananas_a_a_key" && columns == &ColList::from_iter([1, 1])
+        });
+    }
+
+    #[test]
+    fn recursive_ref() {
+        let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
+
+        let mut builder = RawModuleDefV9Builder::new();
+        let ref_ = builder.add_algebraic_type([], "Recursive", recursive_type.clone(), false);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
+        let result: ModuleDef = builder.finish().try_into().unwrap();
+
+        assert!(result.typespace_for_generate[ref_].is_recursive());
+    }
+
+    #[test]
+    fn out_of_bounds_ref() {
+        let invalid_type_1 = AlgebraicType::product([("a", AlgebraicTypeRef(31).into())]);
+        let mut builder = RawModuleDefV9Builder::new();
+        let ref_ = builder.add_algebraic_type([], "Invalid", invalid_type_1.clone(), false);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
+            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) }
+        });
+    }
+
+    #[test]
+    fn not_valid_for_client_code_generation() {
+        let inner_type_invalid_for_use = AlgebraicType::product([("b", AlgebraicType::U32)]);
+        let invalid_type = AlgebraicType::product([("a", inner_type_invalid_for_use.clone())]);
+        let mut builder = RawModuleDefV9Builder::new();
+        let ref_ = builder.add_algebraic_type([], "Invalid", invalid_type.clone(), false);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(
+            result,
+            ValidationError::ClientCodegenError {
+                location,
+                error: ClientCodegenError::NonSpecialTypeNotAUse { ty }
+            } => {
+                location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
+                ty.0 == inner_type_invalid_for_use
+            }
+        );
+    }
+
+    #[test]
+    fn hash_index_supported() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                true,
+            )
+            .with_index(hash(0), "bananas_b")
+            .finish();
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        let indexes = def.indexes().collect::<Vec<_>>();
+        assert_eq!(indexes.len(), 1);
+        assert_eq!(indexes[0].algorithm, IndexAlgorithm::Hash(0.into()));
+    }
+
+    #[test]
+    fn unique_constrain_without_index() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_unique_constraint(1)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(
+            result,
+            ValidationError::UniqueConstraintWithoutIndex { constraint, columns } => {
+                &**constraint == "Bananas_a_key" && *columns == ColSet::from(1)
+            }
+        );
+    }
+
+    #[test]
+    fn direct_index_only_u8_to_u64() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::I32), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_index(direct(0), "bananas_b")
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DirectIndexOnBadType { index, .. } => {
+            &index[..] == "Bananas_b_idx_direct"
+        });
+    }
+
+    #[test]
+    fn one_auto_inc() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_column_sequence(1)
+            .with_column_sequence(1)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::OneAutoInc { column } => {
+            column == &RawColumnName::new("Bananas", "a")
+        });
+    }
+
+    #[test]
+    fn invalid_primary_key() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_primary_key(44)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
+            &table[..] == "Bananas" &&
+            &def[..] == "Bananas" &&
+            column == &44.into()
+        });
+    }
+
+    #[test]
+    fn missing_primary_key_unique_constraint() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_primary_key(0)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::MissingPrimaryKeyUniqueConstraint { column } => {
+            column == &RawColumnName::new("Bananas", "b")
+        });
+    }
+
+    #[test]
+    fn duplicate_type_name() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder.add_algebraic_type(
+            ["scope1".into(), "scope2".into()],
+            "Duplicate",
+            AlgebraicType::U64,
+            false,
+        );
+        builder.add_algebraic_type(
+            ["scope1".into(), "scope2".into()],
+            "Duplicate",
+            AlgebraicType::U32,
+            false,
+        );
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateTypeName { name } => {
+            name == &expect_type_name("scope1::scope2::Duplicate")
+        });
+    }
+
+    #[test]
+    fn duplicate_lifecycle() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder.add_reducer("init1", ProductType::unit(), Some(Lifecycle::Init));
+        builder.add_reducer("init1", ProductType::unit(), Some(Lifecycle::Init));
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateLifecycle { lifecycle } => {
+            lifecycle == &Lifecycle::Init
+        });
+    }
+
+    #[test]
+    fn missing_scheduled_reducer() {
+        let mut builder = RawModuleDefV9Builder::new();
+        let schedule_at_type = builder.add_type::<ScheduleAt>();
+        builder
+            .build_table_with_new_type(
+                "Deliveries",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("scheduled_at", schedule_at_type.clone()),
+                    ("scheduled_id", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(2)
+            .with_index(btree(2), "scheduled_id_index")
+            .with_schedule("check_deliveries", 1)
+            .with_type(TableType::System)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::MissingScheduledFunction { schedule, function } => {
+            &schedule[..] == "Deliveries_sched" &&
+                function == &expect_identifier("check_deliveries")
+        });
+    }
+
+    #[test]
+    fn incorrect_scheduled_reducer_args() {
+        let mut builder = RawModuleDefV9Builder::new();
+        let schedule_at_type = builder.add_type::<ScheduleAt>();
+        let deliveries_product_type = builder
+            .build_table_with_new_type(
+                "Deliveries",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("scheduled_at", schedule_at_type.clone()),
+                    ("scheduled_id", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(2)
+            .with_index(direct(2), "scheduled_id_idx")
+            .with_schedule("check_deliveries", 1)
+            .with_type(TableType::System)
+            .finish();
+        builder.add_reducer("check_deliveries", ProductType::from([("a", AlgebraicType::U64)]), None);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::IncorrectScheduledFunctionParams { function_name, function_kind, expected, actual } => {
+            &function_name[..] == "check_deliveries" &&
+                *function_kind == FunctionKind::Reducer &&
+                expected.0 == AlgebraicType::product([AlgebraicType::Ref(deliveries_product_type)]) &&
+                actual.0 == ProductType::from([("a", AlgebraicType::U64)]).into()
+        });
+    }
+
+    #[test]
+    fn wacky_names() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let schedule_at_type = builder.add_type::<ScheduleAt>();
+
+        let deliveries_product_type = builder
+            .build_table_with_new_type(
+                "Deliveries",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("scheduled_at", schedule_at_type.clone()),
+                    ("scheduled_id", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(2)
+            .with_index(direct(2), "scheduled_id_index")
+            .with_index(btree([0, 2]), "nice_index_name")
+            .with_schedule("check_deliveries", 1)
+            .with_type(TableType::System)
+            .finish();
+
+        builder.add_reducer(
+            "check_deliveries",
+            ProductType::from([("a", deliveries_product_type.into())]),
+            None,
+        );
+
+        // Our builder methods ignore the possibility of setting names at the moment.
+        // But, it could be done in the future for some reason.
+        // Check if it works.
+        let mut raw_def = builder.finish();
+        raw_def.tables[0].constraints[0].name = Some("wacky.constraint()".into());
+        raw_def.tables[0].indexes[0].name = Some("wacky.index()".into());
+        raw_def.tables[0].sequences[0].name = Some("wacky.sequence()".into());
+
+        let def: ModuleDef = raw_def.try_into().unwrap();
+        assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
+        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
+        assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
+    }
+
+    #[test]
+    fn duplicate_reducer_names() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        builder.add_reducer("foo", [("i", AlgebraicType::I32)].into(), None);
+        builder.add_reducer("foo", [("name", AlgebraicType::String)].into(), None);
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
+            &name[..] == "foo"
+        });
+    }
+
+    #[test]
+    fn duplicate_procedure_names() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
+        builder.add_procedure("foo", [("name", AlgebraicType::String)].into(), AlgebraicType::unit());
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
+            &name[..] == "foo"
+        });
+    }
+
+    #[test]
+    fn duplicate_procedure_and_reducer_name() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        builder.add_reducer("foo", [("i", AlgebraicType::I32)].into(), None);
+        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
+            &name[..] == "foo"
+        });
+    }
+}

@@ -1,9 +1,13 @@
 use std::{iter, marker::PhantomData, sync::Arc};
 
+use futures::future::BoxFuture;
+use thiserror::Error;
+use tokio::sync::watch;
+
 pub use spacetimedb_commitlog::{error, payload::Txdata, Decoder, Transaction};
 
 mod imp;
-pub use imp::{local, Local};
+pub use imp::*;
 
 /// Transaction offset.
 ///
@@ -15,33 +19,135 @@ pub use imp::{local, Local};
 /// of all offsets smaller than it.
 pub type TxOffset = u64;
 
+#[derive(Debug, Error)]
+#[error("the database's durability layer went away")]
+pub struct DurabilityExited;
+
+/// Handle to the durable offset, obtained via [`Durability::durable_tx_offset`].
+///
+/// The handle can be used to read the current durable offset, or wait for a
+/// provided offset to be reached.
+///
+/// The handle is valid for as long as the [`Durability`] instance it was
+/// obtained from is live, i.e. able to persist transactions. When the instance
+/// shuts down or crashes, methods will return errors of type [`DurabilityExited`].
+#[derive(Clone)]
+pub struct DurableOffset {
+    // TODO: `watch::Receiver::wait_for` will hold a shared lock until all
+    // subscribers have seen the current value. Although it may skip entries,
+    // this may cause unacceptable contention. We may consider a custom watch
+    // channel that operates on an `AtomicU64` instead of an `RwLock`.
+    inner: watch::Receiver<Option<TxOffset>>,
+}
+
+impl DurableOffset {
+    /// Get the current durable offset, or `None` if no transaction has been
+    /// made durable yet.
+    ///
+    /// Returns `Err` if the associated durablity is no longer live.
+    pub fn get(&self) -> Result<Option<TxOffset>, DurabilityExited> {
+        self.guard_closed().map(|()| self.inner.borrow().as_ref().copied())
+    }
+
+    /// Get the current durable offset, even if the associated durability is
+    /// no longer live.
+    pub fn last_seen(&self) -> Option<TxOffset> {
+        self.inner.borrow().as_ref().copied()
+    }
+
+    /// Wait for `offset` to become durable, i.e.
+    ///
+    /// ```ignore
+    ///     self.get().unwrap().is_some_and(|durable| durable >= offset)
+    /// ```
+    ///
+    /// Returns the actual durable offset at which above condition evaluated to
+    /// `true`, or an `Err` if the durability is no longer live.
+    ///
+    /// Returns immediately if the condition evaluates to `true` for the current
+    /// durable offset.
+    pub async fn wait_for(&mut self, offset: TxOffset) -> Result<TxOffset, DurabilityExited> {
+        self.inner
+            .wait_for(|durable| durable.is_some_and(|val| val >= offset))
+            .await
+            .map(|r| r.as_ref().copied().unwrap())
+            .map_err(|_| DurabilityExited)
+    }
+
+    fn guard_closed(&self) -> Result<(), DurabilityExited> {
+        self.inner.has_changed().map(drop).map_err(|_| DurabilityExited)
+    }
+}
+
+impl From<watch::Receiver<Option<TxOffset>>> for DurableOffset {
+    fn from(inner: watch::Receiver<Option<TxOffset>>) -> Self {
+        Self { inner }
+    }
+}
+
+/// Future created by [Durability::close].
+///
+/// This is a boxed future rather than an associated type, so that [Durability]
+/// can be used as a trait object without knowing the type of the `close` future.
+pub type Close = BoxFuture<'static, Option<TxOffset>>;
+
 /// The durability API.
 ///
 /// NOTE: This is a preliminary definition, still under consideration.
 ///
-/// A durability implementation accepts a payload representing a single database
-/// transaction via [`Durability::append_tx`] in a non-blocking fashion. The
-/// payload _should_ become durable eventually. [`TxOffset`]s reported by
-/// [`Durability::durable_tx_offset`] shall be considered durable to the
-/// extent the implementation can guarantee.
+/// A durability implementation accepts a [Transaction] to be made durable via
+/// the [Durability::append_tx] method in a non-blocking fashion.
+///
+/// Once a transaction becomes durable, the [DurableOffset] is updated.
+/// What durable means depends on the implementation, informally it can be
+/// thought of as "written to disk".
 pub trait Durability: Send + Sync {
     /// The payload representing a single transaction.
     type TxData;
 
-    /// Submit the transaction payload to be made durable.
+    /// Submit a [Transaction] to be made durable.
     ///
     /// This method must never block, and accept new transactions even if they
     /// cannot be made durable immediately.
     ///
-    /// A permanent failure of the durable storage may be signalled by panicking.
-    fn append_tx(&self, tx: Self::TxData);
+    /// Errors may be signalled by panicking.
+    //
+    // TODO: Support batches of txs, i.e. commits.
+    //
+    // The commitlog supports this, but allocation overhead in the durability
+    // API is too high given we don't make any use of it.
+    //
+    // We don't make any use of it because a commit is an atomic unit of storage
+    // (i.e. a torn write will corrupt all transactions contained in it), and it
+    // is very unclear when it is both correct and beneficial to bundle more
+    // than a single transaction into a commit.
+    fn append_tx(&self, tx: Transaction<Self::TxData>);
 
-    /// The [`TxOffset`] considered durable.
+    /// Obtain a handle to the [DurableOffset].
+    fn durable_tx_offset(&self) -> DurableOffset;
+
+    /// Asynchronously request the durability to shut down, without dropping it.
     ///
-    /// A `None` return value indicates that the durable offset is not known,
-    /// either because nothing has been persisted yet, or because the status
-    /// cannot be retrieved.
-    fn durable_tx_offset(&self) -> Option<TxOffset>;
+    /// Shall close any internal channels, such that it is no longer possible to
+    /// append new data (i.e. [Durability::append_tx] shall panic).
+    /// Then, drains the internal queues and attempts to make the remaining data
+    /// durable. Resolves to the durable [TxOffset].
+    ///
+    /// When the returned future resolves, calls to [Durability::append_tx] must
+    /// panic, and calling [DurableOffset::last_seen] must return the same value
+    /// as the future's output.
+    ///
+    /// Repeatedly calling `close` on an already closed [Durability] shall
+    /// return the same [TxOffset].
+    ///
+    /// Note that errors are not propagated, as the [Durability] may already be
+    /// closed.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the [Close] future shall abort the shutdown process,
+    /// and leave the [Durability] in a closed state.
+    fn close(&self) -> Close;
 }
 
 /// Access to the durable history.
@@ -82,10 +188,10 @@ pub trait History {
     ///
     /// Callers should thus only rely on it for informational purposes.
     ///
-    /// The default implementation returns `None`, which is correct for any
+    /// The default implementation returns `(0, None)`, which is correct for any
     /// history implementation.
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        None
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (0, None)
     }
 }
 
@@ -113,8 +219,8 @@ impl<T: History> History for Arc<T> {
         (**self).transactions_from(offset, decoder)
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        (**self).max_tx_offset()
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (**self).tx_range_hint()
     }
 }
 
@@ -153,7 +259,7 @@ impl<T> History for EmptyHistory<T> {
         iter::empty()
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        Some(0)
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (0, Some(0))
     }
 }

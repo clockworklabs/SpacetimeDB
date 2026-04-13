@@ -1,4 +1,4 @@
-//! Types, traits, and macros for working with non-empty streams of errorrs.
+//! Types, traits, and macros for working with non-empty streams of errors.
 //!
 //! The `ErrorStream<_>` type provides a collection that stores a non-empty, unordered stream of errors.
 //! This is valuable for collecting as many errors as possible before returning them to the user,
@@ -61,7 +61,7 @@
 //!     // single ErrorStream.
 //!     let (name, age, friends): (Name, Age, HashSet<Name>) =
 //!         (name, age, friends).combine_errors()?;
-//!     
+//!
 //!     Ok((name, age, friends))
 //! }
 //! ```
@@ -85,7 +85,7 @@
 //! and `CollectAllErrors::collect_all_errors` for collecting errors from iterators.
 
 use crate::map::HashSet;
-use std::hash::Hash;
+use std::{fmt, hash::Hash};
 
 /// A non-empty stream of errors.
 ///
@@ -115,6 +115,41 @@ use std::hash::Hash;
 pub struct ErrorStream<E>(smallvec::SmallVec<[E; 1]>);
 
 impl<E> ErrorStream<E> {
+    /// Build an error stream from a non-empty collection.
+    /// If the collection is empty, panic.
+    pub fn expect_nonempty<I: IntoIterator<Item = E>>(errors: I) -> Self {
+        let mut errors = errors.into_iter();
+        let first = errors.next().expect("expected at least one error");
+        let mut stream = Self::from(first);
+        stream.extend(errors);
+        stream
+    }
+
+    /// Add some extra errors to a result.
+    ///
+    /// If there are no errors, the result is not modified.
+    /// If there are errors, and the result is `Err`, the errors are added to the stream.
+    /// If there are errors, and the result is `Ok`, the `Ok` value is discarded, and the errors are returned in a stream.
+    pub fn add_extra_errors<T>(
+        result: Result<T, ErrorStream<E>>,
+        extra_errors: impl IntoIterator<Item = E>,
+    ) -> Result<T, ErrorStream<E>> {
+        match result {
+            Ok(value) => {
+                let errors: SmallVec<[E; 1]> = extra_errors.into_iter().collect();
+                if errors.is_empty() {
+                    Ok(value)
+                } else {
+                    Err(ErrorStream(errors))
+                }
+            }
+            Err(mut errors) => {
+                errors.extend(extra_errors);
+                Err(errors)
+            }
+        }
+    }
+
     /// Returns an iterator over the errors in the stream.
     pub fn iter(&self) -> impl Iterator<Item = &E> {
         self.0.iter()
@@ -152,6 +187,15 @@ impl<E> ErrorStream<E> {
                 None
             }
         }
+    }
+}
+impl<E: fmt::Display> fmt::Display for ErrorStream<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Errors occurred:")?;
+        for error in self.iter() {
+            writeln!(f, "{error}\n")?;
+        }
+        Ok(())
     }
 }
 
@@ -363,8 +407,8 @@ impl<T, E, I: Iterator<Item = Result<T, ErrorStream<E>>>> CollectAllErrors for I
 /// - `$result` must be a `Result<_, ErrorStream<E>>`.
 /// - `$expected` is a pattern to match against the error.
 /// - `$cond` is an optional expression that should evaluate to `true` if the error matches.
-///     Variables from `$expected` are bound in `$cond` behind references.
-///     Do not use any asserts in `$cond` as it may be called against multiple errors.
+///   Variables from `$expected` are bound in `$cond` behind references.
+///   Do not use any asserts in `$cond` as it may be called against multiple errors.
 ///
 /// ```
 /// use spacetimedb_data_structures::error_stream::{
@@ -454,6 +498,7 @@ macro_rules! expect_error_matching (
 );
 // Make available in this module as well as crate root.
 pub use expect_error_matching;
+use smallvec::SmallVec;
 
 #[cfg(test)]
 mod tests {

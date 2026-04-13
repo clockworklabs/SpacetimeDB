@@ -14,11 +14,10 @@ use fmt_algebraic_type as fmt;
 /// convenient to format it from the Rust type.
 pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + Display {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Ref(r) => write!(f, "{}", r),
+        AlgebraicType::Ref(r) => write!(f, "{r}"),
         AlgebraicType::Sum(ty) => write!(f, "{}", fmt_sum_type(ty)),
         AlgebraicType::Product(ty) => write!(f, "{}", fmt_product_type(ty)),
         AlgebraicType::Array(a) => write!(f, "Array<{}>", fmt(&a.elem_ty)),
-        AlgebraicType::Map(m) => write!(f, "Map<{}, {}>", fmt(&m.key_ty), fmt(&m.ty)),
         AlgebraicType::Bool => write!(f, "Bool"),
         AlgebraicType::I8 => write!(f, "I8"),
         AlgebraicType::U8 => write!(f, "U8"),
@@ -39,14 +38,14 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + Display {
 }
 
 /// Wraps the builtin `ty` into a `Display`able.
-fn fmt_product_type(ty: &ProductType) -> impl '_ + Display {
+pub fn fmt_product_type(ty: &ProductType) -> impl '_ + Display {
     fmt_fn(move |f| {
         write!(f, "(")?;
         for (i, e) in ty.elements.iter().enumerate() {
             if let Some(name) = &e.name {
-                write!(f, "{}", name)?;
+                write!(f, "{name}")?;
             } else {
-                write!(f, "{}", i)?;
+                write!(f, "{i}")?;
             }
             write!(f, ": ")?;
             write!(f, "{}", fmt(&e.algebraic_type))?;
@@ -67,7 +66,7 @@ fn fmt_sum_type(ty: &SumType) -> impl '_ + Display {
         write!(f, "(")?;
         for (i, e) in ty.variants.iter().enumerate() {
             if let Some(name) = &e.name {
-                write!(f, "{}", name)?;
+                write!(f, "{name}")?;
                 write!(f, ": ")?;
             }
             write!(f, "{}", fmt(&e.algebraic_type))?;

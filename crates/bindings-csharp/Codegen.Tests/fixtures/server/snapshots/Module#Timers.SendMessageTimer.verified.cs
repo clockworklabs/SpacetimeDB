@@ -4,77 +4,120 @@
 
 partial class Timers
 {
-    partial struct SendMessageTimer : SpacetimeDB.Internal.ITable<SendMessageTimer>
+    partial struct SendMessageTimer
+        : System.IEquatable<SendMessageTimer>,
+            SpacetimeDB.BSATN.IStructuralReadWrite
     {
-        static bool SpacetimeDB.Internal.ITable<SendMessageTimer>.HasAutoIncFields => true;
+        public void ReadFields(System.IO.BinaryReader reader)
+        {
+            ScheduledId = BSATN.ScheduledIdRW.Read(reader);
+            ScheduledAt = BSATN.ScheduledAtRW.Read(reader);
+            Text = BSATN.TextRW.Read(reader);
+        }
 
-        static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
-            SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) =>
-            new(
-                new(
-                    nameof(SendMessageTimer),
-                    new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[]
-                    {
-                        new(
-                            new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.UnSet
-                        ),
-                        new(
-                            new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.PrimaryKeyAuto
-                        ),
-                        new(
-                            new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.UnSet
-                        )
-                    },
-                    false,
-                    "SendScheduledMessage"
-                ),
-                (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
-            );
+        public void WriteFields(System.IO.BinaryWriter writer)
+        {
+            BSATN.ScheduledIdRW.Write(writer, ScheduledId);
+            BSATN.ScheduledAtRW.Write(writer, ScheduledAt);
+            BSATN.TextRW.Write(writer, Text);
+        }
 
-        static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>
-            new(
-                [
-                    new(nameof(Text), (w, v) => BSATN.Text.Write(w, (string)v!)),
-                    new(nameof(ScheduledId), (w, v) => BSATN.ScheduledId.Write(w, (ulong)v!)),
-                    new(
-                        nameof(ScheduledAt),
-                        (w, v) => BSATN.ScheduledAt.Write(w, (SpacetimeDB.ScheduleAt)v!)
-                    ),
-                ]
-            );
+        object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+        {
+            return new BSATN();
+        }
 
-        public static IEnumerable<SendMessageTimer> Iter() =>
-            SpacetimeDB.Internal.ITable<SendMessageTimer>.Iter();
+        public override string ToString() =>
+            $"SendMessageTimer {{ ScheduledId = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledId)}, ScheduledAt = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledAt)}, Text = {SpacetimeDB.BSATN.StringUtil.GenericToString(Text)} }}";
 
-        public static IEnumerable<SendMessageTimer> Query(
-            System.Linq.Expressions.Expression<Func<SendMessageTimer, bool>> predicate
-        ) => SpacetimeDB.Internal.ITable<SendMessageTimer>.Query(predicate);
+        public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<Timers.SendMessageTimer>
+        {
+            internal static readonly SpacetimeDB.BSATN.U64 ScheduledIdRW = new();
+            internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAtRW = new();
+            internal static readonly SpacetimeDB.BSATN.String TextRW = new();
 
-        public void Insert() => SpacetimeDB.Internal.ITable<SendMessageTimer>.Insert(this);
+            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader)
+            {
+                var ___result = new Timers.SendMessageTimer();
+                ___result.ReadFields(reader);
+                return ___result;
+            }
 
-        public static IEnumerable<SendMessageTimer> FilterByText(string Text) =>
-            SpacetimeDB.Internal.ITable<SendMessageTimer>.ColEq.Where(0, Text, BSATN.Text).Iter();
+            public void Write(System.IO.BinaryWriter writer, Timers.SendMessageTimer value)
+            {
+                value.WriteFields(writer);
+            }
 
-        public static IEnumerable<SendMessageTimer> FilterByScheduledId(ulong ScheduledId) =>
-            SpacetimeDB
-                .Internal.ITable<SendMessageTimer>.ColEq.Where(1, ScheduledId, BSATN.ScheduledId)
-                .Iter();
+            public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
+                SpacetimeDB.BSATN.ITypeRegistrar registrar
+            ) =>
+                registrar.RegisterType<Timers.SendMessageTimer>(
+                    _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
+                        new SpacetimeDB.BSATN.AggregateElement[]
+                        {
+                            new("ScheduledId", ScheduledIdRW.GetAlgebraicType(registrar)),
+                            new("ScheduledAt", ScheduledAtRW.GetAlgebraicType(registrar)),
+                            new("Text", TextRW.GetAlgebraicType(registrar))
+                        }
+                    )
+                );
 
-        public static SendMessageTimer? FindByScheduledId(ulong ScheduledId) =>
-            FilterByScheduledId(ScheduledId).Cast<SendMessageTimer?>().SingleOrDefault();
+            SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<Timers.SendMessageTimer>.GetAlgebraicType(
+                SpacetimeDB.BSATN.ITypeRegistrar registrar
+            ) => GetAlgebraicType(registrar);
+        }
 
-        public static bool DeleteByScheduledId(ulong ScheduledId) =>
-            SpacetimeDB
-                .Internal.ITable<SendMessageTimer>.ColEq.Where(1, ScheduledId, BSATN.ScheduledId)
-                .Delete();
+        public override int GetHashCode()
+        {
+            var ___hashScheduledId = ScheduledId.GetHashCode();
+            var ___hashScheduledAt = ScheduledAt == null ? 0 : ScheduledAt.GetHashCode();
+            var ___hashText = Text == null ? 0 : Text.GetHashCode();
+            return ___hashScheduledId ^ ___hashScheduledAt ^ ___hashText;
+        }
 
-        public static bool UpdateByScheduledId(ulong ScheduledId, SendMessageTimer @this) =>
-            SpacetimeDB
-                .Internal.ITable<SendMessageTimer>.ColEq.Where(1, ScheduledId, BSATN.ScheduledId)
-                .Update(@this);
+#nullable enable
+        public bool Equals(Timers.SendMessageTimer that)
+        {
+            var ___eqScheduledId = this.ScheduledId.Equals(that.ScheduledId);
+            var ___eqScheduledAt =
+                this.ScheduledAt == null
+                    ? that.ScheduledAt == null
+                    : this.ScheduledAt.Equals(that.ScheduledAt);
+            var ___eqText = this.Text == null ? that.Text == null : this.Text.Equals(that.Text);
+            return ___eqScheduledId && ___eqScheduledAt && ___eqText;
+        }
+
+        public override bool Equals(object? that)
+        {
+            if (that == null)
+            {
+                return false;
+            }
+            var that_ = that as Timers.SendMessageTimer?;
+            if (((object?)that_) == null)
+            {
+                return false;
+            }
+            return Equals(that_);
+        }
+
+        public static bool operator ==(Timers.SendMessageTimer this_, Timers.SendMessageTimer that)
+        {
+            if (((object?)this_) == null || ((object?)that) == null)
+            {
+                return object.Equals(this_, that);
+            }
+            return this_.Equals(that);
+        }
+
+        public static bool operator !=(Timers.SendMessageTimer this_, Timers.SendMessageTimer that)
+        {
+            if (((object?)this_) == null || ((object?)that) == null)
+            {
+                return !object.Equals(this_, that);
+            }
+            return !this_.Equals(that);
+        }
+#nullable restore
     } // SendMessageTimer
 } // Timers

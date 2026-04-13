@@ -1,12 +1,15 @@
-use std::any::TypeId;
-use std::ops::{Index, IndexMut};
-
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
 use crate::WithTypespace;
-use crate::{de::Deserialize, ser::Serialize};
+use core::any::TypeId;
+use core::ops::{Index, IndexMut};
+use ethnum::{i256, u256};
+use smallvec::SmallVec;
+use std::rc::Rc;
+use std::sync::Arc;
 
-#[derive(thiserror::Error, Debug)]
+/// An error that occurs when attempting to resolve a type.
+#[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub enum TypeRefError {
     // TODO: ideally this should give some useful type name or path.
     // Figure out if we can provide that even though it's not encoded in SATS.
@@ -19,7 +22,7 @@ pub enum TypeRefError {
 
 /// A `Typespace` represents the typing context in SATS.
 ///
-/// That is, this is the `Δ` or `Γ` you'll see in type theory litterature.
+/// That is, this is the `Δ` or `Γ` you'll see in type theory literature.
 ///
 /// We use (sort of) [deBrujin indices](https://en.wikipedia.org/wiki/De_Bruijn_index)
 /// to represent our type variables.
@@ -33,12 +36,19 @@ pub enum TypeRefError {
 /// where `&0` is the type reference at index `0`.
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, SpacetimeType)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct Typespace {
     /// The types in our typing context that can be referred to with [`AlgebraicTypeRef`]s.
     pub types: Vec<AlgebraicType>,
+}
+
+impl std::fmt::Debug for Typespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Typespace ")?;
+        f.debug_list().entries(&self.types).finish()
+    }
 }
 
 impl Default for Typespace {
@@ -107,6 +117,9 @@ impl Typespace {
     /// Returns the `AlgebraicType` that `r` resolves to in the context of the `Typespace`.
     ///
     /// Panics if `r` is not known by the `Typespace`.
+    ///
+    /// Note, this is not recursive.
+    /// To resolve all nested refs, call `resolve_refs()` on the result.
     pub fn resolve(&self, r: AlgebraicTypeRef) -> WithTypespace<'_, AlgebraicType> {
         self.with_type(&self[r])
     }
@@ -126,10 +139,6 @@ impl Typespace {
             }
             AlgebraicType::Array(array_ty) => {
                 self.inline_typerefs_in_type(&mut array_ty.elem_ty)?;
-            }
-            AlgebraicType::Map(map_type) => {
-                self.inline_typerefs_in_type(&mut map_type.key_ty)?;
-                self.inline_typerefs_in_type(&mut map_type.ty)?;
             }
             AlgebraicType::Ref(r) => {
                 // Lazily resolve any nested references first.
@@ -185,28 +194,27 @@ impl Typespace {
         Ok(())
     }
 
-    /// Check that the entire typespace is in nominal normal form.
-    ///
-    /// Types directly contained in `self.types` are allowed to be sums or products.
-    /// The *fields* of these must be in nominal form, as determined by
-    /// (AlgebraicType::is_nominal_normal_form).
-    ///
-    /// Any type in `self.types` that is not a sum or products must also be in nominal form.
-    /// (TODO(1.0): should we forbid these types entirely?)
-    pub fn is_nominal_normal_form(&self) -> bool {
-        self.types.iter().all(|ty| match ty {
-            AlgebraicType::Sum(sum_ty) => sum_ty
-                .variants
-                .iter()
-                .all(|variant| variant.algebraic_type.is_nominal_normal_form()),
+    /// Iterate over types in the typespace with their references.
+    pub fn refs_with_types(&self) -> impl Iterator<Item = (AlgebraicTypeRef, &AlgebraicType)> {
+        self.types
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| (AlgebraicTypeRef(idx as _), ty))
+    }
 
-            AlgebraicType::Product(product_ty) => product_ty
-                .elements
-                .iter()
-                .all(|element| element.algebraic_type.is_nominal_normal_form()),
-
-            other => other.is_nominal_normal_form(),
-        })
+    /// Check that the entire typespace is valid for generating a `SpacetimeDB` client module.
+    /// See also the `spacetimedb_schema` crate, which layers additional validation on top
+    /// of these checks.
+    ///
+    /// All types in the typespace must either satisfy
+    /// [`is_valid_for_client_type_definition`](AlgebraicType::is_valid_for_client_type_definition) or
+    /// [`is_valid_for_client_type_use`](AlgebraicType::is_valid_for_client_type_use).
+    /// (Only the types that are `valid_for_client_type_definition` will have types generated in
+    /// the client, but the other types are allowed for the convenience of module binding codegen.)
+    pub fn is_valid_for_client_code_generation(&self) -> bool {
+        self.types
+            .iter()
+            .all(|ty| ty.is_valid_for_client_type_definition() || ty.is_valid_for_client_type_use())
     }
 }
 
@@ -228,21 +236,87 @@ pub trait GroundSpacetimeType {
     fn get_type() -> AlgebraicType;
 }
 
-/// A trait for Rust types that can be represented as an [`AlgebraicType`]
-/// provided a typing context `typespace`.
+/// This trait makes types self-describing, allowing them to automatically register their structure
+/// with SpacetimeDB. This is used to tell SpacetimeDB about the structure of a module's tables and
+/// reducers.
+///
+/// Deriving this trait also derives [`Serialize`](crate::ser::Serialize), [`Deserialize`](crate::de::Deserialize),
+/// and [`Debug`](std::fmt::Debug). (There are currently no trait bounds on `SpacetimeType` documenting this fact.)
+/// `Serialize` and `Deserialize` are used to convert Rust data structures to other formats, suitable for storing on disk or passing over the network. `Debug` is simply for debugging convenience.
+///
+/// Any Rust type implementing `SpacetimeType` can be used as a table column or reducer argument. A derive macro is provided, and can be used on both structs and enums:
+///
+/// ```rust
+/// # use spacetimedb_sats::SpacetimeType;
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// struct Location {
+///     x: u64,
+///     y: u64
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// struct PlasticCrate {
+///     count: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// struct AppleCrate {
+///     variety: String,
+///     count: u32,
+///     freshness: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// enum FruitCrate {
+///     Apples(AppleCrate),
+///     Plastic(PlasticCrate),
+/// }
+/// ```
+///
+/// The fields of the struct/enum must also implement `SpacetimeType`.
+///
+/// Any type annotated with `#[table(..)]` automatically derives `SpacetimeType`.
+///
+/// SpacetimeType is implemented for many of the primitive types in the standard library:
+///
+/// - `bool`
+/// - `u8`, `u16`, `u32`, `u64`, `u128`
+/// - `i8`, `i16`, `i32`, `i64`, `i128`
+/// - `f32`, `f64`
+///
+/// And common data structures:
+///
+/// - `String` and `&str`, utf-8 string data
+/// - `()`, the unit type
+/// - `Option<T> where T: SpacetimeType`
+/// - `Result<T, E> where T: SpacetimeType, E: SpacetimeType`
+/// - `Vec<T> where T: SpacetimeType`
+///
+/// (Storing collections in rows of a database table is a form of [denormalization](https://en.wikipedia.org/wiki/Denormalization).)
+///
+/// Do not manually implement this trait unless you are VERY sure you know what you're doing.
+/// Implementations must be consistent with `Deserialize<'de> for T`, `Serialize for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations that are inconsistent across these traits may result in data loss.
+///
+/// N.B.: It's `SpacetimeType`, not `SpaceTimeType`.
+// TODO: we might want to have a note about what to do if you're trying to use a type from another crate in your table.
+// keep this note in sync with the ones on spacetimedb::rt::{ReducerArg, TableColumn}
+#[diagnostic::on_unimplemented(note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition")]
 pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
-    /// and in the typing context in `typespace`.
+    /// and in the typing context in `typespace`. This is used by the
+    /// automatic type registration system in Rust modules.
+    ///
+    /// The resulting `AlgebraicType` may contain `Ref`s that only make sense
+    /// within the context of this particular `typespace`.
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
 }
 
-impl<T: GroundSpacetimeType> SpacetimeType for T {
-    fn make_type<S: TypespaceBuilder>(_: &mut S) -> AlgebraicType {
-        T::get_type()
-    }
-}
-
-use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::SpacetimeType;
 
 /// A trait for types that can build a [`Typespace`].
@@ -281,15 +355,21 @@ pub trait TypespaceBuilder {
 /// ```
 #[macro_export]
 macro_rules! impl_st {
-    ([ $($rgenerics:tt)* ] $rty:ty, $stty:expr) => {
-        impl<$($rgenerics)*> $crate::GroundSpacetimeType for $rty {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $stty:expr) => {
+        impl<$($generic_wrapped $($other_generics)*)?> $crate::GroundSpacetimeType for $rty
+            $(where $generic_wrapped: $crate::GroundSpacetimeType)?
+        {
             fn get_type() -> $crate::AlgebraicType {
                 $stty
             }
         }
+
+        impl_st!([ $($generic $($other_generics)*)? ] $rty, _ts => $stty);
     };
-    ([ $($rgenerics:tt)* ] $rty:ty, $ts:ident => $stty:expr) => {
-        impl<$($rgenerics)*> $crate::SpacetimeType for $rty {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $ts:ident => $stty:expr) => {
+        impl<$($generic_wrapped $($other_generics)*)?> $crate::SpacetimeType for $rty
+            $(where $generic_wrapped: $crate::SpacetimeType)?
+        {
             fn make_type<S: $crate::typespace::TypespaceBuilder>($ts: &mut S) -> $crate::AlgebraicType {
                 $stty
             }
@@ -323,24 +403,46 @@ impl_primitives! {
 }
 
 impl_st!([](), AlgebraicType::unit());
-impl_st!([] & str, AlgebraicType::String);
-impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
-impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
+impl_st!([] str, AlgebraicType::String);
+impl_st!([T] [T], ts => AlgebraicType::array(T::make_type(ts)));
+impl_st!([T: ?Sized] &T, ts => T::make_type(ts));
+impl_st!([T: ?Sized] Box<T>, ts => T::make_type(ts));
+impl_st!([T: ?Sized] Rc<T>, ts => T::make_type(ts));
+impl_st!([T: ?Sized] Arc<T>, ts => T::make_type(ts));
+impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
+impl_st!([T, const N: usize] SmallVec<[T; N]>, ts => <[T]>::make_type(ts));
+impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
+impl_st!([] spacetimedb_primitives::ArgId, AlgebraicType::U64);
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
 impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::ViewId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::IndexId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::SequenceId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::ConstraintId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::ScheduleId, AlgebraicType::U32);
+
+impl_st!([] spacetimedb_primitives::ColList, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
+impl_st!([] spacetimedb_primitives::ColSet, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
 
 impl_st!([] bytes::Bytes, AlgebraicType::bytes());
 
 #[cfg(feature = "bytestring")]
 impl_st!([] bytestring::ByteString, AlgebraicType::String);
 
+impl<T, E> SpacetimeType for Result<T, E>
+where
+    T: SpacetimeType,
+    E: SpacetimeType,
+{
+    fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::result(T::make_type(typespace), E::make_type(typespace))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::proptest::generate_nominal_typespace;
+    use crate::proptest::generate_typespace_valid_for_codegen;
     use proptest::prelude::*;
 
     use super::*;
@@ -348,40 +450,47 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(512))]
         #[test]
-        fn is_nominal(typespace in generate_nominal_typespace(5)) {
-            prop_assert!(typespace.is_nominal_normal_form());
+        fn is_valid_for_client_code_generation(typespace in generate_typespace_valid_for_codegen(5)) {
+            prop_assert!(typespace.is_valid_for_client_code_generation());
         }
     }
 
     #[test]
-    fn is_not_nominal() {
+    fn is_not_valid_for_client_code_generation() {
         let bad_inner_1 = AlgebraicType::sum([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
         let bad_inner_2 = AlgebraicType::product([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
 
-        fn assert_not_nominal(ty: AlgebraicType) {
+        fn assert_not_valid(ty: AlgebraicType) {
             let typespace = Typespace::new(vec![ty.clone()]);
-            assert!(!typespace.is_nominal_normal_form(), "{:?}", ty);
+            assert!(!typespace.is_valid_for_client_code_generation(), "{ty:?}");
         }
-        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
-        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));
+        assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));
 
-        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_1.clone()]));
-        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_2.clone()]));
+        assert_not_valid(AlgebraicType::sum([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_valid(AlgebraicType::sum([AlgebraicType::U8, bad_inner_2.clone()]));
 
-        assert_not_nominal(AlgebraicType::array(bad_inner_1.clone()));
-        assert_not_nominal(AlgebraicType::array(bad_inner_2.clone()));
+        assert_not_valid(AlgebraicType::array(bad_inner_1.clone()));
+        assert_not_valid(AlgebraicType::array(bad_inner_2.clone()));
 
-        assert_not_nominal(AlgebraicType::option(bad_inner_1.clone()));
-        assert_not_nominal(AlgebraicType::option(bad_inner_2.clone()));
+        assert_not_valid(AlgebraicType::option(bad_inner_1.clone()));
+        assert_not_valid(AlgebraicType::option(bad_inner_2.clone()));
 
-        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_1.clone()));
-        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_2.clone()));
-
-        assert_not_nominal(AlgebraicType::map(bad_inner_1.clone(), AlgebraicType::U8));
-        assert_not_nominal(AlgebraicType::map(bad_inner_2.clone(), AlgebraicType::U8));
-
-        assert_not_nominal(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
+        assert_not_valid(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
             bad_inner_1.clone(),
         ))));
+
+        assert_not_valid(AlgebraicType::result(bad_inner_1.clone(), AlgebraicType::U8));
+        assert_not_valid(AlgebraicType::result(AlgebraicType::U8, bad_inner_2.clone()));
+
+        assert_not_valid(AlgebraicType::result(
+            AlgebraicType::array(AlgebraicType::result(bad_inner_1.clone(), AlgebraicType::U8)),
+            AlgebraicType::U8,
+        ));
+
+        assert_not_valid(AlgebraicType::result(
+            AlgebraicType::U8,
+            AlgebraicType::array(AlgebraicType::result(AlgebraicType::U8, bad_inner_2.clone())),
+        ));
     }
 }

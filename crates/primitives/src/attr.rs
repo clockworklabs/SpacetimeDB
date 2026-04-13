@@ -197,6 +197,11 @@ impl Constraints {
         Self::new(ColumnAttribute::PRIMARY_KEY_IDENTITY)
     }
 
+    /// Creates a new `Constraints` instance with [ColumnAttribute::AUTO_INC] set.
+    pub const fn auto_inc() -> Self {
+        Self::new(ColumnAttribute::AUTO_INC)
+    }
+
     /// Adds a constraint to the existing constraints.
     ///
     /// # Example
@@ -209,6 +214,13 @@ impl Constraints {
     /// ```
     pub fn push(self, other: Constraints) -> Self {
         Self::new(self.attr | other.attr)
+    }
+
+    /// Add auto-increment constraint to the existing constraints.
+    /// Returns Err if the result would not be valid.
+    #[allow(clippy::result_unit_err)]
+    pub fn push_auto_inc(self) -> Result<Self, ()> {
+        Self::try_from(self.attr | ColumnAttribute::AUTO_INC)
     }
 
     /// Returns the bits representing the constraints.
