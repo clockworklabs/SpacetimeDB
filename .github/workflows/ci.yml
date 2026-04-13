@@ -169,7 +169,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          cargo ci smoketests -- --test-threads=1          
+          cargo ci smoketests -- --test-threads=1           | tee $RUNNER_TEMP/build.log
 
       - name: Check for changes
         run: |
