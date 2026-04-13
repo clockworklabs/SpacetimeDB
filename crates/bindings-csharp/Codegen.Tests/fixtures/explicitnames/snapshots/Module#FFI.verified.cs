@@ -367,6 +367,9 @@ sealed class demo_viewViewDispatcher : global::SpacetimeDB.Internal.IView
             )
         );
 
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
@@ -477,6 +480,9 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.DemoReducer((SpacetimeDB.ReducerContext)ctx, valueRW.Read(reader));
@@ -495,6 +501,9 @@ static class ModuleRegistration
                 Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
             );
 
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
         public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx)
         {
             Reducers.DemoProcedure((SpacetimeDB.ProcedureContext)ctx);

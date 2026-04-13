@@ -1386,6 +1386,7 @@ record ViewDeclaration
                 public SpacetimeDB.Internal.RawViewDefV10 {{{makeViewDefMethod}}}(SpacetimeDB.BSATN.ITypeRegistrar registrar)
                     => {{{GenerateViewDef(index)}}}
 
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
                 public byte[] Invoke(
                     System.IO.BinaryReader reader,
                     {{{interfaceContext}}} ctx
@@ -1491,6 +1492,7 @@ record ReducerDeclaration
             _ => "null"
         }}};
 
+                 [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
                  public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
                      {{invocation}};
                  }
@@ -1713,6 +1715,7 @@ record ProcedureDeclaration
                     Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
                 );
 
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
                 public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
                     {{{paramReads}}}{{{invokeBody}}}
                 }

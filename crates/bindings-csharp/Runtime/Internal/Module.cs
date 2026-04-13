@@ -469,6 +469,7 @@ public static class Module
         }
         catch (Exception e)
         {
+            Log.Error($"Error while invoking reducer: {e}");
             var error_str = e.Message ?? e.GetType().FullName;
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
             error.Write(error_bytes);
