@@ -95,7 +95,7 @@ compile_should_fail() {
 }
 
 compile_should_pass "$SCRIPT_DIR/pass_query_integration.cpp"
-compile_should_fail "$SCRIPT_DIR/fail_non_index_join.cpp" "Semijoin predicates may only use single-column indexed fields."
+compile_should_fail "$SCRIPT_DIR/fail_non_index_join.cpp" "no member named 'tenant_id'"
 compile_should_fail "$SCRIPT_DIR/fail_event_lookup.cpp" "Lookup side of a semijoin must opt in via CanBeLookupTable."
 
 echo "All query-builder compile tests passed"

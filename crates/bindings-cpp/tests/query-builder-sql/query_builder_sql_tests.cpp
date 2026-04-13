@@ -93,6 +93,10 @@ struct ConnectionRowCols {
         : connection_id(table_name, "connection_id") {}
 };
 
+struct ConnectionRowIxCols {
+    explicit ConnectionRowIxCols(const char*) {}
+};
+
 struct LiteralRowCols {
     qb::Col<LiteralRow, int32_t> score;
     qb::Col<LiteralRow, std::string> name;
@@ -112,6 +116,10 @@ struct LiteralRowCols {
           identity(table_name, "identity"),
           ts(table_name, "ts"),
           bytes(table_name, "bytes") {}
+};
+
+struct LiteralRowIxCols {
+    explicit LiteralRowIxCols(const char*) {}
 };
 
 } // namespace test_query_builder
@@ -150,8 +158,18 @@ struct HasCols<test_query_builder::ConnectionRow> {
 };
 
 template<>
+struct HasIxCols<test_query_builder::ConnectionRow> {
+    static test_query_builder::ConnectionRowIxCols get(const char* table_name) { return test_query_builder::ConnectionRowIxCols(table_name); }
+};
+
+template<>
 struct HasCols<test_query_builder::LiteralRow> {
     static test_query_builder::LiteralRowCols get(const char* table_name) { return test_query_builder::LiteralRowCols(table_name); }
+};
+
+template<>
+struct HasIxCols<test_query_builder::LiteralRow> {
+    static test_query_builder::LiteralRowIxCols get(const char* table_name) { return test_query_builder::LiteralRowIxCols(table_name); }
 };
 
 } // namespace SpacetimeDB::query_builder
@@ -176,6 +194,14 @@ struct algebraic_type_of<test_query_builder::User> {
 
 namespace test_query_builder {
 
+template<typename TRow>
+auto TableFor(const char* table_name) {
+    return SpacetimeDB::QueryBuilder().table<TRow>(
+        table_name,
+        qb::HasCols<TRow>::get(table_name),
+        qb::HasIxCols<TRow>::get(table_name));
+}
+
 void ExpectEq(const std::string& actual, const std::string& expected, const std::string& label) {
     if (actual != expected) {
         std::ostringstream out;
@@ -185,18 +211,18 @@ void ExpectEq(const std::string& actual, const std::string& expected, const std:
 }
 
 void TestSimpleSelect() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
     ExpectEq(users.build().sql(), "SELECT * FROM \"users\"", "simple select");
 }
 
 void TestWhereLiteral() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
     const auto query = users.where([](const auto& user) { return user.id.eq(10); }).build();
     ExpectEq(query.sql(), "SELECT * FROM \"users\" WHERE (\"users\".\"id\" = 10)", "where literal");
 }
 
 void TestWhereMultiplePredicates() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
     const auto query = users
         .where([](const auto& user) { return user.id.eq(10); })
         .where([](const auto& user) { return user.id.gt(3); })
@@ -208,7 +234,7 @@ void TestWhereMultiplePredicates() {
 }
 
 void TestWhereAndFilter() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
     const auto query = users
         .where([](const auto& user) { return user.online; })
         .filter([](const auto& user) { return user.id.gt(10); })
@@ -220,7 +246,7 @@ void TestWhereAndFilter() {
 }
 
 void TestColumnComparisons() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
 
     ExpectEq(
         users.where([](const auto& user) { return user.id.eq(user.id); }).build().sql(),
@@ -234,7 +260,7 @@ void TestColumnComparisons() {
 }
 
 void TestComparisonOperators() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
 
     ExpectEq(
         users.where([](const auto& user) { return user.name.ne("Shub"); }).build().sql(),
@@ -251,7 +277,7 @@ void TestComparisonOperators() {
 }
 
 void TestLogicalComposition() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
     const auto query = users
         .where([](const auto& user) {
             return user.name.eq("Alice").not_().and_(user.online.eq(true).or_(user.id.gte(7)));
@@ -264,7 +290,7 @@ void TestLogicalComposition() {
 }
 
 void TestNotAndOr() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
 
     ExpectEq(
         users.where([](const auto& user) { return user.name.eq("Alice").not_(); }).build().sql(),
@@ -287,7 +313,7 @@ void TestNotAndOr() {
 }
 
 void TestFilterAlias() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
     const auto query = users
         .filter([](const auto& user) { return user.id.eq(5); })
         .filter([](const auto& user) { return user.id.lt(30); })
@@ -299,7 +325,7 @@ void TestFilterAlias() {
 }
 
 void TestLiteralFormatting() {
-    qb::Table<User> users("users");
+    auto users = TableFor<User>("users");
 
     std::array<uint8_t, SpacetimeDB::Identity::SIZE> identity_bytes{};
     identity_bytes.front() = 1;
@@ -337,7 +363,7 @@ void TestLiteralFormatting() {
         "SELECT * FROM \"users\" WHERE (\"users\".\"online\" = TRUE)",
         "bool literal formatting");
 
-    qb::Table<ConnectionRow> connections("player");
+    auto connections = TableFor<ConnectionRow>("player");
     ExpectEq(
         connections.where([&](const auto& row) { return row.connection_id.eq(connection_id); }).build().sql(),
         "SELECT * FROM \"player\" WHERE (\"player\".\"connection_id\" = 0x00000000000000000000000000000000)",
@@ -345,7 +371,7 @@ void TestLiteralFormatting() {
 }
 
 void TestLiteralMatrix() {
-    qb::Table<LiteralRow> table("player");
+    auto table = TableFor<LiteralRow>("player");
 
     ExpectEq(
         table.where([](const auto& row) { return row.score.eq(100); }).build().sql(),
@@ -423,8 +449,8 @@ void TestQueryReturnWrapperShape() {
 }
 
 void TestSemiJoins() {
-    qb::Table<User> users("users");
-    qb::Table<PlayerLevel> levels("player_level");
+    auto users = TableFor<User>("users");
+    auto levels = TableFor<PlayerLevel>("player_level");
 
     const auto left = users.left_semijoin(levels, [](const auto& user, const auto& level) {
         return user.id.eq(level.entity_id);

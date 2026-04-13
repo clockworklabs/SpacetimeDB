@@ -2,6 +2,14 @@
 
 using namespace SpacetimeDB;
 
+template<typename TRow>
+auto TableFor(const char* table_name) {
+    return QueryBuilder{}.table<TRow>(
+        table_name,
+        query_builder::HasCols<TRow>::get(table_name),
+        query_builder::HasIxCols<TRow>::get(table_name));
+}
+
 struct User {
     Identity identity;
     bool online;
@@ -38,7 +46,7 @@ FIELD_Index(auto_inc_membership, auto_inc_user_id)
 
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(
     online_users_filter,
-    QueryBuilder{}[user].where([](const auto& users) {
+    TableFor<User>("user").where([](const auto& users) {
         return users.online;
     }))
 

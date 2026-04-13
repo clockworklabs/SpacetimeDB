@@ -8,22 +8,29 @@
 #include <type_traits>
 #include <utility>
 
+#ifndef SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN
+#define SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN 1
+#endif
+
 namespace SpacetimeDB::query_builder {
 
 template<typename T>
 struct query_row_type;
 
-template<typename TRow>
+template<typename TRow, typename TCols, typename TIxCols>
 class Table;
 
-template<typename TRow>
+template<typename TRow, typename TCols, typename TIxCols>
 class FromWhere;
 
-template<typename TRow>
-class LeftSemiJoin;
+template<typename T>
+struct HasCols;
 
-template<typename TRightRow, typename TLeftRow>
-class RightSemiJoin;
+template<typename T>
+struct HasIxCols;
+
+template<typename T>
+struct CanBeLookupTable : std::false_type {};
 
 template<typename T>
 using query_row_type_t = typename query_row_type<std::remove_cvref_t<T>>::type;
@@ -51,8 +58,8 @@ private:
     std::string sql_;
 };
 
-template<typename TRow>
-concept QueryLike = requires(const TRow& query) {
+template<typename T>
+concept QueryLike = requires(const T& query) {
     { query.into_sql() } -> std::convertible_to<std::string>;
 };
 
@@ -60,15 +67,6 @@ template<typename T>
 concept QueryBuilderReturn = requires {
     typename query_row_type_t<T>;
 } && QueryLike<std::remove_cvref_t<T>>;
-
-template<typename TRow>
-struct HasCols;
-
-template<typename TRow>
-struct HasIxCols;
-
-template<typename TRow>
-struct CanBeLookupTable : std::false_type {};
 
 namespace detail {
 
@@ -86,18 +84,28 @@ std::false_type adl_lookup_table_allowed(...);
 } // namespace detail
 
 template<typename TRow>
-inline constexpr bool can_be_lookup_table_v =
+inline constexpr bool can_be_lookup_row_v =
     CanBeLookupTable<TRow>::value || decltype(detail::adl_lookup_table_allowed<TRow>(0))::value;
 
-template<typename TRow>
+template<typename T>
+inline constexpr bool can_be_lookup_table_v = CanBeLookupTable<std::remove_cvref_t<T>>::value;
+
+template<typename TRow, typename TCols, typename TIxCols>
+struct CanBeLookupTable<Table<TRow, TCols, TIxCols>> : std::bool_constant<can_be_lookup_row_v<TRow>> {};
+
+template<typename TRow, typename TCols, typename TIxCols>
 class Table {
 public:
     using row_type = TRow;
+    using cols_type = TCols;
+    using ix_cols_type = TIxCols;
 
-    explicit constexpr Table(const char* table_name)
-        : table_name_(table_name) {}
+    constexpr Table(const char* table_name, TCols cols, TIxCols ix_cols)
+        : table_name_(table_name), cols_(std::move(cols)), ix_cols_(std::move(ix_cols)) {}
 
     [[nodiscard]] constexpr const char* name() const { return table_name_; }
+    [[nodiscard]] constexpr const TCols& cols() const { return cols_; }
+    [[nodiscard]] constexpr const TIxCols& ix_cols() const { return ix_cols_; }
 
     [[nodiscard]] RawQuery<TRow> build() const {
         std::string sql;
@@ -108,58 +116,107 @@ public:
         return RawQuery<TRow>(std::move(sql));
     }
 
-    [[nodiscard]] std::string into_sql() const {
-        return build().into_sql();
+    [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
+
+    template<typename TFn>
+    [[nodiscard]] auto where(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
     }
 
     template<typename TFn>
-    [[nodiscard]] auto where(TFn&& predicate) const;
+    [[nodiscard]] auto where_ix(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_, ix_cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] auto Where(TFn&& predicate) const {
+        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+            return where_ix(std::forward<TFn>(predicate));
+        } else {
+            return where(std::forward<TFn>(predicate));
+        }
+    }
 
     template<typename TFn>
     [[nodiscard]] auto filter(TFn&& predicate) const {
         return where(std::forward<TFn>(predicate));
     }
 
-    template<typename TRightRow, typename TFn>
-    [[nodiscard]] LeftSemiJoin<TRow> left_semijoin(const Table<TRightRow>& right, TFn&& predicate) const;
+    template<typename TFn>
+    [[nodiscard]] auto Filter(TFn&& predicate) const {
+        return Where(std::forward<TFn>(predicate));
+    }
 
-    template<typename TRightRow, typename TFn>
-    [[nodiscard]] RightSemiJoin<TRightRow, TRow> right_semijoin(const Table<TRightRow>& right, TFn&& predicate) const;
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto left_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto LeftSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
+        return left_semijoin(right, std::forward<TFn>(predicate));
+    }
+
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto right_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto RightSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
+        return right_semijoin(right, std::forward<TFn>(predicate));
+    }
 
 private:
     const char* table_name_;
+    TCols cols_;
+    TIxCols ix_cols_;
 };
 
-template<typename TRow>
+template<typename TRow, typename TCols, typename TIxCols>
 class FromWhere {
 public:
     using row_type = TRow;
+    using cols_type = TCols;
+    using ix_cols_type = TIxCols;
 
-    constexpr FromWhere(const char* table_name, BoolExpr<TRow> expr)
-        : table_name_(table_name), expr_(std::move(expr)) {}
+    constexpr FromWhere(Table<TRow, TCols, TIxCols> table, BoolExpr<TRow> expr)
+        : table_(std::move(table)), expr_(std::move(expr)) {}
 
-    [[nodiscard]] constexpr const char* table_name() const { return table_name_; }
+    [[nodiscard]] constexpr const char* table_name() const { return table_.name(); }
+    [[nodiscard]] constexpr const Table<TRow, TCols, TIxCols>& table() const { return table_; }
     [[nodiscard]] const BoolExpr<TRow>& expr() const { return expr_; }
 
     [[nodiscard]] RawQuery<TRow> build() const {
         std::string predicate = expr_.format();
         std::string sql;
-        sql.reserve(24 + std::char_traits<char>::length(table_name_) + predicate.size());
+        sql.reserve(24 + std::char_traits<char>::length(table_.name()) + predicate.size());
         sql += "SELECT * FROM \"";
-        sql += table_name_;
+        sql += table_.name();
         sql += "\" WHERE ";
         sql += predicate;
         return RawQuery<TRow>(std::move(sql));
     }
 
-    [[nodiscard]] std::string into_sql() const {
-        return build().into_sql();
-    }
+    [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
     template<typename TFn>
     [[nodiscard]] FromWhere where(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(HasCols<TRow>::get(table_name_)));
-        return FromWhere(table_name_, expr_.and_(extra));
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] FromWhere where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols(), table_.ix_cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] FromWhere Where(TFn&& predicate) const {
+        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+            return where_ix(std::forward<TFn>(predicate));
+        } else {
+            return where(std::forward<TFn>(predicate));
+        }
     }
 
     template<typename TFn>
@@ -167,41 +224,50 @@ public:
         return where(std::forward<TFn>(predicate));
     }
 
-    template<typename TRightRow, typename TFn>
-    [[nodiscard]] LeftSemiJoin<TRow> left_semijoin(const Table<TRightRow>& right, TFn&& predicate) const;
+    template<typename TFn>
+    [[nodiscard]] FromWhere Filter(TFn&& predicate) const {
+        return Where(std::forward<TFn>(predicate));
+    }
 
-    template<typename TRightRow, typename TFn>
-    [[nodiscard]] RightSemiJoin<TRightRow, TRow> right_semijoin(const Table<TRightRow>& right, TFn&& predicate) const;
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto left_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto LeftSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
+        return left_semijoin(right, std::forward<TFn>(predicate));
+    }
+
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto right_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
+    template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+    [[nodiscard]] auto RightSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
+        return right_semijoin(right, std::forward<TFn>(predicate));
+    }
 
 private:
-    const char* table_name_;
+    Table<TRow, TCols, TIxCols> table_;
     BoolExpr<TRow> expr_;
 };
-
-template<typename TRow>
-template<typename TFn>
-[[nodiscard]] auto Table<TRow>::where(TFn&& predicate) const {
-    auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(HasCols<TRow>::get(table_name_)));
-    return FromWhere<TRow>(table_name_, std::move(expr));
-}
 
 template<typename TRow>
 struct query_row_type<RawQuery<TRow>> {
     using type = TRow;
 };
 
-template<typename TRow>
-struct query_row_type<Table<TRow>> {
+template<typename TRow, typename TCols, typename TIxCols>
+struct query_row_type<Table<TRow, TCols, TIxCols>> {
     using type = TRow;
 };
 
-template<typename TRow>
-struct query_row_type<FromWhere<TRow>> {
+template<typename TRow, typename TCols, typename TIxCols>
+struct query_row_type<FromWhere<TRow, TCols, TIxCols>> {
     using type = TRow;
 };
 
 } // namespace SpacetimeDB::query_builder
 
+#if SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN
 namespace SpacetimeDB::bsatn {
 
 template<typename TRow>
@@ -235,3 +301,4 @@ struct bsatn_traits<::SpacetimeDB::query_builder::RawQuery<TRow>> {
 };
 
 } // namespace SpacetimeDB::bsatn
+#endif

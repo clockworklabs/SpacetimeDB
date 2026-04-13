@@ -1,11 +1,12 @@
 #pragma once
 
 #include "spacetimedb/query_builder/expr.h"
-#include "spacetimedb/query_builder/table.h"
 #include "spacetimedb/query_builder/join.h"
+#include "spacetimedb/query_builder/table.h"
 
 #include <optional>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace SpacetimeDB {
@@ -68,29 +69,28 @@ constexpr const char* GetQuerySourceName(const TSourceTag& tag) {
 
 class QueryBuilder {
 public:
-    template<typename TRow>
-    [[nodiscard]] constexpr query_builder::Table<TRow> table(const char* table_name) const {
-        return query_builder::Table<TRow>(table_name);
+    template<typename TRow, typename TCols, typename TIxCols>
+    [[nodiscard]] constexpr query_builder::Table<TRow, TCols, TIxCols> table(const char* table_name, TCols cols, TIxCols ix_cols) const {
+        return query_builder::Table<TRow, TCols, TIxCols>(table_name, std::move(cols), std::move(ix_cols));
     }
 
     template<typename TTableTag>
     [[nodiscard]] constexpr auto table(TTableTag tag) const
-        -> query_builder::Table<typename std::remove_cvref_t<TTableTag>::type> {
-        using Tag = std::remove_cvref_t<TTableTag>;
-        using TRow = typename Tag::type;
-        // Tags may refer to either base tables or published view relations.
-        return query_builder::Table<TRow>(detail::GetQuerySourceName(tag));
-    }
-
-    template<typename TTableTag>
-    [[nodiscard]] constexpr auto operator()(TTableTag tag) const
-        -> query_builder::Table<typename std::remove_cvref_t<TTableTag>::type> {
-        return table(tag);
+        -> query_builder::Table<
+            typename std::remove_cvref_t<TTableTag>::type,
+            decltype(query_builder::HasCols<typename std::remove_cvref_t<TTableTag>::type>::get(std::declval<const char*>())),
+            decltype(query_builder::HasIxCols<typename std::remove_cvref_t<TTableTag>::type>::get(std::declval<const char*>()))> {
+        using TRow = typename std::remove_cvref_t<TTableTag>::type;
+        const char* table_name = detail::GetQuerySourceName(tag);
+        return table<TRow>(
+            table_name,
+            query_builder::HasCols<TRow>::get(table_name),
+            query_builder::HasIxCols<TRow>::get(table_name));
     }
 
     template<typename TTableTag>
     [[nodiscard]] constexpr auto operator[](TTableTag tag) const
-        -> query_builder::Table<typename std::remove_cvref_t<TTableTag>::type> {
+        -> decltype(table(tag)) {
         return table(tag);
     }
 };

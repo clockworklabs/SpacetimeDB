@@ -31,7 +31,67 @@ public:
         return IxJoinEq<TRow, TOtherRow, TValue>{column_, rhs.column_};
     }
 
+    template<typename TOtherRow>
+    [[nodiscard]] auto Eq(const IxCol<TOtherRow, TValue>& rhs) const {
+        return eq(rhs);
+    }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> eq(const TRhs& rhs) const {
+        return compare(BoolExpr<TRow>::Kind::Eq, rhs);
+    }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Eq(const TRhs& rhs) const { return eq(rhs); }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> ne(const TRhs& rhs) const {
+        return compare(BoolExpr<TRow>::Kind::Ne, rhs);
+    }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Neq(const TRhs& rhs) const { return ne(rhs); }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> gt(const TRhs& rhs) const {
+        return compare(BoolExpr<TRow>::Kind::Gt, rhs);
+    }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Gt(const TRhs& rhs) const { return gt(rhs); }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> lt(const TRhs& rhs) const {
+        return compare(BoolExpr<TRow>::Kind::Lt, rhs);
+    }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Lt(const TRhs& rhs) const { return lt(rhs); }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> gte(const TRhs& rhs) const {
+        return compare(BoolExpr<TRow>::Kind::Gte, rhs);
+    }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Gte(const TRhs& rhs) const { return gte(rhs); }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> lte(const TRhs& rhs) const {
+        return compare(BoolExpr<TRow>::Kind::Lte, rhs);
+    }
+
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Lte(const TRhs& rhs) const { return lte(rhs); }
+
+    [[nodiscard]] constexpr const ColumnRef<TRow>& column_ref() const { return column_; }
+
 private:
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> compare(typename BoolExpr<TRow>::Kind kind, const TRhs& rhs) const {
+        return BoolExpr<TRow>::compare(kind, detail::Operand<TRow>::column(column_), detail::to_operand<TRow>(rhs));
+    }
+
     ColumnRef<TRow> column_;
 
     template<typename, typename>
@@ -43,33 +103,6 @@ namespace detail {
 template<typename, typename TRow, auto MemberPtr>
 inline constexpr bool delayed_is_indexed_member_v = is_indexed_member_v<TRow, MemberPtr>;
 
-template<typename TRow, typename TValue, auto MemberPtr>
-class MaybeIxCol {
-public:
-    constexpr MaybeIxCol() = default;
-    constexpr MaybeIxCol(const char* table_name, const char* column_name)
-        : column_(table_name, column_name) {}
-
-    template<typename TOtherRow, auto TOtherMemberPtr>
-    [[nodiscard]] auto eq(const MaybeIxCol<TOtherRow, TValue, TOtherMemberPtr>& rhs) const {
-        static_assert(
-            is_indexed_member_v<TRow, MemberPtr> && is_indexed_member_v<TOtherRow, TOtherMemberPtr>,
-            "Semijoin predicates may only use single-column indexed fields.");
-        return IxJoinEq<TRow, TOtherRow, TValue>{column_, rhs.column_};
-    }
-
-private:
-    ColumnRef<TRow> column_{};
-
-    template<typename, typename, auto>
-    friend class MaybeIxCol;
-};
-
-template<typename TRow, typename TValue, auto MemberPtr>
-using ix_col_member_t = MaybeIxCol<TRow, TValue, MemberPtr>;
-// HasIxCols currently exposes all fields through MaybeIxCol so table/view macros can stay uniform.
-// Non-indexed fields are rejected when .eq() is used in a semijoin predicate.
-
 } // namespace detail
 
 template<typename TLeftRow, typename TRightRow, typename TValue>
@@ -78,18 +111,42 @@ struct IxJoinEq {
     ColumnRef<TRightRow> rhs;
 };
 
-template<typename TRow>
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols>
 class LeftSemiJoin {
 public:
-    using row_type = TRow;
+    using row_type = TLeftRow;
 
-    LeftSemiJoin(ColumnRef<TRow> lhs, const char* right_table, const char* right_column, std::optional<BoolExpr<TRow>> where_expr = std::nullopt)
-        : lhs_(lhs), right_table_(right_table), right_column_(right_column), where_expr_(std::move(where_expr)) {}
+    LeftSemiJoin(
+        Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
+        ColumnRef<TLeftRow> left_join_ref,
+        ColumnRef<TRightRow> right_join_ref,
+        std::optional<BoolExpr<TLeftRow>> where_expr = std::nullopt)
+        : left_(std::move(left))
+        , right_(std::move(right))
+        , left_join_ref_(left_join_ref)
+        , right_join_ref_(right_join_ref)
+        , where_expr_(std::move(where_expr)) {}
 
     template<typename TFn>
     [[nodiscard]] LeftSemiJoin where(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(HasCols<TRow>::get(lhs_.table_name())));
-        return LeftSemiJoin(lhs_, right_table_, right_column_, where_expr_ ? where_expr_->and_(extra) : std::optional<BoolExpr<TRow>>(std::move(extra)));
+        auto extra = detail::make_bool_expr<TLeftRow>(std::forward<TFn>(predicate)(left_.cols()));
+        return LeftSemiJoin(left_, right_, left_join_ref_, right_join_ref_, where_expr_ ? where_expr_->and_(extra) : std::optional<BoolExpr<TLeftRow>>(std::move(extra)));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] LeftSemiJoin where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TLeftRow>(std::forward<TFn>(predicate)(left_.cols(), left_.ix_cols()));
+        return LeftSemiJoin(left_, right_, left_join_ref_, right_join_ref_, where_expr_ ? where_expr_->and_(extra) : std::optional<BoolExpr<TLeftRow>>(std::move(extra)));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] LeftSemiJoin Where(TFn&& predicate) const {
+        if constexpr (std::is_invocable_v<TFn, const TLeftCols&, const TLeftIxCols&>) {
+            return where_ix(std::forward<TFn>(predicate));
+        } else {
+            return where(std::forward<TFn>(predicate));
+        }
     }
 
     template<typename TFn>
@@ -97,60 +154,83 @@ public:
         return where(std::forward<TFn>(predicate));
     }
 
-    [[nodiscard]] RawQuery<TRow> build() const {
+    template<typename TFn>
+    [[nodiscard]] LeftSemiJoin Filter(TFn&& predicate) const {
+        return Where(std::forward<TFn>(predicate));
+    }
+
+    [[nodiscard]] RawQuery<TLeftRow> build() const {
         std::string sql;
         sql.reserve(
             48 +
-            (std::char_traits<char>::length(lhs_.table_name()) * 3) +
-            std::char_traits<char>::length(right_table_) * 2 +
-            std::char_traits<char>::length(lhs_.column_name()) +
-            std::char_traits<char>::length(right_column_));
+            (std::char_traits<char>::length(left_.name()) * 3) +
+            std::char_traits<char>::length(right_.name()) * 2 +
+            std::char_traits<char>::length(left_join_ref_.column_name()) +
+            std::char_traits<char>::length(right_join_ref_.column_name()));
         sql += "SELECT \"";
-        sql += lhs_.table_name();
+        sql += left_.name();
         sql += "\".* FROM \"";
-        sql += lhs_.table_name();
+        sql += left_.name();
         sql += "\" JOIN \"";
-        sql += right_table_;
-        sql += "\" ON \"";
-        sql += lhs_.table_name();
-        sql += "\".\"";
-        sql += lhs_.column_name();
-        sql += "\" = \"";
-        sql += right_table_;
-        sql += "\".\"";
-        sql += right_column_;
-        sql += "\"";
+        sql += right_.name();
+        sql += "\" ON ";
+        sql += left_join_ref_.format();
+        sql += " = ";
+        sql += right_join_ref_.format();
         if (where_expr_) {
             sql += " WHERE " + where_expr_->format();
         }
-        return RawQuery<TRow>(std::move(sql));
+        return RawQuery<TLeftRow>(std::move(sql));
     }
 
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
 private:
-    ColumnRef<TRow> lhs_;
-    const char* right_table_;
-    const char* right_column_;
-    std::optional<BoolExpr<TRow>> where_expr_;
+    Table<TLeftRow, TLeftCols, TLeftIxCols> left_;
+    Table<TRightRow, TRightCols, TRightIxCols> right_;
+    ColumnRef<TLeftRow> left_join_ref_;
+    ColumnRef<TRightRow> right_join_ref_;
+    std::optional<BoolExpr<TLeftRow>> where_expr_;
 };
 
-template<typename TRightRow, typename TLeftRow>
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols>
 class RightSemiJoin {
 public:
     using row_type = TRightRow;
 
     RightSemiJoin(
-        ColumnRef<TLeftRow> lhs,
-        ColumnRef<TRightRow> rhs,
+        Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
+        ColumnRef<TLeftRow> left_join_ref,
+        ColumnRef<TRightRow> right_join_ref,
         std::optional<BoolExpr<TLeftRow>> left_where_expr = std::nullopt,
         std::optional<BoolExpr<TRightRow>> right_where_expr = std::nullopt)
-        : lhs_(lhs), rhs_(rhs), left_where_expr_(std::move(left_where_expr)), right_where_expr_(std::move(right_where_expr)) {}
+        : left_(std::move(left))
+        , right_(std::move(right))
+        , left_join_ref_(left_join_ref)
+        , right_join_ref_(right_join_ref)
+        , left_where_expr_(std::move(left_where_expr))
+        , right_where_expr_(std::move(right_where_expr)) {}
 
     template<typename TFn>
     [[nodiscard]] RightSemiJoin where(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRightRow>(std::forward<TFn>(predicate)(HasCols<TRightRow>::get(rhs_.table_name())));
-        return RightSemiJoin(lhs_, rhs_, left_where_expr_, right_where_expr_ ? right_where_expr_->and_(extra) : std::optional<BoolExpr<TRightRow>>(std::move(extra)));
+        auto extra = detail::make_bool_expr<TRightRow>(std::forward<TFn>(predicate)(right_.cols()));
+        return RightSemiJoin(left_, right_, left_join_ref_, right_join_ref_, left_where_expr_, right_where_expr_ ? right_where_expr_->and_(extra) : std::optional<BoolExpr<TRightRow>>(std::move(extra)));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] RightSemiJoin where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRightRow>(std::forward<TFn>(predicate)(right_.cols(), right_.ix_cols()));
+        return RightSemiJoin(left_, right_, left_join_ref_, right_join_ref_, left_where_expr_, right_where_expr_ ? right_where_expr_->and_(extra) : std::optional<BoolExpr<TRightRow>>(std::move(extra)));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] RightSemiJoin Where(TFn&& predicate) const {
+        if constexpr (std::is_invocable_v<TFn, const TRightCols&, const TRightIxCols&>) {
+            return where_ix(std::forward<TFn>(predicate));
+        } else {
+            return where(std::forward<TFn>(predicate));
+        }
     }
 
     template<typename TFn>
@@ -158,29 +238,29 @@ public:
         return where(std::forward<TFn>(predicate));
     }
 
+    template<typename TFn>
+    [[nodiscard]] RightSemiJoin Filter(TFn&& predicate) const {
+        return Where(std::forward<TFn>(predicate));
+    }
+
     [[nodiscard]] RawQuery<TRightRow> build() const {
         std::string sql;
         sql.reserve(
             48 +
-            (std::char_traits<char>::length(lhs_.table_name()) * 2) +
-            (std::char_traits<char>::length(rhs_.table_name()) * 3) +
-            std::char_traits<char>::length(lhs_.column_name()) +
-            std::char_traits<char>::length(rhs_.column_name()));
+            (std::char_traits<char>::length(left_.name()) * 2) +
+            (std::char_traits<char>::length(right_.name()) * 3) +
+            std::char_traits<char>::length(left_join_ref_.column_name()) +
+            std::char_traits<char>::length(right_join_ref_.column_name()));
         sql += "SELECT \"";
-        sql += rhs_.table_name();
+        sql += right_.name();
         sql += "\".* FROM \"";
-        sql += lhs_.table_name();
+        sql += left_.name();
         sql += "\" JOIN \"";
-        sql += rhs_.table_name();
-        sql += "\" ON \"";
-        sql += lhs_.table_name();
-        sql += "\".\"";
-        sql += lhs_.column_name();
-        sql += "\" = \"";
-        sql += rhs_.table_name();
-        sql += "\".\"";
-        sql += rhs_.column_name();
-        sql += "\"";
+        sql += right_.name();
+        sql += "\" ON ";
+        sql += left_join_ref_.format();
+        sql += " = ";
+        sql += right_join_ref_.format();
 
         if (left_where_expr_ && right_where_expr_) {
             sql += " WHERE ";
@@ -201,83 +281,77 @@ public:
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
 private:
-    ColumnRef<TLeftRow> lhs_;
-    ColumnRef<TRightRow> rhs_;
+    Table<TLeftRow, TLeftCols, TLeftIxCols> left_;
+    Table<TRightRow, TRightCols, TRightIxCols> right_;
+    ColumnRef<TLeftRow> left_join_ref_;
+    ColumnRef<TRightRow> right_join_ref_;
     std::optional<BoolExpr<TLeftRow>> left_where_expr_;
     std::optional<BoolExpr<TRightRow>> right_where_expr_;
 };
 
 namespace detail {
 
-template<typename TLeftRow, typename TRightRow, typename TFn>
-[[nodiscard]] LeftSemiJoin<TLeftRow> left_semijoin_impl(const Table<TLeftRow>& left, const Table<TRightRow>& right, TFn&& predicate) {
-    static_assert(can_be_lookup_table_v<TRightRow>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
-    static_assert(requires { HasIxCols<TLeftRow>::get(left.name()); }, "Left side of a semijoin must provide HasIxCols.");
-    static_assert(requires { HasIxCols<TRightRow>::get(right.name()); }, "Lookup side of a semijoin must provide HasIxCols.");
-    const auto join = std::forward<TFn>(predicate)(HasIxCols<TLeftRow>::get(left.name()), HasIxCols<TRightRow>::get(right.name()));
-    return LeftSemiJoin<TLeftRow>(join.lhs, right.name(), join.rhs.column_name());
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto left_semijoin_impl(const Table<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
+    static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
+    const auto join = std::forward<TFn>(predicate)(left.ix_cols(), right.ix_cols());
+    return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
 }
 
-template<typename TLeftRow, typename TRightRow, typename TFn>
-[[nodiscard]] LeftSemiJoin<TLeftRow> left_semijoin_impl(const FromWhere<TLeftRow>& left, const Table<TRightRow>& right, TFn&& predicate) {
-    static_assert(can_be_lookup_table_v<TRightRow>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
-    static_assert(requires { HasIxCols<TLeftRow>::get(left.table_name()); }, "Left side of a semijoin must provide HasIxCols.");
-    static_assert(requires { HasIxCols<TRightRow>::get(right.name()); }, "Lookup side of a semijoin must provide HasIxCols.");
-    const auto join = std::forward<TFn>(predicate)(HasIxCols<TLeftRow>::get(left.table_name()), HasIxCols<TRightRow>::get(right.name()));
-    return LeftSemiJoin<TLeftRow>(join.lhs, right.name(), join.rhs.column_name(), left.expr());
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto left_semijoin_impl(const FromWhere<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
+    static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
+    const auto join = std::forward<TFn>(predicate)(left.table().ix_cols(), right.ix_cols());
+    return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
 }
 
-template<typename TLeftRow, typename TRightRow, typename TFn>
-[[nodiscard]] RightSemiJoin<TRightRow, TLeftRow> right_semijoin_impl(const Table<TLeftRow>& left, const Table<TRightRow>& right, TFn&& predicate) {
-    static_assert(can_be_lookup_table_v<TRightRow>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
-    static_assert(requires { HasIxCols<TLeftRow>::get(left.name()); }, "Left side of a semijoin must provide HasIxCols.");
-    static_assert(requires { HasIxCols<TRightRow>::get(right.name()); }, "Lookup side of a semijoin must provide HasIxCols.");
-    const auto join = std::forward<TFn>(predicate)(HasIxCols<TLeftRow>::get(left.name()), HasIxCols<TRightRow>::get(right.name()));
-    return RightSemiJoin<TRightRow, TLeftRow>(join.lhs, join.rhs);
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto right_semijoin_impl(const Table<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
+    static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
+    const auto join = std::forward<TFn>(predicate)(left.ix_cols(), right.ix_cols());
+    return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
 }
 
-template<typename TLeftRow, typename TRightRow, typename TFn>
-[[nodiscard]] RightSemiJoin<TRightRow, TLeftRow> right_semijoin_impl(const FromWhere<TLeftRow>& left, const Table<TRightRow>& right, TFn&& predicate) {
-    static_assert(can_be_lookup_table_v<TRightRow>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
-    static_assert(requires { HasIxCols<TLeftRow>::get(left.table_name()); }, "Left side of a semijoin must provide HasIxCols.");
-    static_assert(requires { HasIxCols<TRightRow>::get(right.name()); }, "Lookup side of a semijoin must provide HasIxCols.");
-    const auto join = std::forward<TFn>(predicate)(HasIxCols<TLeftRow>::get(left.table_name()), HasIxCols<TRightRow>::get(right.name()));
-    return RightSemiJoin<TRightRow, TLeftRow>(join.lhs, join.rhs, left.expr());
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto right_semijoin_impl(const FromWhere<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
+    static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
+    const auto join = std::forward<TFn>(predicate)(left.table().ix_cols(), right.ix_cols());
+    return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
 }
 
 } // namespace detail
 
-template<typename TRow>
-template<typename TRightRow, typename TFn>
-[[nodiscard]] LeftSemiJoin<TRow> Table<TRow>::left_semijoin(const Table<TRightRow>& right, TFn&& predicate) const {
+template<typename TRow, typename TCols, typename TIxCols>
+template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto Table<TRow, TCols, TIxCols>::left_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
     return detail::left_semijoin_impl(*this, right, std::forward<TFn>(predicate));
 }
 
-template<typename TRow>
-template<typename TRightRow, typename TFn>
-[[nodiscard]] RightSemiJoin<TRightRow, TRow> Table<TRow>::right_semijoin(const Table<TRightRow>& right, TFn&& predicate) const {
+template<typename TRow, typename TCols, typename TIxCols>
+template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto Table<TRow, TCols, TIxCols>::right_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
     return detail::right_semijoin_impl(*this, right, std::forward<TFn>(predicate));
 }
 
-template<typename TRow>
-template<typename TRightRow, typename TFn>
-[[nodiscard]] LeftSemiJoin<TRow> FromWhere<TRow>::left_semijoin(const Table<TRightRow>& right, TFn&& predicate) const {
+template<typename TRow, typename TCols, typename TIxCols>
+template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto FromWhere<TRow, TCols, TIxCols>::left_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
     return detail::left_semijoin_impl(*this, right, std::forward<TFn>(predicate));
 }
 
-template<typename TRow>
-template<typename TRightRow, typename TFn>
-[[nodiscard]] RightSemiJoin<TRightRow, TRow> FromWhere<TRow>::right_semijoin(const Table<TRightRow>& right, TFn&& predicate) const {
+template<typename TRow, typename TCols, typename TIxCols>
+template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
+[[nodiscard]] auto FromWhere<TRow, TCols, TIxCols>::right_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
     return detail::right_semijoin_impl(*this, right, std::forward<TFn>(predicate));
 }
 
-template<typename TRow>
-struct query_row_type<LeftSemiJoin<TRow>> {
-    using type = TRow;
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols>
+struct query_row_type<LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>> {
+    using type = TLeftRow;
 };
 
-template<typename TRightRow, typename TLeftRow>
-struct query_row_type<RightSemiJoin<TRightRow, TLeftRow>> {
+template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols>
+struct query_row_type<RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>> {
     using type = TRightRow;
 };
 

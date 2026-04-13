@@ -2,7 +2,9 @@
 
 #include "spacetimedb/bsatn/timestamp.h"
 #include "spacetimedb/bsatn/types.h"
+#include <charconv>
 #include <cstdint>
+#include <limits>
 #include <iomanip>
 #include <locale>
 #include <memory>
@@ -58,21 +60,23 @@ inline std::string quote_string(std::string_view value) {
 
 inline std::string trim_timestamp_fraction(std::string value) {
     // Keep this in sync with the current Timestamp::to_string() UTC form.
-    // If that representation changes away from a +00:00 suffix, revisit this trimming logic.
+    // If that representation changes away from a +00:00 / Z suffix, revisit this trimming logic.
     const std::size_t plus = value.rfind("+00:00");
+    const std::size_t z = value.rfind('Z');
     const std::size_t dot = value.find('.');
-    if (plus == std::string::npos || dot == std::string::npos || dot > plus) {
+    const std::size_t suffix = plus != std::string::npos ? plus : z;
+    if (suffix == std::string::npos || dot == std::string::npos || dot > suffix) {
         return value;
     }
 
-    std::size_t trim = plus;
+    std::size_t trim = suffix;
     while (trim > dot + 1 && value[trim - 1] == '0') {
         --trim;
     }
     if (trim == dot + 1) {
-        value.erase(dot, plus - dot);
+        value.erase(dot, suffix - dot);
     } else {
-        value.erase(trim, plus - trim);
+        value.erase(trim, suffix - trim);
     }
     return value;
 }
@@ -84,6 +88,7 @@ inline std::string literal_sql(bool value) { return value ? "TRUE" : "FALSE"; }
 inline std::string literal_sql(const Identity& value) { return "0x" + value.to_hex_string(); }
 inline std::string literal_sql(const ConnectionId& value) { return "0x" + value.to_string(); }
 inline std::string literal_sql(const Timestamp& value) { return quote_string(trim_timestamp_fraction(value.to_string())); }
+inline std::string literal_sql(const TimeDuration&) = delete;
 inline std::string literal_sql(const std::vector<uint8_t>& value) {
     std::ostringstream out;
     out << "0x" << std::hex << std::setfill('0');
@@ -97,15 +102,23 @@ inline std::string literal_sql(const i128& value) { return value.to_string(); }
 inline std::string literal_sql(const u256& value) { return value.to_string(); }
 inline std::string literal_sql(const i256& value) { return value.to_string(); }
 
-inline std::string format_floating_point(double value) {
+template<typename TFloat>
+inline std::string format_floating_point(TFloat value) {
+    char buffer[64];
+    const auto result = std::to_chars(buffer, buffer + sizeof(buffer), value, std::chars_format::general);
+    if (result.ec == std::errc{}) {
+        return std::string(buffer, result.ptr);
+    }
+
     std::ostringstream out;
     out.imbue(std::locale::classic());
+    out << std::setprecision(std::numeric_limits<TFloat>::max_digits10);
     out << value;
     return out.str();
 }
 
 inline std::string literal_sql(float value) {
-    return format_floating_point(static_cast<double>(value));
+    return format_floating_point(value);
 }
 
 inline std::string literal_sql(double value) {
@@ -178,20 +191,20 @@ public:
         return format_node(root_);
     }
 
-    // Trailing underscore to avoid conflicting with C++ keyword
     [[nodiscard]] BoolExpr and_(const BoolExpr& other) const {
         return BoolExpr(std::make_shared<Node>(Kind::And, root_, other.root_));
     }
+    [[nodiscard]] BoolExpr And(const BoolExpr& other) const { return and_(other); }
 
-    // Trailing underscore to avoid conflicting with C++ keyword
     [[nodiscard]] BoolExpr or_(const BoolExpr& other) const {
         return BoolExpr(std::make_shared<Node>(Kind::Or, root_, other.root_));
     }
+    [[nodiscard]] BoolExpr Or(const BoolExpr& other) const { return or_(other); }
 
-    // Trailing underscore to avoid conflicting with C++ keyword
     [[nodiscard]] BoolExpr not_() const {
         return BoolExpr(std::make_shared<Node>(Kind::Not, root_, nullptr));
     }
+    [[nodiscard]] BoolExpr Not() const { return not_(); }
 
 private:
     struct Node;
@@ -303,15 +316,27 @@ public:
     template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> eq(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Eq, rhs); }
     template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Eq(const TRhs& rhs) const { return eq(rhs); }
+    template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> ne(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Ne, rhs); }
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Neq(const TRhs& rhs) const { return ne(rhs); }
     template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> gt(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Gt, rhs); }
     template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Gt(const TRhs& rhs) const { return gt(rhs); }
+    template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> lt(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Lt, rhs); }
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Lt(const TRhs& rhs) const { return lt(rhs); }
     template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> gte(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Gte, rhs); }
     template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Gte(const TRhs& rhs) const { return gte(rhs); }
+    template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> lte(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Lte, rhs); }
+    template<typename TRhs>
+    [[nodiscard]] BoolExpr<TRow> Lte(const TRhs& rhs) const { return lte(rhs); }
 
     [[nodiscard]] constexpr const ColumnRef<TRow>& column_ref() const { return column_; }
 
