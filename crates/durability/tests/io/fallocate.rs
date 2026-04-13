@@ -36,7 +36,7 @@ use spacetimedb_commitlog::{
     segment,
     tests::helpers::enable_logging,
 };
-use spacetimedb_durability::{local::OpenError, Durability, Txdata};
+use spacetimedb_durability::{local::OpenError, Durability, Transaction, Txdata};
 use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::{sync::watch, time::sleep};
@@ -99,7 +99,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             new_segment_rx.borrow_and_update();
             // Write past available space.
             for offset in 0..256 {
-                durability.append_tx((offset, txdata.clone()).into());
+                durability.append_tx(Box::new(Transaction::from((offset, txdata.clone()))));
             }
             // Ensure new segment is created.
             new_segment_rx.changed().await?;
@@ -107,7 +107,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             sleep(Duration::from_millis(5)).await;
             // Durability actor should have crashed, so this should panic.
             info!("trying append on crashed durability");
-            durability.append_tx((256, txdata.clone()).into());
+            durability.append_tx(Box::new(Transaction::from((256, txdata.clone()))));
         }
 
         Ok(())
