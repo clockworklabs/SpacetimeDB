@@ -1155,6 +1155,29 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Deletes all rows in the table identified by `table_id`.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_clear(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreClear, out, |caller| {
+            let (_, env) = Self::mem_env(caller);
+            Ok(env.instance_env.clear(table_id.into())?)
+        })
+    }
+
     pub fn volatile_nonatomic_schedule_immediate(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,

@@ -1,4 +1,4 @@
-use crate::db::durability::DurabilityWorker;
+use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::subscription::ExecutionCounters;
@@ -12,7 +12,7 @@ use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
@@ -58,7 +58,6 @@ use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
-use std::num::NonZeroUsize;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -99,7 +98,8 @@ pub struct RelationalDB {
     owner_identity: Identity,
 
     inner: Locking,
-    durability: Option<DurabilityWorker>,
+    durability: Option<Arc<Durability>>,
+    durability_runtime: Option<tokio::runtime::Handle>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -134,8 +134,8 @@ impl std::fmt::Debug for RelationalDB {
 impl Drop for RelationalDB {
     fn drop(&mut self) {
         // Attempt to flush the outstanding transactions.
-        if let Some(worker) = self.durability.take() {
-            worker.spawn_close(self.database_identity);
+        if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
+            spawn_durability_close(durability, &runtime, self.database_identity);
         }
     }
 }
@@ -151,21 +151,12 @@ impl RelationalDB {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
-        let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
-        let durability = durability.zip(rt).map(|(durability, rt)| {
-            let next_tx_offset = {
-                let tx = inner.begin_tx(Workload::Internal);
-                let next_tx_offset = tx.tx_offset();
-                let _ = inner.release_tx(tx);
-                next_tx_offset.into_inner()
-            };
-            let reorder_window_size = NonZeroUsize::new(8).unwrap();
-            DurabilityWorker::new(database_identity, durability, rt, next_tx_offset, reorder_window_size)
-        });
+        let (durability, disk_size_fn, snapshot_worker, durability_runtime) = Persistence::unzip(persistence);
 
         Self {
             inner,
             durability,
+            durability_runtime,
             snapshot_worker,
 
             database_identity,
@@ -814,16 +805,14 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+            self.request_durability(reducer_context, tx_data);
+        })?
+        else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, &tx_data);
-        }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -832,14 +821,12 @@ impl RelationalDB {
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
         log::trace!("COMMIT MUT TX");
 
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload);
+        let reducer_context = tx.ctx.reducer_context().cloned();
+        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+            self.request_durability(reducer_context, tx_data);
+        });
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
-        }
 
         (tx_data, tx_metrics, tx)
     }
@@ -850,6 +837,12 @@ impl RelationalDB {
         self.durability
             .as_ref()
             .map(|durability| durability.durable_tx_offset())
+    }
+
+    fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
+        if let Some(durability) = &self.durability {
+            request_durability(durability.as_ref(), reducer_context, tx_data);
+        }
     }
 
     /// Decide based on the `committed_state.next_tx_offset`
@@ -1449,7 +1442,7 @@ impl RelationalDB {
     }
 
     /// Clears all rows from a table without dropping it.
-    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
+    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<u64, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
     }

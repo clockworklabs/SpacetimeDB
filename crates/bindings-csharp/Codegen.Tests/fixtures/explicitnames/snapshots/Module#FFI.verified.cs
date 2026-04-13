@@ -312,6 +312,9 @@ namespace SpacetimeDB.Internal.TableHandles
         public bool Delete(global::DemoTable row) =>
             global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoDelete(row);
 
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoClear();
+
         public sealed class IdUniqueIndex
             : UniqueIndex<DemoTable, global::DemoTable, int, SpacetimeDB.BSATN.I32>
         {
