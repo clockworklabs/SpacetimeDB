@@ -66,7 +66,6 @@ fn spawn_redirect_server(location: &str) -> (u16, JoinHandle<std::io::Result<()>
 
 #[test]
 fn test_http_disallowed_ip_is_blocked() {
-    require_local_server!();
     let module_code = module_code_http_disallowed_ip("10.0.0.1", 80);
     let test = Smoketest::builder().module_code(&module_code).build();
 
