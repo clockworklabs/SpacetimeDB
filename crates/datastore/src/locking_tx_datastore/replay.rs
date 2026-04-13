@@ -1,4 +1,5 @@
 use super::committed_state::CommittedState;
+use super::datastore::Result;
 use crate::db_metrics::DB_METRICS;
 use crate::locking_tx_datastore::datastore::ReplayError;
 use crate::locking_tx_datastore::state_view::StateView;
@@ -322,5 +323,32 @@ impl Deref for ReplayCommittedState<'_> {
 impl DerefMut for ReplayCommittedState<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.state
+    }
+}
+
+impl ReplayCommittedState<'_> {
+    fn replay_end_tx(&mut self) -> Result<()> {
+        self.next_tx_offset += 1;
+
+        if !self.replay_columns_to_ignore.is_empty() {
+            return Err(anyhow::anyhow!(
+                "`CommittedState::replay_columns_to_ignore` should be empty at the end of a commit, but found {} entries",
+                self.replay_columns_to_ignore.len(),
+            ).into());
+        }
+
+        if !self.replay_table_updated.is_empty() {
+            return Err(anyhow::anyhow!(
+                "`CommittedState::replay_table_updated` should be empty at the end of a commit, but found {} entries",
+                self.replay_table_updated.len(),
+            )
+            .into());
+        }
+
+        // Any dropped tables should be fully gone by the end of a transaction;
+        // if we see any reference to them in the future we should error, not ignore.
+        self.replay_table_dropped.clear();
+
+        Ok(())
     }
 }

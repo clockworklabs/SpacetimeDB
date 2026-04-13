@@ -103,7 +103,7 @@ pub struct CommittedState {
     ///
     /// Cleared after the end of processing each transaction,
     /// as it should be impossible to ever see another reference to the table after that point.
-    replay_table_dropped: IntSet<TableId>,
+    pub(super) replay_table_dropped: IntSet<TableId>,
 
     /// Rows within `st_column` which should be ignored during replay
     /// due to having been superseded by a new row representing the same column.
@@ -120,7 +120,7 @@ pub struct CommittedState {
     /// We insert into this set during [`Self::replay_insert`] of `st_column` rows
     /// and delete from it during [`Self::replay_delete`] of `st_column` rows.
     /// We assert this is empty at the end of each transaction.
-    replay_columns_to_ignore: HashSet<RowPointer>,
+    pub(super) replay_columns_to_ignore: HashSet<RowPointer>,
 
     /// Set of tables whose `st_table` entries have been updated during the currently-replaying transaction,
     /// mapped to the current most-recent `st_table` row.
@@ -138,7 +138,7 @@ pub struct CommittedState {
     ///
     /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
     /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
-    replay_table_updated: IntMap<TableId, RowPointer>,
+    pub(super) replay_table_updated: IntMap<TableId, RowPointer>,
 }
 
 impl CommittedState {
@@ -798,31 +798,6 @@ impl CommittedState {
         if let Some(table) = self.tables.get_mut(&table_id) {
             table.change_columns_to(columns).map_err(TableError::from)?;
         }
-
-        Ok(())
-    }
-
-    pub(super) fn replay_end_tx(&mut self) -> Result<()> {
-        self.next_tx_offset += 1;
-
-        if !self.replay_columns_to_ignore.is_empty() {
-            return Err(anyhow::anyhow!(
-                "`CommittedState::replay_columns_to_ignore` should be empty at the end of a commit, but found {} entries",
-                self.replay_columns_to_ignore.len(),
-            ).into());
-        }
-
-        if !self.replay_table_updated.is_empty() {
-            return Err(anyhow::anyhow!(
-                "`CommittedState::replay_table_updated` should be empty at the end of a commit, but found {} entries",
-                self.replay_table_updated.len(),
-            )
-            .into());
-        }
-
-        // Any dropped tables should be fully gone by the end of a transaction;
-        // if we see any reference to them in the future we should error, not ignore.
-        self.replay_table_dropped.clear();
 
         Ok(())
     }
