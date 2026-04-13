@@ -3,7 +3,7 @@ use std::net::TcpListener;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_local_server, Smoketest};
 
 fn module_code_http_disallowed_ip(addr: &str, port: u16) -> String {
     format!(
@@ -66,6 +66,7 @@ fn spawn_redirect_server(location: &str) -> (u16, JoinHandle<std::io::Result<()>
 
 #[test]
 fn test_http_disallowed_ip_is_blocked() {
+    require_local_server!();
     let module_code = module_code_http_disallowed_ip("10.0.0.1", 80);
     let test = Smoketest::builder().module_code(&module_code).build();
 
@@ -82,6 +83,7 @@ fn test_http_disallowed_ip_is_blocked() {
 
 #[test]
 fn test_http_redirect_to_disallowed_ip_is_blocked() {
+    require_local_server!();
     let (port, redirect_server) = spawn_redirect_server("http://10.0.0.1:80/");
     let module_code = module_code_http_disallowed_ip("localhost", port);
     let test = Smoketest::builder().module_code(&module_code).build();
