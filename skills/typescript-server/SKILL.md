@@ -65,13 +65,16 @@ Optional columns: `nickname: t.option(t.string())`
 Prefer inline `.index('btree')` for single-column. Use named indexes only for multi-column:
 
 ```typescript
-// Inline (preferred):
+// Inline (preferred for single-column):
 authorId: t.u64().index('btree'),
 // Access: ctx.db.post.authorId.filter(authorId);
 
 // Multi-column (named):
-indexes: [{ accessor: 'by_cat_sev', algorithm: 'btree', columns: ['category', 'severity'] }]
+indexes: [{ accessor: 'by_group_user', algorithm: 'btree', columns: ['groupId', 'userId'] }]
+// Access: ctx.db.membership.by_group_user.filter([groupId, userId]);
 ```
+
+When you frequently look up rows by multiple columns, prefer a multi-column index over filtering by one column and looping over the results. Multi-column filter takes an array matching the index column order. You can omit trailing columns to do a prefix scan.
 
 ## Schema Export
 

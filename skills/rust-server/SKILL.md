@@ -75,15 +75,20 @@ Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, 
 Prefer `#[index(btree)]` inline for single-column. Multi-column uses table-level:
 
 ```rust
-// Inline (preferred):
+// Inline (preferred for single-column):
 #[index(btree)]
 pub author_id: u64,
 // Access: ctx.db.post().author_id().filter(author_id)
 
 // Multi-column (table-level):
-#[spacetimedb::table(accessor = post, public, index(accessor = by_cat_sev, btree(columns = [category, severity])))]
-pub struct Post { ... }
+#[spacetimedb::table(accessor = membership, public,
+    index(accessor = by_group_user, btree(columns = [group_id, user_id]))
+)]
+pub struct Membership { pub group_id: u64, pub user_id: Identity, ... }
+// Access: ctx.db.membership().by_group_user().filter((group_id, &user_id))
 ```
+
+When you frequently look up rows by multiple columns, prefer a multi-column index over filtering by one column and looping over the results.
 
 ## Reducers
 

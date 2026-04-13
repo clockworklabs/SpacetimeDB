@@ -85,16 +85,18 @@ Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = 
 Prefer `[SpacetimeDB.Index.BTree]` inline for single-column. Multi-column uses struct-level:
 
 ```csharp
-// Inline (preferred):
+// Inline (preferred for single-column):
 [SpacetimeDB.Index.BTree]
 public ulong AuthorId;
 // Access: ctx.Db.Post.AuthorId.Filter(authorId)
 
 // Multi-column (struct-level):
-[SpacetimeDB.Table(Accessor = "Post", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "ByCatSev", Columns = new[] { "Category", "Severity" })]
-public partial struct Post { ... }
+[SpacetimeDB.Table(Accessor = "Membership")]
+[SpacetimeDB.Index.BTree(Accessor = "ByGroupUser", Columns = ["GroupId", "UserId"])]
+public partial struct Membership { public ulong GroupId; public Identity UserId; ... }
 ```
+
+When you frequently look up rows by multiple columns, prefer a multi-column index over filtering by one column and looping over the results.
 
 ## Reducers
 
