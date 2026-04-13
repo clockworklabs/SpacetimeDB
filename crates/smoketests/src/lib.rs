@@ -1042,10 +1042,7 @@ log = "0.4"
 
     /// Publishes the module and stores the database identity.
     pub fn publish_module(&mut self) -> Result<String> {
-        self.publish_module_internal_ext(
-            None,
-            PublishOptions::default(),
-        )
+        self.publish_module_internal_ext(None, PublishOptions::default())
     }
 
     /// Publishes the module with a specific name and optional clear flag.
@@ -1088,7 +1085,7 @@ log = "0.4"
     /// Publishes the module with name, clear, and break_clients options.
     pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
         self.publish_module_internal_ext(
-            name,
+            Some(name),
             PublishOptions {
                 clear,
                 break_clients,
