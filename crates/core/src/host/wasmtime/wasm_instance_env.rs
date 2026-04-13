@@ -1981,8 +1981,7 @@ impl<T> BacktraceProvider for wasmtime::StoreContext<'_, T> {
 impl ModuleBacktrace for wasmtime::WasmBacktrace {
     fn frames(&self) -> Box<dyn Iterator<Item = BacktraceFrame<'_>> + '_> {
         let is_end_short_backtrace = |func_name: &str| {
-            func_name.contains("__spacetimedb_end_short_backtrace")
-                || func_name.contains("__rust_end_short_backtrace")
+            func_name.contains("__spacetimedb_end_short_backtrace") || func_name.contains("__rust_end_short_backtrace")
         };
         let is_begin_short_backtrace = |func_name: &str| {
             func_name.contains("__spacetimedb_begin_short_backtrace")
