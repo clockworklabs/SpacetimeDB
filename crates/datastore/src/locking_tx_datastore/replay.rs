@@ -1,6 +1,5 @@
 use super::committed_state::CommittedState;
 use crate::db_metrics::DB_METRICS;
-use crate::locking_tx_datastore::datastore::ErrorBehavior;
 use crate::locking_tx_datastore::datastore::ReplayError;
 use crate::locking_tx_datastore::state_view::StateView;
 use crate::system_tables::{StTableRow, ST_TABLE_ID};
@@ -13,6 +12,55 @@ use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::buffer::BufReader;
 use spacetimedb_sats::{AlgebraicValue, Deserialize, ProductValue};
 use spacetimedb_schema::table_name::TableName;
+
+// n.b. (Tyler) We actually **do not** want to check constraints at replay
+// time because not only is it a pain, but actually **subtly wrong** the
+// way we have it implemented. It's wrong because the actual constraints of
+// the database may change as different transactions are added to the
+// schema and you would actually have to change your indexes and
+// constraints as you replayed the log. This we are not currently doing
+// (we're building all the non-bootstrapped indexes at the end after
+// replaying), and thus aren't implementing constraint checking correctly
+// as it stands.
+//
+// However, the above is all rendered moot anyway because we don't need to
+// check constraints while replaying if we just assume that they were all
+// checked prior to the transaction committing in the first place.
+//
+// Note also that operation/mutation ordering **does not** matter for
+// operations inside a transaction of the message log assuming we only ever
+// insert **OR** delete a unique row in one transaction. If we ever insert
+// **AND** delete then order **does** matter. The issue caused by checking
+// constraints for each operation while replaying does not imply that order
+// matters. Ordering of operations would **only** matter if you wanted to
+// view the state of the database as of a partially applied transaction. We
+// never actually want to do this, because after a transaction has been
+// committed, it is assumed that all operations happen instantaneously and
+// atomically at the timestamp of the transaction. The only time that we
+// actually want to view the state of a database while a transaction is
+// partially applied is while the transaction is running **before** it
+// commits. Thus, we only care about operation ordering while the
+// transaction is running, but we do not care about it at all in the
+// context of the commit log.
+//
+// Not caring about the order in the log, however, requires that we **do
+// not** check index constraints during replay of transaction operations.
+// We **could** check them in between transactions if we wanted to update
+// the indexes and constraints as they changed during replay, but that is
+// unnecessary.
+
+/// What to do when encountering an error during commitlog replay due to an invalid TX.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ErrorBehavior {
+    /// Return an error and refuse to continue.
+    ///
+    /// This is the behavior in production, as we don't want to reconstruct an incorrect state.
+    FailFast,
+    /// Log a warning and continue replay.
+    ///
+    /// This behavior is used when inspecting broken commitlogs during debugging.
+    Warn,
+}
 
 pub(super) struct ReplayVisitor<'a, F> {
     pub(super) database_identity: &'a Identity,
