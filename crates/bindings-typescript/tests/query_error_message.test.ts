@@ -71,17 +71,27 @@ describe('query builder diagnostics', () => {
     'Cannot combine predicates from different table scopes with and/or.';
   const messageHint = 'move extra predicates to .where(...)';
 
-  it('reports a clear message for free-floating and(...) in semijoin predicates', () => {
-    const { status, output } = runTypecheck('and(l.id.eq(r.id), r.id.eq(5))');
-    expect(status).not.toBe(0);
-    expect(output).toContain(messageStart);
-    expect(output).toContain(messageHint);
-  });
+  // This test invokes the TypeScript compiler directly, so it uses an explicit timeout for CI variability.
+  it(
+    'reports a clear message for free-floating and(...) in semijoin predicates',
+    () => {
+      const { status, output } = runTypecheck('and(l.id.eq(r.id), r.id.eq(5))');
+      expect(status).not.toBe(0);
+      expect(output).toContain(messageStart);
+      expect(output).toContain(messageHint);
+    },
+    15000
+  );
 
-  it('reports a clear message for method-style .and(...) in semijoin predicates', () => {
-    const { status, output } = runTypecheck('l.id.eq(r.id).and(r.id.eq(5))');
-    expect(status).not.toBe(0);
-    expect(output).toContain(messageStart);
-    expect(output).toContain(messageHint);
-  });
+  // This test invokes the TypeScript compiler directly, so it uses an explicit timeout for CI variability.
+  it(
+    'reports a clear message for method-style .and(...) in semijoin predicates',
+    () => {
+      const { status, output } = runTypecheck('l.id.eq(r.id).and(r.id.eq(5))');
+      expect(status).not.toBe(0);
+      expect(output).toContain(messageStart);
+      expect(output).toContain(messageHint);
+    },
+    15000
+  );
 });
