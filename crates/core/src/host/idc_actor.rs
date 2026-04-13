@@ -163,7 +163,6 @@ async fn run_idc_loop(
         .build()
         .unwrap();
 
-
     // Per-target-database delivery state.
     let mut db_queues: HashMap<Identity, DatabaseQueue> = HashMap::new();
 

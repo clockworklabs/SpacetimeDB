@@ -121,7 +121,7 @@ pub struct HostController {
     /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
     /// Local port to be used by `IdcActor` to make remote reducer calls
-    idc_http_port: OnceCell<u16>
+    idc_http_port: OnceCell<u16>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -244,7 +244,7 @@ impl HostController {
         self.program_storage = ps;
     }
 
-    pub fn set_idc_http_port(&self, port: u16) -> Result<(), u16>{
+    pub fn set_idc_http_port(&self, port: u16) -> Result<(), u16> {
         self.idc_http_port.set(port)
     }
 
@@ -1124,7 +1124,10 @@ impl Host {
             replica_ctx.relational_db().clone(),
             IdcActorConfig {
                 sender_identity: replica_ctx.database_identity,
-                http_port: *host_controller.idc_http_port.get().ok_or_else(|| anyhow!("Port for IDC actor is not initialized"))?,
+                http_port: *host_controller
+                    .idc_http_port
+                    .get()
+                    .ok_or_else(|| anyhow!("Port for IDC actor is not initialized"))?,
             },
             module_host.downgrade(),
         );

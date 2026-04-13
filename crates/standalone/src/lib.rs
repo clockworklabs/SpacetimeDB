@@ -120,7 +120,9 @@ impl StandaloneEnv {
     }
 
     pub fn set_idc_http_port(&self, port: u16) -> anyhow::Result<()> {
-        self.host_controller.set_idc_http_port(port).map_err(|_| anyhow::anyhow!("port already set"))
+        self.host_controller
+            .set_idc_http_port(port)
+            .map_err(|_| anyhow::anyhow!("port already set"))
     }
 }
 
