@@ -91,6 +91,29 @@ impl From<watch::Receiver<Option<TxOffset>>> for DurableOffset {
 /// can be used as a trait object without knowing the type of the `close` future.
 pub type Close = BoxFuture<'static, Option<TxOffset>>;
 
+/// Object-safe conversion into an owned [Transaction].
+pub trait IntoTransaction<T>: Send {
+    fn into_transaction(self: Box<Self>) -> Transaction<T>;
+}
+
+impl<T: Send + 'static> IntoTransaction<T> for Transaction<T> {
+    fn into_transaction(self: Box<Self>) -> Transaction<T> {
+        *self
+    }
+}
+
+impl<T, F> IntoTransaction<T> for F
+where
+    T: Send + 'static,
+    F: FnOnce() -> Transaction<T> + Send + 'static,
+{
+    fn into_transaction(self: Box<Self>) -> Transaction<T> {
+        self()
+    }
+}
+
+pub type PreparedTx<T> = Box<dyn IntoTransaction<T>>;
+
 /// The durability API.
 ///
 /// NOTE: This is a preliminary definition, still under consideration.
@@ -105,7 +128,7 @@ pub trait Durability: Send + Sync {
     /// The payload representing a single transaction.
     type TxData;
 
-    /// Submit a [Transaction] to be made durable.
+    /// Submit work that yields a [Transaction] to be made durable.
     ///
     /// This method must never block, and accept new transactions even if they
     /// cannot be made durable immediately.
@@ -121,7 +144,7 @@ pub trait Durability: Send + Sync {
     // (i.e. a torn write will corrupt all transactions contained in it), and it
     // is very unclear when it is both correct and beneficial to bundle more
     // than a single transaction into a commit.
-    fn append_tx(&self, tx: Transaction<Self::TxData>);
+    fn append_tx(&self, tx: PreparedTx<Self::TxData>);
 
     /// Obtain a handle to the [DurableOffset].
     fn durable_tx_offset(&self) -> DurableOffset;
