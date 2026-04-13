@@ -12,7 +12,7 @@ fn test_delete_database() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("delete-database-{}", std::process::id());
     test.publish_module_named(&name, false).unwrap();
 
     // Start subscription in background to collect updates
