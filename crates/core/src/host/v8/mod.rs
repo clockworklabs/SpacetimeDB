@@ -1805,6 +1805,7 @@ where
     let energy = energy_from_elapsed(budget, timings.total_duration);
 
     // Reuse the last periodic heap sample instead of querying V8 on every call.
+    // We use this statistic for energy tracking, so eventual consistency is fine.
     let memory_allocation = env_on_isolate_unwrap(scope).cached_used_heap_size();
 
     let stats = ExecutionStats {
