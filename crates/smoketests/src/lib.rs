@@ -1042,7 +1042,14 @@ log = "0.4"
 
     /// Publishes the module and stores the database identity.
     pub fn publish_module(&mut self) -> Result<String> {
-        self.publish_module_opts(None, false)
+        self.publish_module_internal_ext(
+            None,
+            PublishOptions {
+                clear: false,
+                break_clients: false,
+                ..PublishOptions::default()
+            },
+        )
     }
 
     /// Publishes the module with a specific name and optional clear flag.
@@ -1050,7 +1057,15 @@ log = "0.4"
     /// If `name` is provided, the database will be published with that name.
     /// If `clear` is true, the database will be cleared before publishing.
     pub fn publish_module_named(&mut self, name: &str, clear: bool) -> Result<String> {
-        self.publish_module_opts(Some(name), clear)
+        self.publish_module_internal_ext(
+            Some(name),
+            PublishOptions {
+                clear,
+                break_clients: false,
+                force: true,
+                ..PublishOptions::default()
+            },
+        )
     }
 
     pub fn publish_module_named_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
@@ -1067,12 +1082,27 @@ log = "0.4"
             .as_ref()
             .context("No database published yet")?
             .clone();
-        self.publish_module_opts(Some(&identity), clear)
+        self.publish_module_internal_ext(
+            Some(&identity),
+            PublishOptions {
+                clear,
+                break_clients: false,
+                force: true,
+                ..PublishOptions::default()
+            },
+        )
     }
 
     /// Publishes the module with name, clear, and break_clients options.
     pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal(Some(name), clear, break_clients)
+        self.publish_module_internal_ext(
+            name,
+            PublishOptions {
+                clear,
+                break_clients,
+                ..PublishOptions::default()
+            },
+        )
     }
 
     /// Publishes the module and allows supplying stdin input to the CLI.
@@ -1103,23 +1133,6 @@ log = "0.4"
 
     pub fn publish_module_with_options_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
         self.publish_module_internal_ext(Some(name), opts)
-    }
-
-    /// Internal helper for publishing with options.
-    fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
-        self.publish_module_internal(name, clear, false)
-    }
-
-    /// Internal helper for publishing with all options.
-    fn publish_module_internal(&mut self, name: Option<&str>, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal_ext(
-            name,
-            PublishOptions {
-                clear,
-                break_clients,
-                ..PublishOptions::default()
-            },
-        )
     }
 
     fn publish_module_internal_ext(&mut self, name: Option<&str>, opts: PublishOptions) -> Result<String> {
