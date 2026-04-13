@@ -189,7 +189,7 @@ where
     let database = ctx
         .get_database_by_identity(&db_identity)
         .await
-        .unwrap()
+        .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let leader = ctx.leader(database.id).await.map_err(log_and_500)?;
