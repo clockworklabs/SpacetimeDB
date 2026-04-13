@@ -69,6 +69,7 @@ pub(super) extern "C" fn cb_noop(_: v8::UnsafeRawIsolatePtr, _: *mut c_void) {}
 ///
 /// Every `callback_every` ticks, `callback` is called.
 fn run_timeout_and_cb_every(
+    // TODO: use RemoteTerminator here once we actually call this function, and make RemoteTerminator thread-safe.
     handle: IsolateHandle,
     callback_every: u64,
     callback: InterruptCallback,
