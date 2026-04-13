@@ -3,7 +3,8 @@ pub struct DstSeed(pub u64);
 
 impl DstSeed {
     pub fn fork(self, discriminator: u64) -> Self {
-        Self(splitmix64(self.0 ^ discriminator.wrapping_mul(0x9e37_79b9_7f4a_7c15)))
+        // derive independent seed using same mixing primitive
+        Self(splitmix64(self.0 ^ discriminator.wrapping_mul(GAMMA)))
     }
 
     pub fn rng(self) -> DstRng {
@@ -20,11 +21,9 @@ pub struct DstRng {
 
 impl DstRng {
     pub fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        z ^ (z >> 31)
+        // advance state, then reuse splitmix64 mixing
+        self.state = self.state.wrapping_add(GAMMA);
+        splitmix64(self.state)
     }
 
     pub fn index(&mut self, len: usize) -> usize {
@@ -33,8 +32,12 @@ impl DstRng {
     }
 }
 
+// constants reused everywhere
+const GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
+
+/// Reference: https://rosettacode.org/wiki/Pseudo-random_numbers/Splitmix64
 fn splitmix64(mut x: u64) -> u64 {
-    x = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    x = x.wrapping_add(GAMMA);
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     x ^ (x >> 31)
