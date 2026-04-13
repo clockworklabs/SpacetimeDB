@@ -23,6 +23,10 @@ impl PreparedTransactions {
         Self::default()
     }
 
+    pub fn debug_id(&self) -> usize {
+        Arc::as_ptr(&self.inner) as usize
+    }
+
     pub fn register_waiter(&self, id: String, info: PreparedTxInfo) -> Option<bool> {
         let mut inner = self.inner.lock().unwrap();
         match inner.remove(&id) {

@@ -1890,6 +1890,7 @@ impl ModuleHost {
         let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
         // Channel for sending the COMMIT/ABORT decision to the executor thread.
         let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
+        let prepared_txs_id = self.prepared_txs.debug_id();
 
         if let Some(commit) = self.prepared_txs.register_waiter(
             prepare_id.clone(),
@@ -1902,7 +1903,9 @@ impl ModuleHost {
                 .two_pc_participant_early_decisions_total
                 .with_label_values(&self.replica_ctx().database.database_identity, decision)
                 .inc();
-            log::warn!("prepare_reducer: observed early {decision} for {prepare_id} before local registration");
+            log::warn!(
+                "prepare_reducer: observed early {decision} for {prepare_id} before local registration; prepared_txs_id=0x{prepared_txs_id:x}"
+            );
             let outcome = ReducerOutcome::Failed(Box::new(
                 format!("2PC prepare {prepare_id} received early {decision} before participant registration")
                     .into_boxed_str(),
@@ -1917,6 +1920,9 @@ impl ModuleHost {
                 None,
             ));
         }
+        log::info!(
+            "prepare_reducer: registered waiter for {prepare_id}; tx_id={tx_id}; prepared_txs_id=0x{prepared_txs_id:x}"
+        );
         //if let Some(tx_id) = tx_id {
         let session = self.replica_ctx().global_tx_manager.ensure_session(
             tx_id,
@@ -2007,18 +2013,24 @@ impl ModuleHost {
 
     /// Finalize a prepared transaction as COMMIT.
     pub fn commit_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
+        let mapped_tx_id = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id);
+        if let Some(tx_id) = mapped_tx_id {
             self.replica_ctx()
                 .global_tx_manager
                 .mark_state(&tx_id, super::global_tx::GlobalTxState::Committing);
         }
+        log::info!(
+            "2PC commit_prepared: prepare_id={prepare_id}; mapped_tx_id={mapped_tx_id:?}; prepared_txs_id=0x{:x}",
+            self.prepared_txs.debug_id()
+        );
         self.prepared_txs.deliver_or_remember_decision(prepare_id, true);
         Ok(())
     }
 
     /// Abort a prepared transaction.
     pub fn abort_prepared(&self, prepare_id: &str) -> Result<(), String> {
-        if let Some(tx_id) = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id) {
+        let mapped_tx_id = self.replica_ctx().global_tx_manager.remove_prepare_mapping(prepare_id);
+        if let Some(tx_id) = mapped_tx_id {
             log::info!("2PC abort_prepared: aborting prepared transaction {tx_id} ({prepare_id})");
             self.replica_ctx()
                 .global_tx_manager
@@ -2026,6 +2038,10 @@ impl ModuleHost {
         } else {
             log::info!("2PC abort_prepared: aborting legacy/unmapped prepare_id {prepare_id}");
         }
+        log::info!(
+            "2PC abort_prepared: prepare_id={prepare_id}; mapped_tx_id={mapped_tx_id:?}; prepared_txs_id=0x{:x}",
+            self.prepared_txs.debug_id()
+        );
         self.prepared_txs.deliver_or_remember_decision(prepare_id, false);
         Ok(())
     }

@@ -1359,6 +1359,7 @@ impl InstanceCommon {
                     action,
                     prepare_id,
                 );
+                log::info!("2PC {action}: sending decision for {prepare_id} to {db_identity} via {url}");
                 let mut req = client.post(&url);
                 if let Some(token) = auth_token {
                     req = req.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
@@ -1370,8 +1371,12 @@ impl InstanceCommon {
                         continue;
                     }
                 };
-                match execute_blocking_http(client, request, |resp| Ok(resp.status())) {
-                    Ok(status) if status.is_success() => {
+                match execute_blocking_http(client, request, |resp| {
+                    let status = resp.status();
+                    let body = resp.text().unwrap_or_default();
+                    Ok((status, body))
+                }) {
+                    Ok((status, _body)) if status.is_success() => {
                         log::info!("2PC {action}: {prepare_id} on {db_identity}");
                         if committed {
                             if let Err(e) = replica_ctx
@@ -1385,18 +1390,24 @@ impl InstanceCommon {
                             }
                         }
                     }
-                    Ok(status) => {
+                    Ok((status, body)) => {
                         if committed {
-                            log::error!("2PC {action}: failed for {prepare_id} on {db_identity}: status {status}");
+                            log::error!(
+                                "2PC {action}: failed for {prepare_id} on {db_identity}: status {status}; url={url}; body={body:?}"
+                            );
                         } else {
-                            log::warn!("2PC {action}: best-effort abort for {prepare_id} on {db_identity} returned status {status}");
+                            log::warn!(
+                                "2PC {action}: best-effort abort for {prepare_id} on {db_identity} returned status {status}; url={url}; body={body:?}"
+                            );
                         }
                     }
                     Err(e) => {
                         if committed {
-                            log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}");
+                            log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}; url={url}");
                         } else {
-                            log::warn!("2PC {action}: best-effort abort transport error for {prepare_id} on {db_identity}: {e}");
+                            log::warn!(
+                                "2PC {action}: best-effort abort transport error for {prepare_id} on {db_identity}: {e}; url={url}"
+                            );
                         }
                     }
                 }
