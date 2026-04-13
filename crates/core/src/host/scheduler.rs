@@ -443,7 +443,7 @@ pub(super) async fn call_scheduled_function(
                 // print their message and backtrace when they occur, so we don't need to do
                 // anything with the error payload.
                 let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                    inst_common.call_reducer_with_tx(Some(tx), params, inst)
+                    inst_common.call_reducer_with_tx(Some(tx), params, inst, |_tx, _ret| Ok(()))
                 }));
                 let reschedule = delete_scheduled_function_row(module_info, db, id, None, None, inst_common, inst);
                 // Currently, we drop the return value from the function call. In the future,

@@ -118,6 +118,10 @@ impl StandaloneEnv {
     pub fn bsatn_rlb_pool(&self) -> &BsatnRowListBuilderPool {
         &self.host_controller.bsatn_rlb_pool
     }
+
+    pub fn set_idc_http_port(&self, port: u16) -> anyhow::Result<()> {
+        self.host_controller.set_idc_http_port(port).map_err(|_| anyhow::anyhow!("port already set"))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
