@@ -1044,11 +1044,7 @@ log = "0.4"
     pub fn publish_module(&mut self) -> Result<String> {
         self.publish_module_internal_ext(
             None,
-            PublishOptions {
-                clear: false,
-                break_clients: false,
-                ..PublishOptions::default()
-            },
+            PublishOptions::default(),
         )
     }
 
@@ -1061,7 +1057,6 @@ log = "0.4"
             Some(name),
             PublishOptions {
                 clear,
-                break_clients: false,
                 ..PublishOptions::default()
             },
         )
@@ -1085,7 +1080,6 @@ log = "0.4"
             Some(&identity),
             PublishOptions {
                 clear,
-                break_clients: false,
                 ..PublishOptions::default()
             },
         )
