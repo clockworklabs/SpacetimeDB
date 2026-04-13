@@ -5,6 +5,8 @@ use crate::locking_tx_datastore::state_view::StateView;
 use crate::system_tables::{StTableRow, ST_TABLE_ID};
 use anyhow::{anyhow, Context};
 use core::ops::{Deref, DerefMut};
+use parking_lot::{RwLock, RwLockReadGuard};
+use spacetimedb_commitlog::payload::txdata;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
@@ -12,6 +14,73 @@ use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::buffer::BufReader;
 use spacetimedb_sats::{AlgebraicValue, Deserialize, ProductValue};
 use spacetimedb_schema::table_name::TableName;
+use std::cell::RefCell;
+use std::sync::Arc;
+
+/// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
+/// history into the database state.
+pub struct Replay<F> {
+    pub(super) database_identity: Identity,
+    pub(super) committed_state: Arc<RwLock<CommittedState>>,
+    pub(super) progress: RefCell<F>,
+    pub(super) error_behavior: ErrorBehavior,
+}
+
+impl<F> Replay<F> {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
+        let mut committed_state = self.committed_state.write();
+        let state = &mut *committed_state;
+        let committed_state = ReplayCommittedState { state };
+        let mut visitor = ReplayVisitor {
+            database_identity: &self.database_identity,
+            committed_state,
+            progress: &mut *self.progress.borrow_mut(),
+            dropped_table_names: IntMap::default(),
+            error_behavior: self.error_behavior,
+        };
+        f(&mut visitor)
+    }
+
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state.read_arc().next_tx_offset
+    }
+
+    pub fn committed_state(&self) -> RwLockReadGuard<'_, CommittedState> {
+        self.committed_state.read()
+    }
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
+    type Record = txdata::Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
+
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        self.using_visitor(|visitor| txdata::decode_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        _tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::skip_record_fn(visitor, version, reader))
+    }
+}
 
 // n.b. (Tyler) We actually **do not** want to check constraints at replay
 // time because not only is it a pain, but actually **subtly wrong** the
@@ -62,15 +131,15 @@ pub enum ErrorBehavior {
     Warn,
 }
 
-pub(super) struct ReplayVisitor<'a, F> {
-    pub(super) database_identity: &'a Identity,
-    pub(super) committed_state: ReplayCommittedState<'a>,
-    pub(super) progress: &'a mut F,
+struct ReplayVisitor<'a, F> {
+    database_identity: &'a Identity,
+    committed_state: ReplayCommittedState<'a>,
+    progress: &'a mut F,
     // Since deletes are handled before truncation / drop, sometimes the schema
     // info is gone. We save the name on the first delete of that table so metrics
     // can still show a name.
-    pub(super) dropped_table_names: IntMap<TableId, TableName>,
-    pub(super) error_behavior: ErrorBehavior,
+    dropped_table_names: IntMap<TableId, TableName>,
+    error_behavior: ErrorBehavior,
 }
 
 impl<F> ReplayVisitor<'_, F> {
@@ -237,9 +306,9 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 }
 
 /// A `CommittedState` under construction during replay.
-pub(super) struct ReplayCommittedState<'cs> {
+struct ReplayCommittedState<'cs> {
     /// The committed state being contructed.
-    pub(super) state: &'cs mut CommittedState,
+    state: &'cs mut CommittedState,
 }
 
 impl Deref for ReplayCommittedState<'_> {

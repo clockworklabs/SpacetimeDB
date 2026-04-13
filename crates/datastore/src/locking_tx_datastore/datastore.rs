@@ -3,12 +3,11 @@ use super::{
     tx_state::TxState,
 };
 use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::ErrorBehavior;
+use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
     locking_tx_datastore::{
-        replay::{ReplayCommittedState, ReplayVisitor},
         state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
         IterByColEqTx, IterByColRangeTx,
     },
@@ -26,16 +25,15 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::{cell::RefCell, ops::RangeBounds};
-use parking_lot::{Mutex, RwLock, RwLockReadGuard};
-use spacetimedb_commitlog::payload::txdata;
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
+use parking_lot::{Mutex, RwLock};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{bsatn, AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
@@ -1011,71 +1009,6 @@ pub enum ReplayError {
     Db(#[from] DatastoreError),
     #[error(transparent)]
     Any(#[from] anyhow::Error),
-}
-
-/// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
-/// history into the database state.
-pub struct Replay<F> {
-    database_identity: Identity,
-    committed_state: Arc<RwLock<CommittedState>>,
-    progress: RefCell<F>,
-    error_behavior: ErrorBehavior,
-}
-
-impl<F> Replay<F> {
-    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
-        let mut committed_state = self.committed_state.write();
-        let state = &mut *committed_state;
-        let committed_state = ReplayCommittedState { state };
-        let mut visitor = ReplayVisitor {
-            database_identity: &self.database_identity,
-            committed_state,
-            progress: &mut *self.progress.borrow_mut(),
-            dropped_table_names: IntMap::default(),
-            error_behavior: self.error_behavior,
-        };
-        f(&mut visitor)
-    }
-
-    pub fn next_tx_offset(&self) -> u64 {
-        self.committed_state.read_arc().next_tx_offset
-    }
-
-    pub fn committed_state(&self) -> RwLockReadGuard<'_, CommittedState> {
-        self.committed_state.read()
-    }
-}
-
-impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
-    type Record = txdata::Txdata<ProductValue>;
-    type Error = txdata::DecoderError<ReplayError>;
-
-    fn decode_record<'a, R: BufReader<'a>>(
-        &self,
-        version: u8,
-        tx_offset: u64,
-        reader: &mut R,
-    ) -> std::result::Result<Self::Record, Self::Error> {
-        self.using_visitor(|visitor| txdata::decode_record_fn(visitor, version, tx_offset, reader))
-    }
-
-    fn consume_record<'a, R: BufReader<'a>>(
-        &self,
-        version: u8,
-        tx_offset: u64,
-        reader: &mut R,
-    ) -> std::result::Result<(), Self::Error> {
-        self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
-    }
-
-    fn skip_record<'a, R: BufReader<'a>>(
-        &self,
-        version: u8,
-        _tx_offset: u64,
-        reader: &mut R,
-    ) -> std::result::Result<(), Self::Error> {
-        self.using_visitor(|visitor| txdata::skip_record_fn(visitor, version, reader))
-    }
 }
 
 /// Construct a [`Metadata`] from the given [`RowRef`],
