@@ -1757,6 +1757,13 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("Javascript module exceeded memory limit (current limit: {current}, initial: {initial})")]
+struct ExceededMemoryLimit {
+    current: usize,
+    initial: usize,
+}
+
 fn common_call<R, O, F>(
     inst: &mut V8Instance<'_, '_, '_>,
     budget: FunctionBudget,
@@ -1770,18 +1777,24 @@ where
     let scope = &mut *inst.scope;
 
     let heap_limit_hit = Cell::new(0u32);
-    let terminated_because_of_heap_limit = Cell::new(false);
 
-    let isolate_handle = scope.thread_safe_handle();
+    // This closure gets called when the configured near heap limit is hit.
+    // We use a near-heap limit as V8 aborts the process when the hard limit is hit.
+    // We'd like to gracefully terminate execution, and not abort,
+    // so we ask V8 to terminate execution as soon as possible
+    // and double the heap limit in the hopes
+    // that V8 manages to stop execution before hitting the new limit.
+    // Note that V8 does not terminate execution immediately when requested
+    // so this mechanism is unfortunately not fool-proof
+    // but we consider it to be good enough.
+    let terminator = error::RemoteTerminator::new(scope);
+    let termination_flag = &terminator.flag;
 
-    let near_heap_limit_callback = |current_heap_limit: usize, _initial_heap_limit: usize| {
+    let near_heap_limit_callback = |current: usize, initial: usize| {
         heap_limit_hit.update(|x| x + 1);
         inst.heap_limit_hit_metric.inc();
-        if !isolate_handle.is_execution_terminating() {
-            terminated_because_of_heap_limit.set(true);
-            isolate_handle.terminate_execution();
-        }
-        current_heap_limit.saturating_mul(2)
+        terminator.terminate_execution(ExceededMemoryLimit { current, initial }.into());
+        current.saturating_mul(2)
     };
 
     with_near_heap_limit_callback(scope, inst.initial_heap_limit, near_heap_limit_callback, |scope| {
@@ -1818,26 +1831,26 @@ where
             }
 
             let e = e.exc_into_error(scope).map(anyhow::Error::from);
+            let termination_error = termination_flag.clear();
             if scope.can_continue() {
                 // We can continue.
                 ExecutionError::Recoverable(e.unwrap_or_else(Into::into))
             } else if scope.has_terminated() {
                 // We can continue if we do `Isolate::cancel_terminate_execution`.
+                // Must be called *after* we check `has_terminated()`, or else it will
+                // cause it to return `false`.
                 scope.cancel_terminate_execution();
-                let e = e.unwrap_or_else(|unknown| {
-                    if terminated_because_of_heap_limit.get() {
-                        anyhow::Error::msg("JavaScript module exceeded memory limit")
-                    } else {
-                        // TODO(noa): check for other causes of termination and give a better error message
-                        unknown.into()
-                    }
-                });
+                let e = e.unwrap_or_else(|unknown| termination_error.unwrap_or_else(|| unknown.into()));
                 ExecutionError::Recoverable(e)
             } else {
                 // We cannot continue.
                 ExecutionError::Trap(e.unwrap_or_else(Into::into))
             }
         });
+
+        // Ensure there's no lingering termination request.
+        termination_flag.clear();
+        scope.cancel_terminate_execution();
 
         let env = env_on_isolate_unwrap(scope);
 

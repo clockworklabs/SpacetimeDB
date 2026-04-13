@@ -12,7 +12,9 @@ use core::fmt;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::Serialize;
+use std::cell::Cell;
 use std::num::NonZero;
+use std::rc::Rc;
 use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
 
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
@@ -106,24 +108,6 @@ impl ArrayTooLongError {
     }
 }
 
-/// A catchable termination error thrown in callbacks to indicate a host error.
-#[derive(Serialize)]
-pub(super) struct TerminationError {
-    __terminated__: String,
-}
-
-impl TerminationError {
-    /// Converts [`anyhow::Error`] to a termination error.
-    pub(super) fn from_error<'scope>(
-        scope: &PinScope<'scope, '_>,
-        error: &anyhow::Error,
-    ) -> ExcResult<ExceptionValue<'scope>> {
-        let __terminated__ = format!("{error}");
-        let error = Self { __terminated__ };
-        serialize_to_js(scope, &error).map(ExceptionValue)
-    }
-}
-
 /// Collapses `res` where the `Ok(x)` where `x` is throwable.
 pub(super) fn collapse_exc_thrown<'scope>(
     scope: &PinScope<'scope, '_>,
@@ -158,38 +142,96 @@ pub type SysCallResult<T> = Result<T, SysCallError>;
 /// A flag set in [`throw_nodes_error`].
 /// The flag should be checked in every module -> host ABI.
 /// If the flag is set, the call is prevented.
-struct TerminationFlag;
+#[derive(Default, Clone)]
+pub(super) struct TerminationFlag(Rc<TerminationFlagInner>);
+
+#[derive(Default)]
+struct TerminationFlagInner {
+    flag: Cell<bool>,
+    reason: Cell<Option<anyhow::Error>>,
+}
+
+impl TerminationFlag {
+    /// Set the terminate-execution flag due to the given host error.
+    pub(super) fn set(&self, err: anyhow::Error) {
+        let already_set = self.0.flag.replace(true);
+        if !already_set {
+            self.0.reason.set(Some(err));
+        }
+    }
+
+    pub(super) fn is_set(&self) -> bool {
+        self.0.flag.get()
+    }
+
+    pub(super) fn clear(&self) -> Option<anyhow::Error> {
+        let flag = self.0.flag.take();
+        let reason = self.0.reason.take();
+        flag.then_some(()).and(reason)
+    }
+}
 
 /// Terminate execution immediately due to the given host error.
 pub(super) fn terminate_execution<'scope>(
     scope: &mut PinScope<'scope, '_>,
-    err: &anyhow::Error,
+    err: anyhow::Error,
 ) -> ExcResult<ExceptionValue<'scope>> {
-    // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
-    // Unfortunately, JS execution won't be terminated once the callback returns,
-    // so we set a slot that all callbacks immediately check
-    // to ensure that the module won't be able to do anything to the host
-    // while it's being terminated (eventually).
-    scope.terminate_execution();
-    scope.set_slot(TerminationFlag);
-    TerminationError::from_error(scope, err)
+    get_or_insert_slot(scope, TerminationFlag::default).set(err);
+    Err(terminate_execution_now(scope))
 }
 
-/// Checks the termination flag and throws a `TerminationError` if set.
-///
-/// Returns whether the flag was set.
-pub(super) fn throw_if_terminated(scope: &PinScope<'_, '_>) -> bool {
-    // If the flag was set in `throw_nodes_error`,
-    // we need to block all module -> host ABI calls.
-    let set = scope.get_slot::<TerminationFlag>().is_some();
-    if set {
-        let err = anyhow::anyhow!("execution is being terminated");
-        if let Ok(exception) = TerminationError::from_error(scope, &err) {
-            exception.throw(scope);
-        }
+/// A handle to terminate execution of a v8 isolate.
+pub(super) struct RemoteTerminator {
+    pub(super) flag: TerminationFlag,
+    pub(super) handle: v8::IsolateHandle,
+}
+
+impl RemoteTerminator {
+    pub(super) fn new(isolate: &mut v8::Isolate) -> Self {
+        let flag = get_or_insert_slot(isolate, TerminationFlag::default).clone();
+        let handle = isolate.thread_safe_handle();
+        Self { flag, handle }
     }
 
-    set
+    /// Request that v8 terminate execution due to the given host error.
+    pub(super) fn terminate_execution(&self, err: anyhow::Error) {
+        self.flag.set(err);
+        self.handle.terminate_execution();
+    }
+}
+
+/// Checks the termination flag and terminates execution immediately if it was set.
+pub(super) fn check_termination(scope: &PinScope<'_, '_>) -> ExcResult<()> {
+    // If the flag was set in `throw_nodes_error`,
+    // we need to block all module -> host ABI calls.
+    if let Some(flag) = scope.get_slot::<TerminationFlag>()
+        && flag.is_set()
+    {
+        return Err(terminate_execution_now(scope));
+    }
+
+    Ok(())
+}
+
+/// Terminate execution of the v8 isolate, not as a request, but right now.
+fn terminate_execution_now(scope: &PinScope<'_, '_>) -> ExceptionThrown {
+    if !scope.is_execution_terminating() {
+        scope.terminate_execution();
+        handle_interrupts(scope);
+        assert!(scope.is_execution_terminating());
+    }
+    exception_already_thrown()
+}
+
+/// Check for interrupts, such as an execution termination request, and handle then.
+fn handle_interrupts(scope: &PinScope<'_, '_>) {
+    // This is stupid. `Isolate::TerminateExecution` requests a termination interrupt, meaning that
+    // `isolate.terminate_execution(); isolate.is_execution_terminating()` evaluates to false.
+    // v8 exposes neither the internal, immediate version `i::Isolate::TerminateExecution`, nor
+    // `Isolate::HandleInterrupts`, so we have to call `HandleInterrupts` in a roundabout way:
+    // via `JSON::Stringify`, which checks at the start of the call for any interrupts. Yippee.
+    let obj = v8::Integer::new(scope, 0);
+    let _ = v8::json::stringify(scope, obj.into());
 }
 
 /// A catchable error code thrown in callbacks
