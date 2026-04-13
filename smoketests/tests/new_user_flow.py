@@ -1,4 +1,4 @@
-from .. import Smoketest
+from .. import Smoketest, requires_anonymous_login
 import time
 
 class NewUserFlow(Smoketest):
@@ -6,7 +6,7 @@ class NewUserFlow(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String
 }
@@ -25,6 +25,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 }
 """
 
+    @requires_anonymous_login
     def test_new_user_flow(self):
         """Test the entirety of the new user flow."""
 

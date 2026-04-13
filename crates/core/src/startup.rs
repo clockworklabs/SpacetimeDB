@@ -1,5 +1,5 @@
-use core_affinity::CoreId;
 use crossbeam_queue::ArrayQueue;
+use itertools::Itertools;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -14,6 +14,9 @@ use tracing_subscriber::{reload, EnvFilter};
 
 use crate::config::{ConfigFile, LogConfig};
 use crate::util::jobs::JobCores;
+use crate::util::thread_scheduling::apply_compute_thread_hint;
+
+pub use core_affinity::CoreId;
 
 pub struct TracingOptions {
     pub config: LogConfig,
@@ -135,13 +138,13 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     let mut prev_time = conf_file.metadata().and_then(|m| m.modified()).ok();
     loop {
         std::thread::sleep(RELOAD_INTERVAL);
-        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified()) {
-            if prev_time.map_or(true, |prev| modified > prev) {
-                log::info!("reloading log config...");
-                prev_time = Some(modified);
-                if reload_handle.reload(parse_from_file(conf_file)).is_err() {
-                    break;
-                }
+        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified())
+            && prev_time.is_none_or(|prev| modified > prev)
+        {
+            log::info!("reloading log config...");
+            prev_time = Some(modified);
+            if reload_handle.reload(parse_from_file(conf_file)).is_err() {
+                break;
             }
         }
     }
@@ -168,7 +171,89 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
 //       processes running - this should probably be some sort of flag.
 #[must_use]
 pub fn pin_threads() -> Cores {
-    Cores::get().unwrap_or_default()
+    pin_threads_with_reservations(CoreReservations::default())
+}
+
+/// Like [`pin_threads`], but with a custom [`CoreReservations`].
+#[must_use]
+pub fn pin_threads_with_reservations(reservations: CoreReservations) -> Cores {
+    Cores::get(reservations).unwrap_or_default()
+}
+
+/// The desired distribution of available cores to purposes.
+///
+/// Note that, in addition to `reserved`, [`Cores`] reserves two additional
+/// cores for the operating system. That is, the denominator for fractions
+/// given below is `num_cpus - reserved - 2`.
+pub struct CoreReservations {
+    /// Cores to run database instances on.
+    ///
+    /// Default: 1/8
+    pub databases: f64,
+    /// Cores to run tokio worker threads on.
+    ///
+    /// Default: 4/8
+    pub tokio_workers: f64,
+    /// Cores to run rayon threads on.
+    ///
+    /// Default: 1/8
+    pub rayon: f64,
+    /// Cores to reserve for IRQ handling.
+    ///
+    /// This will be the first `n` [`CoreId`]s in the list.
+    /// Only make use of this if you're configuring the machine for IRQ pinning!
+    ///
+    /// Default: 2
+    pub irq: usize,
+    /// Extra reserved cores.
+    ///
+    /// If greater than zero, this many cores will be reserved _before_
+    /// any of the other reservations are made (but after reserving the OS cores).
+    ///
+    /// Default: 0
+    pub reserved: usize,
+}
+
+impl Default for CoreReservations {
+    fn default() -> Self {
+        Self {
+            databases: 1.0 / 8.0,
+            tokio_workers: 4.0 / 8.0,
+            rayon: 1.0 / 8.0,
+            irq: 2,
+            reserved: 0,
+        }
+    }
+}
+
+impl CoreReservations {
+    /// Apply this reservation to an arbitrary list of core ids.
+    ///
+    /// Returns the allocated cores in the order:
+    ///
+    /// - irq
+    /// - reserved
+    /// - databases
+    /// - tokio_workers
+    /// - rayon
+    ///
+    /// Left public for testing and debugging purposes.
+    pub fn apply(&self, cores: &mut Vec<CoreId>) -> [Vec<CoreId>; 5] {
+        let irq = cores.drain(..self.irq).collect_vec();
+        let reserved = cores.drain(..self.reserved).collect_vec();
+
+        let total = cores.len() as f64;
+        let frac = |frac: f64| (total * frac).ceil() as usize;
+        fn claim(cores: &mut Vec<CoreId>, n: usize) -> impl Iterator<Item = CoreId> + '_ {
+            cores.drain(..n.min(cores.len()))
+        }
+
+        let databases = claim(cores, frac(self.databases)).collect_vec();
+        let tokio_workers = claim(cores, frac(self.tokio_workers)).collect_vec();
+        let rayon = claim(cores, frac(self.rayon)).collect_vec();
+
+        [irq, reserved, databases, tokio_workers, rayon]
+    }
 }
 
 /// A type holding cores divvied up into different sets.
@@ -177,41 +262,43 @@ pub fn pin_threads() -> Cores {
 #[derive(Default)]
 pub struct Cores {
     /// The cores to run database instances on.
-    ///
-    /// Currently, this is 1/8 of num_cpus.
-    pub databases: JobCores,
-    /// The cores to run tokio worker and blocking threads on.
-    ///
-    /// Currently, tokio worker threads are 4/8 of num_cpus, and tokio blocking
-    /// threads are pinned non-exclusively to 2/8 of num_cpus.
+    pub databases: DatabaseCores,
+    /// The cores to run tokio worker threads on.
     pub tokio: TokioCores,
     /// The cores to run rayon threads on.
-    ///
-    /// Currently, this is 1/8 of num_cpus.
     pub rayon: RayonCores,
+    /// Extra cores if a [`CoreReservations`] with `reserved > 0` was used.
+    ///
+    /// If `Some`, the boxed array is non-empty.
+    pub reserved: Option<Box<[CoreId]>>,
+    /// Cores shared between tokio runtimes to schedule blocking tasks on.
+    ///
+    /// All remaining cores after [`CoreReservations`] have been made become
+    /// blocking cores.
+    ///
+    /// See `Tokio.blocking` for more context.
+    #[cfg(target_os = "linux")]
+    pub blocking: Option<nix::sched::CpuSet>,
 }
 
 impl Cores {
-    fn get() -> Option<Self> {
-        let cores = &mut core_affinity::get_core_ids()
-            .filter(|cores| cores.len() >= 8)?
-            .into_iter();
+    fn get(reservations: CoreReservations) -> Option<Self> {
+        let mut cores = Self::get_core_ids()?;
 
-        let total = cores.len() as f64;
-        let frac = |frac: f64| (total * frac).ceil() as usize;
+        let [_irq, reserved, databases, tokio_workers, rayon] = reservations.apply(&mut cores);
 
-        let databases = cores.take(frac(1.0 / 8.0)).collect();
-
-        let tokio_workers = cores.take(frac(4.0 / 8.0)).collect();
-
-        let rayon = RayonCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
+        let databases = DatabaseCores(databases);
+        let reserved = (!reserved.is_empty()).then(|| reserved.into());
+        let rayon = RayonCores((!rayon.is_empty()).then_some(rayon));
 
         // see comment on `TokioCores.blocking`
         #[cfg(target_os = "linux")]
-        let remaining = cores.try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
-            cpuset.set(core.id).ok()?;
-            Some(cpuset)
-        });
+        let remaining = cores
+            .into_iter()
+            .try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
+                cpuset.set(core.id).ok()?;
+                Some(cpuset)
+            });
 
         let tokio = TokioCores {
             workers: Some(tokio_workers),
@@ -223,20 +310,41 @@ impl Cores {
             databases,
             tokio,
             rayon,
+            reserved,
+            #[cfg(target_os = "linux")]
+            blocking: remaining,
         })
+    }
+
+    /// Get the cores of the local host, as reported by the operating system.
+    ///
+    /// Returns `None` if `num_cpus` is less than 8
+    /// or if core pinning is disabled.
+    /// If `Some` is returned, the `Vec` is non-empty.
+    pub fn get_core_ids() -> Option<Vec<CoreId>> {
+        if cfg!(feature = "no-core-pinning") {
+            return None;
+        }
+
+        let cores = core_affinity::get_core_ids()
+            .filter(|cores| cores.len() >= 10)?
+            .into_iter()
+            .collect_vec();
+
+        (!cores.is_empty()).then_some(cores)
     }
 }
 
 #[derive(Default)]
 pub struct TokioCores {
-    workers: Option<Vec<CoreId>>,
+    pub workers: Option<Vec<CoreId>>,
     // For blocking threads, we don't want to limit them to a specific number
     // and pin them to their own cores - they're supposed to run concurrently
     // with each other. However, `core_affinity` doesn't support affinity masks,
     // so we just use the Linux-specific API, since this is only a slight boost
     // and we don't care enough about performance on other platforms.
     #[cfg(target_os = "linux")]
-    blocking: Option<nix::sched::CpuSet>,
+    pub blocking: Option<nix::sched::CpuSet>,
 }
 
 impl TokioCores {
@@ -255,7 +363,7 @@ impl TokioCores {
             // so this ends up working fine
             builder.on_thread_start(move || {
                 if let Some(core) = cores_queue.pop() {
-                    core_affinity::set_for_current(core);
+                    apply_compute_thread_hint(Some(core));
                 } else {
                     #[cfg(target_os = "linux")]
                     if let Some(cpuset) = &self.blocking {
@@ -281,9 +389,8 @@ impl RayonCores {
             .spawn_handler(thread_spawn_handler(tokio_handle))
             .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
             .start_handler(move |i| {
-                if let Some(cores) = &self.0 {
-                    core_affinity::set_for_current(cores[i]);
-                }
+                let core = self.0.as_ref().and_then(|cores| cores.get(i).copied());
+                apply_compute_thread_hint(core);
             })
             .build_global()
             .unwrap()
@@ -320,5 +427,21 @@ fn thread_spawn_handler(
             thread.run()
         })?;
         Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct DatabaseCores(Vec<CoreId>);
+
+impl DatabaseCores {
+    /// Construct a [`JobCores`] manager suitable for running database WASM code on.
+    ///
+    /// ```rust
+    /// # use spacetimedb::startup::pin_threads;
+    /// let cores = pin_threads();
+    /// let database_cores = cores.databases.make_database_runners();
+    /// ```
+    pub fn make_database_runners(self) -> JobCores {
+        JobCores::from_pinned_cores(self.0)
     }
 }

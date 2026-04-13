@@ -1,22 +1,20 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use spacetimedb::client::consume_each_list::ConsumeEachBuffer;
+use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::Workload;
-use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
-use spacetimedb::messages::websocket::BsatnFormat;
 use spacetimedb::sql::ast::SchemaViewer;
-use spacetimedb::subscription::query::compile_read_only_queryset;
-use spacetimedb::subscription::subscription::ExecutionSet;
+use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::subscription::{collect_table_update, TableUpdateType};
-use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_client_api_messages::websocket::v1::BsatnFormat;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
-
+use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue};
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -47,15 +45,6 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
     ];
     let indexes = &[0.into(), 1.into()];
     db.create_table_for_test("footprint", schema, indexes)
-}
-
-fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> DatabaseTableUpdate {
-    DatabaseTableUpdate {
-        table_id,
-        table_name: table_name.into(),
-        inserts: [row].into(),
-        deletes: [].into(),
-    }
 }
 
 fn eval(c: &mut Criterion) {
@@ -112,14 +101,12 @@ fn eval(c: &mut Criterion) {
     let footprint = AlgebraicValue::sum(1, AlgebraicValue::unit());
     let owner = 6u64;
 
-    let new_lhs_row = product!(entity_id, owner, footprint);
-    let new_rhs_row = product!(entity_id, chunk_index, x, z, dimension);
+    let _new_lhs_row = product!(entity_id, owner, footprint);
+    let _new_rhs_row = product!(entity_id, chunk_index, x, z, dimension);
 
-    let ins_lhs = insert_op(lhs, "footprint", new_lhs_row);
-    let ins_rhs = insert_op(rhs, "location", new_rhs_row);
-    let update = [&ins_lhs, &ins_rhs];
+    let bsatn_rlb_pool = black_box(BsatnRowListBuilderPool::new());
 
-    // A benchmark runner for the new query engine
+    // A benchmark runner for the subscription engine.
     let bench_query = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
             let tx = raw.db.begin_tx(Workload::Subscribe);
@@ -128,36 +115,23 @@ fn eval(c: &mut Criterion) {
             let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
             let plans = plans
                 .into_iter()
-                .map(|plan| plan.optimize().unwrap())
+                .map(|plan| plan.optimize(&auth).unwrap())
                 .map(PipelinedProject::from)
                 .collect::<Vec<_>>();
             let tx = DeltaTx::from(&tx);
 
             b.iter(|| {
-                drop(black_box(collect_table_update::<_, BsatnFormat>(
+                let updates = black_box(collect_table_update::<BsatnFormat>(
                     &plans,
                     table_id,
                     table_name.clone(),
                     &tx,
                     TableUpdateType::Subscribe,
-                )))
-            })
-        });
-    };
-
-    let bench_eval = |c: &mut Criterion, name, sql| {
-        c.bench_function(name, |b| {
-            let tx = raw.db.begin_tx(Workload::Update);
-            let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
-            let query: ExecutionSet = query.into();
-
-            b.iter(|| {
-                drop(black_box(query.eval::<BsatnFormat>(
-                    &raw.db,
-                    &tx,
-                    None,
-                    Compression::None,
-                )))
+                    &bsatn_rlb_pool,
+                ));
+                if let Ok((updates, _)) = updates {
+                    updates.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
+                }
             })
         });
     };
@@ -177,66 +151,6 @@ fn eval(c: &mut Criterion) {
     bench_query(c, "footprint-scan", "select * from footprint");
     bench_query(c, "footprint-semijoin", &semijoin);
     bench_query(c, "index-scan-multi", index_scan_multi);
-
-    // To profile this benchmark for 30s
-    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
-    // Iterate 1M rows.
-    bench_eval(c, "full-scan", "select * from footprint");
-
-    // To profile this benchmark for 30s
-    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-join --exact --profile-time=30
-    // Join 1M rows on the left with 12K rows on the right.
-    // Note, this should use an index join so as not to read the entire footprint table.
-    let name = format!(
-        r#"
-        select footprint.*
-        from footprint join location on footprint.entity_id = location.entity_id
-        where location.chunk_index = {chunk_index}
-        "#
-    );
-    bench_eval(c, "full-join", &name);
-
-    // To profile this benchmark for 30s
-    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
-    c.bench_function("incr-select", |b| {
-        // A passthru executed independently of the database.
-        let select_lhs = "select * from footprint";
-        let select_rhs = "select * from location";
-        let tx = &raw.db.begin_tx(Workload::Update);
-        let query_lhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_lhs).unwrap();
-        let query_rhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_rhs).unwrap();
-        let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
-        let tx = &tx.into();
-
-        b.iter(|| drop(black_box(query.eval_incr_for_test(&raw.db, tx, &update, None))))
-    });
-
-    // To profile this benchmark for 30s
-    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-join --exact --profile-time=30
-    c.bench_function("incr-join", |b| {
-        // Not a passthru - requires reading of database state.
-        let join = format!(
-            "\
-            select footprint.* \
-            from footprint join location on footprint.entity_id = location.entity_id \
-            where location.chunk_index = {chunk_index}"
-        );
-        let tx = &raw.db.begin_tx(Workload::Update);
-        let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, &join).unwrap();
-        let query: ExecutionSet = query.into();
-        let tx = &tx.into();
-
-        b.iter(|| drop(black_box(query.eval_incr_for_test(&raw.db, tx, &update, None))));
-    });
-
-    // To profile this benchmark for 30s
-    // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- query-indexes-multi --exact --profile-time=30
-    // Iterate 1M rows.
-    bench_eval(
-        c,
-        "query-indexes-multi",
-        "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0",
-    );
 }
 
 criterion_group!(benches, eval);

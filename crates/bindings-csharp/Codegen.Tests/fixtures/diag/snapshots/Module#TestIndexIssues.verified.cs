@@ -8,12 +8,14 @@ partial struct TestIndexIssues
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        SelfIndexingColumn = BSATN.SelfIndexingColumn.Read(reader);
+        SelfIndexingColumn = BSATN.SelfIndexingColumnRW.Read(reader);
+        SecondaryIndexingColumn = BSATN.SecondaryIndexingColumnRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.SelfIndexingColumn.Write(writer, SelfIndexingColumn);
+        BSATN.SelfIndexingColumnRW.Write(writer, SelfIndexingColumn);
+        BSATN.SecondaryIndexingColumnRW.Write(writer, SecondaryIndexingColumn);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -22,11 +24,12 @@ partial struct TestIndexIssues
     }
 
     public override string ToString() =>
-        $"TestIndexIssues {{ SelfIndexingColumn = {SpacetimeDB.BSATN.StringUtil.GenericToString(SelfIndexingColumn)} }}";
+        $"TestIndexIssues {{ SelfIndexingColumn = {SpacetimeDB.BSATN.StringUtil.GenericToString(SelfIndexingColumn)}, SecondaryIndexingColumn = {SpacetimeDB.BSATN.StringUtil.GenericToString(SecondaryIndexingColumn)} }}";
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestIndexIssues>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 SelfIndexingColumn = new();
+        internal static readonly SpacetimeDB.BSATN.I32 SelfIndexingColumnRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 SecondaryIndexingColumnRW = new();
 
         public TestIndexIssues Read(System.IO.BinaryReader reader)
         {
@@ -47,9 +50,10 @@ partial struct TestIndexIssues
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
+                        new("SelfIndexingColumn", SelfIndexingColumnRW.GetAlgebraicType(registrar)),
                         new(
-                            nameof(SelfIndexingColumn),
-                            SelfIndexingColumn.GetAlgebraicType(registrar)
+                            "SecondaryIndexingColumn",
+                            SecondaryIndexingColumnRW.GetAlgebraicType(registrar)
                         )
                     }
                 )
@@ -63,14 +67,18 @@ partial struct TestIndexIssues
     public override int GetHashCode()
     {
         var ___hashSelfIndexingColumn = SelfIndexingColumn.GetHashCode();
-        return ___hashSelfIndexingColumn;
+        var ___hashSecondaryIndexingColumn = SecondaryIndexingColumn.GetHashCode();
+        return ___hashSelfIndexingColumn ^ ___hashSecondaryIndexingColumn;
     }
 
 #nullable enable
     public bool Equals(TestIndexIssues that)
     {
         var ___eqSelfIndexingColumn = this.SelfIndexingColumn.Equals(that.SelfIndexingColumn);
-        return ___eqSelfIndexingColumn;
+        var ___eqSecondaryIndexingColumn = this.SecondaryIndexingColumn.Equals(
+            that.SecondaryIndexingColumn
+        );
+        return ___eqSelfIndexingColumn && ___eqSecondaryIndexingColumn;
     }
 
     public override bool Equals(object? that)

@@ -1,0 +1,33 @@
+{
+  "private": true,
+  "packageManager": "pnpm@9.7.0",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "run-all": "pnpm -r -F ./crates/bindings-typescript -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/test-app -F ./docs -F \"./templates/**\" run",
+    "format": "pnpm run-all format && prettier eslint.config.js --write",
+    "lint": "pnpm run-all lint && prettier eslint.config.js --check",
+    "build": "pnpm run-all build",
+    "test": "pnpm run-all test",
+    "generate": "pnpm run-all generate",
+    "clean": "pnpm -r exec rimraf dist .tsbuildinfo coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-jsdoc": "^61.5.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "typescript": "~5.6.2",
+    "vitest": "^3.2.4"
+  }
+}

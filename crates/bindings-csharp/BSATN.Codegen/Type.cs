@@ -1,5 +1,14 @@
 namespace SpacetimeDB.Codegen;
 
+// Generate code to implement serialization to the BSATN format (https://spacetimedb.com/docs/bsatn).
+// C# doesn't support static methods in interfaces, so instead we declare a zero-sized `struct` type that implements
+// the serialization interface (IReadWrite) for us.
+//
+// See BSATN.Runtime for the support code referenced by code generation,
+// and see Codegen.Tests/fixtures/*/snapshots for examples of generated code.
+// Also, if you set <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> in a csproj,
+// you can find the generated code in obj/Debug/*/generated/SpacetimeDB.BSATN.Codegen.
+
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -27,6 +36,14 @@ using static Utils;
 /// <param name="BSATNName">The name of the BSATN struct for the type.</param>
 public abstract record TypeUse(string Name, string BSATNName)
 {
+    internal static string BSATN_FIELD_SUFFIX = "RW";
+
+    /// <summary>
+    /// The name of the static field containing an IReadWrite in the IReadWrite struct associated with this type.
+    /// We make sure this is different from the field name so that collisions cannot occur.
+    /// </summary>
+    public static string BsatnFieldSuffix => $"{BSATN_FIELD_SUFFIX}";
+
     /// <summary>
     /// Parse a type use for a member.
     /// </summary>
@@ -36,6 +53,12 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// <returns></returns>
     public static TypeUse Parse(ISymbol member, ITypeSymbol typeSymbol, DiagReporter diag)
     {
+        if (typeSymbol.SpecialType == SpecialType.System_Void)
+        {
+            // Treat void as equivalent to Unit type
+            return new ReferenceUse("SpacetimeDB.Unit", "SpacetimeDB.Unit.BSATN");
+        }
+
         var type = SymbolToName(typeSymbol);
         string typeInfo;
 
@@ -67,17 +90,41 @@ public abstract record TypeUse(string Name, string BSATNName)
             ),
             INamedTypeSymbol named => named.OriginalDefinition.ToString() switch
             {
+                "SpacetimeDB.Result<T, E>" or "SpacetimeDB.Result<T,E>" => new ResultUse(
+                    type,
+                    typeInfo,
+                    Parse(member, named.TypeArguments[0], diag),
+                    Parse(member, named.TypeArguments[1], diag)
+                ),
                 "System.Collections.Generic.List<T>" => new ListUse(
                     type,
                     typeInfo,
                     Parse(member, named.TypeArguments[0], diag)
                 ),
+                "System.Nullable<T>" => new NullableUse(type, typeInfo),
                 _ => named.IsValueType
-                    ? new ValueUse(type, typeInfo)
+                    ? (
+                        named.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum
+                            ? new EnumUse(type, typeInfo)
+                            : new ValueUse(type, typeInfo)
+                    )
                     : new ReferenceUse(type, typeInfo),
             },
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
+    }
+
+    /// <summary>
+    /// Get the name of the BSATN struct for this type.
+    /// </summary>
+    public virtual string ToBSATNString()
+    {
+        return this.BSATNName;
+    }
+
+    public virtual string ToBSATNString2()
+    {
+        return this.BSATNName;
     }
 
     /// <summary>
@@ -113,7 +160,71 @@ public abstract record TypeUse(string Name, string BSATNName)
 }
 
 /// <summary>
-/// A use of a value type.
+/// A use of a Result&lt;T, E&gt; type.
+/// </summary>
+public sealed record ResultUse : TypeUse
+{
+    public TypeUse Ok { get; }
+    public TypeUse Err { get; }
+
+    public string TypeName { get; }
+
+    public ResultUse(string typeName, string typeInfo, TypeUse ok, TypeUse err)
+        : base(typeName, typeInfo)
+    {
+        Ok = ok;
+        Err = err;
+        TypeName = typeName;
+    }
+
+    public override string ToBSATNString()
+    {
+        return $"{TypeName}.BSATN<{Ok.BSATNName}, {Err.BSATNName}>";
+    }
+
+    public override string ToBSATNString2()
+    {
+        return $"{TypeName}.BSATN<{Ok.BSATNName}, {Err.BSATNName}>";
+    }
+
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = {inVar1} == {inVar2};";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = {inVar}.GetHashCode();";
+}
+
+/// <summary>
+/// A use of an enum type.
+/// (This is a C# enum, not one of our tagged enums.)
+/// </summary>
+/// <param name="Type"></param>
+/// <param name="TypeInfo"></param>
+public record EnumUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
+{
+    // We just use `==` here, rather than `.Equals`, because
+    // C# enums don't provide a `bool Equals(Self other)`, and
+    // using `.Equals(object other)` allocates, which we want to avoid.
+    //
+    // We could instead generate custom .Equals for enums -- except that requires
+    // partial enums, and I'm not sure such things exist.
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = {inVar1} == {inVar2};";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = {inVar}.GetHashCode();";
+}
+
+/// <summary>
+/// A use of a value type (that is not an enum).
 /// </summary>
 /// <param name="Type"></param>
 /// <param name="TypeInfo"></param>
@@ -125,6 +236,24 @@ public record ValueUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
         string outVar,
         int level = 0
     ) => $"var {outVar} = {inVar1}.Equals({inVar2});";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = {inVar}.GetHashCode();";
+}
+
+/// <summary>
+/// A use of a nullable value type (e.g. <c>int?</c>, <c>MyStruct?</c>).
+/// </summary>
+/// <param name="Type"></param>
+/// <param name="TypeInfo"></param>
+public record NullableUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
+{
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = System.Nullable.Equals({inVar1}, {inVar2});";
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar}.GetHashCode();";
@@ -293,6 +422,8 @@ public record MemberDeclaration(
     public MemberDeclaration(IFieldSymbol field, DiagReporter diag)
         : this(field, field.Type, diag) { }
 
+    public string Identifier => EscapeIdentifier(Name);
+
     public static string GenerateBsatnFields(
         Accessibility visibility,
         IEnumerable<MemberDeclaration> members
@@ -301,14 +432,20 @@ public record MemberDeclaration(
         var visStr = SyntaxFacts.GetText(visibility);
         return string.Join(
             "\n        ",
-            members.Select(m => $"{visStr} static readonly {m.Type.BSATNName} {m.Name} = new();")
+            members.Select(m =>
+                $"{visStr} static readonly {m.Type.ToBSATNString()} {m.Identifier}{TypeUse.BsatnFieldSuffix} = new();"
+            )
         );
     }
 
     public static string GenerateDefs(IEnumerable<MemberDeclaration> members) =>
         string.Join(
             ",\n                ",
-            members.Select(m => $"new(nameof({m.Name}), {m.Name}.GetAlgebraicType(registrar))")
+            // we can't use nameof(m.Type.BsatnFieldName) because the bsatn field name differs from the logical name
+            // assigned in the type.
+            members.Select(m =>
+                $"new(\"{m.Name}\", {m.Identifier}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))"
+            )
         );
 }
 
@@ -326,6 +463,12 @@ public abstract record BaseTypeDeclaration<M>
     public readonly string FullName;
     public readonly TypeKind Kind;
     public readonly EquatableArray<M> Members;
+
+    /// <summary>
+    /// Returns the escaped version of ShortName for use in generated C# code where the type name
+    /// appears as an identifier (e.g., in IEquatable&lt;T&gt; or as a base type reference).
+    /// </summary>
+    public string ShortNameIdentifier => EscapeIdentifier(ShortName);
 
     protected abstract M ConvertMember(int index, IFieldSymbol field, DiagReporter diag);
 
@@ -421,10 +564,8 @@ public abstract record BaseTypeDeclaration<M>
         var extensions = new Scope.Extensions(Scope, FullName);
 
         var bsatnDecls = Members.Cast<MemberDeclaration>();
-        var fieldNames = bsatnDecls.Select(m => m.Name);
-        var fieldNamesAndIds = fieldNames.Select((name, i) => (name, i));
 
-        extensions.BaseTypes.Add($"System.IEquatable<{ShortName}>");
+        extensions.BaseTypes.Add($"System.IEquatable<{ShortNameIdentifier}>");
 
         if (Kind is TypeKind.Sum)
         {
@@ -436,10 +577,10 @@ public abstract record BaseTypeDeclaration<M>
                         // To avoid this, we append an underscore to the field name.
                         // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
                         $$"""
-                            public sealed record {{m.Name}}({{m.Type.Name}} {{m.Name}}_) : {{ShortName}}
+                            public sealed record {{m.Identifier}}({{m.Type.Name}} {{m.Identifier}}_) : {{ShortNameIdentifier}}
                             {
                                 public override string ToString() =>
-                                    $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Name}}_) })";
+                                    $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Identifier}}_) })";
                             }
                         
                         """
@@ -451,8 +592,8 @@ public abstract record BaseTypeDeclaration<M>
                     return reader.ReadByte() switch {
                         {{string.Join(
                             "\n            ",
-                            fieldNames.Select((name, i) =>
-                                $"{i} => new {name}({name}.Read(reader)),"
+                            bsatnDecls.Select((m, i) =>
+                                $"{i} => new {m.Identifier}({m.Identifier}{TypeUse.BsatnFieldSuffix}.Read(reader)),"
                             )
                         )}}
                         _ => throw new System.InvalidOperationException("Invalid tag value, this state should be unreachable.")
@@ -463,12 +604,12 @@ public abstract record BaseTypeDeclaration<M>
             switch (value) {
             {{string.Join(
                 "\n",
-                fieldNames.Select((name, i) => $"""
-                            case {name}(var inner):
-                                writer.Write((byte){i});
-                                {name}.Write(writer, inner);
-                                break;
-                """))}}
+                bsatnDecls.Select((m, i) => $"""
+                                                            case {m.Identifier}(var inner):
+                                                                writer.Write((byte){i});
+                                                                {m.Identifier}{TypeUse.BsatnFieldSuffix}.Write(writer, inner);
+                                                                break;
+                                                """))}}
                         }
             """;
 
@@ -482,7 +623,7 @@ public abstract record BaseTypeDeclaration<M>
                         var hashName = $"___hash{member.Name}";
 
                         return $"""
-                                case {member.Name}(var inner):
+                                case {member.Identifier}(var inner):
                                     {member.Type.GetHashCodeStatement("inner", hashName)}
                                     return {hashName};
                         """;
@@ -501,14 +642,14 @@ public abstract record BaseTypeDeclaration<M>
                 public void ReadFields(System.IO.BinaryReader reader) {
             {{string.Join(
                     "\n",
-                    fieldNames.Select(name => $"        {name} = BSATN.{name}.Read(reader);")
+                    bsatnDecls.Select(m => $"        {m.Identifier} = BSATN.{m.Identifier}{TypeUse.BsatnFieldSuffix}.Read(reader);")
                 )}}
                 }
 
                 public void WriteFields(System.IO.BinaryWriter writer) {
             {{string.Join(
                     "\n",
-                    fieldNames.Select(name => $"        BSATN.{name}.Write(writer, {name});")
+                    bsatnDecls.Select(m => $"        BSATN.{m.Identifier}{TypeUse.BsatnFieldSuffix}.Write(writer, {m.Identifier});")
                 )}}
                 }
 
@@ -528,7 +669,7 @@ public abstract record BaseTypeDeclaration<M>
                 public override string ToString() =>
                     $"{{ShortName}} {{start}} {{string.Join(
                         ", ",
-                        fieldNames.Select(name => $$"""{{name}} = {SpacetimeDB.BSATN.StringUtil.GenericToString({{name}})}""")
+                        bsatnDecls.Select(m => $$"""{{m.Name}} = {SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Identifier}})}""")
                     )}} {{end}}";
             """
             );
@@ -547,7 +688,7 @@ public abstract record BaseTypeDeclaration<M>
             var declHashName = (MemberDeclaration decl) => $"___hash{decl.Name}";
 
             getHashCode = $$"""
-                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Name, declHashName(decl))))}}
+                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Identifier, declHashName(decl))))}}
                 return {{JoinOrValue(
                     " ^\n            ",
                     bsatnDecls.Select(declHashName),
@@ -602,7 +743,7 @@ public abstract record BaseTypeDeclaration<M>
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
                     {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Name}", $"that.{decl.Name}", declEqualsName(decl))))}}
+                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqualsName(decl))))}}
                     return {{JoinOrValue(
                         " &&\n        ",
                         bsatnDecls.Select(declEqualsName),

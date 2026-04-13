@@ -5,18 +5,16 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout},
     page::Page,
     var_len::VarLenRef,
 };
-use crate::{
-    bflatn_from::vlr_blob_bytes,
-    blob_store::BlobStore,
-    layout::{ProductTypeLayoutView, VarLenType},
-};
+use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore};
 use core::hash::{Hash as _, Hasher};
 use core::mem;
 use core::str;
+use spacetimedb_sats::layout::{
+    align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, VarLenType,
+};
 use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Deserializer, i256, u256, F32, F64};
 
 /// Hashes the row in `page` where the fixed part starts at `fixed_offset`
@@ -162,6 +160,8 @@ unsafe fn hash_value(
             }
         }
         AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
+            let ty = &ty.elem_ty;
+
             // SAFETY: `value` was valid at and aligned for `ty`.
             // These `ty` store a `vlr: VarLenRef` as their value,
             // so the range is valid and properly aligned for `VarLenRef`.
@@ -170,7 +170,7 @@ unsafe fn hash_value(
             unsafe {
                 run_vlo_bytes(page, bytes, blob_store, curr_offset, |mut bsatn| {
                     let de = Deserializer::new(&mut bsatn);
-                    spacetimedb_sats::hash_bsatn(hasher, ty, de).unwrap();
+                    spacetimedb_sats::hash_bsatn_array(hasher, ty, de).unwrap();
                 });
             }
         }

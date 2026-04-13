@@ -1,0 +1,17 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates looking up rows by primary key and writing projections.
+
+TABLES
+- user
+  - Fields:
+    - id: number (i32, primary key)
+    - name: string
+    - age: number (i32)
+    - active: boolean
+
+- result
+  - Fields:
+    - id: number (i32, primary key)
+    - name: string
+
+REDUCERS
+- lookupUserName: given id:number, find user by id, insert projection (id, name) into result table

@@ -56,7 +56,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 // We export this symbol so that the jemalloc library can find it.
 // See https://github.com/polarsignals/rust-jemalloc-pprof?tab=readme-ov-file#usage
 #[allow(non_upper_case_globals)]
-#[export_name = "_rjem_malloc_conf"]
+#[unsafe(export_name = "_rjem_malloc_conf")]
 pub static _rjem_malloc_conf: &[u8] = b"prof:true,prof_active:false,lg_prof_sample:19\0";
 
 fn main() -> anyhow::Result<()> {
@@ -76,5 +76,13 @@ fn main() -> anyhow::Result<()> {
     cores.tokio.configure(&mut builder);
     let rt = builder.build().unwrap();
     cores.rayon.configure(rt.handle());
-    rt.block_on(async_main(cores.databases))
+    let database_cores = cores.databases.make_database_runners();
+
+    // Keep a handle on the `database_cores` alive outside of `async_main`
+    // and explicitly drop it to avoid dropping it from an `async` context -
+    // Tokio gets angry when you drop a runtime within another runtime.
+    let res = rt.block_on(async_main(database_cores.clone()));
+    drop(database_cores);
+
+    res
 }

@@ -18,15 +18,15 @@ partial record TestTaggedEnumField : System.IEquatable<TestTaggedEnumField>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestTaggedEnumField>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 X = new();
-        internal static readonly SpacetimeDB.BSATN.I32 Y = new();
+        internal static readonly SpacetimeDB.BSATN.I32 XRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 YRW = new();
 
         public TestTaggedEnumField Read(System.IO.BinaryReader reader)
         {
             return reader.ReadByte() switch
             {
-                0 => new X(X.Read(reader)),
-                1 => new Y(Y.Read(reader)),
+                0 => new X(XRW.Read(reader)),
+                1 => new Y(YRW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
@@ -40,11 +40,11 @@ partial record TestTaggedEnumField : System.IEquatable<TestTaggedEnumField>
             {
                 case X(var inner):
                     writer.Write((byte)0);
-                    X.Write(writer, inner);
+                    XRW.Write(writer, inner);
                     break;
                 case Y(var inner):
                     writer.Write((byte)1);
-                    Y.Write(writer, inner);
+                    YRW.Write(writer, inner);
                     break;
             }
         }
@@ -56,8 +56,8 @@ partial record TestTaggedEnumField : System.IEquatable<TestTaggedEnumField>
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(X), X.GetAlgebraicType(registrar)),
-                        new(nameof(Y), Y.GetAlgebraicType(registrar))
+                        new("X", XRW.GetAlgebraicType(registrar)),
+                        new("Y", YRW.GetAlgebraicType(registrar))
                     }
                 )
             );

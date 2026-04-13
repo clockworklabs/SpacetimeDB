@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "Spacetime Algebraic Type Notation"
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,10 +25,16 @@ blake3 = ["dep:blake3"]
 # which we don't want in `spacetimedb_bindings`.
 bytestring = ["dep:bytestring"]
 metrics_impls = ["dep:spacetimedb-metrics"]
+# Gated to avoid including this in `spacetimedb_bindings`.
+memory-usage = ["dep:spacetimedb-memory-usage", "spacetimedb-primitives/memory-usage"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false, features = [
+    "ethnum",
+    "decorum",
+] }
 spacetimedb-metrics = { workspace = true, optional = true }
 
 anyhow.workspace = true
@@ -43,6 +50,7 @@ enum-as-inner.workspace = true
 ethnum.workspace = true
 hex.workspace = true
 itertools.workspace = true
+lean_string.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
@@ -51,6 +59,11 @@ second-stack.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
+uuid.workspace = true
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+uuid = { workspace = true, features = ["v4", "v7"] }
+rand = { workspace = true, features = ["std"] }
 
 # For the `blake3` feature.
 blake3 = { workspace = true, optional = true }
@@ -62,3 +75,8 @@ rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true
