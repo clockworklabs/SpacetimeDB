@@ -1,43 +1,7 @@
-import time
-from .. import Smoketest, run_cmd, requires_docker
+from .. import Smoketest, requires_docker
+from ..docker import restart_docker
 from urllib.request import urlopen
 from .add_remove_index import AddRemoveIndex
-
-
-def restart_docker():
-    # Behold!
-    #
-    # You thought stop/start restarts? How wrong. Restart restarts.
-    run_cmd("docker", "compose", "restart")
-    # The suspense!
-    #
-    # Wait until compose believes the health probe succeeds.
-    #
-    # The container may decide to recompile, or grab a coffee at crates.io, or
-    # whatever. In any case, restart doesn't mean the server is up yet.
-    run_cmd("docker", "compose", "up", "--no-recreate", "--detach", "--wait-timeout", "60")
-    # Belts and suspenders!
-    #
-    # The health probe runs inside the container, but that doesn't mean we can
-    # reach it from outside. Ping until we get through.
-    ping()
-
-def ping():
-    tries = 0
-    host = "127.0.0.1:3000"
-    while tries < 10:
-        tries += 1
-        try:
-            print(f"Ping Server at {host}")
-            urlopen(f"http://{host}/v1/ping")
-            print("Server up")
-            break
-        except Exception:
-            print("Server down")
-            time.sleep(3)
-    else:
-        raise Exception(f"Server at {host} not responding")
-    print(f"Server up after {tries} tries")
 
 
 @requires_docker
@@ -47,7 +11,7 @@ class DockerRestartModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -93,7 +57,7 @@ class DockerRestartSql(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -139,7 +103,7 @@ class DockerRestartAutoDisconnect(Smoketest):
 use log::info;
 use spacetimedb::{ConnectionId, Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = connected_client)]
+#[spacetimedb::table(accessor = connected_client)]
 pub struct ConnectedClient {
     identity: Identity,
     connection_id: ConnectionId,
@@ -148,15 +112,16 @@ pub struct ConnectedClient {
 #[spacetimedb::reducer(client_connected)]
 fn on_connect(ctx: &ReducerContext) {
     ctx.db.connected_client().insert(ConnectedClient {
-        identity: ctx.sender,
-        connection_id: ctx.connection_id.expect("sender connection id unset"),
+        identity: ctx.sender(),
+        connection_id: ctx.connection_id().expect("sender connection id unset"),
     });
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 fn on_disconnect(ctx: &ReducerContext) {
-    let sender_identity = &ctx.sender;
-    let sender_connection_id = ctx.connection_id.as_ref().expect("sender connection id unset");
+    let sender_identity = &ctx.sender();
+    let connection_id = ctx.connection_id();
+    let sender_connection_id = connection_id.as_ref().expect("sender connection id unset");
     let match_client = |row: &ConnectedClient| {
         &row.identity == sender_identity && &row.connection_id == sender_connection_id
     };

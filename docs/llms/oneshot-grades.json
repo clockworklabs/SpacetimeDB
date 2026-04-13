@@ -1,0 +1,1212 @@
+{
+  "generated": "2026-01-30T21:35:14.132Z",
+  "summary": {
+    "byBackend": {
+      "spacetime": {
+        "runs": 7,
+        "avgPercent": 91.7,
+        "best": 100,
+        "worst": 76,
+        "totalScore": 199.75,
+        "maxScore": 216
+      },
+      "postgres": {
+        "runs": 6,
+        "avgPercent": 62.7,
+        "best": 76.4,
+        "worst": 41.7,
+        "totalScore": 116.25,
+        "maxScore": 180
+      }
+    },
+    "byLlm": {
+      "gemini-3-pro": {
+        "spacetime": {
+          "runs": 1,
+          "avgPercent": 85.4,
+          "best": 85.4,
+          "worst": 85.4,
+          "totalScore": 20.5,
+          "maxScore": 24
+        },
+        "postgres": {
+          "runs": 1,
+          "avgPercent": 71.9,
+          "best": 71.9,
+          "worst": 71.9,
+          "totalScore": 17.25,
+          "maxScore": 24
+        }
+      },
+      "gpt-5-2": {
+        "spacetime": {
+          "runs": 1,
+          "avgPercent": 100,
+          "best": 100,
+          "worst": 100,
+          "totalScore": 24,
+          "maxScore": 24
+        },
+        "postgres": {
+          "runs": 1,
+          "avgPercent": 41.7,
+          "best": 41.7,
+          "worst": 41.7,
+          "totalScore": 10,
+          "maxScore": 24
+        }
+      },
+      "grok-code": {
+        "spacetime": {
+          "runs": 1,
+          "avgPercent": 76,
+          "best": 76,
+          "worst": 76,
+          "totalScore": 18.25,
+          "maxScore": 24
+        },
+        "postgres": {
+          "runs": 1,
+          "avgPercent": 46.9,
+          "best": 46.9,
+          "worst": 46.9,
+          "totalScore": 11.25,
+          "maxScore": 24
+        }
+      },
+      "opus-4-5": {
+        "spacetime": {
+          "runs": 4,
+          "avgPercent": 95.1,
+          "best": 100,
+          "worst": 90.3,
+          "totalScore": 137,
+          "maxScore": 144
+        },
+        "postgres": {
+          "runs": 3,
+          "avgPercent": 72,
+          "best": 76.4,
+          "worst": 63.9,
+          "totalScore": 77.75,
+          "maxScore": 108
+        }
+      }
+    },
+    "byApp": {
+      "chat-app": {
+        "spacetime": {
+          "runs": 7,
+          "avgPercent": 91.7,
+          "best": 100,
+          "worst": 76,
+          "totalScore": 199.75,
+          "maxScore": 216
+        },
+        "postgres": {
+          "runs": 6,
+          "avgPercent": 62.7,
+          "best": 76.4,
+          "worst": 41.7,
+          "totalScore": 116.25,
+          "maxScore": 180
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "gemini-3-pro",
+      "backend": "postgres",
+      "runId": "chat-app-20260108-120000",
+      "date": "2026-01-08",
+      "promptLevel": 5,
+      "totalScore": 17.25,
+      "maxScore": 24,
+      "percentage": 71.875,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 568,
+      "locFrontend": 778,
+      "numFiles": 28,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 0.75,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 1,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "gemini-3-pro",
+      "backend": "spacetime",
+      "runId": "chat-app-20260107-120000",
+      "date": "2026-01-07",
+      "promptLevel": 5,
+      "totalScore": 20.5,
+      "maxScore": 24,
+      "percentage": 85.41666666666666,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 550,
+      "locFrontend": 600,
+      "numFiles": null,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 3,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "gpt-5-2",
+      "backend": "postgres",
+      "runId": "chat-app-20260108-140800",
+      "date": "2026-01-08",
+      "promptLevel": 5,
+      "totalScore": 10,
+      "maxScore": 24,
+      "percentage": 41.66666666666667,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 500,
+      "locFrontend": 640,
+      "numFiles": 18,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 1,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 1,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 0,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "gpt-5-2",
+      "backend": "spacetime",
+      "runId": "chat-app-20260107-092240",
+      "date": "2026-01-07",
+      "promptLevel": 5,
+      "totalScore": 24,
+      "maxScore": 24,
+      "percentage": 100,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 752,
+      "locFrontend": 1,
+      "numFiles": 13,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 3,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "grok-code",
+      "backend": "postgres",
+      "runId": "chat-app-20260128-112222",
+      "date": "2026-01-28",
+      "promptLevel": 5,
+      "totalScore": 11.25,
+      "maxScore": 24,
+      "percentage": 46.875,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 731,
+      "locFrontend": 1,
+      "numFiles": 27,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 0.75,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 2,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "grok-code",
+      "backend": "spacetime",
+      "runId": "chat-app-20260107-120000",
+      "date": "2026-01-07",
+      "promptLevel": 5,
+      "totalScore": 18.25,
+      "maxScore": 24,
+      "percentage": 76.04166666666666,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 516,
+      "locFrontend": 875,
+      "numFiles": 12,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 2.75,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 2.5,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "opus-4-5",
+      "backend": "postgres",
+      "runId": "chat-app-20260104-120000",
+      "date": "2026-01-04",
+      "promptLevel": 9,
+      "totalScore": 27.5,
+      "maxScore": 36,
+      "percentage": 76.38888888888889,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 1,
+      "locFrontend": 2,
+      "numFiles": 23,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 9,
+          "name": "Real-Time Permissions",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 10,
+          "name": "Rich User Presence",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 11,
+          "name": "Message Threading",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 12,
+          "name": "Private Rooms & Direct Messages",
+          "score": 3,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "opus-4-5",
+      "backend": "postgres",
+      "runId": "chat-app-20260104-160000",
+      "date": "2026-01-04",
+      "promptLevel": 9,
+      "totalScore": 27.25,
+      "maxScore": 36,
+      "percentage": 75.69444444444444,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 1,
+      "locFrontend": 2,
+      "numFiles": 21,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 2.75,
+          "max": 3
+        },
+        {
+          "feature": 9,
+          "name": "Real-Time Permissions",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 10,
+          "name": "Rich User Presence",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 11,
+          "name": "Message Threading",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 12,
+          "name": "Private Rooms & Direct Messages",
+          "score": 1.5,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "opus-4-5",
+      "backend": "postgres",
+      "runId": "chat-app-20260104-180000",
+      "date": "2026-01-04",
+      "promptLevel": 9,
+      "totalScore": 23,
+      "maxScore": 36,
+      "percentage": 63.888888888888886,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 1,
+      "locFrontend": 2,
+      "numFiles": 20,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 1,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 2.75,
+          "max": 3
+        },
+        {
+          "feature": 9,
+          "name": "Real-Time Permissions",
+          "score": 1.25,
+          "max": 3
+        },
+        {
+          "feature": 10,
+          "name": "Rich User Presence",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 11,
+          "name": "Message Threading",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 12,
+          "name": "Private Rooms & Direct Messages",
+          "score": 2,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "opus-4-5",
+      "backend": "spacetime",
+      "runId": "chat-app-20260102-162918",
+      "date": "",
+      "promptLevel": 9,
+      "totalScore": 34,
+      "maxScore": 36,
+      "percentage": 94.44444444444444,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 1008,
+      "locFrontend": 1500,
+      "numFiles": 26,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 9,
+          "name": "Real-Time Permissions",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 10,
+          "name": "Rich User Presence",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 11,
+          "name": "Message Threading",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 12,
+          "name": "Private Rooms & Direct Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 13,
+          "name": "Room Activity Indicators",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 14,
+          "name": "Draft Sync",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 15,
+          "name": "Anonymous to Registered Migration",
+          "score": 0,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "opus-4-5",
+      "backend": "spacetime",
+      "runId": "chat-app-20260102-170500",
+      "date": "2026-01-02",
+      "promptLevel": 9,
+      "totalScore": 32.5,
+      "maxScore": 36,
+      "percentage": 90.27777777777779,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 879,
+      "locFrontend": 1803,
+      "numFiles": 16,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 2,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 9,
+          "name": "Real-Time Permissions",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 10,
+          "name": "Rich User Presence",
+          "score": 2.5,
+          "max": 3
+        },
+        {
+          "feature": 11,
+          "name": "Message Threading",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 12,
+          "name": "Private Rooms & Direct Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 13,
+          "name": "Room Activity Indicators",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 14,
+          "name": "Draft Sync",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 15,
+          "name": "Anonymous to Registered Migration",
+          "score": 0,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "opus-4-5",
+      "backend": "spacetime",
+      "runId": "chat-app-20260102-171317",
+      "date": "2026-01-02",
+      "promptLevel": 9,
+      "totalScore": 34.5,
+      "maxScore": 36,
+      "percentage": 95.83333333333334,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 1,
+      "locFrontend": 1,
+      "numFiles": 12,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 9,
+          "name": "Real-Time Permissions",
+          "score": 1.5,
+          "max": 3
+        },
+        {
+          "feature": 10,
+          "name": "Rich User Presence",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 11,
+          "name": "Message Threading",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 12,
+          "name": "Private Rooms & Direct Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 13,
+          "name": "Room Activity Indicators",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 14,
+          "name": "Draft Sync",
+          "score": 0,
+          "max": 3
+        },
+        {
+          "feature": 15,
+          "name": "Anonymous to Registered Migration",
+          "score": 0,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "app": "chat-app",
+      "language": "typescript",
+      "llm": "opus-4-5",
+      "backend": "spacetime",
+      "runId": "chat-app-20260105-180000",
+      "date": "2026-01-05",
+      "promptLevel": 9,
+      "totalScore": 36,
+      "maxScore": 36,
+      "percentage": 100,
+      "compiles": true,
+      "runs": true,
+      "locBackend": 650,
+      "locFrontend": 750,
+      "numFiles": 11,
+      "featureScores": [
+        {
+          "feature": 1,
+          "name": "Basic Chat Features",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 2,
+          "name": "Typing Indicators",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 3,
+          "name": "Read Receipts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 4,
+          "name": "Unread Message Counts",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 5,
+          "name": "Scheduled Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 6,
+          "name": "Ephemeral/Disappearing Messages",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 7,
+          "name": "Message Reactions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 8,
+          "name": "Message Editing with History",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 9,
+          "name": "Real-Time Permissions",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 10,
+          "name": "Rich User Presence",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 11,
+          "name": "Message Threading",
+          "score": 3,
+          "max": 3
+        },
+        {
+          "feature": 12,
+          "name": "Private Rooms & Direct Messages",
+          "score": 3,
+          "max": 3
+        }
+      ]
+    }
+  ]
+}

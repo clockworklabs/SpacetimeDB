@@ -33,11 +33,24 @@ public static class Utils
         .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
         .AddMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+                | SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
         );
 
     public static string SymbolToName(ISymbol symbol)
     {
         return symbol.ToDisplayString(SymbolFormat);
+    }
+
+    public static string EscapeIdentifier(string name)
+    {
+        if (name.Length > 0 && name[0] == '@')
+        {
+            return name;
+        }
+
+        var kind = SyntaxFacts.GetKeywordKind(name);
+        var contextualKind = SyntaxFacts.GetContextualKeywordKind(name);
+        return kind != SyntaxKind.None || contextualKind != SyntaxKind.None ? $"@{name}" : name;
     }
 
     public static void RegisterSourceOutputs(
@@ -75,21 +88,35 @@ public static class Utils
     public class UnresolvedTypeException(INamedTypeSymbol type)
         : InvalidOperationException($"Could not resolve type {type}") { }
 
-    public static string GetTypeInfo(ITypeSymbol type)
-    {
+    /// <summary>
+    /// Return whether a type is a nullable, non-value type.
+    /// For example, `string?`.
+    /// </summary>
+    /// <param name="type"></param>
+    /// <returns></returns>
+    public static bool IsNullableReferenceType(ITypeSymbol type) =>
         // We need to distinguish handle nullable reference types specially:
         // compiler expands something like `int?` to `System.Nullable<int>` with the nullable annotation set to `Annotated`
-        // while something like `string?` is expanded to `string` with the nullable annotation set to `Annotated`...
-        // Beautiful design requires beautiful hacks.
-        if (
-            type.NullableAnnotation == NullableAnnotation.Annotated
-            && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T
-        )
+        // while something like `string?` is expanded to `string` with the nullable annotation set to `Annotated`.
+        type.NullableAnnotation == NullableAnnotation.Annotated
+        && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T;
+
+    /// <summary>
+    /// Get the BSATN struct name for a type.
+    /// </summary>
+    /// <param name="type"></param>
+    /// <returns></returns>
+    /// <exception cref="InvalidOperationException"></exception>
+    /// <exception cref="UnresolvedTypeException"></exception>
+    public static string GetTypeInfo(ITypeSymbol type)
+    {
+        if (IsNullableReferenceType(type))
         {
             // If we're here, then this is a nullable reference type like `string?` and the original definition is `string`.
             type = type.WithNullableAnnotation(NullableAnnotation.None);
             return $"SpacetimeDB.BSATN.RefOption<{type}, {GetTypeInfo(type)}>";
         }
+
         return type switch
         {
             ITypeParameterSymbol typeParameter => MakeRwTypeParam(typeParameter.Name),
@@ -148,6 +175,7 @@ public static class Utils
                 "SpacetimeDB.I256" => "SpacetimeDB.BSATN.I256",
                 "SpacetimeDB.U256" => "SpacetimeDB.BSATN.U256",
                 "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
+                "System.Collections.Generic.IEnumerable<T>" => $"SpacetimeDB.BSATN.List",
                 // If we're here, then this is nullable *value* type like `int?`.
                 "System.Nullable<T>" => $"SpacetimeDB.BSATN.ValueOption",
                 var name when name.StartsWith("System.") => throw new InvalidOperationException(
@@ -272,6 +300,18 @@ public static class Utils
             namespaces = new(namespaces_.ToImmutable());
         }
 
+        /// <returns>Whether this Scope is a struct declaration.</returns>
+        public bool IsStruct
+        {
+            get => typeScopes[0].Keyword == "struct";
+        }
+
+        /// <returns>Whether this Scope is a record declaration.</returns>
+        public bool IsRecord
+        {
+            get => typeScopes[0].Keyword == "record";
+        }
+
         public readonly record struct TypeScope(string Keyword, string Name, string Constraints);
 
         public sealed record Extensions(Scope Scope, string FullName)
@@ -292,7 +332,7 @@ public static class Utils
                         .AppendLine(" {");
                 }
 
-                // Loop through the full parent type hiearchy, starting with the outermost.
+                // Loop through the full parent type hierarchy, starting with the outermost.
                 foreach (
                     var (i, typeScope) in Scope.typeScopes.Select((ts, i) => (i, ts)).Reverse()
                 )

@@ -4,9 +4,10 @@ on:
   push:
     tags:
       - '**'
-    branches:
-      - master
-      - release/*
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-cli:
@@ -14,8 +15,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal }
+          # WARNING - do not upgrade this runner to 24.04 or the self hosted runners because it will break downloads for
+          #   anyone who uses a linux distro that doesn't have glibc >= GLIBC_2.38
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          # Disabled because musl builds weren't working and we didn't want to investigate. See https://github.com/clockworklabs/SpacetimeDB/pull/2964.
+          # - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
+          # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
+          # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
           - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
@@ -30,18 +37,75 @@ jobs:
       - name: Show arch
         run: uname -a
 
+      - name: Install musl dependencies
+        # TODO: Should we use `matrix.container == 'alpine'` instead of the `endsWith` check?
+        if: endsWith(matrix.target, '-musl')
+        run: apk add gcc g++ bash curl linux-headers perl git make
+
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
+
+      - name: Add signtool.exe to PATH
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $signtool = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $signtool) { throw "signtool.exe not found under $root" }
+
+          "Found: $($signtool.FullName)"
+          $dir = Split-Path $signtool.FullName
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
+      - name: Write certificate file for signing
+        if: ${{ runner.os == 'Windows' }}
+        shell: powershell
+        env:
+          DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
+        run: |
+          [IO.File]::WriteAllBytes("digicert.pfx", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
 
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
+      - name: Sign binaries for Windows
+        # Disabled for now since the current flow isn't working.
+        if: false
+        #if: ${{ runner.os == 'Windows' }}
+        shell: powershell
+        env:
+          DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          $certFile = Join-Path $env:GITHUB_WORKSPACE 'digicert.pfx'
+
+          $signtool = Get-Command signtool.exe -ErrorAction Stop
+
+          $files = @(
+            (Join-Path $targetDir 'spacetimedb-update.exe'),
+            (Join-Path $targetDir 'spacetimedb-cli.exe'),
+            (Join-Path $targetDir 'spacetimedb-standalone.exe')
+          )
+
+          foreach ($file in $files) {
+            & $signtool.Path sign /f $certFile /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $file
+            & $signtool.Path verify /v /pa $file
+          }
+
       - name: Package (unix)
         if: ${{ runner.os != 'Windows' }}
+        shell: bash
         run: |
           mkdir build
           cd target/${{matrix.target}}/release
@@ -50,6 +114,7 @@ jobs:
 
       - name: Package (windows)
         if: ${{ runner.os == 'Windows' }}
+        shell: bash
         run: |
           mkdir build
           cd target/${{matrix.target}}/release

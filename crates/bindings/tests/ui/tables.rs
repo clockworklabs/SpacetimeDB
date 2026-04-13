@@ -1,22 +1,24 @@
 struct Test;
 
-#[spacetimedb::table(name = table)]
+#[spacetimedb::table(accessor = table)]
 struct Table {
     x: Test,
 }
 
-#[spacetimedb::table(name = type_param)]
+#[spacetimedb::table(accessor = type_param)]
 struct TypeParam<T> {
     t: T,
 }
 
-#[spacetimedb::table(name = const_param)]
+#[spacetimedb::table(accessor = const_param)]
 struct ConstParam<const X: u8> {}
 
 #[derive(spacetimedb::SpacetimeType)]
-enum Alpha { Beta, Gamma }
+struct Alpha {
+    beta: u8,
+}
 
-#[spacetimedb::table(name = delta)]
+#[spacetimedb::table(accessor = delta)]
 struct Delta {
     #[unique]
     #[index(btree)]
@@ -27,8 +29,8 @@ struct Delta {
 
 #[spacetimedb::reducer]
 fn bad_filter_on_index(ctx: &spacetimedb::ReducerContext) {
-    ctx.db.delta().compound_a().find(Alpha::Beta);
-    ctx.db.delta().compound_b().filter(Alpha::Gamma);
+    ctx.db.delta().compound_a().find(Alpha { beta: 0 });
+    ctx.db.delta().compound_b().filter(Alpha { beta: 1 });
 }
 
 fn main() {}

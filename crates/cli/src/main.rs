@@ -1,20 +1,34 @@
 use std::process::ExitCode;
 
 use clap::{Arg, Command};
-use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
 use spacetimedb_paths::cli::CliTomlPath;
-use spacetimedb_paths::{RootDir, SpacetimePaths};
+use spacetimedb_paths::RootDir;
 
+// Note that the standalone server is invoked through standaline/src/main.rs, so you will
+// also want to set the allocator there.
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
+#[cfg(target_env = "msvc")]
+use mimalloc::MiMalloc;
+
+#[cfg(target_env = "msvc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
 #[cfg(not(feature = "markdown-docs"))]
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
+    use spacetimedb_paths::SpacetimePaths;
+
     // Compute matches before loading the config, because `Config` has an observable `drop` method
     // (which deletes a lockfile),
-    // and Clap calls `exit` on parse failure rather than panicing, so destructors never run.
+    // and Clap calls `exit` on parse failure rather than panicking, so destructors never run.
     let matches = get_command().get_matches();
     let (cmd, subcommand_args) = matches.subcommand().unwrap();
 
@@ -29,7 +43,9 @@ async fn main() -> anyhow::Result<ExitCode> {
         .unwrap_or_else(|| paths.cli_config_dir.cli_toml());
     let config = Config::load(cli_toml)?;
 
-    exec_subcommand(config, &paths, root_dir, cmd, subcommand_args).await
+    exec_subcommand(config, &paths, root_dir, cmd, subcommand_args)
+        .await
+        .or_else(|e| e.downcast::<ExitWithCode>().map(|e| e.0))
 }
 
 #[cfg(feature = "markdown-docs")]

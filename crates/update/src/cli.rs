@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 
-mod install;
+pub(crate) mod install;
 mod link;
 mod list;
 mod self_install;
@@ -88,13 +88,27 @@ enum VersionSubcommand {
     Link(link::Link),
 }
 
-fn reqwest_client() -> anyhow::Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .user_agent(format!("SpacetimeDB CLI/{}", env!("CARGO_PKG_VERSION")))
-        .build()?)
+pub(crate) fn reqwest_client_builder() -> reqwest::ClientBuilder {
+    let mut client = reqwest::Client::builder();
+    #[cfg(feature = "github-token-auth")]
+    {
+        use reqwest::header;
+        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+            eprintln!("HTTP requests will use the GITHUB_TOKEN from your environment");
+            let mut headers = header::HeaderMap::new();
+            headers.insert(header::AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+            client = client.default_headers(headers);
+        }
+    }
+    client = client.user_agent(format!("SpacetimeDB CLI/{}", env!("CARGO_PKG_VERSION")));
+    client
 }
 
-fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {
+pub(crate) fn reqwest_client() -> anyhow::Result<reqwest::Client> {
+    Ok(reqwest_client_builder().build()?)
+}
+
+pub(crate) fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {
     Ok(tokio::runtime::Runtime::new()?.block_on(fut))
 }
 

@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB
+namespace SpacetimeDB
 {
     namespace Internal
     {
@@ -12,6 +12,7 @@
             Identity = Unique | AutoInc,
             PrimaryKey = Unique | 0b1000,
             PrimaryKeyAuto = PrimaryKey | AutoInc,
+            Default = 0b0001_0000,
         }
 
         [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
@@ -21,6 +22,27 @@
             internal abstract ColumnAttrs Mask { get; }
         }
     }
+
+    /// <summary>
+    /// Generates code for registering a row-level security rule.
+    ///
+    /// This attribute must be applied to a <c>static</c> field of type <c>Filter</c>.
+    /// It will be interpreted as a filter on the table to which it applies, for all client queries.
+    /// If a module contains multiple <c>client_visibility_filter</c>s for the same table,
+    /// they will be unioned together as if by SQL <c>OR</c>,
+    /// so that any row permitted by at least one filter is visible.
+    ///
+    /// The query follows the same syntax as a subscription query.
+    /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
+    ///
+    /// This is an experimental feature and subject to change in the future.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class ClientVisibilityFilterAttribute : Attribute { }
+
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class SettingsAttribute : Attribute { }
 
     /// <summary>
     /// Registers a type as the row structure of a SpacetimeDB table, enabling codegen for it.
@@ -39,6 +61,8 @@
         ///
         /// <para>Defaults to the <c>nameof</c> of the target type.</para>
         /// </summary>
+        public string? Accessor { get; init; }
+
         public string? Name { get; init; }
 
         /// <summary>
@@ -47,6 +71,8 @@
         /// <para>Defaults to the table only being visible to its owner.</para>
         /// </summary>
         public bool Public { get; init; } = false;
+
+        public bool Event { get; init; } = false;
 
         /// <summary>
         /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
@@ -61,6 +87,26 @@
         public string ScheduledAt { get; init; } = "ScheduledAt";
     }
 
+    /// <summary>
+    /// Registers a method as a SpacetimeDB view, enabling codegen for it.
+    /// Views are pure, read-only queries that run with a view context instead of a reducer context.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ViewAttribute : Attribute
+    {
+        /// <summary>
+        /// Views must have an explicit name.
+        /// </summary>
+        public string? Accessor { get; init; }
+
+        public string? Name { get; init; }
+
+        /// <summary>
+        /// Marks the view as callable by any client. Leave false to restrict to the module owner.
+        /// </summary>
+        public bool Public { get; init; } = false;
+    }
+
     [AttributeUsage(
         AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Field,
         AllowMultiple = true
@@ -68,6 +114,8 @@
     public abstract class Index : Attribute
     {
         public string? Table { get; init; }
+
+        public string? Accessor { get; init; }
 
         public string? Name { get; init; }
 
@@ -92,6 +140,45 @@
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Unique;
     }
 
+    /// <summary>
+    /// Specifies a default value for a table column.
+    /// If a column is added to an existing table while republishing of a module,
+    /// the specified default value will be used to populate existing rows.
+    /// </summary>
+    /// <remarks>
+    /// Updates existing instances of the <see cref="DefaultAttribute"/> class with the specified default value during republishing of a module.
+    /// </remarks>
+    /// <param name="value">The default value for the column.</param>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class DefaultAttribute(object value) : Internal.ColumnAttribute
+    {
+        /// <summary>
+        /// The default value for the column.
+        /// </summary>
+        public string Value
+        {
+            get
+            {
+                if (value is null)
+                {
+                    return "null";
+                }
+                if (value is bool)
+                {
+                    return value.ToString()?.ToLower()!;
+                }
+                var str = value.ToString();
+                if (value is string)
+                {
+                    str = $"\"{str}\"";
+                }
+                return str!;
+            }
+        }
+
+        internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Default;
+    }
+
     public enum ReducerKind
     {
         /// <summary>
@@ -107,5 +194,13 @@
     public sealed class ReducerAttribute(ReducerKind kind = ReducerKind.UserDefined) : Attribute
     {
         public ReducerKind Kind => kind;
+
+        public string? Name { get; init; }
+    }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ProcedureAttribute() : Attribute
+    {
+        public string? Name { get; init; }
     }
 }

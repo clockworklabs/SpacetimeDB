@@ -19,6 +19,5 @@ The result is a WebAssembly module FFI-compatible with SpacetimeDB and with no W
 To regenenerate the `Autogen` folder, run:
 
 ```sh
-cd ../../cli
-cargo run --example regen-csharp-moduledef
+cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
 ```

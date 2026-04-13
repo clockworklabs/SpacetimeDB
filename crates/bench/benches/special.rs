@@ -1,6 +1,5 @@
 use criterion::async_executor::AsyncExecutor;
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
-use mimalloc::MiMalloc;
 use spacetimedb_bench::{
     database::BenchDatabase,
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, u64_u64_u32, BenchTable, RandomTable},
@@ -9,12 +8,22 @@ use spacetimedb_bench::{
 use spacetimedb_lib::sats::{self, bsatn};
 use spacetimedb_lib::{bsatn::ToBsatn as _, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
+use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_testing::modules::{Csharp, ModuleLanguage, Rust};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
+#[cfg(target_env = "msvc")]
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 fn criterion_benchmark(c: &mut Criterion) {
     serialize_benchmarks::<u32_u64_str>(c);
@@ -128,11 +137,12 @@ fn serialize_benchmarks<
     });
 
     let mut table_schema = TableSchema::from_product_type(T::product_type());
-    table_schema.table_name = name.into();
+    table_schema.table_name = TableName::for_test(name);
     let mut table = spacetimedb_table::table::Table::new(
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
     );
+    let pool = PagePool::new_for_test();
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
 
     let ptrs = data_pv
@@ -140,7 +150,7 @@ fn serialize_benchmarks<
         .iter()
         .map(|row| {
             table
-                .insert(&mut blob_store, row.as_product().unwrap())
+                .insert(&pool, &mut blob_store, row.as_product().unwrap())
                 .unwrap()
                 .1
                 .pointer()

@@ -80,6 +80,15 @@ internal static class ErrorDescriptor
             method => method.ParameterList
         );
 
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ProcedureContextParam =
+        new(
+            group,
+            "Procedures must have a first argument of type ProcedureContext",
+            method =>
+                $"Procedure method {method.Identifier} does not have a ProcedureContext parameter.",
+            method => method.ParameterList
+        );
+
     public static readonly ErrorDescriptor<(
         MethodDeclarationSyntax method,
         string prefix
@@ -89,6 +98,18 @@ internal static class ErrorDescriptor
             "Reducer method has a reserved name prefix",
             ctx =>
                 $"Reducer method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
+            ctx => ctx.method.Identifier
+        );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        string prefix
+    )> ProcedureReservedPrefix =
+        new(
+            group,
+            "Procedure method has a reserved name prefix",
+            ctx =>
+                $"Procedure method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
             ctx => ctx.method.Identifier
         );
 
@@ -131,5 +152,119 @@ internal static class ErrorDescriptor
             "Unknown column",
             ctx => $"Could not find the specified column {ctx.columnName} in {ctx.typeName}.",
             ctx => ctx.attr
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> ClientVisibilityNotFilter =
+        new(
+            group,
+            "ClientVisibilityFilters must be Filters",
+            field =>
+                $"Field {field.Name} is marked as ClientVisibilityFilter but it has type {field.Type} which is not SpacetimeDB.Filter",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> ClientVisibilityNotPublicStaticReadonly =
+        new(
+            group,
+            "ClientVisibilityFilters must be public static readonly",
+            field =>
+                $"Field {field.Name} is marked as [ClientVisibilityFilter] but it is not public static readonly",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> IncompatibleDefaultAttributesCombination =
+        new(
+            group,
+            "Invalid Combination: AutoInc, Unique or PrimaryKey cannot have a Default value",
+            field =>
+                $"Field {field.Name} contains a default value and has a AutoInc, Unique or PrimaryKey attributes, which is not allowed.",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> InvalidDefaultValueType =
+        new(
+            group,
+            "Invalid Default Value Type",
+            field => $"Default value for field {field.Name} cannot be converted to provided type",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> InvalidDefaultValueFormat =
+        new(
+            group,
+            "Invalid Default Value Format",
+            field => $"Default value for field {field.Name} has invalid format for provided type ",
+            field => field
+        );
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewContextParam =
+        new(
+            group,
+            "Views must start with ViewContext or AnonymousViewContext",
+            method =>
+                $"View method {method.Identifier} must have a first parameter of type ViewContext or AnonymousViewContext.",
+            method => method.ParameterList
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustHaveName =
+        new(
+            group,
+            "Views must have an explicit name.",
+            method => $"View '{method.Identifier}' must have an explicit name.",
+            method => method
+        );
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewInvalidReturn =
+        new(
+            group,
+            "Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>",
+            method =>
+                $"View '{method.Identifier}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.",
+            method => method.ReturnType
+        );
+
+    // TODO: Remove once Views support Private: Views must be Public currently
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustBePublic =
+        new(
+            group,
+            "Views must be public",
+            method =>
+                $"View '{method.Identifier}' must have Public = true. Views are always public in SpacetimeDB.",
+            method => method
+        );
+
+    // TODO: Remove once Views support arguments: Views must have no arguments beyond the context.
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewArgsUnsupported =
+        new(
+            group,
+            "Views must have no arguments beyond the context.",
+            method =>
+                $"View '{method.Identifier}' must have no arguments beyond the context. This is a temporary limitation.",
+            method => method
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> SettingsMustBeConstCaseConversionPolicy =
+        new(
+            group,
+            "[SpacetimeDB.Settings] field must be a const CaseConversionPolicy",
+            field =>
+                $"Settings field {field.Name} must be declared as 'public const SpacetimeDB.CaseConversionPolicy ...'.",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IEnumerable<string>> DuplicateSettings =
+        new(
+            group,
+            "Multiple [SpacetimeDB.Settings] declarations",
+            fullNames =>
+                $"[SpacetimeDB.Settings] is declared multiple times: {string.Join(", ", fullNames)}",
+            _ => Location.None
+        );
+
+    public static readonly ErrorDescriptor<AttributeData> TableLevelIndexMissingAccessor =
+        new(
+            group,
+            "Table-level index attributes must specify Accessor",
+            _ =>
+                $"Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.",
+            attr => attr
         );
 }

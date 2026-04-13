@@ -1,10 +1,12 @@
 use std::{
     io,
-    num::{NonZeroU16, NonZeroU64},
-    sync::RwLock,
+    num::NonZeroU64,
+    ops::RangeBounds,
+    sync::{Arc, RwLock},
 };
 
 use log::trace;
+use repo::{fs::OnNewSegmentFn, Repo};
 use spacetimedb_paths::server::CommitLogDir;
 
 pub mod commit;
@@ -15,20 +17,31 @@ pub mod segment;
 mod varchar;
 mod varint;
 
+use crate::segment::Committed;
 pub use crate::{
     commit::{Commit, StoredCommit},
+    commitlog::CommittedMeta,
     payload::{Decoder, Encode},
+    repo::{fs::SizeOnDisk, TxOffset},
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
 };
 pub mod error;
 pub mod payload;
 
+#[cfg(feature = "streaming")]
+pub mod stream;
+
 #[cfg(any(test, feature = "test"))]
 pub mod tests;
 
 /// [`Commitlog`] options.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub struct Options {
     /// Set the log format version to write, and the maximum supported version.
     ///
@@ -38,23 +51,19 @@ pub struct Options {
     /// with new or very old versions.
     ///
     /// Default: [`DEFAULT_LOG_FORMAT_VERSION`]
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_log_format_version"))]
     pub log_format_version: u8,
     /// The maximum size in bytes to which log segments should be allowed to
     /// grow.
     ///
     /// Default: 1GiB
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_max_segment_size"))]
     pub max_segment_size: u64,
-    /// The maximum number of records in a commit.
-    ///
-    /// If this number is exceeded, the commit is flushed to disk even without
-    /// explicitly calling [`Commitlog::flush`].
-    ///
-    /// Default: 65,535
-    pub max_records_in_commit: NonZeroU16,
     /// Whenever at least this many bytes have been written to the currently
     /// active segment, an entry is added to its offset index.
     ///
     /// Default: 4096
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_offset_index_interval_bytes"))]
     pub offset_index_interval_bytes: NonZeroU64,
     /// If `true`, require that the segment must be synced to disk before an
     /// index entry is added.
@@ -70,22 +79,71 @@ pub struct Options {
     /// strictly every `offset_index_interval_bytes`.
     ///
     /// Default: false
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "Options::default_offset_index_require_segment_fsync")
+    )]
     pub offset_index_require_segment_fsync: bool,
+    /// If `true`, preallocate the disk space for commitlog segments, up to the
+    /// `max_segment_size`.
+    ///
+    /// Has no effect if the `fallocate` feature is not enabled.
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_preallocate_segments"))]
+    pub preallocate_segments: bool,
+    /// Size in bytes of the memory buffer holding commit data before flushing
+    /// to storage.
+    ///
+    /// Default: 8KiB
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_write_buffer_size"))]
+    pub write_buffer_size: usize,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            log_format_version: DEFAULT_LOG_FORMAT_VERSION,
-            max_segment_size: 1024 * 1024 * 1024,
-            max_records_in_commit: NonZeroU16::MAX,
-            offset_index_interval_bytes: NonZeroU64::new(4096).unwrap(),
-            offset_index_require_segment_fsync: false,
-        }
+        Self::DEFAULT
     }
 }
 
 impl Options {
+    pub const DEFAULT_MAX_SEGMENT_SIZE: u64 = 1024 * 1024 * 1024;
+    pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
+    pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
+    pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
+    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 8 * 1024;
+
+    pub const DEFAULT: Self = Self {
+        log_format_version: DEFAULT_LOG_FORMAT_VERSION,
+        max_segment_size: Self::default_max_segment_size(),
+        offset_index_interval_bytes: Self::default_offset_index_interval_bytes(),
+        offset_index_require_segment_fsync: Self::default_offset_index_require_segment_fsync(),
+        preallocate_segments: Self::default_preallocate_segments(),
+        write_buffer_size: Self::default_write_buffer_size(),
+    };
+
+    pub const fn default_log_format_version() -> u8 {
+        DEFAULT_LOG_FORMAT_VERSION
+    }
+
+    pub const fn default_max_segment_size() -> u64 {
+        Self::DEFAULT_MAX_SEGMENT_SIZE
+    }
+
+    pub const fn default_offset_index_interval_bytes() -> NonZeroU64 {
+        Self::DEFAULT_OFFSET_INDEX_INTERVAL_BYTES
+    }
+
+    pub const fn default_offset_index_require_segment_fsync() -> bool {
+        Self::DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC
+    }
+
+    pub const fn default_preallocate_segments() -> bool {
+        Self::DEFAULT_PREALLOCATE_SEGMENTS
+    }
+
+    pub const fn default_write_buffer_size() -> usize {
+        Self::DEFAULT_WRITE_BUFFER_SIZE
+    }
+
     /// Compute the length in bytes of an offset index based on the settings in
     /// `self`.
     pub fn offset_index_len(&self) -> u64 {
@@ -112,8 +170,15 @@ impl<T> Commitlog<T> {
     /// This is only necessary when opening the commitlog for writing. See the
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
-    pub fn open(root: CommitLogDir, opts: Options) -> io::Result<Self> {
-        let inner = commitlog::Generic::open(repo::Fs::new(root)?, opts)?;
+    pub fn open(root: CommitLogDir, opts: Options, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
+        #[cfg(not(feature = "fallocate"))]
+        if opts.preallocate_segments {
+            log::warn!(
+                "`preallocate_segments` enabled but not supported by this build. commitlog-dir={}",
+                root.display()
+            );
+        }
+        let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -125,6 +190,13 @@ impl<T> Commitlog<T> {
     /// The offset is `None` if the log hasn't been flushed to disk yet.
     pub fn max_committed_offset(&self) -> Option<u64> {
         self.inner.read().unwrap().max_committed_offset()
+    }
+
+    /// Determine the minimum transaction offset in the log.
+    ///
+    /// The offset is `None` if the log hasn't been flushed to disk yet.
+    pub fn min_committed_offset(&self) -> Option<u64> {
+        self.inner.read().unwrap().min_committed_offset()
     }
 
     /// Get the current epoch.
@@ -190,7 +262,7 @@ impl<T> Commitlog<T> {
     pub fn flush(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
         trace!("flush commitlog");
-        inner.commit()?;
+        inner.flush()?;
 
         Ok(inner.max_committed_offset())
     }
@@ -210,7 +282,7 @@ impl<T> Commitlog<T> {
     pub fn flush_and_sync(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
         trace!("flush and sync commitlog");
-        inner.commit()?;
+        inner.flush()?;
         inner.sync();
 
         Ok(inner.max_committed_offset())
@@ -235,7 +307,7 @@ impl<T> Commitlog<T> {
     /// This means that, when this iterator yields an `Err` value, the consumer
     /// may want to check if the iterator is exhausted (by calling `next()`)
     /// before treating the `Err` value as an application error.
-    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
+    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
         self.commits_from(0)
     }
 
@@ -248,8 +320,26 @@ impl<T> Commitlog<T> {
     /// Note that the first [`StoredCommit`] yielded is the first commit
     /// containing the given transaction offset, i.e. its `min_tx_offset` may be
     /// smaller than `offset`.
-    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
+    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
         self.inner.read().unwrap().commits_from(offset)
+    }
+
+    /// Get a list of segment offsets, sorted in ascending order.
+    pub fn existing_segment_offsets(&self) -> io::Result<Vec<u64>> {
+        self.inner.read().unwrap().repo.existing_offsets()
+    }
+
+    /// Compress the segments at the offsets provided, marking them as immutable.
+    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
+        // even though `compress_segment` takes &self, we take an
+        // exclusive lock to avoid any weirdness happening.
+        #[allow(clippy::readonly_write_lock)]
+        let inner = self.inner.write().unwrap();
+        assert!(!offsets.contains(&inner.head.min_tx_offset()));
+        // TODO: parallelize, maybe
+        offsets
+            .iter()
+            .try_for_each(|&offset| inner.repo.compress_segment(offset))
     }
 
     /// Remove all data from the log and reopen it.
@@ -286,59 +376,54 @@ impl<T> Commitlog<T> {
     }
 
     /// Determine the size on disk of this commitlog.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         let inner = self.inner.read().unwrap();
         inner.repo.size_on_disk()
     }
 }
 
 impl<T: Encode> Commitlog<T> {
-    /// Append the record `txdata` to the log.
+    /// Write `transactions` to the log.
     ///
-    /// If the internal buffer exceeds [`Options::max_records_in_commit`], the
-    /// argument is returned in an `Err`. The caller should [`Self::flush`] the
-    /// log and try again.
+    /// This will store all `transactions` as a single [Commit]
+    /// (note that `transactions` must not yield more than [u16::MAX] elements).
     ///
-    /// In case the log is appended to from multiple threads, this may result in
-    /// a busy loop trying to acquire a slot in the buffer. In such scenarios,
-    /// [`Self::append_maybe_flush`] is preferable.
-    pub fn append(&self, txdata: T) -> Result<(), T> {
-        let mut inner = self.inner.write().unwrap();
-        inner.append(txdata)
-    }
-
-    /// Append the record `txdata` to the log.
+    /// Data is buffered internally, call [Self::flush] to force flushing to
+    /// the underlying storage.
     ///
-    /// The `txdata` payload is buffered in memory until either:
-    ///
-    /// - [`Self::flush`] is called explicitly, or
-    /// - [`Options::max_records_in_commit`] is exceeded
-    ///
-    /// In the latter case, [`Self::append`] flushes implicitly, _before_
-    /// appending the `txdata` argument.
-    ///
-    /// I.e. the argument is not guaranteed to be flushed after the method
-    /// returns. If that is desired, [`Self::flush`] must be called explicitly.
+    /// Returns `Ok(None)` if `transactions` was empty, otherwise [Committed],
+    /// which contains the offset range and checksum of the commit.
     ///
     /// # Errors
     ///
-    /// If the log needs to be flushed, but an I/O error occurs, ownership of
-    /// `txdata` is returned back to the caller alongside the [`io::Error`].
+    /// An `Err` value is returned in the following cases:
     ///
-    /// The value can then be used to retry appending.
-    pub fn append_maybe_flush(&self, txdata: T) -> Result<(), error::Append<T>> {
+    /// - if the transaction sequence is invalid, e.g. because the transaction
+    ///   offsets are not contiguous.
+    ///
+    ///   In this case, **none** of the `transactions` will be written.
+    ///
+    /// - if creating the new segment fails due to an I/O error.
+    ///
+    /// # Panics
+    ///
+    /// The method panics if:
+    ///
+    /// - `transactions` exceeds [u16::MAX] elements
+    ///
+    /// - [Self::flush] or writing to the underlying buffered writer fails
+    ///
+    ///   This is likely caused by some storage issue. As we cannot tell with
+    ///   certainty how much data (if any) has been written, the internal state
+    ///   becomes invalid and thus a panic is raised.
+    ///
+    /// - [Self::sync] panics (called when rotating segments)
+    pub fn commit<U: Into<Transaction<T>>>(
+        &self,
+        transactions: impl IntoIterator<Item = U>,
+    ) -> io::Result<Option<Committed>> {
         let mut inner = self.inner.write().unwrap();
-
-        if let Err(txdata) = inner.append(txdata) {
-            if let Err(source) = inner.commit() {
-                return Err(error::Append { txdata, source });
-            }
-            // `inner.commit.n` must be zero at this point
-            let res = inner.append(txdata);
-            debug_assert!(res.is_ok(), "failed to append while holding write lock");
-        }
-
-        Ok(())
+        inner.commit(transactions)
     }
 
     /// Obtain an iterator which traverses the log from the start, yielding
@@ -364,7 +449,10 @@ impl<T: Encode> Commitlog<T> {
     /// This means that, when this iterator yields an `Err` value, the consumer
     /// may want to check if the iterator is exhausted (by calling `next()`)
     /// before treating the `Err` value as an application error.
-    pub fn transactions<'a, D>(&self, de: &'a D) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    pub fn transactions<'a, D>(
+        &self,
+        de: &'a D,
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
@@ -383,7 +471,7 @@ impl<T: Encode> Commitlog<T> {
         &self,
         offset: u64,
         de: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
@@ -431,6 +519,40 @@ impl<T: Encode> Commitlog<T> {
     {
         self.inner.read().unwrap().fold_transactions_from(offset, de)
     }
+
+    pub fn fold_transactions_range<D>(&self, range: impl RangeBounds<u64>, de: D) -> Result<(), D::Error>
+    where
+        D: Decoder,
+        D::Error: From<error::Traversal>,
+    {
+        self.inner.read().unwrap().fold_transaction_range(range, de)
+    }
+}
+
+/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// in `repo`.
+///
+/// Returns `None` if the commitlog is empty.
+///
+/// Note that this function validates the most recent segment, which entails
+/// traversing it from the start.
+///
+/// The function can be used instead of the pattern:
+///
+/// ```ignore
+/// let log = Commitlog::open(..)?;
+/// let max_offset = log.max_committed_offset();
+/// ```
+///
+/// like so:
+///
+/// ```ignore
+/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// ```
+///
+/// Unlike `open`, no segment will be created in an empty `repo`.
+pub fn committed_meta(root: CommitLogDir) -> io::Result<Option<CommittedMeta>> {
+    commitlog::committed_meta(repo::Fs::new(root, None)?)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -451,7 +573,7 @@ pub fn commits_from(
     root: CommitLogDir,
     offset: u64,
 ) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
-    commitlog::commits_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset)
+    commitlog::commits_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -486,7 +608,7 @@ where
     D::Error: From<error::Traversal>,
     T: 'a,
 {
-    commitlog::transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::transactions_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
 
 /// Traverse the commitlog located at the `root` directory from the start and
@@ -512,5 +634,13 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::fold_transactions_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+}
+
+pub fn fold_transaction_range<D>(root: CommitLogDir, range: impl RangeBounds<u64>, de: D) -> Result<(), D::Error>
+where
+    D: Decoder,
+    D::Error: From<error::Traversal> + From<io::Error>,
+{
+    commitlog::fold_transaction_range(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
 }

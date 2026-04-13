@@ -1,16 +1,26 @@
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
-use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
+use spacetimedb_auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::GetNamesResponse;
 use spacetimedb_lib::Identity;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
-use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+use crate::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
 pub const UNSTABLE_WARNING: &str = "WARNING: This command is UNSTABLE and subject to breaking changes.";
+
+/// Strip the Windows extended-length path prefix (`\\?\`) if present.
+/// `fs::canonicalize()` on Windows produces these prefixes, which are
+/// correct but ugly in user-facing output.
+pub fn strip_verbatim_prefix(path: &Path) -> &Path {
+    path.to_str()
+        .and_then(|s| s.strip_prefix(r"\\?\"))
+        .map(Path::new)
+        .unwrap_or(path)
+}
 
 /// Determine the identity of the `database`.
 pub async fn database_identity(
@@ -23,7 +33,7 @@ pub async fn database_identity(
     }
     spacetime_dns(config, name_or_identity, server)
         .await?
-        .with_context(|| format!("the dns resolution of `{name_or_identity}` failed."))
+        .with_context(|| format!("failed to find database `{name_or_identity}`."))
 }
 
 pub(crate) trait ResponseExt: Sized {
@@ -124,7 +134,7 @@ pub async fn spacetime_dns(
 }
 
 pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
-    let builder = reqwest::Client::new().get(format!("{}/v1/identity/public-key", url).as_str());
+    let builder = reqwest::Client::new().get(format!("{url}/v1/identity/public-key").as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
@@ -195,30 +205,72 @@ pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
 pub enum ModuleLanguage {
     Csharp,
     Rust,
+    Javascript,
+    Cpp,
 }
 impl clap::ValueEnum for ModuleLanguage {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::Rust]
+        &[Self::Csharp, Self::Rust, Self::Javascript, Self::Cpp]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs", "C#", "CSharp"])),
             Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "Rust"])),
+            Self::Javascript => Some(clap::builder::PossibleValue::new("typescript").aliases([
+                "JavaScript",
+                "javascript",
+                "js",
+                "TypeScript",
+                "ts",
+                "ECMAScript",
+                "ecmascript",
+                "es",
+            ])),
+            Self::Cpp => Some(clap::builder::PossibleValue::new("cpp").aliases(["c++", "cxx", "C++", "Cpp"])),
         }
     }
 }
 
-pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLanguage> {
+/// Try to find a SpacetimeDB module directory, checking in order:
+/// 1. `{project_dir}/spacetimedb/` subdirectory
+/// 2. `{project_dir}` itself
+///
+/// Returns the first path that contains a recognizable SpacetimeDB module, or `None`.
+pub fn find_module_path(project_dir: &Path) -> Option<PathBuf> {
+    let spacetimedb_subdir = project_dir.join("spacetimedb");
+    if spacetimedb_subdir.is_dir() && detect_module_language(&spacetimedb_subdir).is_ok() {
+        return Some(spacetimedb_subdir);
+    }
+    if project_dir.is_dir() && detect_module_language(project_dir).is_ok() {
+        return Some(project_dir.to_path_buf());
+    }
+    None
+}
+
+pub fn detect_module_language(path_to_module: &Path) -> anyhow::Result<ModuleLanguage> {
     // TODO: Possible add a config file durlng spacetime init with the language
+    if !path_to_module.exists() {
+        anyhow::bail!(
+            "Module directory does not exist: '{}'. \
+             Check your --module-path flag or the module-path setting in spacetime.json.",
+            path_to_module.display()
+        );
+    }
     // check for Cargo.toml
-    if path_to_project.join("Cargo.toml").exists() {
+    if path_to_module.join("Cargo.toml").exists() {
         Ok(ModuleLanguage::Rust)
-    } else if path_to_project
-        .read_dir()
-        .unwrap()
-        .any(|entry| entry.unwrap().path().extension() == Some("csproj".as_ref()))
+    } else if path_to_module.is_dir()
+        && path_to_module
+            .read_dir()
+            .map_err(|e| anyhow::anyhow!("Failed to read directory {}: {}", path_to_module.display(), e))?
+            .flatten()
+            .any(|entry| entry.path().extension() == Some("csproj".as_ref()))
     {
         Ok(ModuleLanguage::Csharp)
+    } else if path_to_module.join("package.json").exists() {
+        Ok(ModuleLanguage::Javascript)
+    } else if path_to_module.join("CMakeLists.txt").exists() {
+        Ok(ModuleLanguage::Cpp)
     } else {
         anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
     }
@@ -230,12 +282,12 @@ pub fn url_to_host_and_protocol(url: &str) -> anyhow::Result<(&str, &str)> {
         let host = url.split("://").last().unwrap();
 
         if !VALID_PROTOCOLS.contains(&protocol) {
-            Err(anyhow::anyhow!("Invalid protocol: {}", protocol))
+            Err(anyhow::anyhow!("Invalid protocol: {protocol}"))
         } else {
             Ok((host, protocol))
         }
     } else {
-        Err(anyhow::anyhow!("Invalid url: {}", url))
+        Err(anyhow::anyhow!("Invalid url: {url}"))
     }
 }
 
@@ -261,20 +313,11 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
         return Ok(true);
     }
     let mut input = String::new();
-    print!("{} [y/N]", prompt);
+    print!("{prompt} [y/N]");
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
     Ok(input == "y" || input == "yes")
-}
-
-pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &str) -> anyhow::Result<T> {
-    res.with_context(|| {
-        format!(
-            "Identity {identity} is not valid for server {server}.
-Please log back in with `spacetime logout` and then `spacetime login`."
-        )
-    })
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
@@ -283,7 +326,7 @@ pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
     let token_parts: Vec<_> = token.split('.').collect();
     if token_parts.len() != 3 {
-        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {}", token));
+        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {token}"));
     }
     let decoded_bytes = BASE_64_STD_NO_PAD.decode(token_parts[1])?;
     let decoded_string = String::from_utf8(decoded_bytes)?;
@@ -314,9 +357,19 @@ pub async fn get_login_token_or_log_in(
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false).await
+        spacetimedb_login_and_save(config, &host, false, true).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;
-        spacetimedb_login_force(config, &host, true).await
+        spacetimedb_login_and_save(config, &host, true, true).await
     }
+}
+
+pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
+    let resolved_exe = std::env::current_exe().context("could not retrieve current exe")?;
+    let bin_path = resolved_exe
+        .parent()
+        .unwrap()
+        .join(bin_name)
+        .with_extension(std::env::consts::EXE_EXTENSION);
+    Ok(bin_path)
 }

@@ -38,6 +38,8 @@ pub enum Error {
     RecordAlreadyExists(DomainName),
     #[error("database with identity {0} already exists")]
     DatabaseAlreadyExists(Identity),
+    #[error("database with identity {0} does not exist")]
+    DatabaseNotFound(Identity),
     #[error("failed to register {0} domain")]
     DomainRegistrationFailure(DomainName),
     #[error("failed to decode data")]
@@ -244,12 +246,12 @@ impl ControlDb {
                 // Remove all existing names.
                 if let Some(value) = rev_tx.get(database_identity_bytes)? {
                     for domain in decode_domain_names(&value)? {
-                        if let Some(ref owner) = domain_owner(tld_tx, &domain)? {
-                            if owner != owner_identity {
-                                transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                    domain: domain.clone(),
-                                }))?;
-                            }
+                        if let Some(ref owner) = domain_owner(tld_tx, &domain)?
+                            && owner != owner_identity
+                        {
+                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                                domain: domain.clone(),
+                            }))?;
                         }
                         dns_tx.remove(domain.to_lowercase().as_bytes())?;
                     }
@@ -258,12 +260,12 @@ impl ControlDb {
 
                 // Insert the new names.
                 for domain in domain_names {
-                    if let Some(ref owner) = domain_owner(tld_tx, domain)? {
-                        if owner != owner_identity {
-                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                domain: domain.clone(),
-                            }))?;
-                        }
+                    if let Some(ref owner) = domain_owner(tld_tx, domain)?
+                        && owner != owner_identity
+                    {
+                        transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                            domain: domain.clone(),
+                        }))?;
                     }
                     tld_tx.insert(domain.tld().to_lowercase().as_bytes(), &owner_identity.to_byte_array())?;
                     dns_tx.insert(domain.to_lowercase().as_bytes(), &database_identity_bytes)?;
@@ -375,6 +377,21 @@ impl ControlDb {
         tree.insert(id.to_be_bytes(), buf)?;
 
         Ok(id)
+    }
+
+    pub(crate) fn update_database(&self, database: Database) -> Result<()> {
+        let Some(stored_database) = self.get_database_by_identity(&database.database_identity)? else {
+            return Err(Error::DatabaseNotFound(database.database_identity));
+        };
+
+        let tree = self.db.open_tree("database_by_identity")?;
+        let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
+        tree.insert(stored_database.database_identity.to_be_byte_array(), buf.clone())?;
+
+        let tree = self.db.open_tree("database")?;
+        tree.insert(stored_database.id.to_be_bytes(), buf)?;
+
+        Ok(())
     }
 
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
@@ -521,7 +538,7 @@ impl ControlDb {
             let balance_entry = match balance_entry {
                 Ok(e) => e,
                 Err(e) => {
-                    log::error!("Invalid iteration in energy_budget control_db tree: {}", e);
+                    log::error!("Invalid iteration in energy_budget control_db tree: {e}");
                     continue;
                 }
             };

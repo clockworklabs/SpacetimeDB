@@ -19,7 +19,7 @@
           but you need to use `./bindings-doctests.sh` to actually test them.
 -->
 
-[SpacetimeDB](https://spacetimedb.com/) allows using the Rust language to write server-side applications called **modules**. Modules run inside a relational database. They have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
+[SpacetimeDB](https://spacetimedb.com/) allows using the Rust language to write server-side applications called **modules**. Modules, which run inside a relational database, have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
 
 ```text
     Client Application                          SpacetimeDB
@@ -40,7 +40,7 @@
 
 Rust modules are written with the the Rust Module Library (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
 
-(Note: Rust can also be used to write **clients** of SpacetimeDB databases, but this requires using a completely different library, the SpacetimeDB Rust Client SDK. See the documentation on [clients] for more information.)
+(Note: Rust can also be used to write **clients** of SpacetimeDB databases, but this requires using a different library, the SpacetimeDB Rust Client SDK. See the documentation on [clients] for more information.)
 
 This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [Rust Module Quickstart](https://spacetimedb.com/docs/modules/rust/quickstart).
 
@@ -60,7 +60,7 @@ Declaring tables and reducers is straightforward:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
-#[table(name = player)]
+#[table(accessor = player)]
 pub struct Player {
     id: u32,
     name: String
@@ -75,7 +75,7 @@ fn add_person(ctx: &ReducerContext, id: u32, name: String) {
 ```
 
 
-Note that reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also open subscriptions to receive streaming updates as the results of a SQL query change.
+Note that reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also subscribe to a set of rows using SQL queries and receive streaming updates whenever any of those rows change.
 
 Tables and reducers in Rust modules can use any type that implements the [`SpacetimeType`] trait.
 
@@ -86,7 +86,7 @@ Tables and reducers in Rust modules can use any type that implements the [`Space
 To create a Rust module, install the [`spacetime` CLI tool](https://spacetimedb.com/install) in your preferred shell. Navigate to your work directory and run the following command:
 
 ```text
-spacetime init --lang rust my-project-directory
+spacetime init --lang rust --project-path my-project-directory my-project
 ```
 
 This creates a Cargo project in `my-project-directory` with the following `Cargo.toml`:
@@ -115,7 +115,7 @@ The project's `lib.rs` will contain the following skeleton:
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String
 }
@@ -184,7 +184,7 @@ For example:
 spacetime publish silly_demo_app
 ```
 
-When you publish your module, a database named will be created with the requested tables, and the module will be installed inside it.
+When you publish your module, a database named `silly_demo_app` will be created with the requested tables, and the module will be installed inside it.
 
 The output of `spacetime publish` will end with a line:
 ```text
@@ -225,7 +225,7 @@ However:
 
 ## Tables
 
-Tables are declared using the [`#[table(name = table_name)]` macro](macro@crate::table).
+Tables are declared using the [`#[table(accessor = table_name)]` macro](macro@crate::table).
 
 This macro is applied to a Rust struct with named fields. All of the fields of the table must implement [`SpacetimeType`].
 
@@ -236,7 +236,7 @@ The resulting type is used to store rows of the table. It is normal struct type.
 use spacetimedb::{table, reducer, ReducerContext, Table, UniqueColumn};
 
 /// A `Person` is a row of the table `person`.
-#[table(name = person, public)]
+#[table(accessor = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -257,8 +257,8 @@ fn do_nothing() {
     drop(person);
 }
 
-// To interact with the database, you need a `ReducerContext`.
-// The first argument of a reducer is always a `ReducerContext`.
+// To interact with the database, you need a `ReducerContext`,
+// which is provided as the first parameter of any reducer.
 #[reducer]
 fn do_something(ctx: &ReducerContext) {
     // `ctx.db.{table_name}()` gets a handle to a database table.
@@ -312,20 +312,20 @@ Tables' [constraints](#unique-and-primary-key-columns) and [indexes](#indexes) g
 
 By default, tables are considered **private**. This means that they are only readable by the database owner and by reducers. Reducers run inside the database, so clients cannot see private tables at all.
 
-Using the [`#[table(name = table_name, public)]`](macro@crate::table) flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
+Using the [`#[table(accessor = table_name, public)]`](macro@crate::table) flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
 
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::table;
 
 // The `enemies` table can be read by all connected clients.
-#[table(name = enemy, public)]
+#[table(accessor = enemy, public)]
 pub struct Enemy {
     /* ... */
 }
 
 // The `loot_items` table is invisible to clients, but not to reducers.
-#[table(name = loot_item)]
+#[table(accessor = loot_item)]
 pub struct LootItem {
     /* ... */
 }
@@ -347,7 +347,7 @@ use spacetimedb::table;
 type SSN = String;
 type Email = String;
 
-#[table(name = citizen)]
+#[table(accessor = citizen)]
 pub struct Citizen {
     #[primary_key]
     id: u64,
@@ -382,7 +382,7 @@ ctx.db.person().ssn()
 
 Notice that updating a row is only possible if a row has a unique column -- there is no `update` method in the base [`Table`] trait. SpacetimeDB has no notion of rows having an "identity" aside from their unique / primary keys.
 
-The `#[primary_key]` annotation is similar to the `#[unique]` annotation, except that it leads to additional methods being made available in the [client]-side SDKs.
+The `#[primary_key]` annotation implies `#[unique]` annotation, but avails additional methods in the [client]-side SDKs.
 
 It is not currently possible to mark a group of fields as collectively unique.
 
@@ -402,7 +402,7 @@ When inserting into a table with an `#[auto_inc]` column, if the annotated colum
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
-#[table(name = example)]
+#[table(accessor = example)]
 struct Example {
     #[auto_inc]
     field: u32
@@ -423,22 +423,48 @@ fn insert_auto_inc_example(ctx: &ReducerContext) {
 
 `auto_inc` is often combined with `unique` or `primary_key` to automatically assign unique integer identifiers to rows.
 
+#### Default Values
+
+Columns can be marked with [`#[default(value)]`](macro@crate::table#default) to specify a default value. This is primarily used for [automatic migrations](#automatic-migrations) when adding new columns to existing tables.
+
+When you republish a module with a new column that has a default value, existing rows are automatically populated with that default. New columns must be added at the **end** of the table definition.
+
+```no_run
+# #[cfg(target_arch = "wasm32")] mod demo {
+use spacetimedb::table;
+
+#[table(accessor = player)]
+struct Player {
+    id: u64,
+    name: String,
+    // New columns added with defaults for migration
+    #[default(0)]
+    score: u32,
+    #[default(true)]
+    is_active: bool,
+}
+# }
+```
+
+The `#[default(value)]` attribute accepts a const-evaluable Rust expression. The value must be usable in a `const` context, which means you cannot use methods like `.to_string()` for `String` defaults. Only primitive types, enums, and other const-constructible types can have defaults.
+
+**Constraints**: `#[default]` cannot be combined with `#[primary_key]`, `#[unique]`, or `#[auto_inc]`, as these constraints require the database to manage column values.
+
 #### Indexes
 
 SpacetimeDB supports both single- and multi-column [B-Tree](https://en.wikipedia.org/wiki/B-tree) indexes.
 
 Indexes are declared using the syntax:
 
-[`#[table(..., index(name = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index).
+[`#[table(..., index(accessor = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index).
 
 For example:
 
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
-
 use spacetimedb::table;
 
-#[table(name = paper, index(name = url_and_country, btree(columns = [url, country])))]
+#[table(accessor = paper, index(accessor = url_and_country, btree(columns = [url, country])))]
 struct Paper {
     url: String,
     country: String,
@@ -456,11 +482,30 @@ Single-column indexes can also be declared using the
 
 column attribute.
 
+For example:
+
+```no_run
+# #[cfg(target_arch = "wasm32")] mod demo {
+use spacetimedb::table;
+
+#[table(accessor = paper)]
+struct Paper {
+    url: String,
+    country: String,
+    #[index(btree)]
+    venue: String
+} 
+# }
+```
+
+
 Any index supports getting a [`RangedIndex`] using [`ctx`](crate::ReducerContext)`.db.{table}().{index}()`. For example, `ctx.db.person().name()`.
     
 [`RangedIndex`] provides:
  - [`RangedIndex::filter`]
  - [`RangedIndex::delete`]
+
+Only types which implement [`FilterableValue`](trait@crate::FilterableValue) may be used as index keys.
 
 ## Reducers
 
@@ -485,11 +530,11 @@ fn give_player_item(
 # }
 ```
 
-Every reducer runs inside a [database transaction](https://en.wikipedia.org/wiki/Database_transaction). <!-- TODO: specific transaction level guarantees. --> This means that reducers will not observe the effects of other reducers modifying the database while they run. Also, if a reducer fails, all of its changes to the database will automatically be rolled back. Reducers can fail by [panicking](::std::panic!) or by returning an `Err`.
+Every reducer runs inside a [database transaction](https://en.wikipedia.org/wiki/Database_transaction). <!-- TODO: specific transaction level guarantees. --> This means that reducers will not observe the effects of other reducers modifying the database while they run. If a reducer fails, all of its changes to the database will automatically be rolled back. Reducers can fail by [panicking](::std::panic!) or by returning an `Err`.
 
 #### The `ReducerContext` Type
 
-Reducers have access to a special [`ReducerContext`] argument. This argument allows reading and writing the database attached to a module. It also provides some additional functionality, like generating random numbers and scheduling future operations.
+Reducers have access to a special [`ReducerContext`] parameter. This parameter allows reading and writing the database attached to a module. It also provides some additional functionality, like generating random numbers and scheduling future operations.
 
 [`ReducerContext`] provides access to the database tables via [the `.db` field](ReducerContext#structfield.db). The [`#[table]`](macro@crate::table) macro generates traits that add accessor methods to this field.
 
@@ -518,14 +563,97 @@ the database and respond to client connections. See [Lifecycle Reducers](macro@c
 
 #### Scheduled Reducers
 
-Reducers can be scheduled to run repeatedly. This can be used to implement timers, game loops, and
-maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reducers).
+Reducers can schedule other reducers to run asynchronously. This allows calling the reducers at a particular time, or at repeating intervals. This can be used to implement timers, game loops, and maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reducers).
+
+## Views
+
+Views are declared using the [`#[view]` macro](macro@crate::view).
+
+Views are read‑only functions that compute and return results from your tables.
+`#[view]` is always applied to top level Rust functions.
+Views must be declared as `public`, with an explicit `name`, and do not accept user parameters beyond the context type.
+Views can return either `Option<T>` or `Vec<T>` where `T` can be a table type or any product type in general.
+
+```no_run
+# #[cfg(target_arch = "wasm32")] mod demo {
+use spacetimedb::{table, view, ViewContext, AnonymousViewContext, SpacetimeType};
+use spacetimedb_lib::Identity;
+
+#[table(accessor = player)]
+struct Player {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[unique]
+    identity: Identity,
+    name: String,
+}
+
+#[table(accessor = player_level)]
+struct PlayerLevel {
+    #[unique]
+    player_id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+#[derive(SpacetimeType)]
+struct PlayerAndLevel {
+    id: u64,
+    identity: Identity,
+    name: String,
+    level: u64,
+}
+
+// At-most-one row: return Option<T>
+#[view(accessor = my_player, public)]
+fn my_player(ctx: &ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender())
+}
+
+// Multiple rows: return Vec<T>
+#[view(accessor = players_for_level, public)]
+fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
+    ctx.db
+        .player_level()
+        .level()
+        .filter(2u64)
+        .map(|player| {
+            ctx.db
+                .player()
+                .id()
+                .find(player.player_id)
+                .map(|p| PlayerAndLevel {
+                    id: p.id,
+                    identity: p.identity,
+                    name: p.name,
+                    level: player.level,
+                })
+        })
+        .collect()
+}
+# }
+```
+
+Views can be queried and subscribed to like normal tables and are updated atomically in realtime.
+
+```sql
+SELECT * FROM my_player;
+SELECT * FROM players_for_level;
+```
+
+#### `ViewContext` and `AnonymousViewContext`
+
+Views must take a `&ViewContext` or an `&AnonymousViewContext` as their first parameter.
+Like reducers, these types allow reading from the database attached to a module via the `.db` field.
+However, unlike reducers, they do not allow writing to the database.
+Both types expose read-only portions of the `Table` and `Index` accessors generated by the [`#[table]` macro](macro@crate::table).
 
 ## Automatic migrations
 
 When you `spacetime publish` a module that has already been published using `spacetime publish <DATABASE_NAME_OR_IDENTITY>`,
 SpacetimeDB attempts to automatically migrate your existing database to the new schema. (The "schema" is just the collection
-of tables and reducers you've declared in your code, together with the types they depend on.) This form of migration is very limited and only supports a few kinds of changes.
+of tables and reducers you've declared in your code, together with the types they depend on.) This form of migration is limited and only supports a few kinds of changes.
 On the plus side, automatic migrations usually don't break clients. The situations that may break clients are documented below.
 
 The following changes are always allowed and never breaking:
@@ -541,10 +669,11 @@ The following changes are always allowed and never breaking:
 
 The following changes are allowed, but may break clients:
 
+- ⚠️ **Adding new columns to the end of a table with a default value**. The new column must be added at the end of the table definition and must have a default value specified. Non-updated clients will not be aware of the new column.
 - ⚠️ **Changing or removing reducers**. Clients that attempt to call the old version of a changed reducer will receive runtime errors.
 - ⚠️ **Changing tables from public to private**. Clients that are subscribed to a newly-private table will receive runtime errors.
 - ⚠️ **Removing `#[primary_key]` annotations**. Non-updated clients will still use the old `#[primary_key]` as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
-- ⚠️ **Removing indexes**. This is only breaking in some situtations.
+- ⚠️ **Removing indexes**. This is only breaking in some situations.
   The specific problem is subscription queries <!-- TODO: clientside link --> involving semijoins, such as:
     ```sql
     SELECT Employee.*
@@ -557,11 +686,13 @@ The following changes are allowed, but may break clients:
 The following changes are forbidden without a manual migration:
 
 - ❌ **Removing tables**.
-- ❌ **Changing the columns of a table**. This includes changing the order of columns of a table.
+- ❌ **Removing or modifying existing columns**. This includes changing the type, renaming, or reordering columns.
+- ❌ **Adding columns without a default value**. New columns must have a default value so existing rows can be populated.
+- ❌ **Adding columns in the middle of a table**. New columns must be added at the end of the table definition.
 - ❌ **Changing whether a table is used for [scheduling](#scheduled-reducers).** <!-- TODO: update this if we ever actually implement it... -->
 - ❌ **Adding `#[unique]` or `#[primary_key]` constraints.** This could result in existing tables being in an invalid state.
 
-Currently, manual migration support is limited. The `spacetime publish --clear-database <DATABASE_IDENTITY>` command can be used to **COMPLETELY DELETE** and reinitialize your database, but naturally it should be used with EXTREME CAUTION.
+Currently, manual migration support is limited. The `spacetime publish --delete-data <DATABASE_IDENTITY>` command can be used to **COMPLETELY DELETE** and reinitialize your database, but naturally it should be used with EXTREME CAUTION.
 
 [macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
 [module library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/lib

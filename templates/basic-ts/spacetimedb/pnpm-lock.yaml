@@ -1,0 +1,51 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      spacetimedb:
+        specifier: 1.*
+        version: 1.9.0
+
+packages:
+
+  base64-js@1.5.1:
+    resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
+
+  fast-text-encoding@1.0.6:
+    resolution: {integrity: sha512-VhXlQgj9ioXCqGstD37E/HBeqEGV/qOD/kmbVG8h5xKBYvM1L3lR1Zn4555cQ8GkYbJa8aJSipLPndE1k6zK2w==}
+
+  prettier@3.6.2:
+    resolution: {integrity: sha512-I7AIg5boAr5R0FFtJ6rCfD+LFsWHp81dolrFD8S79U9tb8Az2nGrJncnMSnys+bpQJfRUzqs9hnA81OAA3hCuQ==}
+    engines: {node: '>=14'}
+    hasBin: true
+
+  spacetimedb@1.9.0:
+    resolution: {integrity: sha512-cl/HeO50A1z6JgUZpA7pJcTspBE4IfH1SJJU8f1DpZ4hYHvQesbbYFHPPIC181s8zexdVAj5NnvFOPwQnSrcXg==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0-0 || ^19.0.0
+      undici: ^6.19.2
+    peerDependenciesMeta:
+      react:
+        optional: true
+      undici:
+        optional: true
+
+snapshots:
+
+  base64-js@1.5.1: {}
+
+  fast-text-encoding@1.0.6: {}
+
+  prettier@3.6.2: {}
+
+  spacetimedb@1.9.0:
+    dependencies:
+      base64-js: 1.5.1
+      fast-text-encoding: 1.0.6
+      prettier: 3.6.2

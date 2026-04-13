@@ -1,22 +1,23 @@
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-
+use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
-use crate::{expr::LeftDeepJoin, statement::Statement};
+use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
 };
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use super::{
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
     expr::RelExpr,
-    type_expr, type_proj, type_select, StatementCtx, StatementSource,
+    type_expr, type_proj, type_select,
 };
 
 /// The result of type checking and name resolution
@@ -25,18 +26,19 @@ pub type TypingResult<T> = core::result::Result<T, TypingError>;
 /// A view of the database schema
 pub trait SchemaView {
     fn table_id(&self, name: &str) -> Option<TableId>;
-    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>>;
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>>;
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>>;
 
-    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+    fn schema(&self, name: &str) -> Option<Arc<TableOrViewSchema>> {
         self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
     }
 }
 
 #[derive(Default)]
-pub struct Relvars(HashMap<Box<str>, Arc<TableSchema>>);
+pub struct Relvars(HashMap<RawIdentifier, Arc<TableOrViewSchema>>);
 
 impl Deref for Relvars {
-    type Target = HashMap<Box<str>, Arc<TableSchema>>;
+    type Target = HashMap<RawIdentifier, Arc<TableOrViewSchema>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -84,7 +86,7 @@ pub trait TypeChecker {
                 {
                     // Check for duplicate aliases
                     if vars.contains_key(&alias) {
-                        return Err(DuplicateName(alias.into_string()).into());
+                        return Err(DuplicateName(alias.clone()).into());
                     }
 
                     let lhs = Box::new(join);
@@ -97,11 +99,11 @@ pub trait TypeChecker {
                     vars.insert(rhs.alias.clone(), rhs.schema.clone());
 
                     if let Some(on) = on {
-                        if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))? {
-                            if let (Expr::Field(a), Expr::Field(b)) = (*a, *b) {
-                                join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b);
-                                continue;
-                            }
+                        if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))?
+                            && let (Expr::Field(a), Expr::Field(b)) = (*a, *b)
+                        {
+                            join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b);
+                            continue;
                         }
                         unreachable!("Unreachability guaranteed by parser")
                     }
@@ -114,7 +116,7 @@ pub trait TypeChecker {
         }
     }
 
-    fn type_relvar(tx: &impl SchemaView, name: &str) -> TypingResult<Arc<TableSchema>> {
+    fn type_relvar(tx: &impl SchemaView, name: &str) -> TypingResult<Arc<TableOrViewSchema>> {
         tx.schema(name)
             .ok_or_else(|| Unresolved::table(name))
             .map_err(TypingError::from)
@@ -155,39 +157,31 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
-    expect_table_type(SubChecker::type_ast(parse_subscription(sql)?, tx)?)
-}
-
-/// Type check a subscription query
-pub fn type_subscription(ast: SqlSelect, tx: &impl SchemaView) -> TypingResult<ProjectName> {
-    expect_table_type(SubChecker::type_ast(ast, tx)?)
-}
-
-/// Parse and type check a *subscription* query into a `StatementCtx`
-pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
-    Ok(StatementCtx {
-        statement: Statement::Select(ProjectList::Name(parse_and_type_sub(sql, tx)?)),
-        sql,
-        source: StatementSource::Subscription,
-    })
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
+    let ast = parse_subscription(sql)?;
+    let has_param = ast.has_parameter();
+    let ast = ast.resolve_sender(auth.caller());
+    expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
 }
 
 /// Returns an error if the input type is not a table type or relvar
 fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
     match expr {
-        ProjectList::Name(proj) => Ok(proj),
+        // Note, this is called before we do any RLS resolution.
+        // Hence this length should always be 1.
+        ProjectList::Name(mut proj) if proj.len() == 1 => Ok(proj.pop().unwrap()),
         ProjectList::Limit(input, _) => expect_table_type(*input),
-        ProjectList::List(..) | ProjectList::Agg(..) => Err(Unsupported::ReturnType.into()),
+        ProjectList::Name(..) | ProjectList::List(..) | ProjectList::Agg(..) => Err(Unsupported::ReturnType.into()),
     }
 }
 
 pub mod test_utils {
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
     use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::{
         def::ModuleDef,
-        schema::{Schema, TableSchema},
+        schema::{Schema, TableOrViewSchema, TableSchema},
     };
     use std::sync::Arc;
 
@@ -196,7 +190,7 @@ pub mod test_utils {
     pub fn build_module_def(types: Vec<(&str, ProductType)>) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         for (name, ty) in types {
-            builder.build_table_with_new_type(name, ty, true);
+            builder.build_table_with_new_type(RawIdentifier::new(name), ty, true);
         }
         builder.finish().try_into().expect("failed to generate module def")
     }
@@ -212,7 +206,7 @@ pub mod test_utils {
             }
         }
 
-        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             match table_id.idx() {
                 0 => Some((TableId(0), "t")),
                 1 => Some((TableId(1), "s")),
@@ -222,18 +216,27 @@ pub mod test_utils {
                 self.0
                     .table(name)
                     .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
+                    .map(TableOrViewSchema::from)
+                    .map(Arc::new)
             })
+        }
+
+        fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
+            Ok(vec![])
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::check::test_utils::{build_module_def, SchemaViewer};
-    use spacetimedb_lib::{AlgebraicType, ProductType};
+    use crate::{
+        check::test_utils::{build_module_def, SchemaViewer},
+        expr::ProjectName,
+    };
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
     use spacetimedb_schema::def::ModuleDef;
 
-    use super::parse_and_type_sub;
+    use super::{SchemaView, TypingResult};
 
     fn module_def() -> ModuleDef {
         build_module_def(vec![
@@ -270,6 +273,11 @@ mod tests {
                 ]),
             ),
         ])
+    }
+
+    /// A wrapper around [super::parse_and_type_sub] that takes a dummy [AuthCtx]
+    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+        super::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
     #[test]
@@ -357,7 +365,7 @@ mod tests {
         ] {
             let sql = format!("select * from t where {ty} = 127");
             let result = parse_and_type_sub(&sql, &tx);
-            assert!(result.is_ok(), "Faild to parse {ty}: {}", result.unwrap_err());
+            assert!(result.is_ok(), "Failed to parse {ty}: {}", result.unwrap_err());
         }
     }
 
@@ -424,6 +432,14 @@ mod tests {
                 msg: "Can leave columns unqualified when unambiguous",
             },
             TestCase {
+                sql: "select * from s where id = :sender",
+                msg: "Can use :sender as an Identity",
+            },
+            TestCase {
+                sql: "select * from s where bytes = :sender",
+                msg: "Can use :sender as a byte array",
+            },
+            TestCase {
                 sql: "select * from t where t.u32 = 1 or t.str = ''",
                 msg: "Type OR with qualified column references",
             },
@@ -468,6 +484,10 @@ mod tests {
                 msg: "Table r does not exist",
             },
             TestCase {
+                sql: "select * from t where arr = :sender",
+                msg: "The :sender param is an identity",
+            },
+            TestCase {
                 sql: "select * from t where t.a = 1",
                 msg: "Field a does not exist on table t",
             },
@@ -510,6 +530,10 @@ mod tests {
             TestCase {
                 sql: "select * from t limit 5",
                 msg: "Subscriptions do not support limit",
+            },
+            TestCase {
+                sql: "select t.* from t join s on t.u32 = s.u32 where bytes = 0xABCD",
+                msg: "Columns must be qualified in join expressions",
             },
         ] {
             let result = parse_and_type_sub(sql, &tx);

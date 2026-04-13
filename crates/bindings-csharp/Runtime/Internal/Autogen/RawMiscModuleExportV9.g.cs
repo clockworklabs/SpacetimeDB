@@ -8,7 +8,9 @@ using System;
 namespace SpacetimeDB.Internal
 {
     [SpacetimeDB.Type]
-    public enum RawMiscModuleExportV9
-    {
-    }
+    public partial record RawMiscModuleExportV9 : SpacetimeDB.TaggedEnum<(
+        RawColumnDefaultValueV9 ColumnDefaultValue,
+        RawProcedureDefV9 Procedure,
+        RawViewDefV9 View
+    )>;
 }

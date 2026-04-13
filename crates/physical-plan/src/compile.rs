@@ -1,12 +1,10 @@
 //! Lowering from the logical plan to the physical plan.
 
-use std::collections::HashMap;
-
 use crate::dml::{DeletePlan, MutationPlan, UpdatePlan};
 use crate::plan::{
     HashJoin, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Semi, TableScan, TupleField,
 };
-
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar};
 use spacetimedb_expr::statement::DML;
 
@@ -29,11 +27,15 @@ fn compile_expr(expr: Expr, var: &mut impl VarLabel) -> PhysicalExpr {
 
 fn compile_project_list(var: &mut impl VarLabel, expr: ProjectList) -> ProjectListPlan {
     match expr {
-        ProjectList::Name(proj) => ProjectListPlan::Name(compile_project_name(var, proj)),
+        ProjectList::Name(proj) => {
+            ProjectListPlan::Name(proj.into_iter().map(|proj| compile_project_name(var, proj)).collect())
+        }
         ProjectList::Limit(input, n) => ProjectListPlan::Limit(Box::new(compile_project_list(var, *input)), n),
-        ProjectList::Agg(expr, agg, ..) => ProjectListPlan::Agg(compile_rel_expr(var, expr), agg),
+        ProjectList::Agg(expr, agg, ..) => {
+            ProjectListPlan::Agg(expr.into_iter().map(|expr| compile_rel_expr(var, expr)).collect(), agg)
+        }
         ProjectList::List(proj, fields) => ProjectListPlan::List(
-            compile_rel_expr(var, proj),
+            proj.into_iter().map(|proj| compile_rel_expr(var, proj)).collect(),
             fields
                 .into_iter()
                 .map(|(_, expr)| compile_field_project(var, expr))
@@ -61,6 +63,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
     match ast {
         RelExpr::RelVar(Relvar { schema, alias, delta }) => {
             let label = var.label(alias.as_ref());
+            let schema = schema.inner();
             PhysicalPlan::TableScan(
                 TableScan {
                     schema,
@@ -93,7 +96,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                 lhs: Box::new(compile_rel_expr(var, *lhs)),
                 rhs: Box::new(PhysicalPlan::TableScan(
                     TableScan {
-                        schema: rhs_schema,
+                        schema: rhs_schema.inner(),
                         limit: None,
                         delta,
                     },
@@ -126,7 +129,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
             let lhs = compile_rel_expr(var, *lhs);
             let rhs = PhysicalPlan::TableScan(
                 TableScan {
-                    schema: rhs_schema,
+                    schema: rhs_schema.inner(),
                     limit: None,
                     delta,
                 },

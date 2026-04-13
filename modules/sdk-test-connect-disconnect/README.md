@@ -8,7 +8,7 @@ This module tests that we can observe `connect`/`disconnect` events for WebSocke
 
 ## How to Run
 
-Execute the tests on `spacetimedb-sdk` at [test.rs](../../crates/sdk/tests/test.rs):
+Execute the tests on `spacetimedb-sdk` at [test.rs](../../sdks/rust/tests/test.rs):
 
 ```bash
 # Will run both Rust/C# modules

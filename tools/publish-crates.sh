@@ -39,48 +39,56 @@ if [ $DRY_RUN -ne 1 ]; then
 fi
 
 BASEDIR=$(pwd)
-declare -a CRATES=("metrics" "primitives" "sql-parser" "bindings-macro" "bindings-sys" "data-structures" "sats" "lib" "bindings" "client-api-messages" "schema" "table" "paths" "commitlog" "durability" "fs-utils" "snapshot" "expr" "physical-plan" "execution" "vm" "physical-plan" "query" "subscription" "core" "cli" "client-api" "standalone" "sdk")
+declare -a ROOTS=(spacetimedb spacetimedb-sdk)
+declare -a CRATES=($(python3 tools/find-publish-list.py --recursive --quiet --directories "${ROOTS[@]}"))
 
-for crate in "${CRATES[@]}"; do
-    if [ ! -d "${BASEDIR}/crates/${crate}" ]; then
-        echo "This crate does not exist: ${crate}"
+echo Crates to publish: "${CRATES[@]}"
+echo
+
+for path in "${CRATES[@]}"; do
+    if [ ! -d "${path}" ]; then
+        echo "This crate does not exist: ${path}"
         exit 1
     fi
 done
 
-for crate in "${CRATES[@]}"; do
-    cd "${BASEDIR}/crates/${crate}"
+i=0
+for path in "${CRATES[@]}"; do
+    i=$(($i+1))
+    cd "${path}"
 
     PUBLISH_CMD="cargo publish"
     [[ $DRY_RUN -eq 1 ]] && PUBLISH_CMD+=" --dry-run"
     [[ $ALLOW_DIRTY -eq 1 ]] && PUBLISH_CMD+=" --allow-dirty"
 
-    echo "Publishing crate: $crate with command: $PUBLISH_CMD"
+    echo "[$i/${#CRATES[@]}] Publishing crate at $path with command: $PUBLISH_CMD"
     if ! OUTPUT=$($PUBLISH_CMD 2>&1); then
         if [ $SKIP_ALREADY_PUBLISHED -eq 1 ] && echo "$OUTPUT" | grep -q "already exists"; then
-            echo "WARNING: Crate $crate version is already published. Skipping..."
+            echo "WARNING: Crate at $path is already published at this version. Skipping..."
         else
-            echo "ERROR: Failed to publish $crate. Check logs:"
+            echo "ERROR: Failed to publish crate at $path. Check logs:"
             echo "$OUTPUT"
             exit 1
         fi
     fi
 
+    crate="$(basename "$path")"
     # Add owners
-    echo "INFO: Adding owners for $crate..."
+    echo "Adding owners for $crate..."
     for owner in "${NEW_CRATE_OWNERS[@]}"; do
         if ! OUTPUT=$(cargo owner --add "$owner" 2>&1); then
           if echo "$OUTPUT" | grep -q "already" ; then
-	    echo "$owner already is an owner of the crate."
+            echo "$owner already is an owner of the crate."
           else
-	    echo "Unknown error adding owner $owner:"
-	    echo "$OUTPUT"
-	    exit 1
+            echo "Unknown error adding owner $owner:"
+            echo "$OUTPUT"
+            exit 1
           fi
         else
-          echo "INFO: Added $owner as an owner of $crate."
+          echo "Added $owner as an owner of $crate."
         fi
     done
+    echo
 done
 
 echo "Doing a test install."

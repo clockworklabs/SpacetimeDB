@@ -1,9 +1,28 @@
+use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
+use spacetimedb_primitives::{TableId, ViewId};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
+use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use std::sync::Arc;
 
-use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
-use spacetimedb_primitives::TableId;
-use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+pub trait CollectViews {
+    fn collect_views(&self, views: &mut HashSet<ViewId>);
+}
+
+impl<T: CollectViews> CollectViews for Arc<T> {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.as_ref().collect_views(views);
+    }
+}
+
+impl<T: CollectViews> CollectViews for Vec<T> {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        for item in self {
+            item.collect_views(views);
+        }
+    }
+}
 
 /// A projection is the root of any relational expression.
 /// This type represents a projection that returns relvars.
@@ -19,17 +38,41 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 /// ```sql
 /// select t.* from t join s ...
 /// ```
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProjectName {
     None(RelExpr),
-    Some(RelExpr, Box<str>),
+    Some(RelExpr, RawIdentifier),
+}
+
+impl CollectViews for ProjectName {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr.collect_views(views),
+        }
+    }
 }
 
 impl ProjectName {
-    /// The [TableSchema] of the returned rows.
+    /// Unwrap the outer projection, returning the inner expression
+    pub fn unwrap(self) -> RelExpr {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr,
+        }
+    }
+
+    /// What is the name of the return table?
+    /// This is either the table name itself or its alias.
+    pub fn return_name(&self) -> Option<&RawIdentifier> {
+        match self {
+            Self::None(input) => input.return_name(),
+            Self::Some(_, name) => Some(name),
+        }
+    }
+
+    /// The [`TableOrViewSchema`] of the returned rows.
     /// Note this expression returns rows from a relvar.
     /// Hence it this method should never return [None].
-    pub fn return_table(&self) -> Option<&TableSchema> {
+    pub fn return_table(&self) -> Option<&TableOrViewSchema> {
         match self {
             Self::None(input) => input.return_table(),
             Self::Some(input, alias) => input.find_table_schema(alias),
@@ -47,9 +90,9 @@ impl ProjectName {
     }
 
     /// Iterate over the returned column names and types
-    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&Identifier, &AlgebraicType)) {
         if let Some(schema) = self.return_table() {
-            for schema in schema.columns() {
+            for schema in schema.public_columns() {
                 f(&schema.col_name, &schema.col_type);
             }
         }
@@ -70,12 +113,59 @@ impl ProjectName {
 /// ```sql
 /// select t.a as x from t join s ...
 /// ```
+///
+/// Note that RLS takes a single expression and produces a list of expressions.
+/// Hence why these variants take lists rather than single expressions.
+///
+/// Why does RLS take an expression and produce a list?
+///
+/// There may be multiple RLS rules associated to a single table.
+/// Semantically these rules represent a UNION over that table,
+/// and this corresponds to a UNION in the original expression.
+///
+/// TODO: We should model the UNION explicitly in the physical plan.
+///
+/// Ex.
+///
+/// Let's say we have the following rules for the `users` table:
+/// ```rust
+/// use spacetimedb::client_visibility_filter;
+/// use spacetimedb::Filter;
+///
+/// #[client_visibility_filter]
+/// const USER_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users WHERE identity = :sender"
+/// );
+///
+/// #[client_visibility_filter]
+/// const ADMIN_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users JOIN admins"
+/// );
+/// ```
+///
+/// The user query
+/// ```sql
+/// SELECT * FROM users WHERE level > 5
+/// ```
+///
+/// essentially resolves to
+/// ```sql
+/// SELECT users.*
+/// FROM users
+/// WHERE identity = :sender AND level > 5
+///
+/// UNION ALL
+///
+/// SELECT users.*
+/// FROM users JOIN admins
+/// WHERE users.level > 5
+/// ```
 #[derive(Debug)]
 pub enum ProjectList {
-    Name(ProjectName),
-    List(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Name(Vec<ProjectName>),
+    List(Vec<RelExpr>, Vec<(RawIdentifier, FieldProject)>),
     Limit(Box<ProjectList>, u64),
-    Agg(RelExpr, AggType, Box<str>, AlgebraicType),
+    Agg(Vec<RelExpr>, AggType, RawIdentifier, AlgebraicType),
 }
 
 #[derive(Debug)]
@@ -83,13 +173,33 @@ pub enum AggType {
     Count,
 }
 
+impl CollectViews for ProjectList {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        match self {
+            Self::Limit(proj, _) => {
+                proj.collect_views(views);
+            }
+            Self::Name(exprs) => {
+                for expr in exprs {
+                    expr.collect_views(views);
+                }
+            }
+            Self::List(exprs, _) | Self::Agg(exprs, ..) => {
+                for expr in exprs {
+                    expr.collect_views(views);
+                }
+            }
+        }
+    }
+}
+
 impl ProjectList {
     /// Does this expression project a single relvar?
-    /// If so, we return it's [TableSchema].
+    /// If so, we return it's [`TableOrViewSchema`].
     /// If not, it projects a list of columns, so we return [None].
-    pub fn return_table(&self) -> Option<&TableSchema> {
+    pub fn return_table(&self) -> Option<&TableOrViewSchema> {
         match self {
-            Self::Name(project) => project.return_table(),
+            Self::Name(project) => project.first().and_then(|expr| expr.return_table()),
             Self::Limit(input, _) => input.return_table(),
             Self::List(..) | Self::Agg(..) => None,
         }
@@ -100,17 +210,19 @@ impl ProjectList {
     /// If not, it projects a list of columns, so we return [None].
     pub fn return_table_id(&self) -> Option<TableId> {
         match self {
-            Self::Name(project) => project.return_table_id(),
+            Self::Name(project) => project.first().and_then(|expr| expr.return_table_id()),
             Self::Limit(input, _) => input.return_table_id(),
             Self::List(..) | Self::Agg(..) => None,
         }
     }
 
     /// Iterate over the projected column names and types
-    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&RawIdentifier, &AlgebraicType)) {
         match self {
             Self::Name(input) => {
-                input.for_each_return_field(f);
+                input
+                    .first()
+                    .inspect(|expr| expr.for_each_return_field(|n, at| f(n.as_raw(), at)));
             }
             Self::Limit(input, _) => {
                 input.for_each_return_field(f);
@@ -126,7 +238,7 @@ impl ProjectList {
 }
 
 /// A logical relational expression
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelExpr {
     /// A relvar or table reference
     RelVar(Relvar),
@@ -139,15 +251,55 @@ pub enum RelExpr {
 }
 
 /// A table reference
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relvar {
-    pub schema: Arc<TableSchema>,
-    pub alias: Box<str>,
+    /// The table schema of this relvar
+    pub schema: Arc<TableOrViewSchema>,
+    /// The name of this relvar
+    pub alias: RawIdentifier,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
 }
 
+impl CollectViews for RelExpr {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.visit(&mut |expr| {
+            if let Self::RelVar(Relvar { schema, .. }) = expr
+                && let Some(info) = &schema.view_info
+            {
+                views.insert(info.view_id);
+            }
+        });
+    }
+}
+
 impl RelExpr {
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit(&self, f: &mut impl FnMut(&Self)) {
+        f(self);
+        match self {
+            Self::Select(lhs, _)
+            | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+                lhs.visit(f);
+            }
+            Self::RelVar(..) => {}
+        }
+    }
+
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
+        f(self);
+        match self {
+            Self::Select(lhs, _)
+            | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+                lhs.visit_mut(f);
+            }
+            Self::RelVar(..) => {}
+        }
+    }
+
     /// The number of fields this expression returns
     pub fn nfields(&self) -> usize {
         match self {
@@ -168,8 +320,8 @@ impl RelExpr {
         }
     }
 
-    /// Return the [TableSchema] for a relvar in the expression
-    pub fn find_table_schema(&self, alias: &str) -> Option<&TableSchema> {
+    /// Return the [`TableOrViewSchema`] for a relvar in the expression
+    pub fn find_table_schema(&self, alias: &str) -> Option<&TableOrViewSchema> {
         match self {
             Self::RelVar(relvar) if relvar.alias.as_ref() == alias => Some(&relvar.schema),
             Self::Select(input, _) => input.find_table_schema(alias),
@@ -187,8 +339,8 @@ impl RelExpr {
     }
 
     /// Does this expression return a single relvar?
-    /// If so, return it's [TableSchema], otherwise return [None].
-    pub fn return_table(&self) -> Option<&TableSchema> {
+    /// If so, return it's [`TableOrViewSchema`], otherwise return [None].
+    pub fn return_table(&self) -> Option<&TableOrViewSchema> {
         match self {
             Self::RelVar(Relvar { schema, .. }) => Some(schema),
             Self::Select(input, _) => input.return_table(),
@@ -201,10 +353,20 @@ impl RelExpr {
     pub fn return_table_id(&self) -> Option<TableId> {
         self.return_table().map(|schema| schema.table_id)
     }
+
+    /// Does this expression return a single relvar?
+    /// If so, return its name or equivalently its alias.
+    pub fn return_name(&self) -> Option<&RawIdentifier> {
+        match self {
+            Self::RelVar(Relvar { alias, .. }) => Some(alias),
+            Self::Select(input, _) => input.return_name(),
+            _ => None,
+        }
+    }
 }
 
 /// A left deep binary cross product
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftDeepJoin {
     /// The lhs is recursive
     pub lhs: Box<RelExpr>,
@@ -213,7 +375,7 @@ pub struct LeftDeepJoin {
 }
 
 /// A typed scalar expression
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     /// A binary expression
     BinOp(BinOp, Box<Expr>, Box<Expr>),
@@ -226,6 +388,30 @@ pub enum Expr {
 }
 
 impl Expr {
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit(&self, f: &impl Fn(&Self)) {
+        f(self);
+        match self {
+            Self::BinOp(_, a, b) | Self::LogOp(_, a, b) => {
+                a.visit(f);
+                b.visit(f);
+            }
+            Self::Value(..) | Self::Field(..) => {}
+        }
+    }
+
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
+        f(self);
+        match self {
+            Self::BinOp(_, a, b) | Self::LogOp(_, a, b) => {
+                a.visit_mut(f);
+                b.visit_mut(f);
+            }
+            Self::Value(..) | Self::Field(..) => {}
+        }
+    }
+
     /// A literal boolean value
     pub const fn bool(v: bool) -> Self {
         Self::Value(AlgebraicValue::Bool(v), AlgebraicType::Bool)
@@ -246,9 +432,9 @@ impl Expr {
 }
 
 /// A typed qualified field projection
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProject {
-    pub table: Box<str>,
+    pub table: RawIdentifier,
     pub field: usize,
     pub ty: AlgebraicType,
 }
