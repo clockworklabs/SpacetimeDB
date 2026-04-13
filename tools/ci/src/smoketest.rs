@@ -128,20 +128,19 @@ const DEFAULT_PARALLELISM: &str = "16";
 
 fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Result<()> {
     // 1. Build binaries first (single process, no race)
-    //build_binaries()?;
+    build_binaries()?;
 
     // 2. Build pre-compiled modules (this also warms the WASM dependency cache)
-    //build_precompiled_modules()?;
+    build_precompiled_modules()?;
 
     // 4. Detect whether to use nextest or cargo test
-    let mut use_nextest = Command::new("cargo")
+    let use_nextest = Command::new("cargo")
         .args(["nextest", "--version"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    use_nextest = false;
 
     if let Some(ref server_url) = server {
         eprintln!("Running smoketests against remote server {server_url}...\n");
