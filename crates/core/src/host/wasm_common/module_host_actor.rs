@@ -658,6 +658,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let stdb = self.instance.replica_ctx().relational_db().clone();
         let replica_ctx = self.instance.replica_ctx().clone();
         let global_tx_id = params.tx_id;
+        let prepare_started_at = std::time::Instant::now();
 
         // Extract recovery info before params are consumed.
         let recovery_reducer_name = self
@@ -747,6 +748,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             execution_duration: total_duration,
         };
         let return_value = event.reducer_return_value.clone();
+        log::info!(
+            "2PC participant {} signalling PREPARED for prepare_id {} tx_id {:?} after {:?}",
+            replica_ctx.database.database_identity,
+            prepare_id,
+            global_tx_id,
+            prepare_started_at.elapsed()
+        );
         let _ = prepared_tx.send((res, return_value));
 
         // Step 4: wait for coordinator's decision, but abort early if the local
@@ -1281,13 +1289,24 @@ impl InstanceCommon {
         inst: &mut I,
     ) -> (ReducerCallResult, Option<Bytes>, bool) {
         let managed_global_tx_id = if tx.is_none() { params.tx_id } else { None };
+        let coordinator_started_at = std::time::Instant::now();
         let (mut tx, event, client, trapped) = self.run_reducer_no_commit(tx, params, inst);
 
         let energy_quanta_used = event.energy_quanta_used;
         let total_duration = event.host_execution_duration;
+        let coordinator_tx_id = managed_global_tx_id;
 
         // Take participant prepare targets before commit so we can write the coordinator log atomically.
         let prepared_participants = inst.take_prepared_participants();
+        if !prepared_participants.is_empty() {
+            log::info!(
+                "2PC coordinator {} entering commit path for tx_id {:?}; participants={} after {:?}",
+                self.info.database_identity,
+                coordinator_tx_id,
+                prepared_participants.len(),
+                coordinator_started_at.elapsed()
+            );
+        }
 
         // If this coordinator tx is committed and has participants, write coordinator log
         // entries into the still-open tx.  They are committed atomically with the tx,
@@ -1301,7 +1320,23 @@ impl InstanceCommon {
             }
         }
 
+        if !prepared_participants.is_empty() {
+            log::info!(
+                "2PC coordinator {} starting commit_and_broadcast_event for tx_id {:?} after {:?}",
+                self.info.database_identity,
+                coordinator_tx_id,
+                coordinator_started_at.elapsed()
+            );
+        }
         let commit_result = commit_and_broadcast_event(&self.info.subscriptions, client, event, tx);
+        if !prepared_participants.is_empty() {
+            log::info!(
+                "2PC coordinator {} finished commit_and_broadcast_event for tx_id {:?} after {:?}",
+                self.info.database_identity,
+                coordinator_tx_id,
+                coordinator_started_at.elapsed()
+            );
+        }
         let commit_tx_offset = commit_result.tx_offset;
         let event = commit_result.event;
 
@@ -1327,11 +1362,23 @@ impl InstanceCommon {
             // carries no durability requirement.
             if committed && !replica_ctx.fake_2pc_persistence {
                 if let Some(mut durable_offset) = stdb.durable_tx_offset() {
+                    log::info!(
+                        "2PC coordinator {} waiting for coordinator-log durability before commit fanout for tx_id {:?} after {:?}",
+                        local_db,
+                        coordinator_tx_id,
+                        coordinator_started_at.elapsed()
+                    );
                     block_on_scoped(&handle, async move {
                         if let Ok(offset) = commit_tx_offset.await {
                             let _ = durable_offset.wait_for(offset).await;
                         }
                     });
+                    log::info!(
+                        "2PC coordinator {} finished coordinator-log durability wait before commit fanout for tx_id {:?} after {:?}",
+                        local_db,
+                        coordinator_tx_id,
+                        coordinator_started_at.elapsed()
+                    );
                 }
             }
 

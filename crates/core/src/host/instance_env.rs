@@ -1142,6 +1142,15 @@ impl InstanceEnv {
             database_identity.to_hex(),
             reducer_name,
         );
+        log::info!(
+            "2PC prepare: coordinator {} sending prepare for tx_id {} prepare_id {} to participant {} reducer {} via {}",
+            caller_identity,
+            tx_id,
+            prepare_id,
+            database_identity,
+            reducer_name,
+            url
+        );
         let mut req = self
             .replica_ctx
             .call_reducer_blocking_client
@@ -1191,7 +1200,32 @@ impl InstanceEnv {
             .with_label_values(&caller_identity)
             .observe(start.elapsed().as_secs_f64());
 
-        result.map(|(status, body)| (status, body, prepare_id))
+        match result {
+            Ok((status, body)) => {
+                log::info!(
+                    "2PC prepare: coordinator {} got response from participant {} for tx_id {} prepare_id {} with status {} after {:?}",
+                    caller_identity,
+                    database_identity,
+                    tx_id,
+                    prepare_id,
+                    status,
+                    start.elapsed()
+                );
+                Ok((status, body, prepare_id))
+            }
+            Err(e) => {
+                log::warn!(
+                    "2PC prepare: coordinator {} failed to get response from participant {} for tx_id {} prepare_id {} after {:?}: {}",
+                    caller_identity,
+                    database_identity,
+                    tx_id,
+                    prepare_id,
+                    start.elapsed(),
+                    e
+                );
+                Err(e)
+            }
+        }
     }
 }
 
