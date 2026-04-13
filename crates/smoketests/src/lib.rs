@@ -1062,7 +1062,6 @@ log = "0.4"
             PublishOptions {
                 clear,
                 break_clients: false,
-                force: true,
                 ..PublishOptions::default()
             },
         )
@@ -1087,7 +1086,6 @@ log = "0.4"
             PublishOptions {
                 clear,
                 break_clients: false,
-                force: true,
                 ..PublishOptions::default()
             },
         )
