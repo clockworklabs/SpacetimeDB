@@ -1177,18 +1177,16 @@ log = "0.4"
             args.push("--break-clients");
         }
 
-        let mut num_replicas_owned: Option<String> = None;
-        if let Some(n) = opts.num_replicas {
-            num_replicas_owned = Some(n.to_string());
+        let num_replicas_owned = opts.num_replicas.map(|n| n.to_string());
+        if let Some(n) = num_replicas_owned.as_ref() {
             args.push("--num-replicas");
-            args.push(num_replicas_owned.as_ref().unwrap());
+            args.push(n);
         }
 
-        let mut org_owned: Option<String> = None;
-        if let Some(org) = opts.organization.as_ref() {
-            org_owned = Some(org.clone());
+        let org_owned = opts.organization.clone();
+        if let Some(org) = org_owned.as_ref() {
             args.push("--organization");
-            args.push(org_owned.as_ref().unwrap());
+            args.push(org);
         }
 
         let name_owned;
