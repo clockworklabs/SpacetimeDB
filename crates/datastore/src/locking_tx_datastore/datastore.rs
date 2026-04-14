@@ -37,7 +37,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{
@@ -546,6 +546,14 @@ impl MutTxDatastore for Locking {
         tx.sequence_id_from_name(sequence_name)
     }
 
+    fn create_constraint_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        constraint: ConstraintSchema,
+    ) -> Result<ConstraintId> {
+        tx.create_constraint(constraint)
+    }
+
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> Result<()> {
         tx.drop_constraint(constraint_id)
     }
@@ -993,7 +1001,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ArgId, ColId, ScheduleId, ViewId};
+    use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
     use spacetimedb_sats::layout::RowTypeLayout;
@@ -3637,6 +3645,258 @@ pub(crate) mod tests {
         assert!(
             result.is_ok(),
             "same PK in a new TX should succeed for event tables (no committed state)"
+        );
+        Ok(())
+    }
+
+    /// Creates a table with a non-unique btree index on `cols` but no constraints.
+    fn table_with_non_unique_index(cols: impl Into<ColList>) -> TableSchema {
+        let indices = vec![IndexSchema::for_test(
+            "Foo_idx_btree",
+            BTreeAlgorithm { columns: cols.into() },
+        )];
+        basic_table_schema_with_indices(indices, Vec::<ConstraintSchema>::new())
+    }
+
+    #[test]
+    fn test_create_constraint_makes_index_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert unique rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint — should succeed since data is unique.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+
+        // Inserting a duplicate should now fail (index is unique).
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(dup_result.is_err(), "duplicate insert should fail after adding unique constraint");
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_rollback_restores_non_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert unique rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint, then rollback.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // TX4: after rollback, duplicates should be allowed again.
+        let mut tx = begin_mut_tx(&datastore);
+        let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(result.is_ok(), "duplicate insert should succeed after rollback of unique constraint");
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_fails_with_duplicates() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert duplicate rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?; // duplicate id=1
+        commit(&datastore, tx)?;
+
+        // TX3: try to add unique constraint — should fail.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(result.is_err(), "create_constraint should fail when duplicates exist");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_multi_col() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique multi-column index on (col 0, col 2).
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(col_list![0, 2]);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert rows unique on (id, age) and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?; // same id, different age
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint on (col 0, col 2) — should succeed.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test(
+            "Foo_id_age_unique",
+            ColSet::from(col_list![0, 2]),
+        );
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_makes_index_non_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with unique constraint.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: drop the unique constraint on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+
+        // Inserting a duplicate on col 0 should now succeed.
+        let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
+        assert!(result.is_ok(), "duplicate insert should succeed after dropping unique constraint");
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_rollback_keeps_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with unique constraint.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: drop constraint, then rollback.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // TX4: after rollback, constraint should be back — duplicates should fail.
+        let mut tx = begin_mut_tx(&datastore);
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
+        assert!(dup_result.is_err(), "duplicate insert should fail after rollback of drop constraint");
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_fails_with_tx_state_duplicates() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a unique row into committed state.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: insert a duplicate in the tx state (same id=1), then try adding constraint.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(
+            result.is_err(),
+            "create_constraint should fail when the tx state contains a duplicate of a committed row"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_merge_error_reverts_uniqueness() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row into committed state.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: insert a conflicting row in the tx state, then try adding a unique constraint.
+        // The committed table has id=1 and the tx state also has id=1.
+        // The committed index check passes (no duplicates within committed data alone),
+        // but `can_merge` should fail because tx + committed have the same key.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(
+            result.is_err(),
+            "create_constraint should fail when tx state conflicts with committed state"
+        );
+
+        // Rollback and verify the index is still non-unique.
+        let _ = datastore.rollback_mut_tx(tx);
+        let mut tx = begin_mut_tx(&datastore);
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(
+            dup_result.is_ok(),
+            "index should be non-unique after merge-error rollback: duplicates must be allowed"
         );
         Ok(())
     }
