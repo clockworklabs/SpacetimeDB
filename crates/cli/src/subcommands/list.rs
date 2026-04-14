@@ -65,16 +65,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .context("unable to retrieve databases for identity")?;
 
     if !result.identities.is_empty() {
-        let config = &config;
-        let databases = join_all(result.identities.into_iter().map(|row| async move {
-            let db_identity = row.db_identity;
-            let db_names = lookup_database_names(config, server, db_identity).await;
-            DatabaseRow {
-                db_names: format_database_names(db_names),
-                db_identity,
-            }
-        }))
-        .await;
+        let databases = assemble_rows(&config, server, result.identities).await;
         let mut table = Table::new(databases);
         table
             .with(Style::psql())
@@ -88,14 +79,24 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-async fn lookup_database_names(config: &Config, server: Option<&str>, db_identity: Identity) -> Vec<String> {
-    match util::spacetime_reverse_dns(config, &db_identity.to_string(), server).await {
-        Ok(response) => response.names.into_iter().map(|name| name.to_string()).collect(),
-        Err(err) => {
-            eprintln!("Warning: failed to look up names for {db_identity}: {err}");
-            vec!["(lookup failed)".to_string()]
+async fn assemble_rows(config: &Config, server: Option<&str>, identities: Vec<IdentityRow>) -> Vec<DatabaseRow> {
+    let lookups = identities.into_iter().map(|row| async move {
+        let db_identity = row.db_identity;
+        let db_names = match util::spacetime_reverse_dns(config, &db_identity.to_string(), server).await {
+            Ok(response) => response.names.into_iter().map(|name| name.to_string()).collect(),
+            Err(err) => {
+                eprintln!("Warning: failed to look up names for {db_identity}: {err}");
+                vec!["(lookup failed)".to_string()]
+            }
+        };
+
+        DatabaseRow {
+            db_names: format_database_names(db_names),
+            db_identity,
         }
-    }
+    });
+
+    join_all(lookups).await
 }
 
 fn format_database_names(names: Vec<String>) -> String {
