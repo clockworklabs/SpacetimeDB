@@ -50,10 +50,6 @@ public:
         TArray<RowType> Out;
 
         auto T = Cache->GetTable(TableName);
-        UE_LOG(LogTemp, Warning,
-            TEXT("GetTable(%s) valid=%d"),
-            *TableName, T.IsValid());
-
         if (T.IsValid())
         {
             for (const auto& Pair : T->Entries)
@@ -62,6 +58,12 @@ public:
                 Out.Add(*Pair.Value.Row);
             }
         }
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("GetTable(%s) valid=%d"),
+				*TableName, T.IsValid());
+		}
         return Out;
     }
 

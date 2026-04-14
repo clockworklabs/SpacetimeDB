@@ -84,12 +84,26 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<OneIdentity>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OneIdentity>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneIdentity>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneIdentity`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_identityQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneIdentity`.
+    fn one_identity(&self) -> __sdk::__query_builder::Table<OneIdentity>;
+}
+
+impl one_identityQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_identity(&self) -> __sdk::__query_builder::Table<OneIdentity> {
+        __sdk::__query_builder::Table::new("one_identity")
+    }
 }

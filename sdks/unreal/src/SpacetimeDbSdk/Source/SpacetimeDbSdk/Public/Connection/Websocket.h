@@ -3,11 +3,11 @@
 #include "CoreMinimal.h"
 #include "IWebSocket.h"
 #include "ModuleBindings/Types/ServerMessageType.g.h"
-#include "ModuleBindings/Types/CompressableQueryUpdateType.g.h"
 #include "JsonObjectConverter.h" // for JSON debugging helpers
 #include "Async/Async.h"
 #include "HAL/CriticalSection.h"
 #include "Misc/ScopeLock.h"
+#include "LogCategory.h"
 
 
 #include "Websocket.generated.h" 
@@ -106,16 +106,9 @@ private:
 	/** Handler for incoming text messages */
 	void HandleMessageReceived(const FString& Message);
 	/** Handler for incoming binary messages */
-	void HandleBinaryMessageReceived(const void* Data, SIZE_T Size, SIZE_T BytesRemaining);
+	void HandleBinaryMessageReceived(const void* Data, SIZE_T Size, bool bIsLastFragment);
 	/** Handler for socket close */
 	void HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
-
-	/** Decompresses a payload based on compression variant */
-	bool DecompressPayload(ECompressableQueryUpdateTag Variant, const TArray<uint8>& In, TArray<uint8>& Out);
-	/** GZip decompression helper */
-	bool DecompressGzip(const TArray<uint8>& InData, TArray<uint8>& OutData);
-	/** Brotli decompression helper */
-	bool DecompressBrotli(const TArray<uint8>& InData, TArray<uint8>& OutData);
 
 	FString InitToken;
 
@@ -135,12 +128,12 @@ static void LogAsJson(const StructType& InStruct, const TCHAR* TagName)
 	FString Json;
 	if (!FJsonObjectConverter::UStructToJsonObjectString(InStruct, Json))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to serialize to JSON"), TagName);
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("[%s] Failed to serialize to JSON"), TagName);
 		return;
 	}
 
 	// Print original JSON
-	UE_LOG(LogTemp, Log, TEXT("[%s] %s"), TagName, *Json);
+	UE_LOG(LogSpacetimeDb_Connection, Log, TEXT("[%s] %s"), TagName, *Json);
 
 	// Extract object paths like /Script/SpacetimeDbSdk.CompressableQueryUpdateType'/Engine/Transient.CompressableQueryUpdateType_0'
 	const FRegexPattern Pattern(TEXT(R"((\/Script\/SpacetimeDbSdk\.\w+)'\/Engine\/Transient\.(\w+))"));
@@ -155,7 +148,7 @@ static void LogAsJson(const StructType& InStruct, const TCHAR* TagName)
 		UObject* FoundObj = StaticFindObject(UObject::StaticClass(), GetTransientPackage(), *ObjectName);
 		if (FoundObj == nullptr)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] Could not find object: %s"), TagName, *ObjectName);
+			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("[%s] Could not find object: %s"), TagName, *ObjectName);
 			continue;
 		}
 
@@ -164,11 +157,11 @@ static void LogAsJson(const StructType& InStruct, const TCHAR* TagName)
 		if (FJsonObjectConverter::UStructToJsonObjectString(
 			static_cast<const UStruct*>(FoundObj->GetClass()), FoundObj, SubJson))
 		{
-			UE_LOG(LogTemp, Log, TEXT("[%s] %s: %s"), TagName, *ObjectName, *SubJson);
+			UE_LOG(LogSpacetimeDb_Connection, Log, TEXT("[%s] %s: %s"), TagName, *ObjectName, *SubJson);
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to serialize object: %s"), TagName, *ObjectName);
+			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("[%s] Failed to serialize object: %s"), TagName, *ObjectName);
 		}
 	}
 }

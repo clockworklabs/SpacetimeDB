@@ -15,7 +15,7 @@ struct TESTCLIENT_API FTestClientOptionalVecOptionalInt32
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    TArray<FTestClientOptionalInt32> Value;
+    TArray<FTestClientOptionalInt32> Value = {};
 
     FTestClientOptionalVecOptionalInt32() = default;
 

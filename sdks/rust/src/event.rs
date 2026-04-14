@@ -10,19 +10,20 @@
 //! You can inspect its `event` field
 //! to determine what change in your connection's state caused the callback to run.
 
-use crate::spacetime_module::{DbUpdate as _, SpacetimeModule};
-use spacetimedb_client_api_messages::websocket as ws;
-use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::Timestamp;
+
+use crate::error::InternalError;
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 /// A change in the state of a [`crate::DbContext`] which causes callbacks to run.
 pub enum Event<R> {
-    /// Event when we are notified that a reducer ran in the remote module.
+    /// Event when we are notified that a reducer this client invoked
+    /// ran to completion in the remote module and its mutations were committed.
     ///
-    /// This event is passed to reducer callbacks,
-    /// and to row callbacks resulting from modifications by the reducer.
+    /// This event is passed to row callbacks resulting from modifications by the reducer.
     Reducer(ReducerEvent<R>),
+
     /// Event when one of our subscriptions is applied.
     ///
     /// This event is passed to subscription-applied callbacks,
@@ -48,12 +49,13 @@ pub enum Event<R> {
     /// No requirement is imposed that it be programmatically inspectable.
     SubscribeError(crate::Error),
 
-    /// Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer.
+    /// Event when we are notified of a transaction in the remote module,
+    /// other than one that was the result of a reducer invoked by this client.
     ///
-    /// This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
+    /// Transactions resulting from reducers invoked by this client will instead report [`Event::Reducer`].
     ///
     /// This event is passed to row callbacks resulting from modifications by the transaction.
-    UnknownTransaction,
+    Transaction,
 }
 
 #[non_exhaustive]
@@ -63,21 +65,8 @@ pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.
     pub timestamp: Timestamp,
 
-    /// Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
+    /// Whether the reducer committed, rolled back by returning an error, or was aborted by the host.
     pub status: Status,
-
-    /// The `Identity` of the SpacetimeDB actor which invoked the reducer.
-    pub caller_identity: Identity,
-
-    /// The [`ConnectionId`] of the SpacetimeDB actor which invoked the reducer,
-    /// or `None` for scheduled reducers.
-    pub caller_connection_id: Option<ConnectionId>,
-
-    /// The amount of energy consumed by the reducer run, in eV.
-    /// (Not literal eV, but our SpacetimeDB energy unit eV.)
-    ///
-    /// May be `None` if the module is configured not to broadcast energy consumed.
-    pub energy_consumed: Option<u128>,
 
     /// The `Reducer` enum defined by the `module_bindings`, which encodes which reducer ran and its arguments.
     pub reducer: R,
@@ -89,24 +78,12 @@ pub enum Status {
     /// The reducer terminated successfully, and its mutations were committed to the database's state.
     Committed,
 
-    /// The reducer encountered an error during its execution, and its mutations were discarded or rolled back.
+    /// The reducer returned or threw a handleable error and its mutations were rolled back.
     ///
     /// The `String` payload is the error message signaled by the reducer,
     /// either as an `Err` return, a `panic` message, or a thrown exception.
-    Failed(Box<str>),
+    Err(String),
 
-    /// The reducer was aborted due to insufficient energy, and its mutations were discarded or rolled back.
-    OutOfEnergy,
-}
-
-impl Status {
-    pub(crate) fn parse_status_and_update<M: SpacetimeModule>(
-        status: ws::UpdateStatus<ws::BsatnFormat>,
-    ) -> crate::Result<(Self, Option<M::DbUpdate>)> {
-        Ok(match status {
-            ws::UpdateStatus::Committed(update) => (Self::Committed, Some(M::DbUpdate::parse_update(update)?)),
-            ws::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),
-            ws::UpdateStatus::OutOfEnergy => (Self::OutOfEnergy, None),
-        })
-    }
+    /// The reducer was aborted due to an unexpected or exceptional circumstance.
+    Panic(InternalError),
 }

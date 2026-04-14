@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeletePkU64Args
     GENERATED_BODY()
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 N;
+    uint64 N = 0;
 
     FDeletePkU64Args() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UDeletePkU64Reducer : public UReducerBase
 
 public:
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 N;
+    uint64 N = 0;
 
 };
 

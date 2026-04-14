@@ -1,0 +1,179 @@
+---
+description: "Official SpacetimeDB/ClockworkLabs brand colors and styling"
+globs: "**/*.xaml, **/*.cs, **/*.css, **/*.tsx, **/*.jsx, **/*.scss, **/*.rs"
+alwaysApply: false
+---
+
+# SpacetimeDB Brand Styling
+
+When building UI for SpacetimeDB applications, use the **official ClockworkLabs brand colors** from spacetimedb.com.
+
+## Primary Brand Color
+
+The official SpacetimeDB brand uses **green (#4cf490)** as the primary accent — not purple/cyan.
+
+## Official Color Palette
+
+### Primary Accent — STDB Green
+```
+#4cf490   — Primary green (main accent)
+#2ef27d   — Green dark
+#1ff174   — Green darker
+#0dd35d   — Green darkest
+#6af6a3   — Green light
+#79f7ac   — Green lighter
+#a6fac8   — Green lightest
+
+Opacity variants:
+#4cf490bf — 75%
+#4cf49080 — 50%
+#4cf49040 — 25%
+#4cf49033 — 20%
+#4cf4901a — 10%
+```
+
+### Secondary Colors
+```
+#a880ff   — Purple
+#02befa   — Blue
+#fbdc8e   — Yellow (used for code highlighting)
+#ff80fb   — Pink
+#00ccb4   — Teal
+#ff9e9e   — Orange
+#ff4c4c   — Red (errors)
+#fc6897   — Red 2
+```
+
+### Backgrounds (Dark Theme)
+```
+#060606   — Darkest background (n8)
+#050505   — Near-black (n7)
+#0d0d0e   — Shade 2 (code backgrounds)
+#141416   — Shade 1
+#202126   — Border color (n6)
+#363840   — Surface/hover (n5)
+```
+
+### Text Colors
+```
+#f4f6fc   — White (headings, primary text)
+#e6e9f0   — N1 (bright text)
+#ced3e0   — N2 (strong text)
+#b6c0cf   — N3 (body text)
+#6f7987   — N4 (muted/secondary text)
+```
+
+## Usage Examples
+
+### MAUI/XAML
+```xml
+<Application.Resources>
+    <Color x:Key="StdbGreen">#4cf490</Color>
+    <Color x:Key="StdbPurple">#a880ff</Color>
+    <Color x:Key="SpaceBackground">#060606</Color>
+    <Color x:Key="TextPrimary">#f4f6fc</Color>
+    <Color x:Key="TextBody">#b6c0cf</Color>
+    <Color x:Key="BorderColor">#202126</Color>
+</Application.Resources>
+```
+
+### C# (Unity, WinForms, code-behind)
+```csharp
+using System.Drawing; // WinForms
+// or: using UnityEngine; // Unity
+
+public static class StdbColors
+{
+    // Primary
+    public static readonly Color Green = Color.FromArgb(0x4c, 0xf4, 0x90);
+    public static readonly Color Purple = Color.FromArgb(0xa8, 0x80, 0xff);
+    public static readonly Color Blue = Color.FromArgb(0x02, 0xbe, 0xfa);
+    
+    // Backgrounds
+    public static readonly Color BgDarkest = Color.FromArgb(0x06, 0x06, 0x06);
+    public static readonly Color BgSurface = Color.FromArgb(0x14, 0x14, 0x16);
+    public static readonly Color Border = Color.FromArgb(0x20, 0x21, 0x26);
+    
+    // Text
+    public static readonly Color TextPrimary = Color.FromArgb(0xf4, 0xf6, 0xfc);
+    public static readonly Color TextBody = Color.FromArgb(0xb6, 0xc0, 0xcf);
+    public static readonly Color TextMuted = Color.FromArgb(0x6f, 0x79, 0x87);
+    
+    // Status
+    public static readonly Color Error = Color.FromArgb(0xff, 0x4c, 0x4c);
+}
+```
+
+### CSS/Tailwind
+```css
+:root {
+  --stdb-green: #4cf490;
+  --stdb-purple: #a880ff;
+  --stdb-blue: #02befa;
+  --stdb-bg: #060606;
+  --stdb-text: #f4f6fc;
+  --stdb-text-body: #b6c0cf;
+  --stdb-border: #202126;
+}
+```
+
+### React/TypeScript
+```typescript
+const stdbColors = {
+  green: '#4cf490',
+  purple: '#a880ff',
+  blue: '#02befa',
+  background: '#060606',
+  text: '#f4f6fc',
+  textBody: '#b6c0cf',
+  border: '#202126',
+} as const;
+```
+
+### Rust/egui
+```rust
+use eframe::egui::Color32;
+
+// Primary
+const STDB_GREEN: Color32 = Color32::from_rgb(0x4c, 0xf4, 0x90);
+const STDB_PURPLE: Color32 = Color32::from_rgb(0xa8, 0x80, 0xff);
+const STDB_BLUE: Color32 = Color32::from_rgb(0x02, 0xbe, 0xfa);
+
+// Backgrounds
+const BG_DARKEST: Color32 = Color32::from_rgb(0x06, 0x06, 0x06);
+const BG_SURFACE: Color32 = Color32::from_rgb(0x14, 0x14, 0x16);
+const BG_HOVER: Color32 = Color32::from_rgb(0x36, 0x38, 0x40);
+const BORDER: Color32 = Color32::from_rgb(0x20, 0x21, 0x26);
+
+// Text
+const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xf4, 0xf6, 0xfc);
+const TEXT_BODY: Color32 = Color32::from_rgb(0xb6, 0xc0, 0xcf);
+const TEXT_MUTED: Color32 = Color32::from_rgb(0x6f, 0x79, 0x87);
+
+// Status
+const ERROR_RED: Color32 = Color32::from_rgb(0xff, 0x4c, 0x4c);
+```
+
+## Design Guidelines
+
+### Colors
+1. **Primary actions** use STDB Green (#4cf490)
+2. **Dark backgrounds** — use near-black (#060606) not pure black
+3. **Body text** — use #b6c0cf, NOT pure white
+4. **Headings** — use #f4f6fc (off-white)
+5. **Borders** — subtle, use #202126
+6. **Code blocks** — yellow text (#fbdc8e) on dark background (#0d0d0e)
+7. **Success states** — use STDB Green
+8. **Error states** — use #ff4c4c
+
+### UI Patterns
+1. **Visual hierarchy** — clear active states, hover effects, focus indicators
+2. **Responsive layout** — works on desktop (mobile optional)
+3. **Loading states** — show spinner/skeleton while data loads
+4. **Empty states** — helpful message when no data exists
+5. **Feedback** — visual feedback for user actions (button states, success/error indicators)
+6. **Glow effects** — subtle glow on interactive elements (buttons, inputs, hover)
+
+## Source
+
+These colors are from the official SpacetimeDB documentation site (spacetimedb.com).

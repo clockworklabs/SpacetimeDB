@@ -6,6 +6,7 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
+        Id = BSATN.IdRW.Read(reader);
         ByteField = BSATN.ByteFieldRW.Read(reader);
         UshortField = BSATN.UshortFieldRW.Read(reader);
         UintField = BSATN.UintFieldRW.Read(reader);
@@ -35,6 +36,7 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
+        BSATN.IdRW.Write(writer, Id);
         BSATN.ByteFieldRW.Write(writer, ByteField);
         BSATN.UshortFieldRW.Write(writer, UshortField);
         BSATN.UintFieldRW.Write(writer, UintField);
@@ -68,10 +70,11 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
     }
 
     public override string ToString() =>
-        $"PublicTable {{ ByteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ByteField)}, UshortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UshortField)}, UintField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UintField)}, UlongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UlongField)}, U128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U128Field)}, U256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U256Field)}, SbyteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(SbyteField)}, ShortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ShortField)}, IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, LongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(LongField)}, I128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I128Field)}, I256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I256Field)}, BoolField = {SpacetimeDB.BSATN.StringUtil.GenericToString(BoolField)}, FloatField = {SpacetimeDB.BSATN.StringUtil.GenericToString(FloatField)}, DoubleField = {SpacetimeDB.BSATN.StringUtil.GenericToString(DoubleField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)}, IdentityField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdentityField)}, ConnectionIdField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ConnectionIdField)}, CustomStructField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomStructField)}, CustomClassField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomClassField)}, CustomEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomEnumField)}, CustomTaggedEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomTaggedEnumField)}, ListField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ListField)}, NullableValueField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableValueField)}, NullableReferenceField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableReferenceField)} }}";
+        $"PublicTable {{ Id = {SpacetimeDB.BSATN.StringUtil.GenericToString(Id)}, ByteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ByteField)}, UshortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UshortField)}, UintField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UintField)}, UlongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UlongField)}, U128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U128Field)}, U256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U256Field)}, SbyteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(SbyteField)}, ShortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ShortField)}, IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, LongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(LongField)}, I128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I128Field)}, I256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I256Field)}, BoolField = {SpacetimeDB.BSATN.StringUtil.GenericToString(BoolField)}, FloatField = {SpacetimeDB.BSATN.StringUtil.GenericToString(FloatField)}, DoubleField = {SpacetimeDB.BSATN.StringUtil.GenericToString(DoubleField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)}, IdentityField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdentityField)}, ConnectionIdField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ConnectionIdField)}, CustomStructField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomStructField)}, CustomClassField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomClassField)}, CustomEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomEnumField)}, CustomTaggedEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomTaggedEnumField)}, ListField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ListField)}, NullableValueField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableValueField)}, NullableReferenceField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableReferenceField)} }}";
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<PublicTable>
     {
+        internal static readonly SpacetimeDB.BSATN.I32 IdRW = new();
         internal static readonly SpacetimeDB.BSATN.U8 ByteFieldRW = new();
         internal static readonly SpacetimeDB.BSATN.U16 UshortFieldRW = new();
         internal static readonly SpacetimeDB.BSATN.U32 UintFieldRW = new();
@@ -123,6 +126,7 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             registrar.RegisterType<PublicTable>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
+                    new("Id", IdRW.GetAlgebraicType(registrar)),
                     new("ByteField", ByteFieldRW.GetAlgebraicType(registrar)),
                     new("UshortField", UshortFieldRW.GetAlgebraicType(registrar)),
                     new("UintField", UintFieldRW.GetAlgebraicType(registrar)),
@@ -164,6 +168,7 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
 
     public override int GetHashCode()
     {
+        var ___hashId = Id.GetHashCode();
         var ___hashByteField = ByteField.GetHashCode();
         var ___hashUshortField = UshortField.GetHashCode();
         var ___hashUintField = UintField.GetHashCode();
@@ -202,7 +207,8 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
         var ___hashNullableValueField = NullableValueField.GetHashCode();
         var ___hashNullableReferenceField =
             NullableReferenceField == null ? 0 : NullableReferenceField.GetHashCode();
-        return ___hashByteField
+        return ___hashId
+            ^ ___hashByteField
             ^ ___hashUshortField
             ^ ___hashUintField
             ^ ___hashUlongField
@@ -232,6 +238,7 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
 #nullable enable
     public bool Equals(PublicTable that)
     {
+        var ___eqId = this.Id.Equals(that.Id);
         var ___eqByteField = this.ByteField.Equals(that.ByteField);
         var ___eqUshortField = this.UshortField.Equals(that.UshortField);
         var ___eqUintField = this.UintField.Equals(that.UintField);
@@ -283,12 +290,16 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
                 }
             }
         }
-        var ___eqNullableValueField = this.NullableValueField.Equals(that.NullableValueField);
+        var ___eqNullableValueField = System.Nullable.Equals(
+            this.NullableValueField,
+            that.NullableValueField
+        );
         var ___eqNullableReferenceField =
             this.NullableReferenceField == null
                 ? that.NullableReferenceField == null
                 : this.NullableReferenceField.Equals(that.NullableReferenceField);
-        return ___eqByteField
+        return ___eqId
+            && ___eqByteField
             && ___eqUshortField
             && ___eqUintField
             && ___eqUlongField

@@ -5,37 +5,12 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using RegressionTests.Shared;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
 const string HOST = "http://localhost:3000";
 const string DBNAME = "republish-test";
-
-DbConnection ConnectToDB()
-{
-    DbConnection? conn = null;
-    conn = DbConnection.Builder()
-        .WithUri(HOST)
-        .WithModuleName(DBNAME)
-        .OnConnect(OnConnected)
-        .OnConnectError((err) =>
-        {
-            throw err;
-        })
-        .OnDisconnect((conn, err) =>
-        {
-            if (err != null)
-            {
-                throw err;
-            }
-            else
-            {
-                throw new Exception("Unexpected disconnect");
-            }
-        })
-        .Build();
-    return conn;
-}
 
 uint waiting = 0;
 bool applied = false;
@@ -128,24 +103,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Info("Evaluation of ExampleData in republishing test completed.");
 }
 
-System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
-{
-    Log.Exception($"Unhandled exception: {sender} {args}");
-    Environment.Exit(1);
-};
-var db = ConnectToDB();
-Log.Info("Starting timer");
+RegressionTestHarness.RegisterUnhandledExceptionExitHandler();
+var db = RegressionTestHarness.ConnectToDatabase(HOST, DBNAME, OnConnected);
 const int TIMEOUT = 20; // seconds;
-var start = DateTime.Now;
-while (!applied || waiting > 0)
-{
-    db.FrameTick();
-    Thread.Sleep(100);
-    if ((DateTime.Now - start).Seconds > TIMEOUT)
-    {
-        Log.Error($"Timeout, all events should have elapsed in {TIMEOUT} seconds!");
-        Environment.Exit(1);
-    }
-}
+RegressionTestHarness.FrameTickUntilComplete(db, () => applied && waiting == 0, TIMEOUT);
 Log.Info("Success");
 Environment.Exit(0);

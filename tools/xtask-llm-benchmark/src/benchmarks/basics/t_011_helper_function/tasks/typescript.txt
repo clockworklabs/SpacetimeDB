@@ -1,0 +1,13 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates helper functions called from reducers.
+
+TABLE
+- result
+  - Fields:
+    - id: number (i32, primary key)
+    - sum: number (i32)
+
+HELPER FUNCTION
+- add(a: number, b: number): number - returns a + b
+
+REDUCERS
+- computeSum: given id:number, a:number, b:number, insert row with sum=add(a,b)

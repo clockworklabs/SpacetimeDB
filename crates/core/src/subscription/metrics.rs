@@ -1,5 +1,5 @@
 use spacetimedb_physical_plan::plan::PhysicalPlan;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::{schema::TableSchema, table_name::TableName};
 use std::sync::Arc;
 
 /// Scan strategy types for subscription queries
@@ -21,7 +21,7 @@ enum ScanStrategy {
 #[derive(Debug)]
 pub struct QueryMetrics {
     pub scan_type: String,
-    pub table_name: String,
+    pub table_name: TableName,
     pub unindexed_columns: String,
     pub rows_scanned: u64,
     pub execution_time_micros: u64,
@@ -70,7 +70,7 @@ fn extract_columns(
 
 /// Analyzes subscription scan strategy and creates QueryMetrics
 pub fn get_query_metrics(
-    table_name: &str,
+    table_name: TableName,
     plan: &PhysicalPlan,
     rows_scanned: u64,
     execution_time_micros: u64,
@@ -112,7 +112,7 @@ pub fn get_query_metrics(
 
     QueryMetrics {
         scan_type: strategy.to_string(),
-        table_name: table_name.to_string(),
+        table_name,
         unindexed_columns: columns.join(","),
         rows_scanned,
         execution_time_micros,

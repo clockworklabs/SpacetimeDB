@@ -46,4 +46,30 @@ namespace SpacetimeDB.Types
 
         public readonly PlayerHandle Player;
     }
+
+    public sealed class PlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, int> PlayerId { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public PlayerCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.Col<Player, int>(tableName, "player_id");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
+        }
+    }
+
+    public sealed class PlayerIxCols
+    {
+        public global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<Player, int> PlayerId { get; }
+
+        public PlayerIxCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.IxCol<Player, int>(tableName, "player_id");
+        }
+    }
 }

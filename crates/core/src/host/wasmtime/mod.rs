@@ -3,14 +3,14 @@ use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostA
 use super::wasm_common::{abi, ModuleCreationError};
 use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
-use crate::host::module_host::{Instance, ModuleRuntime};
 use crate::module_host_context::ModuleCreationContext;
+use crate::util::jobs::AllocatedJobCore;
 use anyhow::Context;
 use spacetimedb_paths::server::ServerDataDir;
 use std::borrow::Cow;
 use std::time::Duration;
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
-use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
+pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
 #[cfg(unix)]
 mod pooling_stack_creator;
@@ -106,13 +106,15 @@ impl WasmtimeRuntime {
 pub type Module = WasmModuleHostActor<WasmtimeModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
-impl ModuleRuntime for WasmtimeRuntime {
-    fn make_actor(
+impl WasmtimeRuntime {
+    pub fn make_actor(
         &self,
         mcc: ModuleCreationContext,
-    ) -> anyhow::Result<(super::module_host::Module, super::module_host::Instance)> {
+        program_bytes: &[u8],
+        core: AllocatedJobCore,
+    ) -> anyhow::Result<super::module_host::ModuleWithInstance> {
         let module =
-            wasmtime::Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+            wasmtime::Module::new(&self.engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -128,11 +130,12 @@ impl ModuleRuntime for WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        let (module, init_inst) = WasmModuleHostActor::new(mcc.into_limited(), module)?;
-        let module = super::module_host::Module::Wasm(module);
-        let init_inst = Instance::Wasm(Box::new(init_inst));
-
-        Ok((module, init_inst))
+        let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
+        Ok(super::module_host::ModuleWithInstance::Wasm {
+            module,
+            executor: core.spawn_async_executor(),
+            init_inst: Box::new(init_inst),
+        })
     }
 }
 

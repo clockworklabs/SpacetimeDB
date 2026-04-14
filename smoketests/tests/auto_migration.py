@@ -8,7 +8,7 @@ class AddTableAutoMigration(Smoketest):
 use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
 use PersonKind::*;
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
     kind: PersonKind,
@@ -28,7 +28,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     }
 }
 
-#[spacetimedb::table(name = point_mass)]
+#[spacetimedb::table(accessor = point_mass)]
 pub struct PointMass {
     mass: f64,
     /// This used to cause an error when check_compatible did not resolve types in a `ModuleDef`.
@@ -44,7 +44,7 @@ pub struct Vector2 {
 
     MODULE_CODE = MODULE_CODE_INIT + """
 
-#[spacetimedb::table(name = person_info)]
+#[spacetimedb::table(accessor = person_info)]
 pub struct PersonInfo {
     #[primary_key]
     id: u64,
@@ -68,7 +68,7 @@ fn kind_to_string(Student: PersonKind) -> &'static str {
         MODULE_CODE_INIT
         + """
 
-#[spacetimedb::table(name = person_info)]
+#[spacetimedb::table(accessor = person_info)]
 pub struct PersonInfo {
     #[primary_key]
     #[auto_inc]
@@ -96,7 +96,7 @@ fn kind_to_string(kind: PersonKind) -> &'static str {
     }
 }
 
-#[spacetimedb::table(name = book, public)]
+#[spacetimedb::table(accessor = book, public)]
 pub struct Book {
     isbn: String,
 }
@@ -120,7 +120,7 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
         logging.info("Initial publish complete")
 
         # Start a subscription before publishing the module, to test that the subscription remains intact after re-publishing.
-        sub = self.subscribe("select * from person", n=4)
+        sub = self.subscribe("select * from person", n=4, confirmed=False)
 
         # initial module code is already published by test framework
         self.call("add_person", "Robert", "Student")
@@ -165,7 +165,7 @@ class RejectTableChanges(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
 }
@@ -186,7 +186,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     MODULE_CODE_UPDATED = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
     age: u128,
@@ -221,7 +221,7 @@ class AddTableColumns(Smoketest):
 use spacetimedb::{log, ReducerContext, Table};
 
 #[derive(Debug)]
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
 }
@@ -243,7 +243,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 use spacetimedb::{log, ReducerContext, Table};
 
 #[derive(Debug)]
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     // Add indexes to verify they are handled correctly during migration,
     // issue #3441
@@ -277,7 +277,7 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
 use spacetimedb::{log, ReducerContext, Table};
 
 #[derive(Debug)]
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
     age: u16,
@@ -307,7 +307,10 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
         NUM_SUBSCRIBERS = 20
         subs = [None] * NUM_SUBSCRIBERS
         for i in range(NUM_SUBSCRIBERS):
-            subs[i]= self.subscribe("select * from person", n=5)
+            # We need unconfirmed reads for the updates to arrive properly.
+            # Otherwise, there's a race between module teardown in publish, vs subscribers
+            # getting the row deletion they expect.
+            subs[i]= self.subscribe("select * from person", n=5, confirmed=False)
 
         # Insert under initial schema
         self.call("add_person", "Robert")

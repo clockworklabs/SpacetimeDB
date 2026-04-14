@@ -1,3 +1,5 @@
+import { stdbLogger } from './logger';
+
 export async function resolveWS(): Promise<typeof WebSocket> {
   // Browser or Node >= 22 (or any env that exposes global WebSocket)
   if (typeof (globalThis as any).WebSocket !== 'undefined') {
@@ -14,7 +16,8 @@ export async function resolveWS(): Promise<typeof WebSocket> {
     const { WebSocket: UndiciWS } = await dynamicImport('undici');
     return UndiciWS as unknown as typeof WebSocket;
   } catch (err) {
-    console.warn(
+    stdbLogger(
+      'warn',
       '[spacetimedb-sdk] No global WebSocket found. ' +
         'On Node 18–21, please install `undici` (npm install undici) ' +
         'to enable WebSocket support.'
