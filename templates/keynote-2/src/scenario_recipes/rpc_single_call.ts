@@ -1,4 +1,4 @@
-﻿import type { RpcConnector } from '../core/connectors';
+import type { RpcConnector } from '../core/connectors';
 
 export async function rpc_single_call(
   conn: RpcConnector,

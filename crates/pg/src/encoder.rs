@@ -57,7 +57,7 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             _ => Type::ANYARRAY,
         },
         AlgebraicType::Product(_) => match format {
-            PsqlPrintFmt::Hex => Type::BYTEA_ARRAY,
+            PsqlPrintFmt::Hex => Type::BYTEA,
             PsqlPrintFmt::Timestamp => Type::TIMESTAMP,
             PsqlPrintFmt::Duration => Type::INTERVAL,
             PsqlPrintFmt::Uuid => Type::UUID,
