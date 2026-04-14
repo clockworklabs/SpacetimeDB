@@ -85,7 +85,7 @@ impl VersionBinDir {
     }
 
     fn link_to(&self, path: &Path) -> anyhow::Result<()> {
-        let rel_path = path.strip_prefix(self).unwrap_or(path);
+        let rel_path = path.strip_prefix(self.0.parent().unwrap()).unwrap_or(path);
         #[cfg(unix)]
         {
             // remove the link if it already exists

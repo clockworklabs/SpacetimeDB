@@ -13,3 +13,4 @@ chrono = { workspace = true, features=["clock"] }
 clap.workspace = true
 regex.workspace = true
 duct.workspace = true
+semver = "1"

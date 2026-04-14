@@ -4,7 +4,8 @@ use bytes::Bytes;
 use derive_more::Display;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
-use spacetimedb_sats::bsatn;
+use spacetimedb_sats::{bsatn, raw_identifier::RawIdentifier};
+use spacetimedb_schema::{identifier::Identifier, reducer_name::ReducerName};
 
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
@@ -25,7 +26,7 @@ pub struct ExecutionContext {
 #[derive(Clone)]
 pub struct ReducerContext {
     /// The name of the reducer.
-    pub name: String,
+    pub name: ReducerName,
     /// The [`Identity`] of the caller.
     pub caller_identity: Identity,
     /// The [`ConnectionId`] of the caller.
@@ -39,7 +40,7 @@ pub struct ReducerContext {
     pub arg_bsatn: Bytes,
 }
 
-impl From<&ReducerContext> for txdata::Inputs {
+impl From<ReducerContext> for txdata::Inputs {
     fn from(
         ReducerContext {
             name,
@@ -47,9 +48,9 @@ impl From<&ReducerContext> for txdata::Inputs {
             caller_connection_id,
             timestamp,
             arg_bsatn,
-        }: &ReducerContext,
+        }: ReducerContext,
     ) -> Self {
-        let reducer_name = Arc::new(Varchar::from_str_truncate(name));
+        let reducer_name = Arc::new(Varchar::from_str_truncate(&name));
         let cap = arg_bsatn.len()
         /* caller_identity */
         + 32
@@ -58,10 +59,10 @@ impl From<&ReducerContext> for txdata::Inputs {
         /* timestamp */
         + 8;
         let mut buf = Vec::with_capacity(cap);
-        bsatn::to_writer(&mut buf, caller_identity).unwrap();
-        bsatn::to_writer(&mut buf, caller_connection_id).unwrap();
-        bsatn::to_writer(&mut buf, timestamp).unwrap();
-        buf.extend_from_slice(arg_bsatn);
+        bsatn::to_writer(&mut buf, &caller_identity).unwrap();
+        bsatn::to_writer(&mut buf, &caller_connection_id).unwrap();
+        bsatn::to_writer(&mut buf, &timestamp).unwrap();
+        buf.extend_from_slice(&arg_bsatn);
 
         txdata::Inputs {
             reducer_name,
@@ -79,8 +80,11 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
         let caller_connection_id = bsatn::from_reader(args)?;
         let timestamp = bsatn::from_reader(args)?;
 
+        let name = RawIdentifier::new(&**inputs.reducer_name);
+        let name = ReducerName::new(Identifier::new_assume_valid(name));
+
         Ok(Self {
-            name: inputs.reducer_name.to_string(),
+            name,
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -105,6 +109,19 @@ pub enum Workload {
 }
 
 impl Workload {
+    /// Returns a reducer workload with no arguments to the reducer
+    /// and the current timestamp.
+    pub fn reducer_no_args(name: ReducerName, id: Identity, conn_id: ConnectionId) -> Self {
+        Self::Reducer(ReducerContext {
+            name,
+            caller_identity: id,
+            caller_connection_id: conn_id,
+            timestamp: Timestamp::now(),
+            arg_bsatn: Bytes::new(),
+        })
+    }
+
+    /// Returns the workload's type/kind, without any of the data.
     pub fn workload_type(&self) -> WorkloadType {
         match self {
             #[cfg(any(test, feature = "test"))]
@@ -123,20 +140,17 @@ impl Workload {
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
 /// It can also be an internal operation that is not associated with a reducer or sql request.
-#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, strum::AsRefStr, enum_map::Enum)]
+#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, Default, strum::AsRefStr, enum_map::Enum)]
 pub enum WorkloadType {
     Reducer,
     Sql,
     Subscribe,
     Unsubscribe,
     Update,
+    #[default]
     Internal,
-}
-
-impl Default for WorkloadType {
-    fn default() -> Self {
-        Self::Internal
-    }
+    View,
+    Procedure,
 }
 
 impl ExecutionContext {
@@ -171,14 +185,8 @@ impl ExecutionContext {
 
     /// If this is a reducer context, returns the name of the reducer.
     #[inline]
-    pub fn reducer_name(&self) -> &str {
-        self.reducer.as_ref().map(|ctx| ctx.name.as_str()).unwrap_or_default()
-    }
-
-    /// If this is a reducer context, returns the name of the reducer.
-    #[inline]
-    pub fn into_reducer_name(self) -> String {
-        self.reducer.map(|ctx| ctx.name).unwrap_or_default()
+    pub fn into_reducer_name(self) -> Option<ReducerName> {
+        self.reducer.map(|ctx| ctx.name)
     }
 
     /// If this is a reducer context, returns the full reducer metadata.

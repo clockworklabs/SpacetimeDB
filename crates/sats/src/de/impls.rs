@@ -3,12 +3,13 @@ use super::{
     ProductKind, ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
 };
 use crate::{
-    de::{array_visit, ArrayAccess, ArrayVisitor, GrowingVec},
+    de::{array_validate, array_visit, ArrayAccess, ArrayVisitor, BasicArrayVisitor, GrowingVec},
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType, ProductTypeElement, ProductValue, SumType,
     SumValue, WithTypespace, F32, F64,
 };
 use crate::{i256, u256};
-use core::{marker::PhantomData, ops::Bound};
+use core::{iter, marker::PhantomData, ops::Bound};
+use lean_string::LeanString;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList};
 use std::{borrow::Cow, rc::Rc, sync::Arc};
@@ -29,9 +30,16 @@ use std::{borrow::Cow, rc::Rc, sync::Arc};
 /// ```
 #[macro_export]
 macro_rules! impl_deserialize {
-    ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, $de:ident => $body:expr) => {
+    (
+        [$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty,
+        $de:ident => $body:expr
+        $(, $validate_de:ident => $validate:expr)?
+    ) => {
         impl<'de, $($generics)*> $crate::de::Deserialize<'de> for $typ {
             fn deserialize<D: $crate::de::Deserializer<'de>>($de: D) -> Result<Self, D::Error> { $body }
+            $(
+                fn validate<D: $crate::de::Deserializer<'de>>($validate_de: D) -> Result<(), D::Error> { $validate }
+            )?
         }
     };
 }
@@ -52,30 +60,140 @@ impl_prim! {
     (f32, deserialize_f32) (f64, deserialize_f64)
 }
 
-impl_deserialize!([] (), de => de.deserialize_product(UnitVisitor));
+struct TupleVisitor<A>(PhantomData<A>);
+#[derive(Copy, Clone)]
+struct TupleNameVisitorMax(usize);
 
-/// The `UnitVisitor` looks for a unit product.
-/// That is, it consumes nothing from the input.
-struct UnitVisitor;
-impl<'de> ProductVisitor<'de> for UnitVisitor {
-    type Output = ();
+impl FieldNameVisitor<'_> for TupleNameVisitorMax {
+    // The index of the field name.
+    type Output = usize;
 
-    fn product_name(&self) -> Option<&str> {
-        None
+    fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>> {
+        iter::repeat_n(None, self.0)
     }
 
-    fn product_len(&self) -> usize {
-        0
+    fn kind(&self) -> ProductKind {
+        ProductKind::Normal
     }
 
-    fn visit_seq_product<A: SeqProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
-        Ok(())
+    fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+        let err = || Error::unknown_field_name(name, &self);
+        // Convert `name` to an index.
+        let Ok(index) = name.parse() else {
+            return Err(err());
+        };
+        // Confirm that the index exists or error.
+        if index < self.0 {
+            Ok(index)
+        } else {
+            Err(err())
+        }
     }
 
-    fn visit_named_product<A: super::NamedProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
-        Ok(())
+    fn visit_seq(self, index: usize) -> Self::Output {
+        // Assert that the index exists.
+        assert!(index < self.0);
+        index
     }
 }
+
+macro_rules! impl_deserialize_tuple {
+    ($($ty_name:ident => $const_val:literal),*) => {
+        impl<'de, $($ty_name: Deserialize<'de>),*> ProductVisitor<'de> for TupleVisitor<($($ty_name,)*)> {
+            type Output = ($($ty_name,)*);
+            fn product_name(&self) -> Option<&str> { None }
+            fn product_len(&self) -> usize { crate::count!($($ty_name)*) }
+            fn visit_seq_product<A: SeqProductAccess<'de>>(self, mut _prod: A) -> Result<Self::Output, A::Error> {
+                $(
+                    #[allow(non_snake_case)]
+                    let $ty_name = _prod
+                        .next_element()?
+                        .ok_or_else(|| Error::invalid_product_length($const_val, &self))?;
+                )*
+
+                Ok(($($ty_name,)*))
+            }
+            fn validate_seq_product<A: SeqProductAccess<'de>>(self, mut _prod: A) -> Result<(), A::Error> {
+                $(
+                    #[allow(non_snake_case)]
+                    _prod
+                        .validate_next_element_seed(PhantomData::<$ty_name>)?
+                        .ok_or_else(|| Error::invalid_product_length($const_val, &self))?;
+                )*
+
+                Ok(())
+            }
+            fn visit_named_product<A: super::NamedProductAccess<'de>>(self, mut prod: A) -> Result<Self::Output, A::Error> {
+                $(
+                    #[allow(non_snake_case)]
+                    let mut $ty_name = None;
+                )*
+
+                let visit = TupleNameVisitorMax(self.product_len());
+                while let Some(index) = prod.get_field_ident(visit)? {
+                    match index {
+                        $($const_val => {
+                            if $ty_name.is_some() {
+                                return Err(A::Error::duplicate_field($const_val, None, &self))
+                            }
+                            $ty_name = Some(prod.get_field_value()?);
+                        })*
+                        index => return Err(Error::invalid_product_length(index, &self)),
+                    }
+                }
+                Ok(($(
+                    $ty_name.ok_or_else(|| A::Error::missing_field($const_val, None, &self))?,
+                )*))
+            }
+            fn validate_named_product<A: super::NamedProductAccess<'de>>(self, mut prod: A) -> Result<(), A::Error> {
+                $(
+                    #[allow(non_snake_case)]
+                    let mut $ty_name = false;
+                )*
+
+                let visit = TupleNameVisitorMax(self.product_len());
+                while let Some(index) = prod.get_field_ident(visit)? {
+                    match index {
+                        $($const_val => {
+                            if $ty_name {
+                                return Err(A::Error::duplicate_field($const_val, None, &self))
+                            }
+                            prod.validate_field_value::<$ty_name>()?;
+                            $ty_name = true;
+                        })*
+                        index => return Err(Error::invalid_product_length(index, &self)),
+                    }
+                }
+
+                $(
+                    if !$ty_name {
+                        return Err(A::Error::missing_field($const_val, None, &self))
+                    }
+                )*
+
+                Ok(())
+            }
+        }
+
+        impl_deserialize!([$($ty_name: Deserialize<'de>),*] ($($ty_name,)*), de => {
+            de.deserialize_product(TupleVisitor::<($($ty_name,)*)>(PhantomData))
+        });
+    };
+}
+
+impl_deserialize_tuple!();
+impl_deserialize_tuple!(T0 => 0);
+impl_deserialize_tuple!(T0 => 0, T1 => 1);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8, T9 => 9);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8, T9 => 9, T10 => 10);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8, T9 => 9, T10 => 10, T11 => 11);
 
 impl<'de> Deserialize<'de> for u8 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -95,16 +213,51 @@ impl<'de> Deserialize<'de> for u8 {
 
 impl_deserialize!([] F32, de => f32::deserialize(de).map(Into::into));
 impl_deserialize!([] F64, de => f64::deserialize(de).map(Into::into));
-impl_deserialize!([] String, de => de.deserialize_str(OwnedSliceVisitor));
-impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
-impl_deserialize!([T: Deserialize<'de>, const N: usize] SmallVec<[T; N]>, de => {
-    de.deserialize_array(BasicSmallVecVisitor)
-});
-impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
-impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
-impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
-impl_deserialize!([T: Deserialize<'de>] Rc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
-impl_deserialize!([T: Deserialize<'de>] Arc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
+impl_deserialize!(
+    [] String,
+    de => de.deserialize_str(OwnedSliceVisitor),
+    de => <&str>::validate(de)
+);
+impl_deserialize!(
+    [] LeanString,
+    de => <Cow<'_, str>>::deserialize(de).map(|s| (&*s).into()),
+    de => <&str>::validate(de)
+);
+impl_deserialize!(
+    [T: Deserialize<'de>] Vec<T>,
+    de => T::__deserialize_vec(de),
+    de => de.validate_array_seed(BasicVecVisitor, PhantomData::<T>)
+);
+impl_deserialize!(
+    [T: Deserialize<'de>, const N: usize] SmallVec<[T; N]>,
+    de => de.deserialize_array(BasicSmallVecVisitor),
+    de => de.validate_array_seed(BasicVecVisitor, PhantomData::<T>)
+);
+impl_deserialize!(
+    [T: Deserialize<'de>, const N: usize] [T; N],
+    de => T::__deserialize_array(de),
+    de => de.validate_array_seed(BasicArrayVisitor::<N>, PhantomData::<T>)
+);
+impl_deserialize!(
+    [] Box<str>,
+    de => String::deserialize(de).map(|s| s.into_boxed_str()),
+    de => String::validate(de)
+);
+impl_deserialize!(
+    [T: Deserialize<'de>] Box<[T]>,
+    de => Vec::deserialize(de).map(|s| s.into_boxed_slice()),
+    de => Vec::<T>::validate(de)
+);
+impl_deserialize!(
+    [T: Deserialize<'de>] Rc<[T]>,
+    de => Vec::deserialize(de).map(|s| s.into()),
+    de => Vec::<T>::validate(de)
+);
+impl_deserialize!(
+    [T: Deserialize<'de>] Arc<[T]>,
+    de => Vec::deserialize(de).map(|s| s.into()),
+    de => Vec::<T>::validate(de)
+);
 
 /// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;
@@ -158,8 +311,16 @@ impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for BorrowedSliceVisit
     }
 }
 
-impl_deserialize!([] Cow<'de, str>, de => de.deserialize_str(CowSliceVisitor));
-impl_deserialize!([] Cow<'de, [u8]>, de => de.deserialize_bytes(CowSliceVisitor));
+impl_deserialize!(
+    [] Cow<'de, str>,
+    de => de.deserialize_str(CowSliceVisitor),
+    de => <&str>::validate(de)
+);
+impl_deserialize!(
+    [] Cow<'de, [u8]>,
+    de => de.deserialize_bytes(CowSliceVisitor),
+    de => <&[u8]>::validate(de)
+);
 
 /// The visitor works with either owned or borrowed versions to produce `Cow<'de, T>`.
 struct CowSliceVisitor;
@@ -180,7 +341,11 @@ impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for CowSliceVisitor {
     }
 }
 
-impl_deserialize!([T: Deserialize<'de>] Box<T>, de => T::deserialize(de).map(Box::new));
+impl_deserialize!(
+    [T: Deserialize<'de>] Box<T>,
+    de => T::deserialize(de).map(Box::new),
+    de => T::validate(de)
+);
 impl_deserialize!([T: Deserialize<'de>] Option<T>, de => de.deserialize_sum(OptionVisitor(PhantomData)));
 
 /// The visitor deserializes an `Option<T>`.
@@ -208,6 +373,18 @@ impl<'de, T: Deserialize<'de>> SumVisitor<'de> for OptionVisitor<T> {
             data.deserialize::<()>()?;
             None
         })
+    }
+
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error> {
+        // Determine the variant.
+        let (some, data) = data.variant(self)?;
+
+        // Validate contents for it.
+        if some {
+            data.validate::<T>()
+        } else {
+            data.validate::<()>()
+        }
     }
 }
 
@@ -266,6 +443,14 @@ impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> SumVisitor<'de> for ResultVi
             ResultVariant::Err => Err(data.deserialize()?),
         })
     }
+
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error> {
+        let (variant, data) = data.variant(self)?;
+        match variant {
+            ResultVariant::Ok => data.validate::<T>(),
+            ResultVariant::Err => data.validate::<E>(),
+        }
+    }
 }
 
 impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor<'de> for ResultVisitor<T, U> {
@@ -291,6 +476,8 @@ impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor<'de> for Resu
         }
     }
 }
+
+impl_deserialize!([T: Deserialize<'de>] Bound<T>, de => WithBound(PhantomData).deserialize(de));
 
 /// The visitor deserializes a `Bound<T>`.
 #[derive(Clone, Copy)]
@@ -331,6 +518,18 @@ impl<'de, S: Copy + DeserializeSeed<'de>> SumVisitor<'de> for BoundVisitor<S> {
             BoundVariant::Included => data.deserialize_seed(this).map(Bound::Included),
             BoundVariant::Excluded => data.deserialize_seed(this).map(Bound::Excluded),
             BoundVariant::Unbounded => data.deserialize::<()>().map(|_| Bound::Unbounded),
+        }
+    }
+
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error> {
+        // Determine the variant.
+        let this = self.0;
+        let (variant, data) = data.variant(self)?;
+
+        // Validate contents for it.
+        match variant {
+            BoundVariant::Included | BoundVariant::Excluded => data.validate_seed(this),
+            BoundVariant::Unbounded => data.validate::<()>(),
         }
     }
 }
@@ -389,6 +588,31 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::String => <Box<str>>::deserialize(de).map(Into::into),
         }
     }
+
+    fn validate<D: Deserializer<'de>>(self, de: D) -> Result<(), D::Error> {
+        match self.ty() {
+            AlgebraicType::Ref(r) => self.resolve(*r).validate(de),
+            AlgebraicType::Sum(sum) => self.with(sum).validate(de),
+            AlgebraicType::Product(prod) => self.with(prod).validate(de),
+            AlgebraicType::Array(ty) => self.with(ty).validate(de),
+            AlgebraicType::Bool => bool::validate(de),
+            AlgebraicType::I8 => i8::validate(de),
+            AlgebraicType::U8 => u8::validate(de),
+            AlgebraicType::I16 => i16::validate(de),
+            AlgebraicType::U16 => u16::validate(de),
+            AlgebraicType::I32 => i32::validate(de),
+            AlgebraicType::U32 => u32::validate(de),
+            AlgebraicType::I64 => i64::validate(de),
+            AlgebraicType::U64 => u64::validate(de),
+            AlgebraicType::I128 => i128::validate(de),
+            AlgebraicType::U128 => u128::validate(de),
+            AlgebraicType::I256 => i256::validate(de),
+            AlgebraicType::U256 => u256::validate(de),
+            AlgebraicType::F32 => f32::validate(de),
+            AlgebraicType::F64 => f64::validate(de),
+            AlgebraicType::String => <Box<str>>::validate(de),
+        }
+    }
 }
 
 impl<'de> DeserializeSeed<'de> for WithTypespace<'_, SumType> {
@@ -396,6 +620,10 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, SumType> {
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         deserializer.deserialize_sum(self)
+    }
+
+    fn validate<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.validate_sum(self)
     }
 }
 
@@ -418,6 +646,14 @@ impl<'de> SumVisitor<'de> for WithTypespace<'_, SumType> {
         let value = Box::new(data.deserialize_seed(variant_ty)?);
         Ok(SumValue { tag, value })
     }
+
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error> {
+        let (tag, data) = data.variant(self)?;
+        // Find the variant type by `tag`.
+        let variant_ty = self.map(|ty| &ty.variants[tag as usize].algebraic_type);
+
+        data.validate_seed(variant_ty)
+    }
 }
 
 impl VariantVisitor<'_> for WithTypespace<'_, SumType> {
@@ -425,7 +661,7 @@ impl VariantVisitor<'_> for WithTypespace<'_, SumType> {
 
     fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
         // Provide the names known from the `SumType`.
-        self.ty().variants.iter().filter_map(|v| v.name())
+        self.ty().variants.iter().filter_map(|v| v.name().map(|n| &**n))
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -455,6 +691,10 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ProductType> {
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         deserializer.deserialize_product(self.map(|pt| &*pt.elements))
     }
+
+    fn validate<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.validate_product(self.map(|pt| &*pt.elements))
+    }
 }
 
 impl<'de> DeserializeSeed<'de> for WithTypespace<'_, [ProductTypeElement]> {
@@ -462,6 +702,10 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, [ProductTypeElement]> {
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         deserializer.deserialize_product(self)
+    }
+
+    fn validate<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.validate_product(self)
     }
 }
 
@@ -479,8 +723,16 @@ impl<'de> ProductVisitor<'de> for WithTypespace<'_, [ProductTypeElement]> {
         visit_seq_product(self, &self, tup)
     }
 
+    fn validate_seq_product<A: SeqProductAccess<'de>>(self, prod: A) -> Result<(), A::Error> {
+        validate_seq_product(self, &self, prod)
+    }
+
     fn visit_named_product<A: super::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
         visit_named_product(self, &self, tup)
+    }
+
+    fn validate_named_product<A: super::NamedProductAccess<'de>>(self, prod: A) -> Result<(), A::Error> {
+        validate_named_product(self, &self, prod)
     }
 }
 
@@ -540,37 +792,46 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
             };
         }
     }
+
+    fn validate<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        /// Validate a vector for the appropriate `ArrayValue` variant.
+        fn val_array<'de, D: Deserializer<'de>, T: Deserialize<'de>>(de: D) -> Result<(), D::Error> {
+            de.validate_array_seed(BasicVecVisitor, PhantomData::<T>)
+        }
+
+        let mut ty = &*self.ty().elem_ty;
+
+        // Loop, resolving `Ref`s, until we reach a non-`Ref` type.
+        loop {
+            break match ty {
+                AlgebraicType::Ref(r) => {
+                    // The only arm that will loop.
+                    ty = self.resolve(*r).ty();
+                    continue;
+                }
+                AlgebraicType::Sum(ty) => deserializer.validate_array_seed(BasicVecVisitor, self.with(ty)),
+                AlgebraicType::Product(ty) => deserializer.validate_array_seed(BasicVecVisitor, self.with(ty)),
+                AlgebraicType::Array(ty) => deserializer.validate_array_seed(BasicVecVisitor, self.with(ty)),
+                &AlgebraicType::Bool => val_array::<_, bool>(deserializer),
+                &AlgebraicType::I8 => val_array::<_, i8>(deserializer),
+                &AlgebraicType::U8 => val_array::<_, u8>(deserializer),
+                &AlgebraicType::I16 => val_array::<_, i16>(deserializer),
+                &AlgebraicType::U16 => val_array::<_, u16>(deserializer),
+                &AlgebraicType::I32 => val_array::<_, i32>(deserializer),
+                &AlgebraicType::U32 => val_array::<_, u32>(deserializer),
+                &AlgebraicType::I64 => val_array::<_, i64>(deserializer),
+                &AlgebraicType::U64 => val_array::<_, u64>(deserializer),
+                &AlgebraicType::I128 => val_array::<_, i128>(deserializer),
+                &AlgebraicType::U128 => val_array::<_, u128>(deserializer),
+                &AlgebraicType::I256 => val_array::<_, i256>(deserializer),
+                &AlgebraicType::U256 => val_array::<_, u256>(deserializer),
+                &AlgebraicType::F32 => val_array::<_, f32>(deserializer),
+                &AlgebraicType::F64 => val_array::<_, f64>(deserializer),
+                &AlgebraicType::String => val_array::<_, String>(deserializer),
+            };
+        }
+    }
 }
-
-// impl<'de> DeserializeSeed<'de> for &ReducerDef {
-//     type Output = ProductValue;
-
-//     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
-//         deserializer.deserialize_product(self)
-//     }
-// }
-
-// impl<'de> ProductVisitor<'de> for &ReducerDef {
-//     type Output = ProductValue;
-
-//     fn product_name(&self) -> Option<&str> {
-//         self.name.as_deref()
-//     }
-//     fn product_len(&self) -> usize {
-//         self.args.len()
-//     }
-//     fn product_kind(&self) -> ProductKind {
-//         ProductKind::ReducerArgs
-//     }
-
-//     fn visit_seq_product<A: super::SeqProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-//         visit_seq_product(&self.args, &self, tup)
-//     }
-
-//     fn visit_named_product<A: super::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-//         visit_named_product(&self.args, &self, tup)
-//     }
-// }
 
 /// Deserialize, provided the fields' types, a product value with unnamed fields.
 pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
@@ -584,6 +845,19 @@ pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
     });
     let elements = elements.collect::<Result<_, _>>()?;
     Ok(ProductValue { elements })
+}
+
+/// Validate, provided the fields' types, a product value with unnamed fields.
+pub fn validate_seq_product<'de, A: SeqProductAccess<'de>>(
+    elems: WithTypespace<[ProductTypeElement]>,
+    visitor: &impl ProductVisitor<'de>,
+    mut tup: A,
+) -> Result<(), A::Error> {
+    for (i, el) in elems.ty().iter().enumerate() {
+        tup.validate_next_element_seed(elems.with(&el.algebraic_type))?
+            .ok_or_else(|| Error::invalid_product_length(i, visitor))?;
+    }
+    Ok(())
 }
 
 /// Deserialize, provided the fields' types, a product value with named fields.
@@ -600,12 +874,12 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     // This is worst case quadratic in complexity
     // as fields can be specified out of order (value side) compared to `elems` (type side).
     for _ in 0..elems.len() {
-        // Deserialize a field name, match against the element types, .
+        // Deserialize a field name, match against the element types.
         let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
             let missing = elements.iter().position(|field| field.is_none()).unwrap();
-            let field_name = elems[missing].name();
+            let field_name = elems[missing].name().map(|n| &**n);
             Error::missing_field(missing, field_name, visitor)
         })?;
 
@@ -614,7 +888,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
         // By index we can select which element to deserialize a value for.
         let slot = &mut elements[index];
         if slot.is_some() {
-            return Err(Error::duplicate_field(index, element.name(), visitor));
+            return Err(Error::duplicate_field(index, element.name().map(|n| &**n), visitor));
         }
 
         // Deserialize the value for this field's type.
@@ -631,6 +905,46 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     Ok(ProductValue { elements })
 }
 
+/// Validate, provided the fields' types, a product value with named fields.
+pub fn validate_named_product<'de, A: super::NamedProductAccess<'de>>(
+    elems_tys: WithTypespace<[ProductTypeElement]>,
+    visitor: &impl ProductVisitor<'de>,
+    mut tup: A,
+) -> Result<(), A::Error> {
+    let elems = elems_tys.ty();
+    // TODO(perf): replace with bitset.
+    let mut elements = vec![false; elems.len()];
+    let kind = visitor.product_kind();
+
+    // Deserialize a product value corresponding to each product type field.
+    // This is worst case quadratic in complexity
+    // as fields can be specified out of order (value side) compared to `elems` (type side).
+    for _ in 0..elems.len() {
+        // Deserialize a field name, match against the element types.
+        let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
+            // Couldn't deserialize a field name.
+            // Find the first field name we haven't filled an element for.
+            let missing = elements.iter().position(|&field| !field).unwrap();
+            let field_name = elems[missing].name().map(|n| &**n);
+            Error::missing_field(missing, field_name, visitor)
+        })?;
+
+        let element = &elems[index];
+
+        // By index we can select which element to deserialize a value for.
+        let slot = &mut elements[index];
+        if *slot {
+            return Err(Error::duplicate_field(index, element.name().map(|n| &**n), visitor));
+        }
+
+        // Deserialize the value for this field's type.
+        tup.validate_field_value_seed(elems_tys.with(&element.algebraic_type))?;
+        *slot = true;
+    }
+
+    Ok(())
+}
+
 /// A visitor for extracting indices of field names in the elements of a [`ProductType`].
 struct TupleNameVisitor<'a> {
     /// The elements of a product type, in order.
@@ -644,7 +958,7 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     type Output = usize;
 
     fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>> {
-        self.elems.iter().map(|f| f.name())
+        self.elems.iter().map(|f| f.name().map(|n| &**n))
     }
 
     fn kind(&self) -> ProductKind {
@@ -659,16 +973,19 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
             .ok_or_else(|| Error::unknown_field_name(name, &self))
     }
 
-    fn visit_seq<E: Error>(self, index: usize, name: &str) -> Result<Self::Output, E> {
+    fn visit_seq(self, index: usize) -> Self::Output {
+        // Confirm that the index exists.
         self.elems
             .get(index)
-            .ok_or_else(|| Error::unknown_field_name(name, &self))?;
+            .expect("`index` should exist when `visit_seq` is called");
 
-        Ok(index)
+        index
     }
 }
 
+impl_deserialize!([] spacetimedb_primitives::ArgId, de => u64::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::ViewId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::ConstraintId, de => u32::deserialize(de).map(Self));
@@ -676,8 +993,8 @@ impl_deserialize!([] spacetimedb_primitives::ColId, de => u16::deserialize(de).m
 impl_deserialize!([] spacetimedb_primitives::ScheduleId, de => u32::deserialize(de).map(Self));
 
 impl GrowingVec<ColId> for ColList {
-    fn with_capacity(cap: usize) -> Self {
-        Self::with_capacity(cap as u16)
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E> {
+        Ok(Self::with_capacity(cap as u16))
     }
     fn push(&mut self, elem: ColId) {
         self.push(elem);
@@ -691,16 +1008,65 @@ impl_deserialize!([] spacetimedb_primitives::ColList, de => {
         fn visit<A: ArrayAccess<'de, Element = ColId>>(self, vec: A) -> Result<Self::Output, A::Error> {
             array_visit(vec)
         }
+
+        fn validate<A: ArrayAccess<'de, Element = ColId>>(self, vec: A) -> Result<(), A::Error> {
+            array_validate(vec)
+        }
     }
     de.deserialize_array(ColListVisitor)
 });
-impl_deserialize!([] spacetimedb_primitives::ColSet, de => ColList::deserialize(de).map(Into::into));
+impl_deserialize!(
+    [] spacetimedb_primitives::ColSet,
+    de => ColList::deserialize(de).map(Into::into),
+    de => ColList::validate(de)
+);
 
 #[cfg(feature = "blake3")]
 impl_deserialize!([] blake3::Hash, de => <[u8; blake3::OUT_LEN]>::deserialize(de).map(blake3::Hash::from_bytes));
 
 // TODO(perf): integrate Bytes with Deserializer to reduce copying
-impl_deserialize!([] bytes::Bytes, de => <Vec<u8>>::deserialize(de).map(Into::into));
+impl_deserialize!(
+    [] bytes::Bytes,
+    de => <Vec<u8>>::deserialize(de).map(Into::into),
+    de => <&[u8]>::validate(de)
+);
 
 #[cfg(feature = "bytestring")]
-impl_deserialize!([] bytestring::ByteString, de => <String>::deserialize(de).map(Into::into));
+impl_deserialize!(
+    [] bytestring::ByteString,
+    de => <String>::deserialize(de).map(Into::into),
+    de => <&str>::validate(de)
+);
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        algebraic_value::{de::ValueDeserializer, ser::value_serialize},
+        bsatn,
+        serde::SerdeWrapper,
+        Deserialize, Serialize,
+    };
+    use core::fmt::Debug;
+
+    #[test]
+    fn roundtrip_tuples_in_different_data_formats() {
+        fn test<T: Serialize + for<'de> Deserialize<'de> + Eq + Debug>(x: T) {
+            let bsatn = bsatn::to_vec(&x).unwrap();
+            let y: T = bsatn::from_slice(&bsatn).unwrap();
+            assert_eq!(x, y);
+
+            let val = value_serialize(&x);
+            let y = T::deserialize(ValueDeserializer::new(val)).unwrap();
+            assert_eq!(x, y);
+
+            let json = serde_json::to_string(SerdeWrapper::from_ref(&x)).unwrap();
+            let SerdeWrapper(y) = serde_json::from_str::<SerdeWrapper<T>>(&json).unwrap();
+            assert_eq!(x, y);
+        }
+
+        test(());
+        test((true,));
+        test((1337u64, false));
+        test(((7331u64, false), 42u32, 24u8));
+    }
+}

@@ -10,9 +10,9 @@ class CreateProject(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaises(Exception):
-                spacetime("init")
+                spacetime("init", "--non-interactive", "test-project")
             with self.assertRaises(Exception):
-                spacetime("init", tmpdir)
-            spacetime("init", "--lang=rust", tmpdir)
+                spacetime("init", "--non-interactive", "--project-path", tmpdir, "test-project")
+            spacetime("init", "--non-interactive", "--lang=rust", "--project-path", tmpdir, "test-project")
             with self.assertRaises(Exception):
-                spacetime("init", "--lang=rust", tmpdir)
+                spacetime("init", "--non-interactive", "--lang=rust", "--project-path", tmpdir, "test-project")

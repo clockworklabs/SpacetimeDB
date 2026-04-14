@@ -1,0 +1,87 @@
+# Frontend Project Setup
+
+## Core Principle
+
+**Set up styling infrastructure BEFORE writing styled components.**
+
+If your components use classes, utilities, or syntax from a CSS framework, that framework must be installed and configured first. Unstyled HTML with framework classes is broken code.
+
+## Setup Order
+
+1. Create project structure (`package.json`, config files)
+2. Install ALL dependencies (including styling)
+3. Configure styling framework
+4. Verify dev server runs without errors
+5. THEN write components
+
+## Styling Framework Quick Reference
+
+### Tailwind CSS (Vite/React)
+
+```bash
+npm install -D tailwindcss@3 postcss autoprefixer
+```
+
+**tailwind.config.js:**
+```js
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: { extend: {} },
+  plugins: [],
+}
+```
+
+**postcss.config.js:**
+```js
+export default {
+  plugins: { tailwindcss: {}, autoprefixer: {} },
+}
+```
+
+**src/index.css (top of file):**
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+
+### Plain CSS (no framework)
+
+No additional setup needed. Just import CSS files in components.
+
+### CSS Modules (Vite)
+
+Built into Vite. Name files `*.module.css` and import as objects:
+```tsx
+import styles from './Component.module.css';
+<div className={styles.container} />
+```
+
+### styled-components / Emotion
+
+```bash
+npm install styled-components
+# or
+npm install @emotion/react @emotion/styled
+```
+
+No config files needed—just import and use.
+
+## Common Mistakes
+
+| Wrong | Right |
+|-------|-------|
+| Write Tailwind classes without installing Tailwind | Install and configure Tailwind first |
+| Use `className="flex bg-gray-900"` without Tailwind | These are Tailwind utilities—they need Tailwind |
+| Assume CSS frameworks are built into Vite/React | They are not—explicit installation required |
+| Skip `postcss.config.js` for Tailwind | Tailwind requires PostCSS configuration |
+| Use `tailwindcss@4` with v3-style config | v4 uses `@tailwindcss/postcss`—use v3 for compatibility |
+
+## Verification Checklist
+
+Before writing components, confirm:
+
+- [ ] `npm install` completes without errors
+- [ ] `npm run dev` starts without CSS/PostCSS errors
+- [ ] Browser shows styled content (not unstyled HTML)

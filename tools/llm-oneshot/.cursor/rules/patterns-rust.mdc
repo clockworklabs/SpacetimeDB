@@ -1,0 +1,217 @@
+---
+description: "Rust client patterns and common pitfalls when building GUI/web apps"
+globs: "**/*.rs"
+---
+
+# Rust Client Patterns
+
+> **Last updated:** 2026-01-12
+
+## Blocking SDK + Async Runtime Conflicts
+
+Many Rust SDKs (including SpacetimeDB, some game engines, native GUI toolkits) use **blocking I/O** internally. Mixing them with Tokio causes problems.
+
+### Symptoms
+
+- `"Cannot block the current thread from within a runtime"` panic
+- Deadlocks when callbacks try to acquire locks
+- `PoisonError` from panicked lock holders
+
+### ❌ Wrong: Blocking Inside Async Runtime
+
+```rust
+#[tokio::main]
+async fn main() {
+    // SpacetimeDB, SDL2, winit, etc. may block internally
+    let conn = BlockingSdk::connect().unwrap();  // PANIC or deadlock!
+}
+```
+
+### ✅ Correct: Separate Blocking Work from Async
+
+```rust
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// Global state for cross-thread access
+static CONNECTION: OnceLock<BlockingSdk> = OnceLock::new();
+static CONNECTED: AtomicBool = AtomicBool::new(false);
+
+fn main() {
+    // 1. Initialize blocking SDK in main thread BEFORE Tokio
+    let conn = BlockingSdk::connect().expect("Connection failed");
+    CONNECTION.set(conn).unwrap();
+    CONNECTED.store(true, Ordering::SeqCst);
+    
+    // 2. Run SDK's event loop in dedicated OS thread
+    std::thread::spawn(|| {
+        loop {
+            if let Some(conn) = CONNECTION.get() {
+                conn.poll();  // Process SDK events
+            }
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+    });
+    
+    // 3. NOW start async runtime for web server, etc.
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let app = axum::Router::new()
+            .route("/status", axum::routing::get(get_status));
+        // ...
+    });
+}
+
+async fn get_status() -> &'static str {
+    // Safe to check atomic from async context
+    if CONNECTED.load(Ordering::SeqCst) { "connected" } else { "disconnected" }
+}
+```
+
+### Key Principles
+
+1. **Initialize blocking SDKs before `#[tokio::main]`** or before `Runtime::new()`
+2. **Use `std::thread::spawn`** for SDK event loops, NOT `tokio::spawn`
+3. **Use lock-free primitives** for cross-thread state:
+   - `OnceLock<T>` for write-once values
+   - `AtomicBool`, `AtomicU64` for simple flags/counters
+   - `RwLock` only if you need mutable shared state (beware deadlocks in callbacks)
+4. **Never hold locks across await points** or SDK callbacks
+
+---
+
+## Axum + Blocking SDK Pattern
+
+When building a web server that wraps a blocking SDK:
+
+```rust
+use axum::{Router, routing::get, Json};
+use std::sync::OnceLock;
+
+static SDK: OnceLock<MySdk> = OnceLock::new();
+
+fn main() {
+    // Initialize SDK (blocking OK here)
+    SDK.set(MySdk::new()).unwrap();
+    
+    // SDK event thread
+    std::thread::spawn(|| loop {
+        SDK.get().unwrap().tick();
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    });
+    
+    // Async web server
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let app = Router::new()
+            .route("/data", get(get_data));
+        
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    });
+}
+
+async fn get_data() -> Json<Vec<MyData>> {
+    // Access SDK data (read-only is safe if SDK handles thread safety)
+    let data: Vec<MyData> = SDK.get()
+        .map(|sdk| sdk.get_items().collect())
+        .unwrap_or_default();
+    Json(data)
+}
+```
+
+---
+
+## Real-Time UI: Optimistic Updates
+
+When building real-time collaborative apps, avoid UI flicker:
+
+### Problem
+
+```rust
+// Polling clears and redraws everything
+fn on_data_received(new_data: Data) {
+    canvas.clear();           // User's in-progress work disappears!
+    for item in new_data {
+        canvas.draw(item);
+    }
+}
+```
+
+### Solution: Pending State Buffer
+
+```rust
+struct AppState {
+    server_items: Vec<Item>,
+    pending_items: Vec<PendingItem>,  // Local, unconfirmed
+}
+
+fn on_user_draw(item: Item) {
+    // 1. Show immediately in pending buffer
+    state.pending_items.push(PendingItem {
+        local_id: generate_id(),
+        item: item.clone(),
+    });
+    
+    // 2. Send to server (don't block on response)
+    sdk.send_item(item);
+}
+
+fn on_data_received(new_items: Vec<Item>) {
+    // 3. Remove pending items that now exist in server data
+    state.pending_items.retain(|p| !new_items.iter().any(|s| s.matches(&p.item)));
+    state.server_items = new_items;
+}
+
+fn render() {
+    // 4. Draw both server items AND pending items
+    for item in &state.server_items {
+        draw(item);
+    }
+    for pending in &state.pending_items {
+        draw(&pending.item);  // Still visible until confirmed
+    }
+}
+```
+
+---
+
+## Common Borrow Checker Patterns
+
+### Use Value Before Move
+
+```rust
+// ❌ Wrong
+struct Record { name: String, value: u64 }
+db.insert(Record { name, value });
+if name == "special" { ... }  // ERROR: name moved!
+
+// ✅ Right - check before move
+let is_special = name == "special";
+db.insert(Record { name, value });
+if is_special { ... }
+
+// ✅ Alternative - clone if needed later
+db.insert(Record { name: name.clone(), value });
+if name == "special" { ... }
+```
+
+### Avoid Holding Locks in Callbacks
+
+```rust
+// ❌ Wrong - deadlock risk
+let data = state.lock().unwrap();
+sdk.on_event(|event| {
+    let mut data = state.lock().unwrap();  // DEADLOCK if same thread!
+    data.update(event);
+});
+
+// ✅ Right - release lock before callback registration
+{
+    let data = state.lock().unwrap();
+    // ... use data ...
+}  // Lock released
+
+sdk.on_event(move |event| {
+    let mut data = state.lock().unwrap();  // Safe - no outer lock held
+    data.update(event);
+});
+```

@@ -2,7 +2,7 @@
 // See `serde` version `v1.0.169` for the parts where MIT / Apache-2.0 applies.
 
 mod impls;
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde;
 
 #[doc(hidden)]
@@ -36,6 +36,11 @@ pub trait Deserializer<'de>: Sized {
     /// Deserializes a product value from the input.
     fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
+    /// Validates a product value from the input.
+    fn validate_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        self.deserialize_product(visitor).map(|_| ())
+    }
+
     /// Deserializes a sum value from the input.
     ///
     /// The entire process of deserializing a sum, starting from `deserialize(args...)`, is roughly:
@@ -68,6 +73,40 @@ pub trait Deserializer<'de>: Sized {
     /// The data format will also return an object ([`VariantAccess`])
     /// that can deserialize the contents of the variant.
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error>;
+
+    /// Validates a sum value from the input.
+    ///
+    /// The entire process of validating a sum, starting from `validate(args...)`, is roughly:
+    ///
+    /// - [`validate`][Deserialize::validate] calls this method,
+    ///   [`validate_sum(sum_visitor)`](Deserializer::validate_sum),
+    ///   providing us with a [`sum_visitor`](SumVisitor).
+    ///
+    /// - This method calls [`sum_visitor.validate_sum(sum_access)`](SumVisitor::validate_sum),
+    ///   where [`sum_access`](SumAccess) deals with extracting the tag and the variant data,
+    ///   with the latter provided as [`VariantAccess`]).
+    ///   The `SumVisitor` will then assemble these into the representation of a sum value
+    ///   that the [`Deserialize`] implementation wants.
+    ///
+    /// - [`validate_sum`](SumVisitor::validate_sum) then calls
+    ///   [`sum_access.variant(variant_visitor)`](SumAccess::variant),
+    ///   and uses the provided `variant_visitor` to translate extracted variant names / tags
+    ///   into something that is meaningful for `validate_sum`, e.g., an index.
+    ///
+    ///   The call to `variant` will also return [`variant_access`](VariantAccess)
+    ///   that can validate the contents of the variant.
+    ///
+    /// - Finally, after `variant` returns,
+    ///   `validate_sum` validates the variant data using
+    ///   [`variant_access.validate_seed(seed)`](VariantAccess::validate_seed)
+    ///   or [`variant_access.validate()`](VariantAccess::validate).
+    ///   This part may require some conditional logic depending on the identified variant.
+    ///
+    /// The data format will also return an object ([`VariantAccess`])
+    /// that can validate the contents of the variant.
+    fn validate_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        self.deserialize_sum(visitor).map(|_| ())
+    }
 
     /// Deserializes a `bool` value from the input.
     fn deserialize_bool(self) -> Result<bool, Self::Error>;
@@ -144,6 +183,17 @@ pub trait Deserializer<'de>: Sized {
         visitor: V,
         seed: T,
     ) -> Result<V::Output, Self::Error>;
+
+    /// Validates an array value.
+    ///
+    /// The validation is provided with a `seed` value.
+    fn validate_array_seed<V: ArrayVisitor<'de, T::Output>, T: DeserializeSeed<'de> + Clone>(
+        self,
+        visitor: V,
+        seed: T,
+    ) -> Result<(), Self::Error> {
+        self.deserialize_array_seed(visitor, seed).map(|_| ())
+    }
 }
 
 /// The `Error` trait allows [`Deserialize`] implementations to create descriptive error messages
@@ -158,6 +208,11 @@ pub trait Deserializer<'de>: Sized {
 pub trait Error: Sized {
     /// Raised when there is general error when deserializing a type.
     fn custom(msg: impl fmt::Display) -> Self;
+
+    /// Deserializing named products are not supported for this visitor.
+    fn named_products_not_supported() -> Self {
+        Self::custom("named products not supported")
+    }
 
     /// The product length was not as promised.
     fn invalid_product_length<'de, T: ProductVisitor<'de>>(len: usize, expected: &T) -> Self {
@@ -184,10 +239,9 @@ pub trait Error: Sized {
             ProductKind::Normal => "field",
             ProductKind::ReducerArgs => "reducer argument",
         };
-        if let Some(one_of) = one_of_names(|| expected.field_names()) {
-            Self::custom(format_args!("unknown {el_ty} `{field_name}`, expected {one_of}"))
-        } else {
-            Self::custom(format_args!("unknown {el_ty} `{field_name}`, there are no {el_ty}s"))
+        match one_of_names(|| expected.field_names()) {
+            Some(one_of) => Self::custom(format_args!("unknown {el_ty} `{field_name}`, expected {one_of}")),
+            _ => Self::custom(format_args!("unknown {el_ty} `{field_name}`, there are no {el_ty}s")),
         }
     }
 
@@ -201,11 +255,15 @@ pub trait Error: Sized {
 
     /// The `name` is not that of a variant of the sum type.
     fn unknown_variant_name<'de, T: VariantVisitor<'de>>(name: &str, expected: &T) -> Self {
-        if let Some(one_of) = one_of_names(|| expected.variant_names().map(Some)) {
-            Self::custom(format_args!("unknown variant `{name}`, expected {one_of}",))
-        } else {
-            Self::custom(format_args!("unknown variant `{name}`, there are no variants"))
+        match one_of_names(|| expected.variant_names().map(Some)) {
+            Some(one_of) => Self::custom(format_args!("unknown variant `{name}`, expected {one_of}",)),
+            _ => Self::custom(format_args!("unknown variant `{name}`, there are no variants")),
         }
+    }
+
+    /// An allocation of `size` elements failed during deserialization.
+    fn allocation_failed(size: usize) -> Self {
+        Self::custom(format_args!("allocation of {size} elements failed"))
     }
 }
 
@@ -263,7 +321,7 @@ fn fmt_invalid_len<'de>(
 }
 
 /// A visitor walking through a [`Deserializer`] for products.
-pub trait ProductVisitor<'de> {
+pub trait ProductVisitor<'de>: Sized {
     /// The resulting product.
     type Output;
 
@@ -283,6 +341,16 @@ pub trait ProductVisitor<'de> {
 
     /// The input contains a named product.
     fn visit_named_product<A: NamedProductAccess<'de>>(self, prod: A) -> Result<Self::Output, A::Error>;
+
+    /// The input contains an unnamed product.
+    fn validate_seq_product<A: SeqProductAccess<'de>>(self, prod: A) -> Result<(), A::Error> {
+        self.visit_seq_product(prod).map(|_| ())
+    }
+
+    /// The input contains a named product.
+    fn validate_named_product<A: NamedProductAccess<'de>>(self, prod: A) -> Result<(), A::Error> {
+        self.visit_named_product(prod).map(|_| ())
+    }
 }
 
 /// What kind of product is this?
@@ -312,6 +380,14 @@ pub trait SeqProductAccess<'de> {
         self.next_element_seed(PhantomData)
     }
 
+    /// Statefully validates `T::Output` from the input provided a `seed` value.
+    ///
+    /// Returns `Ok(Some(()))` for the next element in the unnamed product,
+    /// or `Ok(None)` if there are no more remaining items.
+    fn validate_next_element<T: Deserialize<'de>>(&mut self) -> Result<Option<()>, Self::Error> {
+        self.validate_next_element_seed(PhantomData::<T>)
+    }
+
     /// Statefully deserializes `T::Output` from the input provided a `seed` value.
     ///
     /// Returns `Ok(Some(value))` for the next element in the unnamed product,
@@ -320,6 +396,14 @@ pub trait SeqProductAccess<'de> {
     /// [`Deserialize`] implementations should typically use
     /// [`next_element`](SeqProductAccess::next_element) instead.
     fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, Self::Error>;
+
+    /// Statefully validates `T::Output` from the input provided a `seed` value.
+    ///
+    /// Returns `Ok(Some(()))` for the next element in the unnamed product,
+    /// or `Ok(None)` if there are no more remaining items.
+    fn validate_next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<()>, Self::Error> {
+        self.next_element_seed(seed).map(|opt| opt.map(|_| ()))
+    }
 }
 
 /// Provides a [`ProductVisitor`] with access to each element of the named product in the input.
@@ -329,8 +413,8 @@ pub trait NamedProductAccess<'de> {
     /// The error type that can be returned if some error occurs during deserialization.
     type Error: Error;
 
-    /// Deserializes field name of type `V::Output` from the input using a visitor
-    /// provided by the deserializer.
+    /// Deserializes field name of type `V::Output`
+    /// from the input using a visitor provided by the deserializer.
     fn get_field_ident<V: FieldNameVisitor<'de>>(&mut self, visitor: V) -> Result<Option<V::Output>, Self::Error>;
 
     /// Deserializes field value of type `T` from the input.
@@ -341,11 +425,24 @@ pub trait NamedProductAccess<'de> {
         self.get_field_value_seed(PhantomData)
     }
 
+    /// Deserializes field value of type `T` from the input.
+    ///
+    /// This method exists as a convenience for [`Deserialize`] implementations.
+    /// [`NamedProductAccess`] implementations should not override the default behavior.
+    fn validate_field_value<T: Deserialize<'de>>(&mut self) -> Result<(), Self::Error> {
+        self.validate_field_value_seed(PhantomData::<T>)
+    }
+
     /// Statefully deserializes the field value `T::Output` from the input provided a `seed` value.
     ///
     /// [`Deserialize`] implementations should typically use
     /// [`next_element`](NamedProductAccess::get_field_value) instead.
     fn get_field_value_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<T::Output, Self::Error>;
+
+    /// Statefully validates the field value `T::Output` from the input provided a `seed` value.
+    fn validate_field_value_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<(), Self::Error> {
+        self.get_field_value_seed(seed).map(|_| ())
+    }
 }
 
 /// Visitor used to deserialize the name of a field.
@@ -368,8 +465,9 @@ pub trait FieldNameVisitor<'de> {
 
     /// Deserializes the name of a field using `index`.
     ///
-    /// The `name` is provided for error messages.
-    fn visit_seq<E: Error>(self, index: usize, name: &str) -> Result<Self::Output, E>;
+    /// Should only be called when `index` is already known to exist
+    /// and is expected to panic otherwise.
+    fn visit_seq(self, index: usize) -> Self::Output;
 }
 
 /// A visitor walking through a [`Deserializer`] for sums.
@@ -400,6 +498,17 @@ pub trait SumVisitor<'de> {
     /// The data format will also return an object ([`VariantAccess`])
     /// that can deserialize the contents of the variant.
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error>;
+
+    /// Drives the validation of a sum value.
+    ///
+    /// This method will ask the data format ([`A: SumAccess`][SumAccess])
+    /// which variant of the sum to select in terms of a variant name / tag.
+    /// `A` will use a [`VariantVisitor`], that `SumVisitor` has provided,
+    /// to translate into something that is meaningful for `visit_sum`, e.g., an index.
+    ///
+    /// The data format will also return an object ([`VariantAccess`])
+    /// that can validate the contents of the variant.
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error>;
 }
 
 /// Provides a [`SumVisitor`] access to the data of a sum in the input.
@@ -454,6 +563,18 @@ pub trait VariantAccess<'de>: Sized {
 
     /// Called when deserializing the contents of a sum variant, and provided with a `seed` value.
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error>;
+
+    /// Called when validating the contents of a sum variant.
+    ///
+    /// This method exists as a convenience for [`Deserialize`] implementations.
+    fn validate<T: Deserialize<'de>>(self) -> Result<(), Self::Error> {
+        self.validate_seed(PhantomData::<T>)
+    }
+
+    /// Called when validating the contents of a sum variant, and provided with a `seed` value.
+    fn validate_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        self.deserialize_seed(seed).map(|_| ())
+    }
 }
 
 /// A `SliceVisitor` is provided a slice `T` of some elements by a [`Deserializer`]
@@ -480,12 +601,18 @@ pub trait SliceVisitor<'de, T: ToOwned + ?Sized>: Sized {
 }
 
 /// A visitor walking through a [`Deserializer`] for arrays.
-pub trait ArrayVisitor<'de, T> {
+pub trait ArrayVisitor<'de, T>: Sized {
     /// The output produced by this visitor.
     type Output;
 
-    /// The input contains an array.
+    /// The input contains an array, deserialize it.
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error>;
+
+    /// The input contains an array, but just validate it, don't deserialize.
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<(), A::Error> {
+        let _ = self.visit(vec)?;
+        Ok(())
+    }
 }
 
 /// Provides an [`ArrayVisitor`] with access to each element of the array in the input.
@@ -502,6 +629,13 @@ pub trait ArrayAccess<'de> {
     /// or `Ok(None)` if there are no more remaining elements.
     fn next_element(&mut self) -> Result<Option<Self::Element>, Self::Error>;
 
+    /// This returns `Ok(Some(()))` for the next element in the array,
+    /// or `Ok(None)` if there are no more remaining elements.
+    fn validate_next_element(&mut self) -> Result<Option<()>, Self::Error> {
+        let opt = self.next_element()?;
+        Ok(opt.map(|_| ()))
+    }
+
     /// Returns the number of elements remaining in the array, if known.
     fn size_hint(&self) -> Option<usize> {
         None
@@ -509,13 +643,23 @@ pub trait ArrayAccess<'de> {
 }
 
 /// `DeserializeSeed` is the stateful form of the [`Deserialize`] trait.
-pub trait DeserializeSeed<'de> {
+pub trait DeserializeSeed<'de>: Sized {
     /// The type produced by using this seed.
     type Output;
 
     /// Equivalent to the more common [`Deserialize::deserialize`] associated function,
     /// except with some initial piece of data (the seed `self`) passed in.
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error>;
+
+    /// Validate that the input is of the correct form for this seed.
+    ///
+    /// The default implementation simply deserializes the input and discards the result,
+    /// but implementations can override this to perform more efficient validation
+    /// without fully deserializing the input.
+    fn validate<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        let _ = self.deserialize(deserializer)?;
+        Ok(())
+    }
 }
 
 use crate::de::impls::BorrowedSliceVisitor;
@@ -559,6 +703,18 @@ pub trait Deserialize<'de>: Sized {
     fn __deserialize_array<D: Deserializer<'de>, const N: usize>(deserializer: D) -> Result<[Self; N], D::Error> {
         deserializer.deserialize_array(BasicArrayVisitor)
     }
+
+    #[doc(hidden)]
+    #[inline(always)]
+    /// Validate that the input is of the correct form for this type.
+    ///
+    /// The default implementation simply deserializes the input and discards the result,
+    /// but implementations can override this to perform more efficient validation
+    /// without fully deserializing the input.
+    fn validate<D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+        let _ = Self::deserialize(deserializer)?;
+        Ok(())
+    }
 }
 
 /// A data structure that can be deserialized in SATS
@@ -577,15 +733,22 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for PhantomData<T> {
 /// A vector with two operations: `with_capacity` and `push`.
 pub trait GrowingVec<T> {
     /// Create the collection with the given capacity.
-    fn with_capacity(cap: usize) -> Self;
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E>
+    where
+        Self: Sized;
 
     /// Push to the vector the `elem`.
     fn push(&mut self, elem: T);
 }
 
 impl<T> GrowingVec<T> for Vec<T> {
-    fn with_capacity(cap: usize) -> Self {
-        Self::with_capacity(cap)
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        let mut vec = Vec::new();
+        vec.try_reserve_exact(cap).map_err(|_| E::allocation_failed(cap))?;
+        Ok(vec)
     }
     fn push(&mut self, elem: T) {
         self.push(elem)
@@ -593,8 +756,13 @@ impl<T> GrowingVec<T> for Vec<T> {
 }
 
 impl<T, const N: usize> GrowingVec<T> for SmallVec<[T; N]> {
-    fn with_capacity(cap: usize) -> Self {
-        Self::with_capacity(cap)
+    fn try_with_capacity<E: Error>(cap: usize) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        let mut vec = Self::new();
+        vec.try_reserve_exact(cap).map_err(|_| E::allocation_failed(cap))?;
+        Ok(vec)
     }
     fn push(&mut self, elem: T) {
         self.push(elem)
@@ -603,11 +771,17 @@ impl<T, const N: usize> GrowingVec<T> for SmallVec<[T; N]> {
 
 /// A basic implementation of `ArrayVisitor::visit` using the provided size hint.
 pub fn array_visit<'de, A: ArrayAccess<'de>, V: GrowingVec<A::Element>>(mut access: A) -> Result<V, A::Error> {
-    let mut v = V::with_capacity(access.size_hint().unwrap_or(0));
+    let mut v = V::try_with_capacity(access.size_hint().unwrap_or(0))?;
     while let Some(x) = access.next_element()? {
         v.push(x)
     }
     Ok(v)
+}
+
+/// A basic implementation of `ArrayVisitor::validate`.
+pub fn array_validate<'de, A: ArrayAccess<'de>>(mut access: A) -> Result<(), A::Error> {
+    while access.validate_next_element()?.is_some() {}
+    Ok(())
 }
 
 /// An implementation of [`ArrayVisitor<'de, T>`] where the output is a `Vec<T>`.
@@ -619,6 +793,10 @@ impl<'de, T> ArrayVisitor<'de, T> for BasicVecVisitor {
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
         array_visit(vec)
     }
+
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<(), A::Error> {
+        array_validate(vec)
+    }
 }
 
 /// An implementation of [`ArrayVisitor<'de, T>`] where the output is a `SmallVec<[T; N]>`.
@@ -629,6 +807,10 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicSmallVecVisitor<N> {
 
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
         array_visit(vec)
+    }
+
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<(), A::Error> {
+        array_validate(vec)
     }
 }
 
@@ -645,6 +827,23 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicArrayVisitor<N> {
                 .map_err(|_| Error::custom("too many elements for array"))?
         }
         v.into_inner().map_err(|_| Error::custom("too few elements for array"))
+    }
+
+    fn validate<A: ArrayAccess<'de, Element = T>>(self, mut vec: A) -> Result<(), A::Error> {
+        // Validate each element and count.
+        let mut count = 0;
+        while vec.next_element()?.is_some() {
+            count += 1;
+        }
+        // Don't do this in the loop,
+        // as we bias towards there not being any errors.
+        if count > N {
+            return Err(Error::custom("too many elements for array"));
+        }
+        if count < N {
+            return Err(Error::custom("too few elements for array"));
+        }
+        Ok(())
     }
 }
 
@@ -713,11 +912,160 @@ impl<'de, E: Error> SumAccess<'de> for NoneAccess<E> {
 impl<'de, E: Error> VariantAccess<'de> for NoneAccess<E> {
     type Error = E;
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
-        use crate::algebraic_value::de::*;
-        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::unit()))
-            .map_err(|err| match err {
-                ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
-                ValueDeserializeError::Custom(err) => E::custom(err),
-            })
+        seed.deserialize(UnitAccess::new())
+    }
+}
+
+/// Deserializes `some` variant of an optional value.
+pub struct SomeAccess<D>(D);
+
+impl<D> SomeAccess<D> {
+    /// Returns a new [`SomeAccess`] with a given deserializer for the `some` variant.
+    pub fn new(de: D) -> Self {
+        Self(de)
+    }
+}
+
+impl<'de, D: Deserializer<'de>> SumAccess<'de> for SomeAccess<D> {
+    type Error = D::Error;
+    type Variant = Self;
+
+    fn variant<V: VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+        visitor.visit_name("some").map(|var| (var, self))
+    }
+}
+
+impl<'de, D: Deserializer<'de>> VariantAccess<'de> for SomeAccess<D> {
+    type Error = D::Error;
+    fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
+        seed.deserialize(self.0)
+    }
+    fn validate_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        seed.validate(self.0)
+    }
+}
+
+/// A `Deserializer` that represents a unit value.
+// used in the implementation of `VariantAccess for NoneAccess`
+pub struct UnitAccess<E>(PhantomData<E>);
+
+impl<E: Error> UnitAccess<E> {
+    /// Returns a new [`UnitAccess`].
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E: Error> Default for UnitAccess<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'de, E: Error> SeqProductAccess<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, _seed: T) -> Result<Option<T::Output>, Self::Error> {
+        Ok(None)
+    }
+}
+
+impl<'de, E: Error> NamedProductAccess<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn get_field_ident<V: FieldNameVisitor<'de>>(&mut self, _visitor: V) -> Result<Option<V::Output>, Self::Error> {
+        Ok(None)
+    }
+
+    fn get_field_value_seed<T: DeserializeSeed<'de>>(&mut self, _seed: T) -> Result<T::Output, Self::Error> {
+        unreachable!()
+    }
+}
+
+impl<'de, E: Error> Deserializer<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
+        visitor.visit_seq_product(self)
+    }
+
+    fn deserialize_sum<V: SumVisitor<'de>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_bool(self) -> Result<bool, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u8(self) -> Result<u8, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u16(self) -> Result<u16, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u32(self) -> Result<u32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u64(self) -> Result<u64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u128(self) -> Result<u128, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i8(self) -> Result<i8, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i16(self) -> Result<i16, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i32(self) -> Result<i32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i64(self) -> Result<i64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i128(self) -> Result<i128, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_f32(self) -> Result<f32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_f64(self) -> Result<f64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_str<V: SliceVisitor<'de, str>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_bytes<V: SliceVisitor<'de, [u8]>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_array_seed<V: ArrayVisitor<'de, T::Output>, T: DeserializeSeed<'de> + Clone>(
+        self,
+        _visitor: V,
+        _seed: T,
+    ) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
     }
 }

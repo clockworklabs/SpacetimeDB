@@ -1,0 +1,24 @@
+﻿# Dockerfile.sqlite-seed
+FROM node:20.18.1-bookworm-slim
+
+WORKDIR /app
+
+# Use the same pnpm version as the rest of the repo
+RUN npm install -g pnpm@9.15.3
+
+# Build tools for better-sqlite3
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+# Install deps
+COPY package.json pnpm-lock.yaml* tsconfig.json* ./
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# App source
+COPY src ./src
+COPY modules ./modules
+
+# Default location for the named volume inside the container
+ENV SQLITE_FILE=/data/accounts.sqlite
+
+# Seed script that runs entirely inside Docker, using the named volume
+CMD ["pnpm", "tsx", "src/init/init_sqlite_seed_in_docker.ts"]

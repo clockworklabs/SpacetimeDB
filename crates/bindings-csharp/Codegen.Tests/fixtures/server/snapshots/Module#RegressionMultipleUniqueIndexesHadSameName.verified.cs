@@ -8,14 +8,14 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        Unique1 = BSATN.Unique1.Read(reader);
-        Unique2 = BSATN.Unique2.Read(reader);
+        Unique1 = BSATN.Unique1RW.Read(reader);
+        Unique2 = BSATN.Unique2RW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.Unique1.Write(writer, Unique1);
-        BSATN.Unique2.Write(writer, Unique2);
+        BSATN.Unique1RW.Write(writer, Unique1);
+        BSATN.Unique2RW.Write(writer, Unique2);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -29,8 +29,8 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
     public readonly partial struct BSATN
         : SpacetimeDB.BSATN.IReadWrite<RegressionMultipleUniqueIndexesHadSameName>
     {
-        internal static readonly SpacetimeDB.BSATN.U32 Unique1 = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Unique2 = new();
+        internal static readonly SpacetimeDB.BSATN.U32 Unique1RW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 Unique2RW = new();
 
         public RegressionMultipleUniqueIndexesHadSameName Read(System.IO.BinaryReader reader)
         {
@@ -54,8 +54,8 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(Unique1), Unique1.GetAlgebraicType(registrar)),
-                        new(nameof(Unique2), Unique2.GetAlgebraicType(registrar))
+                        new("Unique1", Unique1RW.GetAlgebraicType(registrar)),
+                        new("Unique2", Unique2RW.GetAlgebraicType(registrar))
                     }
                 )
             );

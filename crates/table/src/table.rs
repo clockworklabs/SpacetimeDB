@@ -1,7 +1,7 @@
 use super::{
-    bflatn_from::serialize_row_from_page,
+    bflatn_from::{serialize_columns_from_page, serialize_row_from_page},
     bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
-    blob_store::BlobStore,
+    blob_store::{BlobStore, NullBlobStore},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset, PAGE_DATA_SIZE},
@@ -15,7 +15,7 @@ use super::{
     static_assert_size,
     static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
     static_layout::StaticLayout,
-    table_index::{TableIndex, TableIndexPointIter, TableIndexRangeIter},
+    table_index::{IndexCannotSeekRange, IndexKey, IndexKind, TableIndex, TableIndexPointIter, TableIndexRangeIter},
     var_len::VarLenMembers,
 };
 use core::{fmt, ptr};
@@ -27,22 +27,28 @@ use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, RowTypeLayout, Size};
-use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
-    bsatn::{self, ser::BsatnError, ToBsatn},
+    bsatn::{self, ser::BsatnError, BufReservedFill, DecodeError, ToBsatn},
+    buffer::BufWriter,
+    de::DeserializeOwned,
     i256,
     product_value::InvalidFieldError,
     satn::Satn,
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
 };
+use spacetimedb_sats::{
+    layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
+    Typespace,
+};
+use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
-    def::IndexAlgorithm,
+    def::{BTreeAlgorithm, IndexAlgorithm},
+    identifier::Identifier,
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
+    table_name::TableName,
 };
 use std::{
     collections::{btree_map, BTreeMap},
@@ -173,8 +179,8 @@ impl TableInner {
     //       during a table scan or index seek.
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
-    fn is_row_present(&self, _squashed_offset: SquashedOffset, ptr: RowPointer) -> bool {
-        if _squashed_offset != ptr.squashed_offset() {
+    fn is_row_present(&self, squashed_offset: SquashedOffset, ptr: RowPointer) -> bool {
+        if squashed_offset != ptr.squashed_offset() {
             return false;
         }
         let Some((page, offset)) = self.try_page_and_offset(ptr) else {
@@ -261,13 +267,70 @@ pub enum ReadViaBsatnError {
     DecodeError(#[from] DecodeError),
 }
 
+/// Error that can occur when attempting to [`Table::change_columns_to`] a different row type.
+///
+/// This will usually be [`Box`]ed, as it's large enough to trigger
+/// [Clippy's `result_large_err` lint](https://rust-lang.github.io/rust-clippy/master/index.html#result_large_err).
+///
+/// Seeing this error represents a bug in SpacetimeDB, as incompatible column-type-changing migrations
+/// are supposed to be detected by the checks in [`spacetimedb_schema::auto_migrate`].
 #[derive(Error, Debug)]
-#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`")]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct ChangeColumnsError {
     table_id: TableId,
-    table_name: Box<str>,
+    table_name: TableName,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
+    reason: ChangeColumnsErrorReason,
+}
+
+/// More specific reason that a [`Table::change_columns_to`] resulted in a [`ChangeColumnsError`],
+/// contained in that error alongside the table metadata and new and old schemas.
+#[derive(Error, Debug)]
+pub enum ChangeColumnsErrorReason {
+    #[error("Layout of schedule table's at column changed from {old:?} to {new:?}")]
+    ScheduleAtColumnChanged {
+        index: usize,
+        old: AlgebraicTypeLayout,
+        new: AlgebraicTypeLayout,
+    },
+    #[error("Layout of schedule table's id column changed from {old:?} to {new:?}")]
+    ScheduleIdColumnChanged {
+        index: usize,
+        old: AlgebraicTypeLayout,
+        new: AlgebraicTypeLayout,
+    },
+    #[error(transparent)]
+    IncompatibleRowLayout(#[from] IncompatibleTypeLayoutError),
+}
+
+/// Error that can occur when attempting to [`Table::validate_add_columns_schema`].
+///
+/// Like [`ChangeColumnsError`], this should never normally be seen at runtime.
+/// Any such error indicates a **bug in SpacetimeDB**, since incompatible
+/// "add column" migrations should be caught earlier by the checks in
+/// [`spacetimedb_schema::auto_migrate`].
+#[derive(Error, Debug)]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
+pub struct AddColumnsError {
+    table_id: TableId,
+    table_name: TableName,
+    old: Vec<ColumnSchema>,
+    new: Vec<ColumnSchema>,
+    default_values: Vec<AlgebraicValue>,
+    reason: AddColumnsErrorReason,
+}
+
+#[derive(Error, Debug)]
+pub enum AddColumnsErrorReason {
+    #[error("Default value type does not match column type for column {0}")]
+    DefaultValueTypeMismatch(ColId),
+    #[error("Missing default value for column {0}")]
+    DefaultValueMissing(ColId),
+    #[error("New column schema missing existing columns")]
+    MissingExistingColumns,
+    #[error(transparent)]
+    ExistingColumnsTypeMismatched(#[from] ChangeColumnsErrorReason),
 }
 
 /// Computes the parts of a table definition, that are row type dependent, from the row type.
@@ -298,37 +361,110 @@ impl Table {
     pub fn change_columns_to(
         &mut self,
         column_schemas: Vec<ColumnSchema>,
-    ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
-        fn validate(
-            this: &Table,
-            new_row_layout: &RowTypeLayout,
-            column_schemas: &[ColumnSchema],
-        ) -> Result<(), ChangeColumnsError> {
-            // Validate that the old row type layout can be changed to the new.
-            let schema = this.get_schema();
-            let row_layout = this.row_layout();
+    ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
+        unsafe { self.change_columns_to_unchecked(column_schemas, Self::validate_row_type_layout) }
+    }
 
-            // Require that a scheduler table doesn't change the `id` and `at` fields.
-            let schedule_compat = schema.schedule.as_ref().zip(schema.pk()).is_none_or(|(schedule, pk)| {
-                let at_col = schedule.at_column.idx();
-                let id_col = pk.col_pos.idx();
-                row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
-            });
+    /// Validate that the old row type layout can be changed to the new.
+    // Intentionally fail fast rather than combining errors with [`spacetimedb_data_structures::error_stream`]
+    // because we've (at least theoretically) already passed through
+    // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
+    // and that method has proper pretty error reporting with `ErrorStream`.
+    // The error here is for internal debugging.
+    fn validate_row_type_layout(
+        &self,
+        new_row_layout: &RowTypeLayout,
+        column_schemas: &[ColumnSchema],
+    ) -> Result<(), Box<ChangeColumnsError>> {
+        let schema = self.get_schema();
+        let row_layout = self.row_layout();
 
-            // The `row_layout` must also be compatible with the new.
-            if schedule_compat && row_layout.is_compatible_with(new_row_layout) {
-                return Ok(());
-            }
-
-            Err(ChangeColumnsError {
+        let make_err = |reason| {
+            Box::new(ChangeColumnsError {
                 table_id: schema.table_id,
                 table_name: schema.table_name.clone(),
                 old: schema.columns().to_vec(),
                 new: column_schemas.to_vec(),
+                reason,
             })
+        };
+
+        // Require that a scheduler table doesn't change the `id` and `at` fields.
+        if let Some((schedule, pk)) = schema.schedule.as_ref().zip(schema.pk()) {
+            let at_col = schedule.at_column.idx();
+            if row_layout[at_col] != new_row_layout[at_col] {
+                return Err(make_err(ChangeColumnsErrorReason::ScheduleAtColumnChanged {
+                    index: at_col,
+                    old: row_layout[at_col].clone(),
+                    new: new_row_layout[at_col].clone(),
+                }));
+            }
+
+            let id_col = pk.col_pos.idx();
+            if row_layout[id_col] != new_row_layout[id_col] {
+                return Err(make_err(ChangeColumnsErrorReason::ScheduleIdColumnChanged {
+                    index: id_col,
+                    old: row_layout[id_col].clone(),
+                    new: new_row_layout[id_col].clone(),
+                }));
+            }
         }
 
-        unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
+        // The `row_layout` must also be compatible with the new.
+        if let Err(reason) = row_layout.ensure_compatible_with(new_row_layout) {
+            return Err(make_err((*reason).into()));
+        }
+
+        Ok(())
+    }
+
+    /// Validates that the proposed `new_columns` schema is compatible with the
+    /// existing table schema and that all newly added columns are initialized
+    /// with default values.
+    /// - `new_columns`: columns schema after adding new columns ordered by `ColId`s.
+    /// - `default_values`: default values for newly added columns ordered by `ColId`s.
+    pub fn validate_add_columns_schema(
+        &self,
+        new_columns: &[ColumnSchema],
+        default_values: &[AlgebraicValue],
+    ) -> Result<(), Box<AddColumnsError>> {
+        let schema = self.get_schema();
+        let existing_columns = &schema.columns;
+
+        let make_err = |reason| {
+            Box::new(AddColumnsError {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                old: schema.columns().to_vec(),
+                new: new_columns.to_vec(),
+                default_values: default_values.to_vec(),
+                reason,
+            })
+        };
+
+        // Ensure we have at least as many (prefix) as the existing columns.
+        let Some(old_cols_in_new_schema) = &new_columns.get(..existing_columns.len()) else {
+            return Err(make_err(AddColumnsErrorReason::MissingExistingColumns));
+        };
+
+        // Ensure that the existing prefix is compatible with the new prefix.
+        let new_row_layout: RowTypeLayout = columns_to_row_type(old_cols_in_new_schema).into();
+        self.validate_row_type_layout(&new_row_layout, new_columns)
+            .map_err(|e| make_err(e.reason.into()))?;
+
+        // Validate that all new columns have default values and their types match.
+        for (idx, new_col) in new_columns.iter().skip(existing_columns.len()).enumerate() {
+            let default_value = default_values
+                .get(idx)
+                .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col.col_pos)))?;
+            if !new_col.col_type.type_check(default_value, Typespace::EMPTY) {
+                return Err(make_err(AddColumnsErrorReason::DefaultValueTypeMismatch(
+                    new_col.col_pos,
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     /// Change the columns of `self` to those in `column_schemas`
@@ -419,12 +555,13 @@ impl Table {
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (&index_id, index) in adapt(self.indexes.iter()).filter(|(_, index)| index.is_unique()) {
-            // SAFETY: Caller promised that `row´ has the same layout as `self`.
-            // Thus, as `index.indexed_columns` is in-bounds of `self`'s layout,
-            // it's also in-bounds of `row`'s layout.
-            let value = unsafe { row.project_unchecked(&index.indexed_columns) };
-            if index.seek_point(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
-                return Err(self.build_error_unique(index, index_id, value));
+            // SAFETY: Caller promised that `row` has the same layout as `self`.
+            // The projection of `row`'s type onto the index's columns
+            // is therefore the same as the key type.
+            let key = unsafe { index.key_from_row(row) };
+
+            if index.seek_point(&key).next().is_some_and(|ptr| !is_deleted(ptr)) {
+                return Err(self.build_error_unique(index, index_id, row));
             }
         }
         Ok(())
@@ -774,8 +911,7 @@ impl Table {
                 }
 
                 let index = self.indexes.get(&index_id).unwrap();
-                let value = new.project(&index.indexed_columns).unwrap();
-                let error = self.build_error_unique(index, index_id, value).into();
+                let error = self.build_error_unique(index, index_id, new).into();
                 (index_id, error)
             })
             .map_err(|(index_id, error)| {
@@ -818,10 +954,13 @@ impl Table {
             .expect("there should be at least one unique index");
         // Project the needle row to the columns of the index, and then seek.
         // As this is a unique index, there are 0-1 rows for this key.
+        // SAFETY: `needle_table.is_row_present(needle_ptr)` holds.
         let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
-        let key = needle_row
-            .project(&target_index.indexed_columns)
-            .expect("needle row should be valid");
+        // SAFETY: Caller promised that the row layout of both tables are the same.
+        // As `target_index` comes from `target_table`,
+        // it follows that `needle_row`'s type projected to `target_index`'s columns
+        // is the same as the index's key type.
+        let key = unsafe { target_index.key_from_row(needle_row) };
         target_index.seek_point(&key).next().filter(|&target_ptr| {
             // SAFETY:
             // - Caller promised that the row layouts were the same.
@@ -1086,10 +1225,10 @@ impl Table {
 
     /// Deletes the row identified by `ptr` from the table.
     ///
-    /// Returns the number of blob bytes deleted. This method does not update statistics by itself.
+    /// This method does update statistics.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> BlobNumBytes {
+    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
@@ -1097,7 +1236,9 @@ impl Table {
         unsafe { self.delete_from_indices(blob_store, ptr) };
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        unsafe { self.delete_internal(blob_store, ptr) }
+        let blob_bytes_deleted = unsafe { self.delete_internal(blob_store, ptr) };
+
+        self.update_statistics_deleted_row(blob_bytes_deleted);
     }
 
     /// Delete `row_ref` from all the indices of this table until `index_id` is reached.
@@ -1109,7 +1250,8 @@ impl Table {
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for (_, index) in self.indexes.range_mut(..index_id) {
-            index.delete(row_ref).unwrap();
+            // SAFETY: any index in this table was constructed with the same row type as this table.
+            unsafe { index.delete(row_ref) };
         }
     }
 
@@ -1121,7 +1263,8 @@ impl Table {
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for index in self.indexes.values_mut() {
-            index.delete(row_ref).unwrap();
+            // SAFETY: any index in this table was constructed with the same row type as this table.
+            unsafe { index.delete(row_ref) };
         }
     }
 
@@ -1149,8 +1292,7 @@ impl Table {
         let ret = before(row_ref);
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        let blob_bytes_deleted = unsafe { self.delete_unchecked(blob_store, ptr) };
-        self.update_statistics_deleted_row(blob_bytes_deleted);
+        unsafe { self.delete_unchecked(blob_store, ptr) };
 
         Some(ret)
     }
@@ -1190,11 +1332,8 @@ impl Table {
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
-            let blob_bytes_deleted = unsafe {
-                // SAFETY: `find_same_row` ensures that the pointer is valid.
-                self.delete_unchecked(blob_store, existing_row_ptr)
-            };
-            self.update_statistics_deleted_row(blob_bytes_deleted);
+            // SAFETY: `find_same_row` ensures that the pointer is valid.
+            unsafe { self.delete_unchecked(blob_store, existing_row_ptr) };
         }
 
         // Remove the temporary row we inserted in the beginning.
@@ -1205,6 +1344,17 @@ impl Table {
         }
 
         Ok(existing_row_ptr)
+    }
+
+    /// Clears this table, removing all present rows from it.
+    pub fn clear(&mut self, blob_store: &mut dyn BlobStore) -> u64 {
+        let ptrs = self.scan_all_row_ptrs();
+        let len = ptrs.len() as u64;
+        for ptr in ptrs {
+            // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
+            unsafe { self.delete_unchecked(blob_store, ptr) };
+        }
+        len
     }
 
     /// Returns the row type for rows in this table.
@@ -1244,7 +1394,12 @@ impl Table {
 
     /// Returns a new [`TableIndex`] for `table`.
     pub fn new_index(&self, algo: &IndexAlgorithm, is_unique: bool) -> Result<TableIndex, InvalidFieldError> {
-        TableIndex::new(self.get_schema().get_row_type(), algo, is_unique)
+        TableIndex::new(
+            self.get_schema().get_row_type(),
+            algo.columns().to_owned(),
+            IndexKind::from_algo(algo),
+            is_unique,
+        )
     }
 
     /// Inserts a new `index` into the table.
@@ -1265,7 +1420,26 @@ impl Table {
         // It follows that this applies to any `rows`, as required.
         let violation = unsafe { index.build_from_rows(rows) };
         violation.unwrap_or_else(|ptr| {
-            panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would")
+            let index_schema = &self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id).expect("Index should exist");
+            let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
+                Some(columns)
+            } else { None };
+            let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
+            let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+            // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
+            let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
+            panic!(
+                "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.
+
+Found violation at pointer {ptr:?} to row {:?}.",
+                index_schema.index_name,
+                index_schema.index_id,
+                self.schema.table_name,
+                self.schema.table_id,
+                indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
+                indexed_column,
+                row,
+            );
         });
         // SAFETY: Forward caller requirement.
         unsafe { self.add_index(index_id, index) };
@@ -1307,7 +1481,7 @@ impl Table {
         Some(index)
     }
 
-    /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
+    /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
     pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
             current_page: None, // Will be filled by the iterator.
@@ -1315,6 +1489,13 @@ impl Table {
             table: self,
             blob_store,
         }
+    }
+
+    /// Returns a list of all present row pointers.
+    pub fn scan_all_row_ptrs(&self) -> Vec<RowPointer> {
+        let mut ptrs = Vec::with_capacity(self.row_count as usize);
+        ptrs.extend(self.scan_rows(&NullBlobStore).map(|row| row.pointer()));
+        ptrs
     }
 
     /// Returns this table combined with the index for [`IndexId`], if any.
@@ -1576,6 +1757,21 @@ impl<'a> RowRef<'a> {
         T::read_column(self, col.into().idx())
     }
 
+    /// Serializes the `cols` of `self` using `ser`.
+    ///
+    /// # Safety
+    ///
+    /// Any `col` in `cols` is in-bounds of `self`'s layout.
+    pub unsafe fn serialize_columns_unchecked<S: Serializer>(self, cols: &ColList, ser: S) -> Result<S::Ok, S::Error> {
+        let table = self.table;
+        let (page, offset) = table.page_and_offset(self.pointer);
+        // SAFETY:
+        // - We have a `RowRef`, so `ptr` points to a valid row in this table
+        // so safety requirements 1-3 flow from that.
+        // - Caller promised that any `col` in `cols` is in-bounds of `self`'s layout.
+        unsafe { serialize_columns_from_page(ser, page, self.blob_store, offset, &table.row_layout, cols) }
+    }
+
     /// Construct a projection of the row at `self` by extracting the `cols`.
     ///
     /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
@@ -1585,7 +1781,7 @@ impl<'a> RowRef<'a> {
     ///
     /// - `cols` must not specify any column which is out-of-bounds for the row `self´.
     pub unsafe fn project_unchecked(self, cols: &ColList) -> AlgebraicValue {
-        let col_layouts = &self.row_layout().product().elements;
+        let col_layouts = self.row_layout().product().elements;
 
         if let Some(head) = cols.as_singleton() {
             let head = head.idx();
@@ -1617,6 +1813,7 @@ impl<'a> RowRef<'a> {
     ///
     /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
+    /// If you want to wrap single elements in a [`ProductValue`], see [`Self::project_product`].
     pub fn project(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         if let Some(head) = cols.as_singleton() {
             return self.read_col(head).map_err(|_| head.into());
@@ -1632,6 +1829,26 @@ impl<'a> RowRef<'a> {
             elements.push(col_val);
         }
         Ok(AlgebraicValue::product(elements))
+    }
+
+    /// Construct a projection of the row at `self` by extracting the `cols`.
+    ///
+    /// Returns an error if `cols` specifies an index which is out-of-bounds for the row at `self`.
+    ///
+    /// This method always returns a [`ProductValue`], even when projecting a single element.
+    /// If you don't want to wrap single elements in a [`ProductValue`], see [`Self::project`].
+    pub fn project_product(self, cols: &ColList) -> Result<ProductValue, InvalidFieldError> {
+        let mut elements = Vec::with_capacity(cols.len() as usize);
+        for col in cols.iter() {
+            let col_val = self.read_col(col).map_err(|err| match err {
+                TypeError::WrongType { .. } => {
+                    unreachable!("AlgebraicValue::read_column never returns a `TypeError::WrongType`")
+                }
+                TypeError::IndexOutOfBounds { .. } => col,
+            })?;
+            elements.push(col_val);
+        }
+        Ok(ProductValue::from(elements))
     }
 
     /// Returns the raw row pointer for this row reference.
@@ -1713,7 +1930,8 @@ impl Serialize for RowRef<'_> {
     fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         let table = self.table;
         let (page, offset) = table.page_and_offset(self.pointer);
-        // SAFETY: `ptr` points to a valid row in this table per above check.
+        // SAFETY: We have a `RowRef`, so `ptr` points to a valid row in this table
+        // so safety requirements 1-3 flow from that.
         unsafe { serialize_row_from_page(ser, page, self.blob_store, offset, &table.row_layout) }
     }
 }
@@ -1741,7 +1959,7 @@ impl ToBsatn for RowRef<'_> {
     ///
     /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_writer`].
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError> {
         if let Some(static_layout) = self.static_layout() {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
@@ -1895,8 +2113,8 @@ impl<'a> TableAndIndex<'a> {
 
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn seek_point(&self, key: &AlgebraicValue) -> IndexScanPointIter<'a> {
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    pub fn seek_point(&self, key: &IndexKey<'_>) -> IndexScanPointIter<'a> {
         IndexScanPointIter {
             table: self.table,
             blob_store: self.blob_store,
@@ -1904,15 +2122,46 @@ impl<'a> TableAndIndex<'a> {
         }
     }
 
-    /// Returns an iterator yielding all rows in this index that fall within `range`.
+    /// Returns an iterator yielding all rows in this index that fall within `range`,
+    /// if the index is compatible with range seeks.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanRangeIter<'a> {
-        IndexScanRangeIter {
+    pub fn seek_range<'b>(
+        &self,
+        range: &impl RangeBounds<IndexKey<'b>>,
+    ) -> Result<IndexScanRangeIter<'a>, IndexCannotSeekRange> {
+        Ok(IndexScanRangeIter {
             table: self.table,
             blob_store: self.blob_store,
-            btree_index_iter: self.index.seek_range(range),
-        }
+            btree_index_iter: self.index.seek_range(range)?,
+        })
+    }
+
+    /// Returns an iterator yielding all rows in this index for `key`.
+    ///
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    pub fn seek_point_via_algebraic_value(&self, key: &AlgebraicValue) -> IndexScanPointIter<'a> {
+        let key = self.index.key_from_algebraic_value(key);
+        self.seek_point(&key)
+    }
+
+    /// Returns an iterator yielding all rows in this index that fall within `range`,
+    /// if the index is compatible with range seeks.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    pub fn seek_range_via_algebraic_value(
+        &self,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Result<IndexScanRangeIter<'a>, IndexCannotSeekRange> {
+        let start = range.start_bound().map(|v| self.index.key_from_algebraic_value(v));
+        let end = range.end_bound().map(|v| self.index.key_from_algebraic_value(v));
+        let btree_index_iter = self.index.seek_range(&(start, end))?;
+
+        Ok(IndexScanRangeIter {
+            table: self.table,
+            blob_store: self.blob_store,
+            btree_index_iter,
+        })
     }
 }
 
@@ -1974,9 +2223,9 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
-    pub constraint_name: Box<str>,
-    pub table_name: Box<str>,
-    pub cols: Vec<Box<str>>,
+    pub constraint_name: RawIdentifier,
+    pub table_name: TableName,
+    pub cols: Vec<Identifier>,
     pub value: AlgebraicValue,
 }
 
@@ -2026,14 +2275,15 @@ impl UniqueConstraintViolation {
 // Private API:
 impl Table {
     /// Returns a unique constraint violation error for the given `index`
-    /// and the `value` that would have been duplicated.
+    /// and the `row` that caused the violation.
     #[cold]
     pub fn build_error_unique(
         &self,
         index: &TableIndex,
         index_id: IndexId,
-        value: AlgebraicValue,
+        row: RowRef<'_>,
     ) -> UniqueConstraintViolation {
+        let value = row.project(&index.indexed_columns).unwrap();
         let schema = self.get_schema();
         UniqueConstraintViolation::build(schema, index, index_id, value)
     }
@@ -2084,13 +2334,7 @@ impl Table {
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
     fn is_row_present(&self, ptr: RowPointer) -> bool {
-        if self.squashed_offset != ptr.squashed_offset() {
-            return false;
-        }
-        let Some((page, offset)) = self.inner.try_page_and_offset(ptr) else {
-            return false;
-        };
-        page.has_row_offset(self.row_size(), offset)
+        self.inner.is_row_present(self.squashed_offset, ptr)
     }
 
     /// Returns the row size for a row in the table.
@@ -2166,10 +2410,10 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
-    use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
-    use spacetimedb_primitives::{col_list, TableId};
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder};
+    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
+    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec, SIZE};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, ModuleDef};
     use spacetimedb_schema::schema::Schema as _;
@@ -2194,10 +2438,7 @@ pub(crate) mod test {
                 true,
             )
             .with_unique_constraint(0)
-            .with_index(
-                RawIndexAlgorithm::BTree { columns: col_list![0] },
-                "accessor_name_doesnt_matter",
-            );
+            .with_index(btree(0), "accessor_name_doesnt_matter");
 
         let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
 
@@ -2295,7 +2536,7 @@ pub(crate) mod test {
         let index = table.get_index_by_id(index_id).unwrap();
 
         index
-            .seek_range(&(..))
+            .iter()
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
                 let key = row_ref.project(&index.indexed_columns).unwrap();
@@ -2326,11 +2567,7 @@ pub(crate) mod test {
 
         let index_id = IndexId(0);
 
-        let algo = BTreeAlgorithm {
-            columns: indexed_columns.clone(),
-        }
-        .into();
-        let index = TableIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns.clone(), IndexKind::BTree, false).unwrap();
         // Add an index on column 0.
         // Safety:
         // We're using `ty` as the row type for both `table` and the new index.
@@ -2361,11 +2598,7 @@ pub(crate) mod test {
             .sum();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 
-        let algo = BTreeAlgorithm {
-            columns: indexed_columns,
-        }
-        .into();
-        let index = TableIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns, IndexKind::BTree, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
         // As above, we're using `ty` as the row type for both `table` and the new index.
@@ -2470,7 +2703,7 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
+        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
@@ -2489,17 +2722,12 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            prop_assume!(!ty.elements.is_empty());
-
+        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048)) {
             test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            prop_assume!(ty.elements.len() >= 2);
-
-
+        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048)) {
             test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
         }
     }

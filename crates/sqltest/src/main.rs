@@ -200,7 +200,7 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB, M: MakeConnection<Conn = D
     db_name: &str,
 ) -> anyhow::Result<(bool, Duration)> {
     let filename = filename.as_ref();
-    let records = sqllogictest::parse_file(filename).map_err(|e| anyhow!("{:?}", e))?;
+    let records = sqllogictest::parse_file(filename).map_err(|e| anyhow!("{e:?}"))?;
 
     let mut begin_times = vec![];
     let mut did_pop = false;
@@ -336,7 +336,7 @@ async fn update_test_file<T: std::io::Write, D: AsyncDB, M: MakeConnection<Conn 
     format: bool,
 ) -> anyhow::Result<()> {
     let filename = filename.as_ref();
-    let records = tokio::task::block_in_place(|| sqllogictest::parse_file(filename).map_err(|e| anyhow!("{:?}", e)))
+    let records = tokio::task::block_in_place(|| sqllogictest::parse_file(filename).map_err(|e| anyhow!("{e:?}")))
         .context("failed to parse sqllogictest file")?;
 
     let mut begin_times = vec![];

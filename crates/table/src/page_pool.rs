@@ -117,7 +117,7 @@ impl<'de> ProductVisitor<'de> for &PagePool {
     }
 
     fn visit_named_product<A: NamedProductAccess<'de>>(self, _: A) -> Result<Self::Output, A::Error> {
-        unreachable!()
+        Err(A::Error::named_products_not_supported())
     }
 }
 

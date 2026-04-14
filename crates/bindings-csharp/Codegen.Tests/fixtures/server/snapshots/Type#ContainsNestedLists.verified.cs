@@ -8,26 +8,26 @@ partial class ContainsNestedLists
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        IntList = BSATN.IntList.Read(reader);
-        StringList = BSATN.StringList.Read(reader);
-        IntArray = BSATN.IntArray.Read(reader);
-        StringArray = BSATN.StringArray.Read(reader);
-        IntArrayArrayList = BSATN.IntArrayArrayList.Read(reader);
-        IntListListArray = BSATN.IntListListArray.Read(reader);
-        StringArrayArrayList = BSATN.StringArrayArrayList.Read(reader);
-        StringListListArray = BSATN.StringListListArray.Read(reader);
+        IntList = BSATN.IntListRW.Read(reader);
+        StringList = BSATN.StringListRW.Read(reader);
+        IntArray = BSATN.IntArrayRW.Read(reader);
+        StringArray = BSATN.StringArrayRW.Read(reader);
+        IntArrayArrayList = BSATN.IntArrayArrayListRW.Read(reader);
+        IntListListArray = BSATN.IntListListArrayRW.Read(reader);
+        StringArrayArrayList = BSATN.StringArrayArrayListRW.Read(reader);
+        StringListListArray = BSATN.StringListListArrayRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.IntList.Write(writer, IntList);
-        BSATN.StringList.Write(writer, StringList);
-        BSATN.IntArray.Write(writer, IntArray);
-        BSATN.StringArray.Write(writer, StringArray);
-        BSATN.IntArrayArrayList.Write(writer, IntArrayArrayList);
-        BSATN.IntListListArray.Write(writer, IntListListArray);
-        BSATN.StringArrayArrayList.Write(writer, StringArrayArrayList);
-        BSATN.StringListListArray.Write(writer, StringListListArray);
+        BSATN.IntListRW.Write(writer, IntList);
+        BSATN.StringListRW.Write(writer, StringList);
+        BSATN.IntArrayRW.Write(writer, IntArray);
+        BSATN.StringArrayRW.Write(writer, StringArray);
+        BSATN.IntArrayArrayListRW.Write(writer, IntArrayArrayList);
+        BSATN.IntListListArrayRW.Write(writer, IntListListArray);
+        BSATN.StringArrayArrayListRW.Write(writer, StringArrayArrayList);
+        BSATN.StringListListArrayRW.Write(writer, StringListListArray);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -40,42 +40,43 @@ partial class ContainsNestedLists
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<ContainsNestedLists>
     {
-        internal static readonly SpacetimeDB.BSATN.List<int, SpacetimeDB.BSATN.I32> IntList = new();
+        internal static readonly SpacetimeDB.BSATN.List<int, SpacetimeDB.BSATN.I32> IntListRW =
+            new();
         internal static readonly SpacetimeDB.BSATN.List<
             string,
             SpacetimeDB.BSATN.String
-        > StringList = new();
-        internal static readonly SpacetimeDB.BSATN.Array<int, SpacetimeDB.BSATN.I32> IntArray =
+        > StringListRW = new();
+        internal static readonly SpacetimeDB.BSATN.Array<int, SpacetimeDB.BSATN.I32> IntArrayRW =
             new();
         internal static readonly SpacetimeDB.BSATN.Array<
             string,
             SpacetimeDB.BSATN.String
-        > StringArray = new();
+        > StringArrayRW = new();
         internal static readonly SpacetimeDB.BSATN.List<
             int[][],
             SpacetimeDB.BSATN.Array<int[], SpacetimeDB.BSATN.Array<int, SpacetimeDB.BSATN.I32>>
-        > IntArrayArrayList = new();
+        > IntArrayArrayListRW = new();
         internal static readonly SpacetimeDB.BSATN.Array<
             System.Collections.Generic.List<System.Collections.Generic.List<int>>,
             SpacetimeDB.BSATN.List<
                 System.Collections.Generic.List<int>,
                 SpacetimeDB.BSATN.List<int, SpacetimeDB.BSATN.I32>
             >
-        > IntListListArray = new();
+        > IntListListArrayRW = new();
         internal static readonly SpacetimeDB.BSATN.List<
             string[][],
             SpacetimeDB.BSATN.Array<
                 string[],
                 SpacetimeDB.BSATN.Array<string, SpacetimeDB.BSATN.String>
             >
-        > StringArrayArrayList = new();
+        > StringArrayArrayListRW = new();
         internal static readonly SpacetimeDB.BSATN.Array<
             System.Collections.Generic.List<System.Collections.Generic.List<string>>,
             SpacetimeDB.BSATN.List<
                 System.Collections.Generic.List<string>,
                 SpacetimeDB.BSATN.List<string, SpacetimeDB.BSATN.String>
             >
-        > StringListListArray = new();
+        > StringListListArrayRW = new();
 
         public ContainsNestedLists Read(System.IO.BinaryReader reader)
         {
@@ -96,22 +97,19 @@ partial class ContainsNestedLists
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(IntList), IntList.GetAlgebraicType(registrar)),
-                        new(nameof(StringList), StringList.GetAlgebraicType(registrar)),
-                        new(nameof(IntArray), IntArray.GetAlgebraicType(registrar)),
-                        new(nameof(StringArray), StringArray.GetAlgebraicType(registrar)),
+                        new("IntList", IntListRW.GetAlgebraicType(registrar)),
+                        new("StringList", StringListRW.GetAlgebraicType(registrar)),
+                        new("IntArray", IntArrayRW.GetAlgebraicType(registrar)),
+                        new("StringArray", StringArrayRW.GetAlgebraicType(registrar)),
+                        new("IntArrayArrayList", IntArrayArrayListRW.GetAlgebraicType(registrar)),
+                        new("IntListListArray", IntListListArrayRW.GetAlgebraicType(registrar)),
                         new(
-                            nameof(IntArrayArrayList),
-                            IntArrayArrayList.GetAlgebraicType(registrar)
-                        ),
-                        new(nameof(IntListListArray), IntListListArray.GetAlgebraicType(registrar)),
-                        new(
-                            nameof(StringArrayArrayList),
-                            StringArrayArrayList.GetAlgebraicType(registrar)
+                            "StringArrayArrayList",
+                            StringArrayArrayListRW.GetAlgebraicType(registrar)
                         ),
                         new(
-                            nameof(StringListListArray),
-                            StringListListArray.GetAlgebraicType(registrar)
+                            "StringListListArray",
+                            StringListListArrayRW.GetAlgebraicType(registrar)
                         )
                     }
                 )

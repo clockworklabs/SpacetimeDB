@@ -14,13 +14,36 @@ pub struct CompressCount {
     pub zstd: usize,
 }
 
+/// Supported compression algorithms.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CompressionAlgorithm {
+    Zstd,
+}
+
 /// Compression type
 ///
 /// if `None`, the file is not compressed, otherwise it will be compressed using the specified algorithm.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CompressType {
     None,
-    Zstd,
+    Algorithm(CompressionAlgorithm),
+}
+
+impl CompressType {
+    pub fn algorithm(&self) -> Option<CompressionAlgorithm> {
+        match self {
+            Self::None => None,
+            Self::Algorithm(algo) => Some(*algo),
+        }
+    }
+
+    pub fn zstd() -> Self {
+        Self::Algorithm(CompressionAlgorithm::Zstd)
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        matches!(self, Self::Algorithm(_))
+    }
 }
 
 /// A reader that can read compressed files
@@ -73,8 +96,12 @@ impl CompressReader {
     pub fn compress_type(&self) -> CompressType {
         match self {
             CompressReader::None(_) => CompressType::None,
-            CompressReader::Zstd(_) => CompressType::Zstd,
+            CompressReader::Zstd(_) => CompressType::Algorithm(CompressionAlgorithm::Zstd),
         }
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        self.compress_type().is_compressed()
     }
 }
 
@@ -194,7 +221,7 @@ mod async_impls {
         pub fn compress_type(&self) -> CompressType {
             match self {
                 AsyncCompressReader::None(_) => CompressType::None,
-                AsyncCompressReader::Zstd(_) => CompressType::Zstd,
+                AsyncCompressReader::Zstd(_) => CompressType::Algorithm(CompressionAlgorithm::Zstd),
             }
         }
     }

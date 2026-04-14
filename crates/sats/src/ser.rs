@@ -2,11 +2,11 @@
 // See `serde` version `v1.0.169` for the parts where MIT / Apache-2.0 applies.
 
 mod impls;
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde;
 
 use crate::de::DeserializeSeed;
-use crate::{algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter};
+use crate::{algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter, ProductValue, SumValue, ValueWithType};
 use crate::{AlgebraicValue, WithTypespace};
 use core::marker::PhantomData;
 use core::{convert::Infallible, fmt};
@@ -116,6 +116,31 @@ pub trait Serializer: Sized {
     ///
     /// The argument is the number of fields in the product.
     fn serialize_named_product(self, len: usize) -> Result<Self::SerializeNamedProduct, Self::Error>;
+
+    /// Serialize a product with named fields.
+    ///
+    /// Allow to override the default serialization for where we need to switch the output format,
+    /// see [`crate::satn::TypedWriter`].
+    fn serialize_named_product_raw(self, value: &ValueWithType<'_, ProductValue>) -> Result<Self::Ok, Self::Error> {
+        let val = &value.val.elements;
+        assert_eq!(val.len(), value.ty().elements.len());
+        let mut prod = self.serialize_named_product(val.len())?;
+        for (val, el_ty) in val.iter().zip(&*value.ty().elements) {
+            prod.serialize_element(el_ty.name().map(|n| &**n), &value.with(&el_ty.algebraic_type, val))?
+        }
+        prod.end()
+    }
+
+    /// Serialize a sum value
+    ///
+    /// Allow to override the default serialization for where we need to switch the output format,
+    /// see [`crate::satn::TypedWriter`].
+    fn serialize_variant_raw(self, sum: &ValueWithType<'_, SumValue>) -> Result<Self::Ok, Self::Error> {
+        let sv = sum.value();
+        let (tag, val) = (sv.tag, &*sv.value);
+        let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
+        self.serialize_variant(tag, var_ty.name().map(|n| &**n), &sum.with(&var_ty.algebraic_type, val))
+    }
 
     /// Serialize a sum value provided the chosen `tag`, `name`, and `value`.
     fn serialize_variant<T: Serialize + ?Sized>(
@@ -252,7 +277,7 @@ pub trait Serializer: Sized {
 /// See the documentation of `serde::Serialize` for more information of the data model.
 ///
 /// Do not manually implement this trait unless you know what you are doing.
-/// Implementations must be consistent with `Deerialize<'de> for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations must be consistent with `Deserialize<'de> for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
 /// Implementations that are inconsistent across these traits may result in data loss.
 ///
 /// [`serde`]: https://crates.io/crates/serde
