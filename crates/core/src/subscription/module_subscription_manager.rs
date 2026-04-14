@@ -10,6 +10,7 @@ use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue
 use crate::subscription::delta::eval_delta;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
+use crate::util::adaptive_recv::AdaptiveUnboundedReceiver;
 use crate::worker_metrics::WORKER_METRICS;
 type V2EvalUpdatesResult = (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics);
 use core::mem;
@@ -37,6 +38,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 /// Clients are uniquely identified by their Identity and ConnectionId.
@@ -1715,7 +1717,7 @@ impl SendWorkerClient {
 /// See comment on the `send_worker_tx` field in [`SubscriptionManager`] for motivation.
 struct SendWorker {
     /// Receiver end of the [`SubscriptionManager`]'s `send_worker_tx` channel.
-    rx: mpsc::UnboundedReceiver<SendWorkerMessage>,
+    rx: AdaptiveUnboundedReceiver<SendWorkerMessage>,
 
     /// `subscription_send_queue_length` metric labeled for this database's `Identity`.
     ///
@@ -1756,6 +1758,12 @@ impl Drop for SendWorker {
 }
 
 impl SendWorker {
+    // Keep the worker warm briefly after handling a message so bursts do not
+    // pay a park/unpark cost on every enqueue, while still parking quickly
+    // once traffic goes quiet.
+    const BASELINE_LINGER: Duration = Duration::from_micros(25);
+    const MAX_LINGER: Duration = Duration::from_micros(500);
+
     fn is_client_dropped_or_cancelled(&self, client_id: &ClientId) -> bool {
         self.clients
             .get(client_id)
@@ -1814,7 +1822,7 @@ impl SendWorker {
         database_identity_to_clean_up_metric: Option<Identity>,
     ) -> Self {
         Self {
-            rx,
+            rx: AdaptiveUnboundedReceiver::new(rx, Self::BASELINE_LINGER, Self::MAX_LINGER),
             queue_length_metric,
             clients: Default::default(),
             database_identity_to_clean_up_metric,
