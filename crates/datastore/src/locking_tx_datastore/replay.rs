@@ -9,7 +9,7 @@ use crate::system_tables::{is_built_in_meta_row, StFields as _};
 use crate::system_tables::{StColumnRow, StTableFields, StTableRow, ST_COLUMN_ID, ST_TABLE_ID};
 use anyhow::{anyhow, Context};
 use core::ops::{Deref, DerefMut};
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use spacetimedb_commitlog::payload::txdata;
 use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
 use spacetimedb_lib::Identity;
@@ -51,10 +51,6 @@ impl<F> Replay<F> {
 
     pub fn next_tx_offset(&self) -> u64 {
         self.committed_state.read_arc().next_tx_offset
-    }
-
-    pub fn committed_state(&self) -> RwLockReadGuard<'_, CommittedState> {
-        self.committed_state.read()
     }
 }
 
