@@ -11,7 +11,10 @@ rust-version.workspace = true
 bench = false
 
 [features]
-unstable_abi = []
+unstable = []
 
 [dependencies]
 spacetimedb-primitives.workspace = true
+
+[lints]
+workspace = true

@@ -1,7 +1,8 @@
 use crate::algebraic_value::AlgebraicValue;
+use crate::impl_deserialize;
 use crate::sum_type::SumType;
 
-/// A value of a sum type chosing a specific variant of the type.
+/// A value of a sum type choosing a specific variant of the type.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SumValue {
     /// A tag representing the choice of one variant of the sum type's variants.
@@ -13,4 +14,41 @@ pub struct SumValue {
 
 impl crate::Value for SumValue {
     type Type = SumType;
+}
+
+impl SumValue {
+    /// Returns a new `SumValue` with the given `tag` and `value`.
+    pub fn new(tag: u8, value: impl Into<AlgebraicValue>) -> Self {
+        let value = Box::from(value.into());
+        Self { tag, value }
+    }
+
+    /// Returns a new `SumValue` with the given `tag` and unit value.
+    pub fn new_simple(tag: u8) -> Self {
+        Self::new(tag, ())
+    }
+}
+
+/// The tag of a `SumValue`.
+/// Can be used to read out the tag of a sum value without reading the payload.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+pub struct SumTag(pub u8);
+
+impl_deserialize!([] SumTag, de => <_>::deserialize(de).map(SumTag));
+
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for SumTag {}
+
+impl From<&u8> for &SumTag {
+    fn from(value: &u8) -> Self {
+        // SAFETY: `SumTag` is `repr(transparent)` of `u8`.
+        unsafe { core::mem::transmute(value) }
+    }
+}
+
+impl From<SumTag> for SumValue {
+    fn from(SumTag(tag): SumTag) -> Self {
+        SumValue::new_simple(tag)
+    }
 }

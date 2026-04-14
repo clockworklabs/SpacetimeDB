@@ -1,11 +1,16 @@
 use std::fmt::Display;
 
 use sqlparser::{
-    ast::{BinaryOperator, Expr, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins, Value},
+    ast::{
+        BinaryOperator, Expr, Function, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
+        Value,
+    },
     parser::ParserError,
 };
 use thiserror::Error;
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
 pub enum SubscriptionUnsupported {
     #[error("Unsupported SELECT: {0}")]
@@ -22,6 +27,8 @@ impl SubscriptionUnsupported {
     }
 }
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
 pub enum SqlUnsupported {
     #[error("Unsupported literal expression: {0}")]
@@ -34,10 +41,16 @@ pub enum SqlUnsupported {
     BinOp(BinaryOperator),
     #[error("Unsupported projection: {0}")]
     Projection(SelectItem),
+    #[error("Unsupported projection expression: {0}")]
+    ProjectionExpr(Expr),
+    #[error("Unsupported aggregate function: {0}")]
+    Aggregate(Function),
+    #[error("Aggregate expressions must have column aliases")]
+    AggregateWithoutAlias,
     #[error("Unsupported FROM expression: {0}")]
     From(TableFactor),
     #[error("Unsupported set operation: {0}")]
-    SetOp(SetExpr),
+    SetOp(Box<SetExpr>),
     #[error("Unsupported INSERT expression: {0}")]
     Insert(Query),
     #[error("Unsupported INSERT value: {0}")]
@@ -60,6 +73,10 @@ pub enum SqlUnsupported {
     MultiStatement,
     #[error("Multi-table DELETE is not supported")]
     MultiTableDelete,
+    #[error("Empty SQL query")]
+    Empty,
+    #[error("Names must be qualified when using joins")]
+    UnqualifiedNames,
 }
 
 impl SqlUnsupported {
@@ -77,13 +94,33 @@ pub enum SqlRequired {
 }
 
 #[derive(Error, Debug)]
+#[error("Recursion limit exceeded, `{source_}`")]
+pub struct RecursionError {
+    pub(crate) source_: &'static str,
+}
+
+#[derive(Error, Debug)]
 pub enum SqlParseError {
     #[error(transparent)]
-    SqlUnsupported(#[from] SqlUnsupported),
+    SqlUnsupported(#[from] Box<SqlUnsupported>),
     #[error(transparent)]
-    SubscriptionUnsupported(#[from] SubscriptionUnsupported),
+    SubscriptionUnsupported(#[from] Box<SubscriptionUnsupported>),
     #[error(transparent)]
     SqlRequired(#[from] SqlRequired),
     #[error(transparent)]
     ParserError(#[from] ParserError),
+    #[error(transparent)]
+    Recursion(#[from] RecursionError),
+}
+
+impl From<SubscriptionUnsupported> for SqlParseError {
+    fn from(value: SubscriptionUnsupported) -> Self {
+        SqlParseError::SubscriptionUnsupported(Box::new(value))
+    }
+}
+
+impl From<SqlUnsupported> for SqlParseError {
+    fn from(value: SqlUnsupported) -> Self {
+        SqlParseError::SqlUnsupported(Box::new(value))
+    }
 }

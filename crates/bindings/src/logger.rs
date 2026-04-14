@@ -5,13 +5,13 @@ use std::sync::Mutex;
 use std::{fmt, panic};
 
 /// Registers the panic hook to our own.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __preinit__00_panic_hook() {
     panic::set_hook(Box::new(panic_hook));
 }
 
 /// Our own panic hook logging to the console.
-fn panic_hook(info: &panic::PanicInfo) {
+fn panic_hook(info: &panic::PanicHookInfo) {
     // Try to look into some string types we know (`&'static str` and `String`).
     let msg = match info.payload().downcast_ref::<&'static str>() {
         Some(s) => *s,
@@ -77,7 +77,7 @@ static LOGGER: Logger = Logger {
 
 /// Registers our logger unless already set.
 /// The maximum level is `Trace`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __preinit__15_init_log() {
     // if the user wants to set their own logger, that's fine
     if log::set_logger(&LOGGER).is_ok() {

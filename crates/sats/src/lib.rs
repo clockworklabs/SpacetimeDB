@@ -10,37 +10,79 @@ pub mod convert;
 pub mod de;
 pub mod hash;
 pub mod hex;
-pub mod map_type;
-pub mod map_value;
+pub mod layout;
+#[cfg(feature = "memory-usage")]
+mod memory_usage_impls;
+#[cfg(feature = "memory-usage")]
+pub use spacetimedb_memory_usage as memory_usage;
 pub mod meta_type;
 pub mod primitives;
 pub mod product_type;
 pub mod product_type_element;
 pub mod product_value;
+pub mod raw_identifier;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
+pub mod size_of;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
+pub mod time_duration;
+pub mod timestamp;
 pub mod typespace;
+pub mod uuid;
 
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
+
+#[cfg(any(test, feature = "serde"))]
+pub mod serde {
+    pub use crate::de::serde::{deserialize_from as deserialize, SerdeDeserializer};
+    pub use crate::ser::serde::{serialize_to as serialize, SerdeSerializer};
+
+    /// A wrapper around a `serde` error which occurred while translating SATS <-> serde.
+    #[repr(transparent)]
+    pub struct SerdeError<E>(pub E);
+
+    /// A wrapper type that implements `serde` traits when `T` implements SATS traits.
+    ///
+    /// Specifically:
+    /// - <code>T: [sats::Serialize][crate::ser::Serialize] => `SerializeWrapper<T>`: [serde::Serialize]</code>
+    /// - <code>T: [sats::Deserialize<'de>][crate::de::Deserialize] => `SerializeWrapper<T>`: [serde::Deserialize<'de>]</code>
+    /// - <code>T: [sats::DeserializeSeed<'de>][crate::de::DeserializeSeed] => `SerializeWrapper<T>`: [serde::DeserializeSeed<'de>]</code>
+    #[repr(transparent)]
+    pub struct SerdeWrapper<T: ?Sized>(pub T);
+
+    impl<T: ?Sized> SerdeWrapper<T> {
+        /// Wraps a value in `SerdeWrapper`.
+        pub fn new(t: T) -> Self
+        where
+            T: Sized,
+        {
+            Self(t)
+        }
+
+        /// Converts `&T` to `&SerializeWrapper<T>`.
+        pub fn from_ref(t: &T) -> &Self {
+            // SAFETY: OK because of `repr(transparent)`.
+            unsafe { &*(t as *const T as *const SerdeWrapper<T>) }
+        }
+    }
+}
 
 /// Allows the macros in [`spacetimedb_bindings_macro`] to accept `crate = spacetimedb_sats`,
 /// which will then emit `$krate::sats`.
 #[doc(hidden)]
 pub use crate as sats;
+use crate::raw_identifier::RawIdentifier;
 
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
 pub use algebraic_value::{i256, u256, AlgebraicValue, F32, F64};
-pub use algebraic_value_hash::hash_bsatn;
+pub use algebraic_value_hash::hash_bsatn_array;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
-pub use map_type::MapType;
-pub use map_value::MapValue;
 pub use product_type::ProductType;
 pub use product_type_element::ProductTypeElement;
 pub use product_value::ProductValue;
@@ -48,6 +90,9 @@ pub use sum_type::SumType;
 pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
 pub use typespace::{GroundSpacetimeType, SpacetimeType, Typespace};
+
+pub use de::Deserialize;
+pub use ser::Serialize;
 
 /// The `Value` trait provides an abstract notion of a value.
 ///
@@ -115,8 +160,25 @@ impl<'a, T: Value> ValueWithType<'a, T> {
 }
 
 impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
-    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
+    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'a, T>> + use<'_, 'a, T> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
+    }
+}
+
+impl<T: Value + PartialEq> PartialEq<T> for ValueWithType<'_, T> {
+    fn eq(&self, other: &T) -> bool {
+        self.val == other
+    }
+}
+
+use core::fmt;
+
+impl<T: fmt::Debug + Value<Type: fmt::Debug>> fmt::Debug for ValueWithType<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ValueWithType")
+            .field("type", self.ty())
+            .field("value", self.value())
+            .finish()
     }
 }
 
@@ -237,4 +299,9 @@ where
 #[doc(hidden)]
 macro_rules! __make_register_reftype {
     ($ty:ty, $name:literal) => {};
+}
+
+/// A helper for prettier Debug implementation, without extra indirection around Some("name").
+fn dbg_aggregate_name(opt: &Option<RawIdentifier>) -> &dyn std::fmt::Debug {
+    opt.as_ref().map_or(opt, |s| s)
 }

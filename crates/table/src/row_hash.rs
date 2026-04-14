@@ -5,14 +5,16 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
     page::Page,
     var_len::VarLenRef,
 };
-use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore, layout::VarLenType};
+use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore};
 use core::hash::{Hash as _, Hasher};
 use core::mem;
 use core::str;
+use spacetimedb_sats::layout::{
+    align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, VarLenType,
+};
 use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Deserializer, i256, u256, F32, F64};
 
 /// Hashes the row in `page` where the fixed part starts at `fixed_offset`
@@ -26,7 +28,7 @@ use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Dese
 /// 1. the `fixed_offset` must point at a row in `page` lasting `ty.size()` bytes.
 /// 2. the row must be a valid `ty`.
 /// 3. for any `vlr: VarLenRef` stored in the row,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 pub unsafe fn hash_row_in_page(
     hasher: &mut impl Hasher,
     page: &Page,
@@ -49,17 +51,17 @@ pub unsafe fn hash_row_in_page(
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn hash_product(
     hasher: &mut impl Hasher,
     bytes: &Bytes,
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: &mut usize,
-    ty: &ProductTypeLayout,
+    ty: ProductTypeLayoutView<'_>,
 ) {
     let base_offset = *curr_offset;
-    for elem_ty in &*ty.elements {
+    for elem_ty in ty.elements {
         *curr_offset = base_offset + elem_ty.offset as usize;
 
         // SAFETY: By 1., `value` is valid at `ty`,
@@ -78,7 +80,7 @@ unsafe fn hash_product(
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn hash_value(
     hasher: &mut impl Hasher,
     bytes: &Bytes,
@@ -112,7 +114,7 @@ unsafe fn hash_value(
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { hash_product(hasher, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { hash_product(hasher, bytes, page, blob_store, curr_offset, ty.view()) }
         }
 
         // The primitive types:
@@ -157,7 +159,9 @@ unsafe fn hash_value(
                 });
             }
         }
-        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty) | VarLenType::Map(ty)) => {
+        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
+            let ty = &ty.elem_ty;
+
             // SAFETY: `value` was valid at and aligned for `ty`.
             // These `ty` store a `vlr: VarLenRef` as their value,
             // so the range is valid and properly aligned for `VarLenRef`.
@@ -166,7 +170,7 @@ unsafe fn hash_value(
             unsafe {
                 run_vlo_bytes(page, bytes, blob_store, curr_offset, |mut bsatn| {
                     let de = Deserializer::new(&mut bsatn);
-                    spacetimedb_sats::hash_bsatn(hasher, ty, de).unwrap();
+                    spacetimedb_sats::hash_bsatn_array(hasher, ty, de).unwrap();
                 });
             }
         }
@@ -224,7 +228,7 @@ pub unsafe fn read_from_bytes<T: Copy>(bytes: &Bytes, curr_offset: &mut usize) -
 
 #[cfg(test)]
 mod tests {
-    use crate::blob_store::HashMapBlobStore;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use core::hash::BuildHasher;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::generate_typed_row;
@@ -235,8 +239,9 @@ mod tests {
         fn pv_row_ref_hash_same_std_random_state((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
+            let pool = &PagePool::new_for_test();
             let blob_store = &mut HashMapBlobStore::default();
-            let (_, row) = table.insert(blob_store, &val).unwrap();
+            let (_, row) = table.insert(pool, blob_store, &val).unwrap();
 
             // Check hashing algos.
             let rs = std::hash::RandomState::new();
@@ -246,9 +251,10 @@ mod tests {
         #[test]
         fn pv_row_ref_hash_same_ahash((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
+            let pool = &PagePool::new_for_test();
             let blob_store = &mut HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
-            let (_, row) = table.insert(blob_store, &val).unwrap();
+            let (_, row) = table.insert(pool, blob_store, &val).unwrap();
 
             // Check hashing algos.
             let rs = std::hash::RandomState::new();

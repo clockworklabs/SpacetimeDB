@@ -22,7 +22,22 @@ public class NoSuchTableException : StdbException
     public override string Message => "No such table";
 }
 
-public class UniqueAlreadyExistsException : StdbException
+public class NoSuchIndexException : StdbException
+{
+    public override string Message => "No such index";
+}
+
+public class IndexNotUniqueException : StdbException
+{
+    public override string Message => "The index was not unique";
+}
+
+public class NoSuchRowException : StdbException
+{
+    public override string Message => "The row was not found, e.g., in an update call";
+}
+
+public class UniqueConstraintViolationException : StdbException
 {
     public override string Message => "Value with given unique identifier already exists";
 }
@@ -55,6 +70,37 @@ public class NoSuchBytesException : StdbException
 public class NoSpaceException : StdbException
 {
     public override string Message => "The provided bytes sink has no more room left";
+}
+
+public class AutoIncOverflowException : StdbException
+{
+    public override string Message => "The auto-increment sequence overflowed";
+}
+
+public class TransactionWouldBlockException : StdbException
+{
+    public override string Message => "Attempted operation while another transaction is open";
+}
+
+public class TransactionNotAnonymousException : StdbException
+{
+    public override string Message => "The transaction is not anonymous";
+}
+
+public class TransactionIsReadOnlyException : StdbException
+{
+    public override string Message => "The transaction is read-only";
+}
+
+public class TransactionIsMutableException : StdbException
+{
+    public override string Message =>
+        "ABI call can only be made while inside a read-only transaction";
+}
+
+public class HttpException : StdbException
+{
+    public override string Message => "HTTP request failed";
 }
 
 public class UnknownException : StdbException

@@ -2,17 +2,13 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb::sql::compiler::compile_sql;
-use spacetimedb::sql::execute::execute_sql;
+use spacetimedb::sql::execute::{run, SqlResult};
 use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
-use spacetimedb::Identity;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
-use spacetimedb_vm::relation::MemTable;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
 use std::io::Write;
@@ -34,7 +30,7 @@ impl ColumnType for Kind {
 
     fn to_char(&self) -> char {
         match &self.0 {
-            AlgebraicType::Map(_) | AlgebraicType::Array(_) => '?',
+            AlgebraicType::Array(_) => '?',
             ty if ty.is_integer() => 'I',
             ty if ty.is_float() => 'R',
             AlgebraicType::String => 'T',
@@ -68,15 +64,24 @@ impl SpaceDb {
         })
     }
 
-    pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
-        self.conn.with_read_only(&ExecutionContext::default(), |tx| {
-            let ast = compile_sql(&self.conn, tx, sql)?;
-            let subs = ModuleSubscriptions::new(Arc::new(self.conn.db.clone()), Identity::ZERO);
-            let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;
-            //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
-            //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
-            Ok(result)
-        })
+    pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<(Vec<Kind>, Vec<ProductValue>)> {
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::clone(&self.conn.db));
+        let mut head = Vec::new();
+        let SqlResult { rows, .. } = runtime.block_on(run(
+            Arc::clone(&self.conn.db),
+            sql.to_string(),
+            self.auth.clone(),
+            Some(subs),
+            None,
+            &mut head,
+        ))?;
+
+        let header = head.into_iter().map(|(_, ty)| Kind(ty)).collect();
+
+        // Remove comments to see which SQL worked. Can't collect it outside from lack of a hook in
+        // the external `sqllogictest` crate. :(
+        // append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
+        Ok((header, rows))
     }
 
     pub fn into_db(self) -> DBRunner {
@@ -90,20 +95,12 @@ impl AsyncDB for SpaceDb {
     type ColumnType = Kind;
 
     async fn run(&mut self, sql: &str) -> Result<DBOutput<Self::ColumnType>, Self::Error> {
-        let is_query_sql = {
-            let lower_sql = sql.trim_start().to_ascii_lowercase();
-            lower_sql.starts_with("select")
-        };
-        let r = self.run_sql(sql)?;
-        if !is_query_sql {
+        let (header, rows) = self.run_sql(sql)?;
+        if header.is_empty() {
             return Ok(DBOutput::StatementComplete(0));
         }
-        let r = r.into_iter().next().unwrap();
 
-        let header = r.head.fields.iter().map(|x| Kind(x.algebraic_type.clone())).collect();
-
-        let output: Vec<Vec<_>> = r
-            .data
+        let output: Vec<Vec<_>> = rows
             .into_iter()
             .map(|row| {
                 row.into_iter()
@@ -124,7 +121,7 @@ impl AsyncDB for SpaceDb {
                         AlgebraicValue::U256(x) => x.to_string(),
                         AlgebraicValue::F32(x) => format!("{:?}", x.as_ref()),
                         AlgebraicValue::F64(x) => format!("{:?}", x.as_ref()),
-                        AlgebraicValue::String(x) => format!("'{}'", x),
+                        AlgebraicValue::String(x) => format!("'{x}'"),
                         x => x.to_satn(),
                     })
                     .collect()

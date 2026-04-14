@@ -1,254 +1,357 @@
+use std::sync::Arc;
 use std::time::Duration;
 
-use super::compiler::compile_sql;
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::system_tables::StVarTable;
-use crate::db::datastore::traits::IsolationLevel;
-use crate::db::relational_db::{RelationalDB, Tx};
+use super::ast::SchemaViewer;
+use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::ArgsTuple;
-use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
-use crate::util::slow::SlowQueryLogger;
-use crate::vm::{DbProgram, TxMode};
-use itertools::Either;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
+use crate::estimation::{check_row_limit, estimate_rows_scanned};
+use crate::host::module_host::{
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError, ViewCallResult,
+    ViewOutcome, WasmInstance,
+};
+use crate::host::{ArgsTuple, ModuleHost};
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
+use crate::subscription::module_subscription_manager::TransactionOffset;
+use crate::subscription::tx::DeltaTx;
+use anyhow::anyhow;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::FieldName;
-use spacetimedb_lib::{ProductType, ProductValue};
-use spacetimedb_vm::eval::run_ast;
-use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
-use spacetimedb_vm::relation::MemTable;
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use tokio::sync::oneshot;
 
 pub struct StmtResult {
     pub schema: ProductType,
     pub rows: Vec<ProductValue>,
 }
 
-// TODO(cloutiertyler): we could do this the swift parsing way in which
-// we always generate a plan, but it may contain errors
+#[derive(Debug)]
+pub struct SqlResult {
+    /// The offset of the SQL operation's transaction.
+    ///
+    /// Used to determine visibility of the transaction wrt the durability
+    /// requirements requested by the caller.
+    pub tx_offset: TransactionOffset,
+    pub rows: Vec<ProductValue>,
+    /// These metrics will be reported via `report_tx_metrics`.
+    /// They should not be reported separately to avoid double counting.
+    pub metrics: ExecutionMetrics,
+}
 
-pub(crate) fn collect_result(
-    result: &mut Vec<MemTable>,
-    updates: &mut Vec<DatabaseTableUpdate>,
-    r: CodeResult,
-) -> Result<(), DBError> {
-    match r {
-        CodeResult::Value(_) => {}
-        CodeResult::Table(x) => result.push(x),
-        CodeResult::Block(lines) => {
-            for x in lines {
-                collect_result(result, updates, x)?;
-            }
+/// Run the `SQL` string using the `auth` credentials
+///
+/// If a `ModuleHost` is provided, the SQL query is executed via the module host,
+/// meaning the module’s core is used to run the statement.
+/// If no module host is provided, the SQL query is executed on the current thread.
+pub async fn run(
+    db: Arc<RelationalDB>,
+    sql_text: String,
+    auth: AuthCtx,
+    subs: Option<ModuleSubscriptions>,
+    module: Option<ModuleHost>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
+) -> Result<SqlResult, DBError> {
+    match module {
+        Some(module) => module.call_view_sql(db, sql_text, auth, subs, head).await,
+        None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
+    }
+}
+
+/// Run the `SQL` string using the provided `WasmInstance` and `ModuleDef`
+///
+/// The query will always be executed on the module's thread.
+pub(crate) fn run_with_instance<I: WasmInstance>(
+    instance: &mut RefInstance<I>,
+    db: Arc<RelationalDB>,
+    sql_text: String,
+    auth: AuthCtx,
+    subs: Option<ModuleSubscriptions>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
+) -> Result<(SqlResult, bool), DBError> {
+    run_inner::<I>(Some(instance), db, sql_text, auth, subs, head)
+}
+
+fn run_inner<I: WasmInstance>(
+    instance: Option<&mut RefInstance<I>>,
+    db: Arc<RelationalDB>,
+    sql_text: String,
+    auth: AuthCtx,
+    subs: Option<ModuleSubscriptions>,
+    head: &mut Vec<(RawIdentifier, AlgebraicType)>,
+) -> Result<(SqlResult, bool), DBError> {
+    // We parse the sql statement in a mutable transaction.
+    // If it turns out to be a query, we downgrade the tx.
+    let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
+        compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)
+    })?;
+
+    let mut metrics = ExecutionMetrics::default();
+
+    match stmt {
+        Statement::Select(stmt) => {
+            // Materialize views and downgrade to a read-only transaction
+            let (tx, trapped) = match instance {
+                Some(instance) => ModuleHost::materialize_views(tx, instance, &stmt, auth.caller(), Workload::Sql)?,
+                None => (tx, false),
+            };
+
+            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
+
+            let (tx_offset_send, tx_offset) = oneshot::channel();
+            // Release the tx on drop, so that we record metrics
+            // and set the transaction offset.
+            let mut tx = scopeguard::guard(tx, |tx| {
+                let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                let _ = tx_offset_send.send(offset);
+                db.report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), Some(tx_metrics_downgrade));
+            });
+
+            // Compute the header for the result set
+            stmt.for_each_return_field(|col_name, col_type| {
+                head.push((col_name.clone(), col_type.clone()));
+            });
+
+            // Evaluate the query
+            let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
+                check_row_limit(
+                    &[&plan],
+                    &db,
+                    &tx,
+                    |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
+                    &auth,
+                )?;
+                Ok(plan)
+            })?;
+
+            // Update transaction metrics
+            tx.metrics.merge(metrics);
+
+            Ok((
+                SqlResult {
+                    tx_offset,
+                    rows,
+                    metrics: tx.metrics,
+                },
+                trapped,
+            ))
         }
-        CodeResult::Halt(err) => return Err(DBError::VmUser(err)),
-        CodeResult::Pass(x) => match x {
-            None => {}
-            Some(update) => {
-                updates.push(DatabaseTableUpdate {
-                    table_name: update.table_name,
-                    table_id: update.table_id,
-                    inserts: update.inserts.into(),
-                    deletes: update.deletes.into(),
+        Statement::DML(stmt) => {
+            // An extra layer of auth is required for DML
+            if !auth.has_write_access() {
+                return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
+            }
+
+            // Evaluate the mutation
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
+
+            // Update transaction metrics
+            tx.metrics.merge(metrics);
+
+            // Update views
+            let (result, trapped) = match instance {
+                Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller()),
+                None => (ViewCallResult::default(tx), false),
+            };
+
+            // Rollback transaction and report metrics if view execution failed
+            if let ViewOutcome::Failed(err) = result.outcome {
+                let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
+                db.report_mut_tx_metrics(reducer, metrics, None);
+                return Err(DBError::View(ViewCallError::InternalError(err)));
+            }
+
+            let tx = result.tx;
+
+            // Commit the tx if there are no deltas to process
+            if subs.is_none() {
+                let metrics = tx.metrics;
+                return db.commit_tx(tx).map(|tx_opt| {
+                    let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+
+                    let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                    let _ = tx_offset_sender.send(tx_offset);
+
+                    db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                    (
+                        SqlResult {
+                            tx_offset: tx_offset_receiver,
+                            rows: vec![],
+                            metrics,
+                        },
+                        trapped,
+                    )
                 });
             }
-        },
-    }
 
-    Ok(())
-}
-
-pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
-    ExecutionContext::sql(db.address())
-}
-
-fn execute(
-    p: &mut DbProgram<'_, '_>,
-    ast: Vec<CrudExpr>,
-    sql: &str,
-    updates: &mut Vec<DatabaseTableUpdate>,
-) -> Result<Vec<MemTable>, DBError> {
-    let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
-        StVarTable::query_limit(p.ctx, p.db, tx)?.map(Duration::from_millis)
-    } else {
-        None
-    };
-    let _slow_query_logger = SlowQueryLogger::new(sql, slow_query_threshold, p.ctx.workload()).log_guard();
-    let mut result = Vec::with_capacity(ast.len());
-    let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-    // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-    collect_result(&mut result, updates, run_ast(p, query, [].into()).into())?;
-    Ok(result)
-}
-
-/// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
-///
-/// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-///
-/// Also, in case the execution takes more than x, log it as `slow query`
-pub fn execute_sql(
-    db: &RelationalDB,
-    sql: &str,
-    ast: Vec<CrudExpr>,
-    auth: AuthCtx,
-    subs: Option<&ModuleSubscriptions>,
-) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ctx_sql(db);
-    if CrudExpr::is_reads(&ast) {
-        let mut updates = Vec::new();
-        db.with_read_only(&ctx, |tx| {
-            execute(
-                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
-                ast,
-                sql,
-                &mut updates,
-            )
-        })
-    } else if subs.is_none() {
-        let mut updates = Vec::new();
-        db.with_auto_commit(&ctx, |mut_tx| {
-            execute(
-                &mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth),
-                ast,
-                sql,
-                &mut updates,
-            )
-        })
-    } else {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        let mut updates = Vec::with_capacity(ast.len());
-        let res = execute(
-            &mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth),
-            ast,
-            sql,
-            &mut updates,
-        );
-        if res.is_ok() && !updates.is_empty() {
+            // Otherwise downgrade the tx and process the deltas.
+            // Note, we get the delta by downgrading the tx.
+            // Hence we just pass a default `DatabaseUpdate` here.
+            // It will ultimately be replaced with the correct one.
             let event = ModuleEvent {
                 timestamp: Timestamp::now(),
-                caller_identity: auth.caller,
-                caller_address: None,
+                caller_identity: auth.caller(),
+                caller_connection_id: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: <_>::default(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
-                status: EventStatus::Committed(DatabaseUpdate { tables: updates }),
+                status: EventStatus::Committed(DatabaseUpdate::default()),
+                reducer_return_value: None,
                 energy_quanta_used: EnergyQuanta::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
                 timer: None,
             };
-            match subs.unwrap().commit_and_broadcast_event(None, event, &ctx, tx).unwrap() {
-                Ok(_) => res,
-                Err(WriteConflict) => todo!("See module_host_actor::call_reducer_with_tx"),
-            }
-        } else {
-            db.finish_tx(&ctx, tx, res)
+            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx);
+            Ok((
+                SqlResult {
+                    tx_offset: res.tx_offset,
+                    rows: vec![],
+                    metrics,
+                },
+                trapped,
+            ))
         }
     }
-}
-
-/// Like [`execute_sql`], but for providing your own `tx`.
-///
-/// Returns None if you pass a mutable query with an immutable tx.
-pub fn execute_sql_tx<'a>(
-    db: &RelationalDB,
-    tx: impl Into<TxMode<'a>>,
-    sql: &str,
-    ast: Vec<CrudExpr>,
-    auth: AuthCtx,
-) -> Result<Option<Vec<MemTable>>, DBError> {
-    let mut tx = tx.into();
-
-    if matches!(tx, TxMode::Tx(_)) && !CrudExpr::is_reads(&ast) {
-        return Ok(None);
-    }
-
-    let ctx = ctx_sql(db);
-    let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
-    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast, sql, &mut updates).map(Some)
-}
-
-/// Run the `SQL` string using the `auth` credentials
-pub fn run(
-    db: &RelationalDB,
-    sql_text: &str,
-    auth: AuthCtx,
-    subs: Option<&ModuleSubscriptions>,
-) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ctx_sql(db);
-    let result = db.with_read_only(&ctx, |tx| {
-        let ast = compile_sql(db, tx, sql_text)?;
-        if CrudExpr::is_reads(&ast) {
-            let mut updates = Vec::new();
-            let result = execute(
-                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
-                ast,
-                sql_text,
-                &mut updates,
-            )?;
-            Ok::<_, DBError>(Either::Left(result))
-        } else {
-            // hehe. right. write.
-            Ok(Either::Right(ast))
-        }
-    })?;
-    match result {
-        Either::Left(result) => Ok(result),
-        // TODO: this should perhaps be an upgradable_read upgrade? or we should try
-        //       and figure out if we can detect the mutablility of the query before we take
-        //       the tx? once we have migrations we probably don't want to have stale
-        //       sql queries after a database schema have been updated.
-        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs),
-    }
-}
-
-/// Translates a `FieldName` to the field's name.
-pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
-    Some(
-        tx.get_schema(field.table)?
-            .get_column(field.col.idx())?
-            .col_name
-            .clone(),
-    )
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
-    use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::vm::tests::create_table_with_rows;
-    use pretty_assertions::assert_eq;
-    use spacetimedb_lib::db::auth::{StAccess, StTableType};
-    use spacetimedb_lib::error::{ResultTest, TestError};
-    use spacetimedb_lib::relation::ColExpr;
-    use spacetimedb_lib::relation::Header;
-    use spacetimedb_lib::{AlgebraicValue, Identity};
-    use spacetimedb_primitives::{col_list, ColId};
-    use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
-    use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
     use std::sync::Arc;
 
-    pub(crate) fn execute_for_testing(
-        db: &RelationalDB,
-        sql_text: &str,
-        q: Vec<CrudExpr>,
-    ) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
-    }
+    use super::*;
+    use crate::db::relational_db::tests_utils::{self, begin_tx, insert, with_auto_commit, TestDB};
+    use itertools::Itertools;
+    use pretty_assertions::assert_eq;
+    use spacetimedb_datastore::system_tables::{
+        StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
+    };
+    use spacetimedb_lib::bsatn::ToBsatn;
+    use spacetimedb_lib::db::auth::{StAccess, StTableType};
+    use spacetimedb_lib::error::{ResultTest, TestError};
+    use spacetimedb_lib::{AlgebraicValue, Identity};
+    use spacetimedb_primitives::{col_list, ColId, TableId};
+    use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
+    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+    use spacetimedb_schema::table_name::TableName;
 
     /// Short-cut for simplify test execution
-    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        run(db, sql_text, AuthCtx::for_testing(), Some(&subs))
+    pub(crate) fn run_for_testing(db: &Arc<RelationalDB>, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
+        runtime
+            .block_on(run(
+                db.clone(),
+                sql_text.to_string(),
+                AuthCtx::for_testing(),
+                Some(subs),
+                None,
+                &mut vec![],
+            ))
+            .map(|x| x.rows)
     }
 
-    fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    struct TestRows {
+        data: Vec<ProductValue>,
+    }
+
+    struct GameData {
+        location: TestRows,
+        inv: TestRows,
+        player: TestRows,
+        location_ty: ProductType,
+        inv_ty: ProductType,
+        player_ty: ProductType,
+    }
+
+    fn create_game_data() -> GameData {
+        let inv_ty = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let inv = TestRows {
+            data: vec![product!(1u64, "health")],
+        };
+
+        let player_ty = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
+        let player = TestRows {
+            data: vec![product!(100u64, 1u64), product!(200u64, 1u64), product!(300u64, 1u64)],
+        };
+
+        let location_ty = ProductType::from([
+            ("entity_id", AlgebraicType::U64),
+            ("x", AlgebraicType::F32),
+            ("z", AlgebraicType::F32),
+        ]);
+        let location = TestRows {
+            data: vec![product!(100u64, 0.0f32, 32.0f32), product!(100u64, 1.0f32, 31.0f32)],
+        };
+
+        GameData {
+            location,
+            inv,
+            player,
+            location_ty,
+            inv_ty,
+            player_ty,
+        }
+    }
+
+    fn create_table_with_rows(
+        db: &RelationalDB,
+        tx: &mut crate::db::relational_db::MutTx,
+        table_name: &str,
+        schema: ProductType,
+        rows: &[ProductValue],
+        access: StAccess,
+    ) -> ResultTest<Arc<TableSchema>> {
+        let columns = schema
+            .elements
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, element)| ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_name: Identifier::new(element.name.unwrap()).unwrap(),
+                col_type: element.algebraic_type,
+                col_pos: ColId(i as _),
+                alias: None,
+            })
+            .collect();
+
+        let table_id = db.create_table(
+            tx,
+            TableSchema::new(
+                TableId::SENTINEL,
+                TableName::for_test(table_name),
+                None,
+                columns,
+                vec![],
+                vec![],
+                vec![],
+                StTableType::User,
+                access,
+                None,
+                None,
+                false,
+                None,
+            ),
+        )?;
+        let schema = db.schema_for_table_mut(tx, table_id)?;
+
+        for row in rows {
+            insert(db, tx, table_id, row)?;
+        }
+
+        Ok(schema)
+    }
+
+    fn create_data(total_rows: u64) -> ResultTest<(TestDB, TestRows)> {
         let stdb = TestDB::durable()?;
 
         let rows: Vec<_> = (1..=total_rows)
@@ -256,12 +359,22 @@ pub(crate) mod tests {
             .collect();
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
-        let schema = stdb.with_auto_commit(&ExecutionContext::default(), |tx| {
+        with_auto_commit(&stdb, |tx| {
             create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
         })?;
-        let header = Header::from(&*schema).into();
+        Ok((stdb, TestRows { data: rows }))
+    }
 
-        Ok((stdb, MemTable::new(header, schema.table_access, rows)))
+    fn create_identity_table(table_name: &str) -> ResultTest<(TestDB, TestRows)> {
+        let stdb = TestDB::durable()?;
+        let head = ProductType::from([("identity", AlgebraicType::identity())]);
+        let rows = vec![product!(Identity::ZERO), product!(Identity::ONE)];
+
+        with_auto_commit(&stdb, |tx| {
+            create_table_with_rows(&stdb, tx, table_name, head.clone(), &rows, StAccess::Public)
+        })?;
+
+        Ok((stdb, TestRows { data: rows }))
     }
 
     #[test]
@@ -270,14 +383,709 @@ pub(crate) mod tests {
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
+        assert_eq!(result, input.data, "Inventory");
+        Ok(())
+    }
 
+    #[test]
+    fn test_limit() -> ResultTest<()> {
+        let (db, _) = create_data(5)?;
+
+        let result = run_for_testing(&db, "SELECT * FROM inventory limit 2")?;
+
+        let (_, input) = create_data(2)?;
+
+        assert_eq!(result, input.data, "Inventory");
+        Ok(())
+    }
+
+    #[test]
+    fn test_count() -> ResultTest<()> {
+        let (db, _) = create_data(5)?;
+
+        let sql = "SELECT count(*) as n FROM inventory";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![5u64]], "Inventory");
+
+        let sql = "SELECT count(*) as n FROM inventory limit 2";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![5u64]], "Inventory");
+
+        let sql = "SELECT count(*) as n FROM inventory WHERE inventory_id = 4 or inventory_id = 5";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![2u64]], "Inventory");
+        Ok(())
+    }
+
+    /// Test the evaluation of SELECT, UPDATE, and DELETE parameterized with `:sender`
+    #[test]
+    fn test_sender_param() -> ResultTest<()> {
+        let (db, _) = create_identity_table("user")?;
+
+        const SELECT_ALL: &str = "SELECT * FROM user";
+
+        let sql = "SELECT * FROM user WHERE identity = :sender";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![Identity::ZERO]]);
+
+        let sql = "DELETE FROM user WHERE identity = :sender";
+        run_for_testing(&db, sql)?;
+        let result = run_for_testing(&db, SELECT_ALL)?;
+        assert_eq!(result, vec![product![Identity::ONE]]);
+
+        let zero = "0".repeat(64);
+        let one = "0".repeat(63) + "1";
+
+        let sql = format!("UPDATE user SET identity = 0x{zero}");
+        run_for_testing(&db, &sql)?;
+        let sql = format!("UPDATE user SET identity = 0x{one} WHERE identity = :sender");
+        run_for_testing(&db, &sql)?;
+        let result = run_for_testing(&db, SELECT_ALL)?;
+        assert_eq!(result, vec![product![Identity::ONE]]);
+
+        Ok(())
+    }
+
+    /// Create an [Identity] from a [u8]
+    fn identity_from_u8(v: u8) -> Identity {
+        Identity::from_byte_array([v; 32])
+    }
+
+    /// Insert rules into the RLS system table
+    fn insert_rls_rules(
+        db: &RelationalDB,
+        table_ids: impl IntoIterator<Item = TableId>,
+        rules: impl IntoIterator<Item = &'static str>,
+    ) -> anyhow::Result<()> {
+        with_auto_commit(db, |tx| {
+            for (table_id, sql) in table_ids.into_iter().zip(rules) {
+                db.insert(
+                    tx,
+                    ST_ROW_LEVEL_SECURITY_ID,
+                    &ProductValue::from(StRowLevelSecurityRow {
+                        table_id,
+                        sql: sql.into(),
+                    })
+                    .to_bsatn_vec()?,
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Insert product values into a table
+    fn insert_rows(
+        db: &RelationalDB,
+        table_id: TableId,
+        rows: impl IntoIterator<Item = ProductValue>,
+    ) -> anyhow::Result<()> {
+        with_auto_commit(db, |tx| {
+            for row in rows.into_iter() {
+                db.insert(tx, table_id, &row.to_bsatn_vec()?)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Assert this query returns the expected rows for this user
+    async fn assert_query_results(
+        db: Arc<RelationalDB>,
+        sql: &str,
+        auth: AuthCtx,
+        expected: impl IntoIterator<Item = ProductValue>,
+    ) {
         assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
+            run(db, sql.to_string(), auth.clone(), None, None, &mut vec![])
+                .await
+                .unwrap()
+                .rows
+                .into_iter()
+                .sorted()
+                .dedup()
+                .collect::<Vec<_>>(),
+            expected.into_iter().sorted().dedup().collect::<Vec<_>>()
         );
+    }
+
+    /// Test a query that uses a multi-column index
+    #[tokio::test]
+    async fn test_multi_column_index() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [
+            ("a", AlgebraicType::U64),
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+        ];
+
+        let table_id = db.create_table_for_test_multi_column("t", &schema, [1, 2].into())?;
+
+        insert_rows(
+            &db,
+            table_id,
+            vec![
+                product![0_u64, 1_u64, 2_u64],
+                product![1_u64, 2_u64, 1_u64],
+                product![2_u64, 2_u64, 2_u64],
+            ],
+        )?;
+
+        assert_query_results(
+            db.clone(),
+            "select * from t where c = 1 and b = 2",
+            AuthCtx::for_testing(),
+            [product![1_u64, 2_u64, 1_u64]],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    /// Test querying a table with RLS rules
+    #[tokio::test]
+    async fn test_rls_rules() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let id_for_a = identity_from_u8(1);
+        let id_for_b = identity_from_u8(2);
+
+        let users_schema = [("identity", AlgebraicType::identity())];
+        let sales_schema = [
+            ("order_id", AlgebraicType::U64),
+            ("customer", AlgebraicType::identity()),
+        ];
+
+        let users_table_id = db.create_table_for_test("users", &users_schema, &[])?;
+        let sales_table_id = db.create_table_for_test("sales", &sales_schema, &[])?;
+
+        insert_rows(&db, users_table_id, vec![product![id_for_a], product![id_for_b]])?;
+        insert_rows(
+            &db,
+            sales_table_id,
+            vec![
+                product![1u64, id_for_a],
+                product![2u64, id_for_b],
+                product![3u64, id_for_a],
+                product![4u64, id_for_b],
+            ],
+        )?;
+
+        insert_rls_rules(
+            &db,
+            [users_table_id, sales_table_id],
+            [
+                "select * from users where identity = :sender",
+                "select s.* from users u join sales s on u.identity = s.customer",
+            ],
+        )?;
+
+        let auth_for_a = AuthCtx::new(Identity::ZERO, id_for_a);
+        let auth_for_b = AuthCtx::new(Identity::ZERO, id_for_b);
+
+        assert_query_results(
+            db.clone(),
+            // Should only return the identity for sender "a"
+            "select * from users",
+            auth_for_a.clone(),
+            [product![id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the identity for sender "b"
+            "select * from users",
+            auth_for_b.clone(),
+            [product![id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "a"
+            "select * from users where identity = :sender",
+            auth_for_a.clone(),
+            [product![id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "b"
+            "select * from users where identity = :sender",
+            auth_for_b.clone(),
+            [product![id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "a"
+            &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
+            auth_for_a.clone(),
+            [product![id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "b"
+            &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
+            auth_for_b.clone(),
+            [product![id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "a"
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_a.to_hex()
+            ),
+            auth_for_a.clone(),
+            [product![id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "b"
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_b.to_hex()
+            ),
+            auth_for_b.clone(),
+            [product![id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "a"
+            &format!(
+                "select * from users where identity = :sender or identity = 0x{}",
+                id_for_b.to_hex()
+            ),
+            auth_for_a.clone(),
+            [product![id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "b"
+            &format!(
+                "select * from users where identity = :sender or identity = 0x{}",
+                id_for_a.to_hex()
+            ),
+            auth_for_b.clone(),
+            [product![id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should not return any rows.
+            // Querying as sender "a", but filtering on sender "b".
+            &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
+            auth_for_a.clone(),
+            [],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should not return any rows.
+            // Querying as sender "b", but filtering on sender "a".
+            &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
+            auth_for_b.clone(),
+            [],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should not return any rows.
+            // Querying as sender "a", but filtering on sender "b".
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_b.to_hex()
+            ),
+            auth_for_a.clone(),
+            [],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should not return any rows.
+            // Querying as sender "b", but filtering on sender "a".
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_a.to_hex()
+            ),
+            auth_for_b.clone(),
+            [],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "a"
+            "select * from sales",
+            auth_for_a.clone(),
+            [product![1u64, id_for_a], product![3u64, id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "b"
+            "select * from sales",
+            auth_for_b.clone(),
+            [product![2u64, id_for_b], product![4u64, id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "a"
+            "select s.* from users u join sales s on u.identity = s.customer",
+            auth_for_a.clone(),
+            [product![1u64, id_for_a], product![3u64, id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "b"
+            "select s.* from users u join sales s on u.identity = s.customer",
+            auth_for_b.clone(),
+            [product![2u64, id_for_b], product![4u64, id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "a"
+            "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
+            auth_for_a.clone(),
+            [product![1u64, id_for_a], product![3u64, id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            // Should only return the orders for sender "b"
+            "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
+            auth_for_b.clone(),
+            [product![2u64, id_for_b], product![4u64, id_for_b]],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    /// Test querying tables with multiple levels of RLS rules
+    #[tokio::test]
+    async fn test_nested_rls_rules() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let id_for_a = identity_from_u8(1);
+        let id_for_b = identity_from_u8(2);
+        let id_for_c = identity_from_u8(3);
+
+        let users_schema = [("identity", AlgebraicType::identity())];
+        let sales_schema = [
+            ("order_id", AlgebraicType::U64),
+            ("product_id", AlgebraicType::U64),
+            ("customer", AlgebraicType::identity()),
+        ];
+
+        let users_table_id = db.create_table_for_test("users", &users_schema, &[0.into()])?;
+        let admin_table_id = db.create_table_for_test("admins", &users_schema, &[0.into()])?;
+        let sales_table_id = db.create_table_for_test("sales", &sales_schema, &[0.into()])?;
+
+        insert_rows(&db, admin_table_id, [product![id_for_c]])?;
+        insert_rows(
+            &db,
+            users_table_id,
+            [product![id_for_a], product![id_for_b], product![id_for_c]],
+        )?;
+        insert_rows(
+            &db,
+            sales_table_id,
+            [product![1u64, 1u64, id_for_a], product![2u64, 2u64, id_for_b]],
+        )?;
+
+        insert_rls_rules(
+            &db,
+            [admin_table_id, users_table_id, users_table_id, sales_table_id],
+            [
+                "select * from admins where identity = :sender",
+                "select * from users where identity = :sender",
+                "select users.* from admins join users",
+                "select s.* from users u join sales s on u.identity = s.customer",
+            ],
+        )?;
+
+        let auth_for_a = AuthCtx::new(Identity::ZERO, id_for_a);
+        let auth_for_b = AuthCtx::new(Identity::ZERO, id_for_b);
+        let auth_for_c = AuthCtx::new(Identity::ZERO, id_for_c);
+
+        assert_query_results(
+            db.clone(),
+            "select * from admins",
+            auth_for_a.clone(),
+            // Identity "a" is not an admin
+            [],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from admins",
+            auth_for_b.clone(),
+            // Identity "b" is not an admin
+            [],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from admins",
+            auth_for_c.clone(),
+            // Identity "c" is an admin
+            [product![id_for_c]],
+        )
+        .await;
+
+        assert_query_results(
+            db.clone(),
+            "select * from users",
+            auth_for_a.clone(),
+            // Identity "a" can only see its own user
+            vec![product![id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from users",
+            auth_for_b.clone(),
+            // Identity "b" can only see its own user
+            vec![product![id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from users",
+            auth_for_c.clone(),
+            // Identity "c" is an admin so it can see everyone's users
+            [product![id_for_a], product![id_for_b], product![id_for_c]],
+        )
+        .await;
+
+        assert_query_results(
+            db.clone(),
+            "select * from sales",
+            auth_for_a.clone(),
+            // Identity "a" can only see its own orders
+            [product![1u64, 1u64, id_for_a]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from sales",
+            auth_for_b.clone(),
+            // Identity "b" can only see its own orders
+            [product![2u64, 2u64, id_for_b]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from sales",
+            auth_for_c.clone(),
+            // Identity "c" is an admin so it can see everyone's orders
+            [product![1u64, 1u64, id_for_a], product![2u64, 2u64, id_for_b]],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    /// Test projecting columns from both tables in join
+    #[tokio::test]
+    async fn test_project_join() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let t_schema = [("id", AlgebraicType::U8), ("x", AlgebraicType::U8)];
+        let s_schema = [("id", AlgebraicType::U8), ("y", AlgebraicType::U8)];
+
+        let t_id = db.create_table_for_test("t", &t_schema, &[0.into()])?;
+        let s_id = db.create_table_for_test("s", &s_schema, &[0.into()])?;
+
+        insert_rows(&db, t_id, [product![1_u8, 2_u8]])?;
+        insert_rows(&db, s_id, [product![1_u8, 3_u8]])?;
+
+        let id = identity_from_u8(1);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            db.clone(),
+            "select t.x, s.y from t join s on t.id = s.id",
+            auth,
+            [product![2_u8, 3_u8]],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, false)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(2)), product![0u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(db.clone(), "select * from my_view", auth, [product![0u8, 2u8]]).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_anonymous_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, true)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(1);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            db.clone(),
+            "select b from my_view",
+            auth,
+            [product![1u8], product![2u8]],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_view_join_table() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+
+        let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
+        let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            db.insert(tx, t_id, &product![0u8, 3u8].to_bsatn_vec().unwrap())?;
+            db.insert(tx, t_id, &product![1u8, 4u8].to_bsatn_vec().unwrap())?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(2)), product![1u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            db.clone(),
+            "select t.* from v join t on v.a = t.c",
+            auth.clone(),
+            [product![1u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select v.* from v join t on v.a = t.c",
+            auth.clone(),
+            [product![1u8, 2u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select v.* from v join t where v.a = t.c",
+            auth.clone(),
+            [product![1u8, 2u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select v.b as b, t.d as d from v join t on v.a = t.c",
+            auth.clone(),
+            [product![2u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select v.b as b, t.d as d from v join t where v.a = t.c",
+            auth.clone(),
+            [product![2u8, 4u8]],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_view_join_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, u_id) = tests_utils::create_view_for_test(&db, "u", &schema, false)?;
+
+        let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(2)), product![1u8, 2u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(1)), product![0u8, 3u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(2)), product![1u8, 4u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            db.clone(),
+            "select u.* from u join v on u.a = v.c",
+            auth.clone(),
+            [product![1u8, 2u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select v.* from u join v on u.a = v.c",
+            auth.clone(),
+            [product![1u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select v.* from u join v where u.a = v.c",
+            auth.clone(),
+            [product![1u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select u.b as b, v.d as d from u join v on u.a = v.c",
+            auth.clone(),
+            [product![2u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select u.b as b, v.d as d from u join v where u.a = v.c",
+            auth,
+            [product![2u8, 4u8]],
+        )
+        .await;
+
         Ok(())
     }
 
@@ -286,70 +1094,16 @@ pub(crate) mod tests {
         let (db, input) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory.* FROM inventory")?;
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, input.data, "Inventory");
 
         let result = run_for_testing(
             &db,
             "SELECT inventory.inventory_id FROM inventory WHERE inventory.inventory_id = 1",
         )?;
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
 
-        let head = ProductType::from([("inventory_id", AlgebraicType::U64)]);
-        let row = product!(1u64);
-        let input = mem_table(input.head.table_id, head, vec![row]);
+        assert_eq!(result, vec![product!(1u64)], "Inventory");
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_select_scalar() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
-
-        let result = run_for_testing(&db, "SELECT 1 FROM inventory")?;
-
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-        let schema = ProductType::from([AlgebraicType::I32]);
-        let row = product!(1);
-        let input = mem_table(input.head.table_id, schema, vec![row]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Scalar"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_select_multiple() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
-
-        let result = run_for_testing(&db, "SELECT * FROM inventory;\nSELECT * FROM inventory")?;
-
-        assert_eq!(result.len(), 2, "Not return results");
-
-        for result in result {
-            assert_eq!(
-                mem_table_without_table_name(&result),
-                mem_table_without_table_name(&input),
-                "Inventory"
-            );
-        }
         Ok(())
     }
 
@@ -357,16 +1111,14 @@ pub(crate) mod tests {
     fn test_select_catalog() -> ResultTest<()> {
         let (db, _) = create_data(1)?;
 
-        let tx = db.begin_tx();
-        let schema = db.schema_for_table(&tx, ST_TABLE_ID).unwrap();
-        db.release_tx(&ExecutionContext::internal(db.address()), tx);
+        let tx = begin_tx(&db);
+        let _ = db.release_tx(tx);
+
         let result = run_for_testing(
             &db,
-            &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLE_NAME, ST_TABLE_ID),
+            &format!("SELECT * FROM {ST_TABLE_NAME} WHERE table_id = {ST_TABLE_ID}"),
         )?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
         let pk_col_id: ColId = StTableFields::TableId.into();
         let row = product![
             ST_TABLE_ID,
@@ -375,108 +1127,62 @@ pub(crate) mod tests {
             StAccess::Public.as_str(),
             Some(AlgebraicValue::Array(ArrayValue::U16(vec![pk_col_id.0].into()))),
         ];
-        let input = MemTable::new(Header::from(&*schema).into(), schema.table_access, vec![row]);
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "st_table"
-        );
+        assert_eq!(result, vec![row], "st_table");
         Ok(())
     }
 
     #[test]
     fn test_select_column() -> ResultTest<()> {
-        let (db, table) = create_data(1)?;
+        let (db, _) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory_id FROM inventory")?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-        // The expected result.
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
-
         let row = product![1u64];
-        let input = MemTable::new(inv.into(), table.table_access, vec![row]);
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![row], "Inventory");
         Ok(())
     }
 
     #[test]
     fn test_where() -> ResultTest<()> {
-        let (db, table) = create_data(1)?;
+        let (db, _) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory_id FROM inventory WHERE inventory_id = 1")?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-
-        // The expected result.
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
-
         let row = product![1u64];
-        let input = MemTable::new(inv.into(), table.table_access, vec![row]);
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![row], "Inventory");
         Ok(())
     }
 
     #[test]
     fn test_or() -> ResultTest<()> {
-        let (db, table) = create_data(2)?;
+        let (db, _) = create_data(2)?;
 
-        let result = run_for_testing(
+        let mut result = run_for_testing(
             &db,
             "SELECT inventory_id FROM inventory WHERE inventory_id = 1 OR inventory_id = 2",
         )?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let mut result = result.first().unwrap().clone();
-        result.data.sort();
-        //The expected result
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
+        result.sort();
 
-        let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![product![1u64], product![2u64]], "Inventory");
         Ok(())
     }
 
     #[test]
     fn test_nested() -> ResultTest<()> {
-        let (db, table) = create_data(2)?;
+        let (db, _) = create_data(2)?;
 
-        let result = run_for_testing(
+        let mut result = run_for_testing(
             &db,
-            "SELECT (inventory_id) FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (1=1))",
+            "SELECT inventory_id FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (true))",
         )?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let mut result = result.first().unwrap().clone();
-        result.data.sort();
-        // The expected result.
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
+        result.sort();
 
-        let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![product![1u64], product![2u64]], "Inventory");
         Ok(())
     }
 
@@ -486,7 +1192,7 @@ pub(crate) mod tests {
 
         let db = TestDB::durable()?;
 
-        let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(&ExecutionContext::default(), |tx| {
+        with_auto_commit::<_, TestError>(&db, |tx| {
             let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
             let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
             create_table_with_rows(
@@ -500,7 +1206,7 @@ pub(crate) mod tests {
             Ok((p, i))
         })?;
 
-        let result = &run_for_testing(
+        let result = run_for_testing(
             &db,
             "SELECT
         Player.*
@@ -508,19 +1214,14 @@ pub(crate) mod tests {
         Player
         JOIN Location
         ON Location.entity_id = Player.entity_id
-        WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
-        )?[0];
+        WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
+        )?;
 
         let row1 = product!(100u64, 1u64);
-        let input = MemTable::new(Header::from(&*p_schema).into(), p_schema.table_access, [row1].into());
 
-        assert_eq!(
-            mem_table_without_table_name(result),
-            mem_table_without_table_name(&input),
-            "Player JOIN Location"
-        );
+        assert_eq!(result, vec![row1], "Player JOIN Location");
 
-        let result = &run_for_testing(
+        let result = run_for_testing(
             &db,
             "SELECT
         Inventory.*
@@ -530,21 +1231,91 @@ pub(crate) mod tests {
         ON Inventory.inventory_id = Player.inventory_id
         JOIN Location
         ON Player.entity_id = Location.entity_id
-        WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
-        )?[0];
+        WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
+        )?;
 
         let row1 = product!(1u64, "health");
-        let input = MemTable::new(
-            Header::from(&*inv_schema).into(),
-            inv_schema.table_access,
-            [row1].into(),
-        );
 
-        assert_eq!(
-            mem_table_without_table_name(result),
-            mem_table_without_table_name(&input),
-            "Inventory JOIN Player JOIN Location"
-        );
+        assert_eq!(result, vec![row1], "Inventory JOIN Player JOIN Location");
+        Ok(())
+    }
+
+    #[test]
+    fn test_multi_way_join_with_bridge_tables() -> anyhow::Result<()> {
+        let db = TestDB::durable()?;
+
+        let orders = db.create_table_for_test(
+            "orders",
+            &[
+                ("o_orderkey", AlgebraicType::U64),
+                ("o_custkey", AlgebraicType::U64),
+                ("o_orderstatus", AlgebraicType::U64),
+            ],
+            &[0.into(), 1.into(), 2.into()],
+        )?;
+
+        let customer = db.create_table_for_test(
+            "customer",
+            &[("c_custkey", AlgebraicType::U64), ("c_nationkey", AlgebraicType::U64)],
+            &[0.into(), 1.into()],
+        )?;
+
+        let nation = db.create_table_for_test(
+            "nation",
+            &[
+                ("n_nationkey", AlgebraicType::U64),
+                ("n_name", AlgebraicType::String),
+                ("n_regionkey", AlgebraicType::U64),
+            ],
+            &[0.into(), 2.into()],
+        )?;
+
+        let region = db.create_table_for_test(
+            "region",
+            &[("r_regionkey", AlgebraicType::U64), ("r_name", AlgebraicType::String)],
+            &[0.into()],
+        )?;
+
+        insert_rows(&db, orders, [product![1u64, 10u64, 0u64], product![2u64, 20u64, 1u64]])?;
+        insert_rows(&db, customer, [product![10u64, 100u64], product![20u64, 200u64]])?;
+        insert_rows(
+            &db,
+            nation,
+            [
+                product![100u64, "NATION_A", 1000u64],
+                product![200u64, "NATION_B", 2000u64],
+            ],
+        )?;
+        insert_rows(
+            &db,
+            region,
+            [product![1000u64, "REGION_A"], product![2000u64, "REGION_B"]],
+        )?;
+
+        let result_three_way = run_for_testing(
+            &db,
+            "
+            SELECT customer.c_custkey, nation.n_name
+            FROM orders
+            JOIN customer ON customer.c_custkey = orders.o_custkey
+            JOIN nation ON nation.n_nationkey = customer.c_nationkey
+            WHERE orders.o_orderstatus = 0",
+        )?;
+
+        assert_eq!(result_three_way, vec![product![10u64, "NATION_A"]]);
+
+        let result_four_way = run_for_testing(
+            &db,
+            "
+            SELECT customer.c_custkey, region.r_name
+            FROM orders
+            JOIN customer ON customer.c_custkey = orders.o_custkey
+            JOIN nation ON nation.n_nationkey = customer.c_nationkey
+            JOIN region ON region.r_regionkey = nation.n_regionkey
+            WHERE orders.o_orderstatus = 0",
+        )?;
+
+        assert_eq!(result_four_way, vec![product![10u64, "REGION_A"]]);
         Ok(())
     }
 
@@ -556,20 +1327,13 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 0, "Return results");
 
-        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-
-        assert_eq!(result.len(), 1, "Not return results");
-        let mut result = result.first().unwrap().clone();
+        let mut result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
         input.data.push(product![2u64, "test"]);
         input.data.sort();
-        result.data.sort();
+        result.sort();
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, input.data, "Inventory");
 
         Ok(())
     }
@@ -582,29 +1346,17 @@ pub(crate) mod tests {
         run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-        assert_eq!(
-            result.iter().map(|x| x.data.len()).sum::<usize>(),
-            3,
-            "Not return results"
-        );
+        assert_eq!(result.len(), 3, "Not return results");
 
         run_for_testing(&db, "DELETE FROM inventory WHERE inventory.inventory_id = 3")?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-        assert_eq!(
-            result.iter().map(|x| x.data.len()).sum::<usize>(),
-            2,
-            "Not delete correct row?"
-        );
+        assert_eq!(result.len(), 2, "Not delete correct row?");
 
         run_for_testing(&db, "DELETE FROM inventory")?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-        assert_eq!(
-            result.iter().map(|x| x.data.len()).sum::<usize>(),
-            0,
-            "Not delete all rows"
-        );
+        assert_eq!(result.len(), 0, "Not delete all rows");
 
         Ok(())
     }
@@ -620,17 +1372,11 @@ pub(crate) mod tests {
 
         let result = run_for_testing(&db, "SELECT * FROM inventory WHERE inventory_id = 2")?;
 
-        let result = result.first().unwrap().clone();
-
         let mut change = input;
         change.data.clear();
         change.data.push(product![2u64, "c2"]);
 
-        assert_eq!(
-            mem_table_without_table_name(&change),
-            mem_table_without_table_name(&result),
-            "Update Inventory 2"
-        );
+        assert_eq!(result, change.data, "Update Inventory 2");
 
         run_for_testing(&db, "UPDATE inventory SET name = 'c3'")?;
 
@@ -638,32 +1384,9 @@ pub(crate) mod tests {
 
         let updated: Vec<_> = result
             .into_iter()
-            .map(|x| {
-                x.data
-                    .into_iter()
-                    .map(|x| x.field_as_str(1, None).unwrap().to_string())
-                    .collect::<Vec<_>>()
-            })
+            .map(|x| x.field_as_str(1, None).unwrap().to_string())
             .collect();
-        assert_eq!(vec![vec!["c3"; 3]], updated);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_big_sql() -> ResultTest<()> {
-        let (db, _input) = create_data(1)?;
-
-        let result = run_for_testing(
-            &db,
-            "insert into inventory (inventory_id, name) values (1, 'Kiley');
-insert into inventory (inventory_id, name) values (2, 'Terza');
-insert into inventory (inventory_id, name) values (3, 'Alvie');
-SELECT * FROM inventory",
-        )?;
-
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data.len(), 4);
+        assert_eq!(vec!["c3"; 3], updated);
 
         Ok(())
     }
@@ -680,18 +1403,20 @@ SELECT * FROM inventory",
             ("d", AlgebraicType::I32),
         ];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, product![1, 1, 1, 1]).map(drop)
-        })?;
+        with_auto_commit(&db, |tx| insert(&db, tx, table_id, &product![1, 1, 1, 1]).map(drop))?;
 
         let result = run_for_testing(&db, "select * from test where b = 1 and a = 1")?;
 
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data, vec![product![1, 1, 1, 1]]);
+        assert_eq!(result, vec![product![1, 1, 1, 1]]);
 
         Ok(())
     }
 
+    /// Test we are protected against stack overflows when:
+    /// 1. The query is too large (too many characters)
+    /// 2. The AST is too deep
+    ///
+    /// Exercise the limit [`recursion::MAX_RECURSION_EXPR`]
     #[test]
     fn test_large_query_no_panic() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -704,16 +1429,43 @@ SELECT * FROM inventory",
             )
             .unwrap();
 
-        let mut query = "select * from test where ".to_string();
-        for x in 0..1_000 {
-            for y in 0..1_000 {
-                let fragment = format!("((x = {x}) and y = {y}) or");
-                query.push_str(&fragment);
+        let build_query = |total| {
+            let mut sql = "select * from test where ".to_string();
+            for x in 1..total {
+                let fragment = format!("x = {x} or ");
+                sql.push_str(&fragment.repeat((total - 1) as usize));
             }
-        }
-        query.push_str("((x = 1000) and (y = 1000))");
+            sql.push_str("(y = 0)");
+            sql
+        };
+        let run = |db: &Arc<RelationalDB>, sep: char, sql_text: &str| {
+            run_for_testing(db, sql_text).map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
+        };
+        let sql = build_query(1_000);
+        assert_eq!(
+            run(&db, ':', &sql),
+            Err("SQL query exceeds maximum allowed length".to_string())
+        );
 
-        assert!(run_for_testing(&db, &query).is_err());
+        let sql = build_query(41); // This causes stack overflow without the limit
+        assert_eq!(run(&db, ',', &sql), Err("Recursion limit exceeded".to_string()));
+
+        let sql = build_query(40); // The max we can with the current limit
+        assert!(run(&db, ',', &sql).is_ok(), "Expected query to run without panic");
+
+        // Check no overflow with lot of joins
+        let mut sql = "SELECT test.* FROM test ".to_string();
+        // We could push up to 700 joins without overflow as long we don't have any conditions,
+        // but here execution become too slow.
+        // TODO: Move this test to the `Plan`
+        for i in 0..200 {
+            sql.push_str(&format!("JOIN test AS m{i} ON test.x = m{i}.y "));
+        }
+
+        assert!(
+            run(&db, ',', &sql).is_ok(),
+            "Query with many joins and conditions should not overflow"
+        );
         Ok(())
     }
 
@@ -722,32 +1474,25 @@ SELECT * FROM inventory",
         let db = TestDB::durable()?;
 
         let table_id = db
-            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[(ColId(0), "test_x")])
+            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[ColId(0)])
             .unwrap();
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        with_auto_commit(&db, |tx| {
             for i in 0..1000i32 {
-                db.insert(tx, table_id, product!(i)).unwrap();
+                insert(&db, tx, table_id, &product!(i)).unwrap();
             }
             Ok::<(), DBError>(())
         })
         .unwrap();
 
         let result = run_for_testing(&db, "select * from test where x > 5 and x < 5").unwrap();
-        assert_eq!(result.len(), 1);
-        assert!(result[0].data.is_empty());
+        assert!(result.is_empty());
 
         let result = run_for_testing(&db, "select * from test where x >= 5 and x < 4").unwrap();
-        assert_eq!(result.len(), 1);
-        assert!(
-            result[0].data.is_empty(),
-            "Expected no rows but found {:#?}",
-            result[0].data
-        );
+        assert!(result.is_empty(), "Expected no rows but found {result:#?}");
 
         let result = run_for_testing(&db, "select * from test where x > 5 and x <= 4").unwrap();
-        assert_eq!(result.len(), 1);
-        assert!(result[0].data.is_empty());
+        assert!(result.is_empty());
         Ok(())
     }
 
@@ -759,14 +1504,11 @@ SELECT * FROM inventory",
         let schema = &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         let row = product![4u8, 8u8];
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, row.clone()).map(drop)
-        })?;
+        with_auto_commit(&db, |tx| insert(&db, tx, table_id, &row.clone()).map(drop))?;
 
         let result = run_for_testing(&db, "select * from test where a >= 3 and a <= 5 and b >= 3 and b <= 5")?;
 
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data, []);
+        assert!(result.is_empty());
 
         Ok(())
     }
@@ -776,37 +1518,171 @@ SELECT * FROM inventory",
         let db = TestDB::durable()?;
 
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<_, DBError> {
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
             for i in 0..5u8 {
-                db.insert(tx, table_id, product!(i))?;
+                insert(&db, tx, table_id, &product!(i))?;
             }
             Ok(())
         })?;
 
-        let server = Identity::from_hashing_bytes("server");
-        let client = Identity::from_hashing_bytes("client");
+        let server = Identity::from_claims("issuer", "server");
+        let client = Identity::from_claims("issuer", "client");
 
         let internal_auth = AuthCtx::new(server, server);
         let external_auth = AuthCtx::new(server, client);
 
+        let tmp_vec = Vec::new();
+
+        let rt = db.runtime().expect("runtime should be there");
+
+        let run = |db, sql, auth, subs, mut tmp_vec| rt.block_on(run(db, sql, auth, subs, None, &mut tmp_vec));
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            external_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
 
         // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth, None).is_ok());
+        assert!(run(
+            db.clone(),
+            "SET row_limit = 4".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
 
         // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_err());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            external_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_err());
 
         // Increase row limit.
-        assert!(run(&db, "DELETE FROM st_var WHERE name = 'row_limit'", internal_auth, None).is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth, None).is_ok());
+        assert!(run(
+            db.clone(),
+            "DELETE FROM st_var WHERE name = 'row_limit'".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(
+            db.clone(),
+            "SET row_limit = 5".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
 
         // Both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            internal_auth,
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            external_auth,
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+
+        Ok(())
+    }
+
+    // Verify we don't return rows on DML
+    #[test]
+    fn test_row_dml() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            for i in 0..4u8 {
+                insert(&db, tx, table_id, &product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let rt = db.runtime().expect("runtime should be there");
+
+        let server = Identity::from_claims("issuer", "server");
+
+        let internal_auth = AuthCtx::new(server, server);
+
+        let tmp_vec = Vec::new();
+        let run = |db, sql: &str, auth, subs, mut tmp_vec| {
+            let sql = sql.to_string();
+            async move { run(db, sql, auth, subs, None, &mut tmp_vec).await }
+        };
+
+        let check = |db, sql, auth, metrics: ExecutionMetrics| {
+            let result = rt.block_on(run(db, sql, auth, None, tmp_vec.clone()))?;
+            assert_eq!(result.rows, vec![]);
+            assert_eq!(result.metrics.rows_inserted, metrics.rows_inserted);
+            assert_eq!(result.metrics.rows_deleted, metrics.rows_deleted);
+            assert_eq!(result.metrics.rows_updated, metrics.rows_updated);
+
+            Ok::<(), DBError>(())
+        };
+
+        let ins = ExecutionMetrics {
+            rows_inserted: 1,
+            ..ExecutionMetrics::default()
+        };
+        let upd = ExecutionMetrics {
+            rows_updated: 5,
+            ..ExecutionMetrics::default()
+        };
+        let del = ExecutionMetrics {
+            rows_deleted: 1,
+            ..ExecutionMetrics::default()
+        };
+
+        check(db.clone(), "INSERT INTO T (a) VALUES (5)", internal_auth.clone(), ins)?;
+        check(db.clone(), "UPDATE T SET a = 2", internal_auth.clone(), upd)?;
+        assert_eq!(
+            rt.block_on(run(
+                db.clone(),
+                "SELECT * FROM T",
+                internal_auth.clone(),
+                None,
+                tmp_vec.clone()
+            ))?
+            .rows,
+            vec![product!(2u8)]
+        );
+        check(db.clone(), "DELETE FROM T", internal_auth, del)?;
 
         Ok(())
     }

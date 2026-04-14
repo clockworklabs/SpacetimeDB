@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 
@@ -15,39 +16,86 @@ public static class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    static async Task<CSharpCompilation> CompileFixture(string name)
+    class Fixture
     {
-        using var workspace = MSBuildWorkspace.Create();
-        var sampleProject = await workspace.OpenProjectAsync(
-            $"{GetProjectDir()}/fixtures/{name}/{name}.csproj"
-        );
-        var compilation = await sampleProject.GetCompilationAsync();
-        return (CSharpCompilation)compilation!;
+        private readonly string projectDir;
+        private readonly CSharpCompilation sampleCompilation;
+
+        public Fixture(string projectDir, CSharpCompilation sampleCompilation)
+        {
+            this.projectDir = projectDir;
+            this.sampleCompilation = sampleCompilation;
+        }
+
+        public CSharpCompilation SampleCompilation => sampleCompilation;
+
+        public static async Task<Fixture> Compile(string name)
+        {
+            var projectDir = Path.Combine(GetProjectDir(), "fixtures", name);
+            using var workspace = MSBuildWorkspace.Create();
+            var sampleProject = await workspace.OpenProjectAsync($"{projectDir}/{name}.csproj");
+            var compilation = await sampleProject.GetCompilationAsync();
+            return new(projectDir, (CSharpCompilation)compilation!);
+        }
+
+        public Task Verify(string fileName, object target) =>
+            Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
+
+        private static CSharpGeneratorDriver CreateDriver(
+            IIncrementalGenerator generator,
+            LanguageVersion languageVersion
+        )
+        {
+            return CSharpGeneratorDriver.Create(
+                [generator.AsSourceGenerator()],
+                driverOptions: new(
+                    disabledOutputs: IncrementalGeneratorOutputKind.None,
+                    trackIncrementalGeneratorSteps: true
+                ),
+                // Make sure that generated files are parsed with the same language version.
+                parseOptions: new(languageVersion)
+            );
+        }
+
+        private async Task<IEnumerable<SyntaxTree>> RunAndCheckGenerator(
+            IIncrementalGenerator generator
+        )
+        {
+            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
+
+            // Store the new driver instance - it contains the results and the cache.
+            var driverAfterGen = driver.RunGenerators(sampleCompilation);
+            var genResult = driverAfterGen.GetRunResult();
+
+            // Verify the generated code against the snapshots.
+            await Verify(generator.GetType().Name, genResult);
+
+            CheckCacheWorking(sampleCompilation, driverAfterGen);
+
+            return genResult.GeneratedTrees;
+        }
+
+        public GeneratorDriverRunResult RunGeneratorAndGetResult(IIncrementalGenerator generator)
+        {
+            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
+            return driver.RunGenerators(sampleCompilation).GetRunResult();
+        }
+
+        public async Task<CSharpCompilation> RunAndCheckGenerators(
+            params IIncrementalGenerator[] generators
+        ) =>
+            sampleCompilation.AddSyntaxTrees(
+                (await Task.WhenAll(generators.Select(RunAndCheckGenerator))).SelectMany(output =>
+                    output
+                )
+            );
     }
 
-    static async Task<IEnumerable<SyntaxTree>> RunAndCheckGenerator<G>(
-        CSharpCompilation sampleCompilation
+    private static void CheckCacheWorking(
+        CSharpCompilation sampleCompilation,
+        GeneratorDriver driverAfterGen
     )
-        where G : IIncrementalGenerator, new()
     {
-        var driver = CSharpGeneratorDriver.Create(
-            [new G().AsSourceGenerator()],
-            driverOptions: new(
-                disabledOutputs: IncrementalGeneratorOutputKind.None,
-                trackIncrementalGeneratorSteps: true
-            ),
-            // Make sure that generated files are parsed with the same language version.
-            parseOptions: new(sampleCompilation.LanguageVersion)
-        );
-
-        // Store the new driver instance - it contains the results and the cache.
-        var driverAfterGen = driver.RunGenerators(sampleCompilation);
-
-        // Verify the generated code against the snapshots.
-        await Verify(driverAfterGen)
-            .UseDirectory($"{GetProjectDir()}/fixtures/{sampleCompilation.AssemblyName}/snapshots")
-            .UseFileName(typeof(G).Name);
-
         // Run again with a driver containing the cache and a trivially modified code to verify that the cache is working.
         var modifiedCompilation = sampleCompilation
             .RemoveAllSyntaxTrees()
@@ -63,6 +111,7 @@ public static class GeneratorSnapshotTests
                     )
                 )
             );
+
         var driverAfterRegen = driverAfterGen.RunGenerators(modifiedCompilation);
 
         var regenSteps = driverAfterRegen
@@ -85,51 +134,271 @@ public static class GeneratorSnapshotTests
                     is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
             )
         );
-
-        return driverAfterGen.GetRunResult().GeneratedTrees;
     }
 
-    static void AssertCompilationSuccessful(Compilation compilation)
+    static IEnumerable<Diagnostic> GetCompilationErrors(Compilation compilation)
     {
-        var emitResult = compilation.Emit(Stream.Null);
+        return compilation
+            .Emit(Stream.Null)
+            .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden)
+            // The order of diagnostics is not predictable, sort them by location to make the test deterministic.
+            .OrderBy(diag => diag.GetMessage() + diag.Location.ToString());
+    }
 
-        Assert.True(
-            emitResult.Success,
-            string.Join(
-                "\n",
-                emitResult.Diagnostics.Select(diag =>
-                    CSharpDiagnosticFormatter.Instance.Format(diag)
-                )
-            )
+    static void AssertGeneratedCodeDoesNotUseInternalBound(CSharpCompilation compilation)
+    {
+        var generatedText = string.Join(
+            "\n\n",
+            compilation.SyntaxTrees.Select(tree => tree.GetText().ToString())
         );
+
+        Assert.DoesNotContain("global::SpacetimeDB.Internal.Bound<", generatedText);
+        Assert.Contains("global::SpacetimeDB.Bound<", generatedText);
+    }
+
+    static void AssertPublicBoundIsAvailableInRuntime(Compilation compilation)
+    {
+        var bound = compilation.GetTypeByMetadataName("SpacetimeDB.Bound`1");
+        Assert.NotNull(bound);
+        Assert.Equal(Accessibility.Public, bound!.DeclaredAccessibility);
+    }
+
+    static void AssertRuntimeDoesNotDefineLocal(Compilation compilation)
+    {
+        var runtimeAssembly = compilation
+            .References.Select(r => compilation.GetAssemblyOrModuleSymbol(r))
+            .OfType<IAssemblySymbol>()
+            .FirstOrDefault(a => a.Name == "SpacetimeDB.Runtime");
+
+        Assert.NotNull(runtimeAssembly);
+
+        // These types are generated per-module by SpacetimeDB.Codegen.Module.
+        // If Runtime defines any of them too, user projects can hit CS0436 warnings.
+        var codegenOwnedTypes = new[]
+        {
+            "SpacetimeDB.Local",
+            "SpacetimeDB.ProcedureContext",
+            "SpacetimeDB.ProcedureTxContext",
+            "SpacetimeDB.ReducerContext",
+            "SpacetimeDB.ViewContext",
+            "SpacetimeDB.AnonymousViewContext",
+        };
+
+        foreach (var name in codegenOwnedTypes)
+        {
+            Assert.Null(runtimeAssembly!.GetTypeByMetadataName(name));
+        }
+    }
+
+    static void AssertNoCs0436Diagnostics(Compilation compilation)
+    {
+        var diagnostics = compilation
+            .Emit(Stream.Null)
+            .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden);
+
+        Assert.DoesNotContain(diagnostics, d => d.Id == "CS0436");
     }
 
     [Fact]
     public static async Task TypeGeneratorOnClient()
     {
-        var sampleCompilation = await CompileFixture("client");
+        var fixture = await Fixture.Compile("client");
 
-        var genOutputs = await RunAndCheckGenerator<SpacetimeDB.Codegen.Type>(sampleCompilation);
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type()
+        );
 
-        var compilationAfterGen = sampleCompilation.AddSyntaxTrees(genOutputs);
-
-        AssertCompilationSuccessful(compilationAfterGen);
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
     }
 
     [Fact]
     public static async Task TypeAndModuleGeneratorsOnServer()
     {
-        var sampleCompilation = await CompileFixture("server");
+        var fixture = await Fixture.Compile("server");
 
-        var genOutputs = (
-            await Task.WhenAll(
-                RunAndCheckGenerator<SpacetimeDB.Codegen.Type>(sampleCompilation),
-                RunAndCheckGenerator<SpacetimeDB.Codegen.Module>(sampleCompilation)
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+
+        AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
+        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
+
+        // Regression guard for user-reported warning spam:
+        // make sure a downstream "user" file that references SpacetimeDB.Local doesn't trigger CS0436.
+        var userCode =
+            "namespace User; public sealed class UseLocal { public SpacetimeDB.Local Db; }";
+        var userTree = CSharpSyntaxTree.ParseText(
+            userCode,
+            new CSharpParseOptions(compilationAfterGen.LanguageVersion)
+        );
+        var compilationWithUserCode = compilationAfterGen.AddSyntaxTrees(userTree);
+        AssertNoCs0436Diagnostics(compilationWithUserCode);
+    }
+
+    [Fact]
+    public static async Task SettingsAndExplicitNames()
+    {
+        var fixture = await Fixture.Compile("explicitnames");
+
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+
+        AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
+        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
+    }
+
+    [Fact]
+    public static async Task CSharpKeywordIdentifiersAreEscapedInGeneratedCode()
+    {
+        var fixture = await Fixture.Compile("server");
+
+        const string source = """
+            using SpacetimeDB;
+
+            [SpacetimeDB.Table]
+            public partial struct KeywordTable
+            {
+                [SpacetimeDB.PrimaryKey]
+                public ulong @class;
+
+                public int @params;
+            }
+
+            [SpacetimeDB.Table(Accessor = "event")]
+            public partial struct AccessorKeywordTable
+            {
+                [SpacetimeDB.PrimaryKey]
+                [SpacetimeDB.Index.BTree(Accessor = "params")]
+                public int Id;
+            }
+
+            [SpacetimeDB.Table]
+            public partial struct @class
+            {
+                [SpacetimeDB.PrimaryKey]
+                public int Id;
+            }
+
+            public static partial class KeywordApis
+            {
+                [SpacetimeDB.Reducer]
+                public static void KeywordReducer(ReducerContext ctx, int @params, string @class)
+                {
+                    _ = @params;
+                    _ = @class;
+                }
+
+                [SpacetimeDB.Reducer]
+                public static void @class(ReducerContext ctx)
+                {
+                }
+
+                [SpacetimeDB.Procedure]
+                public static int KeywordProcedure(ProcedureContext ctx, int @params, int @class)
+                {
+                    return @params + @class;
+                }
+
+                [SpacetimeDB.Procedure]
+                public static void @params(ProcedureContext ctx)
+                {
+                }
+            }
+            """;
+
+        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
+        var tree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "KeywordNames.cs");
+        var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
+
+        var driver = CSharpGeneratorDriver.Create(
+            [
+                new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
+                new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
+            ],
+            driverOptions: new(
+                disabledOutputs: IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true
+            ),
+            parseOptions: parseOptions
+        );
+
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+        var compilationAfterGen = compilation.AddSyntaxTrees(runResult.GeneratedTrees);
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
+    public static async Task TestDiagnostics()
+    {
+        var fixture = await Fixture.Compile("diag");
+
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
+
+        // Unlike in regular tests, we don't expect this compilation to succeed - it's supposed to be full of errors.
+        // We already reported the useful ones from the generator, but let's snapshot those emitted by the compiler as well.
+        // This way we can notice when they get particularly noisy and improve our codegen for the case of a broken code.
+        await fixture.Verify("ExtraCompilationErrors", GetCompilationErrors(compilationAfterGen));
+
+        AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
+        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
+    }
+
+    [Fact]
+    public static async Task ViewInvalidReturnHighlightsReturnType()
+    {
+        var fixture = await Fixture.Compile("diag");
+
+        var runResult = fixture.RunGeneratorAndGetResult(new SpacetimeDB.Codegen.Module());
+
+        var method = fixture
+            .SampleCompilation.SyntaxTrees.Select(tree => new
+            {
+                Tree = tree,
+                Root = tree.GetRoot(),
+            })
+            .SelectMany(entry =>
+                entry
+                    .Root.DescendantNodes()
+                    .OfType<MethodDeclarationSyntax>()
+                    .Select(method => new
+                    {
+                        entry.Tree,
+                        entry.Root,
+                        Method = method,
+                    })
             )
-        ).SelectMany(output => output);
+            .Single(entry => entry.Method.Identifier.Text == "ViewDefWrongReturn");
 
-        var compilationAfterGen = sampleCompilation.AddSyntaxTrees(genOutputs);
+        var returnTypeSpan = method.Method.ReturnType.Span;
+        var diagnostics = runResult
+            .Results.SelectMany(result => result.Diagnostics)
+            .Where(d => d.Id == "STDB0024")
+            .ToList();
+        var diagnostic = diagnostics.FirstOrDefault(d =>
+            d.GetMessage().Contains("ViewDefWrongReturn") && d.Location.SourceTree == method.Tree
+        );
 
-        AssertCompilationSuccessful(compilationAfterGen);
+        Assert.NotNull(diagnostic);
+
+        Assert.Equal(returnTypeSpan, diagnostic!.Location.SourceSpan);
+
+        var returnTypeText = method
+            .Root.ToFullString()
+            .Substring(returnTypeSpan.Start, returnTypeSpan.Length);
+        Assert.Contains("Player", returnTypeText);
     }
 }

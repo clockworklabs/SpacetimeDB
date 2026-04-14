@@ -1,0 +1,308 @@
+use anyhow::Result;
+use core::hash::{Hash, Hasher};
+use core::ops::RangeBounds;
+use spacetimedb_lib::query::Delta;
+use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
+use spacetimedb_sats::buffer::BufWriter;
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
+use spacetimedb_table::{static_assert_size, table::RowRef};
+
+pub mod dml;
+pub mod pipelined;
+
+pub trait Datastore {
+    /// Iterator type for table scans
+    type TableIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
+
+    /// Iterator type for ranged index scans.
+    type RangeIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
+
+    /// Iterator type for point index scans.
+    type PointIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
+
+    /// Returns the number of rows in this table
+    fn row_count(&self, table_id: TableId) -> u64;
+
+    /// Scans and returns all of the rows in a table
+    fn table_scan<'a>(&'a self, table_id: TableId) -> Result<Self::TableIter<'a>>;
+
+    /// Scans a range of keys from an index returning a [`RowRef`] iterator.
+    fn index_scan_range<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Result<Self::RangeIndexIter<'a>>;
+
+    /// Scans a key from an index returning a [`RowRef`] iterator.
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> Result<Self::PointIndexIter<'a>>;
+}
+
+pub trait DeltaStore {
+    fn num_inserts(&self, table_id: TableId) -> usize;
+    fn num_deletes(&self, table_id: TableId) -> usize;
+
+    fn has_inserts(&self, table_id: TableId) -> bool {
+        self.num_inserts(table_id) != 0
+    }
+
+    fn has_deletes(&self, table_id: TableId) -> bool {
+        self.num_deletes(table_id) != 0
+    }
+
+    fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
+    fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
+
+    fn index_scan_range_for_delta(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        delta: Delta,
+        range: impl RangeBounds<AlgebraicValue>,
+    ) -> impl Iterator<Item = Row<'_>>;
+
+    fn index_scan_point_for_delta(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        delta: Delta,
+        point: &AlgebraicValue,
+    ) -> impl Iterator<Item = Row<'_>>;
+
+    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter<'_> {
+        match inserts {
+            true => DeltaScanIter {
+                iter: self.inserts_for_table(table_id),
+            },
+            false => DeltaScanIter {
+                iter: self.deletes_for_table(table_id),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Row<'a> {
+    Ptr(RowRef<'a>),
+    Ref(&'a ProductValue),
+}
+
+impl PartialEq for Row<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ptr(x), Self::Ptr(y)) => x == y,
+            (Self::Ref(x), Self::Ref(y)) => x == y,
+            (Self::Ptr(x), Self::Ref(y)) => x == *y,
+            (Self::Ref(x), Self::Ptr(y)) => y == *x,
+        }
+    }
+}
+
+impl Eq for Row<'_> {}
+
+impl Hash for Row<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Ptr(x) => x.hash(state),
+            Self::Ref(x) => x.hash(state),
+        }
+    }
+}
+
+impl Row<'_> {
+    pub fn to_product_value(&self) -> ProductValue {
+        match self {
+            Self::Ptr(ptr) => ptr.to_product_value(),
+            Self::Ref(val) => (*val).clone(),
+        }
+    }
+
+    pub fn project_product(self, cols: &ColList) -> Result<ProductValue, InvalidFieldError> {
+        match self {
+            Self::Ptr(ptr) => ptr.project_product(cols),
+            Self::Ref(val) => val.project_product(cols),
+        }
+    }
+}
+
+impl_serialize!(['a] Row<'a>, (self, ser) => match self {
+    Self::Ptr(row) => row.serialize(ser),
+    Self::Ref(row) => row.serialize(ser),
+});
+
+impl ToBsatn for Row<'_> {
+    fn static_bsatn_size(&self) -> Option<u16> {
+        match self {
+            Self::Ptr(ptr) => ptr.static_bsatn_size(),
+            Self::Ref(val) => val.static_bsatn_size(),
+        }
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
+        match self {
+            Self::Ptr(ptr) => ptr.to_bsatn_extend(buf),
+            Self::Ref(val) => val.to_bsatn_extend(buf),
+        }
+    }
+
+    fn to_bsatn_vec(&self) -> std::result::Result<Vec<u8>, EncodeError> {
+        match self {
+            Self::Ptr(ptr) => ptr.to_bsatn_vec(),
+            Self::Ref(val) => val.to_bsatn_vec(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RelValue<'a> {
+    Row(Row<'a>),
+    Projection(ProductValue),
+}
+
+impl<'a> From<Row<'a>> for RelValue<'a> {
+    fn from(value: Row<'a>) -> Self {
+        Self::Row(value)
+    }
+}
+
+impl From<ProductValue> for RelValue<'_> {
+    fn from(value: ProductValue) -> Self {
+        Self::Projection(value)
+    }
+}
+
+impl PartialEq for RelValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Row(x), Self::Row(y)) => x == y,
+            (Self::Projection(x), Self::Projection(y)) => x == y,
+            (Self::Row(x), Self::Projection(y)) | (Self::Projection(y), Self::Row(x)) => x.to_product_value() == *y,
+        }
+    }
+}
+
+impl Eq for RelValue<'_> {}
+
+impl Hash for RelValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Row(x) => x.hash(state),
+            Self::Projection(x) => x.hash(state),
+        }
+    }
+}
+
+impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
+    Self::Row(row) => row.serialize(ser),
+    Self::Projection(row) => row.serialize(ser),
+});
+
+impl ToBsatn for RelValue<'_> {
+    fn static_bsatn_size(&self) -> Option<u16> {
+        match self {
+            Self::Row(row) => row.static_bsatn_size(),
+            Self::Projection(row) => row.static_bsatn_size(),
+        }
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_extend(buf),
+            Self::Projection(row) => row.to_bsatn_extend(buf),
+        }
+    }
+
+    fn to_bsatn_vec(&self) -> std::result::Result<Vec<u8>, EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_vec(),
+            Self::Projection(row) => row.to_bsatn_vec(),
+        }
+    }
+}
+
+impl ProjectField for Row<'_> {
+    fn project(&self, field: &TupleField) -> AlgebraicValue {
+        match self {
+            Self::Ptr(ptr) => ptr.project(field),
+            Self::Ref(val) => val.project(field),
+        }
+    }
+}
+
+/// Each query operator returns a tuple of [RowRef]s
+#[derive(Clone)]
+pub enum Tuple<'a> {
+    /// A pointer to a row in a base table
+    Row(Row<'a>),
+    /// A temporary returned by a join operator
+    Join(Vec<Row<'a>>),
+}
+
+static_assert_size!(Tuple, 40);
+
+impl ProjectField for Tuple<'_> {
+    fn project(&self, field: &TupleField) -> AlgebraicValue {
+        match self {
+            Self::Row(row) => row.project(field),
+            Self::Join(ptrs) => field
+                .label_pos
+                .and_then(|i| ptrs.get(i))
+                .map(|ptr| ptr.project(field))
+                .unwrap(),
+        }
+    }
+}
+
+impl<'a> Tuple<'a> {
+    /// Select the tuple element at position `i`
+    fn select(self, i: usize) -> Option<Row<'a>> {
+        match self {
+            Self::Row(_) => None,
+            Self::Join(mut ptrs) => Some(ptrs.swap_remove(i)),
+        }
+    }
+
+    /// Append a [Row] to a tuple
+    fn append(self, ptr: Row<'a>) -> Self {
+        match self {
+            Self::Row(row) => Self::Join(vec![row, ptr]),
+            Self::Join(mut rows) => {
+                rows.push(ptr);
+                Self::Join(rows)
+            }
+        }
+    }
+
+    fn join(self, with: Self) -> Self {
+        match with {
+            Self::Row(ptr) => self.append(ptr),
+            Self::Join(ptrs) => ptrs.into_iter().fold(self, |tup, ptr| tup.append(ptr)),
+        }
+    }
+}
+
+pub struct DeltaScanIter<'a> {
+    iter: Option<std::slice::Iter<'a, ProductValue>>,
+}
+
+impl<'a> Iterator for DeltaScanIter<'a> {
+    type Item = &'a ProductValue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.as_mut().and_then(|iter| iter.next())
+    }
+}

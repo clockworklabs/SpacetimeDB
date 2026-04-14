@@ -1,9 +1,8 @@
+use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_lib::Identity;
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
-
-use crate::address::Address;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct IdentityEmail {
@@ -26,8 +25,8 @@ pub struct EnergyBalance {
 pub struct Database {
     /// Internal id of the database, assigned by the control database.
     pub id: u64,
-    /// Public identity (i.e. [`Address`]) of the database.
-    pub address: Address,
+    /// Public identity (i.e. [`Identity`]) of the database.
+    pub database_identity: Identity,
     /// [`Identity`] of the database's owner.
     pub owner_identity: Identity,
     /// [`HostType`] of the module associated with the database.
@@ -45,14 +44,14 @@ pub struct DatabaseStatus {
     pub state: String,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstance {
+pub struct Replica {
     pub id: u64,
     pub database_id: u64,
     pub node_id: u64,
     pub leader: bool,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstanceStatus {
+pub struct ReplicaStatus {
     pub state: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,6 +63,10 @@ pub struct Node {
     ///
     /// If `None`, the node is not currently live.
     pub advertise_addr: Option<String>,
+    /// The address this node is running its postgres API at.
+    ///
+    /// If `None`, the node is not currently live.
+    pub pg_addr: Option<String>,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeStatus {
@@ -73,10 +76,44 @@ pub struct NodeStatus {
     pub state: String,
 }
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, strum::EnumString, strum::AsRefStr,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Default,
+    Serialize,
+    Deserialize,
+    serde::Deserialize,
+    strum::AsRefStr,
+    strum::Display,
+    strum::EnumString,
 )]
-#[strum(serialize_all = "lowercase")]
 #[repr(i32)]
 pub enum HostType {
+    #[default]
     Wasm = 0,
+    Js = 1,
+}
+
+impl From<HostType> for ModuleKind {
+    fn from(host_type: HostType) -> Self {
+        match host_type {
+            HostType::Wasm => Self::WASM,
+            HostType::Js => Self::JS,
+        }
+    }
+}
+
+impl From<ModuleKind> for HostType {
+    fn from(kind: ModuleKind) -> Self {
+        match kind {
+            ModuleKind::WASM => Self::Wasm,
+            ModuleKind::JS => Self::Js,
+            x => unreachable!("missing mapping from module kind {x:?} to host type"),
+        }
+    }
 }

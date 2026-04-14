@@ -3,10 +3,7 @@ use std::io;
 use thiserror::Error;
 mod indexfile;
 
-pub use indexfile::create_index_file;
-pub use indexfile::delete_index_file;
-pub use indexfile::offset_index_file_path;
-pub use indexfile::IndexFileMut;
+pub use indexfile::{IndexFile, IndexFileMut};
 
 #[derive(Error, Debug)]
 pub enum IndexError {
@@ -19,8 +16,8 @@ pub enum IndexError {
     #[error("Asked key is smaller than the first entry in the index")]
     KeyNotFound,
 
-    #[error("Key should be monotnously increasing")]
-    InvalidInput,
+    #[error("Key should be monotonically increasing: input: {1}, last: {0}")]
+    InvalidInput(u64, u64),
 
     #[error("index file is not readable")]
     InvalidFormat,

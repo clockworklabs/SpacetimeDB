@@ -1,5 +1,9 @@
 //! `AlgebraicType` extensions for generating client code.
 
+use crate::{
+    error::{IdentifierError, PrettyAlgebraicType},
+    identifier::Identifier,
+};
 use enum_as_inner::EnumAsInner;
 use petgraph::{
     algo::tarjan_scc,
@@ -8,16 +12,14 @@ use petgraph::{
 use smallvec::SmallVec;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
-    map::{HashMap, HashSet},
+    map::{hash_set, HashMap, HashSet},
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
-use spacetimedb_sats::{typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace};
-use std::{cell::RefCell, ops::Index, sync::Arc};
-
-use crate::{
-    error::{IdentifierError, PrettyAlgebraicType},
-    identifier::Identifier,
+use spacetimedb_sats::{
+    layout::PrimitiveType, raw_identifier::RawIdentifier, typespace::TypeRefError, AlgebraicTypeRef, ArrayType,
+    SumTypeVariant, Typespace,
 };
+use std::{cell::RefCell, ops::Index, sync::Arc};
 
 /// Errors that can occur when rearranging types for client codegen.
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -92,8 +94,6 @@ type Result<T> = std::result::Result<T, ErrorStream<ClientCodegenError>>;
 /// ]
 /// ```
 /// are forbidden. (Because most languages do not support anonymous recursive types.)
-///
-/// The input must satisfy `AlgebraicType::is_valid_for_client_type_use`.
 #[derive(Debug, Clone)]
 pub struct TypespaceForGenerate {
     defs: HashMap<AlgebraicTypeRef, AlgebraicTypeDef>,
@@ -110,11 +110,13 @@ impl TypespaceForGenerate {
     ) -> TypespaceForGenerateBuilder<'_> {
         TypespaceForGenerateBuilder {
             typespace,
-            result: TypespaceForGenerate { defs: HashMap::new() },
+            result: TypespaceForGenerate {
+                defs: HashMap::default(),
+            },
             is_def: is_def.into_iter().collect(),
-            uses: HashSet::new(),
-            known_uses: HashMap::new(),
-            currently_touching: HashSet::new(),
+            uses: HashSet::default(),
+            known_uses: HashMap::default(),
+            currently_touching: HashSet::default(),
         }
     }
 
@@ -145,7 +147,7 @@ impl Index<&'_ AlgebraicTypeRef> for TypespaceForGenerate {
 }
 
 /// An algebraic type definition.
-#[derive(Debug, Clone, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 pub enum AlgebraicTypeDef {
     /// A product type declaration.
     Product(ProductTypeDef),
@@ -157,7 +159,7 @@ pub enum AlgebraicTypeDef {
 
 thread_local! {
     /// Used to efficiently extract refs from a def.
-    static EXTRACT_REFS_BUF: RefCell<HashSet<AlgebraicTypeRef>> = RefCell::new(HashSet::new());
+    static EXTRACT_REFS_BUF: RefCell<HashSet<AlgebraicTypeRef>> = RefCell::new(HashSet::default());
 }
 
 impl AlgebraicTypeDef {
@@ -226,6 +228,12 @@ impl<'a> IntoIterator for &'a ProductTypeDef {
     }
 }
 
+impl ProductTypeDef {
+    pub fn element_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+        self.elements.iter().map(|(_, ty)| ty)
+    }
+}
+
 /// A sum type definition.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SumTypeDef {
@@ -236,52 +244,9 @@ pub struct SumTypeDef {
 }
 
 /// A sum type, all of whose variants contain ().
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PlainEnumTypeDef {
     pub variants: Box<[Identifier]>,
-}
-
-/// Scalar types, i.e. bools, integers and floats.
-/// These types do not require a `VarLenRef` indirection when stored in a `spacetimedb_table::table::Table`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub enum PrimitiveType {
-    Bool,
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    I256,
-    U256,
-    F32,
-    F64,
-}
-
-impl PrimitiveType {
-    pub fn algebraic_type(&self) -> AlgebraicType {
-        match self {
-            PrimitiveType::Bool => AlgebraicType::Bool,
-            PrimitiveType::I8 => AlgebraicType::I8,
-            PrimitiveType::U8 => AlgebraicType::U8,
-            PrimitiveType::I16 => AlgebraicType::I16,
-            PrimitiveType::U16 => AlgebraicType::U16,
-            PrimitiveType::I32 => AlgebraicType::I32,
-            PrimitiveType::U32 => AlgebraicType::U32,
-            PrimitiveType::I64 => AlgebraicType::I64,
-            PrimitiveType::U64 => AlgebraicType::U64,
-            PrimitiveType::I128 => AlgebraicType::I128,
-            PrimitiveType::U128 => AlgebraicType::U128,
-            PrimitiveType::I256 => AlgebraicType::I256,
-            PrimitiveType::U256 => AlgebraicType::U256,
-            PrimitiveType::F32 => AlgebraicType::F32,
-            PrimitiveType::F64 => AlgebraicType::F64,
-        }
-    }
 }
 
 impl<'a> IntoIterator for &'a SumTypeDef {
@@ -289,6 +254,12 @@ impl<'a> IntoIterator for &'a SumTypeDef {
     type IntoIter = std::slice::Iter<'a, (Identifier, AlgebraicTypeUse)>;
     fn into_iter(self) -> Self::IntoIter {
         self.variants.iter()
+    }
+}
+
+impl SumTypeDef {
+    pub fn variant_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+        self.variants.iter().map(|(_, ty)| ty)
     }
 }
 
@@ -308,16 +279,14 @@ pub enum AlgebraicTypeUse {
     /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
     Array(Arc<AlgebraicTypeUse>),
 
-    /// The type of map values consisting of a key type `key_ty` and value `ty`.
-    /// Values [`AlgebraicValue::Map(map)`](crate::AlgebraicValue::Map) will have this type.
-    /// The order of entries in a map value is observable.
-    Map {
-        key: Arc<AlgebraicTypeUse>,
-        value: Arc<AlgebraicTypeUse>,
-    },
-
     /// A standard structural option type.
     Option(Arc<AlgebraicTypeUse>),
+
+    /// A standard structural result type.
+    Result {
+        ok_ty: Arc<AlgebraicTypeUse>,
+        err_ty: Arc<AlgebraicTypeUse>,
+    },
 
     /// The special `ScheduleAt` type.
     ScheduleAt,
@@ -325,8 +294,17 @@ pub enum AlgebraicTypeUse {
     /// The special `Identity` type.
     Identity,
 
-    /// The special `Address` type.
-    Address,
+    /// The special `ConnectionId` type.
+    ConnectionId,
+
+    /// The special `Timestamp` type.
+    Timestamp,
+
+    /// The special `TimeDuration` type.
+    TimeDuration,
+
+    /// The special `Uuid` type.
+    Uuid,
 
     /// The unit type (empty product).
     /// This is *distinct* from a use of a definition of a product type with no elements.
@@ -360,11 +338,11 @@ impl AlgebraicTypeUse {
         match self {
             AlgebraicTypeUse::Ref(ref_) => f(*ref_),
             AlgebraicTypeUse::Array(elem_ty) => elem_ty._for_each_ref(f),
-            AlgebraicTypeUse::Map { key, value } => {
-                key._for_each_ref(f);
-                value._for_each_ref(f);
-            }
             AlgebraicTypeUse::Option(elem_ty) => elem_ty._for_each_ref(f),
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                ok_ty._for_each_ref(f);
+                err_ty._for_each_ref(f);
+            }
             _ => {}
         }
     }
@@ -418,10 +396,16 @@ impl TypespaceForGenerateBuilder<'_> {
     /// Use the `TypespaceForGenerateBuilder` to validate an `AlgebraicTypeUse`.
     /// Does not actually add anything to the `TypespaceForGenerate`.
     pub fn parse_use(&mut self, ty: &AlgebraicType) -> Result<AlgebraicTypeUse> {
-        if ty.is_address() {
-            Ok(AlgebraicTypeUse::Address)
+        if ty.is_connection_id() {
+            Ok(AlgebraicTypeUse::ConnectionId)
         } else if ty.is_identity() {
             Ok(AlgebraicTypeUse::Identity)
+        } else if ty.is_timestamp() {
+            Ok(AlgebraicTypeUse::Timestamp)
+        } else if ty.is_time_duration() {
+            Ok(AlgebraicTypeUse::TimeDuration)
+        } else if ty.is_uuid() {
+            Ok(AlgebraicTypeUse::Uuid)
         } else if ty.is_unit() {
             Ok(AlgebraicTypeUse::Unit)
         } else if ty.is_never() {
@@ -430,6 +414,12 @@ impl TypespaceForGenerateBuilder<'_> {
             let elem_ty = self.parse_use(elem_ty)?;
             let interned = self.intern_use(elem_ty);
             Ok(AlgebraicTypeUse::Option(interned))
+        } else if let Some((ok_ty, err_ty)) = ty.as_result() {
+            let ok = self.parse_use(ok_ty)?;
+            let err = self.parse_use(err_ty)?;
+            let ok_ty = self.intern_use(ok);
+            let err_ty = self.intern_use(err);
+            Ok(AlgebraicTypeUse::Result { ok_ty, err_ty })
         } else if ty.is_schedule_at() {
             Ok(AlgebraicTypeUse::ScheduleAt)
         } else {
@@ -443,18 +433,6 @@ impl TypespaceForGenerateBuilder<'_> {
                     let interned = self.intern_use(elem_ty);
                     Ok(AlgebraicTypeUse::Array(interned))
                 }
-                AlgebraicType::Map(map) => {
-                    let key_ty = self.parse_use(&map.key_ty);
-                    let value_ty = self.parse_use(&map.ty);
-                    let (key_ty, value_ty) = (key_ty, value_ty).combine_errors()?;
-                    let interned_key = self.intern_use(key_ty);
-                    let interned_value = self.intern_use(value_ty);
-                    Ok(AlgebraicTypeUse::Map {
-                        key: interned_key,
-                        value: interned_value,
-                    })
-                }
-
                 AlgebraicType::String => Ok(AlgebraicTypeUse::String),
                 AlgebraicType::Bool => Ok(AlgebraicTypeUse::Primitive(PrimitiveType::Bool)),
                 AlgebraicType::I8 => Ok(AlgebraicTypeUse::Primitive(PrimitiveType::I8)),
@@ -543,7 +521,7 @@ impl TypespaceForGenerateBuilder<'_> {
             .get(ref_)
             .ok_or_else(|| ErrorStream::from(ClientCodegenError::TypeRefError(TypeRefError::InvalidTypeRef(ref_))))?;
 
-        let result = match def {
+        match def {
             AlgebraicType::Product(product) => product
                 .elements
                 .iter()
@@ -587,9 +565,7 @@ impl TypespaceForGenerateBuilder<'_> {
                 ty: PrettyAlgebraicType(def.clone()),
             }
             .into()),
-        };
-
-        result
+        }
     }
 
     /// Process an element/variant of a product/sum type.
@@ -599,7 +575,7 @@ impl TypespaceForGenerateBuilder<'_> {
     fn process_element(
         &mut self,
         def: &AlgebraicType,
-        element_name: &Option<Box<str>>,
+        element_name: &Option<RawIdentifier>,
         element_type: &AlgebraicType,
     ) -> Result<(Identifier, AlgebraicTypeUse)> {
         let element_name = element_name
@@ -688,7 +664,7 @@ impl NodeIndexable for TypespaceForGenerateBuilder<'_> {
     }
 }
 impl<'a> IntoNodeIdentifiers for &'a TypespaceForGenerateBuilder<'a> {
-    type NodeIdentifiers = std::iter::Cloned<hashbrown::hash_set::Iter<'a, spacetimedb_sats::AlgebraicTypeRef>>;
+    type NodeIdentifiers = std::iter::Cloned<hash_set::Iter<'a, spacetimedb_sats::AlgebraicTypeRef>>;
 
     fn node_identifiers(self) -> Self::NodeIdentifiers {
         self.is_def.iter().cloned()
@@ -751,17 +727,20 @@ mod tests {
         let ref0 = t.add(AlgebraicType::Ref(def));
         let ref1 = t.add(AlgebraicType::array(AlgebraicType::Ref(def)));
         let ref2 = t.add(AlgebraicType::option(AlgebraicType::Ref(ref1)));
-        let ref3 = t.add(AlgebraicType::map(AlgebraicType::U64, AlgebraicType::Ref(ref2)));
-        let ref4 = t.add(AlgebraicType::Ref(ref3));
+        let ref3 = t.add(AlgebraicType::Ref(ref2));
+        let ref4 = t.add(AlgebraicType::result(
+            AlgebraicType::Ref(ref3),
+            AlgebraicType::Ref(ref2),
+        ));
 
         let expected_0 = AlgebraicTypeUse::Ref(def);
         let expected_1 = AlgebraicTypeUse::Array(Arc::new(expected_0.clone()));
         let expected_2 = AlgebraicTypeUse::Option(Arc::new(expected_1.clone()));
-        let expected_3 = AlgebraicTypeUse::Map {
-            key: Arc::new(AlgebraicTypeUse::Primitive(PrimitiveType::U64)),
-            value: Arc::new(expected_2.clone()),
+        let expected_3 = expected_2.clone();
+        let expected_4 = AlgebraicTypeUse::Result {
+            ok_ty: Arc::new(expected_3.clone()),
+            err_ty: Arc::new(expected_2.clone()),
         };
-        let expected_4 = expected_3.clone();
 
         let mut for_generate_forward = TypespaceForGenerate::builder(&t, [def]);
         for_generate_forward.add_definition(def).unwrap();

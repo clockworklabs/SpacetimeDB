@@ -1,0 +1,1 @@
+Please make changes and submit pull requests to the root repository at [SpacetimeDB/demo/Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio). The [Blackholio repository](https://github.com/clockworklabs/Blackholio) is only a mirror.

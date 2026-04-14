@@ -1,0 +1,561 @@
+﻿{
+  Diagnostics: [
+    {/*
+    [AutoInc]
+    public float AutoIncField;
+                 ^^^^^^^^^^^^
+
+*/
+      Message: Field AutoIncField is marked as AutoInc but it has a non-integer type float.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0002,
+        Title: AutoInc fields must be of integer type,
+        MessageFormat: Field {0} is marked as AutoInc but it has a non-integer type {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [AutoInc]
+    public string IdentityField;
+                  ^^^^^^^^^^^^^
+}
+*/
+      Message: Field IdentityField is marked as AutoInc but it has a non-integer type string.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0002,
+        Title: AutoInc fields must be of integer type,
+        MessageFormat: Field {0} is marked as AutoInc but it has a non-integer type {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [Unique]
+    public int? UniqueField;
+                ^^^^^^^^^^^
+
+*/
+      Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0003,
+        Title: Unique fields must be equatable,
+        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Table]
+public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0006,
+        Title: Tables cannot be tagged enums,
+        MessageFormat: Table {0} is a tagged enum, which is not allowed.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [Unique]
+    public int? UniqueField;
+                ^^^^^^^^^^^
+
+*/
+      Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0003,
+        Title: Unique fields must be equatable,
+        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+{
+    [SpacetimeDB.Index.BTree(Accessor = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public int SelfIndexingColumn;
+*/
+      Message: Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0015,
+        Title: Index attribute on a field must not specify Columns,
+        MessageFormat: Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Table]
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
+*/
+      Message: Index attribute doesn't specify columns.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0004,
+        Title: Index attribute must specify Columns,
+        MessageFormat: Index attribute doesn't specify columns.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+*/
+      Message: Index attribute doesn't specify columns.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0004,
+        Title: Index attribute must specify Columns,
+        MessageFormat: Index attribute doesn't specify columns.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
+[SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+*/
+      Message: Could not find the specified column UnknownColumn in TestIndexIssues.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0016,
+        Title: Unknown column,
+        MessageFormat: Could not find the specified column {0} in {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(
+*/
+      Message: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0029,
+        Title: Table-level index attributes must specify Accessor,
+        MessageFormat: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+[SpacetimeDB.Index.BTree(
+ ^^^^^^^^^^^^^^^^^^^^^^^^
+    Name = "TestCanonicalNameWithoutAccessor",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Columns = ["SecondaryIndexingColumn"]
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+public partial struct TestIndexIssues
+*/
+      Message: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0029,
+        Title: Table-level index attributes must specify Accessor,
+        MessageFormat: Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithoutPrimaryKey",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(ScheduleAtCorrectType)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+[SpacetimeDB.Table(
+*/
+      Message: TestScheduleWithoutPrimaryKey is a scheduled table but doesn't have a primary key of type `ulong`.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0014,
+        Title: Invalid scheduled table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+)]
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithWrongPrimaryKeyType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(ScheduleAtCorrectType)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+[SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+*/
+      Message: TestScheduleWithWrongPrimaryKeyType is a scheduled table but doesn't have a primary key of type `ulong`.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0014,
+        Title: Invalid scheduled table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+)]
+[SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(
+*/
+      Message: Could not find the specified column ScheduledAt in TestScheduleIssues.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0016,
+        Title: Unknown column,
+        MessageFormat: Could not find the specified column {0} in {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Table(Accessor = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithWrongScheduleAtType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(ScheduleAtWrongType)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+[SpacetimeDB.Table(
+*/
+      Message: TestScheduleWithWrongScheduleAtType is a scheduled table but doesn't have a primary key of type `ulong`.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0014,
+        Title: Invalid scheduled table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+)]
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "TestScheduleWithMissingScheduleAtField",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = "MissingField"
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+public partial struct TestScheduleIssues
+*/
+      Message: Could not find the specified column MissingField in TestScheduleIssues.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0016,
+        Title: Unknown column,
+        MessageFormat: Could not find the specified column {0} in {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    // Invalid: View definition missing Public=true
+    [SpacetimeDB.View(Accessor = "view_def_no_public")]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static List<Player> ViewDefNoPublic(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+^^^^^
+        return new List<Player>();
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewDefNoPublic' must have Public = true. Views are always public in SpacetimeDB.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0025,
+        Title: Views must be public,
+        MessageFormat: View '{0}' must have Public = true. Views are always public in SpacetimeDB.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_no_context", Public = true)]
+    public static List<Player> ViewDefNoContext()
+                                               ^^
+    {
+*/
+      Message: View method ViewDefNoContext must have a first parameter of type ViewContext or AnonymousViewContext.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0022,
+        Title: Views must start with ViewContext or AnonymousViewContext,
+        MessageFormat: View method {0} must have a first parameter of type ViewContext or AnonymousViewContext.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_wrong_context", Public = true)]
+    public static List<Player> ViewDefWrongContext(ReducerContext ctx)
+                                                  ^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+      Message: View method ViewDefWrongContext must have a first parameter of type ViewContext or AnonymousViewContext.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0022,
+        Title: Views must start with ViewContext or AnonymousViewContext,
+        MessageFormat: View method {0} must have a first parameter of type ViewContext or AnonymousViewContext.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
+    public static Player ViewDefWrongReturn(ViewContext ctx)
+                  ^^^^^^
+    {
+*/
+      Message: View 'ViewDefWrongReturn' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>,
+        MessageFormat: View '{0}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static int TestReducerReturnType(ReducerContext ctx) => 0;
+                  ^^^
+
+*/
+      Message: Reducer method TestReducerReturnType returns int instead of void.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0001,
+        Title: [SpacetimeDB.Reducer] methods must return void,
+        MessageFormat: Reducer method {0} returns {1} instead of void.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void TestReducerWithoutContext() { }
+                                                ^^
+
+*/
+      Message: Reducer method TestReducerWithoutContext does not have a ReducerContext parameter.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0008,
+        Title: Reducers must have a first argument of type ReducerContext,
+        MessageFormat: Reducer method {0} does not have a ReducerContext parameter.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void OnReducerWithReservedPrefix(ReducerContext ctx) { }
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Message: Reducer method OnReducerWithReservedPrefix starts with 'On', which is a reserved prefix.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0010,
+        Title: Reducer method has a reserved name prefix,
+        MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void __ReducerWithReservedPrefix(ReducerContext ctx) { }
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+      Message: Reducer method __ReducerWithReservedPrefix starts with '__', which is a reserved prefix.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0010,
+        Title: Reducer method has a reserved name prefix,
+        MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Several reducers are assigned to the same lifecycle kind Init: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0013,
+        Title: Multiple reducers of the same kind,
+        MessageFormat: Several reducers are assigned to the same lifecycle kind {0}: {1},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Reducer with the same export name TestDuplicateReducerName is registered in multiple places: Reducers.TestDuplicateReducerName, Reducers.InAnotherNamespace.TestDuplicateReducerName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Table with the same export name TestDuplicateTableName is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: TableReadOnly with the same export name TestDuplicateTableNameReadOnly is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.ClientVisibilityFilter]
+    private Filter MY_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");
+                   ^^^^^^^^^
+
+*/
+      Message: Field MY_FILTER is marked as [ClientVisibilityFilter] but it is not public static readonly,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0018,
+        Title: ClientVisibilityFilters must be public static readonly,
+        MessageFormat: Field {0} is marked as [ClientVisibilityFilter] but it is not public static readonly,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static Filter MY_SECOND_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");
+                         ^^^^^^^^^^^^^^^^
+
+*/
+      Message: Field MY_SECOND_FILTER is marked as [ClientVisibilityFilter] but it is not public static readonly,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0018,
+        Title: ClientVisibilityFilters must be public static readonly,
+        MessageFormat: Field {0} is marked as [ClientVisibilityFilter] but it is not public static readonly,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly string MY_THIRD_FILTER = "SELECT * FROM TestAutoIncNotInteger";
+                                  ^^^^^^^^^^^^^^^
+
+*/
+      Message: Field MY_THIRD_FILTER is marked as ClientVisibilityFilter but it has type string which is not SpacetimeDB.Filter,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0017,
+        Title: ClientVisibilityFilters must be Filters,
+        MessageFormat: Field {0} is marked as ClientVisibilityFilter but it has type {1} which is not SpacetimeDB.Filter,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    }
+  ]
+}

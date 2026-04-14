@@ -18,7 +18,7 @@ impl ValueDeserializer {
         Self { val }
     }
 
-    /// Converts `&AlgebraicValue` to `&ValueDeserialize`.
+    /// Converts `&AlgebraicValue` to `&ValueDeserializer`.
     pub fn from_ref(val: &AlgebraicValue) -> &Self {
         // SAFETY: The conversion is OK due to `repr(transparent)`.
         unsafe { &*(val as *const AlgebraicValue as *const ValueDeserializer) }
@@ -58,9 +58,19 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         visitor.visit_seq_product(ProductAccess { vals })
     }
 
+    fn validate_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        let vals = map_err(self.val.into_product())?.into_iter();
+        visitor.validate_seq_product(ProductAccess { vals })
+    }
+
     fn deserialize_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         let sum = map_err(self.val.into_sum())?;
         visitor.visit_sum(SumAccess { sum })
+    }
+
+    fn validate_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        let sum = map_err(self.val.into_sum())?;
+        visitor.validate_sum(SumAccess { sum })
     }
 
     fn deserialize_bool(self) -> Result<bool, Self::Error> {
@@ -140,18 +150,13 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         visitor.visit(ArrayAccess { iter, seed })
     }
 
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
+    fn validate_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
         self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let iter = map_err(self.val.into_map())?.into_iter();
-        visitor.visit(MapAccess { iter, kseed, vseed })
+        visitor: V,
+        seed: T,
+    ) -> Result<(), Self::Error> {
+        let iter = map_err(self.val.into_array())?.into_iter();
+        visitor.validate(ArrayAccess { iter, seed })
     }
 }
 
@@ -168,6 +173,13 @@ impl<'de> de::SeqProductAccess<'de> for ProductAccess {
         self.vals
             .next()
             .map(|val| seed.deserialize(ValueDeserializer { val }))
+            .transpose()
+    }
+
+    fn validate_next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<()>, Self::Error> {
+        self.vals
+            .next()
+            .map(|val| seed.validate(ValueDeserializer { val }))
             .transpose()
     }
 }
@@ -187,12 +199,12 @@ impl SumAccess {
     }
 }
 
-impl de::SumAccess<'_> for SumAccess {
+impl<'de> de::SumAccess<'de> for SumAccess {
     type Error = ValueDeserializeError;
 
     type Variant = ValueDeserializer;
 
-    fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let tag = visitor.visit_tag(self.sum.tag)?;
         let val = *self.sum.value;
         Ok((tag, ValueDeserializer { val }))
@@ -204,6 +216,10 @@ impl<'de> de::VariantAccess<'de> for ValueDeserializer {
 
     fn deserialize_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self)
+    }
+
+    fn validate_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        seed.validate(self)
     }
 }
 
@@ -226,36 +242,11 @@ impl<'de, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAcc
             .map(|val| self.seed.clone().deserialize(ValueDeserializer { val }))
             .transpose()
     }
-}
 
-/// Defines deserialization for [`ValueDeserializer`] where a map value is in the input.
-struct MapAccess<K, V> {
-    /// The elements of the map as an iterator of owned key/value entries.
-    iter: std::collections::btree_map::IntoIter<AlgebraicValue, AlgebraicValue>,
-    /// A key seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    kseed: K,
-    /// A value seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    vseed: V,
-}
-
-impl<'de, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone> de::MapAccess<'de>
-    for MapAccess<K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = ValueDeserializeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
+    fn validate_next_element(&mut self) -> Result<Option<()>, Self::Error> {
         self.iter
             .next()
-            .map(|(key, val)| {
-                Ok((
-                    self.kseed.clone().deserialize(ValueDeserializer { val: key })?,
-                    self.vseed.clone().deserialize(ValueDeserializer { val })?,
-                ))
-            })
+            .map(|val| self.seed.clone().validate(ValueDeserializer { val }))
             .transpose()
     }
 }
@@ -268,9 +259,19 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         visitor.visit_seq_product(RefProductAccess { vals })
     }
 
+    fn validate_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        let vals = ok_or(self.val.as_product())?.elements.iter();
+        visitor.validate_seq_product(RefProductAccess { vals })
+    }
+
     fn deserialize_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         let sum = ok_or(self.val.as_sum())?;
         visitor.visit_sum(SumAccess::from_ref(sum))
+    }
+
+    fn validate_sum<V: de::SumVisitor<'de>>(self, visitor: V) -> Result<(), Self::Error> {
+        let sum = ok_or(self.val.as_sum())?;
+        visitor.validate_sum(SumAccess::from_ref(sum))
     }
 
     fn deserialize_bool(self) -> Result<bool, Self::Error> {
@@ -336,18 +337,13 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         visitor.visit(RefArrayAccess { iter, seed })
     }
 
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
+    fn validate_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
         self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let iter = ok_or(self.val.as_map())?.iter();
-        visitor.visit(RefMapAccess { iter, kseed, vseed })
+        visitor: V,
+        seed: T,
+    ) -> Result<(), Self::Error> {
+        let iter = ok_or(self.val.as_array())?.iter_cloned();
+        visitor.validate(RefArrayAccess { iter, seed })
     }
 }
 
@@ -366,6 +362,13 @@ impl<'de> de::SeqProductAccess<'de> for RefProductAccess<'de> {
             .map(|val| seed.deserialize(ValueDeserializer::from_ref(val)))
             .transpose()
     }
+
+    fn validate_next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<()>, Self::Error> {
+        self.vals
+            .next()
+            .map(|val| seed.validate(ValueDeserializer::from_ref(val)))
+            .transpose()
+    }
 }
 
 impl<'de> de::SumAccess<'de> for &'de SumAccess {
@@ -373,7 +376,7 @@ impl<'de> de::SumAccess<'de> for &'de SumAccess {
 
     type Variant = &'de ValueDeserializer;
 
-    fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let tag = visitor.visit_tag(self.sum.tag)?;
         Ok((tag, ValueDeserializer::from_ref(&self.sum.value)))
     }
@@ -384,6 +387,10 @@ impl<'de> de::VariantAccess<'de> for &'de ValueDeserializer {
 
     fn deserialize_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self)
+    }
+
+    fn validate_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<(), Self::Error> {
+        seed.validate(self)
     }
 }
 
@@ -407,36 +414,11 @@ impl<'de, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for RefArray
             .map(|val| self.seed.clone().deserialize(ValueDeserializer { val }))
             .transpose()
     }
-}
 
-/// Defines deserialization for [`&'de ValueDeserializer`] where an map value is in the input.
-struct RefMapAccess<'a, K, V> {
-    /// The elements of the map as an iterator of borrowed key/value entries.
-    iter: std::collections::btree_map::Iter<'a, AlgebraicValue, AlgebraicValue>,
-    /// A key seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    kseed: K,
-    /// A value seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    vseed: V,
-}
-
-impl<'de, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone> de::MapAccess<'de>
-    for RefMapAccess<'de, K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = ValueDeserializeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
+    fn validate_next_element(&mut self) -> Result<Option<()>, Self::Error> {
         self.iter
             .next()
-            .map(|(key, val)| {
-                Ok((
-                    self.kseed.clone().deserialize(ValueDeserializer::from_ref(key))?,
-                    self.vseed.clone().deserialize(ValueDeserializer::from_ref(val))?,
-                ))
-            })
+            .map(|val| self.seed.clone().validate(ValueDeserializer { val }))
             .transpose()
     }
 }

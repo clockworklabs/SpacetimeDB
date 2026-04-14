@@ -1,7 +1,8 @@
 use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, LogLevel, LoggerRecord, ModuleHandle, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    CompilationMode, CompiledModule, Cpp, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
+    TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 use std::{
     future::Future,
@@ -47,21 +48,26 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
         DEFAULT_CONFIG,
         |module| async move {
             let json =
-                r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Tyrion\", 24]" }, "request_id": 0 }}"#
+                r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
                     .to_string();
             module.send(json).await.unwrap();
 
             let json =
-                r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Cersei\", 31]" }, "request_id": 1 }}"#
+                r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1, "flags": 0 }}"#
                     .to_string();
             module.send(json).await.unwrap();
 
             let json =
-                r#"{"CallReducer": {"reducer": "say_hello", "args": { "Text": "[]" }, "request_id": 2 }}"#.to_string();
+                r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2, "flags": 0 }}"#.to_string();
             module.send(json).await.unwrap();
 
-            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": { "Text": "[30]" }, "request_id": 3 }}"#
+            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3, "flags": 0 }}"#
                 .to_string();
+            module.send(json).await.unwrap();
+
+            let json =
+                r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
+                    .to_string();
             module.send(json).await.unwrap();
 
             assert_eq!(
@@ -72,7 +78,10 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
                     "Hello, World!",
                     "Cersei has age 31 >= 30",
                 ]
+                .into_iter()
                 .map(String::from)
+                .chain(std::iter::once(format!("Module identity: {}", module.db_identity)))
+                .collect::<Vec<_>>()
             );
         },
     );
@@ -81,13 +90,25 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 #[test]
 #[serial]
 fn test_calling_a_reducer() {
-    test_calling_a_reducer_in_module("spacetimedb-quickstart");
+    test_calling_a_reducer_in_module("module-test");
 }
 
 #[test]
 #[serial]
 fn test_calling_a_reducer_csharp() {
-    test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
+    test_calling_a_reducer_in_module("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_typescript() {
+    test_calling_a_reducer_in_module("module-test-ts");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_cpp() {
+    test_calling_a_reducer_in_module("module-test-cpp");
 }
 
 #[test]
@@ -95,14 +116,14 @@ fn test_calling_a_reducer_csharp() {
 fn test_calling_a_reducer_with_private_table() {
     init();
 
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             module
-                .call_reducer_json("add_private", product!["Tyrion"])
+                .call_reducer_binary("add_private", &product!["Tyrion"])
                 .await
                 .unwrap();
-            module.call_reducer_json("query_private", product![]).await.unwrap();
+            module.call_reducer_binary("query_private", &product![]).await.unwrap();
 
             let logs = read_logs(&module)
                 .await
@@ -115,7 +136,92 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
-/// Invoke the `rust-wasm-test` module,
+async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
+    let logs = read_logs(module).await;
+    let mut logs = logs
+        .into_iter()
+        // Filter out log lines from the `repeating_test` reducer,
+        // which runs frequently enough to appear in our logs after we've slept a second.
+        .filter(|line| !line.starts_with("Timestamp: Timestamp { __timestamp_micros_since_unix_epoch__: "))
+        .collect::<Vec<_>>();
+
+    if logs.len() != 1 {
+        panic!("Expected a single log message but found {logs:#?}");
+    };
+
+    logs.swap_remove(0)
+}
+
+fn test_calling_a_procedure_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{
+  "CallProcedure": {
+    "procedure": "sleep_one_second",
+    "args": "[]",
+    "request_id": 0,
+    "flags": 0
+  }
+}"#
+            .to_string();
+            module.send(json).await.unwrap();
+
+            // It sleeps one second, but we'll wait two just to be safe.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            let log_sleep = read_log_skip_repeating(&module).await;
+
+            assert!(log_sleep.starts_with("Slept from "));
+            assert!(log_sleep.contains("a total of"));
+        },
+    )
+}
+
+#[test]
+#[serial]
+fn test_calling_a_procedure() {
+    test_calling_a_procedure_in_module("module-test");
+}
+
+fn test_calling_with_tx_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{
+  "CallProcedure": {
+    "procedure": "with_tx",
+    "args": "[]",
+    "request_id": 0,
+    "flags": 0
+  }
+}"#
+            .to_string();
+            module.send(json).await.unwrap();
+
+            // Wait 1 second just to be safe.
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            let log = read_log_skip_repeating(&module).await;
+
+            assert!(log.contains("Hello, World!"));
+        },
+    )
+}
+
+#[test]
+#[serial]
+fn test_calling_with_tx() {
+    test_calling_with_tx_in_module("module-test");
+}
+
+/// Invoke the `module-test` module,
 /// use `caller` to invoke its `test` reducer,
 /// and assert that its logs look right.
 ///
@@ -135,7 +241,7 @@ fn test_calling_a_reducer_with_private_table() {
 /// ]
 /// ```
 fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             caller(module.clone()).await;
@@ -167,7 +273,7 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
     );
 }
 
-/// Call the `rust-wasm-test` module's `test` reducer with a variety of ways of passing arguments.
+/// Call the `module-test` module's `test` reducer with a variety of ways of passing arguments.
 #[test]
 #[serial]
 fn test_call_query_macro() {
@@ -177,22 +283,21 @@ fn test_call_query_macro() {
         let json = r#"
 { "CallReducer": {
   "reducer": "test",
-  "args": { "Text":
-    "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]"
-  },
-  "request_id": 0
+  "args":
+    "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"foo\": {} }, { \"baz\": \"buzz\" } ]",
+  "request_id": 0,
+  "flags": 0
 } }"#
             .to_string();
         module.send(json).await.unwrap();
     });
 
-    let args_pv = product![
+    let args_pv = &product![
         product![0u32, 2u32, "Macro"],
         product!["Foo"],
         AlgebraicValue::sum(0, AlgebraicValue::unit()),
         AlgebraicValue::sum(2, AlgebraicValue::String("buzz".into())),
     ];
-    let args_pv_clone = args_pv.clone();
 
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
@@ -201,7 +306,7 @@ fn test_call_query_macro() {
 
     // BSATN via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
-        module.call_reducer_binary("test", args_pv_clone).await.unwrap();
+        module.call_reducer_binary("test", args_pv).await.unwrap();
     });
 }
 
@@ -215,29 +320,32 @@ fn test_index_scans() {
     CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
         IN_MEMORY_CONFIG,
         |module| async move {
+            let no_args = &product![];
+
             module
-                .call_reducer_json("load_location_table", product![])
+                .call_reducer_binary("load_location_table", no_args)
                 .await
                 .unwrap();
 
             module
-                .call_reducer_json("test_index_scan_on_id", product![])
+                .call_reducer_binary("test_index_scan_on_id", no_args)
                 .await
                 .unwrap();
 
             module
-                .call_reducer_json("test_index_scan_on_chunk", product![])
+                .call_reducer_binary("test_index_scan_on_chunk", no_args)
                 .await
                 .unwrap();
 
             module
-                .call_reducer_json("test_index_scan_on_x_z_dimension", product![])
+                .call_reducer_binary("test_index_scan_on_x_z_dimension", no_args)
                 .await
                 .unwrap();
 
-            // TODO(1011): Uncomment once multi-column prefix scans are supported
-            // let json = r#"{"call": {"fn": "test_index_scan_on_x_z", "args": []}}"#;
-            // module.send(json.to_string()).await.unwrap();
+            module
+                .call_reducer_binary("test_index_scan_on_x_z", no_args)
+                .await
+                .unwrap();
 
             let logs = read_logs(&module).await;
 
@@ -249,18 +357,16 @@ fn test_index_scans() {
             assert!(timing(&logs[0]));
             assert!(timing(&logs[1]));
             assert!(timing(&logs[2]));
-            // assert!(timing(&logs[3]));
+            assert!(timing(&logs[3]));
         },
     );
 }
 
-async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
-    let json =
-        format!(r#"{{"CallReducer": {{"reducer": "{call}", "args": {{ "Text": "[{count}]" }}, "request_id": 0 }}}}"#);
-
+async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
     let now = Instant::now();
 
-    module.send(json).await.unwrap();
+    // Note: using JSON variant because some functions accept u64 instead, so we rely on JSON's dynamic typing.
+    module.call_reducer_json(call, &product![*count]).await.unwrap();
 
     now.elapsed()
 }
@@ -281,42 +387,81 @@ async fn _run_bench_db(module: ModuleHandle, benches: &[(&str, u32, &str)]) {
     }
 }
 
-#[test]
-#[serial]
-fn test_calling_bench_db_circles() {
-    CompiledModule::compile("benchmarks", CompilationMode::Release).with_module_async(
-        DEFAULT_CONFIG,
-        |module| async move {
-            #[rustfmt::skip]
-            let benches = [
-                ("insert_bulk_food", 50, "INSERT FOOD: 50"),
-                ("insert_bulk_entity", 50, "INSERT ENTITY: 50"),
-                ("insert_bulk_circle", 500, "INSERT CIRCLE: 500"),
-                ("cross_join_circle_food", 50 * 500, "CROSS JOIN CIRCLE FOOD: 25000, processed: 2500"),
-                ("cross_join_all", 50 * 50 * 500, "CROSS JOIN ALL: 1250000, processed: 1250000"),
-            ];
-            _run_bench_db(module, &benches).await
-        },
-    );
+fn test_calling_bench_db_circles<L: ModuleLanguage>() {
+    L::get_module().with_module_async(DEFAULT_CONFIG, |module| async move {
+        #[rustfmt::skip]
+        let benches = [
+            ("insert_bulk_food", 50, "INSERT FOOD: 50"),
+            ("insert_bulk_entity", 50, "INSERT ENTITY: 50"),
+            ("insert_bulk_circle", 500, "INSERT CIRCLE: 500"),
+            ("cross_join_circle_food", 50 * 500, "CROSS JOIN CIRCLE FOOD: 25000, processed: 2500"),
+            ("cross_join_all", 50 * 50 * 500, "CROSS JOIN ALL: 1250000, processed: 1250000"),
+        ];
+
+        _run_bench_db(module, &benches).await
+    });
 }
 
 #[test]
 #[serial]
-fn test_calling_bench_db_ia_loop() {
-    CompiledModule::compile("benchmarks", CompilationMode::Release).with_module_async(
-        DEFAULT_CONFIG,
-        |module| async move {
-            #[rustfmt::skip]
-                let benches = [
-                ("insert_bulk_position", 20_000, "INSERT POSITION: 20000"),
-                ("insert_bulk_velocity", 10_000, "INSERT VELOCITY: 10000"),
-                ("update_position_all", 20_000, "UPDATE POSITION ALL: 20000, processed: 20000"),
-                ("update_position_with_velocity", 10_000, "UPDATE POSITION BY VELOCITY: 10000, processed: 10000"),
-                ("insert_world", 5_000, "INSERT WORLD PLAYERS: 5000"),
-                ("game_loop_enemy_ia", 5_000, "ENEMY IA LOOP PLAYERS: 5000, processed: 2500"),
-            ];
+fn test_calling_bench_db_circles_rust() {
+    test_calling_bench_db_circles::<Rust>();
+}
 
-            _run_bench_db(module, &benches).await
-        },
-    );
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_csharp() {
+    test_calling_bench_db_circles::<Csharp>();
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_typescript() {
+    test_calling_bench_db_circles::<TypeScript>();
+}
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_cpp() {
+    test_calling_bench_db_circles::<Cpp>();
+}
+
+fn test_calling_bench_db_ia_loop<L: ModuleLanguage>() {
+    L::get_module().with_module_async(DEFAULT_CONFIG, |module| async move {
+        #[rustfmt::skip]
+        let benches = [
+            ("insert_bulk_position", 20_000, "INSERT POSITION: 20000"),
+            ("insert_bulk_velocity", 10_000, "INSERT VELOCITY: 10000"),
+            ("update_position_all", 20_000, "UPDATE POSITION ALL: 20000, processed: 20000"),
+            ("update_position_with_velocity", 10_000, "UPDATE POSITION BY VELOCITY: 10000, processed: 10000"),
+            ("insert_world", 5_000, "INSERT WORLD PLAYERS: 5000"),
+            // Note: we set lower amount of ia loop players here than in benchmarks.
+            // Otherwise tests will take forever because they are built in debug mode.
+            ("game_loop_enemy_ia", 100, "ENEMY IA LOOP PLAYERS: 100, processed: 5000"),
+        ];
+
+        _run_bench_db(module, &benches).await
+    });
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_rust() {
+    test_calling_bench_db_ia_loop::<Rust>();
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_csharp() {
+    test_calling_bench_db_ia_loop::<Csharp>();
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_typescript() {
+    test_calling_bench_db_ia_loop::<TypeScript>();
+}
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_cpp() {
+    test_calling_bench_db_ia_loop::<Cpp>();
 }

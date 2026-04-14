@@ -5,12 +5,11 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
-use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
+use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG, UUID_TAG};
+use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG, RESULT_ERR_TAG, RESULT_OK_TAG};
+use crate::typespace::Typespace;
 use crate::{i256, u256};
-use crate::{
-    AlgebraicTypeRef, AlgebraicValue, ArrayType, MapType, ProductType, SpacetimeType, SumType, SumTypeVariant,
-};
+use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SpacetimeType, SumType, SumTypeVariant};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
@@ -41,16 +40,18 @@ pub enum AlgebraicType {
     /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
     ///
     /// These structures are known as sum types because the number of possible values a sum
-    /// ```ignore
+    /// ```text
     /// { N_0(T_0), N_1(T_1), ..., N_n(T_n) }
     /// ```
     /// is:
-    /// ```ignore
+    /// ```text
     /// Σ (i ∈ 0..n). values(T_i)
     /// ```
     /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
     ///
-    /// See also: https://ncatlab.org/nlab/show/sum+type.
+    /// See also:
+    /// - <https://en.wikipedia.org/wiki/Tagged_union>
+    /// - <https://ncatlab.org/nlab/show/sum+type>
     ///
     /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
     Sum(SumType),
@@ -64,14 +65,16 @@ pub enum AlgebraicType {
     /// e.g., the names of its fields and their types in the case of a record.
     /// The name "product" comes from category theory.
     ///
-    /// See also: https://ncatlab.org/nlab/show/product+type.
+    /// See also:
+    /// - <https://en.wikipedia.org/wiki/Record_(computer_science)>
+    /// - <https://ncatlab.org/nlab/show/product+type>
     ///
     /// These structures are known as product types because the number of possible values in product
-    /// ```ignore
+    /// ```text
     /// { N_0: T_0, N_1: T_1, ..., N_n: T_n }
     /// ```
     /// is:
-    /// ```ignore
+    /// ```text
     /// Π (i ∈ 0..n). values(T_i)
     /// ```
     /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
@@ -81,10 +84,6 @@ pub enum AlgebraicType {
     /// The type of array values where elements are of a base type `elem_ty`.
     /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
     Array(ArrayType),
-    /// The type of map values consisting of a key type `key_ty` and value `ty`.
-    /// Values [`AlgebraicValue::Map(map)`](crate::AlgebraicValue::Map) will have this type.
-    /// The order of entries in a map value is observable.
-    Map(Box<MapType>),
     /// The UTF-8 encoded `String` type.
     /// Values [`AlgebraicValue::String(s)`](crate::AlgebraicValue::String) will have this type.
     ///
@@ -135,7 +134,6 @@ impl MetaType for AlgebraicType {
             ("sum", SumType::meta_type()),
             ("product", ProductType::meta_type()),
             ("array", ArrayType::meta_type()),
-            ("map", MapType::meta_type()),
             ("string", AlgebraicType::unit()),
             ("bool", AlgebraicType::unit()),
             ("i8", AlgebraicType::unit()),
@@ -167,14 +165,31 @@ impl AlgebraicType {
     /// The first type in the typespace.
     pub const ZERO_REF: Self = Self::Ref(AlgebraicTypeRef(0));
 
-    /// Returns whether this type is the conventional address type.
-    pub fn is_address(&self) -> bool {
-        matches!(self, Self::Product(p) if p.is_address())
+    /// Returns whether this type is the `ConnectionId` type.
+    ///
+    /// Construct an instance of this type with [`Self::connection_id`]
+    pub fn is_connection_id(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_connection_id())
     }
 
     /// Returns whether this type is the conventional identity type.
     pub fn is_identity(&self) -> bool {
         matches!(self, Self::Product(p) if p.is_identity())
+    }
+
+    /// Returns whether this type is the conventional point-in-time `Timestamp` type.
+    pub fn is_timestamp(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_timestamp())
+    }
+
+    /// Returns whether this type is the conventional time-delta `TimeDuration` type.
+    pub fn is_time_duration(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_time_duration())
+    }
+
+    /// Returns whether this type is the conventional `UUID` type.
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_uuid())
     }
 
     /// Returns whether this type is the conventional `ScheduleAt` type.
@@ -192,10 +207,26 @@ impl AlgebraicType {
         matches!(self, Self::Sum(p) if p.is_empty())
     }
 
+    /// Returns whether this type is an option type.
+    pub fn is_option(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_option())
+    }
+
     /// If this type is the standard option type, returns the type of the `some` variant.
     /// Otherwise, returns `None`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {
         self.as_sum()?.as_option()
+    }
+
+    /// Returns whether this type is a result type.
+    pub fn is_result(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_result())
+    }
+
+    /// If this type is the standard result type, returns the types of the `ok` and `err` variants.
+    /// Otherwise, returns `None`.
+    pub fn as_result(&self) -> Option<(&AlgebraicType, &AlgebraicType)> {
+        self.as_sum()?.as_result()
     }
 
     /// Returns whether this type is scalar or a string type.
@@ -272,7 +303,6 @@ impl AlgebraicType {
                 variants.iter().any(|variant| variant.algebraic_type.contains_refs())
             }
             AlgebraicType::Array(array) => array.elem_ty.contains_refs(),
-            AlgebraicType::Map(map) => map.key_ty.contains_refs() || map.ty.contains_refs(),
             _ => false,
         }
     }
@@ -292,28 +322,44 @@ impl AlgebraicType {
         Self::sum([(OPTION_SOME_TAG, some_type), (OPTION_NONE_TAG, AlgebraicType::unit())])
     }
 
+    /// Returns a structural result type where `ok_type` is the type for the `ok` variant
+    /// and `err_type` is the type for the `err` variant.
+    pub fn result(ok_type: Self, err_type: Self) -> Self {
+        Self::sum([(RESULT_OK_TAG, ok_type), (RESULT_ERR_TAG, err_type)])
+    }
+
     /// Returns an unsized array type where the element type is `ty`.
     pub fn array(ty: Self) -> Self {
         ArrayType { elem_ty: Box::new(ty) }.into()
     }
 
-    /// Returns a map type from the type `key` to the type `value`.
-    pub fn map(key: Self, value: Self) -> Self {
-        MapType::new(key, value).into()
-    }
-
     /// Construct a copy of the `Identity` type.
     pub fn identity() -> Self {
-        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::U256)])
     }
 
-    /// Construct a copy of the `Address` type.
-    pub fn address() -> Self {
-        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
+    /// Construct a copy of the `ConnectionId` type.
+    pub fn connection_id() -> Self {
+        AlgebraicType::product([(CONNECTION_ID_TAG, AlgebraicType::U128)])
+    }
+
+    /// Construct a copy of the point-in-time `Timestamp` type.
+    pub fn timestamp() -> Self {
+        AlgebraicType::product([(TIMESTAMP_TAG, AlgebraicType::I64)])
+    }
+
+    /// Construct a copy of the time-delta `TimeDuration` type.
+    pub fn time_duration() -> Self {
+        AlgebraicType::product([(TIME_DURATION_TAG, AlgebraicType::I64)])
+    }
+
+    /// Construct a copy of the `UUID` type.
+    pub fn uuid() -> Self {
+        AlgebraicType::product([(UUID_TAG, AlgebraicType::U128)])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
-    pub fn simple_enum<'a>(var_names: impl Iterator<Item = &'a str>) -> Self {
+    pub fn simple_enum(var_names: impl Iterator<Item = &'static str>) -> Self {
         Self::sum(var_names.into_iter().map(SumTypeVariant::unit).collect::<Box<[_]>>())
     }
 
@@ -384,7 +430,7 @@ impl AlgebraicType {
     /// in a `SpacetimeDB` client module.
     ///
     /// Such a type must be a non-special sum or product type.
-    /// All of the elements of the type must be [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// All of the elements of the type must satisfy [`AlgebraicType::is_valid_for_client_type_use`].
     ///
     /// This method does not actually follow `Ref`s to check the types they point to,
     /// it only checks the structure of this type.
@@ -413,7 +459,7 @@ impl AlgebraicType {
     /// - a reference
     /// - a special, known type
     /// - a non-compound type like `U8`, `I32`, `F64`, etc.
-    /// - or a map, array, or option built from types that are [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// - or a map, array, option, or result built from types that satisfy [`AlgebraicType::is_valid_for_client_type_use`]
     ///
     /// This method does not actually follow `Ref`s to check the types they point to,
     /// it only checks the structure of the type.
@@ -422,139 +468,63 @@ impl AlgebraicType {
             AlgebraicType::Sum(sum) => {
                 if let Some(wrapped) = sum.as_option() {
                     wrapped.is_valid_for_client_type_use()
+                } else if let Some((ok_ty, err_ty)) = sum.as_result() {
+                    ok_ty.is_valid_for_client_type_use() && err_ty.is_valid_for_client_type_use()
                 } else {
                     sum.is_special() || sum.is_empty()
                 }
             }
             AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
             AlgebraicType::Array(array) => array.elem_ty.is_valid_for_client_type_use(),
-            AlgebraicType::Map(map) => {
-                map.key_ty.is_valid_for_client_type_use() && map.ty.is_valid_for_client_type_use()
-            }
             AlgebraicType::Ref(_) => true,
             _ => true,
         }
     }
 
-    /// Check if a type is a BSATN-compatible subtype of another type.
-    /// Requires that neither `self` nor `other` contain any `Ref`s.
-    ///
-    /// The rough idea is: `self` is a BSATN-subtype of `other` if any BSATN bytestring that can
-    /// be deserialized to `AlgebraicValue` via `self: DeserializeSeed` can be deserialized to an identical
-    /// `AlgebraicValue` via `other: DeserializeSeed`. We also require that names of fields and variants
-    /// match.
-    ///
-    /// - If `self` is a product, this implies that `other` is a product with the same field names in the same order,
-    ///     and the types of the fields in self are BSATN-subtypes of the corresponding fields in `other`.
-    ///
-    /// - If `self` is a sum, this implies that `other` is a sum, with the same variant names in the same order,
-    ///     but possibly additional variants after the variants of `self`.
-    ///     The types of the variants in `self` are BSATN-subtypes of the corresponding variants in `other`.
-    ///
-    /// Similar logic applies to other cases.
-    pub fn is_bsatn_subtype(&self, other: &AlgebraicType) -> bool {
-        // Remark: if we ever want to apply this to recursive AlgebraicTypes,
-        // we will need to use a bisimilarity detection algorithm:
-        // https://en.wikipedia.org/wiki/Bisimulation
-        //
-        // That seems like a hassle and we don't yet need recursive AlgebraicTypes on the wire,
-        // so for now I'm not going to bother.
-        use AlgebraicType::*;
-        match (self, other) {
-            (Sum(s1), Sum(s2)) => {
-                if s1.variants.len() > s2.variants.len() {
-                    return false;
+    pub fn type_check(&self, value: &AlgebraicValue, typespace: &Typespace) -> bool {
+        match (self, value) {
+            (_, AlgebraicValue::Min | AlgebraicValue::Max) => true,
+            (AlgebraicType::Ref(r), _) => {
+                if let Some(resolved_ty) = typespace.get(*r) {
+                    resolved_ty.type_check(value, typespace)
+                } else {
+                    false
                 }
-                s1.variants
-                    .iter()
-                    .zip(s2.variants.iter())
-                    .all(|(v1, v2)| v1.name == v2.name && v1.algebraic_type.is_bsatn_subtype(&v2.algebraic_type))
             }
-            (Product(p1), Product(p2)) => {
-                if p1.elements.len() != p2.elements.len() {
-                    return false;
-                }
-                p1.elements
-                    .iter()
-                    .zip(p2.elements.iter())
-                    .all(|(e1, e2)| e1.name == e2.name && e1.algebraic_type.is_bsatn_subtype(&e2.algebraic_type))
-            }
-            (Array(a1), Array(a2)) => a1.elem_ty.is_bsatn_subtype(&a2.elem_ty),
-            (Map(m1), Map(m2)) => m1.key_ty.is_bsatn_subtype(&m2.key_ty) && m1.ty.is_bsatn_subtype(&m2.ty),
-            (String, String)
-            | (Bool, Bool)
-            | (I8, I8)
-            | (U8, U8)
-            | (I16, I16)
-            | (U16, U16)
-            | (I32, I32)
-            | (U32, U32)
-            | (I64, I64)
-            | (U64, U64)
-            | (I128, I128)
-            | (U128, U128)
-            | (I256, I256)
-            | (U256, U256)
-            | (F32, F32)
-            | (F64, F64) => true,
-            (Ref(_), _) | (_, Ref(_)) => panic!("is_bsatn_subtype called with type containing Ref"),
+            (AlgebraicType::Sum(sum_ty), AlgebraicValue::Sum(sv)) => sum_ty.type_check(sv, typespace),
+            (AlgebraicType::Product(product_ty), AlgebraicValue::Product(pv)) => product_ty.type_check(pv, typespace),
+            (AlgebraicType::Array(array_ty), AlgebraicValue::Array(arr)) => array_ty.type_check(arr, typespace),
+
+            (AlgebraicType::String, AlgebraicValue::String(_))
+            | (AlgebraicType::Bool, AlgebraicValue::Bool(_))
+            | (AlgebraicType::I8, AlgebraicValue::I8(_))
+            | (AlgebraicType::U8, AlgebraicValue::U8(_))
+            | (AlgebraicType::I16, AlgebraicValue::I16(_))
+            | (AlgebraicType::U16, AlgebraicValue::U16(_))
+            | (AlgebraicType::I32, AlgebraicValue::I32(_))
+            | (AlgebraicType::U32, AlgebraicValue::U32(_))
+            | (AlgebraicType::I64, AlgebraicValue::I64(_))
+            | (AlgebraicType::U64, AlgebraicValue::U64(_))
+            | (AlgebraicType::I128, AlgebraicValue::I128(_))
+            | (AlgebraicType::U128, AlgebraicValue::U128(_))
+            | (AlgebraicType::I256, AlgebraicValue::I256(_))
+            | (AlgebraicType::U256, AlgebraicValue::U256(_))
+            | (AlgebraicType::F32, AlgebraicValue::F32(_))
+            | (AlgebraicType::F64, AlgebraicValue::F64(_)) => true,
             _ => false,
         }
     }
 }
-
-/// Deterministically create a type that is a bsatn supertype of the given type.
-#[cfg(feature = "test")]
-pub fn make_bsatn_supertype(t: &AlgebraicType) -> AlgebraicType {
-    match t {
-        AlgebraicType::Product(p) => AlgebraicType::Product(
-            p.elements
-                .iter()
-                .map(|e| {
-                    let mut new = e.clone();
-                    new.algebraic_type = make_bsatn_supertype(&e.algebraic_type);
-                    new
-                })
-                .collect(),
-        ),
-        AlgebraicType::Sum(s) => {
-            AlgebraicType::Sum(
-                s.variants
-                    .iter()
-                    .map(|v| {
-                        let mut new = v.clone();
-                        new.algebraic_type = make_bsatn_supertype(&v.algebraic_type);
-                        new
-                    })
-                    // This is the only change we are actually allowed to make.
-                    .chain(std::iter::once(SumTypeVariant {
-                        name: None,
-                        algebraic_type: AlgebraicType::U256,
-                    }))
-                    .collect(),
-            )
-        }
-        AlgebraicType::Array(a) => AlgebraicType::array(make_bsatn_supertype(&a.elem_ty)),
-        AlgebraicType::Map(m) => AlgebraicType::map(make_bsatn_supertype(&m.key_ty), make_bsatn_supertype(&m.ty)),
-        AlgebraicType::Ref(_) => unimplemented!(),
-        other => other.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::AlgebraicType;
-    use crate::algebraic_type::make_bsatn_supertype;
-    use crate::bsatn::{decode, to_vec};
     use crate::meta_type::MetaType;
-    use crate::proptest::generate_typed_value;
     use crate::satn::Satn;
     use crate::{
         algebraic_type::fmt::fmt_algebraic_type, algebraic_type::map_notation::fmt_algebraic_type as fmt_map,
         algebraic_type_ref::AlgebraicTypeRef, typespace::Typespace,
     };
-    use crate::{ValueWithType, WithTypespace};
-    use proptest::prelude::*;
+    use crate::{product, AlgebraicValue, ValueWithType, WithTypespace};
 
     #[test]
     fn never() {
@@ -602,6 +572,21 @@ mod tests {
     }
 
     #[test]
+    fn result() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        assert_eq!("(ok: U8 | err: String)", fmt_algebraic_type(&result).to_string());
+    }
+
+    #[test]
+    fn result_map() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        assert_eq!(
+            "{ ty_: Sum, ok: { ty_: U8 }, err: { ty_: String } }",
+            fmt_map(&result).to_string()
+        );
+    }
+
+    #[test]
     fn algebraic_type() {
         let algebraic_type = AlgebraicType::meta_type();
         assert_eq!(
@@ -616,7 +601,6 @@ mod tests {
                     algebraic_type: &0\
                 )>) \
                 | array: &0 \
-                | map: (key_ty: &0, ty: &0) \
                 | string: () \
                 | bool: () \
                 | i8: () | u8: () \
@@ -661,7 +645,6 @@ mod tests {
                     } \
                 }, \
                 array: { ty_: Ref, 0: 0 }, \
-                map: { ty_: Product, key_ty: { ty_: Ref, 0: 0 }, ty: { ty_: Ref, 0: 0 } }, \
                 string: { ty_: Product }, \
                 bool: { ty_: Product }, \
                 i8: { ty_: Product }, u8: { ty_: Product }, \
@@ -710,6 +693,18 @@ mod tests {
     }
 
     #[test]
+    fn result_as_value() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        let algebraic_type = AlgebraicType::meta_type();
+        let typespace = Typespace::new(vec![algebraic_type]);
+        let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        assert_eq!(
+            r#"(sum = (variants = [(name = (some = "ok"), algebraic_type = (u8 = ())), (name = (some = "err"), algebraic_type = (string = ()))]))"#,
+            in_space(&typespace, &at_ref, &result.as_value()).to_satn()
+        );
+    }
+
+    #[test]
     fn algebraic_type_as_value() {
         let algebraic_type = AlgebraicType::meta_type();
         let typespace = Typespace::new(vec![algebraic_type.clone()]);
@@ -749,13 +744,6 @@ mod tests {
                             ]))\
                         ), \
                         (name = (some = \"array\"), {ref0}), \
-                        (\
-                            name = (some = \"map\"), \
-                            algebraic_type = (product = (elements = [\
-                                (name = (some = \"key_ty\"), {ref0}), \
-                                (name = (some = \"ty\"), {ref0})\
-                            ]))\
-                        ), \
                         (name = (some = \"string\"), {unit}), \
                         (name = (some = \"bool\"), {unit}), \
                         (name = (some = \"i8\"), {unit}), \
@@ -787,6 +775,12 @@ mod tests {
     }
 
     #[test]
+    fn result_from_value() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        AlgebraicType::from_value(&result.as_value()).expect("No errors.");
+    }
+
+    #[test]
     fn builtin_from_value() {
         let u8 = AlgebraicType::U8;
         AlgebraicType::from_value(&u8.as_value()).expect("No errors.");
@@ -799,41 +793,27 @@ mod tests {
     }
 
     #[test]
-    fn is_not_bsatn_subtype() {
-        fn check_not_bsatn_subtype(ty1: AlgebraicType, ty2: AlgebraicType) {
-            assert!(
-                !ty1.is_bsatn_subtype(&ty2),
-                "{:#?} should not be a sub-layout of {:#?}",
-                ty1,
-                ty2
-            );
-        }
-
-        use AlgebraicType as AT;
-
-        check_not_bsatn_subtype(AT::U8, AT::U16);
-        check_not_bsatn_subtype(AT::U8, AT::product([AT::U8]));
-        check_not_bsatn_subtype(AT::U8, AT::product([AT::U16]));
-        check_not_bsatn_subtype(AT::sum([("a", AT::U8)]), AT::sum([("b", AT::U8)]));
-        check_not_bsatn_subtype(
-            AT::sum([("a", AT::U8), ("b", AT::U16)]),
-            AT::sum([("b", AT::U16), ("a", AT::U8)]),
-        );
-        check_not_bsatn_subtype(
-            AT::product([("a", AT::U8), ("b", AT::U16)]),
-            AT::product([("b", AT::U16), ("a", AT::U8)]),
-        );
+    fn special_types_are_special() {
+        assert!(AlgebraicType::identity().is_identity());
+        assert!(AlgebraicType::identity().is_special());
+        assert!(AlgebraicType::connection_id().is_connection_id());
+        assert!(AlgebraicType::connection_id().is_special());
+        assert!(AlgebraicType::timestamp().is_timestamp());
+        assert!(AlgebraicType::timestamp().is_special());
+        assert!(AlgebraicType::time_duration().is_special());
+        assert!(AlgebraicType::time_duration().is_time_duration());
+        assert!(AlgebraicType::uuid().is_uuid());
+        assert!(AlgebraicType::uuid().is_special());
     }
 
-    proptest! {
-        #[test]
-        fn test_is_bsatn_subtype((ty, val) in generate_typed_value()) {
-            let supertype = make_bsatn_supertype(&ty);
-            prop_assert!(ty.is_bsatn_subtype(&supertype));
+    #[test]
+    fn type_check() {
+        let av = AlgebraicValue::sum(1, AlgebraicValue::from(product![0u16, 1u32]));
+        let at = AlgebraicType::sum([
+            ("a", AlgebraicType::U8),
+            ("b", AlgebraicType::product([AlgebraicType::U16, AlgebraicType::U32])),
+        ]);
 
-            let bsatn = to_vec(&val).unwrap();
-            let via_supertype = decode(&supertype, &mut &bsatn[..]).unwrap();
-            prop_assert_eq!(val, via_supertype);
-        }
+        at.type_check(&av, Typespace::EMPTY);
     }
 }

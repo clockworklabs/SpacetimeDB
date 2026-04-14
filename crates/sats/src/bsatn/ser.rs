@@ -1,7 +1,8 @@
 use crate::buffer::BufWriter;
-use crate::ser::{self, Error, ForwardNamedToSeqProduct, Serialize, SerializeArray, SerializeMap, SerializeSeqProduct};
-use crate::AlgebraicValue;
+use crate::de::DeserializeSeed;
+use crate::ser::{self, Error, ForwardNamedToSeqProduct, SerializeArray, SerializeSeqProduct};
 use crate::{i256, u256};
+use crate::{AlgebraicValue, WithTypespace};
 use core::fmt;
 
 /// Defines the BSATN serialization data format.
@@ -22,8 +23,19 @@ impl<'a, W> Serializer<'a, W> {
     }
 }
 
+impl<W: BufWriter> Serializer<'_, W> {
+    /// Directly write `bytes` to the writer.
+    /// This is a raw API. Only use this if you know what you are doing.
+    #[inline(always)]
+    #[doc(hidden)]
+    pub fn raw_write_bytes(self, bytes: &[u8]) {
+        self.writer.put_slice(bytes);
+    }
+}
+
 /// An error during BSATN serialization.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+// TODO: rename to EncodeError
 pub struct BsatnError {
     /// The error message for the BSATN error.
     custom: String,
@@ -56,7 +68,6 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
     type Ok = ();
     type Error = BsatnError;
     type SerializeArray = Self;
-    type SerializeMap = Self;
     type SerializeSeqProduct = Self;
     type SerializeNamedProduct = ForwardNamedToSeqProduct<Self>;
 
@@ -132,10 +143,6 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         put_len(self.writer, len)?; // N.B. `len > u32::MAX` isn't allowed.
         Ok(self)
     }
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        put_len(self.writer, len)?; // N.B. `len > u32::MAX` isn't allowed.
-        Ok(self)
-    }
     fn serialize_seq_product(self, _len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
         Ok(self)
     }
@@ -153,20 +160,26 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        debug_assert!(AlgebraicValue::decode(ty, &mut { bsatn }).is_ok());
+    unsafe fn serialize_bsatn<Ty>(self, ty: &Ty, bsatn: &[u8]) -> Result<Self::Ok, Self::Error>
+    where
+        for<'a, 'de> WithTypespace<'a, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
+        debug_assert!(crate::bsatn::decode(ty, &mut { bsatn }).is_ok());
         self.writer.put_slice(bsatn);
         Ok(())
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'a, Ty, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
-        ty: &crate::AlgebraicType,
+        ty: &Ty,
         total_bsatn_len: usize,
         bsatn: I,
-    ) -> Result<Self::Ok, Self::Error> {
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        for<'b, 'de> WithTypespace<'b, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
         debug_assert!(total_bsatn_len <= isize::MAX as usize);
-        debug_assert!(AlgebraicValue::decode(ty, &mut &*concat_bytes_slow(total_bsatn_len, bsatn.clone())).is_ok());
+        debug_assert!(crate::bsatn::decode(ty, &mut &*concat_bytes_slow(total_bsatn_len, bsatn.clone())).is_ok());
 
         for chunk in bsatn {
             self.writer.put_slice(chunk);
@@ -208,24 +221,6 @@ impl<W: BufWriter> SerializeArray for Serializer<'_, W> {
 
     fn serialize_element<T: super::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         elem.serialize(self.reborrow())
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl<W: BufWriter> SerializeMap for Serializer<'_, W> {
-    type Ok = ();
-    type Error = BsatnError;
-
-    fn serialize_entry<K: Serialize + ?Sized, V: Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error> {
-        key.serialize(self.reborrow())?;
-        value.serialize(self.reborrow())
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {

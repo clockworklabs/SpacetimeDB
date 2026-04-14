@@ -2,6 +2,11 @@
 name = "spacetimedb-testing"
 version.workspace = true
 edition.workspace = true
+license-file = "LICENSE"
+publish = false
+
+[features]
+allow_loopback_http_for_tests = ["spacetimedb-standalone/allow_loopback_http_for_tests"]
 
 [dependencies]
 spacetimedb-cli.workspace = true
@@ -10,8 +15,12 @@ spacetimedb-lib.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-standalone.workspace = true
 spacetimedb-client-api.workspace = true
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
+bytes.workspace = true
 env_logger.workspace = true
 log.workspace = true
 clap.workspace = true
@@ -23,6 +32,10 @@ lazy_static.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 serde.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
+
+[lints]
+workspace = true

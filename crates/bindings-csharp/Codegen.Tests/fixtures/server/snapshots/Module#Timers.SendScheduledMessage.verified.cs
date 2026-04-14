@@ -4,6 +4,7 @@
 
 partial class Timers
 {
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateSendScheduledMessage(
         Timers.SendMessageTimer arg
     )
@@ -12,7 +13,7 @@ partial class Timers
         using var writer = new BinaryWriter(stream);
         new Timers.SendMessageTimer.BSATN().Write(writer, arg);
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            "SendScheduledMessage",
+            nameof(SendScheduledMessage),
             stream
         );
     }

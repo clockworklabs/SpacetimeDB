@@ -3,29 +3,23 @@ use std::{
     io,
     marker::PhantomData,
     mem,
-    path::{Path, PathBuf},
 };
 
-use log::debug;
+use log::{debug, trace};
 use memmap2::MmapMut;
+use spacetimedb_paths::server::OffsetIndexFile;
 
 use super::IndexError;
-const OFFSET_INDEX_FILE_EXT: &str = ".stdb.ofs";
 const KEY_SIZE: usize = mem::size_of::<u64>();
 const ENTRY_SIZE: usize = KEY_SIZE + mem::size_of::<u64>();
-
-/// Returns the offset index file path based on the root path and offset
-pub fn offset_index_file_path(root: &Path, offset: u64) -> PathBuf {
-    root.join(format!("{offset:0>20}{OFFSET_INDEX_FILE_EXT}"))
-}
 
 /// A mutable representation of an index file using memory-mapped I/O.
 ///
 /// `IndexFileMut` provides efficient read and write access to an index file, which stores
 /// key-value pairs
-/// Succesive key written should be sorted in ascending order, 0 is invalid-key value
+/// Successive key written should be sorted in ascending order, 0 is invalid-key value
 #[derive(Debug)]
-pub struct IndexFileMut<Key: Into<u64> + From<u64>> {
+pub struct IndexFileMut<Key> {
     // A mutable memory-mapped buffer that represents the file contents.
     inner: MmapMut,
     /// The number of entries currently stored in the index file.
@@ -35,6 +29,47 @@ pub struct IndexFileMut<Key: Into<u64> + From<u64>> {
 }
 
 impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
+    pub fn create_index_file(path: &OffsetIndexFile, cap: u64) -> io::Result<Self> {
+        path.open_file(File::options().write(true).read(true).create_new(true))
+            .and_then(|file| {
+                file.set_len(cap * ENTRY_SIZE as u64)?;
+                let mmap = unsafe { MmapMut::map_mut(&file) }?;
+
+                Ok(IndexFileMut {
+                    inner: mmap,
+                    num_entries: 0,
+                    _marker: PhantomData,
+                })
+            })
+            .or_else(|e| {
+                if e.kind() == io::ErrorKind::AlreadyExists {
+                    debug!("Index file {} already exists", path.display());
+                    Self::open_index_file(path, cap)
+                } else {
+                    Err(e)
+                }
+            })
+    }
+
+    pub fn open_index_file(path: &OffsetIndexFile, cap: u64) -> io::Result<Self> {
+        let file = path.open_file(File::options().read(true).write(true))?;
+        file.set_len(cap * ENTRY_SIZE as u64)?;
+        let mmap = unsafe { MmapMut::map_mut(&file)? };
+
+        let mut me = IndexFileMut {
+            inner: mmap,
+            num_entries: 0,
+            _marker: PhantomData,
+        };
+        me.num_entries = me.num_entries().map_err(io::Error::other)?;
+
+        Ok(me)
+    }
+
+    pub fn delete_index_file(path: &OffsetIndexFile) -> io::Result<()> {
+        fs::remove_file(path)
+    }
+
     // Searches for first 0-key, to count number of entries
     fn num_entries(&self) -> Result<usize, IndexError> {
         for index in 0.. {
@@ -80,6 +115,10 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         if low == 0 && key < low_key {
             return Err(IndexError::KeyNotFound);
         }
+        // If found key is 0, return `KeyNotFound`
+        if low_key == 0 {
+            return Err(IndexError::KeyNotFound);
+        }
 
         Ok((Key::from(low_key), low as u64))
     }
@@ -94,20 +133,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
             return Err(IndexError::OutOfRange);
         }
 
-        let entry = &self.inner[start..start + ENTRY_SIZE];
-
-        let key = u64::from_le_bytes(
-            entry[..mem::size_of::<u64>()]
-                .try_into()
-                .map_err(|_| IndexError::InvalidFormat)?,
-        );
-        let value = u64::from_le_bytes(
-            entry[mem::size_of::<u64>()..]
-                .try_into()
-                .map_err(|_| IndexError::InvalidFormat)?,
-        );
-
-        Ok((Key::from(key), value))
+        entry(&self.inner, start)
     }
 
     /// Returns the last key in the index file.
@@ -117,9 +143,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
             return Ok(0);
         }
         let start = (self.num_entries - 1) * ENTRY_SIZE;
-        let key_bytes: &[u8] = &self.inner[start..start + KEY_SIZE];
-        let key = u64::from_le_bytes(key_bytes.try_into().map_err(|_| IndexError::InvalidFormat)?);
-        Ok(key)
+        u64_from_le_bytes(&self.inner[start..start + KEY_SIZE])
     }
 
     // Return (key, value) pair of key just smaller or equal to given key
@@ -139,8 +163,9 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// - `IndexError::OutOfMemory`: Append after index file is already full.
     pub fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
         let key = key.into();
-        if self.last_key()? >= key {
-            return Err(IndexError::InvalidInput);
+        let last_key = self.last_key()?;
+        if last_key >= key {
+            return Err(IndexError::InvalidInput(last_key, key));
         }
 
         let start = self.num_entries * ENTRY_SIZE;
@@ -160,24 +185,44 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// Asynchronously flushes any pending changes to the index file
     ///
     /// Due to Async nature, `Ok(())` does not guarantee that the changes are flushed.
-    /// an `Err` value indicates it definately did not succeed
+    /// an `Err` value indicates it definitely did not succeed
     pub fn async_flush(&self) -> io::Result<()> {
         self.inner.flush_async()
     }
 
-    /// Truncates the index file starting from the entry with a key greater than or equal to the given key.
-    pub fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
+    /// Truncates the index file starting from the entry with a key greater than
+    /// or equal to the given key.
+    ///
+    /// If successful, `key` will no longer be in the index.
+    pub(crate) fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
         let key = key.into();
-        let (found_key, index) = self.find_index(Key::from(key))?;
+        let (found_key, index) = self
+            .find_index(Key::from(key))
+            .map(|(found, index)| (found.into(), index))
+            .or_else(|e| {
+                match e {
+                    // If key is smaller than first entry, truncate all entries
+                    IndexError::KeyNotFound => Ok((key, 0)),
+                    _ => Err(e),
+                }
+            })?;
 
-        // If returned key is smalled than asked key, truncate from next entry
-        self.num_entries = if found_key.into() == key {
+        // If returned key is smaller than asked key, truncate from next entry
+        self.num_entries = if found_key == key {
             index as usize
         } else {
             index as usize + 1
         };
 
         let start = self.num_entries * ENTRY_SIZE;
+        trace!(
+            "truncate key={} found={} index={} num-entries={} start={}",
+            key,
+            found_key,
+            index,
+            self.num_entries,
+            start
+        );
 
         if start < self.inner.len() {
             self.inner[start..].fill(0);
@@ -187,77 +232,147 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
 
         Ok(())
     }
+
+    /// Obtain an iterator over the entries of the index.
+    pub fn entries(&self) -> Entries<'_, Key> {
+        Entries {
+            mmap: &self.inner,
+            pos: 0,
+            max: self.num_entries * ENTRY_SIZE,
+            _key: PhantomData,
+        }
+    }
 }
 
-pub fn create_index_file<Key: Into<u64> + From<u64>>(
-    path: &Path,
-    offset: u64,
-    cap: u64,
-) -> io::Result<IndexFileMut<Key>> {
-    File::options()
-        .write(true)
-        .read(true)
-        .create_new(true)
-        .open(offset_index_file_path(path, offset))
-        .and_then(|file| {
-            file.set_len(cap * ENTRY_SIZE as u64)?;
-            let mmap = unsafe { MmapMut::map_mut(&file) }?;
+impl<'a, K: Into<u64> + From<u64>> IntoIterator for &'a IndexFileMut<K> {
+    type Item = Result<(K, u64), IndexError>;
+    type IntoIter = Entries<'a, K>;
 
-            Ok(IndexFileMut {
-                inner: mmap,
-                num_entries: 0,
-                _marker: PhantomData,
-            })
-        })
-        .or_else(|e| {
-            if e.kind() == io::ErrorKind::AlreadyExists {
-                debug!("Index file {} already exists", path.display());
-                open_index_file(path, offset, cap)
-            } else {
-                Err(e)
-            }
-        })
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries()
+    }
 }
 
-pub fn open_index_file<Key: Into<u64> + From<u64>>(
-    path: &Path,
-    offset: u64,
-    cap: u64,
-) -> io::Result<IndexFileMut<Key>> {
-    let file = File::options()
-        .read(true)
-        .write(true)
-        .open(offset_index_file_path(path, offset))?;
-    file.set_len(cap * ENTRY_SIZE as u64)?;
-    let mmap = unsafe { MmapMut::map_mut(&file)? };
-
-    let mut me = IndexFileMut {
-        inner: mmap,
-        num_entries: 0,
-        _marker: PhantomData,
-    };
-
-    me.num_entries = me.num_entries().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    Ok(me)
+impl<Key: Into<u64> + From<u64>> From<IndexFile<Key>> for IndexFileMut<Key> {
+    fn from(IndexFile { inner }: IndexFile<Key>) -> Self {
+        inner
+    }
 }
 
-pub fn delete_index_file(path: &Path, offset: u64) -> io::Result<()> {
-    fs::remove_file(offset_index_file_path(path, offset)).map_err(Into::into)
+/// A wrapper over [`IndexFileMut`] to provide read-only access to the index file.
+pub struct IndexFile<Key> {
+    inner: IndexFileMut<Key>,
+}
+
+impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
+    pub fn open_index_file(path: &OffsetIndexFile) -> io::Result<Self> {
+        let file = path.open_file(File::options().read(true).write(true))?;
+        let mmap = unsafe { MmapMut::map_mut(&file)? };
+
+        let mut inner = IndexFileMut {
+            inner: mmap,
+            num_entries: 0,
+            _marker: PhantomData,
+        };
+        inner.num_entries = inner.num_entries().map_err(io::Error::other)?;
+
+        Ok(Self { inner })
+    }
+
+    pub fn key_lookup(&self, key: Key) -> Result<(Key, u64), IndexError> {
+        self.inner.key_lookup(key)
+    }
+
+    /// Obtain an iterator over the entries of the index.
+    pub fn entries(&self) -> Entries<'_, Key> {
+        self.inner.entries()
+    }
+}
+
+impl<K> AsMut<IndexFileMut<K>> for IndexFile<K> {
+    fn as_mut(&mut self) -> &mut IndexFileMut<K> {
+        &mut self.inner
+    }
+}
+
+impl<'a, Key: Into<u64> + From<u64>> IntoIterator for &'a IndexFile<Key> {
+    type Item = Result<(Key, u64), IndexError>;
+    type IntoIter = Entries<'a, Key>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries()
+    }
+}
+
+impl<Key: Into<u64> + From<u64>> From<IndexFileMut<Key>> for IndexFile<Key> {
+    fn from(inner: IndexFileMut<Key>) -> Self {
+        Self { inner }
+    }
+}
+
+/// Iterator over the entries of an [`IndexFileMut`] or [`IndexFile`].
+///
+/// Yields pairs of `(K, u64)` or an error if an entry could not be decoded.
+pub struct Entries<'a, K> {
+    mmap: &'a [u8],
+    pos: usize,
+    max: usize,
+    _key: PhantomData<K>,
+}
+
+impl<K: From<u64>> Iterator for Entries<'_, K> {
+    type Item = Result<(K, u64), IndexError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos >= self.max {
+            return None;
+        }
+
+        let item = entry(self.mmap, self.pos);
+        if item.is_ok() {
+            self.pos += ENTRY_SIZE;
+        }
+        Some(item)
+    }
+}
+
+fn entry<K: From<u64>>(mmap: &[u8], start: usize) -> Result<(K, u64), IndexError> {
+    let entry = &mmap[start..start + ENTRY_SIZE];
+    let sz = mem::size_of::<u64>();
+    let key = u64_from_le_bytes(&entry[..sz])?;
+    let val = u64_from_le_bytes(&entry[sz..])?;
+
+    Ok((key.into(), val))
+}
+
+fn u64_from_le_bytes(x: &[u8]) -> Result<u64, IndexError> {
+    x.try_into()
+        .map_err(|_| IndexError::InvalidFormat)
+        .map(u64::from_le_bytes)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
+    use pretty_assertions::assert_matches;
+    use spacetimedb_paths::server::CommitLogDir;
+    use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
     /// Create and fill index file with key as first `fill_till - 1` even numbers
     fn create_and_fill_index(cap: u64, fill_till: u64) -> Result<IndexFileMut<u64>, IndexError> {
-        // Create a temporary directory for testing
+        // Create a temporary directory for testing.
+        // Dropping this at the end of the function is fine, as we're memory-
+        // mapping the index file.
         let temp_dir = TempDir::new()?;
-        let path = temp_dir.path().to_path_buf();
+        create_and_fill_index_in(temp_dir.path(), cap, fill_till)
+    }
 
+    fn create_and_fill_index_in(dir: &Path, cap: u64, fill_till: u64) -> Result<IndexFileMut<u64>, IndexError> {
         // Create an index file
-        let mut index_file: IndexFileMut<u64> = create_index_file(&path, 0, cap)?;
+        let mut index_file = create_index_in(dir, cap)?;
 
         // Enter even number keys from 2
         for i in 1..fill_till {
@@ -267,10 +382,38 @@ mod tests {
         Ok(index_file)
     }
 
-    #[test]
-    fn test_key_lookup() -> Result<(), IndexError> {
-        let index = create_and_fill_index(10, 5)?;
+    /// Create an index file in `dir`.
+    ///
+    /// Useful if `dir` is a temporary directory and should not be dropped.
+    fn create_index_in(dir: &Path, cap: u64) -> io::Result<IndexFileMut<u64>> {
+        let index_path = index_path(dir);
+        IndexFileMut::create_index_file(&index_path, cap)
+    }
 
+    fn index_path(dir: &Path) -> OffsetIndexFile {
+        CommitLogDir::from_path_unchecked(dir).index(0)
+    }
+
+    trait KeyLookup {
+        type Key;
+        fn key_lookup(&self, key: Self::Key) -> Result<(Self::Key, u64), IndexError>;
+    }
+
+    impl<K: Into<u64> + From<u64>> KeyLookup for IndexFileMut<K> {
+        type Key = K;
+        fn key_lookup(&self, key: Self::Key) -> Result<(Self::Key, u64), IndexError> {
+            IndexFileMut::key_lookup(self, key)
+        }
+    }
+
+    impl<K: Into<u64> + From<u64>> KeyLookup for IndexFile<K> {
+        type Key = K;
+        fn key_lookup(&self, key: Self::Key) -> Result<(Self::Key, u64), IndexError> {
+            IndexFile::key_lookup(self, key)
+        }
+    }
+
+    fn assert_key_lookup(index: &impl KeyLookup<Key = u64>) -> Result<(), IndexError> {
         // looking for exact match key
         assert_eq!(index.key_lookup(2)?, (2, 200));
 
@@ -282,7 +425,42 @@ mod tests {
 
         // key smaller than 1st entry should return error
         assert!(index.key_lookup(1).is_err());
+
         Ok(())
+    }
+
+    #[test]
+    fn test_empty_index_lookup_should_fail() -> Result<(), IndexError> {
+        let index = create_index_in(TempDir::new().unwrap().path(), 100)?;
+        assert_matches!(index.key_lookup(0), Err(IndexError::KeyNotFound));
+        assert_matches!(index.key_lookup(10), Err(IndexError::KeyNotFound));
+        Ok(())
+    }
+
+    #[test]
+    fn test_key_lookup() -> Result<(), IndexError> {
+        let index = create_and_fill_index(10, 5)?;
+        assert_key_lookup(&index)
+    }
+
+    #[test]
+    fn test_key_lookup_reopen() -> Result<(), IndexError> {
+        let tmp = TempDir::new()?;
+        create_and_fill_index_in(tmp.path(), 10, 5)?;
+
+        // Re-open as mutable index.
+        let index: IndexFileMut<_> = IndexFileMut::open_index_file(&index_path(tmp.path()), 10)?;
+        assert_key_lookup(&index)
+    }
+
+    #[test]
+    fn test_key_lookup_readonly() -> Result<(), IndexError> {
+        let tmp = TempDir::new()?;
+        create_and_fill_index_in(tmp.path(), 10, 5)?;
+
+        // Re-open as read-only index.
+        let index: IndexFile<u64> = IndexFile::open_index_file(&index_path(tmp.path()))?;
+        assert_key_lookup(&index)
     }
 
     #[test]
@@ -335,13 +513,35 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_eddge_cases() -> Result<(), IndexError> {
+        // index file with no entries
+        let mut index = create_and_fill_index(10, 0)?;
+
+        // Truncate from key smaller than first entry should truncate all entries
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        // first entry will be with key 2
+        let mut index = create_and_fill_index(10, 5)?;
+        assert_eq!(index.num_entries, 4);
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        index.truncate(0)?;
+        assert_eq!(index.num_entries, 0);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_close_open_index() -> Result<(), IndexError> {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new()?;
-        let path = temp_dir.path().to_path_buf();
+        let path = CommitLogDir::from_path_unchecked(temp_dir.path());
+        let index_path = path.index(0);
 
         // Create an index file
-        let mut index_file: IndexFileMut<u64> = create_index_file(&path, 0, 100)?;
+        let mut index_file: IndexFileMut<u64> = IndexFileMut::create_index_file(&index_path, 100)?;
 
         for i in 1..10 {
             index_file.append(i * 2, i * 2 * 100)?;
@@ -350,9 +550,34 @@ mod tests {
         assert_eq!(index_file.num_entries, 9);
         drop(index_file);
 
-        let open_index_file: IndexFileMut<u64> = open_index_file(&path, 0, 100)?;
+        let open_index_file: IndexFileMut<u64> = IndexFileMut::open_index_file(&index_path, 100)?;
         assert_eq!(open_index_file.num_entries, 9);
         assert_eq!(open_index_file.key_lookup(6)?, (6, 600));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_iterator_iterates() -> Result<(), IndexError> {
+        let index = create_and_fill_index(100, 100)?;
+
+        let expected = (1..100).map(|key| (key * 2, key * 2 * 100)).collect::<Vec<_>>();
+        let entries = index.entries().collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(&entries, &expected);
+
+        // `IndexFile` should yield the same result
+        let index: IndexFile<u64> = index.into();
+        let entries = index.entries().collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(&entries, &expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_iterator_yields_nothing_for_empty_index() -> Result<(), IndexError> {
+        let index = create_and_fill_index(100, 0)?;
+        let entries = index.entries().collect::<Result<Vec<_>, _>>()?;
+        assert!(entries.is_empty());
 
         Ok(())
     }
