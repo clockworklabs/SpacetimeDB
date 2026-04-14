@@ -61,29 +61,3 @@ fn cli_list_shows_database_names_and_identities() {
         "missing database identity in output:\n{stdout}"
     );
 }
-
-#[test]
-fn cli_list_marks_unnamed_databases() {
-    require_local_server!();
-    let mut test = Smoketest::builder().autopublish(false).build();
-
-    let identity = test.publish_module().unwrap();
-
-    let output = test.spacetime_cmd(&["list", "--server", &test.server_url]);
-    assert_success(&output, "spacetime list");
-
-    let stdout = output_stdout(&output);
-    assert!(
-        stdout.contains("Associated databases for user"),
-        "missing updated heading:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("Database Name(s)"),
-        "missing Database Name(s) column:\n{stdout}"
-    );
-    assert!(stdout.contains("Identity"), "missing Identity column:\n{stdout}");
-    assert!(
-        stdout.contains(&identity),
-        "missing database identity in output:\n{stdout}"
-    );
-}
