@@ -141,6 +141,19 @@ fn auto_migrate_database(
 
     for step in plan.steps {
         match step {
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name) => {
+                let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
+
+                if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
+                    anyhow::bail!(
+                        "Cannot remove table `{table_name}`: table contains data. \
+                         Clear the table's rows (e.g. via a reducer) before removing it from your schema."
+                    );
+                }
+
+                log!(logger, "Dropping table `{table_name}`");
+                stdb.drop_table(tx, table_id)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name) => {
                 let table_def: &TableDef = plan.new.expect_lookup(table_name);
 
@@ -443,7 +456,7 @@ mod test {
             raw
         };
 
-        // Step 3: Trivially different module (same as v2 — simulates "change anything").
+        // Step 3: Trivially different module (same as v2, simulates "change anything").
         let module_v3 = {
             let mut builder = RawModuleDefV9Builder::new();
             builder
@@ -479,6 +492,92 @@ mod test {
         );
         stdb.commit_tx(tx)?;
 
+        Ok(())
+    }
+
+    fn empty_module() -> ModuleDef {
+        RawModuleDefV9Builder::new()
+            .finish()
+            .try_into()
+            .expect("empty module should be valid")
+    }
+
+    fn single_table_module() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type("droppable", [("id", U64)], true)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn remove_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "removing a table should disconnect clients"
+        );
+        assert!(stdb.table_id_from_name_mut(&tx, "droppable")?.is_none());
+        assert!(
+            tx.pending_schema_changes()
+                .iter()
+                .any(|c| matches!(c, PendingSchemaChange::TableRemoved(..))),
+            "dropping a table should produce a TableRemoved pending schema change: {:?}",
+            tx.pending_schema_changes()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn remove_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "droppable")?
+            .expect("table should exist");
+        insert(&stdb, &mut tx, table_id, &product![42u64])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
+        let err = result.err().expect("removing a non-empty table should fail");
+        assert!(
+            err.to_string().contains("table contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
+        assert!(
+            tx.pending_schema_changes().is_empty(),
+            "failed migration should leave no pending schema changes: {:?}",
+            tx.pending_schema_changes()
+        );
         Ok(())
     }
 }

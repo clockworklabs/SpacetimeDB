@@ -31,6 +31,7 @@ The script will:
 - `--concurrency N` - Concurrent connections (default: 50)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
+- `--stdb-compression none|gzip` - SpacetimeDB client compression mode (default: none)
 - `--skip-prep` - Skip database seeding
 - `--no-animation` - Disable animated output
 
@@ -90,6 +91,7 @@ Copy `.env.example` to `.env` and adjust.
 - `STDB_URL` – WebSocket URL for SpacetimeDB
 - `STDB_MODULE` – module name to load (e.g. `test-1`)
 - `STDB_MODULE_PATH` – filesystem path to the module source (for local dev)
+- `STDB_COMPRESSION` – SpacetimeDB benchmark client compression (`none` or `gzip`)
 - `STDB_CONFIRMED_READS` – `1` = force confirmed reads on, `0` = force them off
 
 **Supabase:**
@@ -166,7 +168,7 @@ cd ..
 ### 1. Run a test
 
 ```bash
-npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list] [--stdb-compression none|gzip]
 ```
 
 Examples:
@@ -183,6 +185,9 @@ npm run bench -- test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
 npm run bench -- test-1 --alpha 2.0
+
+# Enable gzip for the SpacetimeDB benchmark client
+npm run bench -- test-1 --connectors spacetimedb --stdb-compression gzip
 
 # Only run selected connectors
 npm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
@@ -251,20 +256,21 @@ cd templates/keynote-2
 pnpm run bench-dist-coordinator -- \
   --test test-1 \
   --connector spacetimedb \
-  --warmup-seconds 15 \
   --window-seconds 30 \
   --verify 1 \
   --stdb-url ws://127.0.0.1:3000 \
   --stdb-module test-1 \
+  --stdb-compression none \
   --bind 127.0.0.1 \
   --port 8080
 ```
 
 Notes:
 
-- `--warmup-seconds` is the unmeasured warmup period. Generators submit requests during warmup, but those transactions are excluded from TPS.
+- Before measurement begins, the coordinator waits for every participating generator to start its epoch and acknowledge that it is running.
 - `--window-seconds` is the measured interval.
 - `--verify 1` preserves the existing benchmark semantics by running one verification pass centrally after the epoch completes.
+- If a generator never acknowledges start, the coordinator fails the epoch after `--start-ack-timeout-seconds` seconds. The default is `60`.
 - The coordinator derives the HTTP metrics endpoint from `--stdb-url` by switching to `http://` or `https://` and appending `/v1/metrics`.
 - For a real multi-machine run, change `--bind 127.0.0.1` to `--bind 0.0.0.0` so remote generators can reach the coordinator.
 - For a real multi-machine run, set `--stdb-url` to the server machine's reachable address.
@@ -287,7 +293,8 @@ pnpm run bench-dist-generator -- \
   --open-parallelism 128 \
   --control-retries 3 \
   --stdb-url ws://127.0.0.1:3000 \
-  --stdb-module test-1
+  --stdb-module test-1 \
+  --stdb-compression none
 ```
 
 On **generator machine 2**:
@@ -306,7 +313,8 @@ pnpm run bench-dist-generator -- \
   --open-parallelism 128 \
   --control-retries 3 \
   --stdb-url ws://127.0.0.1:3000 \
-  --stdb-module test-1
+  --stdb-module test-1 \
+  --stdb-compression none
 ```
 
 Repeat that on as many generator machines as needed, adjusting `--id` and `--concurrency` for each process.
@@ -359,8 +367,8 @@ The result contains:
 #### Operational notes
 
 - Start the coordinator before the generators.
-- Generators begin submitting requests when the coordinator enters `warmup`, not when the measured window begins.
-- Throughput is measured only from the committed transaction counter delta recorded after warmup, so warmup transactions are excluded.
+- Generators begin submitting requests when the coordinator enters `starting`.
+- Throughput is measured only from the committed transaction counter delta recorded after all participating generators have acknowledged start, so startup traffic is excluded.
 - For this distributed TypeScript mode, each connection runs closed-loop with one request at a time. There is no pipelining in this flow.
 - Late generators are allowed to register and become ready while an epoch is already running, but they only participate in the next epoch.
 - The coordinator does not use heartbeats. It includes generators that most recently reported `ready`.

@@ -849,6 +849,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 public IEnumerable<{{{globalName}}}> Iter() => {{{iTable}}}.DoIter();
                 public {{{globalName}}} Insert({{{globalName}}} row) => {{{iTable}}}.DoInsert(row);
                 public bool Delete({{{globalName}}} row) => {{{iTable}}}.DoDelete(row);
+                public ulong Clear() => {{{iTable}}}.DoClear();
 
                 {{{string.Join("\n", GenerateTableAccessorFilters(v))}}}
             }

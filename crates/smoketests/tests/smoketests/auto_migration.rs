@@ -473,7 +473,10 @@ fn test_remove_primary_key_issue_3934() {
     let mut test = Smoketest::builder().module_code(MODULE_CODE_WITH_PK).build();
 
     // Step 1: Publish with primary key.
-    let identity = test.identity().to_string();
+    let identity = test
+        .database_identity
+        .clone()
+        .expect("database should be published after build");
 
     // Step 2: Remove primary key. Should succeed.
     test.write_module_code(MODULE_CODE_WITHOUT_PK).unwrap();

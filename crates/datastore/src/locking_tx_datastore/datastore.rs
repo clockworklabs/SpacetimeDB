@@ -981,6 +981,27 @@ impl Locking {
     pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
         tx.commit_downgrade(workload)
     }
+
+    /// Commit `tx` and invoke `before_release` while the write lock is still held.
+    #[allow(clippy::type_complexity)]
+    pub fn commit_mut_tx_and_then(
+        &self,
+        tx: MutTxId,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>> {
+        Ok(Some(tx.commit_and_then(before_release)))
+    }
+
+    /// Commit `tx`, invoke `before_downgrade` while the write lock is still held,
+    /// then downgrade the lock to a read-only transaction.
+    pub fn commit_mut_tx_downgrade_and_then(
+        &self,
+        tx: MutTxId,
+        workload: Workload,
+        before_downgrade: impl FnOnce(&Arc<TxData>),
+    ) -> (Arc<TxData>, TxMetrics, TxId) {
+        tx.commit_downgrade_and_then(workload, before_downgrade)
+    }
 }
 
 #[derive(Debug, Error)]

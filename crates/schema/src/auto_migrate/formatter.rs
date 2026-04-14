@@ -43,6 +43,10 @@ fn format_step<F: MigrationFormatter>(
         // So we must recompute it and send any updates to clients.
         // No need to include this step in the formatted plan.
         AutoMigrateStep::UpdateView(_) => Ok(()),
+        AutoMigrateStep::RemoveTable(t) => {
+            let table_def: &TableDef = plan.old.expect_lookup(*t);
+            f.format_remove_table(&table_def.name)
+        }
         AutoMigrateStep::AddTable(t) => {
             let table_info = extract_table_info(*t, plan)?;
             f.format_add_table(&table_info)
@@ -146,6 +150,7 @@ pub enum Action {
 pub trait MigrationFormatter {
     fn format_header(&mut self) -> io::Result<()>;
     fn format_add_table(&mut self, table_info: &TableInfo) -> io::Result<()>;
+    fn format_remove_table(&mut self, table_name: &Identifier) -> io::Result<()>;
     fn format_view(&mut self, view_info: &ViewInfo, action: Action) -> io::Result<()>;
     fn format_index(&mut self, index_info: &IndexInfo, action: Action) -> io::Result<()>;
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
