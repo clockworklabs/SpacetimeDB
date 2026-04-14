@@ -83,7 +83,6 @@ async fn assemble_rows(
     let lookups = identities.into_iter().map(|db_identity| async move {
         let response = util::spacetime_reverse_dns(config, &db_identity.to_string(), server).await?;
         let db_names: Vec<_> = response.names.into_iter().map(|name| name.to_string()).collect();
-
         Ok(DatabaseRow {
             db_names: db_names.join(", "),
             db_identity,

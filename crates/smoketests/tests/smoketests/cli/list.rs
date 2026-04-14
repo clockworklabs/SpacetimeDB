@@ -46,8 +46,11 @@ fn cli_list_shows_database_names_and_identities() {
     assert_success(&output, "spacetime list");
 
     let stdout = output_stdout(&output);
-    assert!(stdout.contains("db_names"), "missing db_names column:\n{stdout}");
-    assert!(stdout.contains("db_identity"), "missing db_identity column:\n{stdout}");
+    assert!(
+        stdout.contains("Database Name(s)"),
+        "missing Database Name(s) column:\n{stdout}"
+    );
+    assert!(stdout.contains("Identity"), "missing Identity column:\n{stdout}");
     assert!(stdout.contains(&alias_name), "missing alias name in output:\n{stdout}");
     assert!(
         stdout.contains(&second_alias_name),
@@ -70,7 +73,15 @@ fn cli_list_marks_unnamed_databases() {
     assert_success(&output, "spacetime list");
 
     let stdout = output_stdout(&output);
-    assert!(stdout.contains("(unnamed)"), "missing unnamed marker:\n{stdout}");
+    assert!(
+        stdout.contains("Associated databases for user"),
+        "missing updated heading:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Database Name(s)"),
+        "missing Database Name(s) column:\n{stdout}"
+    );
+    assert!(stdout.contains("Identity"), "missing Identity column:\n{stdout}");
     assert!(
         stdout.contains(&identity),
         "missing database identity in output:\n{stdout}"
