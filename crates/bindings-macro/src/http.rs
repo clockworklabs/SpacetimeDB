@@ -18,7 +18,6 @@ pub(crate) fn handler_impl(args: TokenStream, original_function: &ItemFn) -> syn
 
     assert_only_lifetime_generics(original_function, "http handlers")?;
 
-    // TODO(error-reporting): Prefer emitting tyck code rather than checking in the macro.
     let typed_args = extract_typed_args(original_function)?;
     if typed_args.len() != 2 {
         return Err(syn::Error::new_spanned(
@@ -31,7 +30,6 @@ pub(crate) fn handler_impl(args: TokenStream, original_function: &ItemFn) -> syn
     let first_arg_ty = &arg_tys[0];
     let second_arg_ty = &arg_tys[1];
 
-    // TODO(error-reporting): Prefer emitting tyck code rather than checking in the macro.
     let ret_ty = match &original_function.sig.output {
         ReturnType::Type(_, t) => t.as_ref(),
         ReturnType::Default => {
@@ -68,8 +66,6 @@ pub(crate) fn handler_impl(args: TokenStream, original_function: &ItemFn) -> syn
         };
 
         const _: () = {
-            // TODO(error-reporting): It should be sufficient to just cast the function to a particular `fn` type,
-            // rather than doing all this stuff with particular args implementing traits.
             fn _assert_args #lifetime_params () #lifetime_where_clause {
                 let _ = <#first_arg_ty as spacetimedb::rt::HttpHandlerContextArg>::_ITEM;
                 let _ = <#second_arg_ty as spacetimedb::rt::HttpHandlerRequestArg>::_ITEM;

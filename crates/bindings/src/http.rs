@@ -271,8 +271,8 @@ impl HttpClient {
     /// Send a `POST` request with the header `Content-Type: text/plain`, a string body,
     /// and a timeout of 100 milliseconds, then treat the response as a string and log it:
     ///
-    /// ```norun
-    /// # use spacetimedb::{procedure, ProcedureContext, http::Timeout};
+    /// ```no_run
+    /// # use spacetimedb::{procedure, ProcedureContext, TimeDuration, http::{Timeout, Request}};
     /// # use std::time::Duration;
     /// # #[procedure]
     /// # fn post_somewhere(ctx: &mut ProcedureContext) {
@@ -281,7 +281,7 @@ impl HttpClient {
     ///     .method("POST")
     ///     .header("Content-Type", "text/plain")
     ///     // Set a timeout of 100 ms, further restricting the default timeout.
-    ///     .extension(Timeout::from(Duration::from_millis(100)))
+    ///     .extension(Timeout::from(TimeDuration::from(Duration::from_millis(100))))
     ///     .body("This is the body of the HTTP request")
     ///     .expect("Building `Request` object failed");
     ///

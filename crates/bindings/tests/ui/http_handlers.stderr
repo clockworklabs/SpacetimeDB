@@ -1,0 +1,205 @@
+error: HTTP handlers must take exactly two arguments
+ --> tests/ui/http_handlers.rs:5:1
+  |
+5 | fn handler_no_args() -> Response {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: HTTP handlers must take exactly two arguments
+  --> tests/ui/http_handlers.rs:20:1
+   |
+20 | fn handler_no_request_arg(_ctx: &mut HandlerContext) -> Response {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: HTTP handlers must return `spacetimedb::http::Response`
+  --> tests/ui/http_handlers.rs:30:1
+   |
+30 | fn handler_no_return_type(_ctx: &mut HandlerContext, _req: Request) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: expected `fn`
+  --> tests/ui/http_handlers.rs:58:1
+   |
+58 | static ROUTER_NOT_A_FUNCTION: Router = Router::new();
+   | ^^^^^^
+
+error: HTTP router functions must take no arguments
+  --> tests/ui/http_handlers.rs:61:1
+   |
+61 | fn router_fn_with_args(ctx: &mut HandlerContext) -> Router {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Router`
+ --> tests/ui/http_handlers.rs:1:61
+  |
+1 | use spacetimedb::http::{handler, router, Request, Response, Router};
+  |                                                             ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0601]: `main` function not found in crate `$CRATE`
+  --> tests/ui/http_handlers.rs:68:2
+   |
+68 | }
+   |  ^ consider adding a `main` function to `$DIR/tests/ui/http_handlers.rs`
+
+error[E0308]: mismatched types
+  --> tests/ui/http_handlers.rs:10:4
+   |
+ 9 | #[handler]
+   | ---------- arguments to this function are incorrect
+10 | fn handler_immutable_ctx(_ctx: &HandlerContext, _req: Request) -> Response {
+   |    ^^^^^^^^^^^^^^^^^^^^^ types differ in mutability
+   |
+   = note: expected fn pointer `for<'a> fn(&'a mut HandlerContext, http::request::Request<Body>) -> http::response::Response<Body>`
+                 found fn item `for<'a> fn(&'a HandlerContext, http::request::Request<Body>) -> http::response::Response<Body> {__spacetimedb_http_handler_handler_immutable_ctx}`
+note: function defined here
+  --> src/rt.rs
+   |
+   | pub fn register_http_handler(name: &'static str, handler: HttpHandlerFn) {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the first argument of an HTTP handler must be `&mut HandlerContext`
+  --> tests/ui/http_handlers.rs:10:32
+   |
+10 | fn handler_immutable_ctx(_ctx: &HandlerContext, _req: Request) -> Response {
+   |                                ^^^^^^^^^^^^^^^ first argument must be `&mut HandlerContext`
+   |
+   = help: the trait `HttpHandlerContextArg` is not implemented for `&HandlerContext`
+help: the trait `HttpHandlerContextArg` is implemented for `&mut HandlerContext`
+  --> src/rt.rs
+   |
+   | impl HttpHandlerContextArg for &mut HandlerContext {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `HttpHandlerContextArg` is implemented for `&mut HandlerContext`, but not for `&HandlerContext`
+
+error[E0308]: mismatched types
+  --> tests/ui/http_handlers.rs:15:4
+   |
+14 | #[handler]
+   | ---------- arguments to this function are incorrect
+15 | fn handler_wrong_ctx(_ctx: &mut ProcedureContext, _req: Request) -> Response {
+   |    ^^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `for<'a> fn(&'a mut HandlerContext, http::request::Request<Body>) -> http::response::Response<Body>`
+                 found fn item `for<'a> fn(&'a mut ProcedureContext, http::request::Request<Body>) -> http::response::Response<Body> {__spacetimedb_http_handler_handler_wrong_ctx}`
+note: function defined here
+  --> src/rt.rs
+   |
+   | pub fn register_http_handler(name: &'static str, handler: HttpHandlerFn) {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the first argument of an HTTP handler must be `&mut HandlerContext`
+  --> tests/ui/http_handlers.rs:15:28
+   |
+15 | fn handler_wrong_ctx(_ctx: &mut ProcedureContext, _req: Request) -> Response {
+   |                            ^^^^^^^^^^^^^^^^^^^^^ first argument must be `&mut HandlerContext`
+   |
+   = help: the trait `HttpHandlerContextArg` is not implemented for `&mut ProcedureContext`
+help: the trait `HttpHandlerContextArg` is implemented for `&mut HandlerContext`
+  --> src/rt.rs
+   |
+   | impl HttpHandlerContextArg for &mut HandlerContext {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/http_handlers.rs:25:4
+   |
+24 | #[handler]
+   | ---------- arguments to this function are incorrect
+25 | fn handler_wrong_request_arg_type(_ctx: &mut HandlerContext, _req: u32) -> Response {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `for<'a> fn(&'a mut HandlerContext, http::request::Request<Body>) -> http::response::Response<Body>`
+                 found fn item `for<'a> fn(&'a mut HandlerContext, u32) -> http::response::Response<Body> {__spacetimedb_http_handler_handler_wrong_request_arg_type}`
+note: function defined here
+  --> src/rt.rs
+   |
+   | pub fn register_http_handler(name: &'static str, handler: HttpHandlerFn) {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the second argument of an HTTP handler must be `spacetimedb::http::Request`
+  --> tests/ui/http_handlers.rs:25:68
+   |
+25 | fn handler_wrong_request_arg_type(_ctx: &mut HandlerContext, _req: u32) -> Response {
+   |                                                                    ^^^ the trait `HttpHandlerRequestArg` is not implemented for `u32`
+   |
+help: the trait `HttpHandlerRequestArg` is implemented for `http::request::Request<Body>`
+  --> src/rt.rs
+   |
+   | impl HttpHandlerRequestArg for crate::http::Request {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/http_handlers.rs:35:4
+   |
+34 | #[handler]
+   | ---------- arguments to this function are incorrect
+35 | fn handler_wrong_return_type(_ctx: &mut HandlerContext, _req: Request) -> u32 {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `for<'a> fn(&'a mut HandlerContext, http::request::Request<Body>) -> http::response::Response<Body>`
+                 found fn item `for<'a> fn(&'a mut HandlerContext, http::request::Request<Body>) -> u32 {__spacetimedb_http_handler_handler_wrong_return_type}`
+note: function defined here
+  --> src/rt.rs
+   |
+   | pub fn register_http_handler(name: &'static str, handler: HttpHandlerFn) {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: HTTP handlers must return `spacetimedb::http::Response`
+  --> tests/ui/http_handlers.rs:35:75
+   |
+35 | fn handler_wrong_return_type(_ctx: &mut HandlerContext, _req: Request) -> u32 {
+   |                                                                           ^^^ the trait `HttpHandlerReturn` is not implemented for `u32`
+   |
+help: the trait `HttpHandlerReturn` is implemented for `http::response::Response<Body>`
+  --> src/rt.rs
+   |
+   | impl HttpHandlerReturn for crate::http::Response {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `sender` found for mutable reference `&mut HandlerContext` in the current scope
+  --> tests/ui/http_handlers.rs:41:23
+   |
+41 |     let _sender = ctx.sender();
+   |                       ^^^^^^ method not found in `&mut HandlerContext`
+
+error[E0599]: no method named `connection_id` found for mutable reference `&mut HandlerContext` in the current scope
+  --> tests/ui/http_handlers.rs:42:24
+   |
+42 |     let _conn_id = ctx.connection_id();
+   |                        ^^^^^^^^^^^^^ method not found in `&mut HandlerContext`
+
+error[E0609]: no field `db` on type `&mut HandlerContext`
+  --> tests/ui/http_handlers.rs:53:21
+   |
+53 |     let _rows = ctx.db.test_table().iter();
+   |                     ^^ unknown field
+   |
+   = note: available fields are: `timestamp`, `http`
+
+error[E0308]: mismatched types
+  --> tests/ui/http_handlers.rs:66:4
+   |
+65 | #[router]
+   | --------- expected due to this
+66 | fn router_fn_wrong_return_type() -> u32 {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `fn() -> Router`
+                 found fn item `fn() -> u32 {router_fn_wrong_return_type}`
+
+error[E0308]: mismatched types
+  --> tests/ui/http_handlers.rs:66:4
+   |
+65 | #[router]
+   | --------- arguments to this function are incorrect
+66 | fn router_fn_wrong_return_type() -> u32 {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `fn() -> Router`
+                 found fn item `fn() -> u32 {router_fn_wrong_return_type}`
+note: function defined here
+  --> src/rt.rs
+   |
+   | pub fn register_http_router(build: fn() -> crate::http::Router) {
+   |        ^^^^^^^^^^^^^^^^^^^^
