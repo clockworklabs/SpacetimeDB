@@ -83,15 +83,22 @@ impl ApiClient {
 
         for lang_entry in &results.languages {
             for mode_entry in &lang_entry.modes {
-                let mut payload = json!({
+                // Serialize models and inject analysis into each model object if provided
+                let mut models_json = serde_json::to_value(&mode_entry.models)?;
+                if let Some(text) = analysis {
+                    if let Some(arr) = models_json.as_array_mut() {
+                        for model in arr {
+                            model["analysis"] = json!(text);
+                        }
+                    }
+                }
+
+                let payload = json!({
                     "lang": lang_entry.lang,
                     "mode": mode_entry.mode,
                     "hash": mode_entry.hash,
-                    "models": mode_entry.models,
+                    "models": models_json,
                 });
-                if let Some(text) = analysis {
-                    payload["analysis"] = json!(text);
-                }
 
                 let resp = self
                     .client
