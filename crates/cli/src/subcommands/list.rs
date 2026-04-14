@@ -88,7 +88,7 @@ async fn assemble_rows(config: &Config, server: Option<&str>, identities: Vec<Id
             Ok(response) => response.names.into_iter().map(|name| name.to_string()).collect(),
             Err(err) => {
                 eprintln!("Warning: failed to look up names for {db_identity}: {err}");
-                vec!["(lookup failed)".to_string()]
+                vec![]
             }
         };
 
