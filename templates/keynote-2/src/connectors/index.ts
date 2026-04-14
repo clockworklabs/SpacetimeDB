@@ -23,6 +23,7 @@ const toSpacetimeConfig = (
   config: ConnectorRuntimeConfig,
 ): SpacetimeConnectorConfig => ({
   initialBalance: config.initialBalance,
+  stdbCompression: config.stdbCompression,
   stdbConfirmedReads: config.stdbConfirmedReads,
   stdbModule: config.stdbModule,
   stdbUrl: config.stdbUrl,
@@ -31,7 +32,6 @@ const toSpacetimeConfig = (
 export const CONNECTORS = {
   convex: (config) => convex(config.convexUrl),
   spacetimedb: (config) => spacetimedb(toSpacetimeConfig(config)),
-  spacetimedbRustClient: (config) => spacetimedb(toSpacetimeConfig(config)),
   bun: (config) => bun(config.bunUrl),
   postgres_rpc: () => postgres_rpc(),
   cockroach_rpc: () => cockroach_rpc(),

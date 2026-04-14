@@ -922,6 +922,9 @@ namespace SpacetimeDB.Internal.TableHandles
         public bool Delete(global::Player row) =>
             global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoDelete(row);
 
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoClear();
+
         public sealed class IdentityUniqueIndex
             : UniqueIndex<Player, global::Player, SpacetimeDB.Identity, SpacetimeDB.Identity.BSATN>
         {
@@ -1033,6 +1036,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 global::TestAutoIncNotInteger
             >.DoDelete(row);
 
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger
+            >.DoClear();
+
         public sealed class IdentityFieldUniqueIndex
             : UniqueIndex<
                 TestAutoIncNotInteger,
@@ -1128,6 +1137,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.DoClear();
     }
 
     public readonly struct TestDuplicateTableName
@@ -1192,6 +1207,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.DoClear();
     }
 
     public readonly struct TestIndexIssues
@@ -1285,6 +1306,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestIndexIssues,
                 global::TestIndexIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestIndexIssues,
+                global::TestIndexIssues
+            >.DoClear();
 
         public sealed class TestIndexWithoutColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
@@ -1484,6 +1511,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithMissingScheduleAtField,
+                global::TestScheduleIssues
+            >.DoClear();
     }
 
     public readonly struct TestScheduleWithoutPrimaryKey
@@ -1552,6 +1585,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutPrimaryKey,
+                global::TestScheduleIssues
+            >.DoClear();
     }
 
     public readonly struct TestScheduleWithoutScheduleAt
@@ -1629,6 +1668,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutScheduleAt,
+                global::TestScheduleIssues
+            >.DoClear();
 
         public sealed class IdCorrectTypeUniqueIndex
             : UniqueIndex<
@@ -1733,6 +1778,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 global::TestScheduleIssues
             >.DoDelete(row);
 
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues
+            >.DoClear();
+
         public sealed class IdWrongTypeUniqueIndex
             : UniqueIndex<
                 TestScheduleWithWrongPrimaryKeyType,
@@ -1835,6 +1886,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues
+            >.DoClear();
 
         public sealed class IdCorrectTypeUniqueIndex
             : UniqueIndex<
@@ -1943,6 +2000,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable
+            >.DoClear();
 
         public sealed class PrimaryKeyFieldUniqueIndex
             : UniqueIndex<

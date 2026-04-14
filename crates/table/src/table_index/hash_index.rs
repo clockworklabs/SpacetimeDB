@@ -1,12 +1,12 @@
 use super::{
     key_size::KeyBytesStorage,
-    same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter},
+    same_key_entry::{same_key_iter, ManySameKeyEntryIter, SameKeyEntry, SameKeyEntryIter},
     Index, KeySize,
 };
 use crate::indexes::RowPointer;
 use core::borrow::Borrow;
 use core::hash::Hash;
-use spacetimedb_data_structures::map::hash_map::EntryRef;
+use spacetimedb_data_structures::map::hash_map::{EntryRef, Values};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 
 // Faster than ahash, so we use this explicitly.
@@ -85,6 +85,15 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
         self.seek_point(point)
     }
 
+    type Iter<'a>
+        = HashIndexIter<'a, K>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        HashIndexIter::new(self.map.values())
+    }
+
     fn num_keys(&self) -> usize {
         self.map.len()
     }
@@ -156,3 +165,6 @@ impl<K: KeySize + Eq + Hash> HashIndex<K> {
         same_key_iter(self.map.get(point))
     }
 }
+
+/// An iterator over all the values in a [`BTreeIndex`].
+pub type HashIndexIter<'a, K> = ManySameKeyEntryIter<'a, Values<'a, K, SameKeyEntry>>;

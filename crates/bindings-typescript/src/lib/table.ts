@@ -268,6 +268,13 @@ export interface TableMethods<TableDef extends UntypedTableDef>
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
   delete(row: Prettify<RowType<TableDef>>): boolean;
+
+  /**
+   * Clears the table of all rows.
+   * Returns the number of rows deleted,
+   * i.e., the return value of `this.count()` before this call.
+   */
+  clear(): bigint;
 }
 
 /**

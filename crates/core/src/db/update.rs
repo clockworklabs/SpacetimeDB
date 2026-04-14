@@ -141,6 +141,19 @@ fn auto_migrate_database(
 
     for step in plan.steps {
         match step {
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name) => {
+                let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
+
+                if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
+                    anyhow::bail!(
+                        "Cannot remove table `{table_name}`: table contains data. \
+                         Clear the table's rows (e.g. via a reducer) before removing it from your schema."
+                    );
+                }
+
+                log!(logger, "Dropping table `{table_name}`");
+                stdb.drop_table(tx, table_id)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name) => {
                 let table_def: &TableDef = plan.new.expect_lookup(table_name);
 
@@ -269,6 +282,11 @@ fn auto_migrate_database(
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name) => {
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
+                log!(logger, "Changing primary key for table `{table_name}`");
+                stdb.alter_table_primary_key(tx, table_name, table_def.primary_key)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");
             }
@@ -323,7 +341,7 @@ mod test {
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
-    use spacetimedb_sats::{product, AlgebraicType::U64};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
@@ -403,6 +421,163 @@ mod test {
             [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
         );
 
+        Ok(())
+    }
+
+    /// Regression test for #3934: removing a primary key annotation and then
+    /// re-publishing causes "Primary key mismatch" on the NEXT publish.
+    #[test]
+    fn update_db_remove_primary_key_issue_3934() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        // Step 1: Table with a primary key (requires unique constraint + index).
+        let module_v1 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_primary_key(0)
+                .with_unique_constraint(0)
+                .with_index(btree(0), "person_name_idx")
+                .with_access(TableAccess::Public)
+                .finish();
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Step 2: Same table, but primary key removed.
+        let module_v2 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Step 3: Trivially different module (same as v2, simulates "change anything").
+        let module_v3 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            builder.add_reducer("noop", spacetimedb_sats::ProductType::unit(), None);
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Publish v1.
+        let mut tx = begin_mut_tx(&stdb);
+        for def in module_v1.tables() {
+            create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        // Migrate v1 → v2 (remove primary key). Should succeed.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
+        assert!(matches!(res, UpdateResult::Success), "v1 → v2 migration failed");
+        stdb.commit_tx(tx)?;
+
+        // Migrate v2 → v3 (trivial change). This is where #3934 crashes.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v2, &module_v3)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        assert!(
+            matches!(res, UpdateResult::Success),
+            "v2 → v3 migration failed (issue #3934)"
+        );
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    fn empty_module() -> ModuleDef {
+        RawModuleDefV9Builder::new()
+            .finish()
+            .try_into()
+            .expect("empty module should be valid")
+    }
+
+    fn single_table_module() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type("droppable", [("id", U64)], true)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn remove_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "removing a table should disconnect clients"
+        );
+        assert!(stdb.table_id_from_name_mut(&tx, "droppable")?.is_none());
+        assert!(
+            tx.pending_schema_changes()
+                .iter()
+                .any(|c| matches!(c, PendingSchemaChange::TableRemoved(..))),
+            "dropping a table should produce a TableRemoved pending schema change: {:?}",
+            tx.pending_schema_changes()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn remove_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "droppable")?
+            .expect("table should exist");
+        insert(&stdb, &mut tx, table_id, &product![42u64])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
+        let err = result.err().expect("removing a non-empty table should fail");
+        assert!(
+            err.to_string().contains("table contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
+        assert!(
+            tx.pending_schema_changes().is_empty(),
+            "failed migration should leave no pending schema changes: {:?}",
+            tx.pending_schema_changes()
+        );
         Ok(())
     }
 }

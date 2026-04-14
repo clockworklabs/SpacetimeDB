@@ -1,7 +1,6 @@
 export const validConnectors = [
   'convex',
   'spacetimedb',
-  'spacetimedbRustClient',
   'bun',
   'postgres_rpc',
   'cockroach_rpc',
@@ -11,6 +10,10 @@ export const validConnectors = [
 ] as const;
 
 export type ConnectorKey = (typeof validConnectors)[number];
+
+export const validStdbCompressions = ['none', 'gzip'] as const;
+
+export type StdbCompression = (typeof validStdbCompressions)[number];
 
 export const defaultDemoSystems: readonly ConnectorKey[] = [
   'convex',
@@ -39,6 +42,7 @@ export interface SharedRuntimeConfig {
   stdbUrl: string;
   stdbModule: string;
   stdbModulePath: string;
+  stdbCompression: StdbCompression;
   stdbConfirmedReads: boolean;
   useDocker: boolean;
   useSpacetimeMetricsEndpoint: boolean;
@@ -82,6 +86,7 @@ export type ConnectorRuntimeConfig = Pick<
   | 'bunUrl'
   | 'convexUrl'
   | 'initialBalance'
+  | 'stdbCompression'
   | 'stdbConfirmedReads'
   | 'stdbModule'
   | 'stdbUrl'
@@ -89,6 +94,7 @@ export type ConnectorRuntimeConfig = Pick<
 
 export interface SpacetimeConnectorConfig {
   initialBalance: number;
+  stdbCompression: StdbCompression;
   stdbConfirmedReads: boolean;
   stdbModule: string;
   stdbUrl: string;
@@ -129,6 +135,19 @@ function parseBooleanLike(raw: string | boolean): boolean {
 
 export function normalizeStdbUrl(url: string): string {
   return url.replace(/^(http|ws)s?:\/\//, '');
+}
+
+export function parseStdbCompression(
+  raw: string,
+  label: string,
+): StdbCompression {
+  if (validStdbCompressions.includes(raw as StdbCompression)) {
+    return raw as StdbCompression;
+  }
+
+  throw new Error(
+    `invalid value for ${label}: ${raw} (expected one of: ${validStdbCompressions.join(', ')})`,
+  );
 }
 
 export function readNumberEnv(
@@ -210,6 +229,10 @@ export function getSharedRuntimeDefaults(
     stdbUrl: normalizeStdbUrl(readStringEnv('STDB_URL', '127.0.0.1:3000', env)),
     stdbModule: readStringEnv('STDB_MODULE', 'test-1', env),
     stdbModulePath: readStringEnv('STDB_MODULE_PATH', './spacetimedb', env),
+    stdbCompression: parseStdbCompression(
+      readStringEnv('STDB_COMPRESSION', 'none', env),
+      'STDB_COMPRESSION',
+    ),
     stdbConfirmedReads: readBooleanEnv('STDB_CONFIRMED_READS', true, env),
     useDocker: readBooleanEnv('USE_DOCKER', false, env),
     useSpacetimeMetricsEndpoint: readBooleanEnv(

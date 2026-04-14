@@ -44,7 +44,7 @@ const food = table({ name: 'food' }, foodRow);
 // -----------------------------------------------------------------------------
 
 export const unique_0_u32_u64_str_tRow = t.row({
-  id: t.u32().unique(),
+  id: t.u32().primaryKey(),
   age: t.u64(),
   name: t.string(),
 });
@@ -62,7 +62,7 @@ export const btree_each_column_u32_u64_str_tRow = t.row({
 });
 
 export const unique_0_u32_u64_u64_tRow = t.row({
-  id: t.u32().unique(),
+  id: t.u32().primaryKey(),
   x: t.u64(),
   y: t.u64(),
 });
