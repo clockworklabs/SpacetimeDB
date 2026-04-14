@@ -86,15 +86,13 @@ pub(crate) fn sats_type_from_derive(
                 found
             });
             let variants = enu.variants.iter().map(|var| {
-                if !allow_discriminants {
-                    if let Some((eq, _)) = &var.discriminant {
-                        return Err(syn::Error::new(
-                            eq.span(),
-                            "explicit discriminant values are not supported by SpacetimeDB; \
-                             SATS assigns variant tags by declaration order, so discriminant \
-                             values would be silently ignored",
-                        ));
-                    }
+                if !allow_discriminants && let Some((eq, _)) = &var.discriminant {
+                    return Err(syn::Error::new(
+                        eq.span(),
+                        "explicit discriminant values are not supported by SpacetimeDB; \
+                         SATS assigns variant tags by declaration order, so discriminant \
+                         values would be silently ignored",
+                    ));
                 }
                 let (member, ty) = variant_data(var)?.unzip();
                 Ok(SatsVariant {
