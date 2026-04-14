@@ -683,6 +683,62 @@ namespace UE::SpacetimeDB {
 
 
 	// =============================================================================
+	// Custom Result struct Serialization
+	// =============================================================================
+	/**
+	 * @brief Helper macro to generate serialization for Blueprint compatible result structs
+	 * @{
+	 *
+	 * This macro creates serialize/deserialize specializations for a struct that
+	 * mimics the behaviour of Result types by exposing an "is ok" boolean flag,
+	 * an "ok" value field, and an "error" value field.
+	 *
+	 * @param StructType     Name of the result wrapper struct
+	 * @param IsOkField      Name of the boolean member that signals if the result is ok
+	 * @param OkValueField   Name of the value member for the ok case
+	 * @param ErrValueField  Name of the value member for the error case
+	 *
+	 * Example usage:
+	 * @code
+	 * USTRUCT(BlueprintType)
+	 * struct FResultStringBool {
+	 *     int32 OkValue;
+	 *     FString ErrorValue;
+	 *     bool bIsOk;
+	 * };
+	 *
+	 * namespace UE::SpacetimeDB {
+	 *     UE_SPACETIMEDB_RESULT(FResultStringBool, bIsOk, OkValue, ErrorValue);
+	 * }
+	 * @endcode
+	 */
+#define UE_SPACETIMEDB_RESULT(StructType, IsOkField, OkValueField, ErrValueField) \
+    template<> inline void serialize<StructType>(UEWriter& w, const StructType& value) { \
+        if (value.IsOkField) { \
+            w.write_u8(0); /* ok tag */ \
+            serialize(w, value.OkValueField); \
+        } else { \
+            w.write_u8(1); /* err tag */ \
+            serialize(w, value.ErrValueField); \
+        } \
+    } \
+    template<> inline StructType deserialize<StructType>(UEReader& r) { \
+        StructType result; \
+        uint8_t tag = r.read_u8(); \
+        if (tag == 0) { \
+            result.IsOkField = true; \
+            result.OkValueField = deserialize<decltype(result.OkValueField)>(r); \
+        } else if (tag == 1) { \
+            result.IsOkField = false; \
+            result.ErrValueField = deserialize<decltype(result.ErrValueField)>(r); \
+        } else { \
+            ensureMsgf(false, TEXT("Invalid result tag: %d"), tag); \
+            return StructType(); \
+        } \
+        return result; \
+    }
+
+	// =============================================================================
 	// UE Utility Type Serialization
 	// =============================================================================
 

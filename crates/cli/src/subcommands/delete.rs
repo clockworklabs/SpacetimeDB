@@ -2,6 +2,7 @@ use std::io;
 
 use crate::common_args;
 use crate::config::Config;
+use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_database_arg};
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header, y_or_n, AuthHeader};
 use clap::{Arg, ArgMatches};
 use http::StatusCode;
@@ -16,20 +17,48 @@ pub fn cli() -> clap::Command {
         .about("Deletes a SpacetimeDB database")
         .arg(
             Arg::new("database")
-                .required(true)
+                .required(false)
                 .help("The name or identity of the database to delete"),
         )
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(clap::ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
         .after_help("Run `spacetime help delete` for more detailed information.\n")
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let database = args.get_one::<String>("database").unwrap();
+    let server_from_cli = args.get_one::<String>("server").map(|s| s.as_ref());
+    let no_config = args.get_flag("no_config");
+    let database_arg = args.get_one::<String>("database").map(|s| s.as_str());
+    let config_targets = load_config_db_targets(no_config)?;
+    let resolved = resolve_database_arg(
+        database_arg,
+        config_targets.as_deref(),
+        "spacetime delete [database] [--no-config]",
+    )?;
+    let server = server_from_cli.or(resolved.server.as_deref());
     let force = args.get_flag("force");
 
-    let identity = database_identity(&config, database, server).await?;
+    let identity = database_identity(&config, &resolved.database, server).await?;
+    let delete_target = if resolved.database == identity.to_string() {
+        identity.to_string()
+    } else {
+        format!("{} ({identity})", resolved.database)
+    };
+
+    if !y_or_n(
+        force,
+        &format!("Are you sure you want to delete database {delete_target}? This action cannot be undone."),
+    )? {
+        println!("Aborting");
+        return Ok(());
+    }
+
     let host_url = config.get_host_url(server)?;
     let request_path = format!("{host_url}/v1/database/{identity}");
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
@@ -43,7 +72,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if !force {
                 print_database_tree_info(&confirm.database_tree).await?;
             }
-            if y_or_n(force, "Do you want to proceed deleting above databases?")? {
+            if force || y_or_n(false, "Do you want to proceed deleting above databases?")? {
                 send_request(&client, &request_path, &auth_header, Some(confirm.confirmation_token))
                     .await?
                     .error_for_status()?;

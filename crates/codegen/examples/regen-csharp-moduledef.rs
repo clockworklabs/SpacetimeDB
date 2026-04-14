@@ -3,7 +3,7 @@
 
 use fs_err as fs;
 use regex::Regex;
-use spacetimedb_codegen::{csharp, generate, OutputFile};
+use spacetimedb_codegen::{csharp, generate, CodegenOptions, OutputFile};
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 use spacetimedb_schema::def::ModuleDef;
 use std::path::Path;
@@ -37,6 +37,7 @@ fn main() -> anyhow::Result<()> {
         &csharp::Csharp {
             namespace: "SpacetimeDB.Internal",
         },
+        &CodegenOptions::default(),
     )
     .into_iter()
     .try_for_each(|OutputFile { filename, code }| {
@@ -52,6 +53,23 @@ fn main() -> anyhow::Result<()> {
         if filename == "AlgebraicType.g.cs" || filename.starts_with("SumType") || filename.starts_with("ProductType") {
             return Ok(());
         }
+
+        // CaseConversionPolicy is part of the public API — move it to
+        // the SpacetimeDB namespace so users don't have to write
+        // SpacetimeDB.Internal.CaseConversionPolicy.
+        let code = if filename == "CaseConversionPolicy.g.cs" {
+            regex_replace!(&code, r"namespace SpacetimeDB\.Internal", "namespace SpacetimeDB")
+        } else {
+            // In other autogen files, qualify the type name in type position
+            // (before a space+identifier) so it resolves after the namespace move.
+            // The pattern "CaseConversionPolicy CaseConversionPolicy" becomes
+            // "SpacetimeDB.CaseConversionPolicy CaseConversionPolicy".
+            regex_replace!(
+                &code,
+                r"\bCaseConversionPolicy(\s+)CaseConversionPolicy\b",
+                "SpacetimeDB.CaseConversionPolicy${1}CaseConversionPolicy"
+            )
+        };
 
         let code = regex_replace!(&code, r"\bAlgebraicType\b", "SpacetimeDB.BSATN.$0");
         let code = regex_replace!(

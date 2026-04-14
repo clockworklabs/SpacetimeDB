@@ -12,7 +12,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -26,11 +25,10 @@
     OnInsertUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Transaction
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -44,11 +42,10 @@
     OnInsertUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Transaction
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -62,11 +59,22 @@
     OnUpdateUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487768057579,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_1,
+            CallerConnectionId: Guid_1,
+            Reducer: {
+              $type: Reducer.SetName,
+              name: A
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -82,33 +90,76 @@
         Online: true
       }
     },
-    OnInsertMessage: {
+    OnSetName: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          Timestamp: 1718487768057579,
+          Status: {
+            $type: Status.Committed
+          },
+          CallerIdentity: Identity_1,
+          CallerConnectionId: Guid_1,
+          Reducer: {
+            $type: Reducer.SetName,
+            name: A
+          }
         },
-        Db: {Scrubbed},
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
+        Db: {
+          Message: {
+            Count: 4
+          },
+          User: {
+            UserIdentityIdxBtree: {},
+            Count: 3
+          }
+        },
+        Reducers: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
       },
-      message: {
-        Sender: Identity_3,
-        Sent: 1718487775346381,
-        Text: Hello, A!
-      }
+      name: A
+    },
+    OnSetName: {
+      eventContext: {
+        Event: {
+          Timestamp: 1718487770000000,
+          Status: {
+            $type: Status.Failed,
+            Failed_: name cannot be empty
+          },
+          CallerIdentity: Identity_1,
+          CallerConnectionId: Guid_1,
+          Reducer: {
+            $type: Reducer.SetName,
+            name: 
+          }
+        },
+        Db: {
+          Message: {
+            Count: 4
+          },
+          User: {
+            UserIdentityIdxBtree: {},
+            Count: 3
+          }
+        },
+        Reducers: {},
+        Procedures: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      name: 
     },
     OnUpdateUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Transaction
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -127,11 +178,28 @@
     OnInsertMessage: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Transaction
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
+        Procedures: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      message: {
+        Sender: Identity_3,
+        Sent: 1718487775346381,
+        Text: Hello, A!
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Transaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -146,11 +214,10 @@
     OnInsertMessage: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Transaction
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -165,11 +232,10 @@
     OnUpdateUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Transaction
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -189,11 +255,10 @@
     OnInsertMessage: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Transaction
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -212,7 +277,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -231,7 +295,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -250,7 +313,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -269,7 +331,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -282,6 +343,7 @@
       }
     },
     LogWarning: Subscription Error: $bad query dude,
+    LogWarning: Received SubscriptionError for unknown query_set_id=4,
     OnInsertMessage: {
       eventContext: {
         Event: {
@@ -289,7 +351,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -308,7 +369,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -327,7 +387,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -346,7 +405,6 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Procedures: {},
         IsActive: false,
         Identity: Identity_1,
@@ -401,25 +459,25 @@
   },
   Stats: {
     ReducerRequestTracker: {
-      requestsAwaitingResponse: 9
+      sampleCount: 2
     },
     ProcedureRequestTracker: {},
-    SubscriptionRequestTracker: {},
-    OneOffRequestTracker: {},
-    AllReducersTracker: {
-      sampleCount: 9
+    SubscriptionRequestTracker: {
+      sampleCount: 5
     },
+    OneOffRequestTracker: {},
+    AllReducersTracker: {},
     ParseMessageQueueTracker: {
-      sampleCount: 15
+      sampleCount: 17
     },
     ParseMessageTracker: {
-      sampleCount: 15
+      sampleCount: 17
     },
     ApplyMessageQueueTracker: {
-      sampleCount: 15
+      sampleCount: 17
     },
     ApplyMessageTracker: {
-      sampleCount: 15
+      sampleCount: 17
     }
   }
 }

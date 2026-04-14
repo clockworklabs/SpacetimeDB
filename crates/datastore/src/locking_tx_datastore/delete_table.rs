@@ -1,4 +1,4 @@
-use spacetimedb_sats::layout::Size;
+use spacetimedb_sats::{layout::Size, memory_usage::MemoryUsage};
 use spacetimedb_table::{
     fixed_bit_set::FixedBitSet,
     indexes::{max_rows_in_page, PageIndex, PageOffset, RowPointer, SquashedOffset},
@@ -14,6 +14,17 @@ pub struct DeleteTable {
     len: usize,
     /// The size of a row in the table.
     fixed_row_size: Size,
+}
+
+impl MemoryUsage for DeleteTable {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            deleted,
+            len,
+            fixed_row_size,
+        } = self;
+        deleted.heap_usage() + len.heap_usage() + fixed_row_size.heap_usage()
+    }
 }
 
 impl DeleteTable {
@@ -195,7 +206,7 @@ mod test {
             self.check_state();
             dt
         }
-        fn iter(&self) -> impl Iterator<Item = RowPointer> {
+        fn iter(&self) -> impl Iterator<Item = RowPointer> + use<> {
             let dt = self.dt.iter().collect::<Vec<_>>();
             let bs = self.bs.iter().copied().collect::<Vec<_>>();
             assert_eq!(dt, bs);

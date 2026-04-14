@@ -36,17 +36,14 @@ use spacetimedb_commitlog::{
     segment,
     tests::helpers::enable_logging,
 };
-use spacetimedb_durability::{Durability, Txdata};
-use spacetimedb_paths::{
-    server::{CommitLogDir, ReplicaDir},
-    FromPathUnchecked,
-};
+use spacetimedb_durability::{local::OpenError, Durability, Transaction, Txdata};
+use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::{sync::watch, time::sleep};
 
 const MB: u64 = 1024 * 1024;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Result<()> {
     enable_logging();
 
@@ -61,11 +58,11 @@ async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Res
         let _guard = mount(file_path, mountpoint, 512 * MB)?;
         let replica_dir = ReplicaDir::from_path_unchecked(mountpoint);
 
-        match local_durability(replica_dir.commit_log(), 1024 * MB, None).await {
-            Err(e) if e.kind() == io::ErrorKind::StorageFull => Ok(()),
+        match local_durability(replica_dir, 1024 * MB, None).await {
+            Err(e) if is_no_space_error(&e) => Ok(()),
             Err(e) => Err(e).context("unexpected error"),
             Ok(durability) => {
-                durability.close().await?;
+                durability.close().await;
                 Err(anyhow!("unexpected success"))
             }
         }
@@ -75,8 +72,8 @@ async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Res
 // NOTE: This test is set up to proceed more or less sequentially.
 // In reality, `append_tx` will fail at some point in the future.
 // I.e. transactions can be lost when the host runs out of disk space.
-#[tokio::test]
-#[should_panic = "durability actor crashed"]
+#[tokio::test(flavor = "multi_thread")]
+#[should_panic = "local durability: actor vanished"]
 async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
     enable_logging();
 
@@ -95,14 +92,14 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             let on_new_segment = Arc::new(move || {
                 new_segment_tx.send_replace(());
             });
-            let durability = local_durability(replica_dir.commit_log(), 256 * MB, Some(on_new_segment)).await?;
+            let durability = local_durability(replica_dir, 256 * MB, Some(on_new_segment)).await?;
             let txdata = txdata();
 
             // Mark initial segment as seen.
             new_segment_rx.borrow_and_update();
             // Write past available space.
-            for _ in 0..256 {
-                durability.append_tx(txdata.clone());
+            for offset in 0..256 {
+                durability.append_tx(Box::new(Transaction::from((offset, txdata.clone()))));
             }
             // Ensure new segment is created.
             new_segment_rx.changed().await?;
@@ -110,7 +107,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             sleep(Duration::from_millis(5)).await;
             // Durability actor should have crashed, so this should panic.
             info!("trying append on crashed durability");
-            durability.append_tx(txdata.clone());
+            durability.append_tx(Box::new(Transaction::from((256, txdata.clone()))));
         }
 
         Ok(())
@@ -123,7 +120,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
 /// without `fallocate`.
 ///
 /// Resuming a segment when there is insufficient space should fail.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_durability_crashes_on_resume_with_insuffient_space() -> anyhow::Result<()> {
     enable_logging();
 
@@ -145,29 +142,32 @@ async fn local_durability_crashes_on_resume_with_insuffient_space() -> anyhow::R
 
         // Try to open local durability with a 1GiB segment size,
         // which is larger than the available disk space.
-        match local_durability(replica_dir.commit_log(), 1024 * MB, None).await {
-            Err(e) if e.kind() == io::ErrorKind::StorageFull => Ok(()),
+        match local_durability(replica_dir, 1024 * MB, None).await {
+            Err(e) if is_no_space_error(&e) => Ok(()),
             Err(e) => Err(e).context("unexpected error"),
             Ok(durability) => {
-                durability.close().await?;
+                durability.close().await;
                 Err(anyhow!("unexpected success"))
             }
         }
     }
 }
 
+fn is_no_space_error(e: &OpenError) -> bool {
+    matches!(e, OpenError::Commitlog(io) if io.kind() == io::ErrorKind::StorageFull)
+}
+
 async fn local_durability(
-    dir: CommitLogDir,
+    dir: ReplicaDir,
     max_segment_size: u64,
     on_new_segment: Option<Arc<OnNewSegmentFn>>,
-) -> io::Result<spacetimedb_durability::Local<[u8; 1024 * 1024]>> {
+) -> Result<spacetimedb_durability::Local<[u8; 1024 * 1024]>, spacetimedb_durability::local::OpenError> {
     spacetimedb_durability::Local::open(
         dir,
         tokio::runtime::Handle::current(),
         spacetimedb_durability::local::Options {
             commitlog: spacetimedb_commitlog::Options {
                 max_segment_size,
-                max_records_in_commit: 1.try_into().unwrap(),
                 preallocate_segments: true,
                 ..<_>::default()
             },

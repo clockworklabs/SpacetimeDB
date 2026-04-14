@@ -1,5 +1,6 @@
 import type { TableNamesOf, UntypedSchemaDef } from '../lib/schema.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
+import type { Values } from '../lib/type_util.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import { type TableCache, TableCacheImpl } from './table_cache.ts';
 
@@ -11,8 +12,8 @@ export type TableDefForTableName<
   SchemaDef extends UntypedSchemaDef,
   N extends TableName<SchemaDef>,
 > = [SchemaDef] extends [UntypedSchemaDef]
-  ? SchemaDef['tables'][number] & { name: N }
-  : UntypedTableDef;
+  ? Values<SchemaDef['tables']> & { accessorName: N }
+  : UntypedTableDef & { accessorName: N };
 
 type TableCacheForTableName<
   RemoteModule extends UntypedRemoteModule,
@@ -112,7 +113,7 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
   getOrCreateTable<N extends TableName<RemoteModule>>(
     tableDef: TableDefForTableName<RemoteModule, N>
   ): TableCacheForTableName<RemoteModule, N> {
-    const name = tableDef.name as N;
+    const name = tableDef.accessorName;
 
     const table = this.tables.get(name);
     if (table) {

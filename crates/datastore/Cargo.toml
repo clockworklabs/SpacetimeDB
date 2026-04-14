@@ -41,7 +41,7 @@ thin-vec.workspace = true
 unindexed_iter_by_col_range_warn = []
 default = ["unindexed_iter_by_col_range_warn"]
 # Enable test helpers and utils
-test = ["spacetimedb-commitlog/test"]
+test = ["spacetimedb-commitlog/test", "spacetimedb-schema/test"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }

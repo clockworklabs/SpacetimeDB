@@ -72,9 +72,12 @@ struct TESTCLIENT_API FEveryVecStructType
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     TArray<FSpacetimeDBTimeDuration> T;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    TArray<FSpacetimeDBUuid> U;
+
     FORCEINLINE bool operator==(const FEveryVecStructType& Other) const
     {
-        return A == Other.A && B == Other.B && C == Other.C && D == Other.D && E == Other.E && F == Other.F && G == Other.G && H == Other.H && I == Other.I && J == Other.J && K == Other.K && L == Other.L && M == Other.M && N == Other.N && O == Other.O && P == Other.P && Q == Other.Q && R == Other.R && S == Other.S && T == Other.T;
+        return A == Other.A && B == Other.B && C == Other.C && D == Other.D && E == Other.E && F == Other.F && G == Other.G && H == Other.H && I == Other.I && J == Other.J && K == Other.K && L == Other.L && M == Other.M && N == Other.N && O == Other.O && P == Other.P && Q == Other.Q && R == Other.R && S == Other.S && T == Other.T && U == Other.U;
     }
 
     FORCEINLINE bool operator!=(const FEveryVecStructType& Other) const
@@ -111,6 +114,7 @@ FORCEINLINE uint32 GetTypeHash(const FEveryVecStructType& EveryVecStructType)
     Hash = HashCombine(Hash, GetTypeHash(EveryVecStructType.R));
     Hash = HashCombine(Hash, GetTypeHash(EveryVecStructType.S));
     Hash = HashCombine(Hash, GetTypeHash(EveryVecStructType.T));
+    Hash = HashCombine(Hash, GetTypeHash(EveryVecStructType.U));
     return Hash;
 }
 
@@ -118,5 +122,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FEveryVecStructType);
 
-    UE_SPACETIMEDB_STRUCT(FEveryVecStructType, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
+    UE_SPACETIMEDB_STRUCT(FEveryVecStructType, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U);
 }

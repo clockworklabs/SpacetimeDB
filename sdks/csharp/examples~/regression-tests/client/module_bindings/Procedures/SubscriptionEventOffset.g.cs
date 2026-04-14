@@ -58,7 +58,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class SubscriptionEventOffsetArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "SubscriptionEventOffset";
+            string IProcedureArgs.ProcedureName => "subscription_event_offset";
         }
 
     }

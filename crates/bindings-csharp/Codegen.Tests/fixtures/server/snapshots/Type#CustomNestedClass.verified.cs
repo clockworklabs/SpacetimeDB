@@ -147,7 +147,10 @@ partial class CustomNestedClass
                 ? that.NestedNullableClass == null
                 : this.NestedNullableClass.Equals(that.NestedNullableClass);
         var ___eqNestedEnum = this.NestedEnum == that.NestedEnum;
-        var ___eqNestedNullableEnum = this.NestedNullableEnum.Equals(that.NestedNullableEnum);
+        var ___eqNestedNullableEnum = System.Nullable.Equals(
+            this.NestedNullableEnum,
+            that.NestedNullableEnum
+        );
         var ___eqNestedTaggedEnum =
             this.NestedTaggedEnum == null
                 ? that.NestedTaggedEnum == null

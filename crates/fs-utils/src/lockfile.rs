@@ -89,3 +89,86 @@ impl Drop for Lockfile {
         Self::release_internal(&self.path).unwrap();
     }
 }
+
+pub mod advisory {
+    use std::{
+        fmt,
+        fs::{self, File},
+        io,
+        path::{Path, PathBuf},
+    };
+
+    use fs2::FileExt as _;
+    use thiserror::Error;
+
+    use crate::create_parent_dir;
+
+    #[derive(Debug, Error)]
+    #[error("failed to lock {}", path.display())]
+    pub struct LockError {
+        pub path: PathBuf,
+        #[source]
+        pub source: io::Error,
+    }
+
+    /// A file locked with an exclusive, filesystem-level lock.
+    ///
+    /// Uses [`flock(2)`] on Unix platforms, and [`LockFile`] on Windows systems.
+    ///
+    /// The file is created if it does not exist.
+    /// Dropping `Lockfile` releases the lock, but, unlike [super::Lockfile],
+    /// does not delete the file.
+    ///
+    /// [`flock(2)`]: https://man7.org/linux/man-pages/man2/flock.2.html
+    /// [`LockFile`]: https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfile?redirectedfrom=MSDN
+    pub struct LockedFile {
+        path: PathBuf,
+        #[allow(unused)]
+        lock: File,
+    }
+
+    impl LockedFile {
+        /// Attempt to lock `path` using an exclusive lock.
+        ///
+        /// The file will be created,
+        /// including its parent directories,
+        /// if it does not exist.
+        ///
+        /// Note that, unlike [super::Lockfile::for_file],
+        /// the exact `path` is used -- no extra adjacent `.lock` file is
+        /// created.
+        pub fn lock(path: impl AsRef<Path>) -> Result<Self, LockError> {
+            let path = path.as_ref();
+            Self::lock_inner(path).map_err(|source| LockError {
+                path: path.into(),
+                source,
+            })
+        }
+
+        fn lock_inner(path: &Path) -> io::Result<Self> {
+            create_parent_dir(path)?;
+            let lock = File::create(path)?;
+            // TODO: Use `File::lock` (available since rust 1.89) instead?
+            lock.try_lock_exclusive()?;
+
+            Ok(Self {
+                path: path.to_path_buf(),
+                lock,
+            })
+        }
+
+        /// Release the lock and optionally remove the locked file.
+        pub fn release(self, remove: bool) -> io::Result<()> {
+            if remove {
+                fs::remove_file(&self.path)?;
+            }
+            Ok(())
+        }
+    }
+
+    impl fmt::Debug for LockedFile {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("LockedFile").field("path", &self.path).finish()
+        }
+    }
+}

@@ -13,7 +13,7 @@ struct TESTCLIENT_API FOneSimpleEnumType
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    ESimpleEnumType E;
+    ESimpleEnumType E = ESimpleEnumType::Zero;
 
     FORCEINLINE bool operator==(const FOneSimpleEnumType& Other) const
     {
