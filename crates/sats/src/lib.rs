@@ -20,6 +20,7 @@ pub mod primitives;
 pub mod product_type;
 pub mod product_type_element;
 pub mod product_value;
+pub mod raw_identifier;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
@@ -30,6 +31,7 @@ pub mod sum_value;
 pub mod time_duration;
 pub mod timestamp;
 pub mod typespace;
+pub mod uuid;
 
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
@@ -73,6 +75,7 @@ pub mod serde {
 /// which will then emit `$krate::sats`.
 #[doc(hidden)]
 pub use crate as sats;
+use crate::raw_identifier::RawIdentifier;
 
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
@@ -299,6 +302,6 @@ macro_rules! __make_register_reftype {
 }
 
 /// A helper for prettier Debug implementation, without extra indirection around Some("name").
-fn dbg_aggregate_name(opt: &Option<Box<str>>) -> &dyn std::fmt::Debug {
+fn dbg_aggregate_name(opt: &Option<RawIdentifier>) -> &dyn std::fmt::Debug {
     opt.as_ref().map_or(opt, |s| s)
 }

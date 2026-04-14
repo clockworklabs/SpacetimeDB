@@ -314,6 +314,14 @@ impl<I: ResourceIndex> ResourceSlab<I> {
         I::from_u32(idx)
     }
 
+    pub fn len(&self) -> usize {
+        self.slab.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.slab.clear();
+    }
+
     pub fn get_mut(&mut self, handle: I) -> Option<&mut I::Resource> {
         self.slab.get_mut(handle.to_u32() as usize)
     }
@@ -355,8 +363,8 @@ pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), Nod
         NodesError::IndexNotFound => errno::NO_SUCH_INDEX,
         NodesError::IndexNotUnique => errno::INDEX_NOT_UNIQUE,
         NodesError::IndexRowNotFound => errno::NO_SUCH_ROW,
+        NodesError::IndexCannotSeekRange => errno::WRONG_INDEX_ALGO,
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => errno::SCHEDULE_AT_DELAY_TOO_LONG,
-        NodesError::AlreadyExists(_) => errno::UNIQUE_ALREADY_EXISTS,
         NodesError::HttpError(message) => return Ok((errno::HTTP_ERROR, Some(message))),
         NodesError::Internal(ref internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
@@ -421,13 +429,21 @@ macro_rules! abi_funcs {
             "spacetime_10.1"::bytes_source_remaining_length,
 
             "spacetime_10.2"::get_jwt,
+
+            // The procedure must not be suspended while holding the transaction lock,
+            // as this can result in a deadlock; therefore, these ABIs are synchronous.
+            "spacetime_10.3"::procedure_start_mut_tx,
+            "spacetime_10.3"::procedure_commit_mut_tx,
+            "spacetime_10.3"::procedure_abort_mut_tx,
+
+            "spacetime_10.4"::datastore_index_scan_point_bsatn,
+            "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
+
+            "spacetime_10.5"::datastore_clear,
         }
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
-            "spacetime_10.3"::procedure_start_mut_tx,
-            "spacetime_10.3"::procedure_commit_mut_tx,
-            "spacetime_10.3"::procedure_abort_mut_tx,
             "spacetime_10.3"::procedure_http_request,
         }
     };

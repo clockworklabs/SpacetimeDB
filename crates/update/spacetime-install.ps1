@@ -30,7 +30,9 @@ function Install {
         Start-Process -Wait -FilePath $Installer -ArgumentList "/quiet", "/install"
     }
 
-    $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/spacetimedb-update-x86_64-pc-windows-msvc.exe"
+    $AssetName = "spacetimedb-update-x86_64-pc-windows-msvc.exe"
+    $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/$AssetName"
+    $MirrorBase = "https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com"
     Write-Output "Downloading installer..."
 
     function UpdatePathIfNotExists {
@@ -44,7 +46,14 @@ function Install {
     }
     
     $Executable = Join-Path ([System.IO.Path]::GetTempPath()) "spacetime-install.exe"
-    Invoke-WebRequest $DownloadUrl -OutFile $Executable -UseBasicParsing
+    try {
+        Invoke-WebRequest $DownloadUrl -OutFile $Executable -UseBasicParsing
+    } catch {
+        Write-Output "Download failed, trying mirror..."
+        $Tag = (Invoke-WebRequest "$MirrorBase/latest-version" -UseBasicParsing).Content.Trim()
+        $MirrorUrl = "$MirrorBase/refs/tags/$Tag/$AssetName"
+        Invoke-WebRequest $MirrorUrl -OutFile $Executable -UseBasicParsing
+    }
     Start-Process -Wait -FilePath $Executable
 
     # TODO: do this in spacetimedb-update

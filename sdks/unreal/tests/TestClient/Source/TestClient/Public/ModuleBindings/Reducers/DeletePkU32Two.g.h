@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeletePkU32TwoArgs
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 N;
+    uint32 N = 0;
 
     FDeletePkU32TwoArgs() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UDeletePkU32TwoReducer : public UReducerBase
 
 public:
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 N;
+    uint32 N = 0;
 
 };
 

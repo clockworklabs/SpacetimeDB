@@ -1,0 +1,11 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates client lifecycle events.
+
+TABLE
+- event
+  - Fields:
+    - id: bigint (u64, primary key, auto-increment)
+    - kind: string
+
+REDUCERS
+- clientConnected: insert event with kind="connected"
+- clientDisconnected: insert event with kind="disconnected"

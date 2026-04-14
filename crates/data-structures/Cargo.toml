@@ -14,11 +14,15 @@ serde = ["dep:serde", "hashbrown/serde"]
 spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false }
 ahash.workspace = true
 crossbeam-queue.workspace = true
+either.workspace = true
 hashbrown.workspace = true
 nohash-hasher.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

@@ -19,7 +19,7 @@ pub mod raw {
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
     #[link(wasm_import_module = "spacetime_10.0")]
-    extern "C" {
+    unsafe extern "C" {
         /// Queries the `table_id` associated with the given (table) `name`
         /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
         ///
@@ -588,12 +588,11 @@ pub mod raw {
         ///
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
-
     }
 
     // See comment on previous `extern "C"` block re: ABI version.
     #[link(wasm_import_module = "spacetime_10.1")]
-    extern "C" {
+    unsafe extern "C" {
         /// Read the remaining length of a [`BytesSource`] and write it to `out`.
         ///
         /// Note that the host automatically frees byte sources which are exhausted.
@@ -622,7 +621,7 @@ pub mod raw {
 
     // See comment on previous `extern "C"` block re: ABI version.
     #[link(wasm_import_module = "spacetime_10.2")]
-    extern "C" {
+    unsafe extern "C" {
         /// Finds the JWT payload associated with `connection_id`.
         /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
         /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
@@ -647,7 +646,7 @@ pub mod raw {
 
     #[cfg(feature = "unstable")]
     #[link(wasm_import_module = "spacetime_10.3")]
-    extern "C" {
+    unsafe extern "C" {
         /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
         ///
         /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
@@ -665,10 +664,9 @@ pub mod raw {
         pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
 
         /// Starts a mutable transaction,
-        /// suspending execution of this WASM instance until
-        /// a mutable transaction lock is aquired.
+        /// blocking until a mutable transaction lock is acquired.
         ///
-        /// Upon resuming, returns `0` on success,
+        /// Returns `0` on success,
         /// enabling further calls that require a pending transaction,
         /// or an error code otherwise.
         ///
@@ -685,11 +683,10 @@ pub mod raw {
         pub fn procedure_start_mut_tx(out: *mut i64) -> u16;
 
         /// Commits a mutable transaction,
-        /// suspending execution of this WASM instance until
-        /// the transaction has been committed
+        /// blocking until the transaction has been committed
         /// and subscription queries have been run and broadcast.
         ///
-        /// Upon resuming, returns `0` on success, or an error code otherwise.
+        /// Once complete, it returns `0` on success, or an error code otherwise.
         ///
         /// # Traps
         ///
@@ -710,10 +707,9 @@ pub mod raw {
         pub fn procedure_commit_mut_tx() -> u16;
 
         /// Aborts a mutable transaction,
-        /// suspending execution of this WASM instance until
-        /// the transaction has been rolled back.
+        /// blocking until the transaction has been aborted.
         ///
-        /// Upon resuming, returns `0` on success, or an error code otherwise.
+        /// Returns `0` on success, or an error code otherwise.
         ///
         /// # Traps
         ///
@@ -735,15 +731,28 @@ pub mod raw {
 
         /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
         /// suspending execution until the request is complete,
-        /// then return its response via a [`BytesSource`] written to `out`.
+        /// then return its response details via a [`BytesSource`] written to `out[0]`
+        /// and its response body via another [`BytesSource`] written to `out[1]`.
         ///
         /// `request_ptr[..request_len]` should store a BSATN-serialized `spacetimedb_lib::http::Request` object
         /// containing the details of the request to be performed.
         ///
-        /// If the request is successful, a [`BytesSource`] is written to `out`
-        /// containing a BSATN-encoded `spacetimedb_lib::http::Response` object.
+        /// `body_ptr[..body_len]` should store a byte array, which will be treated as the body of the request.
+        /// `body_ptr` should be non-null and within the bounds of linear memory even when `body_len` is 0.
+        ///
+        /// If the request is successful, a [`BytesSource`] is written to `out[0]`
+        /// containing a BSATN-encoded `spacetimedb_lib::http::Response` object,
+        /// another [`BytesSource`] containing the bytes of the response body are written to `out[1]`,
+        /// and this function returns 0.
+        ///
         /// "Successful" in this context includes any connection which results in any HTTP status code,
         /// regardless of the specified meaning of that code.
+        /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
+        ///
+        /// If the request fails, a [`BytesSource`] is written to `out[0]`
+        /// containing a BSATN-encoded [`String`] describing the failure,
+        /// and this function returns `HTTP_ERROR`.
+        /// In this case, `out[1]` is not written.
         ///
         /// # Errors
         ///
@@ -763,6 +772,7 @@ pub mod raw {
         /// Traps if:
         ///
         /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
+        /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
         /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
         /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
         #[cfg(feature = "unstable")]
@@ -773,6 +783,106 @@ pub mod raw {
             body_len: u32,
             out: *mut [BytesSource; 2],
         ) -> u16;
+    }
+
+    #[link(wasm_import_module = "spacetime_10.4")]
+    unsafe extern "C" {
+        /// Finds all rows in the index identified by `index_id`,
+        /// according to `point = point_ptr[..point_len]` in WASM memory.
+        ///
+        /// The index itself has a schema/type.
+        /// Matching defined by first BSATN-decoding `point` to that `AlgebraicType`
+        /// and then comparing the decoded `point` to the keys in the index
+        /// using `Ord for AlgebraicValue`.
+        /// to the keys in the index.
+        /// The `point` is BSATN-decoded to that `AlgebraicType`.
+        /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+        /// This occurs exactly when the row's BSATN-encoding
+        /// is equal to the encoding of the `AlgebraicValue`.
+        ///
+        /// This ABI is not limited to single column indices.
+        /// Multi-column indices can be queried by providing
+        /// a BSATN-encoded `ProductValue`
+        /// that is typed at the `ProductType` of the index.
+        ///
+        /// The relevant table for the index is found implicitly via the `index_id`,
+        /// which is unique for the module.
+        ///
+        /// On success, the iterator handle is written to the `out` pointer.
+        /// This handle can be advanced by [`row_iter_bsatn_advance`].
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+        /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
+        /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+        ///   typed at the index's key type (`AlgebraicType`).
+        pub fn datastore_index_scan_point_bsatn(
+            index_id: IndexId,
+            point_ptr: *const u8, // AlgebraicValue
+            point_len: usize,
+            out: *mut RowIter,
+        ) -> u16;
+
+        /// Deletes all rows found in the index identified by `index_id`,
+        /// according to `point = point_ptr[..point_len]` in WASM memory.
+        ///
+        /// This syscall will delete all the rows found by
+        /// [`datastore_index_scan_point_bsatn`] with the same arguments passed.
+        /// See `datastore_index_scan_point_bsatn` for details.
+        ///
+        /// The number of rows deleted is written to the WASM pointer `out`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+        /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+        /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+        ///   typed at the index's key type (`AlgebraicType`).
+        pub fn datastore_delete_by_index_scan_point_bsatn(
+            index_id: IndexId,
+            point_ptr: *const u8, // AlgebraicValue
+            point_len: usize,
+            out: *mut u32,
+        ) -> u16;
+    }
+
+    #[link(wasm_import_module = "spacetime_10.5")]
+    unsafe extern "C" {
+        /// Deletes all rows in the table identified by `table_id`.
+        ///
+        /// The number of rows deleted is written to the WASM pointer `out`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -949,10 +1059,12 @@ fn cvt(x: u16) -> Result<()> {
 ///   before writing a safe and valid `T` to it.
 #[inline]
 unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T> {
-    let mut out = MaybeUninit::uninit();
-    let f_code = f(out.as_mut_ptr());
-    cvt(f_code)?;
-    Ok(out.assume_init())
+    unsafe {
+        let mut out = MaybeUninit::uninit();
+        let f_code = f(out.as_mut_ptr());
+        cvt(f_code)?;
+        Ok(out.assume_init())
+    }
 }
 
 /// Runs the given function `f`.
@@ -1080,6 +1192,21 @@ pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> R
     unsafe { call(|out| raw::datastore_delete_all_by_eq_bsatn(table_id, relation.as_ptr(), relation.len(), out)) }
 }
 
+/// Deletes all rows in the table identified by `table_id`.
+///
+/// The number of rows deleted is returned.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+#[inline]
+pub fn datastore_clear(table_id: TableId) -> Result<u64> {
+    unsafe { call(|out| raw::datastore_clear(table_id, out)) }
+}
+
 /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
 /// Returns iterator handle is written to the `out` pointer.
 /// This handle can be advanced by [`RowIter::read`].
@@ -1092,6 +1219,44 @@ pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> R
 /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
 pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter> {
     let raw = unsafe { call(|out| raw::datastore_table_scan_bsatn(table_id, out))? };
+    Ok(RowIter { raw })
+}
+
+/// Finds all rows in the index identified by `index_id`,
+/// according to the `point.
+///
+/// The index itself has a schema/type.
+/// Matching defined by first BSATN-decoding `point` to that `AlgebraicType`
+/// and then comparing the decoded `point` to the keys in the index
+/// using `Ord for AlgebraicValue`.
+/// to the keys in the index.
+/// The `point` is BSATN-decoded to that `AlgebraicType`.
+/// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+/// This occurs exactly when the row's BSATN-encoding
+/// is equal to the encoding of the `AlgebraicValue`.
+///
+/// This ABI is not limited to single column indices.
+/// Multi-column indices can be queried by providing
+/// a BSATN-encoded `ProductValue`
+/// that is typed at the `ProductType` of the index.
+///
+/// The relevant table for the index is found implicitly via the `index_id`,
+/// which is unique for the module.
+///
+/// On success, the iterator handle is written to the `out` pointer.
+/// This handle can be advanced by [`RowIter::read`].
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+/// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+/// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+///   typed at the index's key type (`AlgebraicType`).
+pub fn datastore_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> Result<RowIter> {
+    let raw = unsafe { call(|out| raw::datastore_index_scan_point_bsatn(index_id, point.as_ptr(), point.len(), out))? };
     Ok(RowIter { raw })
 }
 
@@ -1167,6 +1332,28 @@ pub fn datastore_index_scan_range_bsatn(
         })?
     };
     Ok(RowIter { raw })
+}
+
+/// Deletes all rows found in the index identified by `index_id`,
+/// according to the `point.
+///
+/// This syscall will delete all the rows found by
+/// [`datastore_index_scan_point_bsatn`] with the same arguments passed.
+/// See `datastore_index_scan_point_bsatn` for details.
+///
+/// The number of rows deleted is returned on success.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+/// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+/// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+///   typed at the index's key type (`AlgebraicType`).
+pub fn datastore_delete_by_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> Result<u32> {
+    unsafe { call(|out| raw::datastore_delete_by_index_scan_point_bsatn(index_id, point.as_ptr(), point.len(), out)) }
 }
 
 /// Deletes all rows found in the index identified by `index_id`,
@@ -1375,10 +1562,9 @@ pub mod procedure {
     }
 
     /// Starts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// a mutable transaction lock is aquired.
+    /// blocking until a mutable transaction lock is acquired.
     ///
-    /// Upon resuming, returns `Ok(timestamp)` on success,
+    /// Once complete, returns `Ok(timestamp)` on success,
     /// enabling further calls that require a pending transaction,
     /// or [`Errno`] otherwise.
     ///
@@ -1393,11 +1579,10 @@ pub mod procedure {
     }
 
     /// Commits a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been committed
+    /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Upon resuming, returns `Ok(()` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1417,10 +1602,9 @@ pub mod procedure {
     }
 
     /// Aborts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been rolled back.
+    /// blocking until the transaction has been rolled back.
     ///
-    /// Upon resuming, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
     ///
     /// # Errors
     ///

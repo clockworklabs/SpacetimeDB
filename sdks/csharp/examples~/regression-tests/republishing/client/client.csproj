@@ -11,4 +11,8 @@
     <ProjectReference Include="../../../../SpacetimeDB.ClientSDK.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../../shared/RegressionTestHarness.cs" Link="shared/RegressionTestHarness.cs" />
+  </ItemGroup>
+
 </Project>

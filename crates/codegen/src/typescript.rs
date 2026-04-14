@@ -2,7 +2,7 @@ use crate::util::{
     is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
     iter_tables, iter_types, iter_views, print_auto_generated_version_comment,
 };
-use crate::OutputFile;
+use crate::{CodegenOptions, OutputFile};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
 
@@ -15,76 +15,23 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{
-    BTreeAlgorithm, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
-};
+use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
 use spacetimedb_lib::version::spacetimedb_lib_version;
-
-type Imports = BTreeSet<AlgebraicTypeRef>;
 
 const INDENT: &str = "  ";
 
 pub struct TypeScript;
 
 impl Lang for TypeScript {
-    fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
-        let type_name = collect_case(Case::Pascal, typ.name.name_segments());
-
-        let define_type_for_product = |product: &ProductTypeDef| {
-            let mut output = CodeIndenter::new(String::new(), INDENT);
-            let out = &mut output;
-
-            print_file_header(out, false, true);
-            gen_and_print_imports(module, out, product.element_types(), &[typ.ty], None);
-            writeln!(out);
-            define_body_for_product(module, out, &type_name, &product.elements);
-            out.newline();
-            OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
-                code: output.into_inner(),
-            }
-        };
-
-        let define_type_for_sum = |variants: &[(Identifier, AlgebraicTypeUse)]| {
-            let mut output = CodeIndenter::new(String::new(), INDENT);
-            let out = &mut output;
-
-            print_file_header(out, false, true);
-            gen_and_print_imports(module, out, variants.iter().map(|(_, ty)| ty), &[typ.ty], None);
-            writeln!(out);
-            // For the purpose of bootstrapping AlgebraicType, if the name of the type
-            // is `AlgebraicType`, we need to use an alias.
-            define_body_for_sum(module, out, &type_name, variants);
-            out.newline();
-            OutputFile {
-                filename: type_module_name(&typ.name) + ".ts",
-                code: output.into_inner(),
-            }
-        };
-
-        match &module.typespace_for_generate()[typ.ty] {
-            AlgebraicTypeDef::Product(product) => {
-                vec![define_type_for_product(product)]
-            }
-            AlgebraicTypeDef::Sum(sum) => {
-                vec![define_type_for_sum(&sum.variants)]
-            }
-            AlgebraicTypeDef::PlainEnum(plain_enum) => {
-                let variants = plain_enum
-                    .variants
-                    .iter()
-                    .cloned()
-                    .map(|var| (var, AlgebraicTypeUse::Unit))
-                    .collect::<Vec<_>>();
-                vec![define_type_for_sum(&variants)]
-            }
-        }
+    fn generate_type_files(&self, _module: &ModuleDef, _typ: &TypeDef) -> Vec<OutputFile> {
+        vec![]
     }
 
     /// e.g.
@@ -92,7 +39,12 @@ impl Lang for TypeScript {
     /// table({
     ///   name: 'player',
     ///   indexes: [
-    ///     { name: 'this_is_an_index', algorithm: "btree", columns: [ "ownerId" ] }
+    ///     {
+    ///       accessor: 'this_is_an_index',
+    ///       name: 'this_is_an_index',
+    ///       algorithm: "btree",
+    ///       columns: [ "ownerId" ],
+    ///     }
     ///   ],
     /// }, t.row({
     ///   id: t.u32().primaryKey(),
@@ -123,18 +75,17 @@ impl Lang for TypeScript {
             out,
             product_def.element_types(),
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
-            None,
         );
 
         writeln!(out);
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true).unwrap();
+        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true).unwrap();
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
-            filename: table_module_name(&table.name) + ".ts",
+            filename: table_module_name(&table.accessor_name) + ".ts",
             code: output.into_inner(),
         }
     }
@@ -153,13 +104,12 @@ impl Lang for TypeScript {
             reducer.params_for_generate.element_types(),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
-            None,
         );
 
         define_body_for_reducer(module, out, &reducer.params_for_generate.elements);
 
         OutputFile {
-            filename: reducer_module_name(&reducer.name) + ".ts",
+            filename: reducer_module_name(&reducer.accessor_name) + ".ts",
             code: output.into_inner(),
         }
     }
@@ -185,12 +135,12 @@ impl Lang for TypeScript {
                 .chain([&procedure.return_type_for_generate]),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
-            None,
         );
 
         writeln!(out, "export const params = {{");
         out.with_indent(|out| {
-            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true).unwrap()
+            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true, false)
+                .unwrap()
         });
         writeln!(out, "}};");
 
@@ -198,67 +148,58 @@ impl Lang for TypeScript {
         write_type_builder(module, out, &procedure.return_type_for_generate).unwrap();
 
         OutputFile {
-            filename: procedure_module_name(&procedure.name) + ".ts",
+            filename: procedure_module_name(&procedure.accessor_name) + ".ts",
             code: output.into_inner(),
         }
     }
 
-    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
+    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out, true, false);
 
-        out.newline();
-
-        writeln!(out, "// Import and reexport all reducer arg types");
-        for reducer in iter_reducers(module) {
-            let reducer_name = &reducer.name;
-            let reducer_module_name = reducer_module_name(reducer_name);
-            let args_type = reducer_args_type_name(&reducer.name);
+        writeln!(out);
+        writeln!(out, "// Import all reducer arg schemas");
+        for reducer in iter_reducers(module, options.visibility) {
+            if !is_reducer_invokable(reducer) {
+                // Skip system-defined reducers
+                continue;
+            }
+            let reducer_module_name = reducer_module_name(&reducer.accessor_name);
+            let args_type = reducer_args_type_name(&reducer.accessor_name);
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
-            writeln!(out, "export {{ {args_type} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all procedure arg types");
-        for procedure in iter_procedures(module) {
-            let procedure_name = &procedure.name;
-            let procedure_module_name = procedure_module_name(procedure_name);
-            let args_type = procedure_args_type_name(&procedure.name);
+        writeln!(out, "// Import all procedure arg schemas");
+        for procedure in iter_procedures(module, options.visibility) {
+            let procedure_module_name = procedure_module_name(&procedure.accessor_name);
+            let args_type = procedure_args_type_name(&procedure.accessor_name);
             writeln!(out, "import * as {args_type} from \"./{procedure_module_name}\";");
-            writeln!(out, "export {{ {args_type} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all table handle types");
-        for (table_name, _) in iter_table_names_and_types(module) {
-            let table_module_name = table_module_name(table_name);
-            let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
+        writeln!(out, "// Import all table schema definitions");
+        for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+            let table_module_name = table_module_name(accessor_name);
+            let table_name_pascalcase = accessor_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
             // `__t.object(...)`s.
             writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
-            writeln!(out, "export {{ {table_name_pascalcase}Row }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import and reexport all types");
-        for ty in iter_types(module) {
-            let type_name = collect_case(Case::Pascal, ty.name.name_segments());
-            let type_module_name = type_module_name(&ty.name);
-            writeln!(out, "import {type_name} from \"./{type_module_name}\";");
-            writeln!(out, "export {{ {type_name} }};");
-        }
-
-        out.newline();
+        writeln!(out, "/** Type-only namespace exports for generated type groups. */");
 
         writeln!(out);
-        writeln!(out, "const tablesSchema = __schema(");
+        writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
+        writeln!(out, "const tablesSchema = __schema({{");
         out.indent(1);
-        for table in iter_tables(module) {
+        for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
-            let row_type_name = type_ref_name(module, type_ref);
-            writeln!(out, "__table({{");
+            let table_name_pascalcase = table.accessor_name.deref().to_case(Case::Pascal);
+            writeln!(out, "{}: __table({{", table.accessor_name);
             out.indent(1);
             write_table_opts(
                 module,
@@ -267,55 +208,61 @@ impl Lang for TypeScript {
                 &table.name,
                 iter_indexes(table),
                 iter_constraints(table),
+                table.is_event,
             );
             out.dedent(1);
-            writeln!(out, "}}, {}Row),", row_type_name);
+            writeln!(out, "}}, {}Row),", table_name_pascalcase);
         }
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
-            let row_type_name = type_ref_name(module, type_ref);
-            writeln!(out, "__table({{");
+            let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
+            writeln!(out, "{}: __table({{", view.accessor_name);
             out.indent(1);
-            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty());
+            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
             out.dedent(1);
-            writeln!(out, "}}, {}Row),", row_type_name);
+            writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
         out.dedent(1);
-        writeln!(out, ");");
+        writeln!(out, "}});");
 
         writeln!(out);
-
+        writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
         writeln!(out, "const reducersSchema = __reducers(");
         out.indent(1);
-        for reducer in iter_reducers(module) {
+        for reducer in iter_reducers(module, options.visibility) {
             if !is_reducer_invokable(reducer) {
                 // Skip system-defined reducers
                 continue;
             }
-            let reducer_name = &reducer.name;
-            let args_type = reducer_args_type_name(&reducer.name);
-            writeln!(out, "__reducerSchema(\"{}\", {}),", reducer_name, args_type);
+            let args_type = reducer_args_type_name(&reducer.accessor_name);
+            writeln!(out, "__reducerSchema(\"{}\", {}),", reducer.name, args_type);
         }
         out.dedent(1);
         writeln!(out, ");");
 
         writeln!(out);
-
+        writeln!(
+            out,
+            "/** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */"
+        );
         writeln!(out, "const proceduresSchema = __procedures(");
         out.indent(1);
-        for procedure in iter_procedures(module) {
-            let procedure_name = &procedure.name;
-            let args_type = procedure_args_type_name(&procedure.name);
+        for procedure in iter_procedures(module, options.visibility) {
+            let args_type = procedure_args_type_name(&procedure.accessor_name);
             writeln!(
                 out,
-                "__procedureSchema(\"{procedure_name}\", {args_type}.params, {args_type}.returnType),",
+                "__procedureSchema(\"{}\", {args_type}.params, {args_type}.returnType),",
+                procedure.name,
             );
         }
         out.dedent(1);
         writeln!(out, ");");
 
         writeln!(out);
-
+        writeln!(
+            out,
+            "/** The remote SpacetimeDB module schema, both runtime and type information. */"
+        );
         writeln!(out, "const REMOTE_MODULE = {{");
         out.indent(1);
         writeln!(out, "versionInfo: {{");
@@ -337,60 +284,84 @@ impl Lang for TypeScript {
         out.dedent(1);
 
         writeln!(out);
+        writeln!(out, "/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */");
         writeln!(
             out,
-            "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
+            "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
         );
+        writeln!(out);
+        writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
         writeln!(
             out,
             "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
         );
-        writeln!(out);
-
-        out.newline();
 
         // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
+        writeln!(out);
+        writeln!(
+            out,
+            "/** The context type returned in callbacks for all possible events. */"
+        );
         writeln!(
             out,
             "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
         );
+
+        writeln!(out, "/** The context type returned in callbacks for reducer events. */");
         writeln!(
             out,
             "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
+        );
+
+        writeln!(
+            out,
+            "/** The context type returned in callbacks for subscription events. */"
         );
         writeln!(
             out,
             "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
         );
+
+        writeln!(out, "/** The context type returned in callbacks for error events. */");
         writeln!(
             out,
             "export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;"
         );
 
-        writeln!(out);
-
+        writeln!(out, "/** The subscription handle type to manage active subscriptions created from a {{@link SubscriptionBuilder}}. */");
         writeln!(
             out,
-            "export class SubscriptionBuilder extends __SubscriptionBuilderImpl<"
+            "export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;"
         );
-        out.indent(1);
-        writeln!(out, "typeof REMOTE_MODULE");
-        out.dedent(1);
-        writeln!(out, "> {{}}");
 
         writeln!(out);
-        writeln!(out, "export class DbConnectionBuilder extends __DbConnectionBuilder<");
-        out.indent(1);
-        writeln!(out, "DbConnection");
-        out.dedent(1);
-        writeln!(out, "> {{}}");
+        writeln!(
+            out,
+            "/** Builder class to configure a new subscription to the remote SpacetimeDB instance. */"
+        );
+        writeln!(
+            out,
+            "export class SubscriptionBuilder extends __SubscriptionBuilderImpl<typeof REMOTE_MODULE> {{}}"
+        );
 
         writeln!(out);
+        writeln!(
+            out,
+            "/** Builder class to configure a new database connection to the remote SpacetimeDB instance. */"
+        );
+        writeln!(
+            out,
+            "export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {{}}"
+        );
+
+        writeln!(out);
+        writeln!(out, "/** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */");
         writeln!(
             out,
             "export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {{"
         );
         out.indent(1);
+        writeln!(out, "/** Creates a new {{@link DbConnectionBuilder}} to configure and connect to the remote SpacetimeDB instance. */");
         writeln!(out, "static builder = (): DbConnectionBuilder => {{");
         out.indent(1);
         writeln!(
@@ -399,7 +370,10 @@ impl Lang for TypeScript {
         );
         out.dedent(1);
         writeln!(out, "}};");
-        writeln!(out, "subscriptionBuilder = (): SubscriptionBuilder => {{");
+
+        writeln!(out);
+        writeln!(out, "/** Creates a new {{@link SubscriptionBuilder}} to configure a subscription to the remote SpacetimeDB instance. */");
+        writeln!(out, "override subscriptionBuilder = (): SubscriptionBuilder => {{");
         out.indent(1);
         writeln!(out, "return new SubscriptionBuilder(this);");
 
@@ -409,10 +383,125 @@ impl Lang for TypeScript {
         writeln!(out, "}}");
         out.newline();
 
-        vec![OutputFile {
+        let index_file = OutputFile {
             filename: "index.ts".to_string(),
             code: output.into_inner(),
-        }]
+        };
+
+        let reducers_file = generate_reducers_file(module, options);
+        let procedures_file = generate_procedures_file(module, options);
+        let types_file = generate_types_file(module);
+
+        vec![index_file, reducers_file, procedures_file, types_file]
+    }
+}
+
+fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    writeln!(out);
+    writeln!(out, "// Import all reducer arg schemas");
+    for reducer in iter_reducers(module, options.visibility) {
+        let reducer_module_name = reducer_module_name(&reducer.accessor_name);
+        let args_type = reducer_args_type_name(&reducer.accessor_name);
+        writeln!(out, "import {args_type} from \"../{reducer_module_name}\";");
+    }
+
+    writeln!(out);
+    for reducer in iter_reducers(module, options.visibility) {
+        let reducer_name_pascalcase = reducer.accessor_name.deref().to_case(Case::Pascal);
+        let args_type = reducer_args_type_name(&reducer.accessor_name);
+        writeln!(
+            out,
+            "export type {reducer_name_pascalcase}Params = __Infer<typeof {args_type}>;"
+        );
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/reducers.ts".to_string(),
+        code: output.into_inner(),
+    }
+}
+
+fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    print_lint_suppression(out);
+    writeln!(out, "import {{ type Infer as __Infer }} from \"spacetimedb\";");
+
+    writeln!(out);
+    writeln!(out, "// Import all procedure arg schemas");
+    for procedure in iter_procedures(module, options.visibility) {
+        let procedure_module_name = procedure_module_name(&procedure.accessor_name);
+        let args_type = procedure_args_type_name(&procedure.accessor_name);
+        writeln!(out, "import * as {args_type} from \"../{procedure_module_name}\";");
+    }
+
+    writeln!(out);
+    for procedure in iter_procedures(module, options.visibility) {
+        let procedure_name_pascalcase = procedure.accessor_name.deref().to_case(Case::Pascal);
+        let args_type = procedure_args_type_name(&procedure.accessor_name);
+        writeln!(
+            out,
+            "export type {procedure_name_pascalcase}Args = __Infer<typeof {args_type}.params>;"
+        );
+        writeln!(
+            out,
+            "export type {procedure_name_pascalcase}Result = __Infer<typeof {args_type}.returnType>;"
+        );
+    }
+    out.newline();
+
+    OutputFile {
+        filename: "types/procedures.ts".to_string(),
+        code: output.into_inner(),
+    }
+}
+
+fn generate_types_file(module: &ModuleDef) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_file_header(out, false, true);
+    out.newline();
+
+    let reducer_type_names = module
+        .reducers()
+        .map(|reducer| reducer.accessor_name.deref().to_case(Case::Pascal))
+        .collect::<BTreeSet<_>>();
+
+    for ty in iter_types(module) {
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
+        if reducer_type_names.contains(&type_name) {
+            continue;
+        }
+
+        match &module.typespace_for_generate()[ty.ty] {
+            AlgebraicTypeDef::Product(product) => define_body_for_product(module, out, &type_name, &product.elements),
+            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &sum.variants),
+            AlgebraicTypeDef::PlainEnum(plain_enum) => {
+                let variants = plain_enum
+                    .variants
+                    .iter()
+                    .cloned()
+                    .map(|var| (var, AlgebraicTypeUse::Unit))
+                    .collect::<Vec<_>>();
+                define_body_for_sum(module, out, &type_name, &variants)
+            }
+        }
+    }
+
+    OutputFile {
+        filename: "types.ts".to_string(),
+        code: output.into_inner(),
     }
 }
 
@@ -422,11 +511,15 @@ fn print_index_imports(out: &mut Indenter) {
     let mut types = [
         "TypeBuilder as __TypeBuilder",
         "type AlgebraicTypeType as __AlgebraicTypeType",
+        "Uuid as __Uuid",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
+        "makeQueryBuilder as __makeQueryBuilder",
+        "type QueryBuilder as __QueryBuilder",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
+        "type SubscriptionHandleImpl as __SubscriptionHandleImpl",
         "type ErrorContextInterface as __ErrorContextInterface",
         "type RemoteModule as __RemoteModule",
         "SubscriptionBuilderImpl as __SubscriptionBuilderImpl",
@@ -503,18 +596,19 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
         writeln!(out, "}};");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true, false).unwrap());
         writeln!(out, "}};");
     }
 }
 
 /// e.g.
 /// ```ts
-/// export default __t.object('Point', {
+/// export const Point = __t.object('Point', {
 ///   x: __t.f32(),
 ///   y: __t.f32(),
 ///   fooBar: __t.string(),
 /// });
+/// export type Point = __Infer<typeof Point>;
 /// ```
 fn define_body_for_product(
     module: &ModuleDef,
@@ -522,14 +616,15 @@ fn define_body_for_product(
     name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    write!(out, "export default __t.object(\"{name}\", {{");
+    write!(out, "export const {name} = __t.object(\"{name}\", {{");
     if elements.is_empty() {
         writeln!(out, "}});");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
         writeln!(out, "}});");
     }
+    writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
 }
 
@@ -540,6 +635,7 @@ fn write_table_opts<'a>(
     name: &Identifier,
     indexes: impl Iterator<Item = &'a IndexDef>,
     constraints: impl Iterator<Item = &'a ConstraintDef>,
+    is_event: bool,
 ) {
     let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
     writeln!(out, "name: '{}',", name.deref());
@@ -550,38 +646,28 @@ fn write_table_opts<'a>(
             // Skip system-defined indexes
             continue;
         }
-        match &index_def.algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                let get_name_and_type = |col_pos: ColId| {
-                    let (field_name, field_type) = &product_def.elements[col_pos.idx()];
-                    let name_camel = field_name.deref().to_case(Case::Camel);
-                    (name_camel, field_type)
-                };
-                // TODO(cloutiertyler):
-                // The name users supply is actually the accessor name which will be used
-                // in TypeScript to access the index. This will be used verbatim.
-                // This is confusing because it is not the index name and there is
-                // no actual way for the user to set the actual index name.
-                // I think we should standardize: name and accessorName as the way to set
-                // the name and accessor name of an index across all SDKs.
-                if let Some(accessor_name) = &index_def.accessor_name {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
-                } else {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
-                }
-                out.indent(1);
-                for col_id in columns.iter() {
-                    writeln!(out, "'{}',", get_name_and_type(col_id).0);
-                }
-                out.dedent(1);
-                writeln!(out, "] }},");
-            }
-            IndexAlgorithm::Direct(_) => {
-                // Direct indexes are not implemented yet.
-                continue;
-            }
-            _ => todo!(),
+
+        // We're generating code for the client,
+        // and it does not care what the algorithm on the server is,
+        // as it an use a btree in all cases.
+        let columns = index_def.algorithm.columns();
+        let get_name_and_type = |col_pos: ColId| {
+            let (field_name, field_type) = &product_def.elements[col_pos.idx()];
+            let name_camel = field_name.deref().to_case(Case::Camel);
+            (name_camel, field_type)
         };
+        let accessor_name = index_def.accessor_name.as_deref().unwrap_or(&index_def.name);
+        writeln!(
+            out,
+            "{{ accessor: '{}', name: '{}', algorithm: 'btree', columns: [",
+            accessor_name, index_def.name
+        );
+        out.indent(1);
+        for col_id in columns.iter() {
+            writeln!(out, "'{}',", get_name_and_type(col_id).0);
+        }
+        out.dedent(1);
+        writeln!(out, "] }},");
     }
     out.dedent(1);
     writeln!(out, "],");
@@ -596,6 +682,7 @@ fn write_table_opts<'a>(
             .flat_map(|cs| cs.iter()) // Iterator over the ColIds inside the set
             .map(|col_id| {
                 let (field_name, _field_type) = &product_def.elements[col_id.idx()];
+                let field_name = field_name.deref().to_case(Case::Camel);
                 format!("'{}'", field_name)
             })
             .collect();
@@ -609,6 +696,9 @@ fn write_table_opts<'a>(
     }
     out.dedent(1);
     writeln!(out, "],");
+    if is_event {
+        writeln!(out, "event: true,");
+    }
 }
 
 /// e.g.
@@ -623,6 +713,7 @@ fn write_object_type_builder_fields(
     elements: &[(Identifier, AlgebraicTypeUse)],
     primary_key: Option<ColId>,
     convert_case: bool,
+    write_original_name: bool,
 ) -> anyhow::Result<()> {
     for (i, (ident, ty)) in elements.iter().enumerate() {
         let name = if convert_case {
@@ -635,45 +726,53 @@ fn write_object_type_builder_fields(
             Some(pk) => pk.idx() == i,
             None => false,
         };
-        write_type_builder_field(module, out, &name, ty, is_primary_key)?;
+        let original_name = (write_original_name && convert_case && *name != **ident).then_some(&**ident);
+        write_type_builder_field(module, out, &name, original_name, ty, is_primary_key)?;
     }
 
     Ok(())
+}
+
+/// Returns whether `ty` recursively contains an `AlgebraicTypeUse::Ref`
+fn type_contains_ref(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Ref(_) => true,
+        AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => type_contains_ref(inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => type_contains_ref(ok_ty) || type_contains_ref(err_ty),
+        _ => false,
+    }
 }
 
 fn write_type_builder_field(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
+    original_name: Option<&str>,
     ty: &AlgebraicTypeUse,
     is_primary_key: bool,
 ) -> fmt::Result {
-    // Do we need a getter? (Option/Array only if their inner is a Ref)
-    let needs_getter = match ty {
-        AlgebraicTypeUse::Ref(_) => true,
-        AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => {
-            matches!(inner.as_ref(), AlgebraicTypeUse::Ref(_))
-        }
-        _ => false,
-    };
+    // If the type contains a ref, we need to use a getter to prevent access-before-initialization.
+    let needs_getter = type_contains_ref(ty);
 
     if needs_getter {
         writeln!(out, "get {name}() {{");
         out.indent(1);
         write!(out, "return ");
-        write_type_builder(module, out, ty)?;
-        if is_primary_key {
-            write!(out, ".primaryKey()");
-        }
+    } else {
+        write!(out, "{name}: ");
+    }
+    write_type_builder(module, out, ty)?;
+    if is_primary_key {
+        write!(out, ".primaryKey()");
+    }
+    if let Some(original_name) = original_name {
+        write!(out, ".name(\"{original_name}\")");
+    }
+    if needs_getter {
         writeln!(out, ";");
         out.dedent(1);
         writeln!(out, "}},");
     } else {
-        write!(out, "{name}: ");
-        write_type_builder(module, out, ty)?;
-        if is_primary_key {
-            write!(out, ".primaryKey()");
-        }
         writeln!(out, ",");
     }
 
@@ -690,9 +789,17 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
         AlgebraicTypeUse::Timestamp => write!(out, "__t.timestamp()")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__t.timeDuration()")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__t.scheduleAt()")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__t.uuid()")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "__t.option(")?;
             write_type_builder(module, out, inner_ty)?;
+            write!(out, ")")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "__t.result(")?;
+            write_type_builder(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_type_builder(module, out, err_ty)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
@@ -731,10 +838,11 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
 /// e.g.
 /// ```ts
 /// // The tagged union or sum type for the algebraic type `Option`.
-/// export default __t.enum("Option", {
+/// export const Option = __t.enum("Option", {
 ///   none: __t.unit(),
 ///   some: { value: __t.i32() },
 /// });
+/// export type Option = __Infer<typeof Option>;
 /// ```
 fn define_body_for_sum(
     module: &ModuleDef,
@@ -743,40 +851,38 @@ fn define_body_for_sum(
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
-    write!(out, "const {name}");
+    write!(out, "export const {name}");
     if name == "AlgebraicType" {
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
-    write!(out, " = __t.enum(\"{name}\", {{");
-    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false).unwrap());
+    writeln!(out, " = __t.enum(\"{name}\", {{");
+    // Convert variant names to PascalCase
+    let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
+        .iter()
+        .map(|(ident, ty)| {
+            let pascal = ident.deref().to_case(Case::Pascal);
+            (Identifier::for_test(pascal), ty.clone())
+        })
+        .collect();
+    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap());
     writeln!(out, "}});");
+    writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
-    writeln!(out, "export default {name};");
-    out.newline();
-}
-
-fn type_ref_module_name(module: &ModuleDef, type_ref: AlgebraicTypeRef) -> String {
-    let (name, _) = module.type_def_from_ref(type_ref).unwrap();
-    type_module_name(name)
-}
-
-fn type_module_name(type_name: &ScopedTypeName) -> String {
-    collect_case(Case::Snake, type_name.name_segments()) + "_type"
 }
 
 fn table_module_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Snake) + "_table"
 }
 
-fn reducer_args_type_name(reducer_name: &Identifier) -> String {
-    reducer_name.deref().to_case(Case::Pascal)
+fn reducer_args_type_name(reducer_name: &ReducerName) -> String {
+    reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
 
 fn procedure_args_type_name(reducer_name: &Identifier) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Procedure"
 }
 
-fn reducer_module_name(reducer_name: &Identifier) -> String {
+fn reducer_module_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Snake) + "_reducer"
 }
 
@@ -801,13 +907,14 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Uuid
         | AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::Array(_)
         | AlgebraicTypeUse::Ref(_) // We use the type name for these.
         | AlgebraicTypeUse::String => {
             false
         }
-        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) | AlgebraicTypeUse::Result { .. } => {
             true
         }
     }
@@ -827,6 +934,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::ConnectionId => write!(out, "__Infer<typeof __t.connectionId()>")?,
         AlgebraicTypeUse::Timestamp => write!(out, "__Infer<typeof __t.timestamp()>")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__Infer<typeof __t.timeDuration()>")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__Uuid")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: __Infer<typeof __t.timeDuration()> }} | {{ tag: \"Time\", value: __Infer<typeof __t.timestamp()> }}"
@@ -834,6 +942,11 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
             write!(out, " | undefined")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write_type(module, out, ok_ty, ref_prefix, ref_suffix)?;
+            write!(out, " | ")?;
+            write_type(module, out, err_ty, ref_prefix, ref_suffix)?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::Bool => write!(out, "boolean")?,
@@ -883,19 +996,6 @@ pub fn write_type<W: Write>(
     Ok(())
 }
 
-/// Print imports for each of the `imports`.
-fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffix: Option<&str>) {
-    for typeref in imports {
-        let module_name = type_ref_module_name(module, typeref);
-        let type_name = type_ref_name(module, typeref);
-        if let Some(suffix) = suffix {
-            writeln!(out, "import {type_name}{suffix} from \"./{module_name}\";");
-        } else {
-            writeln!(out, "import {type_name} from \"./{module_name}\";");
-        }
-    }
-}
-
 /// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.
 ///
 /// `this_file` is passed and excluded for the case of recursive types:
@@ -906,7 +1006,6 @@ fn gen_and_print_imports<'a>(
     out: &mut Indenter,
     roots: impl Iterator<Item = &'a AlgebraicTypeUse>,
     dont_import: &[AlgebraicTypeRef],
-    suffix: Option<&str>,
 ) {
     let mut imports = BTreeSet::new();
 
@@ -918,12 +1017,17 @@ fn gen_and_print_imports<'a>(
     for skip in dont_import {
         imports.remove(skip);
     }
-    let len = imports.len();
 
-    print_imports(module, out, imports, suffix);
-
-    if len > 0 {
-        out.newline();
+    if !imports.is_empty() {
+        writeln!(out, "import {{");
+        out.indent(1);
+        for typeref in imports {
+            let type_name = type_ref_name(module, typeref);
+            writeln!(out, "{type_name},");
+        }
+        out.dedent(1);
+        writeln!(out, "}} from \"./types\";");
+        out.newline()
     }
 }
 

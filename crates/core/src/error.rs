@@ -3,13 +3,14 @@ use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
-use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
 use spacetimedb_commitlog::repo::TxOffset;
 use spacetimedb_durability::DurabilityExited;
 use spacetimedb_expr::errors::TypingError;
+use spacetimedb_fs_utils::lockfile::advisory::LockError;
 use spacetimedb_lib::Identity;
 use spacetimedb_schema::error::ValidationErrors;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::table::ReadViaBsatnError;
 use thiserror::Error;
@@ -24,8 +25,6 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_schema::def::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_schema::relation::FieldName;
-use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
-use spacetimedb_vm::expr::Crud;
 
 pub use spacetimedb_datastore::error::{DatastoreError, IndexError, SequenceError, TableError};
 
@@ -41,8 +40,6 @@ pub enum SubscriptionError {
     NotFound(IndexId),
     #[error("Empty string")]
     Empty,
-    #[error("Queries with side effects not allowed: {0:?}")]
-    SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),
     #[error("Subscribing to queries in one call is not supported")]
@@ -58,11 +55,14 @@ pub enum PlanError {
     #[error("Qualified Table `{expect}` not found")]
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownField { field: String, tables: Vec<Box<str>> },
+    UnknownField { field: String, tables: Vec<TableName> },
     #[error("Unknown field name: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownFieldName { field: FieldName, tables: Vec<Box<str>> },
+    UnknownFieldName { field: FieldName, tables: Vec<TableName> },
     #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
-    UnknownFields { fields: Vec<String>, tables: Vec<Box<str>> },
+    UnknownFields {
+        fields: Vec<String>,
+        tables: Vec<TableName>,
+    },
     #[error("Ambiguous field: `{field}`. Also found in {found:?}")]
     AmbiguousField { field: String, found: Vec<String> },
     #[error("Plan error: `{0}`")]
@@ -71,21 +71,23 @@ pub enum PlanError {
     DatabaseInternal(Box<DBError>),
     #[error("Relation Error: `{0}`")]
     Relation(#[from] RelationError),
-    #[error("{0}")]
-    VmError(#[from] ErrorVm),
-    #[error("{0}")]
-    TypeCheck(#[from] ErrorType),
 }
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
     #[error("Replica not found: {0}")]
     NotFound(u64),
-    #[error("Database is already opened. Path:`{0}`. Error:{1}")]
+    #[error("Database is already opened. Path: `{0}`. Error: {1}")]
     DatabasedOpened(PathBuf, anyhow::Error),
 }
 
-#[derive(Error, Debug, EnumAsInner)]
+impl From<LockError> for DatabaseError {
+    fn from(LockError { path, source }: LockError) -> Self {
+        Self::DatabasedOpened(path, source.into())
+    }
+}
+
+#[derive(Error, Debug)]
 pub enum DBError {
     #[error("LibError: {0}")]
     Lib(#[from] LibError),
@@ -111,10 +113,6 @@ pub enum DBError {
     SledDbError(#[from] sled::Error),
     #[error("Mutex was poisoned acquiring lock on MessageLog: {0}")]
     MessageLogPoisoned(String),
-    #[error("VmError: {0}")]
-    Vm(#[from] ErrorVm),
-    #[error("VmErrorUser: {0}")]
-    VmUser(#[from] ErrorLang),
     #[error("SubscriptionError: {0}")]
     Subscription(#[from] SubscriptionError),
     #[error("ClientError: {0}")]
@@ -153,23 +151,6 @@ pub enum DBError {
     View(#[from] ViewCallError),
 }
 
-impl DBError {
-    pub fn get_auth_error(&self) -> Option<&ErrorLang> {
-        if let Self::VmUser(err) = self {
-            if err.kind == ErrorKind::Unauthorized {
-                return Some(err);
-            }
-        }
-        None
-    }
-}
-
-impl From<DBError> for ErrorVm {
-    fn from(err: DBError) -> Self {
-        ErrorVm::Other(err.into())
-    }
-}
-
 impl From<InvalidFieldError> for DBError {
     fn from(value: InvalidFieldError) -> Self {
         LibError::from(value).into()
@@ -191,6 +172,17 @@ impl From<DBError> for PlanError {
 impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBError {
     fn from(err: PoisonError<MutexGuard<'_, T>>) -> Self {
         DBError::MessageLogPoisoned(err.to_string())
+    }
+}
+
+impl From<spacetimedb_durability::local::OpenError> for DBError {
+    fn from(e: spacetimedb_durability::local::OpenError) -> Self {
+        use spacetimedb_durability::local::OpenError::*;
+
+        match e {
+            Lock(e) => Self::from(DatabaseError::from(e)),
+            Commitlog(e) => Self::Other(e.into()),
+        }
     }
 }
 
@@ -263,6 +255,8 @@ pub enum NodesError {
     IndexNotUnique,
     #[error("row was not found in index")]
     IndexRowNotFound,
+    #[error("index does not support range scans")]
+    IndexCannotSeekRange,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
@@ -271,10 +265,8 @@ pub enum NodesError {
     NotInAnonTransaction,
     #[error("ABI call not allowed while holding open a transaction: {0}")]
     WouldBlockTransaction(AbiCall),
-    #[error("table with name {0:?} already exists")]
-    AlreadyExists(String),
     #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    SystemName(Box<str>),
+    SystemName(TableName),
     #[error("internal db error: {0}")]
     Internal(#[source] Box<DBError>),
     #[error(transparent)]
@@ -290,8 +282,6 @@ pub enum NodesError {
 impl From<DBError> for NodesError {
     fn from(e: DBError) -> Self {
         match e {
-            DBError::Datastore(DatastoreError::Table(TableError::Exist(name))) => Self::AlreadyExists(name),
-            DBError::Datastore(DatastoreError::Table(TableError::System(name))) => Self::SystemName(name),
             DBError::Datastore(
                 DatastoreError::Table(TableError::IdNotFound(_, _)) | DatastoreError::Table(TableError::NotFound(_)),
             ) => Self::TableNotFound,
@@ -302,12 +292,6 @@ impl From<DBError> for NodesError {
             DBError::Datastore(DatastoreError::Index(IndexError::KeyNotFound(..))) => Self::IndexRowNotFound,
             _ => Self::Internal(Box::new(e)),
         }
-    }
-}
-
-impl From<ErrorVm> for NodesError {
-    fn from(err: ErrorVm) -> Self {
-        DBError::from(err).into()
     }
 }
 

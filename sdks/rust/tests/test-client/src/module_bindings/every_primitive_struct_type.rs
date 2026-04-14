@@ -27,6 +27,7 @@ pub struct EveryPrimitiveStruct {
     pub r: __sdk::ConnectionId,
     pub s: __sdk::Timestamp,
     pub t: __sdk::TimeDuration,
+    pub u: __sdk::Uuid,
 }
 
 impl __sdk::InModule for EveryPrimitiveStruct {

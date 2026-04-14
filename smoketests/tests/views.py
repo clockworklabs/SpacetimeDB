@@ -5,7 +5,7 @@ class Views(Smoketest):
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -13,18 +13,11 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(0u64)
 }
 """
-
-    def assertSql(self, sql, expected):
-        self.maxDiff = None
-        sql_out = self.spacetime("sql", self.database_identity, sql)
-        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
-        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
-        self.assertMultiLineEqual(sql_out, expected)
 
     def test_st_view_tables(self):
         """This test asserts that views populate the st_view_* system tables"""
@@ -48,12 +41,12 @@ class FailPublish(Smoketest):
     MODULE_CODE_BROKEN_NAMESPACE = """
 use spacetimedb::ViewContext;
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(accessor = person, public)]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb::view(name = person, public)]
+#[spacetimedb::view(accessor = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<Person> {
     None
 }
@@ -69,7 +62,7 @@ pub enum ABC {
     C,
 }
 
-#[spacetimedb::view(name = person, public)]
+#[spacetimedb::view(accessor = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<ABC> {
     None
 }
@@ -100,8 +93,8 @@ class SqlViews(Smoketest):
 use spacetimedb::{AnonymousViewContext, ReducerContext, Table, ViewContext};
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
-#[spacetimedb::table(name = player_level)]
+#[spacetimedb::table(accessor = player_state)]
+#[spacetimedb::table(accessor = player_level)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -111,7 +104,7 @@ pub struct PlayerState {
 
 
 #[derive(Clone)]
-#[spacetimedb::table(name = player_info, index(name=age_level_index, btree(columns = [age, level])))]
+#[spacetimedb::table(accessor = player_info, index(accessor=age_level_index, btree(columns = [age, level])))]
 pub struct PlayerInfo {
     #[primary_key]
     id: u64,
@@ -124,35 +117,35 @@ pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
     ctx.db.player_level().insert(PlayerState { id, level });
 }
 
-#[spacetimedb::view(name = my_player_and_level, public)]
+#[spacetimedb::view(accessor = my_player_and_level, public)]
 pub fn my_player_and_level(ctx: &AnonymousViewContext) -> Option<PlayerState> {
     ctx.db.player_level().id().find(0)
 }
 
-#[spacetimedb::view(name = player_and_level, public)]
+#[spacetimedb::view(accessor = player_and_level, public)]
 pub fn player_and_level(ctx: &AnonymousViewContext) -> Vec<PlayerState> {
     ctx.db.player_level().level().filter(2u64).collect()
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     log::info!("player view called");
     ctx.db.player_state().id().find(42)
 }
 
-#[spacetimedb::view(name = player_none, public)]
+#[spacetimedb::view(accessor = player_none, public)]
 pub fn player_none(_ctx: &ViewContext) -> Option<PlayerState> {
     None
 }
 
-#[spacetimedb::view(name = player_vec, public)]
+#[spacetimedb::view(accessor = player_vec, public)]
 pub fn player_vec(ctx: &ViewContext) -> Vec<PlayerState> {
     let first = ctx.db.player_state().id().find(42).unwrap();
     let second = PlayerState { id: 7, level: 3 };
     vec![first, second]
 }
 
-#[spacetimedb::view(name = player_info_multi_index, public)]
+#[spacetimedb::view(accessor = player_info_multi_index, public)]
 pub fn player_info_view(ctx: &ViewContext) -> Option<PlayerInfo> {
 
     log::info!("player_info called");
@@ -366,14 +359,14 @@ class AutoMigrateViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -383,14 +376,14 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }
@@ -433,18 +426,92 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 """)
 
 
-class AutoMigrateViewsTrapped(Smoketest):
+class AutoMigrateDropView(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
+
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+
+#[spacetimedb::view(accessor = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(1u64)
+}
+"""
+
+    MODULE_CODE_DROP_VIEW = """
+#[derive(Copy, Clone)]
+#[spacetimedb::table(accessor = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+"""
+
+    def test_auto_migration_drop_view(self):
+        """Assert that views can be dropped in an auto-migration"""
+
+        self.write_module_code(self.MODULE_CODE_DROP_VIEW)
+        self.publish_module(self.database_identity, clear=False, break_clients=False)
+
+
+class AutoMigrateAddView(Smoketest):
+    MODULE_CODE = """
+#[derive(Copy, Clone)]
+#[spacetimedb::table(accessor = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+"""
+
+    MODULE_CODE_ADD_VIEW = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(accessor = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+#[spacetimedb::view(accessor = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(1u64)
+}
+"""
+
+    def test_auto_migration_drop_view(self):
+        """Assert that views can be added in an auto-migration"""
+
+        self.write_module_code(self.MODULE_CODE_ADD_VIEW)
+        self.publish_module(self.database_identity, clear=False)
+
+
+class AutoMigrateViewsTrapped(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::ViewContext;
+#[derive(Copy, Clone)]
+#[spacetimedb::table(accessor = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(1u64)
 }
@@ -454,14 +521,14 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
     panic!("This view is trapped")
 }
@@ -471,14 +538,14 @@ pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
 }
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }
@@ -532,7 +599,7 @@ class SubscribeViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
 
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     identity: Identity,
@@ -540,14 +607,14 @@ pub struct PlayerState {
     name: String,
 }
 
-#[spacetimedb::view(name = my_player, public)]
+#[spacetimedb::view(accessor = my_player, public)]
 pub fn my_player(ctx: &ViewContext) -> Option<PlayerState> {
-    ctx.db.player_state().identity().find(ctx.sender)
+    ctx.db.player_state().identity().find(ctx.sender())
 }
 
 #[spacetimedb::reducer]
 pub fn insert_player(ctx: &ReducerContext, name: String) {
-    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender });
+    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender() });
 }
 """
 
@@ -596,3 +663,160 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
             ],
             projection,
         )
+
+
+class QueryView(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::{Query, ReducerContext, Table, ViewContext};
+
+#[spacetimedb::table(accessor = user, public)]
+pub struct User {
+    #[primary_key]
+    identity: u8,
+    name: String,
+    online: bool,
+}
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    #[primary_key]
+    identity: u8,
+    name: String,
+    #[index(btree)]
+    age: u8,
+}
+
+#[spacetimedb::reducer(init)]
+fn init(ctx: &ReducerContext) {
+    ctx.db.user().insert(User {
+        identity: 1,
+        name: "Alice".to_string(),
+        online: true,
+    });
+
+    ctx.db.user().insert(User {
+        identity: 2,
+        name: "BOB".to_string(),
+        online: false,
+    });
+
+
+    ctx.db.user().insert(User {
+        identity: 3,
+        name: "POP".to_string(),
+        online: false,
+    });
+
+    ctx.db.person().insert(Person {
+        identity: 1,
+        name: "Alice".to_string(),
+        age: 30,
+    });
+
+
+    ctx.db.person().insert(Person {
+        identity: 2,
+        name: "BOB".to_string(),
+
+        age: 20,
+    });
+
+}
+
+#[spacetimedb::view(accessor = online_users, public)]
+fn online_users(ctx: &ViewContext) -> impl Query<User> {
+    ctx.from.user().r#where(|c| c.online.eq(true))
+}
+
+#[spacetimedb::view(accessor = online_users_age, public)]
+fn online_users_age(ctx: &ViewContext) -> impl Query<Person> {
+    ctx.from
+        .user()
+        .r#where(|u| u.online.eq(true))
+        .right_semijoin(ctx.from.person(), |u, p| u.identity.eq(p.identity))
+}
+
+#[spacetimedb::view(accessor = offline_user_20_years_old, public)]
+fn offline_user_in_twienties(ctx: &ViewContext) -> impl Query<User> {
+    ctx.from
+        .person()
+        .filter(|p| p.age.eq(20))
+        .right_semijoin(ctx.from.user(), |p, u| p.identity.eq(u.identity))
+        .filter(|u| u.online.eq(false))
+}
+
+#[spacetimedb::view(accessor = users_whos_age_is_known, public)]
+fn users_whos_age_is_known(ctx: &ViewContext) -> impl Query<User> {
+    ctx.from
+        .user()
+        .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
+}
+
+#[spacetimedb::view(accessor = users_who_are_above_20_and_below_30, public)]
+fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> impl Query<Person> {
+    ctx.from
+        .person()
+        .r#where(|p| p.age.gt(20).and(p.age.lt(30)))
+}
+
+#[spacetimedb::view(accessor = users_who_are_above_eq_20_and_below_eq_30, public)]
+fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> impl Query<Person> {
+    ctx.from
+        .person()
+        .r#where(|p| p.age.gte(20).and(p.age.lte(30)))
+}
+"""
+
+
+    def test_query_view(self):
+        """Tests that views returning Query types work as expected"""
+
+        self.assertSql("SELECT * FROM online_users", """\
+ identity | name    | online
+----------+---------+--------
+ 1        | "Alice" | true
+""")
+
+    def test_query_right_semijoin_view(self):
+        """Tests that views returning Query types with right semijoin work as expected"""
+
+        self.assertSql("SELECT * FROM online_users_age", """\
+ identity | name    | age
+----------+---------+-----
+ 1        | "Alice" | 30
+""")
+
+    def test_query_left_semijoin_view(self):
+        """Tests that views returning Query types with left semijoin work as expected"""
+
+        self.assertSql("SELECT * FROM users_whos_age_is_known", """\
+ identity | name    | online
+----------+---------+--------
+ 1        | "Alice" | true
+ 2        | "BOB"   | false
+""")
+
+    def test_query_complex_right_semijoin_view(self):
+        """Tests that views returning Query types with right semijoin work as expected"""
+
+        self.assertSql("SELECT * FROM offline_user_20_years_old", """\
+ identity | name  | online
+----------+-------+--------
+ 2        | "BOB" | false
+""")
+
+    def test_where_expr_view(self):
+        """Tests that views with where expressions work as expected"""
+
+        self.assertSql("SELECT * FROM users_who_are_above_20_and_below_30", """\
+ identity | name | age
+----------+------+-----
+""")
+
+        self.assertSql("SELECT * FROM users_who_are_above_eq_20_and_below_eq_30", """\
+ identity | name    | age
+----------+---------+-----
+ 1        | "Alice" | 30
+ 2        | "BOB"   | 20
+""")
+

@@ -1,18 +1,13 @@
-use std::{
-    hash::{Hash, Hasher},
-    ops::RangeBounds,
-};
-
 use anyhow::Result;
-use spacetimedb_lib::{
-    bsatn::{EncodeError, ToBsatn},
-    query::Delta,
-    sats::impl_serialize,
-    AlgebraicValue, ProductValue,
-};
+use core::hash::{Hash, Hasher};
+use core::ops::RangeBounds;
+use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
+use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
@@ -24,8 +19,13 @@ pub trait Datastore {
     where
         Self: 'a;
 
-    /// Iterator type for ranged index scans
-    type IndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    /// Iterator type for ranged index scans.
+    type RangeIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
+
+    /// Iterator type for point index scans.
+    type PointIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
     where
         Self: 'a;
 
@@ -35,13 +35,21 @@ pub trait Datastore {
     /// Scans and returns all of the rows in a table
     fn table_scan<'a>(&'a self, table_id: TableId) -> Result<Self::TableIter<'a>>;
 
-    /// Scans a range of keys from an index returning a [`RowRef`] iterator
-    fn index_scan<'a>(
+    /// Scans a range of keys from an index returning a [`RowRef`] iterator.
+    fn index_scan_range<'a>(
         &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<Self::IndexIter<'a>>;
+    ) -> Result<Self::RangeIndexIter<'a>>;
+
+    /// Scans a key from an index returning a [`RowRef`] iterator.
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> Result<Self::PointIndexIter<'a>>;
 }
 
 pub trait DeltaStore {
@@ -87,7 +95,7 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
@@ -144,7 +152,7 @@ impl ToBsatn for Row<'_> {
         }
     }
 
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> std::result::Result<(), EncodeError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_extend(buf),
             Self::Ref(val) => val.to_bsatn_extend(buf),
@@ -155,6 +163,73 @@ impl ToBsatn for Row<'_> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_vec(),
             Self::Ref(val) => val.to_bsatn_vec(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RelValue<'a> {
+    Row(Row<'a>),
+    Projection(ProductValue),
+}
+
+impl<'a> From<Row<'a>> for RelValue<'a> {
+    fn from(value: Row<'a>) -> Self {
+        Self::Row(value)
+    }
+}
+
+impl From<ProductValue> for RelValue<'_> {
+    fn from(value: ProductValue) -> Self {
+        Self::Projection(value)
+    }
+}
+
+impl PartialEq for RelValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Row(x), Self::Row(y)) => x == y,
+            (Self::Projection(x), Self::Projection(y)) => x == y,
+            (Self::Row(x), Self::Projection(y)) | (Self::Projection(y), Self::Row(x)) => x.to_product_value() == *y,
+        }
+    }
+}
+
+impl Eq for RelValue<'_> {}
+
+impl Hash for RelValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Row(x) => x.hash(state),
+            Self::Projection(x) => x.hash(state),
+        }
+    }
+}
+
+impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
+    Self::Row(row) => row.serialize(ser),
+    Self::Projection(row) => row.serialize(ser),
+});
+
+impl ToBsatn for RelValue<'_> {
+    fn static_bsatn_size(&self) -> Option<u16> {
+        match self {
+            Self::Row(row) => row.static_bsatn_size(),
+            Self::Projection(row) => row.static_bsatn_size(),
+        }
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_extend(buf),
+            Self::Projection(row) => row.to_bsatn_extend(buf),
+        }
+    }
+
+    fn to_bsatn_vec(&self) -> std::result::Result<Vec<u8>, EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_vec(),
+            Self::Projection(row) => row.to_bsatn_vec(),
         }
     }
 }

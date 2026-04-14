@@ -32,6 +32,23 @@ export class TimeDuration {
     });
   }
 
+  static isTimeDuration(
+    algebraicType: AlgebraicType
+  ): algebraicType is TimeDurationAlgebraicType {
+    if (algebraicType.tag !== 'Product') {
+      return false;
+    }
+    const elements = algebraicType.value.elements;
+    if (elements.length !== 1) {
+      return false;
+    }
+    const microsElement = elements[0];
+    return (
+      microsElement.name === '__time_duration_micros__' &&
+      microsElement.algebraicType.tag === 'I64'
+    );
+  }
+
   get micros(): bigint {
     return this.__time_duration_micros__;
   }

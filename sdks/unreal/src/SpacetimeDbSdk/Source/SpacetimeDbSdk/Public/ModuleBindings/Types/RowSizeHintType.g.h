@@ -22,7 +22,7 @@ struct SPACETIMEDBSDK_API FRowSizeHintType
 public:
     FRowSizeHintType() = default;
 
-    TVariant<TArray<uint64>, uint16> MessageData;
+    TVariant<uint16, TArray<uint64>> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     ERowSizeHintTag Tag = static_cast<ERowSizeHintTag>(0);

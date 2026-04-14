@@ -11,6 +11,6 @@ import {
 } from '../../../src/index';
 
 export default __t.row({
-  id: __t.u32(),
+  id: __t.u32().primaryKey(),
   count: __t.u32(),
 });

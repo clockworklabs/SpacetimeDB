@@ -1,0 +1,114 @@
+---
+description: "Rust frontend/GUI framework guidance for SpacetimeDB apps"
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# Rust GUI Framework — Native egui + SpacetimeDB
+
+> **Last updated:** 2026-01-12
+
+## Recommended: Native egui with Direct SpacetimeDB Connection
+
+For Rust GUI applications connecting to SpacetimeDB, use **egui with Glow renderer** and connect directly via the `spacetimedb-sdk`:
+
+```
+┌─────────────────┐     WebSocket     ┌─────────────────┐
+│   egui Desktop  │◄────────────────►│   SpacetimeDB   │
+│     (native)    │   (real-time)     │     Server      │
+└─────────────────┘                   └─────────────────┘
+```
+
+## ⛔ DO NOT use HTTP polling
+
+**Never** create an Axum/HTTP server as a middleman:
+- Creates new identities on each HTTP request
+- Breaks real-time subscriptions
+- Adds unnecessary complexity
+
+---
+
+## Dependencies
+
+```toml
+[dependencies]
+spacetimedb-sdk = "1.0"
+eframe = { version = "0.29", default-features = false, features = ["glow"] }
+egui = "0.29"
+dirs = "5"  # For token persistence
+```
+
+Use **Glow renderer**, not wgpu — better driver compatibility on Windows.
+
+---
+
+## Architecture
+
+```rust
+type SharedState = Arc<Mutex<AppState>>;
+type SharedConnection = Arc<Mutex<Option<DbConnection>>>;
+
+struct MyApp {
+    state: SharedState,       // UI reads this
+    connection: SharedConnection,  // For calling reducers
+}
+```
+
+- **Background thread**: Connect to SpacetimeDB, call `conn.run_threaded()`
+- **Main thread**: egui UI loop reads `SharedState`, calls reducers via `SharedConnection`
+- **Callbacks**: Update `SharedState` on insert/update/delete events
+
+---
+
+## Key Patterns
+
+### Token Persistence
+Store auth token in `dirs::data_local_dir()` for reconnection with same identity.
+
+### Server State vs Local State
+```rust
+struct AppState {
+    // FROM SERVER - synced via callbacks
+    users: Vec<User>,
+    
+    // LOCAL ONLY - transient UI state  
+    input_text: String,
+    selected_id: Option<u64>,
+}
+```
+
+### Calling Reducers
+```rust
+fn call_reducer<F>(&self, f: F) where F: FnOnce(&DbConnection) {
+    if let Some(conn) = self.connection.lock().unwrap().as_ref() {
+        f(conn);
+    }
+}
+```
+
+---
+
+## Avoid Common Mistakes
+
+| Wrong | Right |
+|-------|-------|
+| Axum HTTP server polling SpacetimeDB | Direct `spacetimedb-sdk` WebSocket |
+| `conn.clone()` | Store in `Arc<Mutex<Option<DbConnection>>>` |
+| Emojis in UI | Text labels (egui fonts lack emoji support) |
+| `wgpu` renderer | `Glow` renderer |
+
+---
+
+## Commands
+
+```bash
+# Generate Rust bindings
+spacetime generate --lang rust --out-dir client/src/module_bindings --module-path backend/
+
+# Build and run
+cd client && cargo build --release && ./target/release/my-client
+```
+
+---
+
+See `spacetimedb-rust.mdc` for full SDK usage (connection setup, callbacks, reducers).

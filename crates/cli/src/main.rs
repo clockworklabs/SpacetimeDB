@@ -43,7 +43,9 @@ async fn main() -> anyhow::Result<ExitCode> {
         .unwrap_or_else(|| paths.cli_config_dir.cli_toml());
     let config = Config::load(cli_toml)?;
 
-    exec_subcommand(config, &paths, root_dir, cmd, subcommand_args).await
+    exec_subcommand(config, &paths, root_dir, cmd, subcommand_args)
+        .await
+        .or_else(|e| e.downcast::<ExitWithCode>().map(|e| e.0))
 }
 
 #[cfg(feature = "markdown-docs")]

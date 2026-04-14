@@ -1,6 +1,6 @@
 //! Table indexes with specialized key types.
 //!
-//! Indexes could be implemented as `MultiMap<AlgebraicValue, RowPointer>` (and once were),
+//! Indexes could be implemented as `BTreeIndex<AlgebraicValue, RowPointer>` (and once were),
 //! but that results in wasted memory and spurious comparisons and branches
 //! because the keys must always be homogeneous at a more specific type than `AlgebraicValue`.
 //!
@@ -12,472 +12,497 @@
 //! are instead enums with similar-looking variants for each specialized key type,
 //! and methods that interact with those enums have matches with similar-looking arms.
 //! Some day we may devise a better solution, but this is good enough for now.
-//
-// I (pgoldman 2024-02-05) suspect, but have not measured, that there's no real reason
-// to have a `ProductType` variant, which would apply to multi-column indexes.
-// I believe `ProductValue::cmp` to not be meaningfully faster than `AlgebraicValue::cmp`.
-// Eventually, we will likely want to compile comparison functions and representations
-// for `ProductValue`-keyed indexes which take advantage of type information,
-// since we know when creating the index the number and type of all the indexed columns.
-// This may involve a bytecode compiler, a tree of closures, or a native JIT.
-///
-/// We also represent unique indices more compactly than non-unique ones, avoiding the multi-map.
-/// Additionally, beyond our btree indices,
-/// we support direct unique indices, where key are indices into `Vec`s.
+//!
+//! I (pgoldman 2024-02-05) suspect, but have not measured, that there's no real reason
+//! to have a `ProductType` variant, which would apply to multi-column indexes.
+//! I believe `ProductValue::cmp` to not be meaningfully faster than `AlgebraicValue::cmp`.
+//! Eventually, we will likely want to compile comparison functions and representations
+//! for `ProductValue`-keyed indexes which take advantage of type information,
+//! since we know when creating the index the number and type of all the indexed columns.
+//! This may involve a bytecode compiler, a tree of closures, or a native JIT.
+//!
+//! We also represent unique indices more compactly than non-unique ones, avoiding the multi-map.
+//! Additionally, beyond our btree indices,
+//! we support direct unique indices, where key are indices into `Vec`s.
+
+use self::btree_index::{BTreeIndex, BTreeIndexRangeIter};
+use self::bytes_key::{size_sub_row_pointer, BytesKey};
+use self::hash_index::HashIndex;
+use self::same_key_entry::SameKeyEntryIter;
+use self::unique_btree_index::{UniqueBTreeIndex, UniqueBTreeIndexRangeIter, UniquePointIter};
+use self::unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixedCapIndexRangeIter};
+use self::unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexRangeIter};
+use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
+use crate::table_index::bytes_key::required_bytes_key_size;
+use crate::table_index::index::Despecialize;
+use crate::table_index::unique_direct_index::ToFromUsize;
 use crate::{read_column::ReadColumn, static_assert_size};
-use core::ops::RangeBounds;
-use spacetimedb_primitives::ColList;
+use core::ops::{Bound, RangeBounds};
+use core::{fmt, iter};
+use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::bsatn::{decode, from_reader};
+use spacetimedb_sats::buffer::{DecodeError, DecodeResult};
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::sum_value::SumTag;
 use spacetimedb_sats::{
-    algebraic_value::Packed, i256, product_value::InvalidFieldError, sum_value::SumTag, u256, AlgebraicType,
-    AlgebraicValue, ProductType, F32, F64,
+    i256, u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumValue, F32, F64,
 };
+use spacetimedb_schema::def::IndexAlgorithm;
 
+mod btree_index;
+mod bytes_key;
+mod hash_index;
+mod index;
 mod key_size;
-mod multimap;
+mod same_key_entry;
+pub mod unique_btree_index;
 pub mod unique_direct_fixed_cap_index;
 pub mod unique_direct_index;
-pub mod uniquemap;
+mod unique_hash_index;
 
-pub use key_size::KeySize;
-use spacetimedb_schema::def::IndexAlgorithm;
-use unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixedCapIndexRangeIter};
-use unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexPointIter, UniqueDirectIndexRangeIter};
+pub use self::index::{Index, IndexCannotSeekRange, IndexSeekRangeResult, RangedIndex};
+pub use self::key_size::KeySize;
 
-type BtreeIndex<K> = multimap::MultiMap<K, RowPointer>;
-type BtreeIndexPointIter<'a> = multimap::MultiMapPointIter<'a, RowPointer>;
-type BtreeIndexRangeIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
-type BtreeUniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
-type BtreeUniqueIndexPointIter<'a> = uniquemap::UniqueMapPointIter<'a, RowPointer>;
-type BtreeUniqueIndexRangeIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
-
-/// A point iterator over a [`TypedIndex`], with a specialized key type.
-///
-/// See module docs for info about specialization.
-enum TypedIndexPointIter<'a> {
-    BTree(BtreeIndexPointIter<'a>),
-    UniqueBTree(BtreeUniqueIndexPointIter<'a>),
-    UniqueDirect(UniqueDirectIndexPointIter),
-}
-
-impl Iterator for TypedIndexPointIter<'_> {
-    type Item = RowPointer;
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::BTree(this) => this.next().copied(),
-            Self::UniqueBTree(this) => this.next().copied(),
-            Self::UniqueDirect(this) => this.next(),
+macro_rules! table_iter {
+    ($(#[$wattr:meta])* pub struct $wrapper:ident =>
+     $(#[$battr:meta])* enum $base:ident {
+        $($(#[$vattr:meta])* $var:ident($varty:ty),)*
+     }) => {
+        $(#[$wattr])*
+        pub struct $wrapper<'a> {
+            iter: $base<'a>,
         }
-    }
-}
 
-/// An iterator over rows matching a certain [`AlgebraicValue`] on the [`TableIndex`].
-pub struct TableIndexPointIter<'a> {
-    /// The iterator seeking for matching values.
-    iter: TypedIndexPointIter<'a>,
-}
+        impl Iterator for $wrapper<'_> {
+            type Item = RowPointer;
 
-impl Iterator for TableIndexPointIter<'_> {
-    type Item = RowPointer;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-/// A ranged iterator over a [`TypedIndex`], with a specialized key type.
-///
-/// See module docs for info about specialization.
-enum TypedIndexRangeIter<'a> {
-    // All the non-unique btree index iterators.
-    BtreeBool(BtreeIndexRangeIter<'a, bool>),
-    BtreeU8(BtreeIndexRangeIter<'a, u8>),
-    BtreeI8(BtreeIndexRangeIter<'a, i8>),
-    BtreeU16(BtreeIndexRangeIter<'a, u16>),
-    BtreeI16(BtreeIndexRangeIter<'a, i16>),
-    BtreeU32(BtreeIndexRangeIter<'a, u32>),
-    BtreeI32(BtreeIndexRangeIter<'a, i32>),
-    BtreeU64(BtreeIndexRangeIter<'a, u64>),
-    BtreeI64(BtreeIndexRangeIter<'a, i64>),
-    BtreeU128(BtreeIndexRangeIter<'a, Packed<u128>>),
-    BtreeI128(BtreeIndexRangeIter<'a, Packed<i128>>),
-    BtreeU256(BtreeIndexRangeIter<'a, u256>),
-    BtreeI256(BtreeIndexRangeIter<'a, i256>),
-    BtreeF32(BtreeIndexRangeIter<'a, F32>),
-    BtreeF64(BtreeIndexRangeIter<'a, F64>),
-    BtreeString(BtreeIndexRangeIter<'a, Box<str>>),
-    BtreeAV(BtreeIndexRangeIter<'a, AlgebraicValue>),
-
-    // All the unique btree index iterators.
-    UniqueBtreeBool(BtreeUniqueIndexRangeIter<'a, bool>),
-    UniqueBtreeU8(BtreeUniqueIndexRangeIter<'a, u8>),
-    UniqueBtreeI8(BtreeUniqueIndexRangeIter<'a, i8>),
-    UniqueBtreeU16(BtreeUniqueIndexRangeIter<'a, u16>),
-    UniqueBtreeI16(BtreeUniqueIndexRangeIter<'a, i16>),
-    UniqueBtreeU32(BtreeUniqueIndexRangeIter<'a, u32>),
-    UniqueBtreeI32(BtreeUniqueIndexRangeIter<'a, i32>),
-    UniqueBtreeU64(BtreeUniqueIndexRangeIter<'a, u64>),
-    UniqueBtreeI64(BtreeUniqueIndexRangeIter<'a, i64>),
-    UniqueBtreeU128(BtreeUniqueIndexRangeIter<'a, Packed<u128>>),
-    UniqueBtreeI128(BtreeUniqueIndexRangeIter<'a, Packed<i128>>),
-    UniqueBtreeU256(BtreeUniqueIndexRangeIter<'a, u256>),
-    UniqueBtreeI256(BtreeUniqueIndexRangeIter<'a, i256>),
-    UniqueBtreeF32(BtreeUniqueIndexRangeIter<'a, F32>),
-    UniqueBtreeF64(BtreeUniqueIndexRangeIter<'a, F64>),
-    UniqueBtreeString(BtreeUniqueIndexRangeIter<'a, Box<str>>),
-    UniqueBtreeAV(BtreeUniqueIndexRangeIter<'a, AlgebraicValue>),
-
-    UniqueDirect(UniqueDirectIndexRangeIter<'a>),
-    UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
-}
-
-impl Iterator for TypedIndexRangeIter<'_> {
-    type Item = RowPointer;
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::BtreeBool(this) => this.next().copied(),
-            Self::BtreeU8(this) => this.next().copied(),
-            Self::BtreeI8(this) => this.next().copied(),
-            Self::BtreeU16(this) => this.next().copied(),
-            Self::BtreeI16(this) => this.next().copied(),
-            Self::BtreeU32(this) => this.next().copied(),
-            Self::BtreeI32(this) => this.next().copied(),
-            Self::BtreeU64(this) => this.next().copied(),
-            Self::BtreeI64(this) => this.next().copied(),
-            Self::BtreeU128(this) => this.next().copied(),
-            Self::BtreeI128(this) => this.next().copied(),
-            Self::BtreeU256(this) => this.next().copied(),
-            Self::BtreeI256(this) => this.next().copied(),
-            Self::BtreeF32(this) => this.next().copied(),
-            Self::BtreeF64(this) => this.next().copied(),
-            Self::BtreeString(this) => this.next().copied(),
-            Self::BtreeAV(this) => this.next().copied(),
-
-            Self::UniqueBtreeBool(this) => this.next().copied(),
-            Self::UniqueBtreeU8(this) => this.next().copied(),
-            Self::UniqueBtreeI8(this) => this.next().copied(),
-            Self::UniqueBtreeU16(this) => this.next().copied(),
-            Self::UniqueBtreeI16(this) => this.next().copied(),
-            Self::UniqueBtreeU32(this) => this.next().copied(),
-            Self::UniqueBtreeI32(this) => this.next().copied(),
-            Self::UniqueBtreeU64(this) => this.next().copied(),
-            Self::UniqueBtreeI64(this) => this.next().copied(),
-            Self::UniqueBtreeU128(this) => this.next().copied(),
-            Self::UniqueBtreeI128(this) => this.next().copied(),
-            Self::UniqueBtreeU256(this) => this.next().copied(),
-            Self::UniqueBtreeI256(this) => this.next().copied(),
-            Self::UniqueBtreeF32(this) => this.next().copied(),
-            Self::UniqueBtreeF64(this) => this.next().copied(),
-            Self::UniqueBtreeString(this) => this.next().copied(),
-            Self::UniqueBtreeAV(this) => this.next().copied(),
-
-            Self::UniqueDirect(this) => this.next(),
-            Self::UniqueDirectU8(this) => this.next(),
+            fn next(&mut self) -> Option<Self::Item> {
+                self.iter.next()
+            }
         }
-    }
-}
 
-/// An iterator over rows matching a range of [`AlgebraicValue`]s on the [`TableIndex`].
-pub struct TableIndexRangeIter<'a> {
-    /// The iterator seeking for matching values.
-    iter: TypedIndexRangeIter<'a>,
-}
-
-impl Iterator for TableIndexRangeIter<'_> {
-    type Item = RowPointer;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-/// An index from a key type determined at runtime to `RowPointer`(s).
-///
-/// See module docs for info about specialization.
-#[derive(Debug, PartialEq, Eq)]
-enum TypedIndex {
-    // All the non-unique btree index types.
-    BtreeBool(BtreeIndex<bool>),
-    BtreeU8(BtreeIndex<u8>),
-    BtreeSumTag(BtreeIndex<u8>),
-    BtreeI8(BtreeIndex<i8>),
-    BtreeU16(BtreeIndex<u16>),
-    BtreeI16(BtreeIndex<i16>),
-    BtreeU32(BtreeIndex<u32>),
-    BtreeI32(BtreeIndex<i32>),
-    BtreeU64(BtreeIndex<u64>),
-    BtreeI64(BtreeIndex<i64>),
-    BtreeU128(BtreeIndex<Packed<u128>>),
-    BtreeI128(BtreeIndex<Packed<i128>>),
-    BtreeU256(BtreeIndex<u256>),
-    BtreeI256(BtreeIndex<i256>),
-    BtreeF32(BtreeIndex<F32>),
-    BtreeF64(BtreeIndex<F64>),
-    BtreeString(BtreeIndex<Box<str>>),
-    BtreeAV(BtreeIndex<AlgebraicValue>),
-
-    // All the unique btree index types.
-    UniqueBtreeBool(BtreeUniqueIndex<bool>),
-    UniqueBtreeU8(BtreeUniqueIndex<u8>),
-    UniqueBtreeSumTag(BtreeUniqueIndex<u8>),
-    UniqueBtreeI8(BtreeUniqueIndex<i8>),
-    UniqueBtreeU16(BtreeUniqueIndex<u16>),
-    UniqueBtreeI16(BtreeUniqueIndex<i16>),
-    UniqueBtreeU32(BtreeUniqueIndex<u32>),
-    UniqueBtreeI32(BtreeUniqueIndex<i32>),
-    UniqueBtreeU64(BtreeUniqueIndex<u64>),
-    UniqueBtreeI64(BtreeUniqueIndex<i64>),
-    UniqueBtreeU128(BtreeUniqueIndex<Packed<u128>>),
-    UniqueBtreeI128(BtreeUniqueIndex<Packed<i128>>),
-    UniqueBtreeU256(BtreeUniqueIndex<u256>),
-    UniqueBtreeI256(BtreeUniqueIndex<i256>),
-    UniqueBtreeF32(BtreeUniqueIndex<F32>),
-    UniqueBtreeF64(BtreeUniqueIndex<F64>),
-    UniqueBtreeString(BtreeUniqueIndex<Box<str>>),
-    UniqueBtreeAV(BtreeUniqueIndex<AlgebraicValue>),
-
-    // All the unique direct index types.
-    UniqueDirectU8(UniqueDirectIndex),
-    UniqueDirectSumTag(UniqueDirectFixedCapIndex),
-    UniqueDirectU16(UniqueDirectIndex),
-    UniqueDirectU32(UniqueDirectIndex),
-    UniqueDirectU64(UniqueDirectIndex),
-}
-
-impl MemoryUsage for TypedIndex {
-    fn heap_usage(&self) -> usize {
-        match self {
-            TypedIndex::BtreeBool(this) => this.heap_usage(),
-            TypedIndex::BtreeU8(this) | TypedIndex::BtreeSumTag(this) => this.heap_usage(),
-            TypedIndex::BtreeI8(this) => this.heap_usage(),
-            TypedIndex::BtreeU16(this) => this.heap_usage(),
-            TypedIndex::BtreeI16(this) => this.heap_usage(),
-            TypedIndex::BtreeU32(this) => this.heap_usage(),
-            TypedIndex::BtreeI32(this) => this.heap_usage(),
-            TypedIndex::BtreeU64(this) => this.heap_usage(),
-            TypedIndex::BtreeI64(this) => this.heap_usage(),
-            TypedIndex::BtreeU128(this) => this.heap_usage(),
-            TypedIndex::BtreeI128(this) => this.heap_usage(),
-            TypedIndex::BtreeU256(this) => this.heap_usage(),
-            TypedIndex::BtreeI256(this) => this.heap_usage(),
-            TypedIndex::BtreeF32(this) => this.heap_usage(),
-            TypedIndex::BtreeF64(this) => this.heap_usage(),
-            TypedIndex::BtreeString(this) => this.heap_usage(),
-            TypedIndex::BtreeAV(this) => this.heap_usage(),
-
-            TypedIndex::UniqueBtreeBool(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU8(this) | TypedIndex::UniqueBtreeSumTag(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI8(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU16(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI16(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU128(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI128(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU256(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI256(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeF32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeF64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeString(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeAV(this) => this.heap_usage(),
-
-            TypedIndex::UniqueDirectSumTag(this) => this.heap_usage(),
-            TypedIndex::UniqueDirectU8(this)
-            | TypedIndex::UniqueDirectU16(this)
-            | TypedIndex::UniqueDirectU32(this)
-            | TypedIndex::UniqueDirectU64(this) => this.heap_usage(),
+        $(#[$battr])*
+        #[derive(derive_more::From)]
+        enum $base<'a> {
+            $($(#[$vattr])* $var($varty)),*
         }
-    }
-}
 
-fn as_tag(av: &AlgebraicValue) -> Option<&u8> {
-    av.as_sum().map(|s| &s.tag)
-}
-
-impl TypedIndex {
-    /// Returns a new index with keys being of `key_type` and the index possibly `is_unique`.
-    fn new(key_type: &AlgebraicType, index_algo: &IndexAlgorithm, is_unique: bool) -> Self {
-        use TypedIndex::*;
-
-        if let IndexAlgorithm::Direct(_) = index_algo {
-            assert!(is_unique);
-            return match key_type {
-                AlgebraicType::U8 => Self::UniqueDirectU8(<_>::default()),
-                AlgebraicType::U16 => Self::UniqueDirectU16(<_>::default()),
-                AlgebraicType::U32 => Self::UniqueDirectU32(<_>::default()),
-                AlgebraicType::U64 => Self::UniqueDirectU64(<_>::default()),
-                // For a plain enum, use `u8` as the native type.
-                AlgebraicType::Sum(sum) if sum.is_simple_enum() => {
-                    UniqueDirectSumTag(UniqueDirectFixedCapIndex::new(sum.variants.len()))
+        impl Iterator for $base<'_> {
+            type Item = RowPointer;
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    $(Self::$var(this) => this.next()),*
                 }
-                _ => unreachable!("unexpected key type {key_type:?} for direct index"),
-            };
-        }
-
-        // If the index is on a single column of a primitive type, string, or plain enum,
-        // use a homogeneous map with a native key type.
-        if is_unique {
-            match key_type {
-                AlgebraicType::Bool => UniqueBtreeBool(<_>::default()),
-                AlgebraicType::I8 => UniqueBtreeI8(<_>::default()),
-                AlgebraicType::U8 => UniqueBtreeU8(<_>::default()),
-                AlgebraicType::I16 => UniqueBtreeI16(<_>::default()),
-                AlgebraicType::U16 => UniqueBtreeU16(<_>::default()),
-                AlgebraicType::I32 => UniqueBtreeI32(<_>::default()),
-                AlgebraicType::U32 => UniqueBtreeU32(<_>::default()),
-                AlgebraicType::I64 => UniqueBtreeI64(<_>::default()),
-                AlgebraicType::U64 => UniqueBtreeU64(<_>::default()),
-                AlgebraicType::I128 => UniqueBtreeI128(<_>::default()),
-                AlgebraicType::U128 => UniqueBtreeU128(<_>::default()),
-                AlgebraicType::I256 => UniqueBtreeI256(<_>::default()),
-                AlgebraicType::U256 => UniqueBtreeU256(<_>::default()),
-                AlgebraicType::F32 => UniqueBtreeF32(<_>::default()),
-                AlgebraicType::F64 => UniqueBtreeF64(<_>::default()),
-                AlgebraicType::String => UniqueBtreeString(<_>::default()),
-                // For a plain enum, use `u8` as the native type.
-                // We use a direct index here
-                AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueBtreeSumTag(<_>::default()),
-
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => UniqueBtreeAV(<_>::default()),
-            }
-        } else {
-            match key_type {
-                AlgebraicType::Bool => BtreeBool(<_>::default()),
-                AlgebraicType::I8 => BtreeI8(<_>::default()),
-                AlgebraicType::U8 => BtreeU8(<_>::default()),
-                AlgebraicType::I16 => BtreeI16(<_>::default()),
-                AlgebraicType::U16 => BtreeU16(<_>::default()),
-                AlgebraicType::I32 => BtreeI32(<_>::default()),
-                AlgebraicType::U32 => BtreeU32(<_>::default()),
-                AlgebraicType::I64 => BtreeI64(<_>::default()),
-                AlgebraicType::U64 => BtreeU64(<_>::default()),
-                AlgebraicType::I128 => BtreeI128(<_>::default()),
-                AlgebraicType::U128 => BtreeU128(<_>::default()),
-                AlgebraicType::I256 => BtreeI256(<_>::default()),
-                AlgebraicType::U256 => BtreeU256(<_>::default()),
-                AlgebraicType::F32 => BtreeF32(<_>::default()),
-                AlgebraicType::F64 => BtreeF64(<_>::default()),
-                AlgebraicType::String => BtreeString(<_>::default()),
-
-                // For a plain enum, use `u8` as the native type.
-                AlgebraicType::Sum(sum) if sum.is_simple_enum() => BtreeSumTag(<_>::default()),
-
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => BtreeAV(<_>::default()),
             }
         }
-    }
+    };
+}
 
-    /// Clones the structure of this index but not the indexed elements,
-    /// so the returned index is empty.
-    fn clone_structure(&self) -> Self {
-        use TypedIndex::*;
+table_iter! {
+    /// An iterator over rows matching a certain [`AlgebraicValue`] on the [`TableIndex`].
+    pub struct TableIndexPointIter =>
+    /// A point iterator over a [`TypedIndex`], with a specialized key type.
+    ///
+    /// See module docs for info about specialization.
+    enum TypedIndexPointIter {
+        NonUnique(SameKeyEntryIter<'a>),
+        Unique(UniquePointIter),
+    }
+}
+
+table_iter! {
+    /// An iterator over all rows in a [`TableIndex`].
+    pub struct TableIndexIter =>
+    /// An iterator over all rows in a [`TypedIndex`].
+    ///
+    /// See module docs for info about specialization.
+    enum TypedIndexIter {
+        // All the non-unique btree index iterators.
+        BTreeBool(<BTreeIndex<bool> as Index>::Iter<'a>),
+        BTreeU8(<BTreeIndex<u8> as Index>::Iter<'a>),
+        BTreeSumTag(<BTreeIndex<SumTag> as Index>::Iter<'a>),
+        BTreeI8(<BTreeIndex<i8> as Index>::Iter<'a>),
+        BTreeU16(<BTreeIndex<u16> as Index>::Iter<'a>),
+        BTreeI16(<BTreeIndex<i16> as Index>::Iter<'a>),
+        BTreeU32(<BTreeIndex<u32> as Index>::Iter<'a>),
+        BTreeI32(<BTreeIndex<i32> as Index>::Iter<'a>),
+        BTreeU64(<BTreeIndex<u64> as Index>::Iter<'a>),
+        BTreeI64(<BTreeIndex<i64> as Index>::Iter<'a>),
+        BTreeU128(<BTreeIndex<u128> as Index>::Iter<'a>),
+        BTreeI128(<BTreeIndex<i128> as Index>::Iter<'a>),
+        BTreeU256(<BTreeIndex<u256> as Index>::Iter<'a>),
+        BTreeI256(<BTreeIndex<i256> as Index>::Iter<'a>),
+        BTreeF32(<BTreeIndex<F32> as Index>::Iter<'a>),
+        BTreeF64(<BTreeIndex<F64> as Index>::Iter<'a>),
+        BTreeString(<BTreeIndex<Box<str>> as Index>::Iter<'a>),
+        BTreeAV(<BTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+
+        // All the unique btree index iterators.
+        UniqueBTreeBool(<UniqueBTreeIndex<bool> as Index>::Iter<'a>),
+        UniqueBTreeU8(<UniqueBTreeIndex<u8> as Index>::Iter<'a>),
+        UniqueBTreeSumTag(<UniqueBTreeIndex<SumTag> as Index>::Iter<'a>),
+        UniqueBTreeI8(<UniqueBTreeIndex<i8> as Index>::Iter<'a>),
+        UniqueBTreeU16(<UniqueBTreeIndex<u16> as Index>::Iter<'a>),
+        UniqueBTreeI16(<UniqueBTreeIndex<i16> as Index>::Iter<'a>),
+        UniqueBTreeU32(<UniqueBTreeIndex<u32> as Index>::Iter<'a>),
+        UniqueBTreeI32(<UniqueBTreeIndex<i32> as Index>::Iter<'a>),
+        UniqueBTreeU64(<UniqueBTreeIndex<u64> as Index>::Iter<'a>),
+        UniqueBTreeI64(<UniqueBTreeIndex<i64> as Index>::Iter<'a>),
+        UniqueBTreeU128(<UniqueBTreeIndex<u128> as Index>::Iter<'a>),
+        UniqueBTreeI128(<UniqueBTreeIndex<i128> as Index>::Iter<'a>),
+        UniqueBTreeU256(<UniqueBTreeIndex<u256> as Index>::Iter<'a>),
+        UniqueBTreeI256(<UniqueBTreeIndex<i256> as Index>::Iter<'a>),
+        UniqueBTreeF32(<UniqueBTreeIndex<F32> as Index>::Iter<'a>),
+        UniqueBTreeF64(<UniqueBTreeIndex<F64> as Index>::Iter<'a>),
+        UniqueBTreeString(<UniqueBTreeIndex<Box<str>> as Index>::Iter<'a>),
+        UniqueBTreeAV(<UniqueBTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+
+        // All the non-unique hash index iterators.
+        HashBool(<HashIndex<bool> as Index>::Iter<'a>),
+        HashU8(<HashIndex<u8> as Index>::Iter<'a>),
+        HashSumTag(<HashIndex<SumTag> as Index>::Iter<'a>),
+        HashI8(<HashIndex<i8> as Index>::Iter<'a>),
+        HashU16(<HashIndex<u16> as Index>::Iter<'a>),
+        HashI16(<HashIndex<i16> as Index>::Iter<'a>),
+        HashU32(<HashIndex<u32> as Index>::Iter<'a>),
+        HashI32(<HashIndex<i32> as Index>::Iter<'a>),
+        HashU64(<HashIndex<u64> as Index>::Iter<'a>),
+        HashI64(<HashIndex<i64> as Index>::Iter<'a>),
+        HashU128(<HashIndex<u128> as Index>::Iter<'a>),
+        HashI128(<HashIndex<i128> as Index>::Iter<'a>),
+        HashU256(<HashIndex<u256> as Index>::Iter<'a>),
+        HashI256(<HashIndex<i256> as Index>::Iter<'a>),
+        HashF32(<HashIndex<F32> as Index>::Iter<'a>),
+        HashF64(<HashIndex<F64> as Index>::Iter<'a>),
+        HashString(<HashIndex<Box<str>> as Index>::Iter<'a>),
+        HashAV(<HashIndex<AlgebraicValue> as Index>::Iter<'a>),
+        HashBytesKey8(<HashIndex<BytesKey<BYTES_KEY_SIZE_8_H>> as Index>::Iter<'a>),
+        HashBytesKey24(<HashIndex<BytesKey<BYTES_KEY_SIZE_24_H>> as Index>::Iter<'a>),
+        HashBytesKey56(<HashIndex<BytesKey<BYTES_KEY_SIZE_56_H>> as Index>::Iter<'a>),
+        HashBytesKey120(<HashIndex<BytesKey<BYTES_KEY_SIZE_120_H>> as Index>::Iter<'a>),
+
+        // All the unique hash index iterators.
+        UniqueHashBool(<UniqueHashIndex<bool> as Index>::Iter<'a>),
+        UniqueHashU8(<UniqueHashIndex<u8> as Index>::Iter<'a>),
+        UniqueHashSumTag(<UniqueHashIndex<SumTag> as Index>::Iter<'a>),
+        UniqueHashI8(<UniqueHashIndex<i8> as Index>::Iter<'a>),
+        UniqueHashU16(<UniqueHashIndex<u16> as Index>::Iter<'a>),
+        UniqueHashI16(<UniqueHashIndex<i16> as Index>::Iter<'a>),
+        UniqueHashU32(<UniqueHashIndex<u32> as Index>::Iter<'a>),
+        UniqueHashI32(<UniqueHashIndex<i32> as Index>::Iter<'a>),
+        UniqueHashU64(<UniqueHashIndex<u64> as Index>::Iter<'a>),
+        UniqueHashI64(<UniqueHashIndex<i64> as Index>::Iter<'a>),
+        UniqueHashU128(<UniqueHashIndex<u128> as Index>::Iter<'a>),
+        UniqueHashI128(<UniqueHashIndex<i128> as Index>::Iter<'a>),
+        UniqueHashU256(<UniqueHashIndex<u256> as Index>::Iter<'a>),
+        UniqueHashI256(<UniqueHashIndex<i256> as Index>::Iter<'a>),
+        UniqueHashF32(<UniqueHashIndex<F32> as Index>::Iter<'a>),
+        UniqueHashF64(<UniqueHashIndex<F64> as Index>::Iter<'a>),
+        UniqueHashString(<UniqueHashIndex<Box<str>> as Index>::Iter<'a>),
+        UniqueHashAV(<UniqueHashIndex<AlgebraicValue> as Index>::Iter<'a>),
+        UniqueHashBytesKey8(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_8_H>> as Index>::Iter<'a>),
+        UniqueHashBytesKey24(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_24_H>> as Index>::Iter<'a>),
+        UniqueHashBytesKey56(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_56_H>> as Index>::Iter<'a>),
+        UniqueHashBytesKey120(<UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_120_H>> as Index>::Iter<'a>),
+
+        // All the direct index iterators.
+        UniqueDirect(UniqueDirectIndexRangeIter<'a>),
+        UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
+    }
+}
+
+table_iter! {
+    /// An iterator over rows matching a range of [`AlgebraicValue`]s on the [`TableIndex`].
+    #[derive(Clone)]
+    pub struct TableIndexRangeIter =>
+    /// A ranged iterator over a [`TypedIndex`], with a specialized key type.
+    ///
+    /// See module docs for info about specialization.
+    #[derive(Clone)]
+    enum TypedIndexRangeIter {
+        /// The range itself provided was empty.
+        RangeEmpty(iter::Empty<RowPointer>),
+
+        // All the non-unique btree index iterators.
+        BTreeBool(BTreeIndexRangeIter<'a, bool>),
+        BTreeU8(BTreeIndexRangeIter<'a, u8>),
+        BTreeSumTag(BTreeIndexRangeIter<'a, SumTag>),
+        BTreeI8(BTreeIndexRangeIter<'a, i8>),
+        BTreeU16(BTreeIndexRangeIter<'a, u16>),
+        BTreeI16(BTreeIndexRangeIter<'a, i16>),
+        BTreeU32(BTreeIndexRangeIter<'a, u32>),
+        BTreeI32(BTreeIndexRangeIter<'a, i32>),
+        BTreeU64(BTreeIndexRangeIter<'a, u64>),
+        BTreeI64(BTreeIndexRangeIter<'a, i64>),
+        BTreeU128(BTreeIndexRangeIter<'a, u128>),
+        BTreeI128(BTreeIndexRangeIter<'a, i128>),
+        BTreeU256(BTreeIndexRangeIter<'a, u256>),
+        BTreeI256(BTreeIndexRangeIter<'a, i256>),
+        BTreeF32(BTreeIndexRangeIter<'a, F32>),
+        BTreeF64(BTreeIndexRangeIter<'a, F64>),
+        BTreeString(BTreeIndexRangeIter<'a, Box<str>>),
+        BTreeAV(BTreeIndexRangeIter<'a, AlgebraicValue>),
+
+        // All the unique btree index iterators.
+        UniqueBTreeBool(UniqueBTreeIndexRangeIter<'a, bool>),
+        UniqueBTreeU8(UniqueBTreeIndexRangeIter<'a, u8>),
+        UniqueBTreeSumTag(UniqueBTreeIndexRangeIter<'a, SumTag>),
+        UniqueBTreeI8(UniqueBTreeIndexRangeIter<'a, i8>),
+        UniqueBTreeU16(UniqueBTreeIndexRangeIter<'a, u16>),
+        UniqueBTreeI16(UniqueBTreeIndexRangeIter<'a, i16>),
+        UniqueBTreeU32(UniqueBTreeIndexRangeIter<'a, u32>),
+        UniqueBTreeI32(UniqueBTreeIndexRangeIter<'a, i32>),
+        UniqueBTreeU64(UniqueBTreeIndexRangeIter<'a, u64>),
+        UniqueBTreeI64(UniqueBTreeIndexRangeIter<'a, i64>),
+        UniqueBTreeU128(UniqueBTreeIndexRangeIter<'a, u128>),
+        UniqueBTreeI128(UniqueBTreeIndexRangeIter<'a, i128>),
+        UniqueBTreeU256(UniqueBTreeIndexRangeIter<'a, u256>),
+        UniqueBTreeI256(UniqueBTreeIndexRangeIter<'a, i256>),
+        UniqueBTreeF32(UniqueBTreeIndexRangeIter<'a, F32>),
+        UniqueBTreeF64(UniqueBTreeIndexRangeIter<'a, F64>),
+        UniqueBTreeString(UniqueBTreeIndexRangeIter<'a, Box<str>>),
+        UniqueBTreeAV(UniqueBTreeIndexRangeIter<'a, AlgebraicValue>),
+
+        UniqueDirect(UniqueDirectIndexRangeIter<'a>),
+        UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
+    }
+}
+
+impl fmt::Debug for TableIndexRangeIter<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.clone();
+        f.debug_list().entries(iter).finish()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, derive_more::From)]
+enum BowStr<'a> {
+    Borrowed(&'a str),
+    Owned(Box<str>),
+}
+
+impl<'a> BowStr<'a> {
+    fn borrow(&'a self) -> &'a str {
         match self {
-            BtreeBool(_) => BtreeBool(<_>::default()),
-            BtreeU8(_) => BtreeU8(<_>::default()),
-            BtreeSumTag(_) => BtreeSumTag(<_>::default()),
-            BtreeI8(_) => BtreeI8(<_>::default()),
-            BtreeU16(_) => BtreeU16(<_>::default()),
-            BtreeI16(_) => BtreeI16(<_>::default()),
-            BtreeU32(_) => BtreeU32(<_>::default()),
-            BtreeI32(_) => BtreeI32(<_>::default()),
-            BtreeU64(_) => BtreeU64(<_>::default()),
-            BtreeI64(_) => BtreeI64(<_>::default()),
-            BtreeU128(_) => BtreeU128(<_>::default()),
-            BtreeI128(_) => BtreeI128(<_>::default()),
-            BtreeU256(_) => BtreeU256(<_>::default()),
-            BtreeI256(_) => BtreeI256(<_>::default()),
-            BtreeF32(_) => BtreeF32(<_>::default()),
-            BtreeF64(_) => BtreeF64(<_>::default()),
-            BtreeString(_) => BtreeString(<_>::default()),
-            BtreeAV(_) => BtreeAV(<_>::default()),
-            UniqueBtreeBool(_) => UniqueBtreeBool(<_>::default()),
-            UniqueBtreeU8(_) => UniqueBtreeU8(<_>::default()),
-            UniqueBtreeSumTag(_) => UniqueBtreeSumTag(<_>::default()),
-            UniqueBtreeI8(_) => UniqueBtreeI8(<_>::default()),
-            UniqueBtreeU16(_) => UniqueBtreeU16(<_>::default()),
-            UniqueBtreeI16(_) => UniqueBtreeI16(<_>::default()),
-            UniqueBtreeU32(_) => UniqueBtreeU32(<_>::default()),
-            UniqueBtreeI32(_) => UniqueBtreeI32(<_>::default()),
-            UniqueBtreeU64(_) => UniqueBtreeU64(<_>::default()),
-            UniqueBtreeI64(_) => UniqueBtreeI64(<_>::default()),
-            UniqueBtreeU128(_) => UniqueBtreeU128(<_>::default()),
-            UniqueBtreeI128(_) => UniqueBtreeI128(<_>::default()),
-            UniqueBtreeU256(_) => UniqueBtreeU256(<_>::default()),
-            UniqueBtreeI256(_) => UniqueBtreeI256(<_>::default()),
-            UniqueBtreeF32(_) => UniqueBtreeF32(<_>::default()),
-            UniqueBtreeF64(_) => UniqueBtreeF64(<_>::default()),
-            UniqueBtreeString(_) => UniqueBtreeString(<_>::default()),
-            UniqueBtreeAV(_) => UniqueBtreeAV(<_>::default()),
-            UniqueDirectU8(_) => UniqueDirectU8(<_>::default()),
-            UniqueDirectSumTag(idx) => UniqueDirectSumTag(idx.clone_structure()),
-            UniqueDirectU16(_) => UniqueDirectU16(<_>::default()),
-            UniqueDirectU32(_) => UniqueDirectU32(<_>::default()),
-            UniqueDirectU64(_) => UniqueDirectU64(<_>::default()),
+            Self::Borrowed(x) => x,
+            Self::Owned(x) => x,
         }
     }
 
-    /// Returns whether this is a unique index or not.
-    fn is_unique(&self) -> bool {
-        use TypedIndex::*;
+    fn into_owned(self) -> Box<str> {
         match self {
-            BtreeBool(_) | BtreeU8(_) | BtreeSumTag(_) | BtreeI8(_) | BtreeU16(_) | BtreeI16(_) | BtreeU32(_)
-            | BtreeI32(_) | BtreeU64(_) | BtreeI64(_) | BtreeU128(_) | BtreeI128(_) | BtreeU256(_) | BtreeI256(_)
-            | BtreeF32(_) | BtreeF64(_) | BtreeString(_) | BtreeAV(_) => false,
-            UniqueBtreeBool(_)
-            | UniqueBtreeU8(_)
-            | UniqueBtreeSumTag(_)
-            | UniqueBtreeI8(_)
-            | UniqueBtreeU16(_)
-            | UniqueBtreeI16(_)
-            | UniqueBtreeU32(_)
-            | UniqueBtreeI32(_)
-            | UniqueBtreeU64(_)
-            | UniqueBtreeI64(_)
-            | UniqueBtreeU128(_)
-            | UniqueBtreeI128(_)
-            | UniqueBtreeU256(_)
-            | UniqueBtreeI256(_)
-            | UniqueBtreeF32(_)
-            | UniqueBtreeF64(_)
-            | UniqueBtreeString(_)
-            | UniqueBtreeAV(_)
-            | UniqueDirectU8(_)
-            | UniqueDirectSumTag(_)
-            | UniqueDirectU16(_)
-            | UniqueDirectU32(_)
-            | UniqueDirectU64(_) => true,
+            Self::Borrowed(x) => x.into(),
+            Self::Owned(x) => x,
+        }
+    }
+}
+
+impl<'a> From<&'a Box<str>> for BowStr<'a> {
+    fn from(value: &'a Box<str>) -> Self {
+        Self::Borrowed(value)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, derive_more::From)]
+enum CowAV<'a> {
+    Borrowed(&'a AlgebraicValue),
+    Owned(AlgebraicValue),
+}
+
+impl<'a> CowAV<'a> {
+    fn borrow(&'a self) -> &'a AlgebraicValue {
+        match self {
+            Self::Borrowed(x) => x,
+            Self::Owned(x) => x,
         }
     }
 
-    /// Add the row referred to by `row_ref` to the index `self`,
-    /// which must be keyed at `cols`.
+    fn into_owned(self) -> AlgebraicValue {
+        match self {
+            Self::Borrowed(x) => x.clone(),
+            Self::Owned(x) => x,
+        }
+    }
+}
+
+// The various sizes passed to `BytesKey`.
+// A `B` suffix is for a size used for a btree index
+// and an `H` suffix is for a size used for a hash index.
+const BYTES_KEY_SIZE_8_B: usize = 8;
+const BYTES_KEY_SIZE_8_H: usize = size_sub_row_pointer(16);
+const _: () = assert!(BYTES_KEY_SIZE_8_B == BYTES_KEY_SIZE_8_H);
+//const BYTES_KEY_SIZE_16_B: usize = 16;
+const BYTES_KEY_SIZE_24_H: usize = size_sub_row_pointer(32);
+//const BYTES_KEY_SIZE_32_B: usize = 32;
+const BYTES_KEY_SIZE_56_H: usize = size_sub_row_pointer(64);
+//const BYTES_KEY_SIZE_64_B: usize = 64;
+const BYTES_KEY_SIZE_120_H: usize = size_sub_row_pointer(128);
+//const BYTES_KEY_SIZE_128_B: usize = 128;
+
+/// A key into a [`TypedIndex`].
+#[derive(enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum TypedIndexKey<'a> {
+    Bool(bool),
+    U8(u8),
+    SumTag(SumTag),
+    I8(i8),
+    U16(u16),
+    I16(i16),
+    U32(u32),
+    I32(i32),
+    U64(u64),
+    I64(i64),
+    U128(u128),
+    I128(i128),
+    U256(u256),
+    I256(i256),
+    F32(F32),
+    F64(F64),
+    String(BowStr<'a>),
+    AV(CowAV<'a>),
+
+    BytesKey8(BytesKey<BYTES_KEY_SIZE_8_B>),
+    BytesKey24(BytesKey<BYTES_KEY_SIZE_24_H>),
+    BytesKey56(BytesKey<BYTES_KEY_SIZE_56_H>),
+    BytesKey120(BytesKey<BYTES_KEY_SIZE_120_H>),
+}
+
+static_assert_size!(TypedIndexKey<'_>, 128);
+
+/// Transposes a `Bound<Result<T, E>>` to a `Result<Bound<T>, E>`.
+fn transpose_bound<T, E>(bound: Bound<Result<T, E>>) -> Result<Bound<T>, E> {
+    match bound {
+        Bound::Unbounded => Ok(Bound::Unbounded),
+        Bound::Included(Ok(v)) => Ok(Bound::Included(v)),
+        Bound::Excluded(Ok(v)) => Ok(Bound::Excluded(v)),
+        Bound::Included(Err(e)) | Bound::Excluded(Err(e)) => Err(e),
+    }
+}
+
+impl<'a> TypedIndexKey<'a> {
+    /// Derives a [`TypedIndexKey`] from an [`AlgebraicValue`]
+    /// driven by the kind of [`TypedIndex`] provided in `index`.
+    #[inline]
+    fn from_algebraic_value(index: &TypedIndex, value: &'a AlgebraicValue) -> Self {
+        use AlgebraicValue::*;
+        use TypedIndex::*;
+        match (value, index) {
+            (Bool(v), BTreeBool(_) | HashBool(_) | UniqueBTreeBool(_) | UniqueHashBool(_)) => Self::Bool(*v),
+
+            (U8(v), BTreeU8(_) | HashU8(_) | UniqueBTreeU8(_) | UniqueHashU8(_) | UniqueDirectU8(_)) => Self::U8(*v),
+            (
+                U8(v) | Sum(SumValue { tag: v, .. }),
+                BTreeSumTag(_) | HashSumTag(_) | UniqueBTreeSumTag(_) | UniqueHashSumTag(_) | UniqueDirectSumTag(_),
+            ) => Self::SumTag(SumTag(*v)),
+
+            (U16(v), BTreeU16(_) | HashU16(_) | UniqueBTreeU16(_) | UniqueHashU16(_) | UniqueDirectU16(_)) => {
+                Self::U16(*v)
+            }
+            (U32(v), BTreeU32(_) | HashU32(_) | UniqueBTreeU32(_) | UniqueHashU32(_) | UniqueDirectU32(_)) => {
+                Self::U32(*v)
+            }
+            (U64(v), BTreeU64(_) | HashU64(_) | UniqueBTreeU64(_) | UniqueHashU64(_) | UniqueDirectU64(_)) => {
+                Self::U64(*v)
+            }
+            (U128(v), BTreeU128(_) | HashU128(_) | UniqueBTreeU128(_) | UniqueHashU128(_)) => Self::U128(v.0),
+            (U256(v), BTreeU256(_) | HashU256(_) | UniqueBTreeU256(_) | UniqueHashU256(_)) => Self::U256(**v),
+
+            (I8(v), BTreeI8(_) | HashI8(_) | UniqueBTreeI8(_) | UniqueHashI8(_)) => Self::I8(*v),
+            (I16(v), BTreeI16(_) | HashI16(_) | UniqueBTreeI16(_) | UniqueHashI16(_)) => Self::I16(*v),
+            (I32(v), BTreeI32(_) | HashI32(_) | UniqueBTreeI32(_) | UniqueHashI32(_)) => Self::I32(*v),
+            (I64(v), BTreeI64(_) | HashI64(_) | UniqueBTreeI64(_) | UniqueHashI64(_)) => Self::I64(*v),
+            (I128(v), BTreeI128(_) | HashI128(_) | UniqueBTreeI128(_) | UniqueHashI128(_)) => Self::I128(v.0),
+            (I256(v), BTreeI256(_) | HashI256(_) | UniqueBTreeI256(_) | UniqueHashI256(_)) => Self::I256(**v),
+
+            (F32(v), BTreeF32(_) | HashF32(_) | UniqueBTreeF32(_) | UniqueHashF32(_)) => Self::F32(*v),
+            (F64(v), BTreeF64(_) | HashF64(_) | UniqueBTreeF64(_) | UniqueHashF64(_)) => Self::F64(*v),
+
+            (String(v), BTreeString(_) | HashString(_) | UniqueBTreeString(_) | UniqueHashString(_)) => {
+                Self::String(v.into())
+            }
+
+            (av, BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_)) => Self::AV(CowAV::Borrowed(av)),
+
+            (av, HashBytesKey8(_) | UniqueHashBytesKey8(_)) => Self::BytesKey8(BytesKey::from_algebraic_value(av)),
+            (av, HashBytesKey24(_) | UniqueHashBytesKey24(_)) => Self::BytesKey24(BytesKey::from_algebraic_value(av)),
+            (av, HashBytesKey56(_) | UniqueHashBytesKey56(_)) => Self::BytesKey56(BytesKey::from_algebraic_value(av)),
+            (av, HashBytesKey120(_) | UniqueHashBytesKey120(_)) => {
+                Self::BytesKey120(BytesKey::from_algebraic_value(av))
+            }
+
+            _ => panic!("value {value:?} is not compatible with index {index:?}"),
+        }
+    }
+
+    /// Derives a [`TypedIndexKey`] from BSATN-encoded `bytes`,
+    /// driven by the kind of [`TypedIndex`] provided in `index`.
+    #[inline]
+    fn from_bsatn(index: &TypedIndex, ty: &AlgebraicType, mut bytes: &'a [u8]) -> DecodeResult<Self> {
+        let reader = &mut bytes;
+
+        use TypedIndex::*;
+        match index {
+            BTreeBool(_) | HashBool(_) | UniqueBTreeBool(_) | UniqueHashBool(_) => from_reader(reader).map(Self::Bool),
+
+            BTreeU8(_) | HashU8(_) | UniqueBTreeU8(_) | UniqueHashU8(_) | UniqueDirectU8(_) => {
+                from_reader(reader).map(Self::U8)
+            }
+            BTreeSumTag(_) | HashSumTag(_) | UniqueBTreeSumTag(_) | UniqueHashSumTag(_) | UniqueDirectSumTag(_) => {
+                from_reader(reader).map(Self::SumTag)
+            }
+            BTreeU16(_) | HashU16(_) | UniqueBTreeU16(_) | UniqueHashU16(_) | UniqueDirectU16(_) => {
+                from_reader(reader).map(Self::U16)
+            }
+            BTreeU32(_) | HashU32(_) | UniqueBTreeU32(_) | UniqueHashU32(_) | UniqueDirectU32(_) => {
+                from_reader(reader).map(Self::U32)
+            }
+            BTreeU64(_) | HashU64(_) | UniqueBTreeU64(_) | UniqueHashU64(_) | UniqueDirectU64(_) => {
+                from_reader(reader).map(Self::U64)
+            }
+            BTreeU128(_) | HashU128(_) | UniqueBTreeU128(_) | UniqueHashU128(_) => from_reader(reader).map(Self::U128),
+            BTreeU256(_) | HashU256(_) | UniqueBTreeU256(_) | UniqueHashU256(_) => from_reader(reader).map(Self::U256),
+
+            BTreeI8(_) | HashI8(_) | UniqueBTreeI8(_) | UniqueHashI8(_) => from_reader(reader).map(Self::I8),
+            BTreeI16(_) | HashI16(_) | UniqueBTreeI16(_) | UniqueHashI16(_) => from_reader(reader).map(Self::I16),
+            BTreeI32(_) | HashI32(_) | UniqueBTreeI32(_) | UniqueHashI32(_) => from_reader(reader).map(Self::I32),
+            BTreeI64(_) | HashI64(_) | UniqueBTreeI64(_) | UniqueHashI64(_) => from_reader(reader).map(Self::I64),
+            BTreeI128(_) | HashI128(_) | UniqueBTreeI128(_) | UniqueHashI128(_) => from_reader(reader).map(Self::I128),
+            BTreeI256(_) | HashI256(_) | UniqueBTreeI256(_) | UniqueHashI256(_) => from_reader(reader).map(Self::I256),
+
+            BTreeF32(_) | HashF32(_) | UniqueBTreeF32(_) | UniqueHashF32(_) => from_reader(reader).map(Self::F32),
+            BTreeF64(_) | HashF64(_) | UniqueBTreeF64(_) | UniqueHashF64(_) => from_reader(reader).map(Self::F64),
+
+            BTreeString(_) | HashString(_) | UniqueBTreeString(_) | UniqueHashString(_) => {
+                from_reader(reader).map(BowStr::Borrowed).map(Self::String)
+            }
+
+            BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_) => {
+                AlgebraicValue::decode(ty, reader).map(CowAV::Owned).map(Self::AV)
+            }
+
+            HashBytesKey8(_) | UniqueHashBytesKey8(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey8),
+            HashBytesKey24(_) | UniqueHashBytesKey24(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey24),
+            HashBytesKey56(_) | UniqueHashBytesKey56(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey56),
+            HashBytesKey120(_) | UniqueHashBytesKey120(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey120),
+        }
+    }
+
+    /// Derives a [`TypedIndexKey`] from a [`RowRef`]
+    /// and a [`ColList`] that describes what columns are indexed by `index`.
     ///
-    /// The returned `usize` is the number of bytes used by the key.
-    /// [`TableIndex::check_and_insert`] will use this
-    /// to update the counter for [`TableIndex::num_key_bytes`].
-    /// We want to store said counter outside of the [`TypedIndex`] enum,
-    /// but we can only compute the size using type info within the [`TypedIndex`],
-    /// so we have to return the size across this boundary.
-    ///
-    /// Returns `Errs(existing_row)` if this index was a unique index that was violated.
-    /// The index is not inserted to in that case.
+    /// Assumes that `row_ref` projected to `cols`
+    /// has the same type as the keys of `index`.
     ///
     /// # Safety
     ///
-    /// 1. Caller promises that `cols` matches what was given at construction (`Self::new`).
+    /// 1. Caller promises that `cols` matches what was given at construction (`TableIndex::new`).
     /// 2. Caller promises that the projection of `row_ref`'s type's equals the index's key type.
-    unsafe fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<usize, RowPointer> {
-        fn project_to_singleton_key<T: ReadColumn>(cols: &ColList, row_ref: RowRef<'_>) -> T {
+    #[inline]
+    unsafe fn from_row_ref(index: &TypedIndex, cols: &ColList, row_ref: RowRef<'_>) -> Self {
+        fn proj<T: ReadColumn>(cols: &ColList, row_ref: RowRef<'_>) -> T {
             // Extract the column.
             let col_pos = cols.as_singleton();
             // SAFETY: Caller promised that `cols` matches what was given at construction (`Self::new`).
@@ -505,575 +530,1109 @@ impl TypedIndex {
             unsafe { T::unchecked_read_column(row_ref, col_layout) }
         }
 
-        fn mm_insert_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeIndex<T>,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key_size = key.key_size_in_bytes();
-            this.insert(key, row_ref.pointer());
-            Ok(key_size)
-        }
-        fn um_insert_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeUniqueIndex<T>,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key_size = key.key_size_in_bytes();
-            this.insert(key, row_ref.pointer())
-                .map_err(|ptr| *ptr)
-                .map(|_| key_size)
-        }
-        fn direct_insert_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_usize: impl FnOnce(T) -> usize,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key = to_usize(key);
-            let key_size = key.key_size_in_bytes();
-            this.insert(key, row_ref.pointer()).map(|_| key_size)
-        }
-        fn direct_u8_insert_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectFixedCapIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_u8: impl FnOnce(T) -> usize,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key = to_u8(key);
-            let key_size = key.key_size_in_bytes();
-            this.insert(key, row_ref.pointer()).map(|_| key_size)
-        }
-        match self {
-            Self::BtreeBool(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU8(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeSumTag(idx) => {
-                let SumTag(key) = project_to_singleton_key(cols, row_ref);
-                let key_size = key.key_size_in_bytes();
-                idx.insert(key, row_ref.pointer());
-                Ok(key_size)
+        use TypedIndex::*;
+        match index {
+            BTreeBool(_) | HashBool(_) | UniqueBTreeBool(_) | UniqueHashBool(_) => Self::Bool(proj(cols, row_ref)),
+
+            BTreeU8(_) | HashU8(_) | UniqueBTreeU8(_) | UniqueHashU8(_) | UniqueDirectU8(_) => {
+                Self::U8(proj(cols, row_ref))
             }
-            Self::BtreeI8(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU16(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI16(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU32(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI32(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU64(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI64(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU128(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI128(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU256(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI256(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeF32(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeF64(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeString(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeAV(this) => {
+            BTreeSumTag(_) | HashSumTag(_) | UniqueBTreeSumTag(_) | UniqueHashSumTag(_) | UniqueDirectSumTag(_) => {
+                Self::SumTag(proj(cols, row_ref))
+            }
+            BTreeU16(_) | HashU16(_) | UniqueBTreeU16(_) | UniqueHashU16(_) | UniqueDirectU16(_) => {
+                Self::U16(proj(cols, row_ref))
+            }
+            BTreeU32(_) | HashU32(_) | UniqueBTreeU32(_) | UniqueHashU32(_) | UniqueDirectU32(_) => {
+                Self::U32(proj(cols, row_ref))
+            }
+            BTreeU64(_) | HashU64(_) | UniqueBTreeU64(_) | UniqueHashU64(_) | UniqueDirectU64(_) => {
+                Self::U64(proj(cols, row_ref))
+            }
+            BTreeU128(_) | HashU128(_) | UniqueBTreeU128(_) | UniqueHashU128(_) => Self::U128(proj(cols, row_ref)),
+            BTreeU256(_) | HashU256(_) | UniqueBTreeU256(_) | UniqueHashU256(_) => Self::U256(proj(cols, row_ref)),
+
+            BTreeI8(_) | HashI8(_) | UniqueBTreeI8(_) | UniqueHashI8(_) => Self::I8(proj(cols, row_ref)),
+            BTreeI16(_) | HashI16(_) | UniqueBTreeI16(_) | UniqueHashI16(_) => Self::I16(proj(cols, row_ref)),
+            BTreeI32(_) | HashI32(_) | UniqueBTreeI32(_) | UniqueHashI32(_) => Self::I32(proj(cols, row_ref)),
+            BTreeI64(_) | HashI64(_) | UniqueBTreeI64(_) | UniqueHashI64(_) => Self::I64(proj(cols, row_ref)),
+            BTreeI128(_) | HashI128(_) | UniqueBTreeI128(_) | UniqueHashI128(_) => Self::I128(proj(cols, row_ref)),
+            BTreeI256(_) | HashI256(_) | UniqueBTreeI256(_) | UniqueHashI256(_) => Self::I256(proj(cols, row_ref)),
+
+            BTreeF32(_) | HashF32(_) | UniqueBTreeF32(_) | UniqueHashF32(_) => Self::F32(proj(cols, row_ref)),
+            BTreeF64(_) | HashF64(_) | UniqueBTreeF64(_) | UniqueHashF64(_) => Self::F64(proj(cols, row_ref)),
+
+            BTreeString(_) | HashString(_) | UniqueBTreeString(_) | UniqueHashString(_) => {
+                Self::String(BowStr::Owned(proj(cols, row_ref)))
+            }
+
+            BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_) => {
                 // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
-                let key = unsafe { row_ref.project_unchecked(cols) };
-                let key_size = key.key_size_in_bytes();
-                this.insert(key, row_ref.pointer());
-                Ok(key_size)
+                let val = unsafe { row_ref.project_unchecked(cols) };
+                Self::AV(CowAV::Owned(val))
             }
-            Self::UniqueBtreeBool(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU8(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeSumTag(idx) => {
-                let SumTag(key) = project_to_singleton_key(cols, row_ref);
-                let key_size = key.key_size_in_bytes();
-                idx.insert(key, row_ref.pointer()).map_err(|ptr| *ptr).map(|_| key_size)
+
+            // SAFETY:
+            // 1. Caller promised that `cols` matches what was given at construction (`Self::new`).
+            //   In the case of `.clone_structure()`, the structure is preserved,
+            //   so the promise is also preserved.
+            //   This entails, that because we reached here, that `cols` is singleton.
+            // 2. Caller promised that projecting the `row_ref`'s type/layout to `self.indexed_columns`
+            //   gives us the index's key type.
+            //   This entails that each `ColId` in `self.indexed_columns`,
+            //   and by 1. also `cols`,
+            //   must be in-bounds of `row_ref`'s layout.
+            HashBytesKey8(_) | UniqueHashBytesKey8(_) => {
+                Self::BytesKey8(unsafe { BytesKey::from_row_ref(cols, row_ref) })
             }
-            Self::UniqueBtreeI8(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU16(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI16(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU32(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI32(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU64(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI64(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU128(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI128(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU256(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI256(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeF32(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeF64(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeString(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeAV(this) => {
-                // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
-                let key = unsafe { row_ref.project_unchecked(cols) };
-                let key_size = key.key_size_in_bytes();
-                this.insert(key, row_ref.pointer())
-                    .map_err(|ptr| *ptr)
-                    .map(|_| key_size)
+            HashBytesKey24(_) | UniqueHashBytesKey24(_) => {
+                Self::BytesKey24(unsafe { BytesKey::from_row_ref(cols, row_ref) })
             }
-            Self::UniqueDirectSumTag(idx) => direct_u8_insert_at_type(idx, cols, row_ref, |SumTag(tag)| tag as usize),
-            Self::UniqueDirectU8(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u8| k as usize),
-            Self::UniqueDirectU16(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u16| k as usize),
-            Self::UniqueDirectU32(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u32| k as usize),
-            Self::UniqueDirectU64(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u64| k as usize),
+            HashBytesKey56(_) | UniqueHashBytesKey56(_) => {
+                Self::BytesKey56(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
+            HashBytesKey120(_) | UniqueHashBytesKey120(_) => {
+                Self::BytesKey120(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+            }
         }
     }
 
-    /// Remove the row referred to by `row_ref` from the index `self`,
-    /// which must be keyed at `cols`.
-    ///
-    /// If `cols` is inconsistent with `self`,
-    /// or the `row_ref` has a row type other than that used for `self`,
-    /// this will behave oddly; it may return an error, do nothing,
-    /// or remove the wrong value from the index.
-    /// Note, however, that it will not invoke undefined behavior.
-    ///
-    /// If the row was present and has been deleted, returns `Ok(Some(key_size_in_bytes))`,
-    /// where `key_size_in_bytes` is the size of the key.
-    /// [`TableIndex::delete`] will use this
-    /// to update the counter for [`TableIndex::num_key_bytes`].
-    /// We want to store said counter outside of the [`TypedIndex`] enum,
-    /// but we can only compute the size using type info within the [`TypedIndex`],
-    /// so we have to return the size across this boundary.
-    // TODO(centril): make this unsafe and use unchecked conversions.
-    fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<usize>, InvalidFieldError> {
-        fn mm_delete_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeIndex<T>,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-        ) -> Result<Option<usize>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
-        }
-        fn um_delete_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeUniqueIndex<T>,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-        ) -> Result<Option<usize>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(&key).then_some(key_size))
-        }
-        fn direct_delete_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_usize: impl FnOnce(T) -> usize,
-        ) -> Result<Option<usize>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key = to_usize(key);
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(key).then_some(key_size))
-        }
-        fn direct_u8_delete_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectFixedCapIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_u8: impl FnOnce(T) -> usize,
-        ) -> Result<Option<usize>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key = to_u8(key);
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(key).then_some(key_size))
-        }
-
+    /// Returns a borrowed version of the key.
+    #[inline]
+    fn borrowed(&self) -> TypedIndexKey<'_> {
         match self {
-            Self::BtreeBool(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU8(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeSumTag(this) => {
-                let col_pos = cols.as_singleton().unwrap();
-                let SumTag(key) = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
-            }
-            Self::BtreeI8(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU16(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI16(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU32(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI32(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU64(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI64(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU128(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI128(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU256(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI256(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeF32(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeF64(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeString(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeAV(this) => {
-                let key = row_ref.project(cols)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
-            }
-            Self::UniqueBtreeBool(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU8(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeSumTag(this) => {
-                let col_pos = cols.as_singleton().unwrap();
-                let SumTag(key) = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key).then_some(key_size))
-            }
-            Self::UniqueBtreeI8(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU16(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI16(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU32(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI32(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU64(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI64(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU128(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI128(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU256(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI256(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeF32(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeF64(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeString(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeAV(this) => {
-                let key = row_ref.project(cols)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key).then_some(key_size))
-            }
-            Self::UniqueDirectSumTag(this) => direct_u8_delete_at_type(this, cols, row_ref, |SumTag(k)| k as usize),
-            Self::UniqueDirectU8(this) => direct_delete_at_type(this, cols, row_ref, |k: u8| k as usize),
-            Self::UniqueDirectU16(this) => direct_delete_at_type(this, cols, row_ref, |k: u16| k as usize),
-            Self::UniqueDirectU32(this) => direct_delete_at_type(this, cols, row_ref, |k: u32| k as usize),
-            Self::UniqueDirectU64(this) => direct_delete_at_type(this, cols, row_ref, |k: u64| k as usize),
+            Self::Bool(x) => TypedIndexKey::Bool(*x),
+            Self::U8(x) => TypedIndexKey::U8(*x),
+            Self::SumTag(x) => TypedIndexKey::SumTag(*x),
+            Self::I8(x) => TypedIndexKey::I8(*x),
+            Self::U16(x) => TypedIndexKey::U16(*x),
+            Self::I16(x) => TypedIndexKey::I16(*x),
+            Self::U32(x) => TypedIndexKey::U32(*x),
+            Self::I32(x) => TypedIndexKey::I32(*x),
+            Self::U64(x) => TypedIndexKey::U64(*x),
+            Self::I64(x) => TypedIndexKey::I64(*x),
+            Self::U128(x) => TypedIndexKey::U128(*x),
+            Self::I128(x) => TypedIndexKey::I128(*x),
+            Self::U256(x) => TypedIndexKey::U256(*x),
+            Self::I256(x) => TypedIndexKey::I256(*x),
+            Self::F32(x) => TypedIndexKey::F32(*x),
+            Self::F64(x) => TypedIndexKey::F64(*x),
+            Self::String(x) => TypedIndexKey::String(x.borrow().into()),
+            Self::AV(x) => TypedIndexKey::AV(x.borrow().into()),
+            Self::BytesKey8(x) => TypedIndexKey::BytesKey8(*x),
+            Self::BytesKey24(x) => TypedIndexKey::BytesKey24(*x),
+            Self::BytesKey56(x) => TypedIndexKey::BytesKey56(*x),
+            Self::BytesKey120(x) => TypedIndexKey::BytesKey120(*x),
         }
     }
 
-    fn seek_point(&self, key: &AlgebraicValue) -> TypedIndexPointIter<'_> {
-        fn mm_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeIndex<T>,
-            key: &AlgebraicValue,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeIndexPointIter<'a> {
-            this.values_in_point(av_as_t(key).expect("key does not conform to key type of index"))
+    /// Converts the key into an [`AlgebraicValue`].
+    fn into_algebraic_value(self, key_type: &AlgebraicType) -> AlgebraicValue {
+        match self {
+            Self::Bool(x) => x.into(),
+            Self::U8(x) => x.into(),
+            Self::SumTag(x) => x.into(),
+            Self::I8(x) => x.into(),
+            Self::U16(x) => x.into(),
+            Self::I16(x) => x.into(),
+            Self::U32(x) => x.into(),
+            Self::I32(x) => x.into(),
+            Self::U64(x) => x.into(),
+            Self::I64(x) => x.into(),
+            Self::U128(x) => x.into(),
+            Self::I128(x) => x.into(),
+            Self::U256(x) => x.into(),
+            Self::I256(x) => x.into(),
+            Self::F32(x) => x.into(),
+            Self::F64(x) => x.into(),
+            Self::String(x) => x.into_owned().into(),
+            Self::AV(x) => x.into_owned(),
+            Self::BytesKey8(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey24(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey56(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey120(x) => x.decode_algebraic_value(key_type),
         }
-        fn um_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeUniqueIndex<T>,
-            key: &AlgebraicValue,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeUniqueIndexPointIter<'a> {
-            this.values_in_point(av_as_t(key).expect("key does not conform to key type of index"))
+    }
+}
+
+const WRONG_TYPE: &str = "key does not conform to key type of index";
+
+/// An index from a key type determined at runtime to `RowPointer`(s).
+///
+/// See module docs for info about specialization.
+#[derive(Debug, PartialEq, Eq, derive_more::From)]
+enum TypedIndex {
+    // All the non-unique btree index types.
+    BTreeBool(BTreeIndex<bool>),
+    BTreeU8(BTreeIndex<u8>),
+    BTreeSumTag(BTreeIndex<SumTag>),
+    BTreeI8(BTreeIndex<i8>),
+    BTreeU16(BTreeIndex<u16>),
+    BTreeI16(BTreeIndex<i16>),
+    BTreeU32(BTreeIndex<u32>),
+    BTreeI32(BTreeIndex<i32>),
+    BTreeU64(BTreeIndex<u64>),
+    BTreeI64(BTreeIndex<i64>),
+    BTreeU128(BTreeIndex<u128>),
+    BTreeI128(BTreeIndex<i128>),
+    BTreeU256(BTreeIndex<u256>),
+    BTreeI256(BTreeIndex<i256>),
+    BTreeF32(BTreeIndex<F32>),
+    BTreeF64(BTreeIndex<F64>),
+    // TODO(perf, centril): consider `UmbraString` or some "German string".
+    BTreeString(BTreeIndex<Box<str>>),
+    BTreeAV(BTreeIndex<AlgebraicValue>),
+
+    // All the non-unique hash index types.
+    HashBool(HashIndex<bool>),
+    HashU8(HashIndex<u8>),
+    HashSumTag(HashIndex<SumTag>),
+    HashI8(HashIndex<i8>),
+    HashU16(HashIndex<u16>),
+    HashI16(HashIndex<i16>),
+    HashU32(HashIndex<u32>),
+    HashI32(HashIndex<i32>),
+    HashU64(HashIndex<u64>),
+    HashI64(HashIndex<i64>),
+    HashU128(HashIndex<u128>),
+    HashI128(HashIndex<i128>),
+    HashU256(HashIndex<u256>),
+    HashI256(HashIndex<i256>),
+    HashF32(HashIndex<F32>),
+    HashF64(HashIndex<F64>),
+    // TODO(perf, centril): consider `UmbraString` or some "German string".
+    HashString(HashIndex<Box<str>>),
+    HashAV(HashIndex<AlgebraicValue>),
+    HashBytesKey8(HashIndex<BytesKey<BYTES_KEY_SIZE_8_H>>),
+    HashBytesKey24(HashIndex<BytesKey<BYTES_KEY_SIZE_24_H>>),
+    HashBytesKey56(HashIndex<BytesKey<BYTES_KEY_SIZE_56_H>>),
+    HashBytesKey120(HashIndex<BytesKey<BYTES_KEY_SIZE_120_H>>),
+
+    // All the unique btree index types.
+    UniqueBTreeBool(UniqueBTreeIndex<bool>),
+    UniqueBTreeU8(UniqueBTreeIndex<u8>),
+    UniqueBTreeSumTag(UniqueBTreeIndex<SumTag>),
+    UniqueBTreeI8(UniqueBTreeIndex<i8>),
+    UniqueBTreeU16(UniqueBTreeIndex<u16>),
+    UniqueBTreeI16(UniqueBTreeIndex<i16>),
+    UniqueBTreeU32(UniqueBTreeIndex<u32>),
+    UniqueBTreeI32(UniqueBTreeIndex<i32>),
+    UniqueBTreeU64(UniqueBTreeIndex<u64>),
+    UniqueBTreeI64(UniqueBTreeIndex<i64>),
+    UniqueBTreeU128(UniqueBTreeIndex<u128>),
+    UniqueBTreeI128(UniqueBTreeIndex<i128>),
+    UniqueBTreeU256(UniqueBTreeIndex<u256>),
+    UniqueBTreeI256(UniqueBTreeIndex<i256>),
+    UniqueBTreeF32(UniqueBTreeIndex<F32>),
+    UniqueBTreeF64(UniqueBTreeIndex<F64>),
+    // TODO(perf, centril): consider `UmbraString` or some "German string".
+    UniqueBTreeString(UniqueBTreeIndex<Box<str>>),
+    UniqueBTreeAV(UniqueBTreeIndex<AlgebraicValue>),
+
+    // All the unique hash index types.
+    UniqueHashBool(UniqueHashIndex<bool>),
+    UniqueHashU8(UniqueHashIndex<u8>),
+    UniqueHashSumTag(UniqueHashIndex<SumTag>),
+    UniqueHashI8(UniqueHashIndex<i8>),
+    UniqueHashU16(UniqueHashIndex<u16>),
+    UniqueHashI16(UniqueHashIndex<i16>),
+    UniqueHashU32(UniqueHashIndex<u32>),
+    UniqueHashI32(UniqueHashIndex<i32>),
+    UniqueHashU64(UniqueHashIndex<u64>),
+    UniqueHashI64(UniqueHashIndex<i64>),
+    UniqueHashU128(UniqueHashIndex<u128>),
+    UniqueHashI128(UniqueHashIndex<i128>),
+    UniqueHashU256(UniqueHashIndex<u256>),
+    UniqueHashI256(UniqueHashIndex<i256>),
+    UniqueHashF32(UniqueHashIndex<F32>),
+    UniqueHashF64(UniqueHashIndex<F64>),
+    // TODO(perf, centril): consider `UmbraString` or some "German string".
+    UniqueHashString(UniqueHashIndex<Box<str>>),
+    UniqueHashAV(UniqueHashIndex<AlgebraicValue>),
+    UniqueHashBytesKey8(UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_8_H>>),
+    UniqueHashBytesKey24(UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_24_H>>),
+    UniqueHashBytesKey56(UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_56_H>>),
+    UniqueHashBytesKey120(UniqueHashIndex<BytesKey<BYTES_KEY_SIZE_120_H>>),
+
+    // All the unique direct index types.
+    UniqueDirectU8(UniqueDirectIndex<u8>),
+    UniqueDirectSumTag(UniqueDirectFixedCapIndex<SumTag>),
+    UniqueDirectU16(UniqueDirectIndex<u16>),
+    UniqueDirectU32(UniqueDirectIndex<u32>),
+    UniqueDirectU64(UniqueDirectIndex<u64>),
+}
+
+static_assert_size!(TypedIndex, 64);
+
+macro_rules! same_for_all_types {
+    ($scrutinee:expr, $this:ident => $body:expr) => {
+        match $scrutinee {
+            Self::BTreeBool($this) => $body,
+            Self::BTreeU8($this) => $body,
+            Self::BTreeSumTag($this) => $body,
+            Self::BTreeI8($this) => $body,
+            Self::BTreeU16($this) => $body,
+            Self::BTreeI16($this) => $body,
+            Self::BTreeU32($this) => $body,
+            Self::BTreeI32($this) => $body,
+            Self::BTreeU64($this) => $body,
+            Self::BTreeI64($this) => $body,
+            Self::BTreeU128($this) => $body,
+            Self::BTreeI128($this) => $body,
+            Self::BTreeU256($this) => $body,
+            Self::BTreeI256($this) => $body,
+            Self::BTreeF32($this) => $body,
+            Self::BTreeF64($this) => $body,
+            Self::BTreeString($this) => $body,
+            Self::BTreeAV($this) => $body,
+
+            Self::HashBool($this) => $body,
+            Self::HashU8($this) => $body,
+            Self::HashSumTag($this) => $body,
+            Self::HashI8($this) => $body,
+            Self::HashU16($this) => $body,
+            Self::HashI16($this) => $body,
+            Self::HashU32($this) => $body,
+            Self::HashI32($this) => $body,
+            Self::HashU64($this) => $body,
+            Self::HashI64($this) => $body,
+            Self::HashU128($this) => $body,
+            Self::HashI128($this) => $body,
+            Self::HashU256($this) => $body,
+            Self::HashI256($this) => $body,
+            Self::HashF32($this) => $body,
+            Self::HashF64($this) => $body,
+            Self::HashString($this) => $body,
+            Self::HashAV($this) => $body,
+            Self::HashBytesKey8($this) => $body,
+            Self::HashBytesKey24($this) => $body,
+            Self::HashBytesKey56($this) => $body,
+            Self::HashBytesKey120($this) => $body,
+
+            Self::UniqueBTreeBool($this) => $body,
+            Self::UniqueBTreeU8($this) => $body,
+            Self::UniqueBTreeSumTag($this) => $body,
+            Self::UniqueBTreeI8($this) => $body,
+            Self::UniqueBTreeU16($this) => $body,
+            Self::UniqueBTreeI16($this) => $body,
+            Self::UniqueBTreeU32($this) => $body,
+            Self::UniqueBTreeI32($this) => $body,
+            Self::UniqueBTreeU64($this) => $body,
+            Self::UniqueBTreeI64($this) => $body,
+            Self::UniqueBTreeU128($this) => $body,
+            Self::UniqueBTreeI128($this) => $body,
+            Self::UniqueBTreeU256($this) => $body,
+            Self::UniqueBTreeI256($this) => $body,
+            Self::UniqueBTreeF32($this) => $body,
+            Self::UniqueBTreeF64($this) => $body,
+            Self::UniqueBTreeString($this) => $body,
+            Self::UniqueBTreeAV($this) => $body,
+
+            Self::UniqueHashBool($this) => $body,
+            Self::UniqueHashU8($this) => $body,
+            Self::UniqueHashSumTag($this) => $body,
+            Self::UniqueHashI8($this) => $body,
+            Self::UniqueHashU16($this) => $body,
+            Self::UniqueHashI16($this) => $body,
+            Self::UniqueHashU32($this) => $body,
+            Self::UniqueHashI32($this) => $body,
+            Self::UniqueHashU64($this) => $body,
+            Self::UniqueHashI64($this) => $body,
+            Self::UniqueHashU128($this) => $body,
+            Self::UniqueHashI128($this) => $body,
+            Self::UniqueHashU256($this) => $body,
+            Self::UniqueHashI256($this) => $body,
+            Self::UniqueHashF32($this) => $body,
+            Self::UniqueHashF64($this) => $body,
+            Self::UniqueHashString($this) => $body,
+            Self::UniqueHashAV($this) => $body,
+            Self::UniqueHashBytesKey8($this) => $body,
+            Self::UniqueHashBytesKey24($this) => $body,
+            Self::UniqueHashBytesKey56($this) => $body,
+            Self::UniqueHashBytesKey120($this) => $body,
+
+            Self::UniqueDirectSumTag($this) => $body,
+            Self::UniqueDirectU8($this) => $body,
+            Self::UniqueDirectU16($this) => $body,
+            Self::UniqueDirectU32($this) => $body,
+            Self::UniqueDirectU64($this) => $body,
         }
-        fn direct_iter_at_type<T>(
-            this: &UniqueDirectIndex,
-            key: &AlgebraicValue,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-            to_usize: impl Copy + FnOnce(&T) -> usize,
-        ) -> UniqueDirectIndexPointIter {
-            let av_as_t = |v| av_as_t(v).expect("key does not conform to key type of index");
-            this.seek_point(to_usize(av_as_t(key)))
+    };
+}
+
+impl MemoryUsage for TypedIndex {
+    fn heap_usage(&self) -> usize {
+        same_for_all_types!(self, this => this.heap_usage())
+    }
+}
+
+#[derive(Debug, PartialEq, derive_more::From)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub enum IndexKind {
+    BTree,
+    Hash,
+    Direct,
+}
+
+impl IndexKind {
+    pub(crate) fn from_algo(algo: &IndexAlgorithm) -> Self {
+        match algo {
+            IndexAlgorithm::BTree(_) => Self::BTree,
+            IndexAlgorithm::Hash(_) => Self::Hash,
+            IndexAlgorithm::Direct(_) => Self::Direct,
+            // This is due to `#[non_exhaustive]`.
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl TypedIndex {
+    /// Returns a new index with keys being of `key_type` and the index possibly `is_unique`.
+    fn new(key_type: &AlgebraicType, kind: IndexKind, is_unique: bool) -> Self {
+        match kind {
+            IndexKind::BTree => Self::new_btree_index(key_type, is_unique),
+            IndexKind::Hash => Self::new_hash_index(key_type, is_unique),
+            IndexKind::Direct => Self::new_direct_index(key_type, is_unique)
+                .unwrap_or_else(|| Self::new_btree_index(key_type, is_unique)),
+        }
+    }
+
+    /// Returns a new direct index with key being of `key_type`.
+    ///
+    /// If the parameters passed are not compatible with a direct index,
+    /// `None` is returned.
+    fn new_direct_index(key_type: &AlgebraicType, is_unique: bool) -> Option<Self> {
+        if !is_unique {
+            return None;
         }
 
         use TypedIndex::*;
-        use TypedIndexPointIter::*;
-        match self {
-            BtreeBool(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_bool)),
-            BtreeU8(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u8)),
-            BtreeSumTag(this) => BTree(mm_iter_at_type(this, key, as_tag)),
-            BtreeI8(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i8)),
-            BtreeU16(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u16)),
-            BtreeI16(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i16)),
-            BtreeU32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u32)),
-            BtreeI32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i32)),
-            BtreeU64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u64)),
-            BtreeI64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i64)),
-            BtreeU128(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u128)),
-            BtreeI128(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i128)),
-            BtreeU256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            BtreeI256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            BtreeF32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_f32)),
-            BtreeF64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_f64)),
-            BtreeString(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_string)),
-            BtreeAV(this) => BTree(this.values_in_point(key)),
+        Some(match key_type {
+            AlgebraicType::U8 => UniqueDirectU8(<_>::default()),
+            AlgebraicType::U16 => UniqueDirectU16(<_>::default()),
+            AlgebraicType::U32 => UniqueDirectU32(<_>::default()),
+            AlgebraicType::U64 => UniqueDirectU64(<_>::default()),
+            // For a plain enum, use `u8` as the native type.
+            AlgebraicType::Sum(sum) if sum.is_simple_enum() => {
+                UniqueDirectSumTag(UniqueDirectFixedCapIndex::new(sum.variants.len()))
+            }
+            _ => return None,
+        })
+    }
 
-            UniqueBtreeBool(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_bool)),
-            UniqueBtreeU8(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u8)),
-            UniqueBtreeSumTag(this) => UniqueBTree(um_iter_at_type(this, key, as_tag)),
-            UniqueBtreeI8(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i8)),
-            UniqueBtreeU16(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u16)),
-            UniqueBtreeI16(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i16)),
-            UniqueBtreeU32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u32)),
-            UniqueBtreeI32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i32)),
-            UniqueBtreeU64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u64)),
-            UniqueBtreeI64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i64)),
-            UniqueBtreeU128(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u128)),
-            UniqueBtreeI128(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i128)),
-            UniqueBtreeU256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            UniqueBtreeI256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            UniqueBtreeF32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_f32)),
-            UniqueBtreeF64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_f64)),
-            UniqueBtreeString(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_string)),
-            UniqueBtreeAV(this) => UniqueBTree(this.values_in_point(key)),
+    /// Returns a new btree index with key being of `key_type`.
+    fn new_btree_index(key_type: &AlgebraicType, is_unique: bool) -> Self {
+        use TypedIndex::*;
 
-            UniqueDirectSumTag(this) => {
-                let key = as_tag(key).expect("key does not conform to key type of index");
-                UniqueDirect(this.seek_point(*key as usize))
+        // If the index is on a single column of a primitive type, string, or plain enum,
+        // use a homogeneous map with a native key type.
+        if is_unique {
+            match key_type {
+                AlgebraicType::Bool => UniqueBTreeBool(<_>::default()),
+                AlgebraicType::I8 => UniqueBTreeI8(<_>::default()),
+                AlgebraicType::U8 => UniqueBTreeU8(<_>::default()),
+                AlgebraicType::I16 => UniqueBTreeI16(<_>::default()),
+                AlgebraicType::U16 => UniqueBTreeU16(<_>::default()),
+                AlgebraicType::I32 => UniqueBTreeI32(<_>::default()),
+                AlgebraicType::U32 => UniqueBTreeU32(<_>::default()),
+                AlgebraicType::I64 => UniqueBTreeI64(<_>::default()),
+                AlgebraicType::U64 => UniqueBTreeU64(<_>::default()),
+                AlgebraicType::I128 => UniqueBTreeI128(<_>::default()),
+                AlgebraicType::U128 => UniqueBTreeU128(<_>::default()),
+                AlgebraicType::I256 => UniqueBTreeI256(<_>::default()),
+                AlgebraicType::U256 => UniqueBTreeU256(<_>::default()),
+                AlgebraicType::F32 => UniqueBTreeF32(<_>::default()),
+                AlgebraicType::F64 => UniqueBTreeF64(<_>::default()),
+                AlgebraicType::String => UniqueBTreeString(<_>::default()),
+                // For a plain enum, use `u8` as the native type.
+                // We use a direct index here
+                AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueBTreeSumTag(<_>::default()),
+
+                // The index is either multi-column,
+                // or we don't care to specialize on the key type,
+                // so use a map keyed on `AlgebraicValue`.
+                _ => UniqueBTreeAV(<_>::default()),
             }
-            UniqueDirectU8(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u8, |k| *k as usize))
-            }
-            UniqueDirectU16(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u16, |k| *k as usize))
-            }
-            UniqueDirectU32(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u32, |k| *k as usize))
-            }
-            UniqueDirectU64(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u64, |k| *k as usize))
+        } else {
+            match key_type {
+                AlgebraicType::Bool => BTreeBool(<_>::default()),
+                AlgebraicType::I8 => BTreeI8(<_>::default()),
+                AlgebraicType::U8 => BTreeU8(<_>::default()),
+                AlgebraicType::I16 => BTreeI16(<_>::default()),
+                AlgebraicType::U16 => BTreeU16(<_>::default()),
+                AlgebraicType::I32 => BTreeI32(<_>::default()),
+                AlgebraicType::U32 => BTreeU32(<_>::default()),
+                AlgebraicType::I64 => BTreeI64(<_>::default()),
+                AlgebraicType::U64 => BTreeU64(<_>::default()),
+                AlgebraicType::I128 => BTreeI128(<_>::default()),
+                AlgebraicType::U128 => BTreeU128(<_>::default()),
+                AlgebraicType::I256 => BTreeI256(<_>::default()),
+                AlgebraicType::U256 => BTreeU256(<_>::default()),
+                AlgebraicType::F32 => BTreeF32(<_>::default()),
+                AlgebraicType::F64 => BTreeF64(<_>::default()),
+                AlgebraicType::String => BTreeString(<_>::default()),
+
+                // For a plain enum, use `u8` as the native type.
+                AlgebraicType::Sum(sum) if sum.is_simple_enum() => BTreeSumTag(<_>::default()),
+
+                // The index is either multi-column,
+                // or we don't care to specialize on the key type,
+                // so use a map keyed on `AlgebraicValue`.
+                _ => BTreeAV(<_>::default()),
             }
         }
     }
 
-    fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TypedIndexRangeIter<'_> {
-        fn mm_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeIndex<T>,
-            range: &impl RangeBounds<AlgebraicValue>,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeIndexRangeIter<'a, T> {
-            let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
-            let start = range.start_bound().map(av_as_t);
-            let end = range.end_bound().map(av_as_t);
-            this.values_in_range(&(start, end))
-        }
-        fn um_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeUniqueIndex<T>,
-            range: &impl RangeBounds<AlgebraicValue>,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeUniqueIndexRangeIter<'a, T> {
-            let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
-            let start = range.start_bound().map(av_as_t);
-            let end = range.end_bound().map(av_as_t);
-            this.values_in_range(&(start, end))
-        }
-        fn direct_iter_at_type<'a, T>(
-            this: &'a UniqueDirectIndex,
-            range: &impl RangeBounds<AlgebraicValue>,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-            to_usize: impl Copy + FnOnce(&T) -> usize,
-        ) -> UniqueDirectIndexRangeIter<'a> {
-            let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
-            let start = range.start_bound().map(av_as_t).map(to_usize);
-            let end = range.end_bound().map(av_as_t).map(to_usize);
-            this.seek_range(&(start, end))
-        }
+    /// Returns a new hash index with key being of `key_type`.
+    fn new_hash_index(key_type: &AlgebraicType, is_unique: bool) -> Self {
+        use TypedIndex::*;
 
-        use TypedIndexRangeIter::*;
+        // If the index is on a single column of a primitive type, string, or plain enum,
+        // use a homogeneous map with a native key type.
+        if is_unique {
+            match key_type {
+                AlgebraicType::Bool => UniqueHashBool(<_>::default()),
+                AlgebraicType::I8 => UniqueHashI8(<_>::default()),
+                AlgebraicType::U8 => UniqueHashU8(<_>::default()),
+                AlgebraicType::I16 => UniqueHashI16(<_>::default()),
+                AlgebraicType::U16 => UniqueHashU16(<_>::default()),
+                AlgebraicType::I32 => UniqueHashI32(<_>::default()),
+                AlgebraicType::U32 => UniqueHashU32(<_>::default()),
+                AlgebraicType::I64 => UniqueHashI64(<_>::default()),
+                AlgebraicType::U64 => UniqueHashU64(<_>::default()),
+                AlgebraicType::I128 => UniqueHashI128(<_>::default()),
+                AlgebraicType::U128 => UniqueHashU128(<_>::default()),
+                AlgebraicType::I256 => UniqueHashI256(<_>::default()),
+                AlgebraicType::U256 => UniqueHashU256(<_>::default()),
+                AlgebraicType::F32 => UniqueHashF32(<_>::default()),
+                AlgebraicType::F64 => UniqueHashF64(<_>::default()),
+                AlgebraicType::String => UniqueHashString(<_>::default()),
+                // For a plain enum, use `u8` as the native type.
+                // We use a direct index here
+                AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueHashSumTag(<_>::default()),
+
+                ty => match required_bytes_key_size(ty) {
+                    Some(..=BYTES_KEY_SIZE_8_H) => UniqueHashBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_24_H) => UniqueHashBytesKey24(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_56_H) => UniqueHashBytesKey56(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_120_H) => UniqueHashBytesKey120(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => UniqueHashAV(<_>::default()),
+                },
+            }
+        } else {
+            match key_type {
+                AlgebraicType::Bool => HashBool(<_>::default()),
+                AlgebraicType::I8 => HashI8(<_>::default()),
+                AlgebraicType::U8 => HashU8(<_>::default()),
+                AlgebraicType::I16 => HashI16(<_>::default()),
+                AlgebraicType::U16 => HashU16(<_>::default()),
+                AlgebraicType::I32 => HashI32(<_>::default()),
+                AlgebraicType::U32 => HashU32(<_>::default()),
+                AlgebraicType::I64 => HashI64(<_>::default()),
+                AlgebraicType::U64 => HashU64(<_>::default()),
+                AlgebraicType::I128 => HashI128(<_>::default()),
+                AlgebraicType::U128 => HashU128(<_>::default()),
+                AlgebraicType::I256 => HashI256(<_>::default()),
+                AlgebraicType::U256 => HashU256(<_>::default()),
+                AlgebraicType::F32 => HashF32(<_>::default()),
+                AlgebraicType::F64 => HashF64(<_>::default()),
+                AlgebraicType::String => HashString(<_>::default()),
+
+                // For a plain enum, use `u8` as the native type.
+                AlgebraicType::Sum(sum) if sum.is_simple_enum() => HashSumTag(<_>::default()),
+
+                ty => match required_bytes_key_size(ty) {
+                    Some(..=BYTES_KEY_SIZE_8_H) => HashBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_24_H) => HashBytesKey24(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_56_H) => HashBytesKey56(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_120_H) => HashBytesKey120(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => HashAV(<_>::default()),
+                },
+            }
+        }
+    }
+
+    /// Clones the structure of this index but not the indexed elements,
+    /// so the returned index is empty.
+    fn clone_structure(&self) -> Self {
+        same_for_all_types!(self, this => this.clone_structure().into())
+    }
+
+    /// Returns whether this is a unique index or not.
+    fn is_unique(&self) -> bool {
+        use TypedIndex::*;
         match self {
-            Self::BtreeBool(this) => BtreeBool(mm_iter_at_type(this, range, AlgebraicValue::as_bool)),
-            Self::BtreeU8(this) => BtreeU8(mm_iter_at_type(this, range, AlgebraicValue::as_u8)),
-            Self::BtreeSumTag(this) => BtreeU8(mm_iter_at_type(this, range, as_tag)),
-            Self::BtreeI8(this) => BtreeI8(mm_iter_at_type(this, range, AlgebraicValue::as_i8)),
-            Self::BtreeU16(this) => BtreeU16(mm_iter_at_type(this, range, AlgebraicValue::as_u16)),
-            Self::BtreeI16(this) => BtreeI16(mm_iter_at_type(this, range, AlgebraicValue::as_i16)),
-            Self::BtreeU32(this) => BtreeU32(mm_iter_at_type(this, range, AlgebraicValue::as_u32)),
-            Self::BtreeI32(this) => BtreeI32(mm_iter_at_type(this, range, AlgebraicValue::as_i32)),
-            Self::BtreeU64(this) => BtreeU64(mm_iter_at_type(this, range, AlgebraicValue::as_u64)),
-            Self::BtreeI64(this) => BtreeI64(mm_iter_at_type(this, range, AlgebraicValue::as_i64)),
-            Self::BtreeU128(this) => BtreeU128(mm_iter_at_type(this, range, AlgebraicValue::as_u128)),
-            Self::BtreeI128(this) => BtreeI128(mm_iter_at_type(this, range, AlgebraicValue::as_i128)),
-            Self::BtreeU256(this) => BtreeU256(mm_iter_at_type(this, range, |av| av.as_u256().map(|x| &**x))),
-            Self::BtreeI256(this) => BtreeI256(mm_iter_at_type(this, range, |av| av.as_i256().map(|x| &**x))),
-            Self::BtreeF32(this) => BtreeF32(mm_iter_at_type(this, range, AlgebraicValue::as_f32)),
-            Self::BtreeF64(this) => BtreeF64(mm_iter_at_type(this, range, AlgebraicValue::as_f64)),
-            Self::BtreeString(this) => BtreeString(mm_iter_at_type(this, range, AlgebraicValue::as_string)),
-            Self::BtreeAV(this) => BtreeAV(this.values_in_range(range)),
+            BTreeBool(_) | BTreeU8(_) | BTreeSumTag(_) | BTreeI8(_) | BTreeU16(_) | BTreeI16(_) | BTreeU32(_)
+            | BTreeI32(_) | BTreeU64(_) | BTreeI64(_) | BTreeU128(_) | BTreeI128(_) | BTreeU256(_) | BTreeI256(_)
+            | BTreeF32(_) | BTreeF64(_) | BTreeString(_) | BTreeAV(_) | HashBool(_) | HashU8(_) | HashSumTag(_)
+            | HashI8(_) | HashU16(_) | HashI16(_) | HashU32(_) | HashI32(_) | HashU64(_) | HashI64(_) | HashU128(_)
+            | HashI128(_) | HashU256(_) | HashI256(_) | HashF32(_) | HashF64(_) | HashString(_) | HashAV(_)
+            | HashBytesKey8(_) | HashBytesKey24(_) | HashBytesKey56(_) | HashBytesKey120(_) => false,
+            UniqueBTreeBool(_)
+            | UniqueBTreeU8(_)
+            | UniqueBTreeSumTag(_)
+            | UniqueBTreeI8(_)
+            | UniqueBTreeU16(_)
+            | UniqueBTreeI16(_)
+            | UniqueBTreeU32(_)
+            | UniqueBTreeI32(_)
+            | UniqueBTreeU64(_)
+            | UniqueBTreeI64(_)
+            | UniqueBTreeU128(_)
+            | UniqueBTreeI128(_)
+            | UniqueBTreeU256(_)
+            | UniqueBTreeI256(_)
+            | UniqueBTreeF32(_)
+            | UniqueBTreeF64(_)
+            | UniqueBTreeString(_)
+            | UniqueBTreeAV(_)
+            | UniqueHashBool(_)
+            | UniqueHashU8(_)
+            | UniqueHashSumTag(_)
+            | UniqueHashI8(_)
+            | UniqueHashU16(_)
+            | UniqueHashI16(_)
+            | UniqueHashU32(_)
+            | UniqueHashI32(_)
+            | UniqueHashU64(_)
+            | UniqueHashI64(_)
+            | UniqueHashU128(_)
+            | UniqueHashI128(_)
+            | UniqueHashU256(_)
+            | UniqueHashI256(_)
+            | UniqueHashF32(_)
+            | UniqueHashF64(_)
+            | UniqueHashString(_)
+            | UniqueHashAV(_)
+            | UniqueHashBytesKey8(_)
+            | UniqueHashBytesKey24(_)
+            | UniqueHashBytesKey56(_)
+            | UniqueHashBytesKey120(_)
+            | UniqueDirectU8(_)
+            | UniqueDirectSumTag(_)
+            | UniqueDirectU16(_)
+            | UniqueDirectU32(_)
+            | UniqueDirectU64(_) => true,
+        }
+    }
 
-            Self::UniqueBtreeBool(this) => UniqueBtreeBool(um_iter_at_type(this, range, AlgebraicValue::as_bool)),
-            Self::UniqueBtreeU8(this) => UniqueBtreeU8(um_iter_at_type(this, range, AlgebraicValue::as_u8)),
-            Self::UniqueBtreeSumTag(this) => UniqueBtreeU8(um_iter_at_type(this, range, as_tag)),
-            Self::UniqueBtreeI8(this) => UniqueBtreeI8(um_iter_at_type(this, range, AlgebraicValue::as_i8)),
-            Self::UniqueBtreeU16(this) => UniqueBtreeU16(um_iter_at_type(this, range, AlgebraicValue::as_u16)),
-            Self::UniqueBtreeI16(this) => UniqueBtreeI16(um_iter_at_type(this, range, AlgebraicValue::as_i16)),
-            Self::UniqueBtreeU32(this) => UniqueBtreeU32(um_iter_at_type(this, range, AlgebraicValue::as_u32)),
-            Self::UniqueBtreeI32(this) => UniqueBtreeI32(um_iter_at_type(this, range, AlgebraicValue::as_i32)),
-            Self::UniqueBtreeU64(this) => UniqueBtreeU64(um_iter_at_type(this, range, AlgebraicValue::as_u64)),
-            Self::UniqueBtreeI64(this) => UniqueBtreeI64(um_iter_at_type(this, range, AlgebraicValue::as_i64)),
-            Self::UniqueBtreeU128(this) => UniqueBtreeU128(um_iter_at_type(this, range, AlgebraicValue::as_u128)),
-            Self::UniqueBtreeI128(this) => UniqueBtreeI128(um_iter_at_type(this, range, AlgebraicValue::as_i128)),
-            Self::UniqueBtreeF32(this) => UniqueBtreeF32(um_iter_at_type(this, range, AlgebraicValue::as_f32)),
-            Self::UniqueBtreeF64(this) => UniqueBtreeF64(um_iter_at_type(this, range, AlgebraicValue::as_f64)),
-            Self::UniqueBtreeU256(this) => {
-                UniqueBtreeU256(um_iter_at_type(this, range, |av| av.as_u256().map(|x| &**x)))
-            }
-            Self::UniqueBtreeI256(this) => {
-                UniqueBtreeI256(um_iter_at_type(this, range, |av| av.as_i256().map(|x| &**x)))
-            }
-            Self::UniqueBtreeString(this) => UniqueBtreeString(um_iter_at_type(this, range, AlgebraicValue::as_string)),
-            Self::UniqueBtreeAV(this) => UniqueBtreeAV(this.values_in_range(range)),
+    /// Add the relation `key -> ptr` to the index.
+    ///
+    /// Returns `Errs(existing_row)` if this index was a unique index that was violated.
+    /// The index is not inserted to in that case.
+    #[inline]
+    fn insert(&mut self, key: TypedIndexKey<'_>, ptr: RowPointer) -> Result<(), RowPointer> {
+        /// Avoid inlining the closure into the common path.
+        #[cold]
+        #[inline(never)]
+        fn outlined_call<R>(work: impl FnOnce() -> R) -> R {
+            work()
+        }
 
-            Self::UniqueDirectSumTag(this) => {
-                let av_as_t = |v| as_tag(v).copied().expect("bound does not conform to key type of index") as usize;
-                let start = range.start_bound().map(av_as_t);
-                let end = range.end_bound().map(av_as_t);
-                let iter = this.seek_range(&(start, end));
-                UniqueDirectU8(iter)
-            }
-            Self::UniqueDirectU8(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u8, |k| *k as usize))
-            }
-            Self::UniqueDirectU16(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u16, |k| {
-                    *k as usize
-                }))
-            }
-            Self::UniqueDirectU32(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u32, |k| {
-                    *k as usize
-                }))
-            }
-            Self::UniqueDirectU64(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u64, |k| {
-                    *k as usize
-                }))
+        fn direct<K: KeySize + Ord + ToFromUsize>(
+            index: &mut UniqueDirectIndex<K>,
+            key: K,
+            ptr: RowPointer,
+        ) -> (Result<(), RowPointer>, Option<TypedIndex>)
+        where
+            TypedIndex: From<UniqueBTreeIndex<K>>,
+        {
+            match index.insert_maybe_despecialize(key, ptr) {
+                Ok(res) => (res, None),
+                Err(Despecialize) => outlined_call(|| {
+                    let mut index = index.into_btree();
+                    let res = index.insert(key, ptr);
+                    (res, Some(index.into()))
+                }),
             }
         }
+
+        use TypedIndex::*;
+        use TypedIndexKey::*;
+        let (res, new) = match (&mut *self, key) {
+            (BTreeBool(i), Bool(k)) => (i.insert(k, ptr), None),
+            (BTreeU8(i), U8(k)) => (i.insert(k, ptr), None),
+            (BTreeSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
+            (BTreeI8(i), I8(k)) => (i.insert(k, ptr), None),
+            (BTreeU16(i), U16(k)) => (i.insert(k, ptr), None),
+            (BTreeI16(i), I16(k)) => (i.insert(k, ptr), None),
+            (BTreeU32(i), U32(k)) => (i.insert(k, ptr), None),
+            (BTreeI32(i), I32(k)) => (i.insert(k, ptr), None),
+            (BTreeU64(i), U64(k)) => (i.insert(k, ptr), None),
+            (BTreeI64(i), I64(k)) => (i.insert(k, ptr), None),
+            (BTreeU128(i), U128(k)) => (i.insert(k, ptr), None),
+            (BTreeI128(i), I128(k)) => (i.insert(k, ptr), None),
+            (BTreeU256(i), U256(k)) => (i.insert(k, ptr), None),
+            (BTreeI256(i), I256(k)) => (i.insert(k, ptr), None),
+            (BTreeF32(i), F32(k)) => (i.insert(k, ptr), None),
+            (BTreeF64(i), F64(k)) => (i.insert(k, ptr), None),
+            (BTreeString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
+            (BTreeAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
+            (HashBool(i), Bool(k)) => (i.insert(k, ptr), None),
+            (HashU8(i), U8(k)) => (i.insert(k, ptr), None),
+            (HashSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
+            (HashI8(i), I8(k)) => (i.insert(k, ptr), None),
+            (HashU16(i), U16(k)) => (i.insert(k, ptr), None),
+            (HashI16(i), I16(k)) => (i.insert(k, ptr), None),
+            (HashU32(i), U32(k)) => (i.insert(k, ptr), None),
+            (HashI32(i), I32(k)) => (i.insert(k, ptr), None),
+            (HashU64(i), U64(k)) => (i.insert(k, ptr), None),
+            (HashI64(i), I64(k)) => (i.insert(k, ptr), None),
+            (HashU128(i), U128(k)) => (i.insert(k, ptr), None),
+            (HashI128(i), I128(k)) => (i.insert(k, ptr), None),
+            (HashU256(i), U256(k)) => (i.insert(k, ptr), None),
+            (HashI256(i), I256(k)) => (i.insert(k, ptr), None),
+            (HashF32(i), F32(k)) => (i.insert(k, ptr), None),
+            (HashF64(i), F64(k)) => (i.insert(k, ptr), None),
+            (HashString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
+            (HashAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
+            (HashBytesKey8(i), BytesKey8(k)) => (i.insert(k, ptr), None),
+            (HashBytesKey24(i), BytesKey24(k)) => (i.insert(k, ptr), None),
+            (HashBytesKey56(i), BytesKey56(k)) => (i.insert(k, ptr), None),
+            (HashBytesKey120(i), BytesKey120(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeBool(i), Bool(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeU8(i), U8(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeI8(i), I8(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeU16(i), U16(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeI16(i), I16(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeU32(i), U32(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeI32(i), I32(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeU64(i), U64(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeI64(i), I64(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeU128(i), U128(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeI128(i), I128(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeU256(i), U256(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeI256(i), I256(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeF32(i), F32(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeF64(i), F64(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
+            (UniqueBTreeAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
+            (UniqueHashBool(i), Bool(k)) => (i.insert(k, ptr), None),
+            (UniqueHashU8(i), U8(k)) => (i.insert(k, ptr), None),
+            (UniqueHashSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
+            (UniqueHashI8(i), I8(k)) => (i.insert(k, ptr), None),
+            (UniqueHashU16(i), U16(k)) => (i.insert(k, ptr), None),
+            (UniqueHashI16(i), I16(k)) => (i.insert(k, ptr), None),
+            (UniqueHashU32(i), U32(k)) => (i.insert(k, ptr), None),
+            (UniqueHashI32(i), I32(k)) => (i.insert(k, ptr), None),
+            (UniqueHashU64(i), U64(k)) => (i.insert(k, ptr), None),
+            (UniqueHashI64(i), I64(k)) => (i.insert(k, ptr), None),
+            (UniqueHashU128(i), U128(k)) => (i.insert(k, ptr), None),
+            (UniqueHashI128(i), I128(k)) => (i.insert(k, ptr), None),
+            (UniqueHashU256(i), U256(k)) => (i.insert(k, ptr), None),
+            (UniqueHashI256(i), I256(k)) => (i.insert(k, ptr), None),
+            (UniqueHashF32(i), F32(k)) => (i.insert(k, ptr), None),
+            (UniqueHashF64(i), F64(k)) => (i.insert(k, ptr), None),
+            (UniqueHashString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
+            (UniqueHashAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
+            (UniqueHashBytesKey8(i), BytesKey8(k)) => (i.insert(k, ptr), None),
+            (UniqueHashBytesKey24(i), BytesKey24(k)) => (i.insert(k, ptr), None),
+            (UniqueHashBytesKey56(i), BytesKey56(k)) => (i.insert(k, ptr), None),
+            (UniqueHashBytesKey120(i), BytesKey120(k)) => (i.insert(k, ptr), None),
+            (UniqueDirectSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
+
+            (UniqueDirectU8(i), U8(k)) => direct(i, k, ptr),
+            (UniqueDirectU16(i), U16(k)) => direct(i, k, ptr),
+            (UniqueDirectU32(i), U32(k)) => direct(i, k, ptr),
+            (UniqueDirectU64(i), U64(k)) => direct(i, k, ptr),
+
+            _ => panic!("{}", WRONG_TYPE),
+        };
+
+        if let Some(new) = new {
+            *self = new;
+        }
+
+        res
+    }
+
+    /// Remove the relation `key -> ptr` from the index.
+    ///
+    /// Returns whether the row was present and has now been deleted.
+    ///
+    /// Panics if `key` is inconsistent with `self`.
+    #[inline]
+    fn delete(&mut self, key: &TypedIndexKey<'_>, ptr: RowPointer) -> bool {
+        use TypedIndex::*;
+        use TypedIndexKey::*;
+        match (self, key) {
+            (BTreeBool(i), Bool(k)) => i.delete(k, ptr),
+            (BTreeU8(i), U8(k)) => i.delete(k, ptr),
+            (BTreeSumTag(i), SumTag(k)) => i.delete(k, ptr),
+            (BTreeI8(i), I8(k)) => i.delete(k, ptr),
+            (BTreeU16(i), U16(k)) => i.delete(k, ptr),
+            (BTreeI16(i), I16(k)) => i.delete(k, ptr),
+            (BTreeU32(i), U32(k)) => i.delete(k, ptr),
+            (BTreeI32(i), I32(k)) => i.delete(k, ptr),
+            (BTreeU64(i), U64(k)) => i.delete(k, ptr),
+            (BTreeI64(i), I64(k)) => i.delete(k, ptr),
+            (BTreeU128(i), U128(k)) => i.delete(k, ptr),
+            (BTreeI128(i), I128(k)) => i.delete(k, ptr),
+            (BTreeU256(i), U256(k)) => i.delete(k, ptr),
+            (BTreeI256(i), I256(k)) => i.delete(k, ptr),
+            (BTreeF32(i), F32(k)) => i.delete(k, ptr),
+            (BTreeF64(i), F64(k)) => i.delete(k, ptr),
+            (BTreeString(i), String(k)) => i.delete(k.borrow(), ptr),
+            (BTreeAV(i), AV(k)) => i.delete(k.borrow(), ptr),
+            (HashBool(i), Bool(k)) => i.delete(k, ptr),
+            (HashU8(i), U8(k)) => i.delete(k, ptr),
+            (HashSumTag(i), SumTag(k)) => i.delete(k, ptr),
+            (HashI8(i), I8(k)) => i.delete(k, ptr),
+            (HashU16(i), U16(k)) => i.delete(k, ptr),
+            (HashI16(i), I16(k)) => i.delete(k, ptr),
+            (HashU32(i), U32(k)) => i.delete(k, ptr),
+            (HashI32(i), I32(k)) => i.delete(k, ptr),
+            (HashU64(i), U64(k)) => i.delete(k, ptr),
+            (HashI64(i), I64(k)) => i.delete(k, ptr),
+            (HashU128(i), U128(k)) => i.delete(k, ptr),
+            (HashI128(i), I128(k)) => i.delete(k, ptr),
+            (HashU256(i), U256(k)) => i.delete(k, ptr),
+            (HashI256(i), I256(k)) => i.delete(k, ptr),
+            (HashF32(i), F32(k)) => i.delete(k, ptr),
+            (HashF64(i), F64(k)) => i.delete(k, ptr),
+            (HashString(i), String(k)) => i.delete(k.borrow(), ptr),
+            (HashAV(i), AV(k)) => i.delete(k.borrow(), ptr),
+            (HashBytesKey8(i), BytesKey8(k)) => i.delete(k, ptr),
+            (HashBytesKey24(i), BytesKey24(k)) => i.delete(k, ptr),
+            (HashBytesKey56(i), BytesKey56(k)) => i.delete(k, ptr),
+            (HashBytesKey120(i), BytesKey120(k)) => i.delete(k, ptr),
+            (UniqueBTreeBool(i), Bool(k)) => i.delete(k, ptr),
+            (UniqueBTreeU8(i), U8(k)) => i.delete(k, ptr),
+            (UniqueBTreeSumTag(i), SumTag(k)) => i.delete(k, ptr),
+            (UniqueBTreeI8(i), I8(k)) => i.delete(k, ptr),
+            (UniqueBTreeU16(i), U16(k)) => i.delete(k, ptr),
+            (UniqueBTreeI16(i), I16(k)) => i.delete(k, ptr),
+            (UniqueBTreeU32(i), U32(k)) => i.delete(k, ptr),
+            (UniqueBTreeI32(i), I32(k)) => i.delete(k, ptr),
+            (UniqueBTreeU64(i), U64(k)) => i.delete(k, ptr),
+            (UniqueBTreeI64(i), I64(k)) => i.delete(k, ptr),
+            (UniqueBTreeU128(i), U128(k)) => i.delete(k, ptr),
+            (UniqueBTreeI128(i), I128(k)) => i.delete(k, ptr),
+            (UniqueBTreeU256(i), U256(k)) => i.delete(k, ptr),
+            (UniqueBTreeI256(i), I256(k)) => i.delete(k, ptr),
+            (UniqueBTreeF32(i), F32(k)) => i.delete(k, ptr),
+            (UniqueBTreeF64(i), F64(k)) => i.delete(k, ptr),
+            (UniqueBTreeString(i), String(k)) => i.delete(k.borrow(), ptr),
+            (UniqueBTreeAV(i), AV(k)) => i.delete(k.borrow(), ptr),
+            (UniqueHashBool(i), Bool(k)) => i.delete(k, ptr),
+            (UniqueHashU8(i), U8(k)) => i.delete(k, ptr),
+            (UniqueHashSumTag(i), SumTag(k)) => i.delete(k, ptr),
+            (UniqueHashI8(i), I8(k)) => i.delete(k, ptr),
+            (UniqueHashU16(i), U16(k)) => i.delete(k, ptr),
+            (UniqueHashI16(i), I16(k)) => i.delete(k, ptr),
+            (UniqueHashU32(i), U32(k)) => i.delete(k, ptr),
+            (UniqueHashI32(i), I32(k)) => i.delete(k, ptr),
+            (UniqueHashU64(i), U64(k)) => i.delete(k, ptr),
+            (UniqueHashI64(i), I64(k)) => i.delete(k, ptr),
+            (UniqueHashU128(i), U128(k)) => i.delete(k, ptr),
+            (UniqueHashI128(i), I128(k)) => i.delete(k, ptr),
+            (UniqueHashU256(i), U256(k)) => i.delete(k, ptr),
+            (UniqueHashI256(i), I256(k)) => i.delete(k, ptr),
+            (UniqueHashF32(i), F32(k)) => i.delete(k, ptr),
+            (UniqueHashF64(i), F64(k)) => i.delete(k, ptr),
+            (UniqueHashString(i), String(k)) => i.delete(k.borrow(), ptr),
+            (UniqueHashAV(i), AV(k)) => i.delete(k.borrow(), ptr),
+            (UniqueHashBytesKey8(i), BytesKey8(k)) => i.delete(k, ptr),
+            (UniqueHashBytesKey24(i), BytesKey24(k)) => i.delete(k, ptr),
+            (UniqueHashBytesKey56(i), BytesKey56(k)) => i.delete(k, ptr),
+            (UniqueHashBytesKey120(i), BytesKey120(k)) => i.delete(k, ptr),
+            (UniqueDirectSumTag(i), SumTag(k)) => i.delete(k, ptr),
+            (UniqueDirectU8(i), U8(k)) => i.delete(k, ptr),
+            (UniqueDirectU16(i), U16(k)) => i.delete(k, ptr),
+            (UniqueDirectU32(i), U32(k)) => i.delete(k, ptr),
+            (UniqueDirectU64(i), U64(k)) => i.delete(k, ptr),
+            _ => panic!("{}", WRONG_TYPE),
+        }
+    }
+
+    #[inline]
+    fn seek_point(&self, key: &TypedIndexKey<'_>) -> TypedIndexPointIter<'_> {
+        use TypedIndex::*;
+        use TypedIndexKey::*;
+        match (self, key) {
+            (BTreeBool(this), Bool(key)) => this.seek_point(key).into(),
+            (BTreeU8(this), U8(key)) => this.seek_point(key).into(),
+            (BTreeSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (BTreeI8(this), I8(key)) => this.seek_point(key).into(),
+            (BTreeU16(this), U16(key)) => this.seek_point(key).into(),
+            (BTreeI16(this), I16(key)) => this.seek_point(key).into(),
+            (BTreeU32(this), U32(key)) => this.seek_point(key).into(),
+            (BTreeI32(this), I32(key)) => this.seek_point(key).into(),
+            (BTreeU64(this), U64(key)) => this.seek_point(key).into(),
+            (BTreeI64(this), I64(key)) => this.seek_point(key).into(),
+            (BTreeU128(this), U128(key)) => this.seek_point(key).into(),
+            (BTreeI128(this), I128(key)) => this.seek_point(key).into(),
+            (BTreeU256(this), U256(key)) => this.seek_point(key).into(),
+            (BTreeI256(this), I256(key)) => this.seek_point(key).into(),
+            (BTreeF32(this), F32(key)) => this.seek_point(key).into(),
+            (BTreeF64(this), F64(key)) => this.seek_point(key).into(),
+            (BTreeString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (BTreeAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (HashBool(this), Bool(key)) => this.seek_point(key).into(),
+            (HashU8(this), U8(key)) => this.seek_point(key).into(),
+            (HashSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (HashI8(this), I8(key)) => this.seek_point(key).into(),
+            (HashU16(this), U16(key)) => this.seek_point(key).into(),
+            (HashI16(this), I16(key)) => this.seek_point(key).into(),
+            (HashU32(this), U32(key)) => this.seek_point(key).into(),
+            (HashI32(this), I32(key)) => this.seek_point(key).into(),
+            (HashU64(this), U64(key)) => this.seek_point(key).into(),
+            (HashI64(this), I64(key)) => this.seek_point(key).into(),
+            (HashU128(this), U128(key)) => this.seek_point(key).into(),
+            (HashI128(this), I128(key)) => this.seek_point(key).into(),
+            (HashU256(this), U256(key)) => this.seek_point(key).into(),
+            (HashI256(this), I256(key)) => this.seek_point(key).into(),
+            (HashF32(this), F32(key)) => this.seek_point(key).into(),
+            (HashF64(this), F64(key)) => this.seek_point(key).into(),
+            (HashString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (HashAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (HashBytesKey8(this), BytesKey8(key)) => this.seek_point(key).into(),
+            (HashBytesKey24(this), BytesKey24(key)) => this.seek_point(key).into(),
+            (HashBytesKey56(this), BytesKey56(key)) => this.seek_point(key).into(),
+            (HashBytesKey120(this), BytesKey120(key)) => this.seek_point(key).into(),
+            (UniqueBTreeBool(this), Bool(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU8(this), U8(key)) => this.seek_point(key).into(),
+            (UniqueBTreeSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI8(this), I8(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU16(this), U16(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI16(this), I16(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU32(this), U32(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI32(this), I32(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU64(this), U64(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI64(this), I64(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU128(this), U128(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI128(this), I128(key)) => this.seek_point(key).into(),
+            (UniqueBTreeU256(this), U256(key)) => this.seek_point(key).into(),
+            (UniqueBTreeI256(this), I256(key)) => this.seek_point(key).into(),
+            (UniqueBTreeF32(this), F32(key)) => this.seek_point(key).into(),
+            (UniqueBTreeF64(this), F64(key)) => this.seek_point(key).into(),
+            (UniqueBTreeString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueBTreeAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueHashBool(this), Bool(key)) => this.seek_point(key).into(),
+            (UniqueHashU8(this), U8(key)) => this.seek_point(key).into(),
+            (UniqueHashSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (UniqueHashI8(this), I8(key)) => this.seek_point(key).into(),
+            (UniqueHashU16(this), U16(key)) => this.seek_point(key).into(),
+            (UniqueHashI16(this), I16(key)) => this.seek_point(key).into(),
+            (UniqueHashU32(this), U32(key)) => this.seek_point(key).into(),
+            (UniqueHashI32(this), I32(key)) => this.seek_point(key).into(),
+            (UniqueHashU64(this), U64(key)) => this.seek_point(key).into(),
+            (UniqueHashI64(this), I64(key)) => this.seek_point(key).into(),
+            (UniqueHashU128(this), U128(key)) => this.seek_point(key).into(),
+            (UniqueHashI128(this), I128(key)) => this.seek_point(key).into(),
+            (UniqueHashU256(this), U256(key)) => this.seek_point(key).into(),
+            (UniqueHashI256(this), I256(key)) => this.seek_point(key).into(),
+            (UniqueHashF32(this), F32(key)) => this.seek_point(key).into(),
+            (UniqueHashF64(this), F64(key)) => this.seek_point(key).into(),
+            (UniqueHashString(this), String(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueHashAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueHashBytesKey8(this), BytesKey8(key)) => this.seek_point(key).into(),
+            (UniqueHashBytesKey24(this), BytesKey24(key)) => this.seek_point(key).into(),
+            (UniqueHashBytesKey56(this), BytesKey56(key)) => this.seek_point(key).into(),
+            (UniqueHashBytesKey120(this), BytesKey120(key)) => this.seek_point(key).into(),
+            (UniqueDirectSumTag(this), SumTag(key)) => this.seek_point(key).into(),
+            (UniqueDirectU8(this), U8(key)) => this.seek_point(key).into(),
+            (UniqueDirectU16(this), U16(key)) => this.seek_point(key).into(),
+            (UniqueDirectU32(this), U32(key)) => this.seek_point(key).into(),
+            (UniqueDirectU64(this), U64(key)) => this.seek_point(key).into(),
+            _ => panic!("{}", WRONG_TYPE),
+        }
+    }
+
+    #[inline]
+    fn iter(&self) -> TypedIndexIter<'_> {
+        same_for_all_types!(self, this => this.iter().into())
+    }
+
+    #[inline]
+    fn seek_range<'a>(
+        &self,
+        range: &impl RangeBounds<TypedIndexKey<'a>>,
+    ) -> IndexSeekRangeResult<TypedIndexRangeIter<'_>> {
+        // Copied from `RangeBounds::is_empty` as it's unstable.
+        // TODO(centril): replace once stable.
+        fn is_empty<T: PartialOrd>(bounds: &impl RangeBounds<T>) -> bool {
+            use core::ops::Bound::*;
+            !match (bounds.start_bound(), bounds.end_bound()) {
+                (Unbounded, _) | (_, Unbounded) => true,
+                (Included(start), Excluded(end))
+                | (Excluded(start), Included(end))
+                | (Excluded(start), Excluded(end)) => start < end,
+                (Included(start), Included(end)) => start <= end,
+            }
+        }
+
+        fn map<'a, 'b: 'a, T: 'a + ?Sized>(
+            range: &'a impl RangeBounds<TypedIndexKey<'b>>,
+            map: impl Copy + FnOnce(&'a TypedIndexKey<'b>) -> Option<&'a T>,
+        ) -> impl RangeBounds<T> + 'a {
+            let as_key = |v| map(v).expect(WRONG_TYPE);
+            let start = range.start_bound().map(as_key);
+            let end = range.end_bound().map(as_key);
+            (start, end)
+        }
+
+        Ok(match self {
+            // Hash indices are not `RangeIndex`.
+            Self::HashBool(_)
+            | Self::HashU8(_)
+            | Self::HashSumTag(_)
+            | Self::HashI8(_)
+            | Self::HashU16(_)
+            | Self::HashI16(_)
+            | Self::HashU32(_)
+            | Self::HashI32(_)
+            | Self::HashU64(_)
+            | Self::HashI64(_)
+            | Self::HashU128(_)
+            | Self::HashI128(_)
+            | Self::HashF32(_)
+            | Self::HashF64(_)
+            | Self::HashU256(_)
+            | Self::HashI256(_)
+            | Self::HashString(_)
+            | Self::HashAV(_)
+            | Self::HashBytesKey8(_)
+            | Self::HashBytesKey24(_)
+            | Self::HashBytesKey56(_)
+            | Self::HashBytesKey120(_)
+            | Self::UniqueHashBool(_)
+            | Self::UniqueHashU8(_)
+            | Self::UniqueHashSumTag(_)
+            | Self::UniqueHashI8(_)
+            | Self::UniqueHashU16(_)
+            | Self::UniqueHashI16(_)
+            | Self::UniqueHashU32(_)
+            | Self::UniqueHashI32(_)
+            | Self::UniqueHashU64(_)
+            | Self::UniqueHashI64(_)
+            | Self::UniqueHashU128(_)
+            | Self::UniqueHashI128(_)
+            | Self::UniqueHashF32(_)
+            | Self::UniqueHashF64(_)
+            | Self::UniqueHashU256(_)
+            | Self::UniqueHashI256(_)
+            | Self::UniqueHashString(_)
+            | Self::UniqueHashAV(_)
+            | Self::UniqueHashBytesKey8(_)
+            | Self::UniqueHashBytesKey24(_)
+            | Self::UniqueHashBytesKey56(_)
+            | Self::UniqueHashBytesKey120(_) => return Err(IndexCannotSeekRange),
+
+            // Ensure we don't panic inside `BTreeMap::seek_range`.
+            _ if is_empty(range) => iter::empty().into(),
+
+            Self::BTreeBool(this) => this.seek_range(&map(range, TypedIndexKey::as_bool)).into(),
+            Self::BTreeU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
+            Self::BTreeSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
+            Self::BTreeI8(this) => this.seek_range(&map(range, TypedIndexKey::as_i8)).into(),
+            Self::BTreeU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
+            Self::BTreeI16(this) => this.seek_range(&map(range, TypedIndexKey::as_i16)).into(),
+            Self::BTreeU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
+            Self::BTreeI32(this) => this.seek_range(&map(range, TypedIndexKey::as_i32)).into(),
+            Self::BTreeU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
+            Self::BTreeI64(this) => this.seek_range(&map(range, TypedIndexKey::as_i64)).into(),
+            Self::BTreeU128(this) => this.seek_range(&map(range, TypedIndexKey::as_u128)).into(),
+            Self::BTreeI128(this) => this.seek_range(&map(range, TypedIndexKey::as_i128)).into(),
+            Self::BTreeU256(this) => this.seek_range(&map(range, TypedIndexKey::as_u256)).into(),
+            Self::BTreeI256(this) => this.seek_range(&map(range, TypedIndexKey::as_i256)).into(),
+            Self::BTreeF32(this) => this.seek_range(&map(range, TypedIndexKey::as_f32)).into(),
+            Self::BTreeF64(this) => this.seek_range(&map(range, TypedIndexKey::as_f64)).into(),
+            Self::BTreeString(this) => {
+                let range = map(range, |k| k.as_string().map(|s| s.borrow()));
+                this.seek_range(&range).into()
+            }
+            Self::BTreeAV(this) => this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow()))).into(),
+
+            Self::UniqueBTreeBool(this) => this.seek_range(&map(range, TypedIndexKey::as_bool)).into(),
+            Self::UniqueBTreeU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
+            Self::UniqueBTreeSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
+            Self::UniqueBTreeI8(this) => this.seek_range(&map(range, TypedIndexKey::as_i8)).into(),
+            Self::UniqueBTreeU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
+            Self::UniqueBTreeI16(this) => this.seek_range(&map(range, TypedIndexKey::as_i16)).into(),
+            Self::UniqueBTreeU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
+            Self::UniqueBTreeI32(this) => this.seek_range(&map(range, TypedIndexKey::as_i32)).into(),
+            Self::UniqueBTreeU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
+            Self::UniqueBTreeI64(this) => this.seek_range(&map(range, TypedIndexKey::as_i64)).into(),
+            Self::UniqueBTreeU128(this) => this.seek_range(&map(range, TypedIndexKey::as_u128)).into(),
+            Self::UniqueBTreeI128(this) => this.seek_range(&map(range, TypedIndexKey::as_i128)).into(),
+            Self::UniqueBTreeU256(this) => this.seek_range(&map(range, TypedIndexKey::as_u256)).into(),
+            Self::UniqueBTreeI256(this) => this.seek_range(&map(range, TypedIndexKey::as_i256)).into(),
+            Self::UniqueBTreeF32(this) => this.seek_range(&map(range, TypedIndexKey::as_f32)).into(),
+            Self::UniqueBTreeF64(this) => this.seek_range(&map(range, TypedIndexKey::as_f64)).into(),
+            Self::UniqueBTreeString(this) => {
+                let range = map(range, |k| k.as_string().map(|s| s.borrow()));
+                this.seek_range(&range).into()
+            }
+            Self::UniqueBTreeAV(this) => this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow()))).into(),
+
+            Self::UniqueDirectSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
+            Self::UniqueDirectU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
+            Self::UniqueDirectU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
+            Self::UniqueDirectU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
+            Self::UniqueDirectU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
+        })
     }
 
     fn clear(&mut self) {
-        match self {
-            Self::BtreeBool(this) => this.clear(),
-            Self::BtreeU8(this) | Self::BtreeSumTag(this) => this.clear(),
-            Self::BtreeI8(this) => this.clear(),
-            Self::BtreeU16(this) => this.clear(),
-            Self::BtreeI16(this) => this.clear(),
-            Self::BtreeU32(this) => this.clear(),
-            Self::BtreeI32(this) => this.clear(),
-            Self::BtreeU64(this) => this.clear(),
-            Self::BtreeI64(this) => this.clear(),
-            Self::BtreeU128(this) => this.clear(),
-            Self::BtreeI128(this) => this.clear(),
-            Self::BtreeU256(this) => this.clear(),
-            Self::BtreeI256(this) => this.clear(),
-            Self::BtreeF32(this) => this.clear(),
-            Self::BtreeF64(this) => this.clear(),
-            Self::BtreeString(this) => this.clear(),
-            Self::BtreeAV(this) => this.clear(),
-
-            Self::UniqueBtreeBool(this) => this.clear(),
-            Self::UniqueBtreeU8(this) | Self::UniqueBtreeSumTag(this) => this.clear(),
-            Self::UniqueBtreeI8(this) => this.clear(),
-            Self::UniqueBtreeU16(this) => this.clear(),
-            Self::UniqueBtreeI16(this) => this.clear(),
-            Self::UniqueBtreeU32(this) => this.clear(),
-            Self::UniqueBtreeI32(this) => this.clear(),
-            Self::UniqueBtreeU64(this) => this.clear(),
-            Self::UniqueBtreeI64(this) => this.clear(),
-            Self::UniqueBtreeU128(this) => this.clear(),
-            Self::UniqueBtreeI128(this) => this.clear(),
-            Self::UniqueBtreeU256(this) => this.clear(),
-            Self::UniqueBtreeI256(this) => this.clear(),
-            Self::UniqueBtreeF32(this) => this.clear(),
-            Self::UniqueBtreeF64(this) => this.clear(),
-            Self::UniqueBtreeString(this) => this.clear(),
-            Self::UniqueBtreeAV(this) => this.clear(),
-
-            Self::UniqueDirectSumTag(this) => this.clear(),
-            Self::UniqueDirectU8(this)
-            | Self::UniqueDirectU16(this)
-            | Self::UniqueDirectU32(this)
-            | Self::UniqueDirectU64(this) => this.clear(),
-        }
+        same_for_all_types!(self, this => this.clear())
     }
 
     #[allow(unused)] // used only by tests
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.num_rows() == 0
     }
 
-    #[allow(unused)] // used only by tests
-    fn len(&self) -> usize {
-        match self {
-            Self::BtreeBool(this) => this.len(),
-            Self::BtreeU8(this) | Self::BtreeSumTag(this) => this.len(),
-            Self::BtreeI8(this) => this.len(),
-            Self::BtreeU16(this) => this.len(),
-            Self::BtreeI16(this) => this.len(),
-            Self::BtreeU32(this) => this.len(),
-            Self::BtreeI32(this) => this.len(),
-            Self::BtreeU64(this) => this.len(),
-            Self::BtreeI64(this) => this.len(),
-            Self::BtreeU128(this) => this.len(),
-            Self::BtreeI128(this) => this.len(),
-            Self::BtreeU256(this) => this.len(),
-            Self::BtreeI256(this) => this.len(),
-            Self::BtreeF32(this) => this.len(),
-            Self::BtreeF64(this) => this.len(),
-            Self::BtreeString(this) => this.len(),
-            Self::BtreeAV(this) => this.len(),
-
-            Self::UniqueBtreeBool(this) => this.len(),
-            Self::UniqueBtreeU8(this) | Self::UniqueBtreeSumTag(this) => this.len(),
-            Self::UniqueBtreeI8(this) => this.len(),
-            Self::UniqueBtreeU16(this) => this.len(),
-            Self::UniqueBtreeI16(this) => this.len(),
-            Self::UniqueBtreeU32(this) => this.len(),
-            Self::UniqueBtreeI32(this) => this.len(),
-            Self::UniqueBtreeU64(this) => this.len(),
-            Self::UniqueBtreeI64(this) => this.len(),
-            Self::UniqueBtreeU128(this) => this.len(),
-            Self::UniqueBtreeI128(this) => this.len(),
-            Self::UniqueBtreeU256(this) => this.len(),
-            Self::UniqueBtreeI256(this) => this.len(),
-            Self::UniqueBtreeF32(this) => this.len(),
-            Self::UniqueBtreeF64(this) => this.len(),
-            Self::UniqueBtreeString(this) => this.len(),
-            Self::UniqueBtreeAV(this) => this.len(),
-
-            Self::UniqueDirectSumTag(this) => this.len(),
-            Self::UniqueDirectU8(this)
-            | Self::UniqueDirectU16(this)
-            | Self::UniqueDirectU32(this)
-            | Self::UniqueDirectU64(this) => this.len(),
-        }
+    /// The number of rows stored in this index.
+    ///
+    /// Note that, for non-unique indexes, this may be larger than [`Self::num_keys`].
+    ///
+    /// This method runs in constant time.
+    fn num_rows(&self) -> usize {
+        same_for_all_types!(self, this => this.num_rows())
     }
 
     fn num_keys(&self) -> usize {
-        match self {
-            Self::BtreeBool(this) => this.num_keys(),
-            Self::BtreeU8(this) | Self::BtreeSumTag(this) => this.num_keys(),
-            Self::BtreeI8(this) => this.num_keys(),
-            Self::BtreeU16(this) => this.num_keys(),
-            Self::BtreeI16(this) => this.num_keys(),
-            Self::BtreeU32(this) => this.num_keys(),
-            Self::BtreeI32(this) => this.num_keys(),
-            Self::BtreeU64(this) => this.num_keys(),
-            Self::BtreeI64(this) => this.num_keys(),
-            Self::BtreeU128(this) => this.num_keys(),
-            Self::BtreeI128(this) => this.num_keys(),
-            Self::BtreeU256(this) => this.num_keys(),
-            Self::BtreeI256(this) => this.num_keys(),
-            Self::BtreeF32(this) => this.num_keys(),
-            Self::BtreeF64(this) => this.num_keys(),
-            Self::BtreeString(this) => this.num_keys(),
-            Self::BtreeAV(this) => this.num_keys(),
-
-            Self::UniqueBtreeBool(this) => this.num_keys(),
-            Self::UniqueBtreeU8(this) | Self::UniqueBtreeSumTag(this) => this.num_keys(),
-            Self::UniqueBtreeI8(this) => this.num_keys(),
-            Self::UniqueBtreeU16(this) => this.num_keys(),
-            Self::UniqueBtreeI16(this) => this.num_keys(),
-            Self::UniqueBtreeU32(this) => this.num_keys(),
-            Self::UniqueBtreeI32(this) => this.num_keys(),
-            Self::UniqueBtreeU64(this) => this.num_keys(),
-            Self::UniqueBtreeI64(this) => this.num_keys(),
-            Self::UniqueBtreeU128(this) => this.num_keys(),
-            Self::UniqueBtreeI128(this) => this.num_keys(),
-            Self::UniqueBtreeU256(this) => this.num_keys(),
-            Self::UniqueBtreeI256(this) => this.num_keys(),
-            Self::UniqueBtreeF32(this) => this.num_keys(),
-            Self::UniqueBtreeF64(this) => this.num_keys(),
-            Self::UniqueBtreeString(this) => this.num_keys(),
-            Self::UniqueBtreeAV(this) => this.num_keys(),
-
-            Self::UniqueDirectSumTag(this) => this.num_keys(),
-            Self::UniqueDirectU8(this)
-            | Self::UniqueDirectU16(this)
-            | Self::UniqueDirectU32(this)
-            | Self::UniqueDirectU64(this) => this.num_keys(),
-        }
+        same_for_all_types!(self, this => this.num_keys())
     }
+
+    /// The number of bytes stored in keys in this index.
+    ///
+    /// For non-unique indexes, duplicate keys are counted once for each row that refers to them,
+    /// even though the internal storage may deduplicate them as an optimization.
+    ///
+    /// This method runs in constant time.
+    ///
+    /// See the [`KeySize`] trait for more details on how this method computes its result.
+    pub fn num_key_bytes(&self) -> u64 {
+        same_for_all_types!(self, this => this.num_key_bytes())
+    }
+}
+
+/// A key into a [`TableIndex`].
+#[derive(derive_more::From)]
+pub struct IndexKey<'a> {
+    key: TypedIndexKey<'a>,
+}
+
+impl IndexKey<'_> {
+    /// Converts the key into an [`AlgebraicValue`].
+    pub fn into_algebraic_value(self, key_type: &AlgebraicType) -> AlgebraicValue {
+        self.key.into_algebraic_value(key_type)
+    }
+}
+
+/// A decoded range scan bound, which may be a point or a range.
+pub enum PointOrRange<'a> {
+    /// A point scan.
+    Point(IndexKey<'a>),
+    /// A range scan, with the lower and upper bound.
+    Range(Bound<IndexKey<'a>>, Bound<IndexKey<'a>>),
 }
 
 /// An index on a set of [`ColId`]s of a table.
@@ -1086,17 +1645,6 @@ pub struct TableIndex {
     // NOTE(centril): This is accessed in index scan ABIs for decoding, so don't `Box<_>` it.
     pub key_type: AlgebraicType,
 
-    /// The number of rows in this index.
-    ///
-    /// Memoized counter for [`Self::num_rows`].
-    num_rows: u64,
-
-    /// The number of key bytes in this index.
-    ///
-    /// Memoized counter for [`Self::num_key_bytes`].
-    /// See that method for more detailed documentation.
-    num_key_bytes: u64,
-
     /// Given a full row, typed at some `ty: ProductType`,
     /// these columns are the ones that this index indexes.
     /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
@@ -1108,35 +1656,27 @@ impl MemoryUsage for TableIndex {
         let Self {
             idx,
             key_type,
-            num_rows,
-            num_key_bytes,
             indexed_columns,
         } = self;
-        idx.heap_usage()
-            + key_type.heap_usage()
-            + num_rows.heap_usage()
-            + num_key_bytes.heap_usage()
-            + indexed_columns.heap_usage()
+        idx.heap_usage() + key_type.heap_usage() + indexed_columns.heap_usage()
     }
 }
 
-static_assert_size!(TableIndex, 88);
+static_assert_size!(TableIndex, 96);
 
 impl TableIndex {
     /// Returns a new possibly unique index, with `index_id` for a choice of indexing algorithm.
     pub fn new(
         row_type: &ProductType,
-        index_algo: &IndexAlgorithm,
+        indexed_columns: ColList,
+        index_kind: IndexKind,
         is_unique: bool,
     ) -> Result<Self, InvalidFieldError> {
-        let indexed_columns = index_algo.columns().to_owned();
         let key_type = row_type.project(&indexed_columns)?;
-        let typed_index = TypedIndex::new(&key_type, index_algo, is_unique);
+        let typed_index = TypedIndex::new(&key_type, index_kind, is_unique);
         Ok(Self {
             idx: typed_index,
             key_type,
-            num_rows: 0,
-            num_key_bytes: 0,
             indexed_columns,
         })
     }
@@ -1150,8 +1690,6 @@ impl TableIndex {
         Self {
             idx,
             key_type,
-            num_rows: 0,
-            num_key_bytes: 0,
             indexed_columns,
         }
     }
@@ -1159,6 +1697,205 @@ impl TableIndex {
     /// Returns whether this is a unique index or not.
     pub fn is_unique(&self) -> bool {
         self.idx.is_unique()
+    }
+
+    /// Derives a key for this index from `value`.
+    ///
+    /// Panics if `value` is not consistent with this index's key type.
+    #[inline]
+    pub fn key_from_algebraic_value<'a>(&self, value: &'a AlgebraicValue) -> IndexKey<'a> {
+        TypedIndexKey::from_algebraic_value(&self.idx, value).into()
+    }
+
+    /// Derives a key for this index from BSATN-encoded `bytes`.
+    ///
+    /// Returns an error if `bytes` is not properly encoded for this index's key type.
+    #[inline]
+    pub fn key_from_bsatn<'de>(&self, bytes: &'de [u8]) -> DecodeResult<IndexKey<'de>> {
+        Ok(TypedIndexKey::from_bsatn(&self.idx, &self.key_type, bytes)?.into())
+    }
+
+    pub fn bounds_from_bsatn<'de>(
+        &self,
+        mut prefix: &'de [u8],
+        prefix_elems: ColId,
+        rstart: &'de [u8],
+        rend: &'de [u8],
+    ) -> DecodeResult<PointOrRange<'de>> {
+        use TypedIndex::*;
+
+        let read_bound = |mut bytes| {
+            let reader = &mut bytes;
+            from_reader::<Bound<()>>(reader).map(|b| b.map(|()| *reader))
+        };
+
+        // Decode just whether it's inclusive or other bound forms.
+        let start = read_bound(rstart)?;
+        let end = read_bound(rend)?;
+
+        match &self.key_type {
+            // Multi-column index case or single-column index on a product field.
+            // We can treat the latter as the former
+            // and allow e.g., prefix scans within the product field.
+            AlgebraicType::Product(key_types) => {
+                // Split into types for the prefix and for the rest.
+                let key_types = &*key_types.elements;
+                let (prefix_types, rest_types) = key_types
+                    .split_at_checked(prefix_elems.idx())
+                    .ok_or_else(|| DecodeError::Other("index key type has too few fields compared to prefix".into()))?;
+                // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
+                // Extract that type and determine the length of the suffix.
+                let Some((range_type, suffix_types)) = rest_types.split_first() else {
+                    return Err(DecodeError::Other(
+                        "prefix length leaves no room for a range in ranged index scan".into(),
+                    ));
+                };
+                let range_type = &range_type.algebraic_type;
+                let suffix_len = suffix_types.len();
+
+                match &self.idx {
+                    BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_) => {
+                        // The index is not specialized.
+                        // We now have the types,
+                        // so proceed to decoding the prefix, and the start/end bounds.
+                        // Finally combine all of these to a single bound pair.
+                        let prefix = decode(prefix_types, &mut prefix)?;
+                        let from_av = |v: AlgebraicValue| TypedIndexKey::AV(v.into()).into();
+                        let decode = |mut b| AlgebraicValue::decode(range_type, &mut b);
+
+                        // Is this really a point scan?
+                        if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
+                            let point = decode(point)?;
+                            let point = Self::combine_prefix_and_point(prefix, point);
+                            return Ok(PointOrRange::Point(from_av(point)));
+                        }
+
+                        // It's not a point scan.
+                        let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
+                        let start = decode_bound(start)?;
+                        let end = decode_bound(end)?;
+                        let (start, end) = Self::combine_prefix_and_bounds(prefix, start, end, suffix_len);
+                        Ok(PointOrRange::Range(start.map(from_av), end.map(from_av)))
+                    }
+                    idx => unreachable!("index should be BytesKey* or AV, but was {idx:?}"),
+                }
+            }
+            // Single-column index case. We implicitly have a PT of len 1.
+            ty if prefix.is_empty() && prefix_elems.idx() == 0 => {
+                // Is this really a point scan?
+                if let Some(point) = Self::as_point_scan(&start, &end, 0) {
+                    return Ok(PointOrRange::Point(self.key_from_bsatn(point)?));
+                }
+
+                // It's not a point scan.
+                let decode = |b: Bound<_>| transpose_bound(b.map(|b| self.key_from_bsatn(b)));
+                Ok(PointOrRange::Range(decode(start)?, decode(end)?))
+            }
+            _ => Err(DecodeError::Other(
+                "a single-column index cannot be prefix scanned".into(),
+            )),
+        }
+    }
+
+    /// Decodes `prefix` ++ `start` and `prefix` ++ `end`
+    /// as BSATN-encoded bounds for a bytes key index.
+    /// The `suffix_len` is used to determine whether this is a point scan or a range scan.
+    #[allow(dead_code)]
+    fn bounds_from_bsatn_bytes_key<'de, const N: usize>(
+        prefix: &'de [u8],
+        prefix_types: &[ProductTypeElement],
+        start: Bound<&'de [u8]>,
+        end: Bound<&'de [u8]>,
+        range_type: &AlgebraicType,
+        suffix_len: usize,
+        ctor: impl Copy + FnOnce(BytesKey<N>) -> TypedIndexKey<'de>,
+    ) -> DecodeResult<PointOrRange<'de>> {
+        // Is this really a point scan?
+        let from = |k| ctor(k).into();
+        let decode =
+            |bytes| BytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, bytes, range_type).map(from);
+        Ok(if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
+            PointOrRange::Point(decode(point)?)
+        } else {
+            // It's not a point scan.
+            let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
+            PointOrRange::Range(decode_bound(start)?, decode_bound(end)?)
+        })
+    }
+
+    /// Returns `start` if there is no suffix and `(start, end)` represents a point bound.
+    /// Otherwise, `None` is returned.
+    fn as_point_scan<'de>(start: &Bound<&'de [u8]>, end: &Bound<&'de [u8]>, suffix_len: usize) -> Option<&'de [u8]> {
+        if let (0, Bound::Included(s), Bound::Included(e)) = (suffix_len, start, end)
+            && s == e
+        {
+            return Some(s);
+        }
+        None
+    }
+
+    /// Combines `prefix` and `point` into a ingle `AlgebraicValue` point.
+    fn combine_prefix_and_point(prefix: ProductValue, point: AlgebraicValue) -> AlgebraicValue {
+        let mut elems: Vec<_> = prefix.elements.into();
+        elems.push(point);
+        AlgebraicValue::product(elems)
+    }
+
+    /// Combines `prefix` equality constraints with `start` and `end` bounds
+    /// filling with `suffix_len` to ensure that the number of fields matches
+    /// that of the index type.
+    fn combine_prefix_and_bounds(
+        prefix: ProductValue,
+        start: Bound<AlgebraicValue>,
+        end: Bound<AlgebraicValue>,
+        suffix_len: usize,
+    ) -> (Bound<AlgebraicValue>, Bound<AlgebraicValue>) {
+        let prefix_is_empty = prefix.elements.is_empty();
+        // Concatenate prefix, value, and the most permissive value for the suffix.
+        let concat = |prefix: ProductValue, val, fill| {
+            let mut vals: Vec<_> = prefix.elements.into();
+            vals.reserve(1 + suffix_len);
+            vals.push(val);
+            vals.extend(iter::repeat_n(fill, suffix_len));
+            AlgebraicValue::product(vals)
+        };
+        // The start endpoint needs `Min` as the suffix-filling element,
+        // as it imposes the least and acts like `Unbounded`.
+        let concat_start = |val| concat(prefix.clone(), val, AlgebraicValue::Min);
+        let range_start = match start {
+            Bound::Included(r) => Bound::Included(concat_start(r)),
+            Bound::Excluded(r) => Bound::Excluded(concat_start(r)),
+            // Prefix is empty, and suffix will be `Min`,
+            // so simplify `(Min, Min, ...)` to `Unbounded`.
+            Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+            Bound::Unbounded => Bound::Included(concat_start(AlgebraicValue::Min)),
+        };
+        // The end endpoint needs `Max` as the suffix-filling element,
+        // as it imposes the least and acts like `Unbounded`.
+        let concat_end = |val| concat(prefix, val, AlgebraicValue::Max);
+        let range_end = match end {
+            Bound::Included(r) => Bound::Included(concat_end(r)),
+            Bound::Excluded(r) => Bound::Excluded(concat_end(r)),
+            // Prefix is empty, and suffix will be `Max`,
+            // so simplify `(Max, Max, ...)` to `Unbounded`.
+            Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+            Bound::Unbounded => Bound::Included(concat_end(AlgebraicValue::Max)),
+        };
+        (range_start, range_end)
+    }
+
+    /// Derives a key for this index from `row_ref`.
+    ///
+    /// # Safety
+    ///
+    /// Caller promises that the projection of `row_ref`'s type's
+    /// to the indexed column equals the index's key type.
+    #[inline]
+    pub unsafe fn key_from_row<'a>(&self, row_ref: RowRef<'a>) -> IndexKey<'a> {
+        // SAFETY:
+        // 1. We're passing the same `ColList` that was provided during construction.
+        // 2. Forward caller requirements.
+        unsafe { TypedIndexKey::from_row_ref(&self.idx, &self.indexed_columns, row_ref) }.into()
     }
 
     /// Inserts `ptr` with the value `row` to this index.
@@ -1174,66 +1911,76 @@ impl TableIndex {
     /// It also follows from `row_ref`'s type/layout
     /// being the same as passed in on `self`'s construction.
     pub unsafe fn check_and_insert(&mut self, row_ref: RowRef<'_>) -> Result<(), RowPointer> {
-        // SAFETY:
-        // 1. We're passing the same `ColList` that was provided during construction.
-        // 2. Forward the caller's proof obligation.
-        let res = unsafe { self.idx.insert(&self.indexed_columns, row_ref) };
-        match res {
-            Ok(key_size) => {
-                // No existing row; the new row was inserted.
-                // Update the `num_rows` and `num_key_bytes` counters
-                // to account for the new insertion.
-                self.num_rows += 1;
-                self.num_key_bytes += key_size as u64;
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+        // SAFETY: Forward the caller's proof obligation.
+        let key = unsafe { self.key_from_row(row_ref).key };
+        self.idx.insert(key, row_ref.pointer())
     }
 
     /// Deletes `row_ref` with its indexed value `row_ref.project(&self.indexed_columns)` from this index.
     ///
     /// Returns whether `ptr` was present.
-    pub fn delete(&mut self, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
-        if let Some(size_in_bytes) = self.idx.delete(&self.indexed_columns, row_ref)? {
-            // Was present, and deleted: update the `num_rows` and `num_key_bytes` counters.
-            self.num_rows -= 1;
-            self.num_key_bytes -= size_in_bytes as u64;
-            Ok(true)
-        } else {
-            // Was not present: don't update counters.
-            Ok(false)
-        }
+    ///
+    /// # Safety
+    ///
+    /// Caller promises that projecting the `row_ref`'s type
+    /// to the index's columns equals the index's key type.
+    /// This is entailed by an index belonging to the table's schema.
+    /// It also follows from `row_ref`'s type/layout
+    /// being the same as passed in on `self`'s construction.
+    pub unsafe fn delete(&mut self, row_ref: RowRef<'_>) -> bool {
+        // SAFETY: Forward the caller's proof obligation.
+        let key = unsafe { self.key_from_row(row_ref).key };
+        self.idx.delete(&key.borrowed(), row_ref.pointer())
     }
 
     /// Returns whether `value` is in this index.
     pub fn contains_any(&self, value: &AlgebraicValue) -> bool {
-        self.seek_point(value).next().is_some()
+        let key = self.key_from_algebraic_value(value);
+        self.seek_point(&key).next().is_some()
     }
 
     /// Returns the number of rows associated with this `value`.
     /// Returns `None` if 0.
     /// Returns `Some(1)` if the index is unique.
     pub fn count(&self, value: &AlgebraicValue) -> Option<usize> {
-        match self.seek_point(value).count() {
+        let key = self.key_from_algebraic_value(value);
+        match self.seek_point(&key).count() {
             0 => None,
             n => Some(n),
         }
     }
 
     /// Returns an iterator that yields all the `RowPointer`s for the given `key`.
-    pub fn seek_point(&self, key: &AlgebraicValue) -> TableIndexPointIter<'_> {
-        TableIndexPointIter {
-            iter: self.idx.seek_point(key),
-        }
+    #[inline]
+    pub fn seek_point(&self, key: &IndexKey<'_>) -> TableIndexPointIter<'_> {
+        let iter = self.idx.seek_point(&key.key);
+        TableIndexPointIter { iter }
     }
 
-    /// Returns an iterator over the [TableIndex] that yields all the `RowPointer`s
-    /// that fall within the specified `range`.
-    pub fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TableIndexRangeIter<'_> {
-        TableIndexRangeIter {
-            iter: self.idx.seek_range(range),
-        }
+    /// Returns an iterator that yields all the `RowPointer`s in the index.
+    ///
+    /// The order in which the rows are yielded
+    /// depends on the underlying index algorithm.
+    /// For example, while btree and direct indices yield in key-sorted order,
+    /// hash indices provide a non-deterministic order.
+    /// As such, it's best not to rely on the order at all.
+    pub fn iter(&self) -> TableIndexIter<'_> {
+        TableIndexIter { iter: self.idx.iter() }
+    }
+
+    /// Returns an iterator over the [TableIndex],
+    /// that yields all the `RowPointer`s,
+    /// that fall within the specified `range`,
+    /// if the index is [`RangedIndex`].
+    pub fn seek_range<'a>(
+        &self,
+        range: &impl RangeBounds<IndexKey<'a>>,
+    ) -> IndexSeekRangeResult<TableIndexRangeIter<'_>> {
+        let start = range.start_bound().map(|v| &v.key);
+        let end = range.end_bound().map(|v| &v.key);
+        let range = (start, end);
+        let iter = self.idx.seek_range(&range)?;
+        Ok(TableIndexRangeIter { iter })
     }
 
     /// Extends [`TableIndex`] with `rows`.
@@ -1264,43 +2011,87 @@ impl TableIndex {
         use TypedIndex::*;
         match (&self.idx, &other.idx) {
             // For non-unique indices, it's always possible to merge.
-            (BtreeBool(_), BtreeBool(_))
-            | (BtreeU8(_), BtreeU8(_))
-            | (BtreeSumTag(_), BtreeSumTag(_))
-            | (BtreeI8(_), BtreeI8(_))
-            | (BtreeU16(_), BtreeU16(_))
-            | (BtreeI16(_), BtreeI16(_))
-            | (BtreeU32(_), BtreeU32(_))
-            | (BtreeI32(_), BtreeI32(_))
-            | (BtreeU64(_), BtreeU64(_))
-            | (BtreeI64(_), BtreeI64(_))
-            | (BtreeU128(_), BtreeU128(_))
-            | (BtreeI128(_), BtreeI128(_))
-            | (BtreeU256(_), BtreeU256(_))
-            | (BtreeI256(_), BtreeI256(_))
-            | (BtreeF32(_), BtreeF32(_))
-            | (BtreeF64(_), BtreeF64(_))
-            | (BtreeString(_), BtreeString(_))
-            | (BtreeAV(_), BtreeAV(_)) => Ok(()),
+            (BTreeBool(_), BTreeBool(_))
+            | (BTreeU8(_), BTreeU8(_))
+            | (BTreeSumTag(_), BTreeSumTag(_))
+            | (BTreeI8(_), BTreeI8(_))
+            | (BTreeU16(_), BTreeU16(_))
+            | (BTreeI16(_), BTreeI16(_))
+            | (BTreeU32(_), BTreeU32(_))
+            | (BTreeI32(_), BTreeI32(_))
+            | (BTreeU64(_), BTreeU64(_))
+            | (BTreeI64(_), BTreeI64(_))
+            | (BTreeU128(_), BTreeU128(_))
+            | (BTreeI128(_), BTreeI128(_))
+            | (BTreeU256(_), BTreeU256(_))
+            | (BTreeI256(_), BTreeI256(_))
+            | (BTreeF32(_), BTreeF32(_))
+            | (BTreeF64(_), BTreeF64(_))
+            | (BTreeString(_), BTreeString(_))
+            | (BTreeAV(_), BTreeAV(_))
+            | (HashBool(_), HashBool(_))
+            | (HashU8(_), HashU8(_))
+            | (HashSumTag(_), HashSumTag(_))
+            | (HashI8(_), HashI8(_))
+            | (HashU16(_), HashU16(_))
+            | (HashI16(_), HashI16(_))
+            | (HashU32(_), HashU32(_))
+            | (HashI32(_), HashI32(_))
+            | (HashU64(_), HashU64(_))
+            | (HashI64(_), HashI64(_))
+            | (HashU128(_), HashU128(_))
+            | (HashI128(_), HashI128(_))
+            | (HashU256(_), HashU256(_))
+            | (HashI256(_), HashI256(_))
+            | (HashF32(_), HashF32(_))
+            | (HashF64(_), HashF64(_))
+            | (HashString(_), HashString(_))
+            | (HashAV(_), HashAV(_))
+            | (HashBytesKey8(_), HashBytesKey8(_))
+            | (HashBytesKey24(_), HashBytesKey24(_))
+            | (HashBytesKey56(_), HashBytesKey56(_))
+            | (HashBytesKey120(_), HashBytesKey120(_)) => Ok(()),
             // For unique indices, we'll need to see if everything in `other` can be added to `idx`.
-            (UniqueBtreeBool(idx), UniqueBtreeBool(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU8(idx), UniqueBtreeU8(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeSumTag(idx), UniqueBtreeSumTag(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI8(idx), UniqueBtreeI8(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU16(idx), UniqueBtreeU16(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI16(idx), UniqueBtreeI16(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU32(idx), UniqueBtreeU32(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI32(idx), UniqueBtreeI32(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU64(idx), UniqueBtreeU64(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI64(idx), UniqueBtreeI64(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU128(idx), UniqueBtreeU128(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI128(idx), UniqueBtreeI128(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU256(idx), UniqueBtreeU256(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI256(idx), UniqueBtreeI256(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeF32(idx), UniqueBtreeF32(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeF64(idx), UniqueBtreeF64(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeString(idx), UniqueBtreeString(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeAV(idx), UniqueBtreeAV(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
+            (UniqueBTreeBool(idx), UniqueBTreeBool(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeU8(idx), UniqueBTreeU8(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeSumTag(idx), UniqueBTreeSumTag(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeI8(idx), UniqueBTreeI8(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeU16(idx), UniqueBTreeU16(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeI16(idx), UniqueBTreeI16(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeU32(idx), UniqueBTreeU32(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeI32(idx), UniqueBTreeI32(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeU64(idx), UniqueBTreeU64(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeI64(idx), UniqueBTreeI64(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeU128(idx), UniqueBTreeU128(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeI128(idx), UniqueBTreeI128(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeU256(idx), UniqueBTreeU256(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeI256(idx), UniqueBTreeI256(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeF32(idx), UniqueBTreeF32(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeF64(idx), UniqueBTreeF64(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeString(idx), UniqueBTreeString(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeAV(idx), UniqueBTreeAV(other)) => idx.can_merge(other, ignore),
+            (UniqueHashBool(idx), UniqueHashBool(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU8(idx), UniqueHashU8(other)) => idx.can_merge(other, ignore),
+            (UniqueHashSumTag(idx), UniqueHashSumTag(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI8(idx), UniqueHashI8(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU16(idx), UniqueHashU16(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI16(idx), UniqueHashI16(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU32(idx), UniqueHashU32(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI32(idx), UniqueHashI32(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU64(idx), UniqueHashU64(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI64(idx), UniqueHashI64(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU128(idx), UniqueHashU128(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI128(idx), UniqueHashI128(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU256(idx), UniqueHashU256(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI256(idx), UniqueHashI256(other)) => idx.can_merge(other, ignore),
+            (UniqueHashF32(idx), UniqueHashF32(other)) => idx.can_merge(other, ignore),
+            (UniqueHashF64(idx), UniqueHashF64(other)) => idx.can_merge(other, ignore),
+            (UniqueHashString(idx), UniqueHashString(other)) => idx.can_merge(other, ignore),
+            (UniqueHashAV(idx), UniqueHashAV(other)) => idx.can_merge(other, ignore),
+            (UniqueHashBytesKey8(idx), UniqueHashBytesKey8(other)) => idx.can_merge(other, ignore),
+            (UniqueHashBytesKey24(idx), UniqueHashBytesKey24(other)) => idx.can_merge(other, ignore),
+            (UniqueHashBytesKey56(idx), UniqueHashBytesKey56(other)) => idx.can_merge(other, ignore),
+            (UniqueHashBytesKey120(idx), UniqueHashBytesKey120(other)) => idx.can_merge(other, ignore),
             (UniqueDirectU8(idx), UniqueDirectU8(other)) => idx.can_merge(other, ignore),
             (UniqueDirectSumTag(idx), UniqueDirectSumTag(other)) => idx.can_merge(other, ignore),
             (UniqueDirectU16(idx), UniqueDirectU16(other)) => idx.can_merge(other, ignore),
@@ -1318,8 +2109,6 @@ impl TableIndex {
     /// rather than constructing a new `TableIndex`.
     pub fn clear(&mut self) {
         self.idx.clear();
-        self.num_key_bytes = 0;
-        self.num_rows = 0;
     }
 
     /// The number of unique keys in this index.
@@ -1333,7 +2122,7 @@ impl TableIndex {
     ///
     /// This method runs in constant time.
     pub fn num_rows(&self) -> u64 {
-        self.num_rows
+        self.idx.num_rows() as u64
     }
 
     /// The number of bytes stored in keys in this index.
@@ -1345,7 +2134,7 @@ impl TableIndex {
     ///
     /// See the [`KeySize`] trait for more details on how this method computes its result.
     pub fn num_key_bytes(&self) -> u64 {
-        self.num_key_bytes
+        self.idx.num_key_bytes()
     }
 }
 
@@ -1355,16 +2144,22 @@ mod test {
     use crate::page_pool::PagePool;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::ops::Bound::*;
+    use decorum::Total;
     use proptest::prelude::*;
-    use proptest::{collection::vec, test_runner::TestCaseResult};
+    use proptest::{
+        collection::{hash_set, vec},
+        test_runner::TestCaseResult,
+    };
     use spacetimedb_data_structures::map::HashMap;
+    use spacetimedb_lib::ProductTypeElement;
     use spacetimedb_primitives::ColId;
+    use spacetimedb_sats::algebraic_value::Packed;
+    use spacetimedb_sats::proptest::{generate_algebraic_value, generate_primitive_algebraic_type};
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
-    use spacetimedb_schema::def::BTreeAlgorithm;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
@@ -1381,9 +2176,15 @@ mod test {
         })
     }
 
-    fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> TableIndex {
-        let algo = BTreeAlgorithm { columns: cols.clone() }.into();
-        TableIndex::new(row_type, &algo, is_unique).unwrap()
+    impl IndexKind {
+        /// Returns a strategy generating a ranged index kind.
+        fn gen_for_ranged() -> impl Strategy<Value = Self> {
+            any::<bool>().prop_map(|is_direct| if is_direct { Self::Direct } else { Self::BTree })
+        }
+    }
+
+    fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool, kind: IndexKind) -> TableIndex {
+        TableIndex::new(row_type, cols.clone(), kind, is_unique).unwrap()
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
@@ -1403,46 +2204,132 @@ mod test {
         index: &'a TableIndex,
         row: &'a AlgebraicValue,
     ) -> Option<TableIndexPointIter<'a>> {
-        index.is_unique().then(|| index.seek_point(row))
+        index
+            .is_unique()
+            .then(|| index.seek_point(&index.key_from_algebraic_value(row)))
+    }
+
+    fn successor_of_primitive(av: &AlgebraicValue) -> Option<AlgebraicValue> {
+        use AlgebraicValue::*;
+        match av {
+            Min | Max | Sum(_) | Product(_) | Array(_) | String(_) => unimplemented!(),
+
+            Bool(false) => Some(Bool(true)),
+            Bool(true) => None,
+            I8(x) => x.checked_add(1).map(I8),
+            U8(x) => x.checked_add(1).map(U8),
+            I16(x) => x.checked_add(1).map(I16),
+            U16(x) => x.checked_add(1).map(U16),
+            I32(x) => x.checked_add(1).map(I32),
+            U32(x) => x.checked_add(1).map(U32),
+            I64(x) => x.checked_add(1).map(I64),
+            U64(x) => x.checked_add(1).map(U64),
+            I128(x) => x.0.checked_add(1).map(Packed).map(I128),
+            U128(x) => x.0.checked_add(1).map(Packed).map(U128),
+            I256(x) => x.checked_add(1.into()).map(Box::new).map(I256),
+            U256(x) => x.checked_add(1u8.into()).map(Box::new).map(U256),
+            F32(x) => Some(F32(Total::from_inner(x.into_inner().next_up()))),
+            F64(x) => Some(F64(Total::from_inner(x.into_inner().next_up()))),
+        }
+    }
+
+    fn gen_primitive_ty_and_val() -> impl Strategy<Value = (AlgebraicType, AlgebraicValue)> {
+        generate_primitive_algebraic_type().prop_flat_map(|ty| (Just(ty.clone()), generate_algebraic_value(ty)))
+    }
+
+    fn seek_range<'a>(
+        index: &'a TableIndex,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> IndexSeekRangeResult<TableIndexRangeIter<'a>> {
+        let start = range.start_bound().map(|v| index.key_from_algebraic_value(v));
+        let end = range.end_bound().map(|v| index.key_from_algebraic_value(v));
+        index.seek_range(&(start, end))
     }
 
     proptest! {
         #![proptest_config(ProptestConfig { max_shrink_iters: 0x10000000, ..Default::default() })]
+
         #[test]
-        fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
-            let mut index = new_index(&ty, &cols, is_unique);
+        fn hash_index_cannot_seek_range((ty, cols, pv) in gen_row_and_cols(), is_unique: bool) {
+            let index = TableIndex::new(&ty, cols.clone(), IndexKind::Hash, is_unique).unwrap();
+
+            let key = pv.project(&cols).unwrap();
+            assert_eq!(seek_range(&index, &(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
+        }
+
+        #[test]
+        fn remove_nonexistent_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
+            let mut index = new_index(&ty, &cols, is_unique, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
-            prop_assert_eq!(index.delete(row_ref).unwrap(), false);
+            prop_assert_eq!(unsafe { index.delete(row_ref) }, false);
             prop_assert!(index.idx.is_empty());
+            prop_assert_eq!(index.num_keys(), 0);
+            prop_assert_eq!(index.num_key_bytes(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
         }
 
         #[test]
-        fn insert_delete_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
-            let mut index = new_index(&ty, &cols, is_unique);
+        fn insert_delete_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
+            let mut index = new_index(&ty, &cols, is_unique, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
-            prop_assert_eq!(index.idx.len(), 0);
+            prop_assert_eq!(index.num_keys(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
-            prop_assert_eq!(index.idx.len(), 1);
+            prop_assert_eq!(index.num_keys(), 1);
+            prop_assert_eq!(index.num_rows(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
-            prop_assert_eq!(index.delete(row_ref).unwrap(), true);
-            prop_assert_eq!(index.idx.len(), 0);
+            prop_assert_eq!(unsafe { index.delete(row_ref) }, true);
+            prop_assert_eq!(index.num_keys(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
         }
 
         #[test]
-        fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols()) {
-            let mut index = new_index(&ty, &cols, true);
+        fn non_unique_allows_key_twice(
+            (ty, cols, key) in gen_row_and_cols(),
+            kind: IndexKind,
+            vals in hash_set(any::<i32>(), 1..10)
+        ) {
+            // Add a field to `ty` so we can use the same key more than once.
+            let mut ty = Vec::from(ty.elements);
+            ty.push(ProductTypeElement::new_named(AlgebraicType::I32, "extra"));
+            let ty = ProductType::from(ty.into_boxed_slice());
+
+            let mut index = new_index(&ty, &cols, false, kind);
+            let mut table = table(ty);
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+
+            let num_vals = vals.len();
+            for val in vals {
+                let mut key = Vec::from(key.clone().elements);
+                key.push(val.into());
+                let key = ProductValue::from(key);
+
+                let row_ref = table.insert(&pool, &mut blob_store, &key).unwrap().1;
+
+                // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
+                prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
+            }
+
+            assert_eq!(index.num_keys(), 1);
+            assert_eq!(index.num_rows() as usize, num_vals);
+        }
+
+        #[test]
+        fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind) {
+            let mut index = new_index(&ty, &cols, true, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
@@ -1450,7 +2337,7 @@ mod test {
             let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
-            prop_assert_eq!(index.idx.len(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), false);
             prop_assert_eq!(
                 get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
@@ -1462,7 +2349,8 @@ mod test {
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
 
             // Inserting again would be a problem.
-            prop_assert_eq!(index.idx.len(), 1);
+            prop_assert_eq!(index.num_keys(), 1);
+            prop_assert_eq!(index.num_rows(), 1);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), true);
             prop_assert_eq!(
                 get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
@@ -1470,15 +2358,17 @@ mod test {
             );
             // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Err(row_ref.pointer()));
+            prop_assert_eq!(index.num_keys(), 1);
+            prop_assert_eq!(index.num_rows(), 1);
         }
 
         #[test]
-        fn seek_various_ranges(needle in 1..u64::MAX) {
+        fn seek_various_ranges(needle in 1..u64::MAX, is_unique: bool, kind in IndexKind::gen_for_ranged()) {
             use AlgebraicValue::U64 as V;
 
             let cols = 0.into();
             let ty = ProductType::from_iter([AlgebraicType::U64]);
-            let mut index = new_index(&ty, &cols, true);
+            let mut index = new_index(&ty, &cols, is_unique, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
@@ -1498,8 +2388,15 @@ mod test {
                 prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
             }
 
+            assert_eq!(index.num_keys(), 3);
+            assert_eq!(index.num_rows(), 3);
+            assert_eq!(index.num_key_bytes() as usize, 3 * size_of::<u64>());
+
             fn test_seek(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
-                let mut ptrs_in_index = index.seek_range(&range).collect::<Vec<_>>();
+                check_seek(seek_range(index, &range).unwrap().collect(), val_to_ptr, expect)
+            }
+
+            fn check_seek(mut ptrs_in_index: Vec<RowPointer>, val_to_ptr: &HashMap<u64, RowPointer>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
                 ptrs_in_index.sort();
                 let mut expected_ptrs = expect.into_iter().map(|expected| val_to_ptr.get(&expected).unwrap()).copied().collect::<Vec<_>>();
                 expected_ptrs.sort();
@@ -1513,6 +2410,7 @@ mod test {
             // Test point ranges.
             for x in range.clone() {
                 test_seek(&index, &val_to_ptr, V(x), [x])?;
+                check_seek(index.seek_point(&index.key_from_algebraic_value(&V(x))).collect(), &val_to_ptr, [x])?;
             }
 
             // Test `..` (`RangeFull`).
@@ -1559,6 +2457,44 @@ mod test {
             // Test `(x, y)` (Exclusive start, exclusive end).
             test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Excluded(V(needle))), [])?;
             test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Excluded(V(next))), [needle])?;
+        }
+
+        #[test]
+        fn empty_range_scans_dont_panic((ty, val) in gen_primitive_ty_and_val(), is_unique: bool, kind in IndexKind::gen_for_ranged()) {
+            let succ = successor_of_primitive(&val);
+            prop_assume!(succ.is_some());
+            let succ = succ.unwrap();
+
+            // Construct the index.
+            let row_ty = ProductType::from([ty.clone()]);
+            let mut index = new_index(&row_ty, &[0].into(), is_unique, kind);
+
+            // Construct the table and add `val` as a row.
+            let mut table = table(row_ty);
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+            let pv = product![val.clone()];
+            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
+
+            // Add the row to the index.
+            assert_eq!(index.num_keys(), 0);
+            assert_eq!(index.num_rows(), 0);
+            assert_eq!(index.num_key_bytes(), 0);
+            unsafe { index.check_and_insert(row_ref).unwrap(); }
+            assert_eq!(index.num_keys(), 1);
+            assert_eq!(index.num_rows(), 1);
+
+            // Seek the empty ranges.
+            let rows = seek_range(&index, &(&succ..&val)).unwrap().collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = seek_range(&index, &(&succ..=&val)).unwrap().collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = seek_range(&index, &(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = seek_range(&index, &(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = seek_range(&index, &(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            assert_eq!(rows, []);
         }
     }
 }
