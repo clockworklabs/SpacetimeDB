@@ -554,7 +554,7 @@ where
 
     // Always disconnect, even if authorization or execution failed.
     module
-        .call_identity_disconnected(caller_identity, connection_id, false)
+        .call_identity_disconnected(caller_identity, connection_id)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
