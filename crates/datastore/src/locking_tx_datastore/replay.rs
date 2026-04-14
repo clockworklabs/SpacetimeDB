@@ -581,6 +581,23 @@ impl ReplayCommittedState<'_> {
             .expect("first field in `st_column` should decode to a `TableId`")
     }
 
+    fn replay_truncate(&mut self, table_id: TableId) -> Result<()> {
+        // (1) Table dropped? Avoid an error and just ignore the row instead.
+        if self.replay_table_dropped.contains(&table_id) {
+            return Ok(());
+        }
+
+        // Get the table for mutation.
+        let (table, blob_store, ..) = self.get_table_and_blob_store_mut(table_id)?;
+
+        // We do not need to consider a truncation of `st_table` itself,
+        // as if that happens, the database is bricked.
+
+        table.clear(blob_store);
+
+        Ok(())
+    }
+
     fn replay_end_tx(&mut self) -> Result<()> {
         self.next_tx_offset += 1;
 

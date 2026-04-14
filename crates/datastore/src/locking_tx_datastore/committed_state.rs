@@ -531,23 +531,6 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn replay_truncate(&mut self, table_id: TableId) -> Result<()> {
-        // (1) Table dropped? Avoid an error and just ignore the row instead.
-        if self.replay_table_dropped.contains(&table_id) {
-            return Ok(());
-        }
-
-        // Get the table for mutation.
-        let (table, blob_store, ..) = self.get_table_and_blob_store_mut(table_id)?;
-
-        // We do not need to consider a truncation of `st_table` itself,
-        // as if that happens, the database is bricked.
-
-        table.clear(blob_store);
-
-        Ok(())
-    }
-
     /// Builds the in-memory state of sequences from `st_sequence` system table.
     /// The tables store the lasted allocated value, which tells us where to start generating.
     pub(super) fn build_sequence_state(&mut self) -> Result<SequencesState> {
