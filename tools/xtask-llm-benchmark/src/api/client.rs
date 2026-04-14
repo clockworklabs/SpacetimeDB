@@ -159,13 +159,6 @@ impl ApiClient {
                 }
                 let task_name = task_entry.file_name().to_string_lossy().to_string();
 
-                // Read first line of prompt.md as description
-                let prompt_path = task_entry.path().join("prompt.md");
-                let description = fs::read_to_string(&prompt_path)
-                    .ok()
-                    .and_then(|s| s.lines().next().map(|l| l.trim_start_matches('#').trim().to_string()))
-                    .unwrap_or_default();
-
                 // Humanize task_name for title
                 let title = task_name
                     .trim_start_matches(|c: char| c == 't' || c == '_' || c.is_ascii_digit())
@@ -188,20 +181,30 @@ impl ApiClient {
                         .join(" ")
                 };
 
-                // Read golden answers per language
+                // Read per-language prompts and golden answers
+                let tasks_dir = task_entry.path().join("tasks");
                 let answers_dir = task_entry.path().join("answers");
                 let mut golden_answers = serde_json::Map::new();
-                for (lang, file) in [("rust", "rust.rs"), ("csharp", "csharp.cs"), ("typescript", "typescript.ts")] {
-                    let path = answers_dir.join(file);
-                    if let Ok(content) = fs::read_to_string(&path) {
-                        golden_answers.insert(lang.to_string(), json!(content));
+                let mut descriptions = serde_json::Map::new();
+
+                for (lang, prompt_file, answer_file) in [
+                    ("rust", "rust.txt", "rust.rs"),
+                    ("csharp", "csharp.txt", "csharp.cs"),
+                    ("typescript", "typescript.txt", "typescript.ts"),
+                ] {
+                    if let Ok(prompt) = fs::read_to_string(tasks_dir.join(prompt_file)) {
+                        descriptions.insert(lang.to_string(), json!(prompt.trim()));
+                    }
+                    if let Ok(answer) = fs::read_to_string(answers_dir.join(answer_file)) {
+                        golden_answers.insert(lang.to_string(), json!(answer));
                     }
                 }
 
                 categories.entry(cat_name.clone()).or_default().push(json!({
                     "id": task_name,
                     "title": title,
-                    "description": description,
+                    "description": descriptions.get("rust").unwrap_or(&json!("")),
+                    "descriptions": descriptions,
                     "golden_answers": golden_answers,
                 }));
             }
