@@ -129,9 +129,6 @@ impl DstSubsystem for DatastoreSubsystem {
         "datastore"
     }
 
-    fn determinism_level() -> DeterminismLevel {
-        DeterminismLevel::TransitionalObserved
-    }
 
     fn generate_case(seed: DstSeed) -> Self::Case {
         let mut rng = seed.fork(1).rng();

@@ -1,20 +1,11 @@
 use crate::{seed::DstSeed, trace::Trace};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DeterminismLevel {
-    /// The subsystem's correctness-relevant resources are simulated and framework-controlled.
-    FullDst,
-    /// The subsystem uses DST-style generators/invariants, but still relies on real resources.
-    TransitionalObserved,
-}
-
 pub trait DstSubsystem {
     type Case: Clone + core::fmt::Debug + Eq + PartialEq;
     type Event: Clone + core::fmt::Debug + Eq + PartialEq;
     type Outcome: Clone + core::fmt::Debug + Eq + PartialEq;
 
     fn name() -> &'static str;
-    fn determinism_level() -> DeterminismLevel;
     fn generate_case(seed: DstSeed) -> Self::Case;
     fn run_case(case: &Self::Case) -> anyhow::Result<RunRecord<Self::Case, Self::Event, Self::Outcome>>;
 }
@@ -22,7 +13,6 @@ pub trait DstSubsystem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunRecord<C, E, O> {
     pub subsystem: &'static str,
-    pub determinism_level: DeterminismLevel,
     pub seed: DstSeed,
     pub case: C,
     pub trace: Option<Trace<E>>,
