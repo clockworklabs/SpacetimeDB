@@ -25,13 +25,7 @@ pub fn cli() -> Command {
 
 #[derive(Deserialize)]
 struct DatabasesResult {
-    pub identities: Vec<IdentityRow>,
-}
-
-#[derive(Tabled, Deserialize)]
-#[serde(transparent)]
-struct IdentityRow {
-    pub db_identity: Identity,
+    pub identities: Vec<Identity>,
 }
 
 #[derive(Tabled)]
@@ -67,7 +61,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .context("unable to retrieve databases for identity")?;
 
     if !result.identities.is_empty() {
-        let databases = assemble_rows(&config, server, result.identities).await;
+        let databases = assemble_rows(&config, server, result.identities).await?;
         let mut table = Table::new(databases);
         table
             .with(Style::psql())
@@ -81,22 +75,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-async fn assemble_rows(config: &Config, server: Option<&str>, identities: Vec<IdentityRow>) -> Vec<DatabaseRow> {
-    let lookups = identities.into_iter().map(|row| async move {
-        let db_identity = row.db_identity;
-        let db_names = match util::spacetime_reverse_dns(config, &db_identity.to_string(), server).await {
-            Ok(response) => response.names.into_iter().map(|name| name.to_string()).collect(),
-            Err(err) => {
-                eprintln!("Warning: failed to look up names for {db_identity}: {err}");
-                vec!["(lookup failed)".to_string()]
-            }
-        };
+async fn assemble_rows(
+    config: &Config,
+    server: Option<&str>,
+    identities: Vec<Identity>,
+) -> anyhow::Result<Vec<DatabaseRow>> {
+    let lookups = identities.into_iter().map(|db_identity| async move {
+        let response = util::spacetime_reverse_dns(config, &db_identity.to_string(), server).await?;
+        let db_names: Vec<_> = response.names.into_iter().map(|name| name.to_string()).collect();
 
-        DatabaseRow {
+        Ok(DatabaseRow {
             db_names: db_names.join(", "),
             db_identity,
-        }
+        })
     });
-
-    join_all(lookups).await
+    join_all(lookups).await.into_iter().collect::<anyhow::Result<Vec<_>>>()
 }
