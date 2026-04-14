@@ -38,6 +38,7 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
+use tracing::{info_span};
 
 const PREPARE_ID_HEADER: &str = "X-Prepare-Id";
 
@@ -1114,6 +1115,14 @@ impl InstanceEnv {
         let tx_id = self.current_tx_id().ok_or_else(|| {
             NodesError::HttpError("2PC remote reducer call requires an active distributed transaction id".to_owned())
         })?;
+        let prepare_span = info_span!(
+            "call_reducer_on_db_2pc",
+            database_identity = %caller_identity,
+            target_database_identity = %database_identity,
+            tx_id = %tx_id,
+            reducer = reducer_name
+        );
+        let _enter = prepare_span.enter();
 
         if self.replica_ctx.global_tx_manager.is_wounded(&tx_id) {
             return Err(self.wounded_tx_error(tx_id));

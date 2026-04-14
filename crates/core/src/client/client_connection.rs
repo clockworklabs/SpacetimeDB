@@ -37,7 +37,7 @@ use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use tokio::time::sleep;
-use tracing::{trace, warn};
+use tracing::{info_span, trace, warn, Instrument};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -725,6 +725,11 @@ impl ClientConnection {
         let module_info = module.info.clone();
         let database_identity = module_info.database_identity;
         let client_identity = id.identity;
+        let connection_span = info_span!(
+            "client_connection",
+            database_identity = %database_identity,
+            connection_id = %id.connection_id
+        );
         let abort_handle = tokio::spawn(async move {
             let Ok(fut) = fut_rx.await else { return };
 
@@ -737,7 +742,8 @@ impl ClientConnection {
             };
 
             fut.await
-        })
+        }
+        .instrument(connection_span))
         .abort_handle();
 
         let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);

@@ -213,6 +213,12 @@ impl GlobalTxLockGuard {
 impl Drop for GlobalTxLockGuard {
     fn drop(&mut self) {
         if let Some(tx_id) = self.tx_id.take() {
+            let span = tracing::info_span!(
+                "global_tx_lock_guard_drop",
+                database_identity = %self.manager.local_database_identity,
+                tx_id = %tx_id
+            );
+            let _enter = span.enter();
             self.manager.release(&tx_id);
         }
     }
@@ -233,6 +239,7 @@ impl Default for GlobalTxManager {
 }
 
 impl GlobalTxManager {
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     fn session_metric_labels(&self, tx_id: &GlobalTxId) -> Option<(Identity, &'static str)> {
         let session = self.get_session(tx_id)?;
         let role = match session.role {
@@ -260,6 +267,7 @@ impl GlobalTxManager {
         tx_id.creator_db == self.local_database_identity
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub fn ensure_session(
         &self,
         tx_id: GlobalTxId,
@@ -273,18 +281,26 @@ impl GlobalTxManager {
             .clone()
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub fn get_session(&self, tx_id: &GlobalTxId) -> Option<Arc<GlobalTxSession>> {
         self.sessions.lock().unwrap().get(tx_id).cloned()
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub fn remove_session(&self, tx_id: &GlobalTxId) {
         self.sessions.lock().unwrap().remove(tx_id);
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, prepare_id = prepare_id))]
     pub fn tx_for_prepare(&self, prepare_id: &str) -> Option<GlobalTxId> {
         self.prepare_to_tx.lock().unwrap().get(prepare_id).copied()
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, prepare_id),
+        fields(database_identity = %self.local_database_identity, tx_id = %tx_id, prepare_id = prepare_id.as_str())
+    )]
     pub fn set_prepare_mapping(&self, tx_id: GlobalTxId, prepare_id: String) {
         self.prepare_to_tx.lock().unwrap().insert(prepare_id.clone(), tx_id);
         if let Some(session) = self.get_session(&tx_id) {
@@ -292,6 +308,7 @@ impl GlobalTxManager {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, prepare_id = prepare_id))]
     pub fn remove_prepare_mapping(&self, prepare_id: &str) -> Option<GlobalTxId> {
         let tx_id = self.prepare_to_tx.lock().unwrap().remove(prepare_id);
         if let Some(tx_id) = tx_id
@@ -302,28 +319,37 @@ impl GlobalTxManager {
         tx_id
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, prepare_id),
+        fields(database_identity = %self.local_database_identity, tx_id = %tx_id, participant = %db_identity, prepare_id = prepare_id.as_str())
+    )]
     pub fn add_participant(&self, tx_id: GlobalTxId, db_identity: Identity, prepare_id: String) {
         if let Some(session) = self.get_session(&tx_id) {
             session.add_participant(db_identity, prepare_id);
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id, state = ?state))]
     pub fn mark_state(&self, tx_id: &GlobalTxId, state: GlobalTxState) {
         if let Some(session) = self.get_session(tx_id) {
             session.set_state(state);
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub fn is_wounded(&self, tx_id: &GlobalTxId) -> bool {
         self.get_session(tx_id).map(|s| s.is_wounded()).unwrap_or(false)
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub fn subscribe_wounded(&self, tx_id: &GlobalTxId) -> Option<watch::Receiver<bool>> {
         self.get_session(tx_id).map(|s| s.subscribe_wounded())
     }
 
     // This should only be called by the coordinator.
     // Arguably we should have a separate state for wounded and aborted, in case we wound a remote tx before we send write the prepare.
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub fn wound(&self, tx_id: &GlobalTxId) -> Option<Arc<GlobalTxSession>> {
         let session = self.get_session(tx_id)?;
         let was_fresh = session.wound();
@@ -348,6 +374,7 @@ impl GlobalTxManager {
         Some(session)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, on_wound), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub async fn acquire<F, Fut>(self: &Arc<Self>, tx_id: GlobalTxId, mut on_wound: F) -> AcquireDisposition
     where
         F: FnMut(GlobalTxId) -> Fut,
@@ -532,6 +559,7 @@ impl GlobalTxManager {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self), fields(database_identity = %self.local_database_identity, tx_id = %tx_id))]
     pub fn release(&self, tx_id: &GlobalTxId) {
         let mut state = self.lock_state.lock().unwrap();
         if state.owner.as_ref() == Some(tx_id) {

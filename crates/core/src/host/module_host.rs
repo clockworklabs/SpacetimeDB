@@ -73,6 +73,7 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
+use tracing::{info_span, Instrument};
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -1727,6 +1728,12 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
+        let reducer_span = info_span!(
+            "call_reducer",
+            database_identity = %self.info.database_identity,
+            tx_id = ?tx_id,
+            reducer = reducer_name
+        );
         let res = async {
             let (reducer_id, reducer_def) = self
                 .info
@@ -1754,6 +1761,7 @@ impl ModuleHost {
             )
             .await
         }
+        .instrument(reducer_span)
         .await;
 
         let log_message = match &res {
@@ -1779,6 +1787,12 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(ReducerCallResult, Option<Bytes>), ReducerCallError> {
+        let reducer_span = info_span!(
+            "call_reducer",
+            database_identity = %self.info.database_identity,
+            tx_id = ?tx_id,
+            reducer = reducer_name
+        );
         let res = async {
             let (reducer_id, reducer_def) = self
                 .info
@@ -1806,6 +1820,7 @@ impl ModuleHost {
             )
             .await
         }
+        .instrument(reducer_span)
         .await;
 
         let log_message = match &res {
@@ -1839,110 +1854,85 @@ impl ModuleHost {
         coordinator_identity_override: Option<Identity>,
         supplied_prepare_id: Option<String>,
     ) -> Result<(String, ReducerCallResult, Option<Bytes>), ReducerCallError> {
-        if tx_id.is_none() {
-            log::error!(
-                "prepare_reducer called without tx_id: caller_identity={caller_identity}, reducer_name={reducer_name}"
-            );
-        }
-        let tx_id = tx_id.ok_or(ReducerCallError::NoSuchReducer)?;
+        let prepare_span = info_span!(
+            "prepare_reducer",
+            database_identity = %self.info.database_identity,
+            tx_id = ?tx_id,
+            reducer = reducer_name,
+            coordinator_identity = ?coordinator_identity_override.unwrap_or(caller_identity)
+        );
+        async {
+            if tx_id.is_none() {
+                log::error!(
+                    "prepare_reducer called without tx_id: caller_identity={caller_identity}, reducer_name={reducer_name}"
+                );
+            }
+            let tx_id = tx_id.ok_or(ReducerCallError::NoSuchReducer)?;
 
-        let (reducer_id, reducer_def) = self
-            .info
-            .module_def
-            .reducer_full(reducer_name)
-            .ok_or(ReducerCallError::NoSuchReducer)?;
-        if let Some(lifecycle) = reducer_def.lifecycle {
-            return Err(ReducerCallError::LifecycleReducer(lifecycle));
-        }
-        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-            return Err(ReducerCallError::NoSuchReducer);
-        }
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
 
-        let args = args
-            .into_tuple_for_def(&self.info.module_def, reducer_def)
-            .map_err(InvalidReducerArguments)?;
-        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-        let params = CallReducerParams {
-            timestamp: Timestamp::now(),
-            caller_identity,
-            caller_connection_id,
-            tx_id: Some(tx_id),
-            client: None,
-            request_id: None,
-            timer: None,
-            reducer_id,
-            args,
-        };
+            let args = args
+                .into_tuple_for_def(&self.info.module_def, reducer_def)
+                .map_err(InvalidReducerArguments)?;
+            let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+            let params = CallReducerParams {
+                timestamp: Timestamp::now(),
+                caller_identity,
+                caller_connection_id,
+                tx_id: Some(tx_id),
+                client: None,
+                request_id: None,
+                timer: None,
+                reducer_id,
+                args,
+            };
 
-        // Resolve the effective coordinator identity before generating the prepare_id so
-        // the prefix is namespaced correctly even when called from the HTTP prepare handler.
-        let coordinator_identity = coordinator_identity_override.unwrap_or(caller_identity);
-        let prepare_id = supplied_prepare_id.unwrap_or_else(|| generate_prepare_id(tx_id, coordinator_identity));
-        let prepare_tx_id = Self::tx_id_from_prepare_id(&prepare_id)
-            .ok_or_else(|| ReducerCallError::InvalidPrepareId(format!("prepare_id '{prepare_id}' is not parseable")))?;
-        if prepare_tx_id != tx_id {
-            return Err(ReducerCallError::InvalidPrepareId(format!(
-                "prepare_id '{prepare_id}' encodes tx_id {prepare_tx_id}, expected {tx_id}"
-            )));
-        }
+            // Resolve the effective coordinator identity before generating the prepare_id so
+            // the prefix is namespaced correctly even when called from the HTTP prepare handler.
+            let coordinator_identity = coordinator_identity_override.unwrap_or(caller_identity);
+            let prepare_id = supplied_prepare_id.unwrap_or_else(|| generate_prepare_id(tx_id, coordinator_identity));
+            let prepare_tx_id = Self::tx_id_from_prepare_id(&prepare_id)
+                .ok_or_else(|| ReducerCallError::InvalidPrepareId(format!("prepare_id '{prepare_id}' is not parseable")))?;
+            if prepare_tx_id != tx_id {
+                return Err(ReducerCallError::InvalidPrepareId(format!(
+                    "prepare_id '{prepare_id}' encodes tx_id {prepare_tx_id}, expected {tx_id}"
+                )));
+            }
 
-        // Channel for signalling PREPARED result back to this task.
-        let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
-        // Channel for sending the COMMIT/ABORT decision to the executor thread.
-        let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
-        let prepared_txs_id = self.prepared_txs.debug_id();
+            // Channel for signalling PREPARED result back to this task.
+            let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<(ReducerCallResult, Option<Bytes>)>();
+            // Channel for sending the COMMIT/ABORT decision to the executor thread.
+            let (decision_tx, decision_rx) = std::sync::mpsc::channel::<bool>();
+            let prepared_txs_id = self.prepared_txs.debug_id();
 
-        if let Some(commit) = self.prepared_txs.register_waiter(
-            prepare_id.clone(),
-            super::prepared_tx::PreparedTxInfo {
-                decision_sender: decision_tx,
-            },
-        ) {
-            let decision = if commit { "commit" } else { "abort" };
-            WORKER_METRICS
-                .two_pc_participant_early_decisions_total
-                .with_label_values(&self.replica_ctx().database.database_identity, decision)
-                .inc();
-            log::warn!(
-                "prepare_reducer: observed early {decision} for {prepare_id} before local registration; prepared_txs_id=0x{prepared_txs_id:x}"
-            );
-            let outcome = ReducerOutcome::Failed(Box::new(
-                format!("2PC prepare {prepare_id} received early {decision} before participant registration")
-                    .into_boxed_str(),
-            ));
-            return Ok((
-                String::new(),
-                ReducerCallResult {
-                    outcome,
-                    energy_used: EnergyQuanta::ZERO,
-                    execution_duration: Default::default(),
+            if let Some(commit) = self.prepared_txs.register_waiter(
+                prepare_id.clone(),
+                super::prepared_tx::PreparedTxInfo {
+                    decision_sender: decision_tx,
                 },
-                None,
-            ));
-        }
-        log::info!(
-            "prepare_reducer: registered waiter for {prepare_id}; tx_id={tx_id}; prepared_txs_id=0x{prepared_txs_id:x}"
-        );
-        //if let Some(tx_id) = tx_id {
-        let session = self.replica_ctx().global_tx_manager.ensure_session(
-            tx_id,
-            super::global_tx::GlobalTxRole::Participant,
-            tx_id.creator_db,
-        );
-        session.set_state(super::global_tx::GlobalTxState::Preparing);
-        self.replica_ctx()
-            .global_tx_manager
-            .set_prepare_mapping(tx_id, prepare_id.clone());
-        let global_tx_lock_guard = match self.acquire_global_tx_slot(tx_id).await {
-            Ok(guard) => guard,
-            Err(outcome) => {
-                self.prepared_txs.clear(&prepare_id);
-                self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
-                self.replica_ctx()
-                    .global_tx_manager
-                    .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
-                self.replica_ctx().global_tx_manager.release(&tx_id);
-                self.replica_ctx().global_tx_manager.remove_session(&tx_id);
+            ) {
+                let decision = if commit { "commit" } else { "abort" };
+                WORKER_METRICS
+                    .two_pc_participant_early_decisions_total
+                    .with_label_values(&self.replica_ctx().database.database_identity, decision)
+                    .inc();
+                log::warn!(
+                    "prepare_reducer: observed early {decision} for {prepare_id} before local registration; prepared_txs_id=0x{prepared_txs_id:x}"
+                );
+                let outcome = ReducerOutcome::Failed(Box::new(
+                    format!("2PC prepare {prepare_id} received early {decision} before participant registration")
+                        .into_boxed_str(),
+                ));
                 return Ok((
                     String::new(),
                     ReducerCallResult {
@@ -1953,62 +1943,91 @@ impl ModuleHost {
                     None,
                 ));
             }
-        };
-        //}
-
-        // Spawn a background task that runs the reducer and holds the write lock
-        // until we send a decision.  The executor thread blocks inside
-        // `call_reducer_prepare_and_hold` on `decision_rx.recv()`.
-        let this = self.clone();
-        let reducer_name_owned = reducer_def.name.clone();
-        let prepare_id_clone = prepare_id.clone();
-        tokio::spawn(async move {
-            let _ = this
-                .call(
-                    &reducer_name_owned,
-                    (
-                        params,
-                        prepare_id_clone,
-                        coordinator_identity,
-                        prepared_tx,
-                        decision_rx,
-                        global_tx_lock_guard,
-                    ),
-                    async |(p, pid, cid, ptx, drx, guard), inst| {
-                        inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx, guard);
-                        Ok::<(), ReducerCallError>(())
-                    },
-                    // JS modules: no 2PC support yet.
-                    async |(_p, _pid, _cid, _ptx, _drx, _guard), _inst| Err(ReducerCallError::NoSuchReducer),
-                )
-                .await;
-        });
-
-        // Wait for the PREPARED result (or failure) from `call_reducer_prepare_and_hold`.
-        match prepared_rx.await {
-            Ok((result, return_value)) => {
-                if matches!(result.outcome, ReducerOutcome::Committed) {
-                    //if let Some(tx_id) = tx_id {
-                    self.replica_ctx()
-                        .global_tx_manager
-                        .mark_state(&tx_id, super::global_tx::GlobalTxState::Prepared);
-                    // }
-                    Ok((prepare_id, result, return_value))
-                } else {
-                    // Reducer failed — remove the entry we registered (no hold in progress).
+            log::info!(
+                "prepare_reducer: registered waiter for {prepare_id}; tx_id={tx_id}; prepared_txs_id=0x{prepared_txs_id:x}"
+            );
+            let session = self.replica_ctx().global_tx_manager.ensure_session(
+                tx_id,
+                super::global_tx::GlobalTxRole::Participant,
+                tx_id.creator_db,
+            );
+            session.set_state(super::global_tx::GlobalTxState::Preparing);
+            self.replica_ctx()
+                .global_tx_manager
+                .set_prepare_mapping(tx_id, prepare_id.clone());
+            let global_tx_lock_guard = match self.acquire_global_tx_slot(tx_id).await {
+                Ok(guard) => guard,
+                Err(outcome) => {
                     self.prepared_txs.clear(&prepare_id);
-                    // if let Some(tx_id) = tx_id {
                     self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
                     self.replica_ctx()
                         .global_tx_manager
                         .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
+                    self.replica_ctx().global_tx_manager.release(&tx_id);
                     self.replica_ctx().global_tx_manager.remove_session(&tx_id);
-                    // }
-                    Ok((String::new(), result, return_value))
+                    return Ok((
+                        String::new(),
+                        ReducerCallResult {
+                            outcome,
+                            energy_used: EnergyQuanta::ZERO,
+                            execution_duration: Default::default(),
+                        },
+                        None,
+                    ));
                 }
+            };
+
+            // Spawn a background task that runs the reducer and holds the write lock
+            // until we send a decision.  The executor thread blocks inside
+            // `call_reducer_prepare_and_hold` on `decision_rx.recv()`.
+            let this = self.clone();
+            let reducer_name_owned = reducer_def.name.clone();
+            let prepare_id_clone = prepare_id.clone();
+            tokio::spawn(async move {
+                let _ = this
+                    .call(
+                        &reducer_name_owned,
+                        (
+                            params,
+                            prepare_id_clone,
+                            coordinator_identity,
+                            prepared_tx,
+                            decision_rx,
+                            global_tx_lock_guard,
+                        ),
+                        async |(p, pid, cid, ptx, drx, guard), inst| {
+                            inst.call_reducer_prepare_and_hold(p, pid, cid, ptx, drx, guard);
+                            Ok::<(), ReducerCallError>(())
+                        },
+                        // JS modules: no 2PC support yet.
+                        async |(_p, _pid, _cid, _ptx, _drx, _guard), _inst| Err(ReducerCallError::NoSuchReducer),
+                    )
+                    .await;
+            });
+
+            // Wait for the PREPARED result (or failure) from `call_reducer_prepare_and_hold`.
+            match prepared_rx.await {
+                Ok((result, return_value)) => {
+                    if matches!(result.outcome, ReducerOutcome::Committed) {
+                        self.replica_ctx()
+                            .global_tx_manager
+                            .mark_state(&tx_id, super::global_tx::GlobalTxState::Prepared);
+                        Ok((prepare_id, result, return_value))
+                    } else {
+                        self.prepared_txs.clear(&prepare_id);
+                        self.replica_ctx().global_tx_manager.remove_prepare_mapping(&prepare_id);
+                        self.replica_ctx()
+                            .global_tx_manager
+                            .mark_state(&tx_id, super::global_tx::GlobalTxState::Aborted);
+                        self.replica_ctx().global_tx_manager.remove_session(&tx_id);
+                        Ok((String::new(), result, return_value))
+                    }
+                }
+                Err(_) => Err(ReducerCallError::NoSuchModule(NoSuchModule)),
             }
-            Err(_) => Err(ReducerCallError::NoSuchModule(NoSuchModule)),
         }
+        .instrument(prepare_span)
+        .await
     }
 
     /// Finalize a prepared transaction as COMMIT.
