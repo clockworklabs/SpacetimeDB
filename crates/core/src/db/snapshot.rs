@@ -158,7 +158,7 @@ impl SnapshotMetrics {
 type WeakDatabaseState = Weak<RwLock<CommittedState>>;
 
 enum Request {
-    // TakeSnapshot,
+    TakeSnapshot,
     ReplaceState(SnapshotDatabaseState),
 }
 
