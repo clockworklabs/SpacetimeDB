@@ -381,7 +381,7 @@ public static class GeneratorSnapshotTests
                         Method = method,
                     })
             )
-            .Single(entry => entry.Method.Identifier.Text == "ViewDefIEnumerableReturnFromIter");
+            .Single(entry => entry.Method.Identifier.Text == "ViewDefWrongReturn");
 
         var returnTypeSpan = method.Method.ReturnType.Span;
         var diagnostics = runResult
@@ -389,8 +389,7 @@ public static class GeneratorSnapshotTests
             .Where(d => d.Id == "STDB0024")
             .ToList();
         var diagnostic = diagnostics.FirstOrDefault(d =>
-            d.GetMessage().Contains("ViewDefIEnumerableReturnFromIter")
-            && d.Location.SourceTree == method.Tree
+            d.GetMessage().Contains("ViewDefWrongReturn") && d.Location.SourceTree == method.Tree
         );
 
         Assert.NotNull(diagnostic);
@@ -400,6 +399,6 @@ public static class GeneratorSnapshotTests
         var returnTypeText = method
             .Root.ToFullString()
             .Substring(returnTypeSpan.Start, returnTypeSpan.Length);
-        Assert.Contains("IEnumerable", returnTypeText);
+        Assert.Contains("Player", returnTypeText);
     }
 }
