@@ -123,10 +123,12 @@ pub enum PendingSchemaChange {
     /// Only non-representational row-type changes are allowed here,
     /// so existing rows in the table will be compatible with the new row type.
     TableAlterRowType(TableId, Vec<ColumnSchema>),
-    /// The constraint with [`ConstraintSchema`] was added to the table with [`TableId`].
-    ConstraintRemoved(TableId, ConstraintSchema),
+    /// The constraint with [`ConstraintSchema`] was removed from the table with [`TableId`].
+    /// If indices were made non-unique, their [`IndexId`]s are stored.
+    ConstraintRemoved(TableId, ConstraintSchema, Vec<IndexId>),
     /// The constraint with [`ConstraintId`] was added to the table with [`TableId`].
-    ConstraintAdded(TableId, ConstraintId),
+    /// If indices were made unique, their [`IndexId`]s and the taken [`PointerMap`] are stored.
+    ConstraintAdded(TableId, ConstraintId, Vec<IndexId>, Option<PointerMap>),
     /// The [`Sequence`] with [`SequenceSchema`] was added to the table with [`TableId`].
     SequenceRemoved(TableId, Sequence, SequenceSchema),
     /// The sequence with [`SequenceId`] was added to the table with [`TableId`].
@@ -146,10 +148,12 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
-            Self::ConstraintRemoved(table_id, constraint_schema) => {
-                table_id.heap_usage() + constraint_schema.heap_usage()
+            Self::ConstraintRemoved(table_id, constraint_schema, index_ids) => {
+                table_id.heap_usage() + constraint_schema.heap_usage() + index_ids.heap_usage()
             }
-            Self::ConstraintAdded(table_id, constraint_id) => table_id.heap_usage() + constraint_id.heap_usage(),
+            Self::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {
+                table_id.heap_usage() + constraint_id.heap_usage() + index_ids.heap_usage() + pointer_map.heap_usage()
+            }
             Self::SequenceRemoved(table_id, sequence, sequence_schema) => {
                 table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
             }
