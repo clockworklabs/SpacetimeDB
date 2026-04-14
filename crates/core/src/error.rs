@@ -25,8 +25,6 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_schema::def::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_schema::relation::FieldName;
-use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
-use spacetimedb_vm::expr::Crud;
 
 pub use spacetimedb_datastore::error::{DatastoreError, IndexError, SequenceError, TableError};
 
@@ -42,8 +40,6 @@ pub enum SubscriptionError {
     NotFound(IndexId),
     #[error("Empty string")]
     Empty,
-    #[error("Queries with side effects not allowed: {0:?}")]
-    SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),
     #[error("Subscribing to queries in one call is not supported")]
@@ -75,10 +71,6 @@ pub enum PlanError {
     DatabaseInternal(Box<DBError>),
     #[error("Relation Error: `{0}`")]
     Relation(#[from] RelationError),
-    #[error("{0}")]
-    VmError(#[from] ErrorVm),
-    #[error("{0}")]
-    TypeCheck(#[from] ErrorType),
 }
 
 #[derive(Error, Debug)]
@@ -121,10 +113,6 @@ pub enum DBError {
     SledDbError(#[from] sled::Error),
     #[error("Mutex was poisoned acquiring lock on MessageLog: {0}")]
     MessageLogPoisoned(String),
-    #[error("VmError: {0}")]
-    Vm(#[from] ErrorVm),
-    #[error("VmErrorUser: {0}")]
-    VmUser(#[from] ErrorLang),
     #[error("SubscriptionError: {0}")]
     Subscription(#[from] SubscriptionError),
     #[error("ClientError: {0}")]
@@ -161,23 +149,6 @@ pub enum DBError {
     DurabilityGone(#[from] DurabilityExited),
     #[error(transparent)]
     View(#[from] ViewCallError),
-}
-
-impl DBError {
-    pub fn get_auth_error(&self) -> Option<&ErrorLang> {
-        if let Self::VmUser(err) = self
-            && err.kind == ErrorKind::Unauthorized
-        {
-            return Some(err);
-        }
-        None
-    }
-}
-
-impl From<DBError> for ErrorVm {
-    fn from(err: DBError) -> Self {
-        ErrorVm::Other(err.into())
-    }
 }
 
 impl From<InvalidFieldError> for DBError {
@@ -321,12 +292,6 @@ impl From<DBError> for NodesError {
             DBError::Datastore(DatastoreError::Index(IndexError::KeyNotFound(..))) => Self::IndexRowNotFound,
             _ => Self::Internal(Box::new(e)),
         }
-    }
-}
-
-impl From<ErrorVm> for NodesError {
-    fn from(err: ErrorVm) -> Self {
-        DBError::from(err).into()
     }
 }
 

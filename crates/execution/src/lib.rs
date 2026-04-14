@@ -95,7 +95,7 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
@@ -163,6 +163,73 @@ impl ToBsatn for Row<'_> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_vec(),
             Self::Ref(val) => val.to_bsatn_vec(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RelValue<'a> {
+    Row(Row<'a>),
+    Projection(ProductValue),
+}
+
+impl<'a> From<Row<'a>> for RelValue<'a> {
+    fn from(value: Row<'a>) -> Self {
+        Self::Row(value)
+    }
+}
+
+impl From<ProductValue> for RelValue<'_> {
+    fn from(value: ProductValue) -> Self {
+        Self::Projection(value)
+    }
+}
+
+impl PartialEq for RelValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Row(x), Self::Row(y)) => x == y,
+            (Self::Projection(x), Self::Projection(y)) => x == y,
+            (Self::Row(x), Self::Projection(y)) | (Self::Projection(y), Self::Row(x)) => x.to_product_value() == *y,
+        }
+    }
+}
+
+impl Eq for RelValue<'_> {}
+
+impl Hash for RelValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Row(x) => x.hash(state),
+            Self::Projection(x) => x.hash(state),
+        }
+    }
+}
+
+impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
+    Self::Row(row) => row.serialize(ser),
+    Self::Projection(row) => row.serialize(ser),
+});
+
+impl ToBsatn for RelValue<'_> {
+    fn static_bsatn_size(&self) -> Option<u16> {
+        match self {
+            Self::Row(row) => row.static_bsatn_size(),
+            Self::Projection(row) => row.static_bsatn_size(),
+        }
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_extend(buf),
+            Self::Projection(row) => row.to_bsatn_extend(buf),
+        }
+    }
+
+    fn to_bsatn_vec(&self) -> std::result::Result<Vec<u8>, EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_vec(),
+            Self::Projection(row) => row.to_bsatn_vec(),
         }
     }
 }

@@ -12,7 +12,7 @@ use crate::{
     execution_context::ExecutionContext,
     locking_tx_datastore::{
         mut_tx::ViewReadSets,
-        state_view::{iter_st_column_for_table, ApplyFilter, EqOnColumn, RangeOnColumn, ScanOrIndex},
+        state_view::{iter_st_column_for_table, ScanOrIndex},
         IterByColRangeTx,
     },
     system_tables::{
@@ -51,8 +51,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
-    table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
-    table_index::IndexSeekRangeResult,
+    table::{InsertError, RowRef, Table, TableAndIndex, TableScanIter},
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -220,12 +219,12 @@ impl StateView for CommittedState {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        match self.index_seek_range(table_id, &cols, &range) {
+        let iter = self
+            .get_index_by_cols(table_id, &cols)
+            .map(|i| i.seek_range_via_algebraic_value(&range));
+        match iter {
             Some(Ok(iter)) => Ok(ScanOrIndex::Index(iter)),
-            None | Some(Err(_)) => Ok(ScanOrIndex::Scan(ApplyFilter::new(
-                RangeOnColumn { cols, range },
-                self.iter(table_id)?,
-            ))),
+            None | Some(Err(_)) => Ok(ScanOrIndex::scan_range(cols, range, self.iter(table_id)?)),
         }
     }
 
@@ -236,12 +235,12 @@ impl StateView for CommittedState {
         val: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
         let cols = cols.into();
-        match self.index_seek_point(table_id, &cols, val) {
+        let iter = self
+            .get_index_by_cols(table_id, &cols)
+            .map(|i| i.seek_point_via_algebraic_value(val));
+        match iter {
             Some(iter) => Ok(ScanOrIndex::Index(iter)),
-            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
-                EqOnColumn { cols, val },
-                self.iter(table_id)?,
-            ))),
+            None => Ok(ScanOrIndex::scan_eq(cols, val, self.iter(table_id)?)),
         }
     }
 
@@ -963,45 +962,11 @@ impl CommittedState {
         Some(self.get_table(table_id)?.scan_rows(&self.blob_store))
     }
 
-    /// When there's an index on `cols`,
-    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
-    /// that match the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`
-    /// when `range` is a point.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_range<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
+    /// Returns an index for `table_id` on `cols`, if any.
+    pub(super) fn get_index_by_cols(&self, table_id: TableId, cols: &ColList) -> Option<TableAndIndex<'_>> {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_range(range))
-    }
-
-    /// When there's an index on `cols`,
-    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
-    /// that equal `value` in the indexed column.
-    ///
-    /// Matching is defined by `Eq for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_point<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        value: &AlgebraicValue,
-    ) -> Option<IndexScanPointIter<'a>> {
-        self.tables
-            .get(&table_id)?
-            .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_point(value))
     }
 
     /// Returns the table associated with the given `index_id`, if any.
@@ -1198,7 +1163,7 @@ impl CommittedState {
         &mut self,
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
-        tx_blob_store: impl BlobStore,
+        tx_bs: impl BlobStore,
         truncates: &mut IntSet<TableId>,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
@@ -1210,40 +1175,65 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, tx_table) in insert_tables {
-            // For each newly-inserted row, serialize to a product value.
-            let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
-            inserts.extend(tx_table.scan_rows(&tx_blob_store).map(|row| row.to_product_value()));
-
-            // For each newly-inserted row, serialize to a product value.
-            // This doesn't apply to event tables,
-            // which are only recorded in `TxData`,
-            // but never the committed state.
             let schema = tx_table.get_schema();
-            if !schema.is_event {
+            let page_pool = &self.page_pool;
+            if schema.is_event {
+                // For event tables, we don't want to insert into the committed state,
+                // we just want to include them in subscriptions and the commitlog.
+                Self::collect_inserts(page_pool, truncates, tx_data, &tx_bs, table_id, tx_table, |_| {});
+            } else {
                 let (commit_table, commit_blob_store, page_pool) =
-                    self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
-                for row in &inserts {
+                    self.get_table_and_blob_store_or_create(table_id, schema);
+                Self::collect_inserts(page_pool, truncates, tx_data, &tx_bs, table_id, tx_table, |row| {
                     commit_table
                         .insert(page_pool, commit_blob_store, row)
                         .expect("Failed to insert when merging commit");
-                }
+                });
             }
-
-            // Add the table to `TxData` if there were insertions.
-            if !inserts.is_empty() {
-                tx_data.set_inserts_for_table(table_id, &schema.table_name, inserts.into());
-
-                // If table has inserted rows, it cannot be truncated.
-                if truncates.contains(&table_id) {
-                    truncates.remove(&table_id);
-                }
-            }
-
-            let (.., pages) = tx_table.consume_for_merge();
-
-            // Put all the pages in the table back into the pool.
-            self.page_pool.put_many(pages);
         }
+    }
+
+    /// Collects the inserted rows in `tx_table` into `tx_data`,
+    /// and applies `on_row` to each inserted row.
+    ///
+    /// The `on_row` closure will be called with each inserted row.
+    /// `Self::merge_apply_inserts` uses this to add non-event rows to the committed state.
+    fn collect_inserts(
+        page_pool: &PagePool,
+        truncates: &mut IntSet<TableId>,
+        tx_data: &mut TxData,
+        tx_blob_store: &impl BlobStore,
+        table_id: TableId,
+        tx_table: Table,
+        mut on_row: impl FnMut(&ProductValue),
+    ) {
+        // For each newly-inserted row, serialize to a product value.
+        // This bypasses the `Vec<_>` intermediary and constructs the `Arc<[_]>` directly,
+        // which matters somewhat for smaller transactions and more for larger transactions.
+        let mut inserts = Arc::new_uninit_slice(tx_table.row_count as usize);
+        let inserts_mut = Arc::get_mut(&mut inserts).expect("`Arc` should be unique as it was just created");
+        for (row, slot) in tx_table.scan_rows(tx_blob_store).zip(inserts_mut) {
+            let row = row.to_product_value();
+            on_row(&row);
+            slot.write(row);
+        }
+        // SAFETY: We've written to every slot in `inserts`, so it's now fully initialized.
+        let inserts = unsafe { inserts.assume_init() };
+
+        // Add the table to `TxData` if there were insertions.
+        if !inserts.is_empty() {
+            tx_data.set_inserts_for_table(table_id, &tx_table.get_schema().table_name, inserts);
+
+            // If table has inserted rows, it cannot be truncated.
+            if truncates.contains(&table_id) {
+                truncates.remove(&table_id);
+            }
+        }
+
+        let (.., pages) = tx_table.consume_for_merge();
+
+        // Put all the pages in the table back into the pool.
+        page_pool.put_many(pages);
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
@@ -1304,6 +1294,11 @@ impl CommittedState {
             TableAlterAccess(table_id, access) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
+            }
+            // A table's primary key was changed. Change back to the old one.
+            TableAlterPrimaryKey(table_id, old_pk) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|s| s.primary_key = old_pk.and_then(|cl| cl.as_singleton()));
             }
             // A table's row type was changed. Change back to the old one.
             // The row representation of old rows hasn't changed,

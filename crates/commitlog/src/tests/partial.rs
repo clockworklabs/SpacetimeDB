@@ -271,7 +271,7 @@ impl fmt::Display for ShortMem {
 
 impl Repo for ShortMem {
     type SegmentWriter = ShortSegment;
-    type SegmentReader = io::BufReader<repo::mem::Segment>;
+    type SegmentReader = repo::mem::ReadOnlySegment;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         self.inner.create_segment(offset).map(|inner| ShortSegment {

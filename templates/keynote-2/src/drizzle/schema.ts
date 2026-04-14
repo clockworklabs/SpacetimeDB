@@ -1,4 +1,4 @@
-﻿import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
+import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { sqliteTable, integer as sqliteInt } from 'drizzle-orm/sqlite-core';
 
 export const pgAccounts = pgTable('accounts', {
