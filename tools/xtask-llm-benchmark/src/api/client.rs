@@ -188,10 +188,21 @@ impl ApiClient {
                         .join(" ")
                 };
 
+                // Read golden answers per language
+                let answers_dir = task_entry.path().join("answers");
+                let mut golden_answers = serde_json::Map::new();
+                for (lang, file) in [("rust", "rust.rs"), ("csharp", "csharp.cs"), ("typescript", "typescript.ts")] {
+                    let path = answers_dir.join(file);
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        golden_answers.insert(lang.to_string(), json!(content));
+                    }
+                }
+
                 categories.entry(cat_name.clone()).or_default().push(json!({
                     "id": task_name,
                     "title": title,
                     "description": description,
+                    "golden_answers": golden_answers,
                 }));
             }
         }

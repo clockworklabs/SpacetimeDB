@@ -15,7 +15,7 @@ use xtask_llm_benchmark::bench::runner::{
     build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
 };
 use xtask_llm_benchmark::api::ApiClient;
-use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig};
+use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
 use xtask_llm_benchmark::context::constants::ALL_MODES;
 use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash};
 use xtask_llm_benchmark::eval::Lang;
@@ -273,8 +273,10 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         ))?;
     }
 
+    let mut all_outcomes: Vec<RunOutcome> = Vec::new();
+
     for mode in modes {
-        run_mode_benchmarks(
+        let outcomes = run_mode_benchmarks(
             &mode,
             config.lang,
             &config,
@@ -282,6 +284,25 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
             runtime.as_ref(),
             llm_provider.as_ref(),
         )?;
+        all_outcomes.extend(outcomes);
+    }
+
+    // Write local run log on --dry-run so results aren't lost
+    if args.dry_run && !all_outcomes.is_empty() {
+        let runs_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runs");
+        let _ = fs::create_dir_all(&runs_dir);
+        let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
+        let log_path = runs_dir.join(format!("run-{timestamp}.json"));
+        match serde_json::to_string_pretty(&all_outcomes) {
+            Ok(json) => {
+                if let Err(e) = fs::write(&log_path, json) {
+                    eprintln!("[warn] failed to write run log: {e}");
+                } else {
+                    println!("Run log: {}", log_path.display());
+                }
+            }
+            Err(e) => eprintln!("[warn] failed to serialize run log: {e}"),
+        }
     }
 
     Ok(())
@@ -372,8 +393,16 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
         let analysis = runtime.block_on(provider.generate(&analysis_route, &built))?.text;
 
         if args.dry_run {
-            println!("--- {}/{}/{} ---", lang, mode, model);
-            println!("{}", analysis);
+            // Save locally
+            let runs_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runs");
+            let _ = fs::create_dir_all(&runs_dir);
+            let safe_model = model.replace([' ', '/'], "_");
+            let path = runs_dir.join(format!("analysis-{lang}-{mode}-{safe_model}-{run_date}.md"));
+            if let Err(e) = fs::write(&path, &analysis) {
+                eprintln!("[warn] failed to write analysis: {e}");
+            } else {
+                println!("Analysis written to: {}", path.display());
+            }
         } else {
             api.upload_analysis(lang, mode, model, &analysis, &run_date)?;
         }
@@ -480,7 +509,7 @@ fn run_mode_benchmarks(
     bench_root: &Path,
     runtime: Option<&Runtime>,
     llm_provider: Option<&Arc<dyn LlmProvider>>,
-) -> Result<()> {
+) -> Result<Vec<RunOutcome>> {
     let lang_str = lang.as_str();
     let context = build_context(mode, Some(lang))?;
     // Use processed context hash so each lang/mode combination has its own unique hash
@@ -490,7 +519,7 @@ fn run_mode_benchmarks(
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
 
     if config.hash_only {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     if config.goldens_only {
@@ -499,7 +528,7 @@ fn run_mode_benchmarks(
 
         rt.block_on(build_goldens_only_for_lang(config.host.clone(), bench_root, lang, sels))?;
         println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     // Run benchmarks for all matching routes
@@ -507,7 +536,7 @@ fn run_mode_benchmarks(
 
     if routes.is_empty() {
         println!("{:<12} [{:<10}] no matching models to run", mode, lang_str);
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let runtime = runtime.expect("runtime required for normal runs");
@@ -543,7 +572,8 @@ fn run_mode_benchmarks(
         println!("   ↳ {}: {}/{} passed ({:.1}%)", name, passed, total, pct);
     }
 
-    Ok(())
+    let all_outcomes: Vec<RunOutcome> = route_runs.into_iter().flat_map(|rr| rr.outcomes).collect();
+    Ok(all_outcomes)
 }
 
 /// Routes to run: when `model_filter` is set (from --models), only routes whose vendor and
