@@ -12,7 +12,7 @@ use crate::{
     execution_context::ExecutionContext,
     locking_tx_datastore::{mut_tx::ViewReadSets, state_view::ScanOrIndex, IterByColRangeTx},
     system_tables::{
-        system_tables, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StFields, StIndexRow,
+        system_tables, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StIndexRow,
         StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewRow, SystemTable, ST_CLIENT_ID,
         ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
         ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX,
@@ -37,7 +37,7 @@ use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, ColSet, IndexId, SequenceId, TableId, ViewId};
-use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
 use spacetimedb_table::{
@@ -546,74 +546,6 @@ impl CommittedState {
         table.clear(blob_store);
 
         Ok(())
-    }
-
-    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, row: &ProductValue) -> Result<()> {
-        // (1) Table dropped? Avoid an error and just ignore the row instead.
-        if self.replay_table_dropped.contains(&table_id) {
-            return Ok(());
-        }
-
-        // Get the table for mutation.
-        let (table, blob_store, _, page_pool) = self.get_table_and_blob_store_mut(table_id)?;
-
-        // Delete the row.
-        let row_ptr = table
-            .delete_equal_row(page_pool, blob_store, row)
-            .map_err(TableError::Bflatn)?
-            .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
-
-        if table_id == ST_TABLE_ID {
-            let referenced_table_id = row
-                .elements
-                .get(StTableFields::TableId.col_idx())
-                .expect("`st_table` row should conform to `st_table` schema")
-                .as_u32()
-                .expect("`st_table` row should conform to `st_table` schema");
-            if self
-                .replay_table_updated
-                .remove(&TableId::from(*referenced_table_id))
-                .is_some()
-            {
-                // This delete is part of an update to an `st_table` row,
-                // i.e. earlier in this transaction we inserted a new version of the row.
-                // That means it's not a dropped table.
-            } else {
-                // A row was removed from `st_table`, so a table was dropped.
-                // Remove that table from the in-memory structures.
-                let dropped_table_id = Self::read_table_id(row);
-                // It's safe to ignore the case where we don't have an in-memory structure for the deleted table.
-                // This can happen if a table is initially empty at the snapshot or its creation,
-                // and never has any rows inserted into or deleted from it.
-                self.tables.remove(&dropped_table_id);
-
-                // Mark the table as dropped so that when
-                // processing row deletions for that table later,
-                // they are simply ignored in (1).
-                self.replay_table_dropped.insert(dropped_table_id);
-            }
-        }
-
-        if table_id == ST_COLUMN_ID {
-            // We may have reached the corresponding delete to an insert in `st_column`
-            // as the result of a column-type-altering migration.
-            // Now that the outdated `st_column` row isn't present any more,
-            // we can stop ignoring it.
-            //
-            // It's also possible that we're deleting this column as the result of a deleted table,
-            // and that there wasn't any corresponding insert at all.
-            // If that's the case, `row_ptr` won't be in `self.replay_columns_to_ignore`,
-            // which is fine.
-            self.replay_columns_to_ignore.remove(&row_ptr);
-        }
-
-        Ok(())
-    }
-
-    /// Assuming that a `TableId` is stored as the first field in `row`, read it.
-    pub(super) fn read_table_id(row: &ProductValue) -> TableId {
-        TableId::deserialize(ValueDeserializer::from_ref(&row.elements[0]))
-            .expect("first field in `st_column` should decode to a `TableId`")
     }
 
     /// Builds the in-memory state of sequences from `st_sequence` system table.
