@@ -72,7 +72,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         table
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
-        println!("Associated databases for {identity}:\n");
+        println!("Associated databases for user {identity}:\n");
         println!("{table}");
     } else {
         println!("No databases found for {identity}.");
@@ -93,18 +93,10 @@ async fn assemble_rows(config: &Config, server: Option<&str>, identities: Vec<Id
         };
 
         DatabaseRow {
-            db_names: format_database_names(db_names),
+            db_names: db_names.join(", "),
             db_identity,
         }
     });
 
     join_all(lookups).await
-}
-
-fn format_database_names(names: Vec<String>) -> String {
-    if names.is_empty() {
-        "(unnamed)".to_string()
-    } else {
-        names.join(", ")
-    }
 }
