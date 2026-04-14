@@ -904,6 +904,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoCount();
 
@@ -915,6 +921,9 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public bool Delete(global::Player row) =>
             global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoClear();
 
         public sealed class IdentityUniqueIndex
             : UniqueIndex<Player, global::Player, SpacetimeDB.Identity, SpacetimeDB.Identity.BSATN>
@@ -997,6 +1006,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
@@ -1020,6 +1035,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestAutoIncNotInteger,
                 global::TestAutoIncNotInteger
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger
+            >.DoClear();
 
         public sealed class IdentityFieldUniqueIndex
             : UniqueIndex<
@@ -1087,6 +1108,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDefaultFieldValues,
@@ -1110,6 +1137,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.DoClear();
     }
 
     public readonly struct TestDuplicateTableName
@@ -1145,6 +1178,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
@@ -1168,6 +1207,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.DoClear();
     }
 
     public readonly struct TestIndexIssues
@@ -1232,6 +1277,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
@@ -1255,6 +1306,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestIndexIssues,
                 global::TestIndexIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestIndexIssues,
+                global::TestIndexIssues
+            >.DoClear();
 
         public sealed class TestIndexWithoutColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
@@ -1425,6 +1482,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
@@ -1448,6 +1511,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithMissingScheduleAtField,
+                global::TestScheduleIssues
+            >.DoClear();
     }
 
     public readonly struct TestScheduleWithoutPrimaryKey
@@ -1487,6 +1556,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 global::TestScheduleIssues
             >.MakeSchedule("DummyScheduledReducer", 3);
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
@@ -1510,6 +1585,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutPrimaryKey,
+                global::TestScheduleIssues
+            >.DoClear();
     }
 
     public readonly struct TestScheduleWithoutScheduleAt
@@ -1558,6 +1639,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
@@ -1581,6 +1668,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutScheduleAt,
+                global::TestScheduleIssues
+            >.DoClear();
 
         public sealed class IdCorrectTypeUniqueIndex
             : UniqueIndex<
@@ -1655,6 +1748,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 global::TestScheduleIssues
             >.MakeSchedule("DummyScheduledReducer", 3);
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
@@ -1678,6 +1777,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithWrongPrimaryKeyType,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues
+            >.DoClear();
 
         public sealed class IdWrongTypeUniqueIndex
             : UniqueIndex<
@@ -1752,6 +1857,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 global::TestScheduleIssues
             >.MakeSchedule("DummyScheduledReducer", 2);
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
@@ -1775,6 +1886,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues
+            >.DoClear();
 
         public sealed class IdCorrectTypeUniqueIndex
             : UniqueIndex<
@@ -1854,6 +1971,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
@@ -1877,6 +2000,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable
+            >.DoClear();
 
         public sealed class PrimaryKeyFieldUniqueIndex
             : UniqueIndex<
@@ -1915,9 +2044,10 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
-            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<TestScheduleIssues>>().GetAlgebraicType(
-                registrar
-            )
+            ReturnType: new SpacetimeDB.BSATN.List<
+                TestScheduleIssues,
+                TestScheduleIssues.BSATN
+            >().GetAlgebraicType(registrar)
         );
 
     public byte[] Invoke(
@@ -1930,14 +2060,17 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
             var returnValue = Module.ViewDefIEnumerableReturnFromFilter(
                 (SpacetimeDB.ViewContext)ctx
             );
-            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<TestScheduleIssues>> returnRW =
-                new();
+            var listSerializer = new SpacetimeDB.BSATN.List<
+                TestScheduleIssues,
+                TestScheduleIssues.BSATN
+            >();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -1962,7 +2095,7 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
-            ReturnType: new SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>>().GetAlgebraicType(
+            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
                 registrar
             )
         );
@@ -1975,14 +2108,14 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
         try
         {
             var returnValue = Module.ViewDefIEnumerableReturnFromIter((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.Unsupported<System.Collections.Generic.IEnumerable<Player>> returnRW =
-                new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2019,13 +2152,14 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
         try
         {
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2060,13 +2194,14 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
         try
         {
             var returnValue = Module.ViewDefNoPublic((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2101,13 +2236,14 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
         try
         {
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -2441,6 +2577,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal PlayerReadOnly()
             : base("Player") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdentityIndex
@@ -2466,6 +2608,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestAutoIncNotIntegerReadOnly()
             : base("TestAutoIncNotInteger") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdentityFieldIndex
@@ -2491,6 +2639,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestDefaultFieldValuesReadOnly()
             : base("TestDefaultFieldValues") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2500,6 +2654,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestDuplicateTableNameReadOnly()
             : base("TestDuplicateTableName") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2509,6 +2669,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestIndexIssuesReadOnly()
             : base("TestIndexIssues") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class TestIndexWithoutColumnsIndex
@@ -2620,6 +2786,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithMissingScheduleAtFieldReadOnly()
             : base("TestScheduleWithMissingScheduleAtField") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2629,6 +2801,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithoutPrimaryKeyReadOnly()
             : base("TestScheduleWithoutPrimaryKey") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2638,6 +2816,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithoutScheduleAtReadOnly()
             : base("TestScheduleWithoutScheduleAt") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdCorrectTypeIndex
@@ -2663,6 +2847,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithWrongPrimaryKeyTypeReadOnly()
             : base("TestScheduleWithWrongPrimaryKeyType") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdWrongTypeIndex
@@ -2688,6 +2878,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestScheduleWithWrongScheduleAtTypeReadOnly()
             : base("TestScheduleWithWrongScheduleAtType") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdCorrectTypeIndex
@@ -2713,6 +2909,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal TestUniqueNotEquatableReadOnly()
             : base("TestUniqueNotEquatable") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class PrimaryKeyFieldIndex

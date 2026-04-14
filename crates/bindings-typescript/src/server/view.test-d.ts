@@ -161,6 +161,10 @@ spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
     .where(row => row.id.eq(5))
     .leftSemijoin(ctx.from.order, (p, o) => p.name.eq(o.person_name))
     .build();
+  const _mixedScopeAndInJoinPredicate = ctx.from.person
+    // @ts-expect-error semijoin on(...) only supports one table scope for and/or clauses.
+    .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id).and(o.id.eq(5)))
+    .build();
   return ctx.from.person
     .where(row => row.id.eq(5))
     .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id))

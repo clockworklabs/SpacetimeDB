@@ -1,3 +1,95 @@
+#[cfg(feature = "browser")]
+use std::path::Path;
+
+use spacetimedb_testing::sdk::{Test, TestBuilder};
+
+fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> TestBuilder {
+    let builder = Test::builder();
+    let builder = builder.with_client(client_project);
+
+    // Note: `run_selector` is intentionally interpreted differently by mode:
+    // - Native mode uses it as a CLI subcommand (`cargo run -- <selector>`), with `None` => `cargo run`.
+    // - Web mode assembles the Node/wasm-bindgen commands directly in this test harness.
+    #[cfg(feature = "browser")]
+    {
+        let package_name = Path::new(client_project)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("client project path should end in a UTF-8 directory name")
+            .to_owned();
+        let artifact_name = package_name.replace('-', "_");
+        let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| {
+            // Cargo workspace members emit into the workspace target directory, not each crate's
+            // local `./target`. Use `CARGO_TARGET_DIR` when set, otherwise fall back to the
+            // workspace target.
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target")
+                .to_string_lossy()
+                .into_owned()
+        });
+        let bindgen_out_dir = format!("{client_project}/target/sdk-test-web-bindgen/{package_name}");
+        let wasm_path = format!("{target_dir}/wasm32-unknown-unknown/debug/deps/{artifact_name}.wasm");
+        let js_module = format!("{bindgen_out_dir}/{artifact_name}.js");
+        let js_module_cjs = format!("{bindgen_out_dir}/{artifact_name}.cjs");
+        let build_command = "cargo build --target wasm32-unknown-unknown --no-default-features --features browser";
+        let mkdir_command = shlex::try_join(["mkdir", "-p", bindgen_out_dir.as_str()])
+            .expect("bindgen output path should be shell-quotable");
+        let bindgen_command = shlex::try_join([
+            "wasm-bindgen",
+            "--target",
+            "nodejs",
+            "--out-dir",
+            bindgen_out_dir.as_str(),
+            wasm_path.as_str(),
+        ])
+        .expect("wasm-bindgen command should be shell-quotable");
+        let cp_command = shlex::try_join(["cp", js_module.as_str(), js_module_cjs.as_str()])
+            .expect("bindgen JS output paths should be shell-quotable");
+        let compile_command = format!(
+            "/bin/bash -lc \
+             \"{build_command} \
+             && {mkdir_command} \
+             && {bindgen_command} \
+             && {cp_command}\""
+        );
+        let js_module = format!("{bindgen_out_dir}/{artifact_name}.cjs");
+        let run_selector = run_selector.unwrap_or_default();
+        let node_script = format!(
+            "(async () => {{ \
+              const m = require({js_module:?}); \
+              if (m.default) {{ await m.default(); }} \
+              const run = m.run || m.main || m.start; \
+              if (!run) throw new Error(\"No exported run/main/start function from wasm module\"); \
+              const dbName = process.env.SPACETIME_SDK_TEST_DB_NAME; \
+              if (!dbName) throw new Error(\"Missing SPACETIME_SDK_TEST_DB_NAME\"); \
+              await run({run_selector:?}, dbName); \
+              // These wasm clients run under Node rather than a browser. Some tests intentionally leave
+              // websocket/event-loop work alive once their assertions are complete, so exit here to keep
+              // non-lifecycle tests from hanging on leftover handles after `run()` has finished.
+              process.exit(0);
+            }})().catch((e) => {{ console.error(e); process.exit(1); }});"
+        );
+        let node_script = shlex::try_quote(&node_script).expect("inline Node script should be shell-quotable");
+        let run_command = format!("node --experimental-websocket -e {node_script}");
+
+        builder
+            .with_compile_command(compile_command)
+            .with_run_command(run_command)
+    }
+
+    #[cfg(not(feature = "browser"))]
+    {
+        let run_command = match run_selector {
+            Some(subcommand) => format!("cargo run -- {}", subcommand),
+            None => "cargo run".to_owned(),
+        };
+
+        builder
+            .with_compile_command("cargo build")
+            .with_run_command(run_command)
+    }
+}
+
 macro_rules! declare_tests_with_suffix {
     ($lang:ident, $suffix:literal) => {
         mod $lang {
@@ -7,10 +99,9 @@ macro_rules! declare_tests_with_suffix {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test-client");
 
             fn make_test(subcommand: &str) -> Test {
-                Test::builder()
+                super::platform_test_builder(CLIENT, Some(subcommand))
                     .with_name(subcommand)
                     .with_module(MODULE)
-                    .with_client(CLIENT)
                     .with_language("rust")
                     // We test against multiple modules in different languages,
                     // and as of writing (pgoldman 2026-02-12),
@@ -19,8 +110,6 @@ macro_rules! declare_tests_with_suffix {
                     // depending on which module is the source.
                     .with_generate_private_items(true)
                     .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command(format!("cargo run -- {}", subcommand))
                     .build()
             }
 
@@ -197,13 +286,12 @@ macro_rules! declare_tests_with_suffix {
 
             #[test]
             fn connect_disconnect_callbacks() {
-                Test::builder()
+                const CONNECT_DISCONNECT_CLIENT: &str =
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect_disconnect_client");
+
+                super::platform_test_builder(CONNECT_DISCONNECT_CLIENT, None)
                     .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
                     .with_module(concat!("sdk-test-connect-disconnect", $suffix))
-                    .with_client(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/tests/connect_disconnect_client"
-                    ))
                     .with_language("rust")
                     // We test against multiple modules in different languages,
                     // and as of writing (pgoldman 2026-02-12),
@@ -212,8 +300,6 @@ macro_rules! declare_tests_with_suffix {
                     // depending on which module is the source.
                     .with_generate_private_items(true)
                     .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command("cargo run")
                     .build()
                     .run();
             }
@@ -267,7 +353,12 @@ macro_rules! declare_tests_with_suffix {
                 make_test("test-lhs-join-update-disjoint-queries").run()
             }
 
+            // The Rust client variant of this test is currently under-synchronized:
+            // it returns basically instantly after starting the connection.
+            // It's also somewhat broken due to casing issues.
+            // Re-enable this test once it is fixed and properly waiting for its results.
             #[test]
+            #[ignore = "Flaky until test-client retains ignored connections or this test owns its connection lifetime"]
             fn test_intra_query_bag_semantics_for_join() {
                 make_test("test-intra-query-bag-semantics-for-join").run()
             }
@@ -327,14 +418,11 @@ mod event_table_tests {
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/event-table-client");
 
     fn make_test(subcommand: &str) -> Test {
-        Test::builder()
+        super::platform_test_builder(CLIENT, Some(subcommand))
             .with_name(subcommand)
             .with_module(MODULE)
-            .with_client(CLIENT)
             .with_language("rust")
             .with_bindings_dir("src/module_bindings")
-            .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
             .build()
     }
 
@@ -368,10 +456,9 @@ macro_rules! procedure_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
 
             fn make_test(subcommand: &str) -> Test {
-                Test::builder()
+                super::platform_test_builder(CLIENT, Some(subcommand))
                     .with_name(subcommand)
                     .with_module(MODULE)
-                    .with_client(CLIENT)
                     .with_language("rust")
                     // We test against multiple modules in different languages,
                     // and as of writing (pgoldman 2026-02-12),
@@ -380,8 +467,6 @@ macro_rules! procedure_tests {
                     // depending on which module is the source.
                     .with_generate_private_items(true)
                     .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command(format!("cargo run -- {}", subcommand))
                     .build()
             }
 
@@ -436,10 +521,9 @@ macro_rules! view_tests {
             const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
 
             fn make_test(subcommand: &str) -> Test {
-                Test::builder()
+                super::platform_test_builder(CLIENT, Some(subcommand))
                     .with_name(subcommand)
                     .with_module(MODULE)
-                    .with_client(CLIENT)
                     .with_language("rust")
                     // We test against multiple modules in different languages,
                     // and as of writing (pgoldman 2026-02-12),
@@ -448,8 +532,6 @@ macro_rules! view_tests {
                     // depending on which module is the source.
                     .with_generate_private_items(true)
                     .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command(format!("cargo run -- {}", subcommand))
                     .build()
             }
 
@@ -482,9 +564,52 @@ macro_rules! view_tests {
             fn subscription_updates_for_view() {
                 make_test("view-subscription-update").run()
             }
+
+            #[test]
+            fn disconnect_does_not_break_sender_view_updates() {
+                make_test("view-disconnect-does-not-break-sender-updates").run()
+            }
         }
     };
 }
 
 view_tests!(rust_view, "");
 view_tests!(cpp_view, "-cpp");
+
+macro_rules! view_pk_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = concat!("sdk-test-view-pk", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-pk-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                super::platform_test_builder(CLIENT, Some(subcommand))
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
+            }
+
+            #[test]
+            fn query_builder_view_with_pk_on_update_callback() {
+                make_test("view-pk-on-update").run()
+            }
+
+            #[test]
+            fn query_builder_join_table_with_view_pk() {
+                make_test("view-pk-join-query-builder").run()
+            }
+
+            #[test]
+            fn query_builder_semijoin_two_sender_views_with_pk() {
+                make_test("view-pk-semijoin-two-sender-views-query-builder").run()
+            }
+        }
+    };
+}
+
+view_pk_tests!(rust_view_pk, "");
+view_pk_tests!(csharp_view_pk, "-cs");

@@ -1,8 +1,8 @@
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
 const spacetimedb = schema({
-  account: table(
-    { name: 'account' },
+  accounts: table(
+    { name: 'accounts', public: true },
     {
       id: t.u32().primaryKey().index('hash'),
       balance: t.i64(),
@@ -12,9 +12,9 @@ const spacetimedb = schema({
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(
-  { n: t.u32(), balance: t.i64() },
-  (ctx, { n, balance }) => {
-    const accounts = ctx.db.account;
+  { n: t.u32(), initialBalance: t.i64() },
+  (ctx, { n, initialBalance: balance }) => {
+    const accounts = ctx.db.accounts;
 
     for (const row of accounts) {
       accounts.delete(row);
@@ -27,15 +27,24 @@ export const seed = spacetimedb.reducer(
 );
 
 export const transfer = spacetimedb.reducer(
-  { from: t.u32(), to: t.u32(), amount: t.u32() },
-  (ctx, { from, to, amount: amt }) => {
-    const accounts = ctx.db.account;
+  { from: t.u32(), to: t.u32(), amount: t.i64() },
+  (ctx, { from, to, amount }) => {
+    if (from === to) {
+      throw new SenderError('same_account');
+    }
+    if (amount <= 0) {
+      throw new SenderError('non_positive_amount');
+    }
+
+    const accounts = ctx.db.accounts;
     const byId = accounts.id;
 
-    const fromRow = byId.find(from)!;
-    const toRow = byId.find(to)!;
+    const fromRow = byId.find(from);
+    const toRow = byId.find(to);
+    if (fromRow === null || toRow === null) {
+      throw new SenderError('account_missing');
+    }
 
-    const amount = BigInt(amt);
     if (fromRow.balance < amount) {
       throw new SenderError('insufficient_funds');
     }

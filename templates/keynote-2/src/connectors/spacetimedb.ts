@@ -1,30 +1,19 @@
 import type { ReducerConnector } from '../core/connectors';
 import * as mod from '../../module_bindings';
+import { deriveWebsocketUrl } from '../core/stdbUrl';
+import type { SpacetimeConnectorConfig } from '../config.ts';
 
-export function spacetimedb(
-  url = process.env.STDB_URL!,
-  moduleName = process.env.STDB_MODULE!,
-): ReducerConnector {
-  let ready!: Promise<void>;
+export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector {
+  const {
+    initialBalance,
+    stdbCompression,
+    stdbConfirmedReads,
+    stdbModule: moduleName,
+    stdbUrl: url,
+  } = config;
+
+  let ready: ReturnType<typeof Promise.withResolvers<void>>;
   let conn: mod.DbConnection;
-  let resolveReady!: () => void;
-  let rejectReady!: (e: unknown) => void;
-
-  function armReady() {
-    ready = new Promise<void>((res, rej) => {
-      resolveReady = res;
-      rejectReady = rej;
-    });
-  }
-
-  // --- reducer completion tracking  ------------------------
-  const transferWaiters = new Map<
-    bigint,
-    { resolve: () => void; reject: (e: unknown) => void }
-  >();
-
-  let nextTransferId = 1n;
-  let transferHooked = false;
 
   async function connectWithBindings() {
     if (!url) throw new Error('STDB_URL not set');
@@ -32,93 +21,49 @@ export function spacetimedb(
 
     const Db = mod.DbConnection;
 
-    armReady();
+    ready = Promise.withResolvers<void>();
 
     const subscriptions: string[] = [];
     if (process.env.VERIFY === '1') {
       console.log('[spacetimedb] subscribing to accounts');
       subscriptions.push('SELECT * FROM accounts');
     }
-    let subscribed = subscriptions.length === 0;
+    const subscribed = Promise.withResolvers<void>();
+    if (subscriptions.length === 0) subscribed.resolve();
 
     const builder = Db.builder()
-      .withUri(url)
+      .withUri(deriveWebsocketUrl(url))
       .withDatabaseName(moduleName)
-      .withConfirmedReads(process.env.STDB_CONFIRMED_READS === '1')
+      .withCompression(stdbCompression)
+      .withConfirmedReads(stdbConfirmedReads)
       .onConnect((ctx) => {
         console.log('[stdb] connected');
         const conn = ctx;
 
-        const reducers = conn.reducers;
-
-        if (
-          process.env.USE_SPACETIME_METRICS_ENDPOINT === '0' &&
-          !transferHooked
-        ) {
-          transferHooked = true;
-          console.log('[stdb] hooking onTransfer');
-          (reducers as any).onTransfer(
-            (
-              eventCtx: any,
-              args: {
-                from: number;
-                to: number;
-                amount: bigint;
-                clientTxnId: bigint;
-              },
-            ) => {
-              const clientTxnId = args.clientTxnId;
-              // console.log('[stdb] onTransfer fired', { ...args, status: eventCtx?.event?.status });
-
-              const waiter = transferWaiters.get(clientTxnId);
-              if (!waiter) {
-                console.warn(
-                  '[stdb] no waiter for clientTxnId',
-                  clientTxnId.toString(),
-                );
-                return;
-              }
-
-              transferWaiters.delete(clientTxnId);
-
-              const status = eventCtx?.event?.status;
-
-              if (status?.tag === 'Committed') {
-                waiter.resolve();
-              } else if (status?.tag === 'Failed') {
-                waiter.reject(new Error(status?.value ?? 'transfer failed'));
-              } else if (status?.tag === 'OutOfEnergy') {
-                waiter.reject(new Error('transfer out of energy'));
-              } else {
-                waiter.reject(new Error('unknown transfer status'));
-              }
-            },
-          );
-        }
-
-        resolveReady();
+        ready.resolve();
 
         if (subscriptions.length > 0) {
           conn
             .subscriptionBuilder()
             .onApplied((_sCtx) => {
-              subscribed = true;
+              subscribed.resolve();
             })
             .onError((ctx) => {
               console.error('[stdb] subscription failed', ctx.event?.message);
+              subscribed.reject(ctx.event);
             })
             .subscribe(subscriptions);
         }
       })
       .onConnectError((_ctx, err: any) => {
-        console.error('[stdb] onConnectError', err);
-
         if (err instanceof Error) {
-          rejectReady(err);
+          ready.reject(err);
+        } else if (err && err.error instanceof Error) {
+          ready.reject(err.error);
         } else if (err && typeof err.message === 'string') {
-          rejectReady(new Error(err.message));
+          ready.reject(new Error(err.message));
         } else {
-          rejectReady(
+          ready.reject(
             new Error(`Spacetime connection error: ${JSON.stringify(err)}`),
           );
         }
@@ -127,48 +72,34 @@ export function spacetimedb(
 
     conn = builder.build();
 
-    while (!subscribed) {
-      await new Promise((res) => setTimeout(res, 25));
-    }
+    await ready.promise;
+    await subscribed.promise;
   }
 
   return {
     name: 'spacetimedb',
-    maxInflightPerWorker: 16384,
+    maxInflightPerWorker: 512,
 
     async open() {
       try {
         await connectWithBindings();
-        await ready;
+        await ready.promise;
       } catch (err) {
-        console.error('[spacetimedb] open() failed', err);
+        console.error('[spacetimedb] open() failed:', err);
         throw err;
       }
     },
 
     async close() {
-      const err = new Error('SpacetimeDB connection closed');
-
-      // Fail any in-flight transfers
-      for (const waiter of transferWaiters.values()) {
-        try {
-          waiter.reject(err);
-        } catch {
-          /* ignore */
-        }
-      }
-      transferWaiters.clear();
-      transferHooked = false;
-
       try {
         conn.disconnect();
       } catch (e) {
-        console.error('[spacetimedb] close() failed', e);
+        console.error('[spacetimedb] close() failed:', e);
       }
     },
 
     async createWorker(): Promise<ReducerConnector> {
-      const worker = spacetimedb(url, moduleName);
+      const worker = spacetimedb(config);
       await worker.open();
       worker.verify = async () => {
         throw new Error(
@@ -180,51 +111,22 @@ export function spacetimedb(
     },
 
     async call(fn: string, args: Record<string, any>) {
-      await ready;
+      await ready.promise;
 
       switch (fn) {
         case 'seed': {
-          conn.reducers.seed({
+          return conn.reducers.seed({
             n: args.accounts,
-            initialBalance: args.initialBalance,
+            initialBalance: BigInt(args.initialBalance),
           });
-          return;
-        }
-
-        case 'createAccount': {
-          conn.reducers.createAccount({ id: args.id, balance: args.balance });
-          return;
         }
 
         case 'transfer': {
-          const clientTxnId = nextTransferId++;
-
-          if (process.env.USE_SPACETIME_METRICS_ENDPOINT === '0') {
-            return new Promise<void>((resolve, reject) => {
-              const waiter = { resolve, reject };
-              transferWaiters.set(clientTxnId, waiter);
-
-              try {
-                conn.reducers.transfer({
-                  from: args.from,
-                  to: args.to,
-                  amount: args.amount,
-                  clientTxnId,
-                });
-              } catch (err) {
-                console.log(`ERROR ${err}`);
-                transferWaiters.delete(clientTxnId);
-                reject(err);
-              }
-            });
-          } else {
-            return conn.reducers.transfer({
-              from: args.from,
-              to: args.to,
-              amount: args.amount,
-              clientTxnId,
-            });
-          }
+          return conn.reducers.transfer({
+            from: args.from,
+            to: args.to,
+            amount: args.amount,
+          });
         }
 
         default:
@@ -254,7 +156,7 @@ export function spacetimedb(
     async verify() {
       if (!conn) throw new Error('SpacetimeDB not connected');
 
-      const rawInitial = process.env.SEED_INITIAL_BALANCE;
+      const rawInitial = initialBalance;
       if (!rawInitial) {
         console.warn(
           '[spacetimedb] SEED_INITIAL_BALANCE not set; skipping verification',

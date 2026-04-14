@@ -17,7 +17,7 @@ use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
@@ -278,7 +278,7 @@ impl InstanceEnv {
     }
 
     pub(crate) fn relational_db(&self) -> &Arc<RelationalDB> {
-        &self.replica_ctx.relational_db
+        self.replica_ctx.relational_db()
     }
 
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
@@ -489,9 +489,12 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
-        let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
-        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+        let rows_to_delete = match iter {
+            IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+            IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+        };
 
         Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
     }
@@ -545,6 +548,20 @@ impl InstanceEnv {
 
         // Delete them and return how many we deleted.
         Ok(stdb.delete_by_rel(tx, table_id, relation))
+    }
+
+    /// Deletes all rows in the table identified by `table_id`.
+    pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
+
+        let rows_deleted = stdb.clear_table(tx, table_id).map_err(NodesError::from)?;
+
+        // To clear a table, we must find all the row pointers,
+        // so we have scanned that many rows.
+        tx.metrics.rows_scanned += rows_deleted as usize;
+
+        Ok(rows_deleted)
     }
 
     /// Returns the `table_id` associated with the given `table_name`.
@@ -653,19 +670,22 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Open index iterator
-        let (table_id, lower, upper, iter) =
+        let (table_id, iter) =
             self.relational_db()
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
         // Scan the index and serialize rows to BSATN.
-        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+        let (point, (chunks, rows_scanned, bytes_scanned)) = match iter {
+            IndexScanPointOrRange::Point(point, iter) => (Some(point), ChunkedWriter::collect_iter(pool, iter)),
+            IndexScanPointOrRange::Range(iter) => (None, ChunkedWriter::collect_iter(pool, iter)),
+        };
 
         // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.index_seeks += 1;
         tx.metrics.bytes_scanned += bytes_scanned;
         tx.metrics.rows_scanned += rows_scanned;
 
-        tx.record_index_scan_range(&self.func_type, table_id, index_id, lower, upper);
+        tx.record_index_scan_range(&self.func_type, table_id, index_id, point);
 
         Ok(chunks)
     }
@@ -708,9 +728,10 @@ impl InstanceEnv {
             ));
         }
 
-        let stdb = self.replica_ctx.relational_db.clone();
         // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let tx = self
+            .relational_db()
+            .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         self.tx.set_raw(tx);
         self.in_anon_tx = true;
 
@@ -857,8 +878,18 @@ impl InstanceEnv {
             err
         }
 
-        fn http_error<E: ToString>(err: E) -> NodesError {
-            NodesError::HttpError(err.to_string())
+        fn http_error<E: std::error::Error>(err: E) -> NodesError {
+            // Include the full error chain, not just the top-level message.
+            // `reqwest::Error` wraps underlying causes (DNS failure, connection refused,
+            // timeout, TLS errors, etc.) which are essential for debugging.
+            use std::fmt::Write;
+            let mut message = err.to_string();
+            let mut source = err.source();
+            while let Some(cause) = source {
+                write!(message, ": {cause}").unwrap();
+                source = cause.source();
+            }
+            NodesError::HttpError(message)
         }
 
         // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
@@ -888,7 +919,7 @@ impl InstanceEnv {
 
         // Check if we have a blocked IP address, since IP literals bypass DNS resolution.
         if is_blocked_ip_literal(reqwest.url()) {
-            return Err(http_error(BLOCKED_HTTP_ADDRESS_ERROR));
+            return Err(NodesError::HttpError(BLOCKED_HTTP_ADDRESS_ERROR.to_string()));
         }
 
         let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
@@ -970,12 +1001,16 @@ impl InstanceEnv {
 
 /// Default timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
-/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
-const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+/// Applied when the module does not specify a timeout.
+/// 30 seconds is generous enough for most external API calls (including LLM APIs)
+/// without silently hanging forever on a broken endpoint.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
 /// If the user requests a timeout longer than this, we will clamp to this value.
-const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(10);
+/// 180 seconds accommodates long-running LLM and AI API calls,
+/// which routinely take 30-120 seconds for complex requests.
+const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
 struct FilteredDnsResolver;
@@ -1319,7 +1354,7 @@ mod test {
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
-        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db);
         let logger = {
             let _rt = runtime.enter();
             Arc::new(temp_logger())
@@ -1336,7 +1371,6 @@ mod test {
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
-                relational_db,
             },
             runtime,
         ))

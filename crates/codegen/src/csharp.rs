@@ -653,6 +653,13 @@ impl Lang for Csharp<'_> {
                 }
             }
         }
+        for (columns, constraints) in schema.backcompat_column_constraints() {
+            if constraints.has_indexed() || constraints.has_unique() || constraints.has_primary_key() {
+                for col_pos in columns.iter() {
+                    ix_col_positions.insert(col_pos.idx());
+                }
+            }
+        }
 
         writeln!(output, "public sealed class {cols_owner_name}Cols");
         indented_block(&mut output, |output| {

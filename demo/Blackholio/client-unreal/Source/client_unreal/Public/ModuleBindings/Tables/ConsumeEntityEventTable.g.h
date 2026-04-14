@@ -37,25 +37,8 @@ public:
         const FEventContext&, Context,
         const FConsumeEntityEventType&, NewRow);
 
-    DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams( 
-        FOnConsumeEntityEventUpdate,
-        const FEventContext&, Context,
-        const FConsumeEntityEventType&, OldRow,
-        const FConsumeEntityEventType&, NewRow);
-
-    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( 
-        FOnConsumeEntityEventDelete,
-        const FEventContext&, Context,
-        const FConsumeEntityEventType&, DeletedRow);
-
     UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
     FOnConsumeEntityEventInsert OnInsert;
-
-    UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnConsumeEntityEventUpdate OnUpdate;
-
-    UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnConsumeEntityEventDelete OnDelete;
 
 private:
     const FString TableName = TEXT("consume_entity_event");

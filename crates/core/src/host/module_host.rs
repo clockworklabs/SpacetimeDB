@@ -8,10 +8,10 @@ use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::estimation::estimate_rows_scanned;
+use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
-use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::JsInstance;
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
@@ -27,7 +27,6 @@ use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
 use crate::util::jobs::SingleCoreExecutor;
-use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -51,6 +50,7 @@ use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
+use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -66,7 +66,6 @@ use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
@@ -348,8 +347,8 @@ pub enum ModuleWithInstance {
 }
 
 enum ModuleHostInner {
-    Wasm(WasmtimeModuleHost),
-    Js(V8ModuleHost),
+    Wasm(Box<WasmtimeModuleHost>),
+    Js(Box<V8ModuleHost>),
 }
 
 struct WasmtimeModuleHost {
@@ -358,7 +357,9 @@ struct WasmtimeModuleHost {
 }
 
 struct V8ModuleHost {
-    instance_manager: ModuleInstanceManager<super::v8::JsModule>,
+    module: super::v8::JsModule,
+    instance_lane: super::v8::JsInstanceLane,
+    procedure_instances: ModuleInstanceManager<super::v8::JsModule>,
 }
 
 /// A module; used as a bound on `InstanceManager`.
@@ -461,7 +462,7 @@ fn init_database_inner(
 ) -> anyhow::Result<(Option<ReducerCallResult>, bool)> {
     log::debug!("init database");
     let timestamp = Timestamp::now();
-    let stdb = &*replica_ctx.relational_db;
+    let stdb = replica_ctx.relational_db();
     let logger = replica_ctx.logger.system_logger();
     let owner_identity = replica_ctx.database.owner_identity;
 
@@ -753,6 +754,7 @@ impl CallProcedureParams {
 struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
+    module_instances_metric: ModuleInstancesMetric,
     create_instance_time_metric: CreateInstanceTimeMetric,
 }
 
@@ -764,11 +766,45 @@ struct CreateInstanceTimeMetric {
     database_identity: Identity,
 }
 
+/// Handle on the `spacetime_module_instances` label for a particular database
+/// which calls `remove_label_values` to clean up on drop.
+struct ModuleInstancesMetric {
+    metric: IntGauge,
+    host_type: HostType,
+    database_identity: Identity,
+    count: std::sync::Mutex<i64>,
+}
+
 impl Drop for CreateInstanceTimeMetric {
     fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_create_instance_time_seconds
             .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl Drop for ModuleInstancesMetric {
+    fn drop(&mut self) {
+        let _ = WORKER_METRICS
+            .module_instances
+            .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl ModuleInstancesMetric {
+    fn inc(&self) {
+        let mut count = self.count.lock().unwrap();
+        *count += 1;
+        self.metric.set(*count);
+    }
+
+    fn dec(&self) {
+        let mut count = self.count.lock().unwrap();
+        if *count == 0 {
+            return;
+        }
+        *count -= 1;
+        self.metric.set(*count);
     }
 }
 
@@ -779,8 +815,17 @@ impl CreateInstanceTimeMetric {
 }
 
 impl<M: GenericModule> ModuleInstanceManager<M> {
-    fn new(module: M, init_inst: M::Instance, database_identity: Identity) -> Self {
+    fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
         let host_type = module.host_type();
+        let module_instances_metric = ModuleInstancesMetric {
+            metric: WORKER_METRICS
+                .module_instances
+                .with_label_values(&database_identity, &host_type),
+            host_type,
+            database_identity,
+            count: std::sync::Mutex::new(1),
+        };
+
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
                 .module_create_instance_time_seconds
@@ -789,13 +834,13 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             database_identity,
         };
 
-        // Add the first instance.
         let mut instances = VecDeque::new();
-        instances.push_front(init_inst);
+        instances.extend(init_inst);
 
         Self {
             instances: Mutex::new(instances),
             module,
+            module_instances_metric,
             create_instance_time_metric,
         }
     }
@@ -816,6 +861,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.create_instance_time_metric.observe(elapsed_time);
+            self.module_instances_metric.inc();
             res
         }
     }
@@ -825,6 +871,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             // Don't return trapped instances;
             // they may have left internal data structures in the guest `Instance`
             // (WASM linear memory, V8 global scope) in a bad state.
+            self.module_instances_metric.dec();
             return;
         }
 
@@ -891,6 +938,8 @@ pub enum ReducerCallError {
     Args(#[from] InvalidReducerArguments),
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
+    #[error("The reducer worker encountered a fatal error: {0}")]
+    WorkerError(String),
     #[error("no such reducer")]
     NoSuchReducer,
     #[error("no such scheduled reducer")]
@@ -1020,16 +1069,21 @@ impl ModuleHost {
                 init_inst,
             } => {
                 info = module.info();
-                let instance_manager = ModuleInstanceManager::new(module, init_inst, database_identity);
-                Arc::new(ModuleHostInner::Wasm(WasmtimeModuleHost {
+                let instance_manager = ModuleInstanceManager::new(module, Some(init_inst), database_identity);
+                Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     executor,
                     instance_manager,
-                }))
+                })))
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
-                let instance_manager = ModuleInstanceManager::new(module, init_inst, database_identity);
-                Arc::new(ModuleHostInner::Js(V8ModuleHost { instance_manager }))
+                let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
+                let procedure_instances = ModuleInstanceManager::new(module.clone(), None, database_identity);
+                Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
+                    module,
+                    instance_lane,
+                    procedure_instances,
+                })))
             }
         };
         let on_panic = Arc::new(on_panic);
@@ -1089,7 +1143,8 @@ impl ModuleHost {
         let timer_guard = self.start_call_timer(label);
 
         Ok(match &*self.inner {
-            ModuleHostInner::Wasm(WasmtimeModuleHost { executor, .. }) => {
+            ModuleHostInner::Wasm(wasm) => {
+                let executor = &wasm.executor;
                 executor
                     .run_job(async move || {
                         drop(timer_guard);
@@ -1097,18 +1152,14 @@ impl ModuleHost {
                     })
                     .await
             }
-            ModuleHostInner::Js(V8ModuleHost { instance_manager }) => {
-                instance_manager
-                    .with_instance(async |mut inst| {
-                        let res = inst
-                            .run_on_thread(async move || {
-                                drop(timer_guard);
-                                f().await
-                            })
-                            .await;
-                        (res, inst)
+            ModuleHostInner::Js(js) => {
+                let instance_lane = &js.instance_lane;
+                instance_lane
+                    .run_on_thread(async move || {
+                        drop(timer_guard);
+                        f().await
                     })
-                    .await
+                    .await?
             }
         })
     }
@@ -1147,7 +1198,7 @@ impl ModuleHost {
         arg: A,
         timer: impl FnOnce(&str) -> Guard,
         work_wasm: impl AsyncFnOnce(Guard, &SingleCoreExecutor, Box<ModuleInstance>, A) -> (R, Box<ModuleInstance>),
-        work_js: impl AsyncFnOnce(Guard, &mut JsInstance, A) -> R,
+        work_js: impl AsyncFnOnce(Guard, &super::v8::JsInstanceLane, A) -> R,
     ) -> Result<R, NoSuchModule> {
         self.guard_closed()?;
         let timer_guard = timer(label);
@@ -1166,19 +1217,14 @@ impl ModuleHost {
         });
 
         Ok(match &*self.inner {
-            ModuleHostInner::Wasm(WasmtimeModuleHost {
-                executor,
-                instance_manager,
-            }) => {
+            ModuleHostInner::Wasm(wasm) => {
+                let executor = &wasm.executor;
+                let instance_manager = &wasm.instance_manager;
                 instance_manager
                     .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
                     .await
             }
-            ModuleHostInner::Js(V8ModuleHost { instance_manager }) => {
-                instance_manager
-                    .with_instance(async |mut inst| (work_js(timer_guard, &mut inst, arg).await, inst))
-                    .await
-            }
+            ModuleHostInner::Js(js) => work_js(timer_guard, &js.instance_lane, arg).await,
         })
     }
 
@@ -1191,7 +1237,7 @@ impl ModuleHost {
         label: &str,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &mut JsInstance) -> R,
+        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
@@ -1216,11 +1262,71 @@ impl ModuleHost {
                     .await
             },
             async move |timer_guard, inst, arg| {
+                super::v8::assert_not_on_js_module_thread(label);
                 drop(timer_guard);
                 js(arg, inst).await
             },
         )
         .await
+    }
+
+    /// Run a function for this module using pooled instances.
+    ///
+    /// For WASM, this is identical to [`Self::call`].
+    /// For V8/JS, this uses the pooled procedure instances instead of the
+    /// single instance lane.
+    async fn call_pooled<A, R>(
+        &self,
+        label: &str,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        js: impl AsyncFnOnce(A, &JsInstance) -> R,
+    ) -> Result<R, NoSuchModule>
+    where
+        R: Send + 'static,
+        A: Send + 'static,
+    {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("pooled operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                host.instance_manager
+                    .with_instance(async |mut inst| {
+                        host.executor
+                            .run_job(async move || {
+                                drop(timer_guard);
+                                (wasm(arg, &mut inst).await, inst)
+                            })
+                            .await
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                host.procedure_instances
+                    .with_instance(async |inst| {
+                        drop(timer_guard);
+                        let res = js(arg, &inst).await;
+                        (res, inst)
+                    })
+                    .await
+            }
+        })
+    }
+
+    async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
+        self.call_pooled(
+            label,
+            cmd,
+            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
+            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd).await),
+        )
+        .await?
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -1251,7 +1357,6 @@ impl ModuleHost {
             client_id.identity,
             client_id.connection_id,
             info,
-            true,
             call_reducer,
             trapped_slot,
         )
@@ -1293,7 +1398,6 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
         info: &ModuleInfo,
-        drop_view_subscribers: bool,
         call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
         trapped_slot: &mut bool,
     ) -> Result<(), ReducerCallError> {
@@ -1309,20 +1413,10 @@ impl ModuleHost {
 
         let workload = || Workload::reducer_no_args(reducer_name.clone(), caller_identity, caller_connection_id);
 
-        // Decrement the number of subscribers for each view this caller is subscribed to
-        let dec_view_subscribers = |tx: &mut MutTxId| {
-            if drop_view_subscribers && let Err(err) = tx.unsubscribe_views(caller_identity) {
-                log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
-            }
-        };
-
         // A fallback transaction that deletes the client from `st_client`.
         let database_identity = stdb.database_identity();
         let fallback = || {
             stdb.with_auto_commit(workload(), |mut_tx| {
-
-                dec_view_subscribers(mut_tx);
-
                 if !is_client_exist(mut_tx) {
                     // The client is already gone. Nothing to do.
                     log::debug!(
@@ -1348,9 +1442,7 @@ impl ModuleHost {
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
-            let mut mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
-
-            dec_view_subscribers(&mut mut_tx);
+            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
 
             if !is_client_exist(&mut_tx) {
                 // The client is already gone. Nothing to do.
@@ -1430,13 +1522,12 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
-        drop_view_subscribers: bool,
     ) -> Result<(), ReducerCallError> {
         self.call(
             "call_identity_disconnected",
-            (caller_identity, caller_connection_id, drop_view_subscribers),
-            async |(a, b, c), inst| inst.call_identity_disconnected(a, b, c),
-            async |(a, b, c), inst| inst.call_identity_disconnected(a, b, c).await,
+            (caller_identity, caller_connection_id),
+            async |(a, b), inst| inst.call_identity_disconnected(a, b),
+            async |(a, b), inst| inst.call_identity_disconnected(a, b).await,
         )
         .await?
     }
@@ -1505,14 +1596,13 @@ impl ModuleHost {
             args,
         };
 
-        Ok(self
-            .call(
-                &reducer_def.name,
-                call_reducer_params,
-                async |p, inst| inst.call_reducer(p),
-                async |p, inst| inst.call_reducer(p).await,
-            )
-            .await?)
+        self.call(
+            &reducer_def.name,
+            call_reducer_params,
+            async |p, inst| Ok(inst.call_reducer(p)),
+            async |p, inst| inst.call_reducer(p).await,
+        )
+        .await?
     }
 
     pub async fn call_reducer(
@@ -1580,12 +1670,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_single_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_single_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1613,12 +1698,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_multi_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_multi_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1646,12 +1726,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_remove_v2_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_remove_v2_subscription", cmd)
             .await
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
 
@@ -1678,12 +1753,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_multi_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_multi_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1711,12 +1781,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_add_legacy_subscription",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_add_legacy_subscription", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1745,12 +1810,7 @@ impl ModuleHost {
         };
 
         let res = self
-            .call(
-                "call_view_sql",
-                cmd,
-                async |cmd, inst| inst.call_view(cmd),
-                async |cmd, inst| inst.call_view(cmd).await,
-            )
+            .call_view_command("call_view_sql", cmd)
             .await
             //TODO: handle error better
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
@@ -1854,7 +1914,7 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.call(
+        self.call_pooled(
             name,
             params,
             async move |params, inst| inst.call_procedure(params).await,
@@ -1866,14 +1926,14 @@ impl ModuleHost {
     pub(super) async fn call_scheduled_function(
         &self,
         params: ScheduledFunctionParams,
-    ) -> Result<CallScheduledFunctionResult, NoSuchModule> {
-        self.call(
+    ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
+        self.call_pooled(
             "unknown scheduled function",
             params,
-            async move |params, inst| inst.call_scheduled_function(params).await,
-            async move |params, inst| inst.call_scheduled_function(params).await,
+            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
+            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
         )
-        .await
+        .await?
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -1899,7 +1959,12 @@ impl ModuleHost {
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
             let sender = if is_anonymous { None } else { Some(caller) };
-            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
+            let is_materialized = if is_anonymous {
+                tx.is_anonymous_view_materialized(view_id)?
+            } else {
+                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
+            };
+            if !is_materialized {
                 let (res, trapped) =
                     Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
                 tx = res.tx;
@@ -1919,51 +1984,91 @@ impl ModuleHost {
         Ok((tx, false))
     }
 
+    /// Refreshes every view made stale by `tx`.
+    ///
+    /// The returned transaction contains both the original writes and any backing-table
+    /// updates produced by re-materializing the affected views.
     pub fn call_views_with_tx<I: WasmInstance>(
         tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
         caller: Identity,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        let mut out = ViewCallResult::default(tx);
+    ) -> (ViewCallResult, bool) {
+        Self::call_views_with_tx_at(tx, instance, caller, Timestamp::now())
+    }
+
+    /// Refreshes every view made stale by `tx`.
+    ///
+    /// This is the shared host-side path for finishing a transaction after writes have
+    /// invalidated one or more materialized views.
+    pub fn call_views_with_tx_at<I: WasmInstance>(
+        tx: MutTxId,
+        instance: &mut RefInstance<'_, I>,
+        caller: Identity,
+        timestamp: Timestamp,
+    ) -> (ViewCallResult, bool) {
+        let mut tx = tx;
         let module_def = &instance.common.info().module_def;
+        let mut outcome = ViewOutcome::Success;
+        let mut energy_used = FunctionBudget::ZERO;
+        let mut total_duration = Duration::ZERO;
+        let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
-        use FunctionArgs::Nullary;
         for ViewCallInfo {
             view_id,
             table_id,
             fn_ptr,
             sender,
-        } in out.tx.views_for_refresh().cloned().collect::<Vec<_>>()
+        } in tx.views_for_refresh().cloned().collect::<Vec<_>>()
         {
-            let view_def = module_def
-                .get_view_by_id(fn_ptr, sender.is_none())
-                .ok_or(ViewCallError::NoSuchView)?;
+            let Some(view_def) = module_def.get_view_by_id(fn_ptr, sender.is_none()) else {
+                outcome = ViewOutcome::Failed(format!("view with fn_ptr `{fn_ptr}` not found"));
+                break;
+            };
+            let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
+                Ok(args) => args,
+                Err(err) => {
+                    outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
+                    break;
+                }
+            };
 
-            let (result, trap) = Self::call_view(
+            let (result, trap) = Self::call_view_inner(
                 instance,
-                out.tx,
+                tx,
                 &view_def.name,
                 view_id,
                 table_id,
-                Nullary,
+                view_def.fn_ptr,
                 caller,
                 sender,
-            )?;
+                args,
+                view_def.product_type_ref,
+                timestamp,
+            );
 
             // Increment execution stats
-            out.tx = result.tx;
-            out.outcome = result.outcome;
-            out.energy_used += result.energy_used;
-            out.total_duration += result.total_duration;
-            out.abi_duration += result.abi_duration;
+            tx = result.tx;
+            outcome = result.outcome;
+            energy_used += result.energy_used;
+            total_duration += result.total_duration;
+            abi_duration += result.abi_duration;
             trapped |= trap;
 
             // Terminate early if execution failed
-            if !matches!(out.outcome, ViewOutcome::Success) || trapped {
+            if !matches!(outcome, ViewOutcome::Success) || trapped {
                 break;
             }
         }
-        Ok((out, trapped))
+        (
+            ViewCallResult {
+                outcome,
+                tx,
+                energy_used,
+                total_duration,
+                abi_duration,
+            },
+            trapped,
+        )
     }
 
     fn call_view<I: WasmInstance>(
@@ -1976,6 +2081,30 @@ impl ModuleHost {
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
+        Self::call_view_at(
+            instance,
+            tx,
+            view_name,
+            view_id,
+            table_id,
+            args,
+            caller,
+            sender,
+            Timestamp::now(),
+        )
+    }
+
+    fn call_view_at<I: WasmInstance>(
+        instance: &mut RefInstance<'_, I>,
+        tx: MutTxId,
+        view_name: &Identifier,
+        view_id: ViewId,
+        table_id: TableId,
+        args: FunctionArgs,
+        caller: Identity,
+        sender: Option<Identity>,
+        timestamp: Timestamp,
+    ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let module_def = &instance.common.info().module_def;
         let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
         let fn_ptr = view_def.fn_ptr;
@@ -1984,21 +2113,9 @@ impl ModuleHost {
             .into_tuple_for_def(module_def, view_def)
             .map_err(InvalidViewArguments)?;
 
-        match Self::call_view_inner(
-            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type,
-        ) {
-            err @ Err(ViewCallError::NoSuchView) => {
-                let _log_message = no_such_function_log_message("view", view_name);
-                //   self.inject_logs(LogLevel::Error, view_name, &log_message);
-                err
-            }
-            err @ Err(ViewCallError::Args(_)) => {
-                let _log_message = args_error_log_message("view", view_name);
-                // self.inject_logs(LogLevel::Error, view_name, &log_message);
-                err
-            }
-            res => res,
-        }
+        Ok(Self::call_view_inner(
+            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type, timestamp,
+        ))
     }
 
     fn call_view_inner<I: WasmInstance>(
@@ -2012,10 +2129,11 @@ impl ModuleHost {
         sender: Option<Identity>,
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
-    ) -> Result<(ViewCallResult, bool), ViewCallError> {
+        timestamp: Timestamp,
+    ) -> (ViewCallResult, bool) {
         let view_name = name.clone();
         let params = CallViewParams {
-            timestamp: Timestamp::now(),
+            timestamp,
             view_name,
             view_id,
             table_id,
@@ -2026,7 +2144,7 @@ impl ModuleHost {
             row_type,
         };
 
-        Ok(instance.common.call_view_with_tx(tx, params, instance.instance))
+        instance.common.call_view_with_tx(tx, params, instance.instance)
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
@@ -2093,7 +2211,7 @@ impl ModuleHost {
         into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
     ) -> Result<(), anyhow::Error> {
         let replica_ctx = self.replica_ctx();
-        let db = replica_ctx.relational_db.clone();
+        let db = self.relational_db().clone();
         let subscriptions = replica_ctx.subscriptions.clone();
         log::debug!("One-off query: {query}");
         let metrics = self
@@ -2197,8 +2315,7 @@ impl ModuleHost {
 
         if let Some(metrics) = metrics {
             // Record the metrics for the one-off query
-            replica_ctx
-                .relational_db
+            self.relational_db()
                 .exec_counters_for(WorkloadType::Sql)
                 .record(&metrics);
         }
@@ -2221,7 +2338,7 @@ impl ModuleHost {
         rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
     ) -> Result<(), anyhow::Error> {
         let replica_ctx = self.replica_ctx();
-        let db = replica_ctx.relational_db.clone();
+        let db = self.relational_db().clone();
         let subscriptions = replica_ctx.subscriptions.clone();
         log::debug!("One-off query: {query}");
         let metrics = self
@@ -2231,8 +2348,7 @@ impl ModuleHost {
             .await??;
 
         if let Some(metrics) = metrics {
-            replica_ctx
-                .relational_db
+            self.relational_db()
                 .exec_counters_for(WorkloadType::Sql)
                 .record(&metrics);
         }
@@ -2338,7 +2454,7 @@ impl ModuleHost {
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        let db = &*self.replica_ctx().relational_db;
+        let db = self.relational_db();
 
         db.with_auto_commit(Workload::Internal, |tx| {
             let tables = db.get_all_tables_mut(tx)?;
@@ -2368,24 +2484,28 @@ impl ModuleHost {
     }
 
     pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
-        self.replica_ctx().relational_db.durable_tx_offset()
+        self.relational_db().durable_tx_offset()
     }
 
     pub fn database_logger(&self) -> &Arc<DatabaseLogger> {
         &self.replica_ctx().logger
     }
 
+    pub fn relational_db(&self) -> &Arc<RelationalDB> {
+        self.replica_ctx().relational_db()
+    }
+
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.replica_ctx(),
-            ModuleHostInner::Js(js) => js.instance_manager.module.replica_ctx(),
+            ModuleHostInner::Js(js) => js.module.replica_ctx(),
         }
     }
 
     fn scheduler(&self) -> &Scheduler {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.scheduler(),
-            ModuleHostInner::Js(js) => js.instance_manager.module.scheduler(),
+            ModuleHostInner::Js(js) => js.module.scheduler(),
         }
     }
 }

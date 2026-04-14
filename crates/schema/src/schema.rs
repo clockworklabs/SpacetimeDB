@@ -22,8 +22,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::def::{
-    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
+    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup,
+    RawModuleDefVersion, ScheduleDef, SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
 use crate::identifier::Identifier;
 
@@ -760,6 +760,7 @@ impl TableSchema {
             name,
             is_public,
             is_anonymous,
+            primary_key,
             param_columns,
             return_columns,
             ..
@@ -772,6 +773,9 @@ impl TableSchema {
             .map(|(i, schema)| (ColId::from(i), schema))
             .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema })
             .collect();
+        let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
+            .then_some(*primary_key)
+            .flatten();
 
         let table_access = if *is_public {
             StAccess::Public
@@ -796,7 +800,7 @@ impl TableSchema {
             StTableType::User,
             table_access,
             None,
-            None,
+            view_primary_key,
             false,
             None,
         )
@@ -842,6 +846,7 @@ impl TableSchema {
             name,
             is_public,
             is_anonymous,
+            primary_key,
             param_columns,
             return_columns,
             accessor_name,
@@ -851,12 +856,9 @@ impl TableSchema {
         let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
         let mut meta_cols = 0;
-        let mut index_name = name.as_raw().clone().into_inner();
 
         let mut push_column = |name: &'static str, col_type| {
             meta_cols += 1;
-            index_name += "_";
-            index_name += name;
             columns.push(ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: columns.len().into(),
@@ -883,22 +885,68 @@ impl TableSchema {
                 .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
-        let index_schema = |col_list: ColList| {
-            index_name += "idx_btree";
-            IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: RawIdentifier::new(index_name),
-                index_algorithm: IndexAlgorithm::BTree(col_list.into()),
-                alias: None,
-            }
+        let make_index_name = |col_list: &ColList| {
+            let cols_name = generate_cols_name(col_list, |col| columns.get(col.idx()).map(|col| &*col.col_name));
+            RawIdentifier::new(format!("{name}_{cols_name}_idx_btree"))
         };
 
-        let indexes = match meta_cols {
-            1 => vec![index_schema(col_list![0])],
-            2 => vec![index_schema(col_list![0, 1])],
+        let make_constraint_name = |col_list: &ColList| {
+            let cols_name = generate_cols_name(col_list, |col| columns.get(col.idx()).map(|col| &*col.col_name));
+            RawIdentifier::new(format!("{name}_{cols_name}_key"))
+        };
+
+        let mut indexes = match meta_cols {
+            1 => vec![IndexSchema {
+                index_id: IndexId::SENTINEL,
+                table_id: TableId::SENTINEL,
+                index_name: make_index_name(&col_list![0]),
+                index_algorithm: IndexAlgorithm::BTree(col_list![0].into()),
+                alias: None,
+            }],
+            2 => vec![IndexSchema {
+                index_id: IndexId::SENTINEL,
+                table_id: TableId::SENTINEL,
+                index_name: make_index_name(&col_list![0, 1]),
+                index_algorithm: IndexAlgorithm::BTree(col_list![0, 1].into()),
+                alias: None,
+            }],
             _ => vec![],
         };
+
+        let mut constraints = vec![];
+        let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
+            .then_some(primary_key.map(|pk| ColId::from(meta_cols + pk.idx())))
+            .flatten();
+
+        if *is_anonymous {
+            if let Some(pk_col) = view_primary_key {
+                let cols = col_list![pk_col];
+                constraints.push(ConstraintSchema {
+                    table_id: TableId::SENTINEL,
+                    constraint_id: ConstraintId::SENTINEL,
+                    constraint_name: make_constraint_name(&cols),
+                    data: ConstraintData::Unique(UniqueConstraintData {
+                        columns: ColSet::from(cols.clone()),
+                    }),
+                });
+                indexes.push(IndexSchema {
+                    index_id: IndexId::SENTINEL,
+                    table_id: TableId::SENTINEL,
+                    index_name: make_index_name(&cols),
+                    index_algorithm: IndexAlgorithm::BTree(cols.into()),
+                    alias: None,
+                });
+            }
+        } else if let Some(pk_col) = view_primary_key {
+            let cols = col_list![ColId(0), pk_col];
+            indexes.push(IndexSchema {
+                index_id: IndexId::SENTINEL,
+                table_id: TableId::SENTINEL,
+                index_name: make_index_name(&cols),
+                index_algorithm: IndexAlgorithm::BTree(cols.into()),
+                alias: None,
+            });
+        }
 
         let table_access = if *is_public {
             StAccess::Public
@@ -918,12 +966,12 @@ impl TableSchema {
             Some(view_info),
             columns,
             indexes,
-            vec![],
+            constraints,
             vec![],
             StTableType::User,
             table_access,
             None,
-            None,
+            if *is_anonymous { view_primary_key } else { None },
             false,
             Some(accessor_name.clone()),
         )

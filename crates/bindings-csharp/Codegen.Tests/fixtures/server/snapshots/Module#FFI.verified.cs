@@ -734,6 +734,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 BTreeMultiColumn,
@@ -757,6 +763,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 BTreeMultiColumn,
                 global::BTreeMultiColumn
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                BTreeMultiColumn,
+                global::BTreeMultiColumn
+            >.DoClear();
 
         internal sealed class LocationIndex()
             : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
@@ -926,6 +938,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoCount();
 
@@ -937,6 +955,9 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public bool Delete(global::BTreeViews row) =>
             global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoClear();
 
         internal sealed class IdUniqueIndex
             : UniqueIndex<
@@ -1114,6 +1135,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoCount();
 
@@ -1129,6 +1156,9 @@ namespace SpacetimeDB.Internal.TableHandles
             global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoDelete(
                 row
             );
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoClear();
 
         public sealed class FooUniqueIndex
             : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
@@ -1236,6 +1266,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoCount();
 
@@ -1251,6 +1287,9 @@ namespace SpacetimeDB.Internal.TableHandles
             global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoDelete(
                 row
             );
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoClear();
 
         public sealed class BarUniqueIndex
             : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
@@ -1297,6 +1336,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoCount();
 
@@ -1312,6 +1357,9 @@ namespace SpacetimeDB.Internal.TableHandles
             global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoDelete(
                 row
             );
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoClear();
     }
 
     public readonly struct PublicTable
@@ -1367,6 +1415,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoCount();
 
@@ -1378,6 +1432,9 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public bool Delete(global::PublicTable row) =>
             global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoClear();
 
         public sealed class IdUniqueIndex
             : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
@@ -1453,6 +1510,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 RegressionMultipleUniqueIndexesHadSameName,
@@ -1478,6 +1541,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 RegressionMultipleUniqueIndexesHadSameName,
                 global::RegressionMultipleUniqueIndexesHadSameName
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >.DoClear();
 
         internal sealed class Unique1UniqueIndex
             : UniqueIndex<
@@ -1577,6 +1646,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 global::Timers.SendMessageTimer
             >.MakeSchedule("SendScheduledMessage", 1);
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<
                 SendMessageTimer,
@@ -1600,6 +1675,12 @@ namespace SpacetimeDB.Internal.TableHandles
                 SendMessageTimer,
                 global::Timers.SendMessageTimer
             >.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer
+            >.DoClear();
 
         public sealed class ScheduledIdUniqueIndex
             : UniqueIndex<
@@ -1636,10 +1717,9 @@ sealed class public_table_queryViewDispatcher : global::SpacetimeDB.Internal.IVi
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
-            ReturnType: new SpacetimeDB.BSATN.ValueOption<
-                PublicTable,
-                PublicTable.BSATN
-            >().GetAlgebraicType(registrar)
+            ReturnType: global::SpacetimeDB.BSATN.AlgebraicType.MakeQueryBuilderProductType(
+                new PublicTable.BSATN().GetAlgebraicType(registrar)
+            )
         );
 
     public byte[] Invoke(
@@ -1770,6 +1850,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal BTreeMultiColumnReadOnly()
             : base("BTreeMultiColumn") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class LocationIndex
@@ -1852,6 +1938,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal BTreeViewsReadOnly()
             : base("BTreeViews") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdIndex
@@ -1949,6 +2041,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal MultiTable1ReadOnly()
             : base("MultiTable1") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class FooIndex
@@ -2001,6 +2099,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal MultiTable2ReadOnly()
             : base("MultiTable2") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class BarIndex
@@ -2026,6 +2130,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal PrivateTableReadOnly()
             : base("PrivateTable") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
     }
 
@@ -2035,6 +2145,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal PublicTableReadOnly()
             : base("PublicTable") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdIndex
@@ -2060,6 +2176,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal RegressionMultipleUniqueIndexesHadSameNameReadOnly()
             : base("RegressionMultipleUniqueIndexesHadSameName") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class Unique1Index
@@ -2103,6 +2225,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal SendMessageTimerReadOnly()
             : base("SendMessageTimer") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class ScheduledIdIndex

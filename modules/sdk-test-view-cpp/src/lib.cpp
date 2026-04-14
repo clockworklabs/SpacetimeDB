@@ -95,12 +95,12 @@ SPACETIMEDB_REDUCER(delete_player, ReducerContext ctx, Identity identity)
 SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, int32_t dx, int32_t dy)
 {
     // Find or create player
-    auto my_player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto my_player_opt = ctx.db[player_identity].find(ctx.sender());
     Player my_player;
     
     if (!my_player_opt.has_value()) {
         // Create new player
-        my_player = ctx.db[player].insert(Player{0, ctx.sender});
+        my_player = ctx.db[player].insert(Player{0, ctx.sender()});
     } else {
         my_player = my_player_opt.value();
     }
@@ -133,14 +133,14 @@ SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, int32_t dx, int32_t dy)
 
 // View: my_player - Returns the player for the caller
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     return player_opt;
 }
 
 // View: my_player_and_level - Returns player with level joined
 SPACETIMEDB_VIEW(std::optional<PlayerAndLevel>, my_player_and_level, Public, ViewContext ctx) {
     // Find the caller's player
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return std::optional<PlayerAndLevel>();
     }
@@ -183,7 +183,7 @@ SPACETIMEDB_VIEW(std::vector<PlayerLocation>, nearby_players, Public, ViewContex
     std::vector<PlayerLocation> results;
     
     // Find the caller's player
-    auto my_player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto my_player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!my_player_opt.has_value()) {
         return results; // No player, return empty
     }
