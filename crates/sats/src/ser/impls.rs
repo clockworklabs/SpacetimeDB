@@ -2,6 +2,7 @@ use super::{Serialize, SerializeArray, SerializeSeqProduct, Serializer};
 use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, ArrayValue, ProductValue, SumValue, ValueWithType, F32, F64};
 use core::ops::Bound;
+use lean_string::LeanString;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColList, ColSet};
 use std::rc::Rc;
@@ -111,6 +112,7 @@ impl_serialize!([T: Serialize + ?Sized] Rc<T>, (self, ser) => (**self).serialize
 impl_serialize!([T: Serialize + ?Sized] Arc<T>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize + ?Sized] &T, (self, ser) => (**self).serialize(ser));
 impl_serialize!([] String, (self, ser) => ser.serialize_str(self));
+impl_serialize!([] LeanString, (self, ser) => ser.serialize_str(self));
 impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {
     Some(v) => ser.serialize_variant(0, Some("some"), v),
     None => ser.serialize_variant(1, Some("none"), &()),
@@ -257,7 +259,9 @@ impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => {
     }
 });
 
+impl_serialize!([] spacetimedb_primitives::ArgId, (self, ser) => ser.serialize_u64(self.0));
 impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::ViewId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::SequenceId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::ConstraintId, (self, ser) => ser.serialize_u32(self.0));

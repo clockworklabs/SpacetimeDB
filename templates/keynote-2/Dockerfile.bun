@@ -1,0 +1,14 @@
+﻿FROM oven/bun:latest
+
+WORKDIR /app
+
+COPY package.json bun.lockb* tsconfig.json ./
+
+RUN bun install --ignore-scripts
+
+# Copy source
+COPY bun ./bun
+
+ENV PORT=4001
+
+CMD ["bun", "bun/bun-server.ts"]

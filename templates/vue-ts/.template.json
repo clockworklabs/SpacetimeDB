@@ -1,0 +1,14 @@
+{
+  "description": "Vue.js web app with TypeScript server",
+  "client_framework": "Vue.js",
+  "client_lang": "typescript",
+  "server_lang": "typescript",
+  "builtWith": [
+    "vue",
+    "vitejs",
+    "typescript",
+    "vite",
+    "vue-tsc",
+    "spacetimedb"
+  ]
+}

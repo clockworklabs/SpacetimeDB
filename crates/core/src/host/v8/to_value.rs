@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use bytemuck::{NoUninit, Pod};
 use spacetimedb_sats::{i256, u256};
 use v8::{BigInt, Boolean, Integer, Local, Number, PinScope, Value};
@@ -104,22 +102,19 @@ impl_to_value!(i256, (val, scope) => {
 
 #[cfg(test)]
 pub(in super::super) mod test {
-    use super::super::from_value::FromValue;
-    use super::super::V8Runtime;
+    use super::super::{from_value::FromValue, new_isolate, V8Runtime};
     use super::*;
     use core::fmt::Debug;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::{any_i256, any_u256};
-    use v8::{scope, Context, ContextScope, Isolate};
+    use v8::{scope_with_context, Context};
 
-    /// Sets up V8 and runs `logic` with a [`HandleScope`].
+    /// Sets up V8 and runs `logic` with a [`PinScope`].
     pub(in super::super) fn with_scope<R>(logic: impl FnOnce(&mut PinScope<'_, '_>) -> R) -> R {
         V8Runtime::init_for_test();
-        let isolate = &mut Isolate::new(<_>::default());
-        isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
-        scope!(let scope, isolate);
-        let context = Context::new(scope, Default::default());
-        let scope = &mut ContextScope::new(scope, context);
+
+        let mut isolate = new_isolate(Default::default());
+        scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         logic(scope)
     }

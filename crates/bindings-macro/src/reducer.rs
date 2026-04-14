@@ -4,7 +4,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser as _;
 use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn, LitStr};
+use syn::{FnArg, Ident, ItemFn, LitStr, PatType};
 
 #[derive(Default)]
 pub(crate) struct ReducerArgs {
@@ -59,25 +59,29 @@ impl ReducerArgs {
     }
 }
 
-pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
-    let func_name = &original_function.sig.ident;
-    let vis = &original_function.vis;
-
-    let reducer_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
-
+pub(crate) fn assert_only_lifetime_generics(original_function: &ItemFn, function_kind_plural: &str) -> syn::Result<()> {
     for param in &original_function.sig.generics.params {
         let err = |msg| syn::Error::new_spanned(param, msg);
         match param {
             syn::GenericParam::Lifetime(_) => {}
-            syn::GenericParam::Type(_) => return Err(err("type parameters are not allowed on reducers")),
-            syn::GenericParam::Const(_) => return Err(err("const parameters are not allowed on reducers")),
+            syn::GenericParam::Type(_) => {
+                return Err(err(format!(
+                    "type parameters are not allowed on {function_kind_plural}"
+                )));
+            }
+            syn::GenericParam::Const(_) => {
+                return Err(err(format!(
+                    "const parameters are not allowed on {function_kind_plural}"
+                )));
+            }
         }
     }
+    Ok(())
+}
 
-    let lifecycle = args.lifecycle.iter().filter_map(|lc| lc.to_lifecycle_value());
-
-    // Extract all function parameters, except for `self` ones that aren't allowed.
-    let typed_args = original_function
+/// Extract all function parameters, except for `self` ones that aren't allowed.
+pub(crate) fn extract_typed_args(original_function: &ItemFn) -> syn::Result<Vec<&PatType>> {
+    original_function
         .sig
         .inputs
         .iter()
@@ -85,7 +89,24 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             FnArg::Typed(arg) => Ok(arg),
             _ => Err(syn::Error::new_spanned(arg, "expected typed argument")),
         })
-        .collect::<syn::Result<Vec<_>>>()?;
+        .collect()
+}
+
+pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
+    let func_name = &original_function.sig.ident;
+    let vis = &original_function.vis;
+
+    let reducer_name = ident_to_litstr(func_name);
+
+    assert_only_lifetime_generics(original_function, "reducers")?;
+
+    let lifecycle = args.lifecycle.iter().filter_map(|lc| lc.to_lifecycle_value());
+
+    let typed_args = extract_typed_args(original_function)?;
+
+    let explicit_name = args.name.as_ref();
+
+    let generate_explicit_names = generate_explicit_names_impl(&reducer_name.value(), func_name, explicit_name);
 
     // Extract all function parameter names.
     let opt_arg_names = typed_args.iter().map(|arg| {
@@ -114,7 +135,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     let lt_where_clause = &lt_params.where_clause;
 
     let generated_describe_function = quote! {
-        #[export_name = #register_describer_symbol]
+        #[unsafe(export_name = #register_describer_symbol)]
         pub extern "C" fn __register_describer() {
             spacetimedb::rt::register_reducer::<_, #func_name>(#func_name)
         }
@@ -134,16 +155,50 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             }
         };
         impl #func_name {
-            fn invoke(__ctx: spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
+            fn invoke(__ctx: &spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
                 spacetimedb::rt::invoke_reducer(#func_name, __ctx, __args)
             }
         }
         #[automatically_derived]
-        impl spacetimedb::rt::ReducerInfo for #func_name {
+        impl spacetimedb::rt::FnInfo for #func_name {
+            type Invoke = spacetimedb::rt::ReducerFn;
+            /// The function kind, which will cause scheduled tables to accept reducers.
+            type FnKind = spacetimedb::rt::FnKindReducer;
             const NAME: &'static str = #reducer_name;
             #(const LIFECYCLE: Option<spacetimedb::rt::LifecycleReducer> = Some(#lifecycle);)*
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
-            const INVOKE: spacetimedb::rt::ReducerFn = #func_name::invoke;
+            const INVOKE: Self::Invoke = #func_name::invoke;
         }
+
+        #generate_explicit_names
     })
+}
+
+pub(crate) fn generate_explicit_names_impl(
+    func_name: &str,
+    func_handle: &Ident,
+    explicit_name: Option<&LitStr>,
+) -> TokenStream {
+    let mut explicit_names_body = Vec::new();
+
+    // Table name
+    if let Some(explicit_name) = explicit_name {
+        explicit_names_body.push(quote! {
+            names.insert_function(
+                #func_name,
+                #explicit_name,
+            );
+        });
+    };
+
+    quote! {
+
+        impl spacetimedb::rt::ExplicitNames for #func_handle {
+            fn explicit_names() -> spacetimedb::spacetimedb_lib::ExplicitNames {
+                let mut names = spacetimedb::spacetimedb_lib::ExplicitNames::default();
+                #(#explicit_names_body)*
+                names
+            }
+        }
+    }
 }

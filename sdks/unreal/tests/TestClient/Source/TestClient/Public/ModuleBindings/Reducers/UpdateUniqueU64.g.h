@@ -14,10 +14,10 @@ struct TESTCLIENT_API FUpdateUniqueU64Args
     GENERATED_BODY()
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 N;
+    uint64 N = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FUpdateUniqueU64Args() = default;
 
@@ -49,9 +49,9 @@ class TESTCLIENT_API UUpdateUniqueU64Reducer : public UReducerBase
 
 public:
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 N;
+    uint64 N = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

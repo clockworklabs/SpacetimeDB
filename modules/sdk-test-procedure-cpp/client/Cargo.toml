@@ -1,0 +1,10 @@
+[package]
+name = "sdk-test-procedure-cpp-client"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+# Standalone - not part of the root workspace
+
+[dependencies]
+spacetimedb-sdk = { path = "../../../sdks/rust" }

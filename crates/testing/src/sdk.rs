@@ -1,5 +1,6 @@
 use duct::cmd;
 use rand::seq::IteratorRandom;
+use spacetimedb::messages::control_db::HostType;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use std::fs::create_dir_all;
@@ -81,6 +82,9 @@ pub struct Test {
     /// not any of the aliases the SpacetimeDB CLI's `generate` command would accept.
     generate_language: String,
 
+    /// If true, pass `--include-private` to `spacetime generate` to include bindings for private items.
+    generate_include_private: bool,
+
     /// A relative path within the `client_project` to place the module bindings.
     ///
     /// Usually `src/module_bindings`.
@@ -119,19 +123,21 @@ impl Test {
     pub fn run(self) {
         let paths = ensure_standalone_process();
 
-        let wasm_file = compile_module(&self.module_name);
+        let (file, host_type) = compile_module(&self.module_name);
 
         generate_bindings(
             paths,
             &self.generate_language,
-            &wasm_file,
+            &file,
+            host_type,
             &self.client_project,
             &self.generate_subdir,
+            self.generate_include_private,
         );
 
         compile_client(&self.compile_command, &self.client_project);
 
-        let db_name = publish_module(paths, &wasm_file);
+        let db_name = publish_module(paths, &file, host_type);
 
         run_client(&self.run_command, &self.client_project, &db_name);
     }
@@ -196,18 +202,18 @@ macro_rules! memoized {
 // which is bad both for performance reasons as well as can lead to errors
 // with toolchains like .NET which don't expect parallel invocations
 // of their build tools on the same project folder.
-fn compile_module(module: &str) -> String {
+fn compile_module(module: &str) -> (String, HostType) {
     let module = module.to_owned();
 
-    memoized!(|module: String| -> String {
+    memoized!(|module: String| -> (String, HostType) {
         let module = CompiledModule::compile(module, CompilationMode::Debug);
-        module.path().to_str().unwrap().to_owned()
+        (module.path().to_str().unwrap().to_owned(), module.host_type)
     })
 }
 
 // Note: this function does not memoize because we want each test to publish the same
 // module as a separate clean database instance for isolation purposes.
-fn publish_module(paths: &SpacetimePaths, wasm_file: &str) -> String {
+fn publish_module(paths: &SpacetimePaths, wasm_file: &str, host_type: HostType) -> String {
     let name = random_module_name();
     invoke_cli(
         paths,
@@ -216,7 +222,10 @@ fn publish_module(paths: &SpacetimePaths, wasm_file: &str) -> String {
             "--anonymous",
             "--server",
             "local",
-            "--bin-path",
+            match host_type {
+                HostType::Wasm => "--bin-path",
+                HostType::Js => "--js-path",
+            },
             wasm_file,
             &name,
         ],
@@ -275,8 +284,10 @@ fn generate_bindings(
     paths: &SpacetimePaths,
     language: &str,
     wasm_file: &str,
+    host_type: HostType,
     client_project: &str,
     generate_subdir: &str,
+    generate_include_private: bool,
 ) {
     // We need these to be owned `String`s so we can memoize on them.
     let client_project = client_project.to_owned();
@@ -286,7 +297,21 @@ fn generate_bindings(
     // so our memoization has unit as the value.
     // This makes it run at most once for each key.
     memoized!(|(client_project, generate_subdir): (String, String)| -> () {
-        let mut args: Vec<&str> = vec!["generate", "--lang", language, "--bin-path", wasm_file];
+        let mut args: Vec<&str> = vec![
+            "generate",
+            "--yes",
+            "--lang",
+            language,
+            match host_type {
+                HostType::Wasm => "--bin-path",
+                HostType::Js => "--js-path",
+            },
+            wasm_file,
+        ];
+
+        if generate_include_private {
+            args.push("--include-private");
+        }
 
         let generate_dir: String;
 
@@ -385,6 +410,7 @@ pub struct TestBuilder {
     module_name: Option<String>,
     client_project: Option<String>,
     generate_language: Option<String>,
+    generate_include_private: bool,
     generate_subdir: Option<String>,
     compile_command: Option<String>,
     run_command: Option<String>,
@@ -448,6 +474,13 @@ impl TestBuilder {
         }
     }
 
+    pub fn with_generate_private_items(self, include_private: bool) -> Self {
+        TestBuilder {
+            generate_include_private: include_private,
+            ..self
+        }
+    }
+
     pub fn build(self) -> Test {
         let generate_language = self
             .generate_language
@@ -471,6 +504,7 @@ impl TestBuilder {
                 .client_project
                 .expect("Supply a client project directory using TestBuilder::with_client"),
             generate_language,
+            generate_include_private: self.generate_include_private,
             generate_subdir,
             compile_command: self
                 .compile_command

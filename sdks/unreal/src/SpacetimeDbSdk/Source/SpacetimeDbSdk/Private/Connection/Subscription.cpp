@@ -1,5 +1,6 @@
 #include "Connection/Subscription.h"
 #include "Connection/DbConnectionBase.h"
+#include "Connection/LogCategory.h"
 
 USubscriptionHandleBase::USubscriptionHandleBase() {}
 
@@ -7,12 +8,12 @@ void USubscriptionHandleBase::Unsubscribe()
 {
 	if (bEnded )
 	{
-		UE_LOG(LogTemp, Warning, TEXT("USubscriptionHandleBase::Unsubscribe called on an already ended handle. Not allowed"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("USubscriptionHandleBase::Unsubscribe called on an already ended handle. Not allowed"));
 		return;
 	}
 	if (bUnsubscribeCalled)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("USubscriptionHandleBase::Unsubscribe called multiple times for the same handle. Not allowed"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("USubscriptionHandleBase::Unsubscribe called multiple times for the same handle. Not allowed"));
 		return;
 	}
 
@@ -90,13 +91,13 @@ USubscriptionHandleBase* USubscriptionBuilderBase::SubscribeBase(const TArray<FS
 {
 	if (!Handle)
 	{
-		UE_LOG(LogTemp, Error, TEXT("USubscriptionBuilderBase::SubscribeBase: Handle is null! Returning null handle."));
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("USubscriptionBuilderBase::SubscribeBase: Handle is null! Returning null handle."));
 		return Handle;
 	}
 
 	if (QuerySqls.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SubscribeBase called with no query strings"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("SubscribeBase called with no query strings"));
 	}
 	
 	Handle->AppliedDelegate = AppliedDelegate;

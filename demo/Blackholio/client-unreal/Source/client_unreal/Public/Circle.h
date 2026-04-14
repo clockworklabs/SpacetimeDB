@@ -15,7 +15,8 @@ class CLIENT_UNREAL_API ACircle : public AEntity
 public:
 	ACircle();
 	
-	uint32 OwnerPlayerId = 0;
+	UPROPERTY(BlueprintReadOnly, Category="BH|Circle")
+	int32 OwnerPlayerId = 0;
 	UPROPERTY(BlueprintReadOnly, Category="BH|Circle")
 	FString Username;
 

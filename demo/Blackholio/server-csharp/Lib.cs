@@ -2,16 +2,16 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-	const uint START_PLAYER_MASS = 15;
-	const uint START_PLAYER_SPEED = 10;
-	const uint FOOD_MASS_MIN = 2;
-	const uint FOOD_MASS_MAX = 4;
-	const uint TARGET_FOOD_COUNT = 600;
+	const int START_PLAYER_MASS = 15;
+	const int START_PLAYER_SPEED = 10;
+	const int FOOD_MASS_MIN = 2;
+	const int FOOD_MASS_MAX = 4;
+	const int TARGET_FOOD_COUNT = 600;
 	const float MINIMUM_SAFE_MASS_RATIO = 0.85f;
 	const float MIN_OVERLAP_PCT_TO_CONSUME = 0.1f;
 
-	const uint MIN_MASS_TO_SPLIT = START_PLAYER_MASS * 2;
-	const uint MAX_CIRCLES_PER_PLAYER = 16;
+	const int MIN_MASS_TO_SPLIT = START_PLAYER_MASS * 2;
+	const int MAX_CIRCLES_PER_PLAYER = 16;
 	const float SPLIT_RECOMBINE_DELAY_SEC = 5f;
 	const float SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC = 2f;
 	const float ALLOWED_SPLIT_CIRCLE_OVERLAP_PCT = 0.9f;
@@ -20,56 +20,56 @@ public static partial class Module
 
 
 	#region Tables
-	[Table(Name = "config", Public = true)]
+	[Table(Accessor = "config", Public = true)]
 	public partial struct Config
 	{
 		[PrimaryKey]
-		public uint id;
-		public ulong world_size;
+		public int id;
+		public long world_size;
 	}
 
-	[Table(Name = "entity", Public = true)]
-	[Table(Name = "logged_out_entity")]
+	[Table(Accessor = "entity", Public = true)]
+	[Table(Accessor = "logged_out_entity")]
 	public partial struct Entity
 	{
 		[PrimaryKey, AutoInc]
-		public uint entity_id;
+		public int entity_id;
 		public DbVector2 position;
-		public uint mass;
+		public int mass;
 	}
 
-	[Table(Name = "circle", Public = true)]
-	[SpacetimeDB.Index.BTree(Name = "player_id", Columns = [nameof(player_id)])]
-	[Table(Name = "logged_out_circle")]
+	[Table(Accessor = "circle", Public = true)]
+	[SpacetimeDB.Index.BTree(Accessor = "player_id", Columns = [nameof(player_id)])]
+	[Table(Accessor = "logged_out_circle")]
 	public partial struct Circle
 	{
 		[PrimaryKey]
-		public uint entity_id;
-		public uint player_id;
+		public int entity_id;
+		public int player_id;
 		public DbVector2 direction;
 		public float speed;
 		public SpacetimeDB.Timestamp last_split_time;
 	}
 
-	[Table(Name = "player", Public = true)]
-	[Table(Name = "logged_out_player")]
+	[Table(Accessor = "player", Public = true)]
+	[Table(Accessor = "logged_out_player")]
 	public partial struct Player
 	{
 		[PrimaryKey]
 		public Identity identity;
 		[Unique, AutoInc]
-		public uint player_id;
+		public int player_id;
 		public string name;
 	}
 
-	[Table(Name = "food", Public = true)]
+	[Table(Accessor = "food", Public = true)]
 	public partial struct Food
 	{
 		[PrimaryKey]
-		public uint entity_id;
+		public int entity_id;
 	}
 
-	[Table(Name = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers), ScheduledAt = nameof(scheduled_at))]
 	public partial struct MoveAllPlayersTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -77,7 +77,7 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 	}
 
-	[Table(Name = "spawn_food_timer", Scheduled = nameof(SpawnFood), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "spawn_food_timer", Scheduled = nameof(SpawnFood), ScheduledAt = nameof(scheduled_at))]
 	public partial struct SpawnFoodTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -85,7 +85,7 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 	}
 
-	[Table(Name = "circle_decay_timer", Scheduled = nameof(CircleDecay), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "circle_decay_timer", Scheduled = nameof(CircleDecay), ScheduledAt = nameof(scheduled_at))]
 	public partial struct CircleDecayTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -93,23 +93,30 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 	}
 
-	[Table(Name = "circle_recombine_timer", Scheduled = nameof(CircleRecombine), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "circle_recombine_timer", Scheduled = nameof(CircleRecombine), ScheduledAt = nameof(scheduled_at))]
 	public partial struct CircleRecombineTimer
 	{
 		[PrimaryKey, AutoInc]
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
-		public uint player_id;
+		public int player_id;
 	}
+    
+    [Table(Accessor = "consume_entity_event", Public = true, Event = true)]
+    public partial struct ConsumeEntityEvent
+    {
+        public int consumed_entity_id;
+        public int consumer_entity_id;
+    }
 
-	[Table(Name = "consume_entity_timer", Scheduled = nameof(ConsumeEntity), ScheduledAt = nameof(scheduled_at))]
+	[Table(Accessor = "consume_entity_timer", Scheduled = nameof(ConsumeEntity), ScheduledAt = nameof(scheduled_at))]
 	public partial struct ConsumeEntityTimer
 	{
 		[PrimaryKey, AutoInc]
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
-		public uint consumed_entity_id;
-		public uint consumer_entity_id;
+		public int consumed_entity_id;
+		public int consumer_entity_id;
 	}
 	#endregion
 
@@ -208,7 +215,7 @@ public static partial class Module
 		}
 	}
 
-	public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id)
+	public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, int player_id)
 	{
 		var rng = ctx.Rng;
 		var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
@@ -224,7 +231,7 @@ public static partial class Module
 		);
 	}
 
-	public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
+	public static Entity SpawnCircleAt(ReducerContext ctx, int player_id, int mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
 	{
 		var entity = ctx.Db.entity.Insert(new Entity
 		{
@@ -269,9 +276,9 @@ public static partial class Module
 		return distance_sq <= radius_sum * radius_sum;
 	}
 
-	public static float MassToRadius(uint mass) => MathF.Sqrt(mass);
+	public static float MassToRadius(int mass) => MathF.Sqrt(mass);
 
-	public static float MassToMaxMoveSpeed(uint mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
+	public static float MassToMaxMoveSpeed(int mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
 
 	[Reducer]
 	public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
@@ -379,7 +386,7 @@ public static partial class Module
 		}
 
 		// Check collisions
-		Dictionary<uint, Entity> entities = ctx.Db.entity.Iter().Select(e => (e.entity_id, e)).ToDictionary();
+		Dictionary<int, Entity> entities = ctx.Db.entity.Iter().Select(e => (e.entity_id, e)).ToDictionary();
 		foreach (var circle in ctx.Db.circle.Iter())
 		{
 			//var span = new SpacetimeDB.LogStopwatch("collisions");
@@ -418,7 +425,7 @@ public static partial class Module
 		//span.End();
 	}
 
-	private static void schedule_consume_entity(ReducerContext ctx, uint consumer_id, uint consumed_id)
+	private static void schedule_consume_entity(ReducerContext ctx, int consumer_id, int consumed_id)
 	{
 		ctx.Db.consume_entity_timer.Insert(new ConsumeEntityTimer
 		{
@@ -433,13 +440,19 @@ public static partial class Module
 	{
 		var consumed_entity = ctx.Db.entity.entity_id.Find(request.consumed_entity_id) ?? throw new Exception("Consumed entity doesn't exist");
 		var consumer_entity = ctx.Db.entity.entity_id.Find(request.consumer_entity_id) ?? throw new Exception("Consumer entity doesn't exist");
+        
+        ctx.Db.consume_entity_event.Insert(new ConsumeEntityEvent
+        {
+            consumed_entity_id = consumed_entity.entity_id,
+            consumer_entity_id = consumer_entity.entity_id
+        });
 
 		consumer_entity.mass += consumed_entity.mass;
 		DestroyEntity(ctx, consumed_entity.entity_id);
 		ctx.Db.entity.entity_id.Update(consumer_entity);
 	}
 
-	public static void DestroyEntity(ReducerContext ctx, uint entityId)
+	public static void DestroyEntity(ReducerContext ctx, int entityId)
 	{
 		ctx.Db.food.entity_id.Delete(entityId);
 		ctx.Db.circle.entity_id.Delete(entityId);
@@ -536,7 +549,7 @@ public static partial class Module
 			{
 				continue;
 			}
-			circle_entity.mass = (uint)(circle_entity.mass * 0.99f);
+			circle_entity.mass = (int)(circle_entity.mass * 0.99f);
 			ctx.Db.entity.entity_id.Update(circle_entity);
 		}
 	}
@@ -574,5 +587,5 @@ public static partial class Module
 
 	public static float Range(this Random rng, float min, float max) => rng.NextSingle() * (max - min) + min;
 
-	public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
+	public static int Range(this Random rng, int min, int max) => (int)rng.NextInt64(min, max);
 }

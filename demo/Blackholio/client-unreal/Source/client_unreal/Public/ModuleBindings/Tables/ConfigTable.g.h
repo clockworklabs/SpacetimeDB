@@ -20,7 +20,7 @@ class CLIENT_UNREAL_API UConfigIdUniqueIndex : public UObject
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FConfigType, uint32, FTableCache<FConfigType>> IdIndexHelper;
+    FUniqueIndexHelper<FConfigType, int32, FTableCache<FConfigType>> IdIndexHelper;
 
 public:
     UConfigIdUniqueIndex()
@@ -33,8 +33,8 @@ public:
      * @param Key The id to search for.
      * @return The found FConfigType, or a default-constructed FConfigType if not found.
      */
-    // NOTE: Not exposed to Blueprint because uint32 types are not Blueprint-compatible
-    FConfigType Find(uint32 Key)
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ConfigIndex")
+    FConfigType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
         return IdIndexHelper.FindUniqueIndex(Key);

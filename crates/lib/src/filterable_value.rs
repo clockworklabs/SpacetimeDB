@@ -1,4 +1,4 @@
-use crate::{ConnectionId, Identity};
+use crate::{ConnectionId, Identity, Uuid};
 use core::ops;
 use spacetimedb_sats::bsatn;
 use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
@@ -8,6 +8,7 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 ///
 /// Types which can appear specifically as a terminating bound in a BTree index,
 /// which may be a range, instead use [`IndexScanRangeBoundsTerminator`].
+///
 /// Because SpacetimeDB supports a only restricted set of types as index keys,
 /// only a small set of `Column` types have corresponding `FilterableValue` implementations.
 /// Specifically, these types are:
@@ -15,19 +16,29 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - [`bool`].
 /// - [`String`], which is also filterable with `&str`.
 /// - [`Identity`].
+/// - [`Uuid`].
 /// - [`ConnectionId`].
 /// - [`Hash`](struct@Hash).
 /// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
 ///   No-payload enums are sometimes called "plain," "simple" or "C-style."
 ///   They are enums where no variant has any payload data.
+///
+/// Because SpacetimeDB indexes are present both on the server
+/// and in clients which use our various SDKs,
+/// implementing `FilterableValue` for a new column type is a significant burden,
+/// and **is not as simple** as adding a new `impl FilterableValue` block to our Rust code.
+/// To implement `FilterableValue` for a new column type, you must also:
+/// - Ensure (with automated tests) that the `spacetimedb-codegen` crate
+///   and accompanying SpacetimeDB client SDK can equality-compare and ordering-compare values of the column type,
+///   and that the resulting ordering is the same as the canonical ordering
+///   implemented by `spacetimedb-sats` for [`spacetimedb_sats::AlgebraicValue`].
+///   This will nearly always require implementing bespoke comparison methods for the type in question,
+///   as most languages do not automatically make product types (structs or classes) sortable.
+/// - Extend our other supported module languages' bindings libraries.
+///   so that they can also define tables with indexes keyed by the new filterable type.
 //
 // General rules for implementors of this type:
-// - It should only be implemented for types that have
-//   simple-to-implement consistent total equality and ordering
-//   on all languages SpacetimeDB supports in both client and module SDKs.
-//   This means that user-defined compound types other than C-style enums,
-//   and arrays thereof,
-//   should not implement it, as C# and TypeScript use reference equality for those types.
+// - See above doc comment for requirements to add implementations for new column types.
 // - It should only be implemented for owned values if those values are `Copy`.
 //   Otherwise it should only be implemented for references.
 //   This is so that rustc and IDEs will recommend rewriting `x` to `&x` rather than `x.clone()`.
@@ -37,8 +48,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 //   E.g. `&str: FilterableValue<Column = String>` is desirable.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
-    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
+    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
 )]
 pub trait FilterableValue: Serialize + Private {
     type Column;
@@ -94,6 +105,7 @@ impl_filterable_value! {
     &str => String,
 
     Identity: Copy,
+    Uuid: Copy,
     ConnectionId: Copy,
     Hash: Copy,
 
@@ -126,12 +138,28 @@ impl<Bound: FilterableValue> TermBound<&Bound> {
     }
 }
 pub trait IndexScanRangeBoundsTerminator {
+    /// Whether this bound terminator is a point.
+    const POINT: bool = false;
+
+    /// The key type of the bound.
     type Arg;
+
+    /// Returns the point bound, assuming `POINT == true`.
+    fn point(&self) -> &Self::Arg {
+        unimplemented!()
+    }
+
+    /// Returns the terminal bound for the range scan.
+    /// This bound can either be a point, as in most cases, or an actual bound.
     fn bounds(&self) -> TermBound<&Self::Arg>;
 }
 
 impl<Col, Arg: FilterableValue<Column = Col>> IndexScanRangeBoundsTerminator for Arg {
+    const POINT: bool = true;
     type Arg = Arg;
+    fn point(&self) -> &Arg {
+        self
+    }
     fn bounds(&self) -> TermBound<&Arg> {
         TermBound::Single(ops::Bound::Included(self))
     }

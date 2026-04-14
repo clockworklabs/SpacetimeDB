@@ -1,0 +1,11 @@
+# Build directories
+library_build/
+test_modules/build_*/
+
+# Test output files
+test_log.txt
+test_summary_live.txt
+test_summary.txt
+
+# Results directory
+results/

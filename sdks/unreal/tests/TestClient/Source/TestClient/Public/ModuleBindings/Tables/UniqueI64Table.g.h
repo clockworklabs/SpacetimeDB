@@ -60,7 +60,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for unique_i64 table*/
+    /** Update function for unique_i_64 table*/
     FTableAppliedDiff<FUniqueI64Type> Update(TArray<FWithBsatn<FUniqueI64Type>> InsertsRef, TArray<FWithBsatn<FUniqueI64Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -98,7 +98,7 @@ public:
     FOnUniqueI64Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("unique_i64");
+    const FString TableName = TEXT("unique_i_64");
 
     TSharedPtr<UClientCache<FUniqueI64Type>> Data;
 };

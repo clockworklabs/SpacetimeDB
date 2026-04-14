@@ -1,0 +1,15 @@
+[package]
+name = "spacetimedb-guard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+portpicker = "0.1"
+reqwest = { workspace = true, features = ["blocking", "json"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true
+
+

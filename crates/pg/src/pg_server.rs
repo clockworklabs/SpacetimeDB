@@ -9,8 +9,8 @@ use futures::{stream, Sink};
 use futures::{SinkExt, Stream};
 use http::StatusCode;
 use pgwire::api::auth::{
-    finish_authentication, save_startup_parameters_to_metadata, DefaultServerParameterProvider, LoginInfo,
-    StartupHandler,
+    finish_authentication, protocol_negotiation, save_startup_parameters_to_metadata, DefaultServerParameterProvider,
+    LoginInfo, StartupHandler,
 };
 use pgwire::api::portal::Format;
 use pgwire::api::query::SimpleQueryHandler;
@@ -25,7 +25,7 @@ use pgwire::tokio::process_socket;
 use spacetimedb_client_api::auth::validate_token;
 use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
-use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
+use spacetimedb_client_api::{Authorization, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::DatabaseName;
 use spacetimedb_lib::sats::satn::{PsqlClient, TypedSerializer};
@@ -46,8 +46,6 @@ pub(crate) enum PgError {
     DatabaseNameRequired,
     #[error(transparent)]
     Pg(#[from] PgWireError),
-    #[error("SSL is not supported by SpacetimeDB")]
-    SSLNotSupported,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -75,9 +73,8 @@ pub(crate) fn to_rows(
     let mut results = Vec::with_capacity(stmt.rows.len());
     let ty = Typespace::EMPTY.with_type(&stmt.schema);
 
+    let mut encoder = DataRowEncoder::new(header.clone());
     for row in stmt.rows {
-        let mut encoder = DataRowEncoder::new(header.clone());
-
         for (idx, value) in ty.with_values(&row).enumerate() {
             let ty = satn::PsqlType {
                 client: PsqlClient::Postgres,
@@ -88,7 +85,7 @@ pub(crate) fn to_rows(
             let mut fmt = PsqlFormatter { encoder: &mut encoder };
             value.serialize(TypedSerializer { ty: &ty, f: &mut fmt })?;
         }
-        results.push(encoder.finish());
+        results.push(Ok(encoder.take_row()));
     }
     Ok(stream::iter(results))
 }
@@ -149,8 +146,11 @@ struct PgSpacetimeDB<T> {
     parameter_provider: DefaultServerParameterProvider,
 }
 
-impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> PgSpacetimeDB<T> {
-    async fn exe_sql<'a>(&self, query: String) -> PgWireResult<Vec<Response<'a>>> {
+impl<T> PgSpacetimeDB<T>
+where
+    T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
+{
+    async fn exe_sql(&self, query: String) -> PgWireResult<Vec<Response>> {
         let params = self.cached.lock().await.clone().unwrap();
         let db = SqlParams {
             name_or_identity: database::NameOrIdentity::Name(DatabaseName(params.database.clone())),
@@ -160,7 +160,7 @@ impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone>
             database::sql_direct(
                 self.ctx.clone(),
                 db,
-                SqlQueryParams { confirmed: true },
+                SqlQueryParams { confirmed: Some(true) },
                 params.caller_identity,
                 query.to_string(),
             )
@@ -219,6 +219,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
     {
         match message {
             PgWireFrontendMessage::Startup(ref startup) => {
+                protocol_negotiation(client, startup).await?;
                 save_startup_parameters_to_metadata(client, startup);
                 client.set_state(PgWireConnectionState::AuthenticationInProgress);
 
@@ -238,16 +239,19 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     params
                         .get(param)
                         .map(String::from)
-                        .ok_or_else(|| PgError::MetadataError(anyhow::anyhow!("Missing parameter: {}", param)))
+                        .ok_or_else(|| PgError::MetadataError(anyhow::anyhow!("Missing parameter: {param}")))
                 };
 
                 // We don't support `METADATA_USER` because we don't have a user management system.
                 let database = param(METADATA_DATABASE)?;
                 let pwd = pwd.into_password()?;
-                if let Ok(application_name) = param("application_name") {
-                    log::info!("PG: Connecting to database: {database}, by {application_name}",);
-                } else {
-                    log::info!("PG: Connecting to database: {database}");
+                match param("application_name") {
+                    Ok(application_name) => {
+                        log::info!("PG: Connecting to database: {database}, by {application_name}",);
+                    }
+                    _ => {
+                        log::info!("PG: Connecting to database: {database}");
+                    }
                 }
 
                 let name = database::NameOrIdentity::Name(DatabaseName(database.clone()));
@@ -282,13 +286,10 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 self.cached.lock().await.clone_from(&Some(metadata));
                 finish_authentication(client, &self.parameter_provider).await?;
             }
-            PgWireFrontendMessage::SslRequest(_) => {
-                let err = PgError::SSLNotSupported;
-                log::error!("{err}");
-                let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
-                return close_client(client, err).await;
-            }
             // The other messages are for features not supported by SpacetimeDB, that are rejected by the parser.
+            // This includes TLS negotiation - any TLS negotiation done with the client will happen before
+            // this point, and because we pass `tls_acceptor: None` for `process_socket()`, pgwire will reject
+            // TLS for us.
             _ => {
                 unreachable!("Unsupported startup message: {message:?}");
             }
@@ -298,10 +299,11 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 }
 
 #[async_trait]
-impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> SimpleQueryHandler
-    for PgSpacetimeDB<T>
+impl<T> SimpleQueryHandler for PgSpacetimeDB<T>
+where
+    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
 {
-    async fn do_query<'a, C>(&self, _client: &mut C, query: &str) -> PgWireResult<Vec<Response<'a>>>
+    async fn do_query<C>(&self, _client: &mut C, query: &str) -> PgWireResult<Vec<Response>>
     where
         C: ClientInfo + Unpin + Send + Sync,
     {
@@ -330,8 +332,9 @@ impl<T> PgSpacetimeDBFactory<T> {
     }
 }
 
-impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> PgWireServerHandlers
-    for PgSpacetimeDBFactory<T>
+impl<T> PgWireServerHandlers for PgSpacetimeDBFactory<T>
+where
+    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
 {
     fn simple_query_handler(&self) -> Arc<impl SimpleQueryHandler> {
         self.handler.clone()
@@ -344,11 +347,10 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
     }
 }
 
-pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone + 'static>(
-    shutdown: Arc<Notify>,
-    ctx: T,
-    tcp: TcpListener,
-) {
+pub async fn start_pg<T>(shutdown: Arc<Notify>, ctx: T, tcp: TcpListener)
+where
+    T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone + 'static,
+{
     let factory = Arc::new(PgSpacetimeDBFactory::new(ctx));
 
     log::debug!(

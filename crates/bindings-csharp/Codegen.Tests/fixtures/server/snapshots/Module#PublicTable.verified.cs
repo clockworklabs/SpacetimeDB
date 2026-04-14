@@ -307,7 +307,10 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
                 }
             }
         }
-        var ___eqNullableValueField = this.NullableValueField.Equals(that.NullableValueField);
+        var ___eqNullableValueField = System.Nullable.Equals(
+            this.NullableValueField,
+            that.NullableValueField
+        );
         var ___eqNullableReferenceField =
             this.NullableReferenceField == null
                 ? that.NullableReferenceField == null

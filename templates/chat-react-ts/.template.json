@@ -1,0 +1,22 @@
+{
+  "description": "TypeScript server/client implementing quickstart chat",
+  "client_lang": "typescript",
+  "server_lang": "typescript",
+  "builtWith": [
+    "react",
+    "react-dom",
+    "eslint",
+    "testing-library",
+    "vitejs",
+    "eslint-plugin-react-hooks",
+    "eslint-plugin-react-refresh",
+    "globals",
+    "jsdom",
+    "prettier",
+    "typescript",
+    "typescript-eslint",
+    "vite",
+    "vitest",
+    "spacetimedb"
+  ]
+}

@@ -1,5 +1,14 @@
 import { AlgebraicType } from './algebraic_type';
 
+export type TimeDurationAlgebraicType = {
+  tag: 'Product';
+  value: {
+    elements: [
+      { name: '__time_duration_micros__'; algebraicType: { tag: 'I64' } },
+    ];
+  };
+};
+
 /**
  * A difference between two points in time, represented as a number of microseconds.
  */
@@ -12,7 +21,7 @@ export class TimeDuration {
    * Get the algebraic type representation of the {@link TimeDuration} type.
    * @returns The algebraic type representation of the type.
    */
-  static getAlgebraicType(): AlgebraicType {
+  static getAlgebraicType(): TimeDurationAlgebraicType {
     return AlgebraicType.Product({
       elements: [
         {
@@ -21,6 +30,23 @@ export class TimeDuration {
         },
       ],
     });
+  }
+
+  static isTimeDuration(
+    algebraicType: AlgebraicType
+  ): algebraicType is TimeDurationAlgebraicType {
+    if (algebraicType.tag !== 'Product') {
+      return false;
+    }
+    const elements = algebraicType.value.elements;
+    if (elements.length !== 1) {
+      return false;
+    }
+    const microsElement = elements[0];
+    return (
+      microsElement.name === '__time_duration_micros__' &&
+      microsElement.algebraicType.tag === 'I64'
+    );
   }
 
   get micros(): bigint {
@@ -37,5 +63,15 @@ export class TimeDuration {
 
   static fromMillis(millis: number): TimeDuration {
     return new TimeDuration(BigInt(millis) * TimeDuration.MICROS_PER_MILLIS);
+  }
+
+  /** This outputs the same string format that we use in the host and in Rust modules */
+  toString(): string {
+    const micros = this.micros;
+    const sign = micros < 0 ? '-' : '+';
+    const pos = micros < 0 ? -micros : micros;
+    const secs = pos / 1_000_000n;
+    const micros_remaining = pos % 1_000_000n;
+    return `${sign}${secs}.${String(micros_remaining).padStart(6, '0')}`;
   }
 }

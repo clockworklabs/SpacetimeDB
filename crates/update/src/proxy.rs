@@ -39,6 +39,10 @@ pub(crate) fn run_cli(
         paths.cli_bin_dir.current_version_dir().spacetimedb_cli()
     };
 
+    // Check for updates before exec'ing the CLI. On Unix, exec replaces
+    // the process so this is our only chance to print a notice.
+    crate::update_notice::maybe_print_update_notice(paths.cli_config_dir.as_ref());
+
     let mut cmd = Command::new(&cli_path);
     cmd.args(&args);
     #[cfg(unix)]
@@ -102,7 +106,7 @@ fn exec_replace(cmd: &mut Command) -> io::Result<ExitCode> {
         }
         unsafe {
             if SetConsoleCtrlHandler(Some(ctrlc_handler), TRUE) == FALSE {
-                return Err(io::Error::new(io::ErrorKind::Other, "Unable to set console handler"));
+                return Err(io::Error::other("Unable to set console handler"));
             }
         }
 

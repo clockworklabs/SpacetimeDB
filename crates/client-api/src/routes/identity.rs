@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
+use axum::routing::MethodRouter;
 use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -64,12 +65,12 @@ impl<'de> serde::Deserialize<'de> for IdentityForUrl {
 
 #[derive(Deserialize)]
 pub struct GetDatabasesParams {
-    identity: IdentityForUrl,
+    pub identity: IdentityForUrl,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetDatabasesResponse {
-    identities: Vec<Identity>,
+    pub identities: Vec<Identity>,
 }
 
 pub async fn get_databases<S: ControlStateDelegate>(
@@ -78,7 +79,7 @@ pub async fn get_databases<S: ControlStateDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = identity.into();
     // Linear scan for all databases that have this owner, and return their identities
-    let all_dbs = ctx.get_databases().map_err(|e| {
+    let all_dbs = ctx.get_databases().await.map_err(|e| {
         log::error!("Failure when retrieving databases for search: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -135,15 +136,46 @@ pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::resp
     ))
 }
 
-pub fn router<S>() -> axum::Router<S>
+/// A struct to allow customization of the `/identity` routes.
+pub struct IdentityRoutes<S> {
+    /// POST /identity
+    pub create_post: MethodRouter<S>,
+    /// GET /identity/public-key
+    pub public_key_get: MethodRouter<S>,
+    /// POST /identity/websocket-tocken
+    pub websocket_token_post: MethodRouter<S>,
+    /// GET /identity/:identity/verify
+    pub verify_get: MethodRouter<S>,
+    /// GET /identity/:identity/databases
+    pub databases_get: MethodRouter<S>,
+}
+
+impl<S> Default for IdentityRoutes<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
-    use axum::routing::{get, post};
-    axum::Router::new()
-        .route("/", post(create_identity::<S>))
-        .route("/public-key", get(get_public_key::<S>))
-        .route("/websocket-token", post(create_websocket_token::<S>))
-        .route("/:identity/verify", get(validate_token))
-        .route("/:identity/databases", get(get_databases::<S>))
+    fn default() -> Self {
+        use axum::routing::{get, post};
+        Self {
+            create_post: post(create_identity::<S>),
+            public_key_get: get(get_public_key::<S>),
+            websocket_token_post: post(create_websocket_token::<S>),
+            verify_get: get(validate_token),
+            databases_get: get(get_databases::<S>),
+        }
+    }
+}
+
+impl<S> IdentityRoutes<S>
+where
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+{
+    pub fn into_router(self) -> axum::Router<S> {
+        axum::Router::new()
+            .route("/", self.create_post)
+            .route("/public-key", self.public_key_get)
+            .route("/websocket-token", self.websocket_token_post)
+            .route("/:identity/verify", self.verify_get)
+            .route("/:identity/databases", self.databases_get)
+    }
 }

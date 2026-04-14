@@ -1,6 +1,7 @@
 use std::{io, sync::Arc};
 
 use async_trait::async_trait;
+use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
 use spacetimedb_snapshot::SnapshotRepository;
@@ -23,7 +24,7 @@ pub type Durability = dyn spacetimedb_durability::Durability<TxData = Txdata>;
 /// It is not part of the [`Durability`] trait because it must report disk
 /// usage of the local instance only, even if exclusively remote durability is
 /// configured or the database is in follower state.
-pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<SizeOnDisk> + Send + Sync>;
 
 /// Persistence services for a database.
 pub struct Persistence {
@@ -40,19 +41,23 @@ pub struct Persistence {
     /// persistent (as opposed to in-memory) databases. This is enforced by
     /// this type.
     pub snapshots: Option<SnapshotWorker>,
+    /// The tokio runtime onto which durability-related tasks shall be spawned.
+    pub runtime: tokio::runtime::Handle,
 }
 
 impl Persistence {
     /// Convenience constructor of a [Persistence] that handles boxing.
     pub fn new(
         durability: impl spacetimedb_durability::Durability<TxData = Txdata> + 'static,
-        disk_size: impl Fn() -> io::Result<u64> + Send + Sync + 'static,
+        disk_size: impl Fn() -> io::Result<SizeOnDisk> + Send + Sync + 'static,
         snapshots: Option<SnapshotWorker>,
+        runtime: tokio::runtime::Handle,
     ) -> Self {
         Self {
             durability: Arc::new(durability),
             disk_size: Arc::new(disk_size),
             snapshots,
+            runtime,
         }
     }
 
@@ -78,15 +83,23 @@ impl Persistence {
 
     /// Convenience to deconstruct an [Option<Self>] into parts.
     ///
-    /// Returns `(Some(durability), Some(disk_size), Option<SnapshotWorker>)`
-    /// if `this` is `Some`, and `(None, None, None)` if `this` is `None`.
-    pub(super) fn unzip(this: Option<Self>) -> (Option<Arc<Durability>>, Option<DiskSizeFn>, Option<SnapshotWorker>) {
+    /// Returns `(Some(durability), Some(disk_size), Option<SnapshotWorker>, Some(runtime))`
+    /// if `this` is `Some`, and `(None, None, None, None)` if `this` is `None`.
+    pub(super) fn unzip(
+        this: Option<Self>,
+    ) -> (
+        Option<Arc<Durability>>,
+        Option<DiskSizeFn>,
+        Option<SnapshotWorker>,
+        Option<tokio::runtime::Handle>,
+    ) {
         this.map(
             |Self {
                  durability,
                  disk_size,
                  snapshots,
-             }| (Some(durability), Some(disk_size), snapshots),
+                 runtime,
+             }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
         )
         .unwrap_or_default()
     }
@@ -129,15 +142,14 @@ impl LocalPersistenceProvider {
 impl PersistenceProvider for LocalPersistenceProvider {
     async fn persistence(&self, database: &Database, replica_id: u64) -> anyhow::Result<Persistence> {
         let replica_dir = self.data_dir.replica(replica_id);
-        let commitlog_dir = replica_dir.commit_log();
         let snapshot_dir = replica_dir.snapshots();
 
-        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
         let database_identity = database.database_identity;
         let snapshot_worker =
             asyncify(move || relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id))
                 .await
                 .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled))?;
+        let (durability, disk_size) = relational_db::local_durability(replica_dir, Some(&snapshot_worker)).await?;
 
         tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
             snapshot_worker.subscribe(),
@@ -150,6 +162,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
             durability,
             disk_size,
             snapshots: Some(snapshot_worker),
+            runtime: tokio::runtime::Handle::current(),
         })
     }
 }

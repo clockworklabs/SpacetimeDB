@@ -14,6 +14,12 @@ use spacetimedb_table::table::UniqueConstraintViolation;
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
 
+pub const CALL_PROCEDURE_DUNDER: &str = "__call_procedure__";
+
+pub const CALL_VIEW_DUNDER: &str = "__call_view__";
+
+pub const CALL_VIEW_ANON_DUNDER: &str = "__call_view_anon__";
+
 pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like
@@ -308,6 +314,14 @@ impl<I: ResourceIndex> ResourceSlab<I> {
         I::from_u32(idx)
     }
 
+    pub fn len(&self) -> usize {
+        self.slab.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.slab.clear();
+    }
+
     pub fn get_mut(&mut self, handle: I) -> Option<&mut I::Resource> {
         self.slab.get_mut(handle.to_u32() as usize)
     }
@@ -338,17 +352,21 @@ decl_index!(TimingSpanIdx => TimingSpan);
 pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
 /// Converts a [`NodesError`] to an error code, if possible.
-pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
-    match err {
-        NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
-        NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
-        NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
-        NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
-        NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),
-        NodesError::IndexRowNotFound => Some(errno::NO_SUCH_ROW),
-        NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
-        NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
-        NodesError::Internal(internal) => match **internal {
+pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), NodesError> {
+    let errno = match err {
+        NodesError::NotInTransaction => errno::NOT_IN_TRANSACTION,
+        NodesError::NotInAnonTransaction => errno::TRANSACTION_NOT_ANONYMOUS,
+        NodesError::WouldBlockTransaction(_) => errno::WOULD_BLOCK_TRANSACTION,
+        NodesError::DecodeRow(_) => errno::BSATN_DECODE_ERROR,
+        NodesError::DecodeValue(_) => errno::BSATN_DECODE_ERROR,
+        NodesError::TableNotFound => errno::NO_SUCH_TABLE,
+        NodesError::IndexNotFound => errno::NO_SUCH_INDEX,
+        NodesError::IndexNotUnique => errno::INDEX_NOT_UNIQUE,
+        NodesError::IndexRowNotFound => errno::NO_SUCH_ROW,
+        NodesError::IndexCannotSeekRange => errno::WRONG_INDEX_ALGO,
+        NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => errno::SCHEDULE_AT_DELAY_TOO_LONG,
+        NodesError::HttpError(message) => return Ok((errno::HTTP_ERROR, Some(message))),
+        NodesError::Internal(ref internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
                 UniqueConstraintViolation {
                     constraint_name: _,
@@ -356,23 +374,22 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
                     cols: _,
                     value: _,
                 },
-            ))) => Some(errno::UNIQUE_ALREADY_EXISTS),
-            _ => None,
+            ))) => errno::UNIQUE_ALREADY_EXISTS,
+            _ => return Err(err),
         },
-        _ => None,
-    }
+        _ => return Err(err),
+    };
+    Ok((errno, None))
 }
 
 /// Converts a [`NodesError`] to an error code and logs, if possible.
-pub fn err_to_errno_and_log<C: From<u16>>(func: AbiCall, err: NodesError) -> anyhow::Result<C> {
-    let Some(errno) = err_to_errno(&err) else {
-        return Err(AbiRuntimeError { func, err }.into());
-    };
+pub fn err_to_errno_and_log<C: From<u16>>(func: AbiCall, err: NodesError) -> anyhow::Result<(C, Option<String>)> {
+    let (errno, message) = err_to_errno(err).map_err(|err| AbiRuntimeError { func, err })?;
     log::debug!(
         "abi call to {func} returned an errno: {errno} ({})",
         errno::strerror(errno).unwrap_or("<unknown>")
     );
-    Ok(errno.get().into())
+    Ok((errno.get().into(), message))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -384,8 +401,8 @@ pub struct AbiRuntimeError {
 }
 
 macro_rules! abi_funcs {
-    ($mac:ident) => {
-        $mac! {
+    ($link_sync:ident,  $link_async:ident) => {
+        $link_sync! {
             "spacetime_10.0"::table_id_from_name,
             "spacetime_10.0"::datastore_table_row_count,
             "spacetime_10.0"::datastore_table_scan_bsatn,
@@ -410,6 +427,24 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
 
             "spacetime_10.1"::bytes_source_remaining_length,
+
+            "spacetime_10.2"::get_jwt,
+
+            // The procedure must not be suspended while holding the transaction lock,
+            // as this can result in a deadlock; therefore, these ABIs are synchronous.
+            "spacetime_10.3"::procedure_start_mut_tx,
+            "spacetime_10.3"::procedure_commit_mut_tx,
+            "spacetime_10.3"::procedure_abort_mut_tx,
+
+            "spacetime_10.4"::datastore_index_scan_point_bsatn,
+            "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
+
+            "spacetime_10.5"::datastore_clear,
+        }
+
+        $link_async! {
+            "spacetime_10.3"::procedure_sleep_until,
+            "spacetime_10.3"::procedure_http_request,
         }
     };
 }

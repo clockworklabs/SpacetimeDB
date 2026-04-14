@@ -1,47 +1,79 @@
 use std::{
     io,
-    num::NonZeroU16,
-    panic,
+    num::NonZeroUsize,
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering::Relaxed},
-        Arc, Weak,
+        Arc,
     },
-    time::Duration,
 };
 
-use anyhow::Context as _;
+use futures::{FutureExt as _, TryFutureExt as _};
 use itertools::Itertools as _;
 use log::{info, trace, warn};
+use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
-use spacetimedb_paths::server::CommitLogDir;
+use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
+use spacetimedb_paths::server::ReplicaDir;
+use thiserror::Error;
 use tokio::{
-    sync::{mpsc, watch},
-    task::{spawn_blocking, AbortHandle, JoinHandle},
-    time::{interval, MissedTickBehavior},
+    sync::{futures::OwnedNotified, mpsc, oneshot, watch, Notify},
+    task::{spawn_blocking, AbortHandle},
 };
-use tracing::instrument;
+use tracing::{instrument, Span};
 
-use crate::{Durability, DurableOffset, History, TxOffset};
+use crate::{Close, Durability, DurableOffset, History, PreparedTx, TxOffset};
+
+pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
-    /// Periodically flush and sync the log this often.
+    /// The number of elements to reserve for batching transactions.
     ///
-    /// Default: 500ms
-    pub sync_interval: Duration,
+    /// This puts an upper bound on the buffer capacity, while not preventing
+    /// reallocations when the number of queued transactions exceeds it.
+    ///
+    /// In other words, the durability actor will attempt to receive all
+    /// transactions that are currently in the queue, but shrink the buffer to
+    /// `batch_capacity` if it had to make additional space during a burst.
+    ///
+    /// The internal queue of [Local] is bounded to
+    /// `Options::QUEUE_CAPACITY_MULTIPLIER * batch_capacity`.
+    ///
+    /// Default: 4096
+    pub batch_capacity: NonZeroUsize,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
+}
+
+impl Options {
+    pub const DEFAULT_BATCH_CAPACITY: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
+    pub const QUEUE_CAPACITY_MULTIPLIER: usize = 4;
+
+    fn queue_capacity(self) -> usize {
+        Self::QUEUE_CAPACITY_MULTIPLIER * self.batch_capacity.get()
+    }
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
-            sync_interval: Duration::from_millis(500),
+            batch_capacity: Self::DEFAULT_BATCH_CAPACITY,
             commitlog: Default::default(),
         }
     }
 }
+
+#[derive(Debug, Error)]
+pub enum OpenError {
+    #[error("commitlog directory is locked")]
+    Lock(#[from] LockError),
+    #[error("failed to open commitlog")]
+    Commitlog(#[from] io::Error),
+}
+
+type ShutdownReply = oneshot::Sender<OwnedNotified>;
 
 /// [`Durability`] implementation backed by a [`Commitlog`] on local storage.
 ///
@@ -63,60 +95,86 @@ pub struct Local<T> {
     /// Backlog of transactions to be written to disk by the background
     /// [`PersisterTask`].
     ///
-    /// Note that this is unbounded!
-    queue: mpsc::UnboundedSender<Txdata<T>>,
-    /// How many transactions are sitting in the `queue`.
+    /// The queue is bounded to
+    /// `Options::QUEUE_CAPACITY_MULTIPLIER * Options::batch_capacity`.
+    queue: mpsc::Sender<PreparedTx<Txdata<T>>>,
+    /// How many transactions are pending durability, including items buffered
+    /// in the queue and items currently being written by the actor.
     ///
     /// This is mainly for observability purposes, and can thus be updated with
     /// relaxed memory ordering.
     queue_depth: Arc<AtomicU64>,
-    /// Handle to the [`PersisterTask`], allowing to drain the `queue` when
-    /// explicitly dropped via [`Self::close`].
-    persister_task: JoinHandle<()>,
+    /// Channel to request the actor to exit.
+    shutdown: mpsc::Sender<ShutdownReply>,
+    /// [AbortHandle] to force cancellation of the [Actor].
+    abort: AbortHandle,
 }
 
 impl<T: Encode + Send + Sync + 'static> Local<T> {
-    /// Create a [`Local`] instance at the `root` directory.
+    /// Create a [`Local`] instance at the `replica_dir`.
     ///
-    /// The `root` directory must already exist.
+    /// `replica_dir` must already exist.
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
-    pub fn open(root: CommitLogDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
+    ///
+    /// We will send a message down the `on_new_segment` channel whenever we begin a new commitlog segment.
+    /// This is used to capture a snapshot each new segment.
+    pub fn open(
+        replica_dir: ReplicaDir,
+        rt: tokio::runtime::Handle,
+        opts: Options,
+        on_new_segment: Option<Arc<OnNewSegmentFn>>,
+    ) -> Result<Self, OpenError> {
         info!("open local durability");
 
-        let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
-        let (queue, rx) = mpsc::unbounded_channel();
+        // We could just place a lock on the commitlog directory,
+        // yet for backwards-compatibility, we keep using the `db.lock` file.
+        let lock = Lock::create(replica_dir.0.join("db.lock"))?;
+
+        let clog = Arc::new(Commitlog::open(
+            replica_dir.commit_log(),
+            opts.commitlog,
+            on_new_segment,
+        )?);
+        let queue_capacity = opts.queue_capacity();
+        let (queue, txdata_rx) = mpsc::channel(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
+        let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
 
-        let persister_task = rt.spawn(
-            PersisterTask {
-                clog: clog.clone(),
-                rx,
-                queue_depth: queue_depth.clone(),
-                max_records_in_commit: opts.commitlog.max_records_in_commit,
-            }
-            .run(),
-        );
-        rt.spawn(
-            FlushAndSyncTask {
-                clog: Arc::downgrade(&clog),
-                period: opts.sync_interval,
-                offset: durable_tx,
-                abort: persister_task.abort_handle(),
-            }
-            .run(),
-        );
+        let abort = rt
+            .spawn(
+                Actor {
+                    clog: clog.clone(),
+
+                    durable_offset: durable_tx,
+                    queue_depth: queue_depth.clone(),
+
+                    batch_capacity: opts.batch_capacity,
+
+                    lock,
+                }
+                .run(txdata_rx, shutdown_rx),
+            )
+            .abort_handle();
 
         Ok(Self {
             clog,
             durable_offset: durable_rx,
             queue,
+            shutdown: shutdown_tx,
             queue_depth,
-            persister_task,
+            abort,
         })
     }
 
+    /// Obtain a read-only copy of the durable state that implements [History].
+    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T> {
+        self.clog.clone()
+    }
+}
+
+impl<T: Send + Sync + 'static> Local<T> {
     /// Inspect how many transactions added via [`Self::append_tx`] are pending
     /// to be applied to the underlying [`Commitlog`].
     pub fn queue_depth(&self) -> u64 {
@@ -124,7 +182,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
+    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
@@ -138,175 +196,216 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         self.clog.compress_segments(offsets)
     }
 
-    /// Apply all outstanding transactions to the [`Commitlog`] and flush it
-    /// to disk.
-    ///
-    /// Returns the durable [`TxOffset`], if any.
-    pub async fn close(self) -> anyhow::Result<Option<TxOffset>> {
-        info!("close local durability");
-
-        drop(self.queue);
-        if let Err(e) = self.persister_task.await {
-            if e.is_panic() {
-                return Err(e).context("persister task panicked");
-            }
-        }
-
-        spawn_blocking(move || self.clog.flush_and_sync())
-            .await?
-            .context("failed to sync commitlog")
-    }
-
     /// Get the size on disk of the underlying [`Commitlog`].
-    pub fn size_on_disk(&self) -> io::Result<u64> {
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         self.clog.size_on_disk()
     }
 }
 
-struct PersisterTask<T> {
+struct Actor<T> {
     clog: Arc<Commitlog<Txdata<T>>>,
-    rx: mpsc::UnboundedReceiver<Txdata<T>>,
+
+    durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
-    max_records_in_commit: NonZeroU16,
+
+    batch_capacity: NonZeroUsize,
+
+    #[allow(unused)]
+    lock: Lock,
 }
 
-impl<T: Encode + Send + Sync + 'static> PersisterTask<T> {
-    #[instrument(name = "durability::local::persister_task", skip_all)]
-    async fn run(mut self) {
-        info!("starting persister task");
+impl<T: Encode + Send + Sync + 'static> Actor<T> {
+    #[instrument(name = "durability::local::actor", skip_all)]
+    async fn run(
+        self,
+        mut transactions_rx: mpsc::Receiver<PreparedTx<Txdata<T>>>,
+        mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
+    ) {
+        info!("starting durability actor");
 
-        while let Some(txdata) = self.rx.recv().await {
-            self.queue_depth.fetch_sub(1, Relaxed);
-            trace!("received txdata");
+        let mut tx_buf = Vec::with_capacity(self.batch_capacity.get());
+        // `flush_and_sync` when the loop exits without panicking,
+        // or `flush_and_sync` inside the loop failed.
+        let mut sync_on_exit = true;
 
-            // If we are writing one commit per tx, trying to buffer is
-            // fairly pointless. Immediately flush instead.
-            //
-            // Otherwise, try `Commitlog::append` as a fast-path which doesn't
-            // require `spawn_blocking`.
-            if self.max_records_in_commit.get() == 1 {
-                self.flush_append(txdata, true).await;
-            } else if let Err(retry) = self.clog.append(txdata) {
-                self.flush_append(retry, false).await
+        loop {
+            tokio::select! {
+                // Biased towards the shutdown channel,
+                // so that we stop accepting new data promptly after
+                // `Durability::close` was called.
+                biased;
+
+                Some(reply) = shutdown_rx.recv() => {
+                    transactions_rx.close();
+                    let _ = reply.send(self.lock.notified());
+                },
+
+                // Pop as many elements from the channel as possible,
+                // potentially requiring the `tx_buf` to allocate additional
+                // capacity.
+                // We'll reclaim capacity in excess of `self.batch_size` below.
+                n = transactions_rx.recv_many(&mut tx_buf, usize::MAX) => {
+                    if n == 0 {
+                        break;
+                    }
+                    if tx_buf.is_empty() {
+                        continue;
+                    }
+
+                    let clog = self.clog.clone();
+                    let ready_len = tx_buf.len();
+                    self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
+                    tx_buf = spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
+                        for tx in tx_buf.drain(..) {
+                            clog.commit([tx.into_transaction()])?;
+                        }
+                        Ok(tx_buf)
+                    })
+                    .await
+                    .expect("commitlog write panicked")
+                    .expect("commitlog write failed");
+                    if self.flush_and_sync().await.is_err() {
+                        sync_on_exit = false;
+                        break;
+                    }
+                    // Reclaim burst capacity.
+                    if n < self.batch_capacity.get() {
+                        tx_buf.shrink_to(self.batch_capacity.get());
+                    }
+                },
             }
-
-            trace!("appended txdata");
         }
 
-        info!("exiting persister task");
+        if sync_on_exit {
+            let _ = self.flush_and_sync().await;
+        }
+
+        info!("exiting durability actor");
     }
 
     #[instrument(skip_all)]
-    async fn flush_append(&self, txdata: Txdata<T>, flush_after: bool) {
+    async fn flush_and_sync(&self) -> io::Result<Option<TxOffset>> {
+        // Skip if nothing changed.
+        if let Some((committed, durable)) = self.clog.max_committed_offset().zip(*self.durable_offset.borrow())
+            && committed == durable
+        {
+            return Ok(None);
+        }
+
         let clog = self.clog.clone();
-        let task = spawn_blocking(move || {
-            let mut retry = Some(txdata);
-            while let Some(txdata) = retry.take() {
-                if let Err(error::Append { txdata, source }) = clog.append_maybe_flush(txdata) {
-                    flush_error(source);
-                    retry = Some(txdata);
-                }
-            }
-
-            if flush_after {
-                clog.flush().map(drop).unwrap_or_else(flush_error);
-            }
-
-            trace!("flush-append succeeded");
+        let span = Span::current();
+        spawn_blocking(move || {
+            let _span = span.enter();
+            clog.flush_and_sync()
         })
-        .await;
-        if let Err(e) = task {
-            // Resume panic on the spawned task,
-            // which will drop the channel receiver,
-            // which will cause `append_tx` to panic.
-            if e.is_panic() {
-                panic::resume_unwind(e.into_panic())
+        .await
+        .expect("commitlog flush-and-sync blocking task panicked")
+        .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
+        .inspect(|maybe_offset| {
+            if let Some(new_offset) = maybe_offset {
+                trace!("synced to offset {new_offset}");
+                self.durable_offset.send_modify(|val| {
+                    val.replace(*new_offset);
+                });
             }
-        }
+        })
     }
 }
 
-/// Handle an error flushing the commitlog.
-///
-/// Panics if the error indicates that the log may be permanently unwritable.
-#[inline]
-fn flush_error(e: io::Error) {
-    warn!("error flushing commitlog: {e:?}");
-    if e.kind() == io::ErrorKind::AlreadyExists {
-        panic!("commitlog unwritable!");
+struct Lock {
+    file: Option<LockedFile>,
+    notify_on_drop: Arc<Notify>,
+}
+
+impl Lock {
+    pub fn create(path: PathBuf) -> Result<Self, LockError> {
+        let file = LockedFile::lock(path).map(Some)?;
+        let notify_on_drop = Arc::new(Notify::new());
+
+        Ok(Self { file, notify_on_drop })
+    }
+
+    pub fn notified(&self) -> OwnedNotified {
+        self.notify_on_drop.clone().notified_owned()
     }
 }
 
-struct FlushAndSyncTask<T> {
-    clog: Weak<Commitlog<Txdata<T>>>,
-    period: Duration,
-    offset: watch::Sender<Option<TxOffset>>,
-    /// Handle to abort the [`PersisterTask`] if fsync panics.
-    abort: AbortHandle,
-}
-
-impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
-    #[instrument(name = "durability::local::flush_and_sync_task", skip_all)]
-    async fn run(self) {
-        info!("starting syncer task");
-
-        let mut interval = interval(self.period);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
-        loop {
-            interval.tick().await;
-
-            let Some(clog) = self.clog.upgrade() else {
-                break;
-            };
-            // Skip if nothing changed.
-            if let Some(committed) = clog.max_committed_offset() {
-                if self.offset.borrow().is_some_and(|durable| durable == committed) {
-                    continue;
-                }
-            }
-
-            let task = spawn_blocking(move || clog.flush_and_sync()).await;
-            match task {
-                Err(e) => {
-                    if e.is_panic() {
-                        self.abort.abort();
-                        panic::resume_unwind(e.into_panic())
-                    }
-                    break;
-                }
-                Ok(Err(e)) => {
-                    warn!("flush failed: {e}");
-                }
-                Ok(Ok(Some(new_offset))) => {
-                    trace!("synced to offset {new_offset}");
-                    self.offset.send_modify(|val| {
-                        val.replace(new_offset);
-                    });
-                }
-                // No data to flush.
-                Ok(Ok(None)) => {}
-            }
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // Ensure the file lock is dropped before notifying.
+        if let Some(file) = self.file.take() {
+            drop(file);
         }
-
-        info!("exiting syncer task");
+        self.notify_on_drop.notify_waiters();
     }
 }
 
 impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
-    fn append_tx(&self, tx: Self::TxData) {
-        self.queue.send(tx).expect("commitlog persister task vanished");
+    fn append_tx(&self, tx: PreparedTx<Self::TxData>) {
+        let mut tx = Some(tx);
+        let blocked = match self.queue.try_reserve() {
+            Ok(permit) => {
+                permit.send(tx.take().expect("tx already sent"));
+                false
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                panic!("durability actor crashed");
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let mut send = || self.queue.blocking_send(tx.take().expect("tx already sent"));
+                if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(send)
+                } else {
+                    send()
+                }
+                .expect("durability actor crashed");
+                true
+            }
+        };
+
         self.queue_depth.fetch_add(1, Relaxed);
+        let _ = blocked;
     }
 
     fn durable_tx_offset(&self) -> DurableOffset {
         self.durable_offset.clone().into()
     }
+
+    fn close(&self) -> Close {
+        info!("close local durability");
+
+        let durable_offset = self.durable_tx_offset();
+        let shutdown = self.shutdown.clone();
+        // Abort actor if shutdown future is dropped.
+        let abort = scopeguard::guard(self.abort.clone(), |actor| {
+            warn!("close future dropped, aborting durability actor");
+            actor.abort();
+        });
+
+        async move {
+            let (done_tx, done_rx) = oneshot::channel();
+            // Ignore channel errors - those just mean the actor is already gone.
+            let _ = shutdown
+                .send(done_tx)
+                .map_err(drop)
+                .and_then(|()| done_rx.map_err(drop))
+                .and_then(|done| async move {
+                    done.await;
+                    Ok(())
+                })
+                .await;
+            // Don't abort if we completed normally.
+            let _ = ScopeGuard::into_inner(abort);
+
+            durable_offset.last_seen()
+        }
+        .boxed()
+    }
 }
 
-impl<T: Encode + 'static> History for Local<T> {
+impl<T: Encode + 'static> History for Commitlog<Txdata<T>> {
     type TxData = Txdata<T>;
 
     fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>
@@ -314,7 +413,7 @@ impl<T: Encode + 'static> History for Local<T> {
         D: Decoder,
         D::Error: From<error::Traversal>,
     {
-        self.clog.fold_transactions_from(offset, decoder)
+        self.fold_transactions_from(offset, decoder)
     }
 
     fn transactions_from<'a, D>(
@@ -327,12 +426,12 @@ impl<T: Encode + 'static> History for Local<T> {
         D::Error: From<error::Traversal>,
         Self::TxData: 'a,
     {
-        self.clog.transactions_from(offset, decoder)
+        self.transactions_from(offset, decoder)
     }
 
     fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
-        let min = self.clog.min_committed_offset().unwrap_or_default();
-        let max = self.clog.max_committed_offset();
+        let min = self.min_committed_offset().unwrap_or_default();
+        let max = self.max_committed_offset();
 
         (min, max)
     }

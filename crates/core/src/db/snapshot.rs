@@ -114,10 +114,21 @@ impl SnapshotWorker {
     ///
     /// The snapshot will be taken at some point in the future.
     /// The request is dropped if the handle is not yet fully initialized.
+    ///
+    /// Panics if the snapshot worker has closed the receive end of its queue(s),
+    /// which is likely due to it having panicked.
     pub fn request_snapshot(&self) {
         self.request_snapshot
             .unbounded_send(Request::TakeSnapshot)
             .expect("snapshot worker panicked");
+    }
+
+    /// Like [`Self::request_snapshot`], but doesn't propogate panics from the worker.
+    ///
+    /// Used by the durability to request snapshots on commitlog segment rotation,
+    /// since the durability should continue writing queued TXes even if the snapshot worker panics.
+    pub fn request_snapshot_ignore_closed(&self) {
+        let _ = self.request_snapshot.unbounded_send(Request::TakeSnapshot);
     }
 
     /// Subscribe to the [TxOffset]s of snapshots created by this worker.
@@ -175,6 +186,7 @@ impl SnapshotWorkerActor {
     /// message is received, unless a new snapshot request is already being
     /// processed.
     async fn run(mut self) {
+        let database_identity = self.snapshot_repo.database_identity();
         let mut database_state: Option<WeakDatabaseState> = None;
         while let Some(req) = self.snapshot_requests.next().await {
             match req {
@@ -182,7 +194,7 @@ impl SnapshotWorkerActor {
                     let res = self
                         .maybe_take_snapshot(database_state.as_ref())
                         .await
-                        .inspect_err(|e| warn!("SnapshotWorker: {e:#}"));
+                        .inspect_err(|e| warn!("database={database_identity} SnapshotWorker: {e:#}"));
                     if let Ok(snapshot_offset) = res {
                         self.maybe_compress_snapshots(snapshot_offset).await;
                         self.snapshot_created.send_replace(snapshot_offset);

@@ -259,6 +259,14 @@ namespace SpacetimeDB
         public readonly NetworkRequestTracker ReducerRequestTracker = new();
 
         /// <summary>
+        /// Tracks times from procedures requests being sent to their responses being received.
+        /// Includes: network send + host + network receive time.
+        /// 
+        /// GetRequestsAwaitingResponse() is meaningful here.
+        /// </summary>
+        public readonly NetworkRequestTracker ProcedureRequestTracker = new();
+
+        /// <summary>
         /// Tracks times from subscriptions being sent to their responses being received.
         /// Includes: network send + host + network receive time.
         /// 

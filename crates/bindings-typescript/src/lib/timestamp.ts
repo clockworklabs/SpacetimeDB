@@ -1,4 +1,17 @@
 import { AlgebraicType } from './algebraic_type';
+import { TimeDuration } from './time_duration';
+
+export type TimestampAlgebraicType = {
+  tag: 'Product';
+  value: {
+    elements: [
+      {
+        name: '__timestamp_micros_since_unix_epoch__';
+        algebraicType: { tag: 'I64' };
+      },
+    ];
+  };
+};
 
 /**
  * A point in time, represented as a number of microseconds since the Unix epoch.
@@ -20,7 +33,7 @@ export class Timestamp {
    * Get the algebraic type representation of the {@link Timestamp} type.
    * @returns The algebraic type representation of the type.
    */
-  static getAlgebraicType(): AlgebraicType {
+  static getAlgebraicType(): TimestampAlgebraicType {
     return AlgebraicType.Product({
       elements: [
         {
@@ -29,6 +42,23 @@ export class Timestamp {
         },
       ],
     });
+  }
+
+  static isTimestamp(
+    algebraicType: AlgebraicType
+  ): algebraicType is TimestampAlgebraicType {
+    if (algebraicType.tag !== 'Product') {
+      return false;
+    }
+    const elements = algebraicType.value.elements;
+    if (elements.length !== 1) {
+      return false;
+    }
+    const microsElement = elements[0];
+    return (
+      microsElement.name === '__timestamp_micros_since_unix_epoch__' &&
+      microsElement.algebraicType.tag === 'I64'
+    );
   }
 
   /**
@@ -41,6 +71,11 @@ export class Timestamp {
    */
   static now(): Timestamp {
     return Timestamp.fromDate(new Date());
+  }
+
+  /** Convert to milliseconds since Unix epoch. */
+  toMillis(): bigint {
+    return this.microsSinceUnixEpoch / 1000n;
   }
 
   /**
@@ -70,5 +105,44 @@ export class Timestamp {
       );
     }
     return new Date(Number(millis));
+  }
+
+  /**
+   * Get an ISO 8601 / RFC 3339 formatted string representation of this timestamp with microsecond precision.
+   *
+   * This method preserves the full microsecond precision of the timestamp,
+   * and throws `RangeError` if the `Timestamp` is outside the range representable in ISO format.
+   *
+   * @returns ISO 8601 formatted string with microsecond precision (e.g., '2025-02-17T10:30:45.123456Z')
+   */
+  toISOString(): string {
+    const micros = this.__timestamp_micros_since_unix_epoch__;
+    const millis = micros / Timestamp.MICROS_PER_MILLIS;
+
+    if (
+      millis > BigInt(Number.MAX_SAFE_INTEGER) ||
+      millis < BigInt(Number.MIN_SAFE_INTEGER)
+    ) {
+      throw new RangeError(
+        'Timestamp is outside of the representable range for ISO string formatting'
+      );
+    }
+
+    const date = new Date(Number(millis));
+    const isoBase = date.toISOString(); // Format: '2025-02-17T10:30:45.123Z'
+
+    // Extract the full 6 decimal places of microseconds
+    const microsRemainder = Math.abs(Number(micros % 1000000n));
+    const fractionalPart = String(microsRemainder).padStart(6, '0');
+
+    // Replace the 3-digit millisecond part with the full 6-digit microsecond part
+    return isoBase.replace(/\.\d{3}Z$/, `.${fractionalPart}Z`);
+  }
+
+  since(other: Timestamp): TimeDuration {
+    return new TimeDuration(
+      this.__timestamp_micros_since_unix_epoch__ -
+        other.__timestamp_micros_since_unix_epoch__
+    );
   }
 }
