@@ -23,5 +23,6 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     match client.config.version {
         WsVersion::V1 => super::message_handlers_v1::handle(client, message, timer).await,
         WsVersion::V2 => super::message_handlers_v2::handle(client, message, timer).await,
+        WsVersion::V3 => super::message_handlers_v3::handle(client, message, timer).await,
     }
 }
