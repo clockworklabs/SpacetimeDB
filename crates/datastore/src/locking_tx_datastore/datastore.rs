@@ -1022,7 +1022,7 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
@@ -1152,7 +1152,7 @@ mod tests {
         }
     }
 
-    fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
+    pub(crate) fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
         product![a, b, c]
     }
 
@@ -1310,11 +1310,11 @@ mod tests {
         datastore.begin_tx(Workload::ForTests)
     }
 
-    fn begin_mut_tx(datastore: &Locking) -> MutTxId {
+    pub(crate) fn begin_mut_tx(datastore: &Locking) -> MutTxId {
         datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
     }
 
-    fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
+    pub(crate) fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
         let (_, tx_data, _, _) = datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`");
         Ok(tx_data)
     }
@@ -1439,7 +1439,7 @@ mod tests {
         u32_str_u32(42, "foo", 24)
     }
 
-    fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
+    pub(crate) fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
         datastore
             .iter_mut_tx(tx, table_id)
             .unwrap()
@@ -3501,7 +3501,7 @@ mod tests {
     }
 
     /// Create an event table with the basic schema (id: u32, name: String, age: u32).
-    fn setup_event_table() -> ResultTest<(Locking, MutTxId, TableId)> {
+    pub(crate) fn setup_event_table() -> ResultTest<(Locking, MutTxId, TableId)> {
         let datastore = get_datastore()?;
         let mut tx = begin_mut_tx(&datastore);
         let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
@@ -3589,34 +3589,6 @@ mod tests {
         // But committed state should be empty.
         let tx = begin_mut_tx(&datastore);
         assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
-        Ok(())
-    }
-
-    #[test]
-    fn test_event_table_replay_ignores_inserts() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_event_table()?;
-        // Commit the table-creation tx so the schema exists.
-        commit(&datastore, tx)?;
-
-        // Get the schema for this event table.
-        let tx = begin_mut_tx(&datastore);
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
-        let _ = datastore.rollback_mut_tx(tx);
-
-        // Directly call replay_insert on committed state.
-        let row = u32_str_u32(1, "Carol", 40);
-        {
-            let mut committed_state = datastore.committed_state.write();
-            committed_state.replay_insert(table_id, &schema, &row)?;
-        }
-
-        // After replay, the event table should still have no committed rows.
-        let tx = begin_mut_tx(&datastore);
-        assert_eq!(
-            all_rows(&datastore, &tx, table_id).len(),
-            0,
-            "replay_insert should be a no-op for event tables"
-        );
         Ok(())
     }
 
