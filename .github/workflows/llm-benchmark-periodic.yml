@@ -20,6 +20,9 @@ on:
         required: false
         default: 'guidelines,no_context'
 
+permissions:
+  contents: read
+
 concurrency:
   group: llm-benchmark-periodic
   cancel-in-progress: true

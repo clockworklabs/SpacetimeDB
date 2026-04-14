@@ -220,4 +220,123 @@ impl ApiClient {
         }
     }
 
+    /// Fetch available run dates from `GET /api/llm-benchmark-results?dates=true`.
+    pub fn fetch_run_dates(
+        &self,
+        lang: Option<&str>,
+        mode: Option<&str>,
+    ) -> Result<Vec<String>> {
+        let mut params = vec!["dates=true".to_string()];
+        if let Some(l) = lang {
+            params.push(format!("lang={}", urlencoding::encode(l)));
+        }
+        if let Some(m) = mode {
+            params.push(format!("mode={}", urlencoding::encode(m)));
+        }
+        let url = format!("{}/api/llm-benchmark-results?{}", self.base_url, params.join("&"));
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .context("fetch run dates failed")?;
+
+        if resp.status().is_success() {
+            let body: serde_json::Value = resp.json().context("parse dates response")?;
+            Ok(body["dates"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default())
+        } else {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("fetch run dates failed: {} \u{2014} {}", status, body);
+        }
+    }
+
+    /// Fetch failure results from `GET /api/llm-benchmark-results?failures=true`.
+    pub fn fetch_failures(
+        &self,
+        lang: Option<&str>,
+        mode: Option<&str>,
+        model: Option<&str>,
+        date: Option<&str>,
+    ) -> Result<(Vec<serde_json::Value>, Option<String>)> {
+        let mut params = vec!["failures=true".to_string()];
+        if let Some(l) = lang {
+            params.push(format!("lang={}", urlencoding::encode(l)));
+        }
+        if let Some(m) = mode {
+            params.push(format!("mode={}", urlencoding::encode(m)));
+        }
+        if let Some(m) = model {
+            params.push(format!("model={}", urlencoding::encode(m)));
+        }
+        if let Some(d) = date {
+            params.push(format!("date={}", urlencoding::encode(d)));
+        }
+        let url = format!("{}/api/llm-benchmark-results?{}", self.base_url, params.join("&"));
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .context("fetch failures failed")?;
+
+        if resp.status().is_success() {
+            let body: serde_json::Value = resp.json().context("parse failures response")?;
+            let date = body["date"].as_str().map(String::from);
+            let results = body["results"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            Ok((results, date))
+        } else {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("fetch failures failed: {} \u{2014} {}", status, body);
+        }
+    }
+
+    /// Upload analysis for a specific (lang, mode, model) via the upload endpoint.
+    pub fn upload_analysis(
+        &self,
+        lang: &str,
+        mode: &str,
+        model_name: &str,
+        analysis: &str,
+        date: &str,
+    ) -> Result<()> {
+        let payload = json!({
+            "lang": lang,
+            "mode": mode,
+            "hash": null,
+            "models": [{
+                "name": model_name,
+                "tasks": {},
+                "analysis": analysis,
+            }],
+        });
+
+        let url = format!("{}/api/llm-benchmark-upload", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .with_context(|| format!("upload analysis failed for {}/{}/{}", lang, mode, model_name))?;
+
+        if resp.status().is_success() {
+            println!("  uploaded analysis for {}/{}/{}/{}", lang, mode, model_name, date);
+            Ok(())
+        } else {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("upload analysis failed: {} \u{2014} {}", status, body);
+        }
+    }
 }

@@ -75,6 +75,9 @@ struct Cli {
 enum Commands {
     /// Run benchmarks / build goldens / compute hashes.
     Run(RunArgs),
+
+    /// Run AI analysis on existing benchmark failures from the database.
+    Analyze(AnalyzeArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -126,6 +129,29 @@ struct RunArgs {
     dry_run: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+struct AnalyzeArgs {
+    /// Filter by language (e.g. rust, csharp, typescript)
+    #[arg(long)]
+    lang: Option<String>,
+
+    /// Filter by mode (e.g. guidelines, no_context, docs)
+    #[arg(long)]
+    mode: Option<String>,
+
+    /// Filter by model name (e.g. "Claude Sonnet 4.6")
+    #[arg(long)]
+    model: Option<String>,
+
+    /// Run date (YYYY-MM-DD). If omitted, lists available dates.
+    #[arg(long)]
+    date: Option<String>,
+
+    /// Print analysis to stdout instead of uploading
+    #[arg(long)]
+    dry_run: bool,
+}
+
 /// Local wrapper so we can parse Vendor without orphan-rule issues.
 #[derive(Clone, Debug)]
 struct VendorArg(pub Vendor);
@@ -172,6 +198,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run(args) => cmd_run(args),
+        Commands::Analyze(args) => cmd_analyze(args),
     }
 }
 
@@ -258,6 +285,180 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/* ------------------------------ analyze ------------------------------ */
+
+fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
+    let api = ApiClient::from_env()
+        .context("failed to initialize API client")?
+        .context("LLM_BENCHMARK_UPLOAD_URL required for analyze")?;
+
+    // If no date specified, list available dates and exit
+    if args.date.is_none() {
+        let dates = api.fetch_run_dates(args.lang.as_deref(), args.mode.as_deref())?;
+        if dates.is_empty() {
+            println!("No run dates found.");
+        } else {
+            println!("Available run dates:");
+            for d in &dates {
+                println!("  {}", d);
+            }
+            println!("\nUse --date YYYY-MM-DD to analyze a specific run.");
+        }
+        return Ok(());
+    }
+
+    let date = args.date.as_deref().unwrap();
+
+    // Fetch failures from the API
+    let (failures, run_date) = api.fetch_failures(
+        args.lang.as_deref(),
+        args.mode.as_deref(),
+        args.model.as_deref(),
+        Some(date),
+    )?;
+
+    let run_date = run_date.unwrap_or_else(|| date.to_string());
+
+    if failures.is_empty() {
+        println!("No failures found for date {}.", run_date);
+        return Ok(());
+    }
+
+    // Group failures by (lang, mode, model)
+    let mut groups: std::collections::BTreeMap<(String, String, String), Vec<&serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    for f in &failures {
+        let lang = f["lang"].as_str().unwrap_or("unknown").to_string();
+        let mode = f["mode"].as_str().unwrap_or("unknown").to_string();
+        let model = f["modelName"].as_str().unwrap_or("unknown").to_string();
+        groups.entry((lang, mode, model)).or_default().push(f);
+    }
+
+    println!(
+        "Found {} failures across {} (lang, mode, model) groups for date {}",
+        failures.len(),
+        groups.len(),
+        run_date
+    );
+
+    // Initialize LLM provider for analysis
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let provider = make_provider_from_env()?;
+
+    let analysis_route = ModelRoute::new(
+        "gpt-4.1-mini",
+        xtask_llm_benchmark::llm::types::Vendor::OpenAi,
+        "gpt-4.1-mini",
+        Some("openai/gpt-4.1-mini"),
+    );
+
+    for ((lang, mode, model), group_failures) in &groups {
+        println!("\nAnalyzing {}/{}/{} ({} failures)...", lang, mode, model, group_failures.len());
+
+        // Build prompt from the JSON failure data
+        let prompt = build_analysis_prompt_from_json(lang, mode, model, group_failures);
+
+        let built = xtask_llm_benchmark::llm::prompt::BuiltPrompt {
+            system: Some(
+                "You are an expert at analyzing SpacetimeDB benchmark failures. \
+                 Write objective technical analysis. Do not address the reader or make suggestions \
+                 \u{2014} just analyze what went wrong and what the correct code should be."
+                    .to_string(),
+            ),
+            static_prefix: None,
+            segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
+            search_enabled: false,
+        };
+
+        let analysis = runtime.block_on(provider.generate(&analysis_route, &built))?.text;
+
+        if args.dry_run {
+            println!("--- {}/{}/{} ---", lang, mode, model);
+            println!("{}", analysis);
+        } else {
+            api.upload_analysis(lang, mode, model, &analysis, &run_date)?;
+        }
+    }
+
+    println!("\nDone.");
+    Ok(())
+}
+
+fn build_analysis_prompt_from_json(lang: &str, mode: &str, model: &str, failures: &[&serde_json::Value]) -> String {
+    let lang_display = match lang {
+        "rust" => "Rust",
+        "csharp" => "C#",
+        "typescript" => "TypeScript",
+        _ => lang,
+    };
+
+    let mut prompt = format!(
+        "Analyze the following SpacetimeDB benchmark test failures for {model} generating \
+         {lang_display} code with context mode \"{mode}\" ({count} failing tasks).\n\n\
+         For each failure, explain what went wrong in the generated code and what the correct \
+         approach is. Include inline code examples.\n\n",
+        count = failures.len(),
+    );
+
+    for f in failures.iter().take(10) {
+        let task_id = f["taskId"].as_str().unwrap_or("?");
+        let passed = f["passedTests"].as_u64().unwrap_or(0);
+        let total = f["totalTests"].as_u64().unwrap_or(0);
+
+        prompt.push_str(&format!("### {} - {}/{} tests passed\n", task_id, passed, total));
+
+        // Extract failure reasons from scorerDetails
+        if let Some(details) = f["scorerDetails"].as_object() {
+            let reasons: Vec<String> = details
+                .iter()
+                .filter_map(|(name, score)| {
+                    if score["pass"].as_bool() == Some(true) {
+                        return None;
+                    }
+                    let notes = &score["notes"];
+                    let error = notes["error"]
+                        .as_str()
+                        .or_else(|| notes["stderr"].as_str())
+                        .or_else(|| notes["diff"].as_str())
+                        .unwrap_or("failed");
+                    Some(format!("{}: {}", name, &error[..error.len().min(200)]))
+                })
+                .collect();
+            if !reasons.is_empty() {
+                prompt.push_str(&format!("**Failure**: {}\n\n", reasons.join(", ")));
+            }
+        }
+
+        if let Some(output) = f["llmOutput"].as_str() {
+            let truncated = if output.len() > 1500 {
+                format!("{}...", &output[..1500])
+            } else {
+                output.to_string()
+            };
+            prompt.push_str(&format!("**Generated code**:\n```\n{}\n```\n\n", truncated));
+        }
+    }
+
+    if failures.len() > 10 {
+        prompt.push_str(&format!(
+            "\n**{} additional failures not shown.**\n\n",
+            failures.len() - 10
+        ));
+    }
+
+    prompt.push_str(
+        "\n---\n\nFor each failure or group of similar failures, provide:\n\
+         1. What the model generated and why it's wrong\n\
+         2. What the correct SpacetimeDB API usage is\n\
+         3. The root cause pattern\n\n\
+         Group similar failures. Use code blocks with syntax highlighting.\n",
+    );
+
+    prompt
 }
 
 fn model_filter_from_groups(groups: Option<Vec<ModelGroup>>) -> Option<HashMap<Vendor, HashSet<String>>> {
