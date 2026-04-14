@@ -484,7 +484,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
         let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
-            futures::stream::iter(retry_tasks.into_iter().map(|task| {
+            futures::stream::iter(retry_tasks.drain(..).map(|task| {
                 let runner = &runner;
                 let route = cfg.route;
                 let lang = cfg.lang;
@@ -527,13 +527,18 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         }
 
         good.extend(new_good);
+        if still_failing.is_empty() {
+            retry_tasks = still_failing;
+            break;
+        }
         retry_tasks = still_failing;
     }
 
-    if !retry_tasks.is_empty() {
+    let dropped = retry_tasks.len();
+    if dropped > 0 {
         eprintln!(
             "[runner] {} tasks still failing after retries — excluded from upload",
-            retry_tasks.len()
+            dropped
         );
     }
 
@@ -546,7 +551,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         eprintln!("[dry-run] skipping upload ({} outcomes)", good.len());
     } else if !good.is_empty() {
         let analysis =
-            match crate::bench::analysis::run_analysis(&good, cfg.lang.as_str(), cfg.mode, cfg.llm).await {
+            match crate::bench::analysis::run_analysis(&good, cfg.lang.as_str(), cfg.mode, &cfg.route.display_name, cfg.bench_root, cfg.llm).await {
                 Ok(Some(text)) => {
                     eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
                     Some(text)
@@ -574,7 +579,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         fmt_dur(total_wall.elapsed())
     );
 
-    Ok(outcomes)
+    Ok(good)
 }
 
 // run only selected tasks by selectors like 1/01/001 or t_001
@@ -651,48 +656,84 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         .collect()
         .await;
 
-    let mut outcomes = Vec::with_capacity(results.len());
-    let mut errs = 0usize;
+    let (mut good, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash);
 
-    for (task, r) in results {
-        match r {
-            Ok(v) => outcomes.push(v),
-            Err(RunOneError::WithOutput { msg, llm_output }) => {
-                errs += 1;
-                eprintln!("⚠️ task failed but continuing: {msg}");
-                outcomes.push(build_fail_outcome(
-                    &task,
-                    lang_name,
-                    cfg.route,
-                    cfg.hash,
-                    anyhow::anyhow!(msg),
-                    Some(llm_output),
-                ));
+    // Retry provider-error tasks until all pass or none make progress
+    let mut dropped = 0usize;
+    {
+        const MAX_RETRY_ROUNDS: usize = 3;
+        let mut pending = retry_tasks;
+        for round in 1..=MAX_RETRY_ROUNDS {
+            if pending.is_empty() {
+                break;
             }
-            Err(RunOneError::Other(e)) => {
-                errs += 1;
-                eprintln!("⚠️ task failed but continuing: {e:?}");
-                outcomes.push(build_fail_outcome(&task, lang_name, cfg.route, cfg.hash, e, None));
+            eprintln!(
+                "[runner] retry round {}/{}: {} tasks with provider errors",
+                round, MAX_RETRY_ROUNDS, pending.len()
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+            let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
+                futures::stream::iter(pending.drain(..).map(|task| {
+                    let runner = &runner;
+                    let route = cfg.route;
+                    let lang = cfg.lang;
+                    let lang_name = lang_name.to_string();
+                    let context = cfg.context;
+                    let hash = cfg.hash;
+                    let llm = cfg.llm;
+                    let host = cfg.host.clone();
+
+                    async move {
+                        let started = Utc::now();
+                        let run_cfg = RunContext {
+                            lang_name: &lang_name,
+                            lang,
+                            mode: cfg.mode,
+                            route,
+                            context,
+                            hash,
+                            llm,
+                            host,
+                        };
+                        let res = runner.run_one(&task, &run_cfg).await;
+                        (task, res.map(|mut o| { o.started_at.get_or_insert(started); o }))
+                    }
+                }))
+                .buffer_unordered(buf)
+                .collect()
+                .await;
+
+            let (new_good, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash);
+
+            if new_good.is_empty() && !still_failing.is_empty() {
+                eprintln!(
+                    "[runner] no tasks recovered in retry round {} — provider may be down, dropping {} tasks",
+                    round,
+                    still_failing.len()
+                );
+                dropped = still_failing.len();
+                break;
             }
+
+            good.extend(new_good);
+            pending = still_failing;
         }
+        dropped += pending.len();
     }
 
-    // Filter out provider errors (no LLM response) — don't upload these as they pollute data
-    let provider_errors = outcomes.iter().filter(|o| o.llm_output.is_none()).count();
-    let uploadable: Vec<RunOutcome> = outcomes.into_iter().filter(|o| o.llm_output.is_some()).collect();
-
-    if provider_errors > 0 {
+    if dropped > 0 {
         eprintln!(
-            "[runner] {} provider errors excluded from upload (LLM never responded)",
-            provider_errors
+            "[runner] {} tasks still failing after retries — excluded from upload",
+            dropped
         );
     }
 
     if cfg.dry_run {
-        eprintln!("[dry-run] skipping upload ({} outcomes)", uploadable.len());
-    } else if !uploadable.is_empty() {
+        eprintln!("[dry-run] skipping upload ({} outcomes)", good.len());
+    } else if !good.is_empty() {
         let analysis =
-            match crate::bench::analysis::run_analysis(&uploadable, cfg.lang.as_str(), cfg.mode, cfg.llm).await {
+            match crate::bench::analysis::run_analysis(&good, cfg.lang.as_str(), cfg.mode, &cfg.route.display_name, cfg.bench_root, cfg.llm).await {
                 Ok(Some(text)) => {
                     eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
                     Some(text)
@@ -705,21 +746,19 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
             };
 
         if let Some(ref api) = cfg.api_client {
-            api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &uploadable, analysis.as_deref())?;
+            api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &good, analysis.as_deref())?;
         } else {
             eprintln!("[runner] no API client configured; skipping upload");
         }
     }
 
     println!(
-        "\u{2713} [{}] {}: total {} (err={}, provider_err={})",
+        "\u{2713} [{}] {}: total {}",
         lang_name,
         cfg.route.display_name,
         fmt_dur(total_wall.elapsed()),
-        errs,
-        provider_errors
     );
-    Ok(uploadable)
+    Ok(good)
 }
 
 pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {

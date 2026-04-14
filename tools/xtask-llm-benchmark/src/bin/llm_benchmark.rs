@@ -239,10 +239,10 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let bench_root = find_bench_root();
 
     // Upload task catalog before running benchmarks
-    if let Some(ref api) = api_client {
-        if let Err(e) = api.upload_task_catalog(&bench_root) {
-            eprintln!("[warn] failed to upload task catalog: {e}");
-        }
+    if let Some(ref api) = api_client
+        && let Err(e) = api.upload_task_catalog(&bench_root)
+    {
+        eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
     let modes = config
@@ -363,12 +363,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
         let prompt = build_analysis_prompt_from_json(lang, mode, model, group_failures);
 
         let built = xtask_llm_benchmark::llm::prompt::BuiltPrompt {
-            system: Some(
-                "You are an expert at analyzing SpacetimeDB benchmark failures. \
-                 Write objective technical analysis. Do not address the reader or make suggestions \
-                 \u{2014} just analyze what went wrong and what the correct code should be."
-                    .to_string(),
-            ),
+            system: Some(xtask_llm_benchmark::bench::analysis::system_prompt()),
             static_prefix: None,
             segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
             search_enabled: false,
@@ -389,6 +384,11 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
 }
 
 fn build_analysis_prompt_from_json(lang: &str, mode: &str, model: &str, failures: &[&serde_json::Value]) -> String {
+    // Reuse the shared prompt builder for the intro + instructions,
+    // but we need to build the failure list from JSON values instead of RunOutcome.
+    use xtask_llm_benchmark::bench::analysis::analysis_instructions;
+
+    // Reuse the same context description logic as bench::analysis
     let lang_display = match lang {
         "rust" => "Rust",
         "csharp" => "C#",
@@ -396,22 +396,30 @@ fn build_analysis_prompt_from_json(lang: &str, mode: &str, model: &str, failures
         _ => lang,
     };
 
+    let ctx_desc = match mode {
+        "guidelines" => "the SpacetimeDB AI guidelines (concise cheat-sheets for code generation)",
+        "cursor_rules" => "SpacetimeDB Cursor/IDE rules (anti-hallucination guardrails)",
+        "docs" => "SpacetimeDB markdown documentation",
+        "rustdoc_json" => "SpacetimeDB rustdoc JSON (auto-generated API reference)",
+        "llms.md" => "the SpacetimeDB llms.md file",
+        "no_context" | "none" | "no_guidelines" => "no documentation (testing base model knowledge only)",
+        "search" => "web search results (no local docs)",
+        _ => "unspecified context",
+    };
+
     let mut prompt = format!(
-        "Analyze the following SpacetimeDB benchmark test failures for {model} generating \
-         {lang_display} code with context mode \"{mode}\" ({count} failing tasks).\n\n\
-         For each failure, explain what went wrong in the generated code and what the correct \
-         approach is. Include inline code examples.\n\n",
+        "{model} was given {ctx_desc} and asked to generate {lang_display} SpacetimeDB modules. \
+         It failed {count} tasks.\n\n",
         count = failures.len(),
     );
 
-    for f in failures.iter().take(10) {
+    for f in failures.iter().take(15) {
         let task_id = f["taskId"].as_str().unwrap_or("?");
         let passed = f["passedTests"].as_u64().unwrap_or(0);
         let total = f["totalTests"].as_u64().unwrap_or(0);
 
-        prompt.push_str(&format!("### {} - {}/{} tests passed\n", task_id, passed, total));
+        prompt.push_str(&format!("### {} ({}/{})\n", task_id, passed, total));
 
-        // Extract failure reasons from scorerDetails
         if let Some(details) = f["scorerDetails"].as_object() {
             let reasons: Vec<String> = details
                 .iter()
@@ -425,39 +433,26 @@ fn build_analysis_prompt_from_json(lang: &str, mode: &str, model: &str, failures
                         .or_else(|| notes["stderr"].as_str())
                         .or_else(|| notes["diff"].as_str())
                         .unwrap_or("failed");
-                    Some(format!("{}: {}", name, &error[..error.len().min(200)]))
+                    Some(format!("{}: {}", name, &error[..error.len().min(150)]))
                 })
                 .collect();
             if !reasons.is_empty() {
-                prompt.push_str(&format!("**Failure**: {}\n\n", reasons.join(", ")));
+                prompt.push_str(&format!("Error: {}\n", reasons.join("; ")));
             }
         }
 
         if let Some(output) = f["llmOutput"].as_str() {
-            let truncated = if output.len() > 1500 {
-                format!("{}...", &output[..1500])
-            } else {
-                output.to_string()
-            };
-            prompt.push_str(&format!("**Generated code**:\n```\n{}\n```\n\n", truncated));
+            let truncated = if output.len() > 1500 { &output[..1500] } else { output };
+            prompt.push_str(&format!("```{}\n{}\n```\n", lang, truncated));
         }
+        prompt.push('\n');
     }
 
-    if failures.len() > 10 {
-        prompt.push_str(&format!(
-            "\n**{} additional failures not shown.**\n\n",
-            failures.len() - 10
-        ));
+    if failures.len() > 15 {
+        prompt.push_str(&format!("({} more failures not shown)\n\n", failures.len() - 15));
     }
 
-    prompt.push_str(
-        "\n---\n\nFor each failure or group of similar failures, provide:\n\
-         1. What the model generated and why it's wrong\n\
-         2. What the correct SpacetimeDB API usage is\n\
-         3. The root cause pattern\n\n\
-         Group similar failures. Use code blocks with syntax highlighting.\n",
-    );
-
+    prompt.push_str(&analysis_instructions(mode));
     prompt
 }
 

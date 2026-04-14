@@ -85,11 +85,11 @@ impl ApiClient {
             for mode_entry in &lang_entry.modes {
                 // Serialize models and inject analysis into each model object if provided
                 let mut models_json = serde_json::to_value(&mode_entry.models)?;
-                if let Some(text) = analysis {
-                    if let Some(arr) = models_json.as_array_mut() {
-                        for model in arr {
-                            model["analysis"] = json!(text);
-                        }
+                if let Some(text) = analysis
+                    && let Some(arr) = models_json.as_array_mut()
+                {
+                    for model in arr {
+                        model["analysis"] = json!(text);
                     }
                 }
 
