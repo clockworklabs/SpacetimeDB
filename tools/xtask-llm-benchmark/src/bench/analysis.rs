@@ -56,7 +56,6 @@ Write in third person for a public benchmark page. Do not address the reader.";
 fn context_description(mode: &str) -> &'static str {
     match mode {
         "guidelines" => "the SpacetimeDB AI guidelines (concise cheat-sheets for code generation)",
-        "cursor_rules" => "SpacetimeDB Cursor/IDE rules (anti-hallucination guardrails)",
         "docs" => "SpacetimeDB markdown documentation",
         "rustdoc_json" => "SpacetimeDB rustdoc JSON (auto-generated API reference)",
         "llms.md" => "the SpacetimeDB llms.md file",
@@ -73,7 +72,6 @@ fn has_context(mode: &str) -> bool {
 fn context_name(mode: &str) -> &'static str {
     match mode {
         "guidelines" => "AI guidelines",
-        "cursor_rules" => "Cursor/IDE rules",
         "docs" => "documentation",
         "rustdoc_json" => "rustdoc",
         "llms.md" => "llms.md",

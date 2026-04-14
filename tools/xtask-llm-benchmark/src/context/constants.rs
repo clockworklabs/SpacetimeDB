@@ -4,26 +4,10 @@ pub const DOCS_DIR_DEFAULT: &str = "../../docs";
 pub const SKILLS_DIR_DEFAULT: &str = "../../skills";
 pub const RUSTDOC_CRATE_ROOT_DEFAULT: &str = "../../crates/bindings";
 
-// ## Context modes
-//
-// `guidelines` and `cursor_rules` serve different purposes:
-//
-// - `guidelines` (docs/static/ai-guidelines/): Constructive "happy path" cheat sheets
-//   optimized for one-shot code generation. Show correct patterns only, no anti-patterns.
-//   Used by the benchmark to measure how well models generate SpacetimeDB code from scratch.
-//
-// - `cursor_rules` (docs/static/ai-rules/): IDE-oriented .mdc rules designed for Cursor,
-//   Windsurf, and similar AI coding assistants. Include anti-hallucination guardrails,
-//   common mistake tables, client-side patterns, and migration guidance. These work well
-//   in an IDE context where the model has project context, can iterate, and is editing
-//   existing code — but they are NOT optimized for single-shot benchmark generation.
-//
-// Do not conflate the two. They have different audiences and different design goals.
 pub const ALL_MODES: &[&str] = &[
     "docs",
     "llms.md",
-    "guidelines",   // constructive-only AI guidelines (docs/static/ai-guidelines/)
-    "cursor_rules", // IDE-oriented cursor/IDE rules   (docs/static/ai-rules/)
+    "guidelines",
     "rustdoc_json",
     "no_context",
     "none",          // alias for no_context (backward compat)

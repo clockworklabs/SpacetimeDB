@@ -42,14 +42,6 @@ Rules:\n\
                 .to_string()
         } else {
             let preamble = match mode {
-                "cursor_rules" => format!(
-                    "The following are SpacetimeDB coding rules for {}. \
-                     Read ALL rules carefully before writing any code. \
-                     They contain ❌ WRONG examples showing common mistakes to AVOID \
-                     and ✅ CORRECT examples showing the right patterns to follow. \
-                     Focus on the ✅ patterns. Write SERVER-SIDE module code only.",
-                    self.lang
-                ),
                 "guidelines" => format!(
                     "The following are SpacetimeDB {} guidelines. \
                      All examples shown are correct patterns to follow.",

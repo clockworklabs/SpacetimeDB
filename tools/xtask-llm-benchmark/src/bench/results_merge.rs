@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use crate::results::schema::{LangEntry, ModeEntry, ModelEntry, Results};
 
 /// Normalize all model names in loaded results and merge duplicates.
@@ -34,7 +32,6 @@ pub fn ensure_lang<'a>(root: &'a mut Results, lang: &str) -> &'a mut LangEntry {
     root.languages.push(LangEntry {
         lang: lang.to_string(),
         modes: Vec::new(),
-        golden_answers: BTreeMap::new(),
     });
     root.languages.last_mut().unwrap()
 }

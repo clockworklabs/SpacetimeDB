@@ -1,5 +1,5 @@
 use crate::context::constants::{docs_dir, is_empty_context_mode};
-use crate::context::paths::{gather_cursor_rules_files, gather_guidelines_files, resolve_mode_paths};
+use crate::context::paths::{gather_guidelines_files, resolve_mode_paths};
 use crate::eval::lang::Lang;
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
@@ -41,8 +41,6 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
     let base = base_for_mode(mode)?;
     let files = if mode == "guidelines" {
         gather_guidelines_files(base.join("static/ai-guidelines"), lang)?
-    } else if mode == "cursor_rules" {
-        gather_cursor_rules_files(base.join("static/ai-rules"), lang)?
     } else {
         resolve_mode_paths(mode)?
     };
@@ -51,8 +49,8 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
         let rel = stable_rel_path(&base, &p);
         let contents = fs::read_to_string(&p).with_context(|| format!("read {}", rel))?;
 
-        // For guidelines/cursor_rules we don't filter tabs; for other modes filter by lang if specified
-        let skip_tab_filter = matches!(mode, "guidelines" | "cursor_rules");
+        // For guidelines we don't filter tabs; for other modes filter by lang if specified
+        let skip_tab_filter = mode == "guidelines";
         let contents = if skip_tab_filter {
             contents
         } else if let Some(lang) = lang {
@@ -62,7 +60,7 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
         };
 
         // When building for a specific language, skip files that have no content for it
-        // (e.g. Rust-only pages with no TypeScript tab). Not used for cursor_rules/guidelines.
+        // (e.g. Rust-only pages with no TypeScript tab). Not used for guidelines.
         if !skip_tab_filter && lang.is_some() && contents.trim().is_empty() {
             continue;
         }
