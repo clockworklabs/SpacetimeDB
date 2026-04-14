@@ -341,10 +341,9 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
             details_path,
             config.providers_filter.as_ref(),
             config.model_filter.as_ref(),
-        )? {
-            if !http_list.is_empty() {
-                print_http_failures_summary(total, &http_list);
-            }
+        )? && !http_list.is_empty()
+        {
+            print_http_failures_summary(total, &http_list);
         }
     }
 
@@ -1055,14 +1054,12 @@ fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>)
                 continue;
             }
             let name = entry.file_name().to_string_lossy().into_owned();
-            if let Some(rest) = name.strip_prefix("t_") {
-                if let Some((num_str, _)) = rest.split_once('_') {
-                    if num_str.len() == 3 {
-                        if let Ok(n) = num_str.parse::<u32>() {
-                            nums.insert(n);
-                        }
-                    }
-                }
+            if let Some(rest) = name.strip_prefix("t_")
+                && let Some((num_str, _)) = rest.split_once('_')
+                && num_str.len() == 3
+                && let Ok(n) = num_str.parse::<u32>()
+            {
+                nums.insert(n);
             }
         }
     }
@@ -1145,10 +1142,10 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
 
     for lang_entry in &results.languages {
         // Skip if filtering by language
-        if let Some(filter_lang) = &args.lang {
-            if lang_entry.lang != filter_lang.as_str() {
-                continue;
-            }
+        if let Some(filter_lang) = &args.lang
+            && lang_entry.lang != filter_lang.as_str()
+        {
+            continue;
         }
 
         let golden_answers = &lang_entry.golden_answers;
@@ -1425,17 +1422,17 @@ fn load_details_and_http_failures(
                         if outcome.llm_output.is_some() {
                             continue;
                         }
-                        if let Some(err) = get_publish_error_from_outcome(outcome) {
-                            if is_http_like_error(&err) {
-                                http_failures.push((
-                                    lang_entry.lang.clone(),
-                                    mode_entry.mode.clone(),
-                                    model_entry.name.clone(),
-                                    task_id.clone(),
-                                    vendor,
-                                    api_model,
-                                ));
-                            }
+                        if let Some(err) = get_publish_error_from_outcome(outcome)
+                            && is_http_like_error(&err)
+                        {
+                            http_failures.push((
+                                lang_entry.lang.clone(),
+                                mode_entry.mode.clone(),
+                                model_entry.name.clone(),
+                                task_id.clone(),
+                                vendor,
+                                api_model,
+                            ));
                         }
                     }
                 }
@@ -1459,28 +1456,28 @@ fn outcome_matches_run_scope(
     let Some(vendor) = Vendor::parse(vendor_slug) else {
         return true; // unknown vendor, include
     };
-    if let Some(pf) = providers_filter {
-        if !pf.contains(&vendor) {
-            return false;
-        }
+    if let Some(pf) = providers_filter
+        && !pf.contains(&vendor)
+    {
+        return false;
     }
-    if let Some(mf) = model_filter {
-        if let Some(allowed) = mf.get(&vendor) {
-            let model_lower = model_name.to_ascii_lowercase();
-            let api_lower = route_api_model.map(|s| s.to_ascii_lowercase());
-            let model_norm = model_lower.replace(' ', "-");
-            let matches = allowed.iter().any(|a| {
-                let al = a.to_ascii_lowercase();
-                let a_norm = al.replace(' ', "-");
-                model_norm == a_norm
-                    || model_lower == al
-                    || api_lower
-                        .as_ref()
-                        .is_some_and(|api| api == &al || api.contains(al.as_str()) || al.contains(api.as_str()))
-            });
-            if !matches {
-                return false;
-            }
+    if let Some(mf) = model_filter
+        && let Some(allowed) = mf.get(&vendor)
+    {
+        let model_lower = model_name.to_ascii_lowercase();
+        let api_lower = route_api_model.map(|s| s.to_ascii_lowercase());
+        let model_norm = model_lower.replace(' ', "-");
+        let matches = allowed.iter().any(|a| {
+            let al = a.to_ascii_lowercase();
+            let a_norm = al.replace(' ', "-");
+            model_norm == a_norm
+                || model_lower == al
+                || api_lower
+                    .as_ref()
+                    .is_some_and(|api| api == &al || api.contains(al.as_str()) || al.contains(api.as_str()))
+        });
+        if !matches {
+            return false;
         }
     }
     true

@@ -1,16 +1,18 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { RpcRequest, RpcResponse } from '../connectors/rpc/rpc_common.ts';
-import { poolMaxFromEnv } from '../helpers.ts';
+import { getSharedRuntimeDefaults } from '../config.ts';
 
 const PG_URL = process.env.PG_URL;
 if (!PG_URL) {
   throw new Error('PG_URL not set');
 }
+
+const { poolMax } = getSharedRuntimeDefaults();
 
 const accounts = pgTable('accounts', {
   id: integer('id').primaryKey(),
@@ -20,10 +22,40 @@ const accounts = pgTable('accounts', {
 const pool = new Pool({
   connectionString: PG_URL,
   application_name: 'pg-rpc-drizzle',
-  max: poolMaxFromEnv(),
+  max: poolMax,
 });
 
 const db = drizzle(pool, { schema: { accounts } });
+
+const PREPARED = {
+  getAccountById: {
+    name: 'get_account',
+    text: `
+      SELECT id, balance
+      FROM accounts
+      WHERE id = $1
+      LIMIT 1
+    `,
+  },
+  transferSelectForUpdate: {
+    name: 'transfer_select',
+    text: `
+      SELECT id, balance
+      FROM accounts
+      WHERE id IN ($1, $2)
+      ORDER BY id
+      FOR UPDATE
+    `,
+  },
+  transferUpdateBalance: {
+    name: 'transfer_update',
+    text: `
+      UPDATE accounts
+      SET balance = $1::bigint
+      WHERE id = $2
+    `,
+  },
+} as const;
 
 async function rpcTransfer(args: Record<string, unknown>) {
   const fromId = Number(args.from_id ?? args.from);
@@ -40,14 +72,17 @@ async function rpcTransfer(args: Record<string, unknown>) {
   if (fromId === toId || amount <= 0) return;
 
   const delta = BigInt(amount);
+  const client = await pool.connect();
 
-  await db.transaction(async (tx) => {
-    const rows = await tx
-      .select()
-      .from(accounts)
-      .where(inArray(accounts.id, [fromId, toId]))
-      .for('update')
-      .orderBy(accounts.id);
+  try {
+    await client.query('BEGIN');
+
+    const rowsResult = await client.query<{ id: number; balance: string }>({
+      name: PREPARED.transferSelectForUpdate.name,
+      text: PREPARED.transferSelectForUpdate.text,
+      values: [fromId, toId],
+    });
+    const rows = rowsResult.rows;
 
     if (rows.length !== 2) {
       throw new Error('account_missing');
@@ -56,32 +91,43 @@ async function rpcTransfer(args: Record<string, unknown>) {
     const [first, second] = rows;
     const fromRow = first.id === fromId ? first : second;
     const toRow = first.id === fromId ? second : first;
+    const fromBalance = BigInt(fromRow.balance);
 
-    if (fromRow.balance < delta) {
-      return;
+    if (fromBalance >= delta) {
+      const toBalance = BigInt(toRow.balance);
+
+      await client.query({
+        name: PREPARED.transferUpdateBalance.name,
+        text: PREPARED.transferUpdateBalance.text,
+        values: [(fromBalance - delta).toString(), fromId],
+      });
+
+      await client.query({
+        name: PREPARED.transferUpdateBalance.name,
+        text: PREPARED.transferUpdateBalance.text,
+        values: [(toBalance + delta).toString(), toId],
+      });
     }
 
-    await tx
-      .update(accounts)
-      .set({ balance: fromRow.balance - delta })
-      .where(eq(accounts.id, fromId));
-
-    await tx
-      .update(accounts)
-      .set({ balance: toRow.balance + delta })
-      .where(eq(accounts.id, toId));
-  });
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function rpcGetAccount(args: Record<string, unknown>) {
   const id = Number(args.id);
   if (!Number.isInteger(id)) throw new Error('invalid id');
 
-  const rows = await db
-    .select()
-    .from(accounts)
-    .where(eq(accounts.id, id))
-    .limit(1);
+  const rowsResult = await pool.query<{ id: number; balance: string }>({
+    name: PREPARED.getAccountById.name,
+    text: PREPARED.getAccountById.text,
+    values: [id],
+  });
+  const rows = rowsResult.rows;
 
   if (rows.length === 0) return null;
   const row = rows[0]!;

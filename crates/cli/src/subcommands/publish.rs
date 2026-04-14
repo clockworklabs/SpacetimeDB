@@ -28,7 +28,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
         .key(Key::new("js_file").module_specific())
-        .key(Key::new("num_replicas"))
+        .key(Key::new("num_replicas").module_specific())
         .key(Key::new("break_clients"))
         .key(Key::new("anon_identity"))
         .key(Key::new("parent"))
@@ -429,13 +429,13 @@ async fn execute_publish_configs<'a>(
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
-        if let Some(path_to_project) = path_to_project.as_ref() {
-            if !path_to_project.exists() {
-                return Err(anyhow::anyhow!(
-                    "Project path does not exist: {}",
-                    path_to_project.display()
-                ));
-            }
+        if let Some(path_to_project) = path_to_project.as_ref()
+            && !path_to_project.exists()
+        {
+            return Err(anyhow::anyhow!(
+                "Project path does not exist: {}",
+                path_to_project.display()
+            ));
         }
 
         // Decide program file path and read program.
@@ -543,10 +543,10 @@ async fn execute_publish_configs<'a>(
                     println!("{op} database with identity: {database_identity}");
                 }
 
-                if is_maincloud_host(&database_host) {
-                    if let Some(domain) = domain.as_ref() {
-                        println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
-                    }
+                if is_maincloud_host(&database_host)
+                    && let Some(domain) = domain.as_ref()
+                {
+                    println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
                 }
             }
             PublishResult::PermissionDenied { name } => {

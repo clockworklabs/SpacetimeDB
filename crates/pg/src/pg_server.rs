@@ -73,9 +73,8 @@ pub(crate) fn to_rows(
     let mut results = Vec::with_capacity(stmt.rows.len());
     let ty = Typespace::EMPTY.with_type(&stmt.schema);
 
+    let mut encoder = DataRowEncoder::new(header.clone());
     for row in stmt.rows {
-        let mut encoder = DataRowEncoder::new(header.clone());
-
         for (idx, value) in ty.with_values(&row).enumerate() {
             let ty = satn::PsqlType {
                 client: PsqlClient::Postgres,
@@ -86,7 +85,7 @@ pub(crate) fn to_rows(
             let mut fmt = PsqlFormatter { encoder: &mut encoder };
             value.serialize(TypedSerializer { ty: &ty, f: &mut fmt })?;
         }
-        results.push(encoder.finish());
+        results.push(Ok(encoder.take_row()));
     }
     Ok(stream::iter(results))
 }
@@ -246,10 +245,13 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 // We don't support `METADATA_USER` because we don't have a user management system.
                 let database = param(METADATA_DATABASE)?;
                 let pwd = pwd.into_password()?;
-                if let Ok(application_name) = param("application_name") {
-                    log::info!("PG: Connecting to database: {database}, by {application_name}",);
-                } else {
-                    log::info!("PG: Connecting to database: {database}");
+                match param("application_name") {
+                    Ok(application_name) => {
+                        log::info!("PG: Connecting to database: {database}, by {application_name}",);
+                    }
+                    _ => {
+                        log::info!("PG: Connecting to database: {database}");
+                    }
                 }
 
                 let name = database::NameOrIdentity::Name(DatabaseName(database.clone()));

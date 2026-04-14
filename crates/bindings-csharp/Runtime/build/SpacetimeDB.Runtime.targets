@@ -22,6 +22,7 @@
     <WasmImport Include="$(SpacetimeNamespace)!console_timer_start" />
     <WasmImport Include="$(SpacetimeNamespace)!console_timer_end" />
     <WasmImport Include="$(SpacetimeNamespace)!volatile_nonatomic_schedule_immediate" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_clear" />
 
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />

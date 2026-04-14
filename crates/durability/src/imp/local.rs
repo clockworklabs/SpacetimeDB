@@ -1,13 +1,11 @@
 use std::{
     io,
-    num::NonZeroU16,
-    panic,
+    num::NonZeroUsize,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering::Relaxed},
         Arc,
     },
-    time::Duration,
 };
 
 use futures::{FutureExt as _, TryFutureExt as _};
@@ -21,29 +19,47 @@ use thiserror::Error;
 use tokio::{
     sync::{futures::OwnedNotified, mpsc, oneshot, watch, Notify},
     task::{spawn_blocking, AbortHandle},
-    time::{interval, MissedTickBehavior},
 };
 use tracing::{instrument, Span};
 
-use crate::{Close, Durability, DurableOffset, History, TxOffset};
+use crate::{Close, Durability, DurableOffset, History, PreparedTx, TxOffset};
 
 pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
-    /// Periodically flush and sync the log this often.
+    /// The number of elements to reserve for batching transactions.
     ///
-    /// Default: 10ms
-    pub sync_interval: Duration,
+    /// This puts an upper bound on the buffer capacity, while not preventing
+    /// reallocations when the number of queued transactions exceeds it.
+    ///
+    /// In other words, the durability actor will attempt to receive all
+    /// transactions that are currently in the queue, but shrink the buffer to
+    /// `batch_capacity` if it had to make additional space during a burst.
+    ///
+    /// The internal queue of [Local] is bounded to
+    /// `Options::QUEUE_CAPACITY_MULTIPLIER * batch_capacity`.
+    ///
+    /// Default: 4096
+    pub batch_capacity: NonZeroUsize,
     /// [`Commitlog`] configuration.
     pub commitlog: spacetimedb_commitlog::Options,
+}
+
+impl Options {
+    pub const DEFAULT_BATCH_CAPACITY: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
+    pub const QUEUE_CAPACITY_MULTIPLIER: usize = 4;
+
+    fn queue_capacity(self) -> usize {
+        Self::QUEUE_CAPACITY_MULTIPLIER * self.batch_capacity.get()
+    }
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
-            sync_interval: Duration::from_millis(10),
+            batch_capacity: Self::DEFAULT_BATCH_CAPACITY,
             commitlog: Default::default(),
         }
     }
@@ -79,9 +95,11 @@ pub struct Local<T> {
     /// Backlog of transactions to be written to disk by the background
     /// [`PersisterTask`].
     ///
-    /// Note that this is unbounded!
-    queue: mpsc::UnboundedSender<Txdata<T>>,
-    /// How many transactions are sitting in the `queue`.
+    /// The queue is bounded to
+    /// `Options::QUEUE_CAPACITY_MULTIPLIER * Options::batch_capacity`.
+    queue: async_channel::Sender<PreparedTx<Txdata<T>>>,
+    /// How many transactions are pending durability, including items buffered
+    /// in the queue and items currently being written by the actor.
     ///
     /// This is mainly for observability purposes, and can thus be updated with
     /// relaxed memory ordering.
@@ -118,7 +136,8 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             opts.commitlog,
             on_new_segment,
         )?);
-        let (queue, txdata_rx) = mpsc::unbounded_channel();
+        let queue_capacity = opts.queue_capacity();
+        let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
@@ -131,8 +150,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                     durable_offset: durable_tx,
                     queue_depth: queue_depth.clone(),
 
-                    sync_interval: opts.sync_interval,
-                    max_records_in_commit: opts.commitlog.max_records_in_commit,
+                    batch_capacity: opts.batch_capacity,
 
                     lock,
                 }
@@ -151,7 +169,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain a read-only copy of the durable state that implements [History].
-    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> {
+    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T> {
         self.clog.clone()
     }
 }
@@ -164,7 +182,7 @@ impl<T: Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
+    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
@@ -190,8 +208,7 @@ struct Actor<T> {
     durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
 
-    sync_interval: Duration,
-    max_records_in_commit: NonZeroU16,
+    batch_capacity: NonZeroUsize,
 
     #[allow(unused)]
     lock: Lock,
@@ -201,13 +218,12 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(
         self,
-        mut txdata_rx: mpsc::UnboundedReceiver<Txdata<T>>,
+        transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>,
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
 
-        let mut sync_interval = interval(self.sync_interval);
-        sync_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut tx_buf = Vec::with_capacity(self.batch_capacity.get());
         // `flush_and_sync` when the loop exits without panicking,
         // or `flush_and_sync` inside the loop failed.
         let mut sync_on_exit = true;
@@ -217,38 +233,44 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                 // Biased towards the shutdown channel,
                 // so that we stop accepting new data promptly after
                 // `Durability::close` was called.
-                //
-                // Note that periodic `flush_and_sync` needs to be polled before
-                // the txdata channel, so that we don't delay `fsync(2)` under
-                // high transaction throughput.
                 biased;
 
                 Some(reply) = shutdown_rx.recv() => {
-                    txdata_rx.close();
+                    transactions_rx.close();
                     let _ = reply.send(self.lock.notified());
                 },
 
-                _ = sync_interval.tick() => {
+                // Pop as many elements from the channel as possible,
+                // potentially requiring the `tx_buf` to allocate additional
+                // capacity.
+                // We'll reclaim capacity in excess of `self.batch_size` below.
+                n = recv_many(&transactions_rx, &mut tx_buf, usize::MAX) => {
+                    if n == 0 {
+                        break;
+                    }
+                    if tx_buf.is_empty() {
+                        continue;
+                    }
+
+                    let clog = self.clog.clone();
+                    let ready_len = tx_buf.len();
+                    self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
+                    tx_buf = spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
+                        for tx in tx_buf.drain(..) {
+                            clog.commit([tx.into_transaction()])?;
+                        }
+                        Ok(tx_buf)
+                    })
+                    .await
+                    .expect("commitlog write panicked")
+                    .expect("commitlog write failed");
                     if self.flush_and_sync().await.is_err() {
                         sync_on_exit = false;
                         break;
                     }
-                },
-
-                data = txdata_rx.recv() => {
-                    let Some(txdata) = data else {
-                        break;
-                    };
-                    self.queue_depth.fetch_sub(1, Relaxed);
-                    // If we are writing one commit per tx, trying to buffer is
-                    // fairly pointless. Immediately flush instead.
-                    //
-                    // Otherwise, try `Commitlog::append` as a fast-path
-                    // that doesn't require `spawn_blocking`.
-                    if self.max_records_in_commit.get() == 1 {
-                        self.flush_append(txdata, true).await;
-                    } else if let Err(retry) = self.clog.append(txdata) {
-                        self.flush_append(retry, false).await
+                    // Reclaim burst capacity.
+                    if n < self.batch_capacity.get() {
+                        tx_buf.shrink_to(self.batch_capacity.get());
                     }
                 },
             }
@@ -262,36 +284,12 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     }
 
     #[instrument(skip_all)]
-    async fn flush_append(&self, txdata: Txdata<T>, flush_after: bool) {
-        let clog = self.clog.clone();
-        let span = Span::current();
-        spawn_blocking(move || {
-            let _span = span.enter();
-            let mut retry = Some(txdata);
-            while let Some(txdata) = retry.take() {
-                if let Err(error::Append { txdata, source }) = clog.append_maybe_flush(txdata) {
-                    flush_error("append-maybe-flush", &source);
-                    retry = Some(txdata);
-                }
-            }
-
-            if flush_after {
-                clog.flush()
-                    .map(drop)
-                    .unwrap_or_else(|e| flush_error("flush-after", &e));
-            }
-        })
-        .await
-        .expect("commitlog append blocking task panicked")
-    }
-
-    #[instrument(skip_all)]
     async fn flush_and_sync(&self) -> io::Result<Option<TxOffset>> {
         // Skip if nothing changed.
-        if let Some((committed, durable)) = self.clog.max_committed_offset().zip(*self.durable_offset.borrow()) {
-            if committed == durable {
-                return Ok(None);
-            }
+        if let Some((committed, durable)) = self.clog.max_committed_offset().zip(*self.durable_offset.borrow())
+            && committed == durable
+        {
+            return Ok(None);
         }
 
         let clog = self.clog.clone();
@@ -302,7 +300,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
         })
         .await
         .expect("commitlog flush-and-sync blocking task panicked")
-        .inspect_err(|e| flush_error("flush-and-sync", e))
+        .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
         .inspect(|maybe_offset| {
             if let Some(new_offset) = maybe_offset {
                 trace!("synced to offset {new_offset}");
@@ -342,25 +340,11 @@ impl Drop for Lock {
     }
 }
 
-/// Handle an error flushing the commitlog.
-///
-/// Panics if the error indicates that the log may be permanently unwritable.
-#[inline]
-#[track_caller]
-fn flush_error(task: &str, e: &io::Error) {
-    warn!("error flushing commitlog ({task}): {e:?}");
-    if matches!(e.kind(), io::ErrorKind::AlreadyExists | io::ErrorKind::StorageFull) {
-        panic!("{e}");
-    }
-}
-
 impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
-    fn append_tx(&self, tx: Self::TxData) {
-        if self.queue.send(tx).is_err() {
-            panic!("durability actor crashed");
-        }
+    fn append_tx(&self, tx: PreparedTx<Self::TxData>) {
+        self.queue.send_blocking(tx).expect("local durability: actor vanished");
         self.queue_depth.fetch_add(1, Relaxed);
     }
 
@@ -430,4 +414,29 @@ impl<T: Encode + 'static> History for Commitlog<Txdata<T>> {
 
         (min, max)
     }
+}
+
+/// Implement tokio's `recv_many` for an `async_channel` receiver.
+async fn recv_many<T>(chan: &async_channel::Receiver<T>, buf: &mut Vec<T>, limit: usize) -> usize {
+    let mut n = 0;
+    if !chan.is_empty() {
+        buf.reserve(chan.len().min(limit));
+        while n < limit {
+            let Ok(val) = chan.try_recv() else {
+                break;
+            };
+            buf.push(val);
+            n += 1;
+        }
+    }
+
+    if n == 0 {
+        let Ok(val) = chan.recv().await else {
+            return n;
+        };
+        buf.push(val);
+        n += 1;
+    }
+
+    n
 }

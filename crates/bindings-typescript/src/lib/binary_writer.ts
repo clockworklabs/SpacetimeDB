@@ -42,6 +42,10 @@ export default class BinaryWriter {
     this.buffer = typeof init === 'number' ? new ResizableBuffer(init) : init;
   }
 
+  clear() {
+    this.offset = 0;
+  }
+
   reset(buffer: ResizableBuffer) {
     this.buffer = buffer;
     this.offset = 0;

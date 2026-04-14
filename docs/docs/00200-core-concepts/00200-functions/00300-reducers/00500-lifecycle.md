@@ -114,7 +114,7 @@ The `init` reducer:
 - Failure prevents publishing or clearing
 
 :::tip Module Owner
-In the `init` reducer, `ctx.sender` is the **module owner** — the identity of the user who published the database. This is the only place where the owner identity is automatically provided, so if you need to reference it later (e.g. for authorization), store it in a table during `init`:
+In the `init` reducer, `ctx.sender()` is the **module owner** — the identity of the user who published the database. This is the only place where the owner identity is automatically provided, so if you need to reference it later (e.g. for authorization), store it in a table during `init`:
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -169,7 +169,7 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 </TabItem>
 </Tabs>
 
-You can then check `ctx.sender` against the stored owner identity in other reducers to restrict admin-only operations.
+You can then check `ctx.sender()` against the stored owner identity in other reducers to restrict admin-only operations.
 :::
 
 ## Client Connected
@@ -256,7 +256,7 @@ SPACETIMEDB_TABLE(Session, sessions, Private);
 FIELD_PrimaryKey(sessions, connection_id);
 
 SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
-    LOG_INFO("Client connected: " + ctx.sender.to_string());
+    LOG_INFO("Client connected: " + ctx.sender().to_string());
     
     // ctx.connection_id is guaranteed to be present
     auto conn_id = ctx.connection_id.value();
@@ -264,7 +264,7 @@ SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
     // Initialize client session
     ctx.db[sessions].insert(Session{
         conn_id,
-        ctx.sender,
+        ctx.sender(),
         ctx.timestamp
     });
     
@@ -352,7 +352,7 @@ SPACETIMEDB_TABLE(Session, sessions, Private);
 FIELD_PrimaryKey(sessions, connection_id);
 
 SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
-    LOG_INFO("Client disconnected: " + ctx.sender.to_string());
+    LOG_INFO("Client disconnected: " + ctx.sender().to_string());
     
     // ctx.connection_id is guaranteed to be present
     auto conn_id = ctx.connection_id.value();

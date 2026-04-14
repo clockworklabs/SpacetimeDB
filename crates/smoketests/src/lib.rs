@@ -772,6 +772,8 @@ impl Smoketest {
 
     /// Initializes, writes, and publishes a TypeScript module from source.
     ///
+    /// Will publish with the `--clear-database` flag.
+    ///
     /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
     /// On success this updates `self.database_identity`.
     pub fn publish_typescript_module_source(
@@ -779,6 +781,22 @@ impl Smoketest {
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
+    ) -> Result<String> {
+        self.publish_typescript_module_source_clear(project_dir_name, module_name, module_source, true)
+    }
+
+    /// Initializes, writes, and publishes a TypeScript module from source.
+    ///
+    /// If `clear` is `true`, this will publish with the `--clear-database` flag.
+    ///
+    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
+    /// On success this updates `self.database_identity`.
+    pub fn publish_typescript_module_source_clear(
+        &mut self,
+        project_dir_name: &str,
+        module_name: &str,
+        module_source: &str,
+        clear: bool,
     ) -> Result<String> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid TypeScript project path")?;
@@ -803,16 +821,19 @@ impl Smoketest {
         pnpm(&["install", ts_bindings_path], &module_path)?;
 
         let module_path_str = module_path.to_str().context("Invalid TypeScript module path")?;
-        let publish_output = self.spacetime(&[
+        let mut publish_args = vec![
             "publish",
             "--server",
             &self.server_url,
             "--module-path",
             module_path_str,
             "--yes",
-            "--clear-database",
-            module_name,
-        ])?;
+        ];
+        if clear {
+            publish_args.push("--clear-database");
+        }
+        publish_args.push(module_name);
+        let publish_output = self.spacetime(&publish_args)?;
 
         let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
         let identity = re

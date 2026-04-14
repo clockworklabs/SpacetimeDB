@@ -890,14 +890,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
         }
 
-        if let Some(default_value) = &default_value {
-            if auto_inc.is_some() || primary_key.is_some() || unique.is_some() {
-                return Err(syn::Error::new(
-                    default_value.span(),
-                    "invalid combination: auto_inc, unique index or primary key cannot have a default value",
-                ));
-            };
-        }
+        if let Some(default_value) = &default_value
+            && (auto_inc.is_some() || primary_key.is_some() || unique.is_some())
+        {
+            return Err(syn::Error::new(
+                default_value.span(),
+                "invalid combination: auto_inc, unique index or primary key cannot have a default value",
+            ));
+        };
 
         let column = Column {
             index: col_num,
@@ -1146,7 +1146,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
 
     let describe_table_func = quote! {
-        #[export_name = #register_describer_symbol]
+        #[unsafe(export_name = #register_describer_symbol)]
         extern "C" fn __register_describer() {
             spacetimedb::rt::register_table::<#tablehandle_ident>()
         }
@@ -1302,6 +1302,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
 
             impl #viewhandle_ident {
+                #[inline]
+                pub fn count(&self) -> u64 {
+                    spacetimedb::table::count::<#tablehandle_ident>()
+                }
+
                 #(#index_accessors_ro)*
             }
 

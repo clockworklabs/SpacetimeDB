@@ -53,16 +53,18 @@ namespace SpacetimeDB {
  * @endcode
  */
 struct ProcedureContext {
+private:
     // Caller's identity - who invoked this procedure
-    Identity sender;
-    
+    Identity sender_;
+
+public:
     // Timestamp when the procedure was invoked
     Timestamp timestamp;
-    
+
     // Connection ID for the caller
     // Used to track which client connection initiated this procedure
     ConnectionId connection_id;
-    
+
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
     // HTTP client for making external requests
     // IMPORTANT: HTTP calls are NOT allowed inside transactions!
@@ -81,7 +83,11 @@ public:
     ProcedureContext() = default;
     
     ProcedureContext(Identity s, Timestamp t, ConnectionId conn_id)
-        : sender(s), timestamp(t), connection_id(conn_id) {}
+        : sender_(s), timestamp(t), connection_id(conn_id) {}
+
+    Identity sender() const {
+        return sender_;
+    }
 
     /**
      * @brief Read the current module's Identity
@@ -197,7 +203,7 @@ public:
         // Create a ReducerContext for this transaction
         // Note: connection_id converted to std::optional
         ReducerContext reducer_ctx(
-            sender,
+            sender(),
             std::optional<ConnectionId>(connection_id),
             Timestamp::from_micros_since_epoch(tx_timestamp)
         );
@@ -260,7 +266,7 @@ public:
         
         // Create a ReducerContext for this transaction
         ReducerContext reducer_ctx(
-            sender,
+            sender(),
             std::optional<ConnectionId>(connection_id),
             Timestamp::from_micros_since_epoch(tx_timestamp)
         );

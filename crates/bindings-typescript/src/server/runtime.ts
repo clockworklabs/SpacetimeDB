@@ -1,4 +1,5 @@
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
+import * as _syscalls2_1 from 'spacetime:sys@2.1';
 
 import type { ModuleHooks, u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import {
@@ -45,7 +46,7 @@ import type { SchemaInner } from './schema';
 
 const { freeze } = Object;
 
-export const sys = _syscalls2_0;
+export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -508,6 +509,7 @@ function makeTableView(
       );
       return count > 0;
     },
+    clear: () => sys.datastore_clear(table_id),
   };
 
   const tableView = Object.assign(
@@ -516,6 +518,7 @@ function makeTableView(
   ) as Table<any>;
 
   for (const indexDef of table.indexes) {
+    const accessorName = indexDef.accessorName!;
     const index_id = sys.index_id_from_name(indexDef.sourceName!);
 
     let column_ids: number[];
@@ -666,9 +669,37 @@ function makeTableView(
       index = base as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
       // numColumns == 1
+
+      const serializeSingleRange = !isHashIndex
+        ? (buffer: ResizableBuffer, range: Range<any>): IndexScanArgs => {
+            BINARY_WRITER.reset(buffer);
+            const writer = BINARY_WRITER;
+            const writeBound = (bound: Bound<any>) => {
+              const tags = { included: 0, excluded: 1, unbounded: 2 };
+              writer.writeU8(tags[bound.tag]);
+              if (bound.tag !== 'unbounded')
+                serializeSingleElement!(writer, bound.value);
+            };
+            writeBound(range.from);
+            const rstartLen = writer.offset;
+            writeBound(range.to);
+            const rendLen = writer.offset - rstartLen;
+            return [0, 0, rstartLen, rendLen];
+          }
+        : null;
+
       const rawIndex = {
         filter: (range: any): IteratorObject<RowType<any>> => {
           const buf = LEAF_BUF;
+          if (serializeSingleRange && range instanceof Range) {
+            const args = serializeSingleRange(buf, range);
+            const iter_id = sys.datastore_index_scan_range_bsatn(
+              index_id,
+              buf.buffer,
+              ...args
+            );
+            return tableIterator(iter_id, deserializeRow);
+          }
           const point_len = serializeSinglePoint(buf, range);
           const iter_id = sys.datastore_index_scan_point_bsatn(
             index_id,
@@ -679,6 +710,14 @@ function makeTableView(
         },
         delete: (range: any): u32 => {
           const buf = LEAF_BUF;
+          if (serializeSingleRange && range instanceof Range) {
+            const args = serializeSingleRange(buf, range);
+            return sys.datastore_delete_by_index_scan_range_bsatn(
+              index_id,
+              buf.buffer,
+              ...args
+            );
+          }
           const point_len = serializeSinglePoint(buf, range);
           return sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
@@ -795,10 +834,13 @@ function makeTableView(
       } as RangedIndex<any, any>;
     }
 
-    if (Object.hasOwn(tableView, indexDef.accessorName!)) {
-      freeze(Object.assign(tableView[indexDef.accessorName!], index));
+    // IMPORTANT: duplicate accessor handling.
+    // When multiple raw indexes share the same accessor name, we merge index
+    // methods onto a single accessor object instead of throwing.
+    if (Object.hasOwn(tableView, accessorName)) {
+      freeze(Object.assign((tableView as any)[accessorName], index));
     } else {
-      tableView[indexDef.accessorName!] = freeze(index) as any;
+      (tableView as any)[accessorName] = freeze(index);
     }
   }
 

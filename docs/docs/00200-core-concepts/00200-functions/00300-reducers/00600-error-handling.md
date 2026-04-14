@@ -119,7 +119,7 @@ pub fn transfer_credits(
   FIELD_PrimaryKey(users, identity);
 
   SPACETIMEDB_REDUCER(transfer_credits, ReducerContext ctx, Identity to_user, uint32_t amount) {
-    auto from_user = ctx.db[users_identity].find(ctx.sender);
+    auto from_user = ctx.db[users_identity].find(ctx.sender());
     if (!from_user) {
       return Err("User not found");
     }

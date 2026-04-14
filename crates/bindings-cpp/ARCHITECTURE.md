@@ -77,7 +77,7 @@ SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     }
     
     // Success path
-    ctx.db[user].insert(User{ctx.sender, name, false});
+    ctx.db[user].insert(User{ctx.sender(), name, false});
     return Ok();  // No value needed - just success
 }
 ```

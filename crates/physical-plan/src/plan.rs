@@ -575,6 +575,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -587,6 +588,7 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
+                    rhs_prefix,
                     rhs_field,
                     unique,
                     lhs_field,
@@ -769,10 +771,10 @@ impl PhysicalPlan {
         match self {
             Self::Filter(input, expr) => {
                 expr.visit(&mut |expr| {
-                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr {
-                        if !reqs.contains(var) {
-                            reqs.push(*var);
-                        }
+                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr
+                        && !reqs.contains(var)
+                    {
+                        reqs.push(*var);
                     }
                 });
                 Self::Filter(Box::new(input.introduce_semijoins(reqs)), expr)
@@ -954,12 +956,11 @@ impl PhysicalPlan {
             Self::Filter(input, expr) => {
                 let mut cols: Vec<_> = cols.iter().collect();
                 expr.visit(&mut |plan| {
-                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan {
-                        if let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value) {
-                            if proj.label == *label {
-                                cols.push(proj.field_pos.into());
-                            }
-                        }
+                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan
+                        && let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value)
+                        && proj.label == *label
+                    {
+                        cols.push(proj.field_pos.into());
                     }
                 });
                 input.returns_distinct_values(label, &ColSet::from_iter(cols))
@@ -1253,6 +1254,8 @@ pub struct IxJoin {
     pub rhs_label: Label,
     /// The index id
     pub rhs_index: IndexId,
+    /// Optional constant prefix values for multi-column index probes.
+    pub rhs_prefix: Vec<AlgebraicValue>,
     /// The index field
     pub rhs_field: ColId,
     /// Is the index a unique constraint index?
@@ -1499,7 +1502,7 @@ mod tests {
     ) -> TableOrViewSchema {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            TableName::for_test(table_name),
+            TableName::new(Identifier::for_test(table_name)),
             None,
             columns
                 .iter()
