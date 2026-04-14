@@ -118,9 +118,7 @@ impl SnapshotWorker {
     /// Panics if the snapshot worker has closed the receive end of its queue(s),
     /// which is likely due to it having panicked.
     pub fn request_snapshot(&self) {
-        self.request_snapshot
-            .unbounded_send(Request::TakeSnapshot)
-            .expect("snapshot worker panicked");
+        // Temporary kill switch: ignore all snapshot requests.
     }
 
     /// Like [`Self::request_snapshot`], but doesn't propogate panics from the worker.
@@ -128,7 +126,7 @@ impl SnapshotWorker {
     /// Used by the durability to request snapshots on commitlog segment rotation,
     /// since the durability should continue writing queued TXes even if the snapshot worker panics.
     pub fn request_snapshot_ignore_closed(&self) {
-        let _ = self.request_snapshot.unbounded_send(Request::TakeSnapshot);
+        // Temporary kill switch: ignore all snapshot requests.
     }
 
     /// Subscribe to the [TxOffset]s of snapshots created by this worker.
@@ -160,7 +158,7 @@ impl SnapshotMetrics {
 type WeakDatabaseState = Weak<RwLock<CommittedState>>;
 
 enum Request {
-    TakeSnapshot,
+    // TakeSnapshot,
     ReplaceState(SnapshotDatabaseState),
 }
 
