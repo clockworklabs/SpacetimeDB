@@ -170,37 +170,57 @@ async fn run_idc_loop(
     load_pending_into_targets(&db, &mut db_queues);
 
     loop {
-        // Deliver one message per ready target, then re-check.
-        let mut any_delivered = true;
-        while any_delivered {
-            any_delivered = false;
-            for queue in db_queues.values_mut() {
-                if !queue.is_ready() {
-                    continue;
+        // One delivery attempt per ready target — fair round-robin across all targets.
+        // Each target gets exactly one shot per pass regardless of how busy it is,
+        // preventing a constantly-busy target from starving others.
+        let mut any_delivered = false;
+        for queue in db_queues.values_mut() {
+            if !queue.is_ready() {
+                continue;
+            }
+            let Some(msg) = queue.queue.front().cloned() else {
+                continue;
+            };
+
+            // If the outbox row was deleted before we could deliver, skip the
+            // HTTP call entirely. ST_OUTBOUND_MSG was already cleaned up by
+            // load_pending_into_targets when it detected the missing row.
+            if !outbox_row_exists(&db, msg.outbox_table_id, msg.row_id) {
+                log::debug!(
+                    "idc_actor: outbox row already deleted for msg_id={}; skipping delivery",
+                    msg.msg_id,
+                );
+                queue.queue.pop_front();
+                any_delivered = true;
+                continue;
+            }
+
+            let outcome = attempt_delivery(&client, &config, &msg).await;
+            match outcome {
+                DeliveryOutcome::TransportError(reason) => {
+                    log::warn!(
+                        "idc_actor: transport error delivering msg_id={} to {}: {reason}",
+                        msg.msg_id,
+                        msg.target_db_identity.to_hex(),
+                    );
+                    queue.record_transport_error();
+                    // Do NOT pop the front — keep retrying this message for this target.
                 }
-                let Some(msg) = queue.queue.front().cloned() else {
-                    continue;
-                };
-                let outcome = attempt_delivery(&client, &config, &msg).await;
-                match outcome {
-                    DeliveryOutcome::TransportError(reason) => {
-                        log::warn!(
-                            "idc_actor: transport error delivering msg_id={} to {}: {reason}",
-                            msg.msg_id,
-                            msg.target_db_identity.to_hex(),
-                        );
-                        queue.record_transport_error();
-                        // Do NOT pop the front — keep retrying this message for this target.
-                    }
-                    outcome => {
-                        queue.queue.pop_front();
-                        queue.record_success();
-                        any_delivered = true;
-                        let (result_status, result_payload) = outcome_to_result(&outcome);
-                        finalize_message(&db, &module_host, &msg, result_status, result_payload).await;
-                    }
+                outcome => {
+                    queue.queue.pop_front();
+                    queue.record_success();
+                    any_delivered = true;
+                    let (result_status, result_payload) = outcome_to_result(&outcome);
+                    finalize_message(&db, &module_host, &msg, result_status, result_payload).await;
                 }
             }
+        }
+
+        // If any target made progress, skip sleeping and immediately run another pass
+        // so queues drain as fast as possible.
+        if any_delivered {
+            load_pending_into_targets(&db, &mut db_queues);
+            continue;
         }
 
         // Compute how long to sleep: min over all blocked targets' unblock times.
@@ -213,8 +233,6 @@ async fn run_idc_loop(
 
         // Wait for a notification or the next retry time.
         tokio::select! {
-            //TODO:(shub) optimise this to send new entry directly instead of calling
-            //`load_pending_into_targets`
             _ = notify_rx.recv() => {
                 // Drain all pending notifications (coalesce bursts).
                 while notify_rx.try_recv().is_ok() {}
@@ -376,75 +394,89 @@ async fn finalize_message(
     result_status: StInboundMsgResultStatus,
     result_payload: Bytes,
 ) {
-    // Call the on_result reducer if configured.
-    if let Some(on_result_reducer) = &msg.on_result_reducer {
-        let Some(host) = module_host.upgrade() else {
-            log::warn!(
-                "idc_actor: module host gone, cannot call on_result reducer '{}' for msg_id={}",
+    // If there is no on_result_reducer, just delete the outbound message and return.
+    let Some(on_result_reducer) = &msg.on_result_reducer else {
+        delete_message(db, msg.msg_id);
+        return;
+    };
+
+    // Check whether the outbox row still exists. The user may have deleted it between
+    // the time it was queued and now; in that case skip the callback — there is nothing
+    // to report back to and the ST_OUTBOUND_MSG entry was already cleaned up by
+    // `load_pending_into_targets`.
+    if !outbox_row_exists(db, msg.outbox_table_id, msg.row_id) {
+        log::debug!(
+            "idc_actor: outbox row already deleted for msg_id={}; skipping on_result reducer '{}'",
+            msg.msg_id,
+            on_result_reducer,
+        );
+        // ST_OUTBOUND_MSG was already deleted by load_pending_into_targets when it
+        // detected the missing row, so there is nothing left to clean up here.
+        return;
+    }
+
+    let Some(host) = module_host.upgrade() else {
+        log::warn!(
+            "idc_actor: module host gone, cannot call on_result reducer '{}' for msg_id={}",
+            on_result_reducer,
+            msg.msg_id,
+        );
+        delete_message(db, msg.msg_id);
+        return;
+    };
+
+    let mut args_bytes = Vec::new();
+    if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &msg.request_row) {
+        log::error!(
+            "idc_actor: failed to encode on_result args for msg_id={}: {e}",
+            msg.msg_id
+        );
+        delete_message(db, msg.msg_id);
+        return;
+    }
+
+    let result_arg: Result<(), String> = match result_status {
+        StInboundMsgResultStatus::Success => Ok(()),
+        StInboundMsgResultStatus::ReducerError => Err(String::from_utf8_lossy(&result_payload).into_owned()),
+    };
+    if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &result_arg) {
+        log::error!(
+            "idc_actor: failed to encode on_result result arg for msg_id={}: {e}",
+            msg.msg_id
+        );
+        delete_message(db, msg.msg_id);
+        return;
+    }
+
+    let caller_identity = Identity::ZERO; // system call
+    let result = host
+        .call_reducer_with_success_action(
+            caller_identity,
+            None, // no connection_id
+            None, // no client sender
+            None, // no request_id
+            None, // no timer
+            on_result_reducer,
+            FunctionArgs::Bsatn(bytes::Bytes::from(args_bytes)),
+            ReducerSuccessActionKind::DeleteOutboundMsg(msg.msg_id),
+        )
+        .await;
+
+    match result {
+        Ok(_) => {
+            log::debug!(
+                "idc_actor: on_result reducer '{}' called for msg_id={}",
                 on_result_reducer,
                 msg.msg_id,
             );
+        }
+        Err(e) => {
             delete_message(db, msg.msg_id);
-            return;
-        };
-
-        let mut args_bytes = Vec::new();
-        if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &msg.request_row) {
             log::error!(
-                "idc_actor: failed to encode on_result args for msg_id={}: {e}",
-                msg.msg_id
-            );
-            delete_message(db, msg.msg_id);
-            return;
-        }
-        match result_status {
-            StInboundMsgResultStatus::Success => {
-                args_bytes.push(0);
-                args_bytes.extend_from_slice(&result_payload);
-            }
-            StInboundMsgResultStatus::ReducerError => {
-                let err = String::from_utf8_lossy(&result_payload).into_owned();
-                if let Err(e) = spacetimedb_sats::bsatn::to_writer(&mut args_bytes, &Err::<(), String>(err)) {
-                    log::error!(
-                        "idc_actor: failed to encode on_result error args for msg_id={}: {e}",
-                        msg.msg_id
-                    );
-                    delete_message(db, msg.msg_id);
-                    return;
-                }
-            }
-        }
-
-        let caller_identity = Identity::ZERO; // system call
-        let result = host
-            .call_reducer_with_success_action(
-                caller_identity,
-                None, // no connection_id
-                None, // no client sender
-                None, // no request_id
-                None, // no timer
+                "idc_actor: on_result reducer '{}' failed for msg_id={}: {e:?}",
                 on_result_reducer,
-                FunctionArgs::Bsatn(bytes::Bytes::from(args_bytes)),
-                ReducerSuccessActionKind::DeleteOutboundMsg(msg.msg_id),
-            )
-            .await;
-
-        match result {
-            Ok(_) => {
-                log::debug!(
-                    "idc_actor: on_result reducer '{}' called for msg_id={}",
-                    on_result_reducer,
-                    msg.msg_id,
-                );
-            }
-            Err(e) => {
-                delete_message(db, msg.msg_id);
-                log::error!(
-                    "idc_actor: on_result reducer '{}' failed for msg_id={}: {e:?}",
-                    on_result_reducer,
-                    msg.msg_id,
-                );
-            }
+                msg.msg_id,
+            );
         }
     }
 }
@@ -507,12 +539,16 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Identity
             .and_then(|mut iter| iter.next());
 
         let Some(outbox_row_ref) = outbox_row else {
-            log::error!(
-                "idc_actor: outbox row not found in table {:?} for row_id={} (msg_id={})",
+            // The outbox row was explicitly deleted by the user; clean up the
+            // now-orphaned ST_OUTBOUND_MSG entry so it is never retried.
+            log::warn!(
+                "idc_actor: outbox row not found in table {:?} for row_id={} (msg_id={}); \
+                 deleting orphaned ST_OUTBOUND_MSG entry",
                 outbox_table_id,
                 st_row.row_id,
                 st_row.msg_id,
             );
+            delete_message(db, st_row.msg_id);
             continue;
         };
 
@@ -615,6 +651,15 @@ async fn attempt_delivery(client: &reqwest::Client, config: &IdcActorConfig, msg
             }
         }
     }
+}
+
+/// Returns `true` if the outbox row identified by `(table_id, row_id)` still exists.
+fn outbox_row_exists(db: &RelationalDB, table_id: TableId, row_id: u64) -> bool {
+    let tx = db.begin_tx(Workload::Internal);
+    db.iter_by_col_eq(&tx, table_id, ColId(0), &AlgebraicValue::U64(row_id))
+        .ok()
+        .and_then(|mut iter| iter.next())
+        .is_some()
 }
 
 /// Delete a message from ST_OUTBOUND_MSG within a new transaction.

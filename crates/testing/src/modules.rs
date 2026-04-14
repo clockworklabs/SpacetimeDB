@@ -209,6 +209,7 @@ impl CompiledModule {
         )
         .await
         .unwrap();
+        env.set_idc_http_port(80).unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
