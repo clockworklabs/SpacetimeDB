@@ -19,12 +19,18 @@ def _append_to_file(path: Path, content: str):
         f.write(content)
 
 
-def _parse_quickstart(doc_path: Path, language: str, module_name: str) -> str:
+def _parse_quickstart(doc_path: Path, language: str, module_name: str, server: bool) -> str:
     """Extract code blocks from `quickstart.md` docs.
     This will replicate the steps in the quickstart guide, so if it fails the quickstart guide is broken.
     """
     content = Path(doc_path).read_text()
-    codeblock_lang = "ts" if language == "typescript" else language
+
+    # append " server" to the codeblock language if we're extracting server code
+    if server:
+        codeblock_lang = "ts server" if language == "typescript" else f"{language} server"
+    else:
+        codeblock_lang = "ts" if language == "typescript" else language
+
     blocks = re.findall(rf"```{codeblock_lang}\n(.*?)\n```", content, re.DOTALL)
 
     end = ""
@@ -32,7 +38,7 @@ def _parse_quickstart(doc_path: Path, language: str, module_name: str) -> str:
         found = False
         filtered_blocks = []
         for block in blocks:
-            # The doc first create an empy class Module, so we need to fixup the closing
+            # The doc first create an empty class Module, so we need to fixup the closing
             if "partial class Module" in block:
                 block = block.replace("}", "")
                 end = "\n}"
@@ -51,6 +57,18 @@ def load_nuget_config(p: Path):
             return xmltodict.parse(f.read(), force_list=["add", "packageSource", "package"])
     return {}
 
+
+def _nuget_config_path(project_dir: Path) -> Path:
+    p_upper = project_dir / "NuGet.Config"
+    if p_upper.exists():
+        return p_upper
+
+    p_lower = project_dir / "nuget.config"
+    if p_lower.exists():
+        return p_lower
+
+    return p_upper
+
 def save_nuget_config(p: Path, doc: dict):
     # Write back (pretty, UTF-8, no BOM)
     xml = xmltodict.unparse(doc, pretty=True)
@@ -60,8 +78,8 @@ def add_source(doc: dict, *, key: str, path: str) -> None:
     cfg = doc.setdefault("configuration", {})
     sources = cfg.setdefault("packageSources", {})
     source_entries = sources.setdefault("add", [])
-    source = {"@key": key, "@value": path}
-    source_entries.append(source)
+
+    source_entries.append({"@key": key, "@value": str(path)})
 
 def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
     cfg = doc.setdefault("configuration", {})
@@ -84,12 +102,25 @@ def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
 def override_nuget_package(*, project_dir: Path, package: str, source_dir: Path, build_subdir: str):
     """Override nuget config to use a local NuGet package on a .NET project"""
     # Make sure the local package is built
-    run_cmd("dotnet", "pack", cwd=source_dir)
+    repo_nuget_config = STDB_DIR / "NuGet.Config"
+    if repo_nuget_config.exists():
+        run_cmd(
+            "dotnet",
+            "restore",
+            "--configfile",
+            str(repo_nuget_config),
+            cwd=source_dir,
+            capture_stderr=True,
+        )
+        run_cmd("dotnet", "pack", "-c", "Release", "--no-restore", cwd=source_dir)
+    else:
+        run_cmd("dotnet", "pack", "-c", "Release", cwd=source_dir)
 
-    p = Path(project_dir) / "nuget.config"
+    p = _nuget_config_path(Path(project_dir))
     doc = load_nuget_config(p)
     add_source(doc, key=package, path=source_dir/build_subdir)
     add_mapping(doc, key=package, pattern=package)
+    add_source(doc, key="nuget.org", path="https://api.nuget.org/v3/index.json")
     # Fallback for other packages
     add_mapping(doc, key="nuget.org", pattern="*")
     save_nuget_config(p, doc)
@@ -148,7 +179,7 @@ class BaseQuickstart(Smoketest):
         )
         self.project_path = server_path / "spacetimedb"
         shutil.copy2(STDB_DIR / "rust-toolchain.toml", self.project_path)
-        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name))
+        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name, server=True))
         self.server_postprocess(self.project_path)
         self.spacetime("build", "-d", "-p", self.project_path, capture_stderr=True)
 
@@ -174,10 +205,10 @@ class BaseQuickstart(Smoketest):
         self.spacetime(
             "generate", "--lang", client_lang,
             "--out-dir", client_path / self.module_bindings,
-            "--project-path", self.project_path, capture_stderr=True
+            "--module-path", self.project_path, capture_stderr=True
         )
         # Replay the quickstart guide steps
-        main = _parse_quickstart(self.client_doc, client_lang, self._module_name)
+        main = _parse_quickstart(self.client_doc, client_lang, self._module_name, server=False)
         for src, dst in self.replacements.items():
             main = main.replace(src, dst)
         main += "\n" + self.extra_code
@@ -194,8 +225,8 @@ class BaseQuickstart(Smoketest):
 
 class Rust(BaseQuickstart):
     lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/02-rust-quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/04-rust-quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
+    client_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
     server_file = "src/lib.rs"
     client_file = "src/main.rs"
     module_bindings = "src/module_bindings"
@@ -243,8 +274,8 @@ fn user_input_direct(ctx: &DbConnection) {
 
 class CSharp(BaseQuickstart):
     lang = "csharp"
-    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/04-csharp-quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/02-csharp-quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
+    client_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
     server_file = "Lib.cs"
     client_file = "Program.cs"
     module_bindings = "module_bindings"
@@ -356,7 +387,7 @@ Main();
 class TypeScript(Rust):
     lang = "typescript"
     client_lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/05-typescript-quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
     server_file = "src/index.ts"
 
     def server_postprocess(self, server_path: Path):

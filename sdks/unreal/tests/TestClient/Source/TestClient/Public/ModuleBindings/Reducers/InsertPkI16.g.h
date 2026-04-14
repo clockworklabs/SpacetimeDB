@@ -14,10 +14,10 @@ struct TESTCLIENT_API FInsertPkI16Args
     GENERATED_BODY()
 
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 N;
+    int16 N = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertPkI16Args() = default;
 
@@ -49,9 +49,9 @@ class TESTCLIENT_API UInsertPkI16Reducer : public UReducerBase
 
 public:
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 N;
+    int16 N = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeleteUniqueBoolArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    bool B;
+    bool B = false;
 
     FDeleteUniqueBoolArgs() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UDeleteUniqueBoolReducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    bool B;
+    bool B = false;
 
 };
 

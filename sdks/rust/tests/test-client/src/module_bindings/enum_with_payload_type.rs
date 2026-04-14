@@ -47,6 +47,8 @@ pub enum EnumWithPayload {
 
     Timestamp(__sdk::Timestamp),
 
+    Uuid(__sdk::Uuid),
+
     Bytes(Vec<u8>),
 
     Ints(Vec<i32>),

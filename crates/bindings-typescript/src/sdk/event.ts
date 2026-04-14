@@ -1,8 +1,18 @@
-import type { ReducerEvent, ReducerInfoType } from './reducer_event';
+import type { ReducerEvent } from './reducer_event';
+import type { ReducerEventInfo } from './reducers';
 
-export type Event<Reducer extends ReducerInfoType> =
-  | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
-  | { tag: 'SubscribeApplied' }
-  | { tag: 'UnsubscribeApplied' }
-  | { tag: 'Error'; value: Error }
-  | { tag: 'UnknownTransaction' };
+type WithId = {
+  /**
+   * A client-generated id to distinguish between different events.
+   */
+  id: string;
+};
+
+export type Event<Reducer extends ReducerEventInfo> = WithId &
+  (
+    | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
+    | { tag: 'SubscribeApplied' }
+    | { tag: 'UnsubscribeApplied' }
+    | { tag: 'Error'; value: Error }
+    | { tag: 'Transaction' }
+  );

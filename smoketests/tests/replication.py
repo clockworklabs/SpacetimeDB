@@ -158,7 +158,7 @@ class ReplicationTest(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{duration, ReducerContext, Table};
 
-#[spacetimedb::table(name = counter, public)]
+#[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
     #[auto_inc]
@@ -167,7 +167,7 @@ pub struct Counter {
     value: u64,
 }
 
-#[spacetimedb::table(name = schedule_counter, public, scheduled(increment, at = sched_at))]
+#[spacetimedb::table(accessor = schedule_counter, public, scheduled(increment, at = sched_at))]
 pub struct ScheduledCounter {
     #[primary_key]
     #[auto_inc]
@@ -207,7 +207,7 @@ fn start(ctx: &ReducerContext, id: u64, count: u64) {
     });
 }
 
-#[spacetimedb::table(name = message, public)]
+#[spacetimedb::table(accessor = message, public)]
 pub struct Message {
     #[primary_key]
     #[auto_inc]
@@ -490,7 +490,8 @@ class EnableDisableReplication(EnableReplicationTest):
         name = random_string()
 
         self.publish_module(name, num_replicas = 1)
-        self.cluster.wait_for_leader_change(None)
+        # ensure database is up and commitlog ends up non-empty
+        self.run_counter(1, 100)
 
         # suspend first
         self.call_control("suspend_database", {"Name": name})
@@ -500,7 +501,7 @@ class EnableDisableReplication(EnableReplicationTest):
         self.call_control("unsuspend_database", {"Name": name})
 
         self.cluster.wait_for_leader_change(None)
-        self.run_counter(1, 100)
+        self.run_counter(2, 100)
 
         self.call_control("disable_replication", {"Name": name})
-        self.run_counter(2, 100)
+        self.run_counter(3, 100)

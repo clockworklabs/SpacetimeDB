@@ -9,8 +9,8 @@ use std::collections::btree_map;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use itertools::Itertools;
 use spacetimedb_primitives::*;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
@@ -22,9 +22,11 @@ use spacetimedb_sats::Typespace;
 
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
-
-/// A not-yet-validated identifier.
-pub type RawIdentifier = Box<str>;
+use crate::db::raw_def::v10::RawConstraintDefV10;
+use crate::db::raw_def::v10::RawScopedTypeNameV10;
+use crate::db::raw_def::v10::RawSequenceDefV10;
+use crate::db::raw_def::v10::RawTypeDefV10;
+use crate::db::view::extract_view_return_product_type_ref;
 
 /// A not-yet-validated `sql`.
 pub type RawSql = Box<str>;
@@ -95,6 +97,41 @@ pub struct RawModuleDefV9 {
     ///
     /// Each definition must have a unique name.
     pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
+}
+
+impl RawModuleDefV9 {
+    /// Find a [`RawTableDefV9`] by name in this raw module def
+    fn find_table_def(&self, table_name: &str) -> Option<&RawTableDefV9> {
+        self.tables
+            .iter()
+            .find(|table_def| table_def.name.as_ref() == table_name)
+    }
+
+    /// Find a [`RawViewDefV9`] by name in this raw module def
+    fn find_view_def(&self, view_name: &str) -> Option<&RawViewDefV9> {
+        self.misc_exports.iter().find_map(|misc_export| match misc_export {
+            RawMiscModuleExportV9::View(view_def) if view_def.name.as_ref() == view_name => Some(view_def),
+            _ => None,
+        })
+    }
+
+    /// Find and return the product type ref for a table in this module def
+    fn type_ref_for_table(&self, table_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_table_def(table_name)
+            .map(|table_def| table_def.product_type_ref)
+    }
+
+    /// Find and return the product type ref for a view in this module def
+    fn type_ref_for_view(&self, view_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_view_def(view_name)
+            .map(|view_def| &view_def.return_type)
+            .and_then(|return_type| extract_view_return_product_type_ref(return_type).map(|(ref_, _)| ref_))
+    }
+
+    /// Find and return the product type ref for a table or view in this module def
+    pub fn type_ref_for_table_like(&self, name: &str) -> Option<AlgebraicTypeRef> {
+        self.type_ref_for_table(name).or_else(|| self.type_ref_for_view(name))
+    }
 }
 
 /// The definition of a database table.
@@ -213,7 +250,7 @@ pub struct RawSequenceDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
     /// If `None`, a nicely-formatted unique default will be chosen.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -245,7 +282,7 @@ pub struct RawSequenceDefV9 {
 pub struct RawIndexDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -277,7 +314,7 @@ pub enum RawIndexAlgorithm {
         /// The columns to index on. These are ordered.
         columns: ColList,
     },
-    /// Currently forbidden.
+    /// Implemented using a hashmap.
     Hash {
         /// The columns to index on. These are ordered.
         columns: ColList,
@@ -296,6 +333,11 @@ pub fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::BTree { columns: cols.into() }
 }
 
+/// Returns a hash index algorithm for the columns `cols`.
+pub fn hash(cols: impl Into<ColList>) -> RawIndexAlgorithm {
+    RawIndexAlgorithm::Hash { columns: cols.into() }
+}
+
 /// Returns a direct index algorithm for the column `col`.
 pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::Direct { column: col.into() }
@@ -312,7 +354,7 @@ pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
 pub struct RawScheduleDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The name of the reducer or procedure to call.
     ///
@@ -330,7 +372,7 @@ pub struct RawScheduleDefV9 {
 pub struct RawConstraintDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 
     /// The data for the constraint.
     pub data: RawConstraintDataV9,
@@ -482,6 +524,19 @@ pub struct RawViewDefV9 {
     /// All elements of the inner `ProductType` must have names.
     /// This again will be validated by the server on publish.
     pub return_type: AlgebraicType,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+pub enum ViewResultHeader {
+    // This means the row data will follow, as a bsatn-encoded Vec<RowType>.
+    // We could make RowData contain an Vec<u8> of the bytes, but that forces us to make an extra copy when we serialize and
+    // when we deserialize.
+    RowData,
+    // This means we the view wants to return the results of the sql query.
+    RawSql(String),
+    // We can add an option for parameterized queries later,
+    // which would make it easier to cache query plans on the host side.
 }
 
 /// A reducer definition.
@@ -641,7 +696,7 @@ impl RawModuleDefV9Builder {
         // Make the type into a ref.
         let name = *name_gen;
         let add_ty = core::mem::replace(ty, AlgebraicType::U8);
-        *ty = AlgebraicType::Ref(self.add_algebraic_type([], format!("gen_{name}"), add_ty, true));
+        *ty = AlgebraicType::Ref(self.add_algebraic_type([], RawIdentifier::new(format!("gen_{name}")), add_ty, true));
         *name_gen += 1;
     }
 
@@ -780,7 +835,11 @@ impl RawModuleDefV9Builder {
 /// TODO(1.0): build namespacing directly into the bindings macros so that we don't need to do this.
 pub fn sats_name_to_scoped_name(sats_name: &str) -> RawScopedTypeNameV9 {
     // We can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
-    let mut scope: Vec<RawIdentifier> = sats_name.split("::").flat_map(|s| s.split('.')).map_into().collect();
+    let mut scope: Vec<RawIdentifier> = sats_name
+        .split("::")
+        .flat_map(|s| s.split('.'))
+        .map(RawIdentifier::new)
+        .collect();
     // Unwrapping to "" will result in a validation error down the line, which is exactly what we want.
     let name = scope.pop().unwrap_or_default();
     RawScopedTypeNameV9 {
@@ -962,7 +1021,7 @@ impl RawTableDefBuilder<'_> {
         let column = column.as_ref();
         self.columns()?
             .iter()
-            .position(|x| x.name().is_some_and(|s| s == column))
+            .position(|x| x.has_name(column.as_ref()))
             .map(|x| x.into())
     }
 
@@ -981,5 +1040,46 @@ impl RawTableDefBuilder<'_> {
 impl Drop for RawTableDefBuilder<'_> {
     fn drop(&mut self) {
         self.module_def.tables.push(self.table.clone());
+    }
+}
+
+impl From<RawTypeDefV10> for RawTypeDefV9 {
+    fn from(raw: RawTypeDefV10) -> Self {
+        RawTypeDefV9 {
+            name: raw.source_name.into(),
+            ty: raw.ty,
+            custom_ordering: raw.custom_ordering,
+        }
+    }
+}
+
+impl From<RawScopedTypeNameV10> for RawScopedTypeNameV9 {
+    fn from(raw: RawScopedTypeNameV10) -> Self {
+        RawScopedTypeNameV9 {
+            scope: raw.scope,
+            name: raw.source_name,
+        }
+    }
+}
+
+impl From<RawConstraintDefV10> for RawConstraintDefV9 {
+    fn from(raw: RawConstraintDefV10) -> Self {
+        RawConstraintDefV9 {
+            name: raw.source_name,
+            data: raw.data,
+        }
+    }
+}
+
+impl From<RawSequenceDefV10> for RawSequenceDefV9 {
+    fn from(raw: RawSequenceDefV10) -> Self {
+        RawSequenceDefV9 {
+            name: raw.source_name,
+            column: raw.column,
+            start: raw.start,
+            min_value: raw.min_value,
+            max_value: raw.max_value,
+            increment: raw.increment,
+        }
     }
 }

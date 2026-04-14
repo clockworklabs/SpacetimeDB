@@ -36,4 +36,26 @@ namespace SpacetimeDB.Types
 
         public readonly ConfigHandle Config;
     }
+
+    public sealed class ConfigCols
+    {
+        public global::SpacetimeDB.Col<Config, int> Id { get; }
+        public global::SpacetimeDB.Col<Config, long> WorldSize { get; }
+
+        public ConfigCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<Config, int>(tableName, "id");
+            WorldSize = new global::SpacetimeDB.Col<Config, long>(tableName, "world_size");
+        }
+    }
+
+    public sealed class ConfigIxCols
+    {
+        public global::SpacetimeDB.IxCol<Config, int> Id { get; }
+
+        public ConfigIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<Config, int>(tableName, "id");
+        }
+    }
 }

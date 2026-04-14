@@ -54,12 +54,11 @@ class Permissions(Smoketest):
         self.new_identity()
 
         with self.assertRaises(Exception):
-            # TODO: This raises for the wrong reason - `--clear-database` doesn't exist anymore!
-            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--clear-database", "--yes")
+            self.spacetime("publish", self.database_identity, "--module-path", self.project_path, "--delete-data", "--yes")
 
-        # Check that this holds without `--clear-database`, too.
+        # Check that this holds without `--delete-data`, too.
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--yes")
+            self.spacetime("publish", self.database_identity, "--module-path", self.project_path, "--yes")
 
     def test_replace_names(self):
         """Test that you can't replace names of a database you don't own"""
@@ -81,12 +80,12 @@ class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = secret, private)]
+#[spacetimedb::table(accessor = secret, private)]
 pub struct Secret {
     answer: u8,
 }
 
-#[spacetimedb::table(name = common_knowledge, public)]
+#[spacetimedb::table(accessor = common_knowledge, public)]
 pub struct CommonKnowledge {
     thing: String,
 }

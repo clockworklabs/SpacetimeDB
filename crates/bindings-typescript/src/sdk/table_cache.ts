@@ -1,9 +1,20 @@
 import { EventEmitter } from './event_emitter.ts';
-import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
 
 import { stdbLogger } from './logger.ts';
-import type { ComparablePrimitive } from '../';
-import type { EventContextInterface } from './index.ts';
+import { deepEqual, type ComparablePrimitive } from '../';
+import type { EventContextInterface, TableDefForTableName } from './index.ts';
+import type { RowType, TableIndexes, UntypedTableDef } from '../lib/table.ts';
+import type { ClientTableCoreImplementable } from './client_table.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
+import type { TableNamesOf } from '../lib/schema.ts';
+import type {
+  ReadonlyIndex,
+  ReadonlyIndexes,
+  ReadonlyRangedIndex,
+  ReadonlyUniqueIndex,
+} from '../lib/indexes.ts';
+import type { Bound } from '../server/range.ts';
+import type { Prettify } from '../lib/type_util.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,
@@ -15,11 +26,9 @@ export type Operation<
   row: RowType;
 };
 
-export type TableUpdate<
-  RowType extends Record<string, any> = Record<string, any>,
-> = {
+export type TableUpdate<TableDef extends UntypedTableDef> = {
   tableName: string;
-  operations: Operation<RowType>[];
+  operations: Operation<RowType<TableDef>>[];
 };
 
 export type PendingCallback = {
@@ -27,14 +36,42 @@ export type PendingCallback = {
   table: string;
   cb: () => void;
 };
+
+// Strict scalar compare for index term values.
+const scalarCompare = (x: any, y: any): number => {
+  if (x === y) return 0;
+  // Compare booleans/numbers/bigints/strings with JS ordering.
+  return x < y ? -1 : 1;
+};
+
+export type TableIndexView<
+  RemoteModule extends UntypedRemoteModule,
+  TableName extends TableNamesOf<RemoteModule>,
+> = ReadonlyIndexes<
+  TableDefForTableName<RemoteModule, TableName>,
+  TableIndexes<TableDefForTableName<RemoteModule, TableName>>
+>;
+
+export type TableCache<
+  RemoteModule extends UntypedRemoteModule,
+  TableName extends TableNamesOf<RemoteModule>,
+> = TableCacheImpl<RemoteModule, TableName> &
+  TableIndexView<RemoteModule, TableName>;
+
 /**
  * Builder to generate calls to query a `table` in the database
  */
-export class TableCache<
-  RowType extends Record<string, any> = Record<string, any>,
-> {
-  private rows: Map<ComparablePrimitive, [RowType, number]>;
-  private tableTypeInfo: TableRuntimeTypeInfo;
+export class TableCacheImpl<
+  RemoteModule extends UntypedRemoteModule,
+  TableName extends TableNamesOf<RemoteModule>,
+> implements ClientTableCoreImplementable<RemoteModule, TableName>
+{
+  private readonly hasPrimaryKey: boolean;
+  private rows: Map<
+    ComparablePrimitive,
+    [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
+  >;
+  private tableDef: TableDefForTableName<RemoteModule, TableName>;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
   /**
@@ -43,39 +80,225 @@ export class TableCache<
    * @param primaryKey column name designated as `#[primarykey]`
    * @param entityClass the entityClass
    */
-  constructor(tableTypeInfo: TableRuntimeTypeInfo) {
-    this.tableTypeInfo = tableTypeInfo;
+  constructor(tableDef: TableDefForTableName<RemoteModule, TableName>) {
+    this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
+    this.hasPrimaryKey = Object.values(this.tableDef.columns).some(
+      col => col.columnMetadata.isPrimaryKey === true
+    );
+    // Build index views from the resolved runtime index metadata.
+    //
+    // We intentionally use `resolvedIndexes` rather than `indexes`:
+    // - `indexes` is declarative table-level config (`IndexOpts`) used mainly for typing.
+    // - `resolvedIndexes` is the runtime shape (`UntypedIndex`) that includes both
+    //   field-level and explicit table-level indexes.
+    for (const idxDef of this.tableDef.resolvedIndexes) {
+      const index = this.#makeReadonlyIndex(this.tableDef, idxDef);
+      // IMPORTANT: for duplicate accessor names, client cache uses assignment
+      // semantics and later entries overwrite earlier ones. This matches prior
+      // behavior and is intentionally different from server runtime merge logic.
+      (this as any)[idxDef.name] = index;
+    }
+  }
+
+  // TODO: this just scans the whole table; we should build proper index structures
+  #makeReadonlyIndex<
+    I extends TableDefForTableName<
+      RemoteModule,
+      TableName
+    >['resolvedIndexes'][number],
+  >(
+    tableDef: TableDefForTableName<RemoteModule, TableName>,
+    idx: I
+  ): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
+    type TableDef = TableDefForTableName<RemoteModule, TableName>;
+    type Row = Prettify<RowType<TableDef>>;
+
+    // We do not yet support non-btree indexes
+    if (idx.algorithm !== 'btree') {
+      throw new Error('Only btree indexes are supported in TableCacheImpl');
+    }
+
+    const columns = idx.columns;
+
+    // Extract the tuple key for this btree index (column order preserved)
+    const getKey = (row: Row): readonly unknown[] => columns.map(c => row[c]);
+
+    // The server’s ranged scan fixes all prefix cols to equality and applies
+    // the bound only to the *last* term. We mirror that.
+    //
+    // rangeArg for multi-col index is:
+    //   [...prefixEqualValues, (lastTerm | Range<lastTerm>)]
+    //
+    // If only one element is provided, it’s the last term (scalar or Range).
+    const matchRange = (row: Row, rangeArg: any): boolean => {
+      const key = getKey(row);
+
+      // Normalize rangeArg into an array.
+      // With multi-col b-tree, IndexScanRangeBounds always yields at least one element.
+      const arr = Array.isArray(rangeArg) ? rangeArg : [rangeArg];
+
+      const prefixLen = Math.max(0, arr.length - 1);
+      // Check equality over the prefix (all but the last provided element)
+      for (let i = 0; i < prefixLen; i++) {
+        if (!deepEqual(key[i], arr[i])) return false;
+      }
+
+      const lastProvided = arr[arr.length - 1];
+      const kLast = key[prefixLen];
+
+      // If the last provided is a Range<T>, apply bounds; otherwise equality.
+      if (
+        lastProvided &&
+        typeof lastProvided === 'object' &&
+        'from' in lastProvided &&
+        'to' in lastProvided
+      ) {
+        // Range<T>
+        const from = lastProvided.from as Bound<any>;
+        const to = lastProvided.to as Bound<any>;
+
+        // Lower bound
+        if (from.tag !== 'unbounded') {
+          const c = scalarCompare(kLast, from.value);
+          if (c < 0) return false;
+          if (c === 0 && from.tag === 'excluded') return false;
+        }
+
+        // Upper bound
+        if (to.tag !== 'unbounded') {
+          const c = scalarCompare(kLast, to.value);
+          if (c > 0) return false;
+          if (c === 0 && to.tag === 'excluded') return false;
+        }
+
+        // All good on last term; any remaining columns (if any) are unconstrained,
+        // which matches server behavior for a prefix scan.
+        return true;
+      } else {
+        // Equality on the last provided element
+        if (!deepEqual(kLast, lastProvided)) return false;
+        // Any remaining columns are unconstrained (prefix equality only).
+        return true;
+      }
+    };
+
+    // An index is unique if it shares all columns with a unique constraint
+    const isUnique = tableDef.constraints.some(constraint => {
+      if (constraint.constraint !== 'unique') {
+        return false;
+      }
+      return deepEqual(constraint.columns, idx.columns);
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    if (isUnique) {
+      const impl: ReadonlyUniqueIndex<TableDef, I> = {
+        find: (colVal: any): Row | null => {
+          // For unique btree, caller supplies the *full* key (tuple if multi-col).
+          const expected = Array.isArray(colVal) ? colVal : [colVal];
+          for (const row of self.iter()) {
+            if (deepEqual(getKey(row), expected)) return row;
+          }
+          return null;
+        },
+      };
+      return impl as ReadonlyIndex<TableDef, I>;
+    } else {
+      const impl: ReadonlyRangedIndex<TableDef, I> = {
+        *filter(range: any): IteratorObject<Row, undefined> {
+          for (const row of self.iter()) {
+            if (matchRange(row, range)) yield row;
+          }
+        },
+      };
+      return impl as ReadonlyIndex<TableDef, I>;
+    }
   }
 
   /**
    * @returns number of rows in the table
    */
-  count(): number {
-    return this.rows.size;
+  count(): bigint {
+    return BigInt(this.rows.size);
   }
 
   /**
    * @returns The values of the rows in the table
    */
-  iter(): RowType[] {
-    return Array.from(this.rows.values()).map(([row]) => row);
+  iter(): IteratorObject<
+    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+    undefined
+  > {
+    function* generator(
+      rows: Map<
+        ComparablePrimitive,
+        [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
+      >
+    ): IteratorObject<
+      Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      undefined
+    > {
+      for (const [row] of rows.values()) {
+        yield row as Prettify<
+          RowType<TableDefForTableName<RemoteModule, TableName>>
+        >;
+      }
+    }
+    return generator(this.rows);
+  }
+
+  /**
+   * Allows iteration over the rows in the table
+   * @returns An iterator over the rows in the table
+   */
+  [Symbol.iterator](): IteratorObject<
+    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+    undefined
+  > {
+    return this.iter();
   }
 
   applyOperations = (
-    operations: Operation<RowType>[],
-    ctx: EventContextInterface
+    operations: Operation<
+      RowType<TableDefForTableName<RemoteModule, TableName>>
+    >[],
+    ctx: EventContextInterface<RemoteModule>
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
-    if (this.tableTypeInfo.primaryKeyInfo !== undefined) {
+
+    // Event tables: fire on_insert callbacks but don't store rows in the cache.
+    if (this.tableDef.isEvent) {
+      for (const op of operations) {
+        if (op.type === 'insert') {
+          pendingCallbacks.push({
+            type: 'insert',
+            table: this.tableDef.sourceName,
+            cb: () => {
+              this.emitter.emit('insert', ctx, op.row);
+            },
+          });
+        }
+      }
+      return pendingCallbacks;
+    }
+
+    if (this.hasPrimaryKey) {
       const insertMap = new Map<
         ComparablePrimitive,
-        [Operation<RowType>, number]
+        [
+          Operation<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+          number,
+        ]
       >();
       const deleteMap = new Map<
         ComparablePrimitive,
-        [Operation<RowType>, number]
+        [
+          Operation<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+          number,
+        ]
       >();
       for (const op of operations) {
         if (op.type === 'insert') {
@@ -136,9 +359,9 @@ export class TableCache<
   };
 
   update = (
-    ctx: EventContextInterface,
+    ctx: EventContextInterface<RemoteModule>,
     rowId: ComparablePrimitive,
-    newRow: RowType,
+    newRow: RowType<TableDefForTableName<RemoteModule, TableName>>,
     refCountDelta: number = 0
   ): PendingCallback | undefined => {
     const existingEntry = this.rows.get(rowId);
@@ -146,7 +369,7 @@ export class TableCache<
       // TODO: this should throw an error and kill the connection.
       stdbLogger(
         'error',
-        `Updating a row that was not present in the cache. Table: ${this.tableTypeInfo.tableName}, RowId: ${rowId}`
+        `Updating a row that was not present in the cache. Table: ${this.tableDef.sourceName}, RowId: ${rowId}`
       );
       return undefined;
     }
@@ -155,7 +378,7 @@ export class TableCache<
     if (previousCount + refCountDelta <= 0) {
       stdbLogger(
         'error',
-        `Negative reference count for in table ${this.tableTypeInfo.tableName} row ${rowId} (${previousCount} + ${refCountDelta})`
+        `Negative reference count for in table ${this.tableDef.sourceName} row ${rowId} (${previousCount} + ${refCountDelta})`
       );
       return undefined;
     }
@@ -164,11 +387,11 @@ export class TableCache<
     if (previousCount === 0) {
       stdbLogger(
         'error',
-        `Updating a row id in table ${this.tableTypeInfo.tableName} which was not present in the cache (rowId: ${rowId})`
+        `Updating a row id in table ${this.tableDef.sourceName} which was not present in the cache (rowId: ${rowId})`
       );
       return {
         type: 'insert',
-        table: this.tableTypeInfo.tableName,
+        table: this.tableDef.sourceName,
         cb: () => {
           this.emitter.emit('insert', ctx, newRow);
         },
@@ -176,7 +399,7 @@ export class TableCache<
     }
     return {
       type: 'update',
-      table: this.tableTypeInfo.tableName,
+      table: this.tableDef.sourceName,
       cb: () => {
         this.emitter.emit('update', ctx, oldRow, newRow);
       },
@@ -184,8 +407,10 @@ export class TableCache<
   };
 
   insert = (
-    ctx: EventContextInterface,
-    operation: Operation<RowType>,
+    ctx: EventContextInterface<RemoteModule>,
+    operation: Operation<
+      RowType<TableDefForTableName<RemoteModule, TableName>>
+    >,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
@@ -196,7 +421,7 @@ export class TableCache<
     if (previousCount === 0) {
       return {
         type: 'insert',
-        table: this.tableTypeInfo.tableName,
+        table: this.tableDef.sourceName,
         cb: () => {
           this.emitter.emit('insert', ctx, operation.row);
         },
@@ -207,8 +432,10 @@ export class TableCache<
   };
 
   delete = (
-    ctx: EventContextInterface,
-    operation: Operation<RowType>,
+    ctx: EventContextInterface<RemoteModule>,
+    operation: Operation<
+      RowType<TableDefForTableName<RemoteModule, TableName>>
+    >,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
@@ -226,7 +453,7 @@ export class TableCache<
       this.rows.delete(operation.rowId);
       return {
         type: 'delete',
-        table: this.tableTypeInfo.tableName,
+        table: this.tableDef.sourceName,
         cb: () => {
           this.emitter.emit('delete', ctx, operation.row);
         },
@@ -240,7 +467,7 @@ export class TableCache<
    * Register a callback for when a row is newly inserted into the database.
    *
    * ```ts
-   * User.onInsert((user, reducerEvent) => {
+   * ctx.db.user.onInsert((reducerEvent, user) => {
    *   if (reducerEvent) {
    *      console.log("New user on reducer", reducerEvent, user);
    *   } else {
@@ -251,8 +478,11 @@ export class TableCache<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onInsert = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  onInsert = (
+    cb: (
+      ctx: EventContextInterface<RemoteModule>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+    ) => void
   ): void => {
     this.emitter.on('insert', cb);
   };
@@ -261,7 +491,7 @@ export class TableCache<
    * Register a callback for when a row is deleted from the database.
    *
    * ```ts
-   * User.onDelete((user, reducerEvent) => {
+   * ctx.db.user.onDelete((reducerEvent, user) => {
    *   if (reducerEvent) {
    *      console.log("Deleted user on reducer", reducerEvent, user);
    *   } else {
@@ -272,8 +502,11 @@ export class TableCache<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onDelete = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  onDelete = (
+    cb: (
+      ctx: EventContextInterface<RemoteModule>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+    ) => void
   ): void => {
     this.emitter.on('delete', cb);
   };
@@ -282,7 +515,7 @@ export class TableCache<
    * Register a callback for when a row is updated into the database.
    *
    * ```ts
-   * User.onInsert((user, reducerEvent) => {
+   * ctx.db.user.onInsert((reducerEvent, oldUser, user) => {
    *   if (reducerEvent) {
    *      console.log("Updated user on reducer", reducerEvent, user);
    *   } else {
@@ -293,8 +526,12 @@ export class TableCache<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onUpdate = <EventContext>(
-    cb: (ctx: EventContext, oldRow: RowType, row: RowType) => void
+  onUpdate = (
+    cb: (
+      ctx: EventContextInterface<RemoteModule>,
+      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+    ) => void
   ): void => {
     this.emitter.on('update', cb);
   };
@@ -304,8 +541,11 @@ export class TableCache<
    *
    * @param cb Callback to be removed
    */
-  removeOnInsert = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  removeOnInsert = (
+    cb: (
+      ctx: EventContextInterface<RemoteModule>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+    ) => void
   ): void => {
     this.emitter.off('insert', cb);
   };
@@ -315,8 +555,11 @@ export class TableCache<
    *
    * @param cb Callback to be removed
    */
-  removeOnDelete = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  removeOnDelete = (
+    cb: (
+      ctx: EventContextInterface<RemoteModule>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+    ) => void
   ): void => {
     this.emitter.off('delete', cb);
   };
@@ -326,8 +569,12 @@ export class TableCache<
    *
    * @param cb Callback to be removed
    */
-  removeOnUpdate = <EventContext>(
-    cb: (ctx: EventContext, oldRow: RowType, row: RowType) => void
+  removeOnUpdate = (
+    cb: (
+      ctx: EventContextInterface<RemoteModule>,
+      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+    ) => void
   ): void => {
     this.emitter.off('update', cb);
   };

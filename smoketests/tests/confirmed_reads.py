@@ -40,12 +40,14 @@ class ConfirmedReadsSql(Smoketest):
         self.spacetime(
             "sql",
             "--confirmed",
+            "true",
             self.database_identity,
             "insert into person (name) values ('Horst')")
 
         res = self.spacetime(
             "sql",
             "--confirmed",
+            "true",
             self.database_identity,
             "select * from person")
         res = parse_sql_result(str(res))

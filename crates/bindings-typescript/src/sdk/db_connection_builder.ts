@@ -1,18 +1,23 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
-import type { Identity } from '../';
-import type RemoteModule from './spacetime_module';
+import type {
+  DbConnectionConfig,
+  ErrorContextInterface,
+  Identity,
+  RemoteModuleOf,
+} from '../';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 
 /**
  * The database client connection to a SpacetimeDB server.
+ * NOTE: DbConnectionImpl<any> is used here because UntypedRemoteModule causes
+ * variance issues with function paramters, and the end user will never be
+ * constructing a DbConnectionBuilder directly since it's code generated. We will
+ * always have a concrete RemoteModule type in those cases. Even if they user
+ * did do this, they would just lose type safety on the RemoteModule.
  */
-export class DbConnectionBuilder<
-  DbConnection,
-  ErrorContext,
-  _SubscriptionEventContext,
-> {
+export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #uri?: URL;
   #nameOrAddress?: string;
   #identity?: Identity;
@@ -32,8 +37,10 @@ export class DbConnectionBuilder<
    * @param dbConnectionConstructor The constructor to use to create a new `DbConnection`.
    */
   constructor(
-    private remoteModule: RemoteModule,
-    private dbConnectionConstructor: (imp: DbConnectionImpl) => DbConnection
+    private remoteModule: RemoteModuleOf<DbConnection>,
+    private dbConnectionCtor: (
+      config: DbConnectionConfig<RemoteModuleOf<DbConnection>>
+    ) => DbConnection
   ) {
     this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
@@ -50,13 +57,13 @@ export class DbConnectionBuilder<
   }
 
   /**
-   * Set the name or Identity of the database module to connect to.
+   * Set the name or Identity of the remote database to connect to.
    *
    * @param nameOrAddress
    *
    * @returns The `DbConnectionBuilder` instance.
    */
-  withModuleName(nameOrAddress: string): this {
+  withDatabaseName(nameOrAddress: string): this {
     this.#nameOrAddress = nameOrAddress;
     return this;
   }
@@ -76,11 +83,7 @@ export class DbConnectionBuilder<
   }
 
   withWSFn(
-    createWSFn: (args: {
-      url: URL;
-      wsProtocol: string;
-      authToken?: string;
-    }) => Promise<WebsocketDecompressAdapter>
+    createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn
   ): this {
     this.#createWSFn = createWSFn;
     return this;
@@ -179,14 +182,19 @@ export class DbConnectionBuilder<
    * });
    * ```
    */
-  onConnectError(callback: (ctx: ErrorContext, error: Error) => void): this {
+  onConnectError(
+    callback: (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      error: Error
+    ) => void
+  ): this {
     this.#emitter.on('connectError', callback);
     return this;
   }
 
   /**
    * Registers a callback to run when a {@link DbConnection} whose connection initially succeeded
-   * is disconnected, either after a {@link DbConnection.disconnect} call or due to an error.
+   * is disconnected, either after a {@link DbConnection.disconnect()} call or due to an error.
    *
    * If the connection ended because of an error, the error is passed to the callback.
    *
@@ -197,7 +205,8 @@ export class DbConnectionBuilder<
    * Note that this does not trigger if `build` fails
    * or in cases where {@link DbConnectionBuilder.onConnectError} would trigger.
    * This callback only triggers if the connection closes after `build` returns successfully
-   * and {@link DbConnectionBuilder.onConnect} is invoked, i.e., after the `IdentityToken` is received.
+   * and {@link DbConnectionBuilder.onConnect} is invoked, i.e., after the initial connection
+   * message is received.
    *
    * To simplify SDK implementation, at most one such callback can be registered.
    * Calling `onDisconnect` on the same `DbConnectionBuilder` multiple times throws an error.
@@ -211,10 +220,21 @@ export class DbConnectionBuilder<
    * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
    */
   onDisconnect(
-    callback: (ctx: ErrorContext, error?: Error | undefined) => void
+    callback: (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      error?: Error | undefined
+    ) => void
   ): this {
     this.#emitter.on('disconnect', callback);
     return this;
+  }
+
+  getUri(): string {
+    return this.#uri?.toString() ?? '';
+  }
+
+  getModuleName(): string {
+    return this.#nameOrAddress ?? '';
   }
 
   /**
@@ -228,7 +248,7 @@ export class DbConnectionBuilder<
    * const host = "http://localhost:3000";
    * const name_or_address = "database_name"
    * const auth_token = undefined;
-   * DbConnection.builder().withUri(host).withModuleName(name_or_address).withToken(auth_token).build();
+   * DbConnection.builder().withUri(host).withDatabaseName(name_or_address).withToken(auth_token).build();
    * ```
    */
   build(): DbConnection {
@@ -245,19 +265,17 @@ export class DbConnectionBuilder<
     // Ideally, it would be a compile time error, but I'm not sure how to accomplish that.
     ensureMinimumVersionOrThrow(this.remoteModule.versionInfo?.cliVersion);
 
-    return this.dbConnectionConstructor(
-      new DbConnectionImpl({
-        uri: this.#uri,
-        nameOrAddress: this.#nameOrAddress,
-        identity: this.#identity,
-        token: this.#token,
-        emitter: this.#emitter,
-        compression: this.#compression,
-        lightMode: this.#lightMode,
-        confirmedReads: this.#confirmedReads,
-        createWSFn: this.#createWSFn,
-        remoteModule: this.remoteModule,
-      })
-    );
+    return this.dbConnectionCtor({
+      uri: this.#uri,
+      nameOrAddress: this.#nameOrAddress,
+      identity: this.#identity,
+      token: this.#token,
+      emitter: this.#emitter,
+      compression: this.#compression,
+      lightMode: this.#lightMode,
+      confirmedReads: this.#confirmedReads,
+      createWSFn: this.#createWSFn,
+      remoteModule: this.remoteModule,
+    });
   }
 }

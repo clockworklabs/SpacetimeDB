@@ -1,19 +1,30 @@
 #![allow(clippy::too_many_arguments)]
 
+use super::wasmtime_module::{
+    call_view_export, decode_view_result_sink_code, CallViewAnonType, CallViewType, ViewResultSinkError,
+};
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
-use crate::host::wasm_common::module_host_actor::ExecutionTimings;
+use crate::host::wasm_common::module_host_actor::{
+    deserialize_view_rows, run_query_for_view, ExecutionTimings, ViewResult, ViewReturnData,
+};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
-use anyhow::Context as _;
+use crate::subscription::module_subscription_manager::TransactionOffset;
+use anyhow::{anyhow, Context as _};
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_lib::{ConnectionId, Timestamp};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::Identifier;
 use std::future::Future;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
@@ -75,6 +86,15 @@ pub(super) struct WasmInstanceEnv {
     /// The database `InstanceEnv` associated to this instance.
     instance_env: InstanceEnv,
 
+    /// A validated `ModuleDef` for this instance used by procedures to refresh views.
+    module_def: Option<Arc<ModuleDef>>,
+
+    /// A cached `__call_view__` export used by procedures to refresh views.
+    call_view: Option<CallViewType>,
+
+    /// A cached `__call_view_anon__` export used by procedures to refresh views.
+    call_view_anon: Option<CallViewAnonType>,
+
     /// The `Mem` associated to this instance. At construction time,
     /// this is always `None`. The `Mem` instance is extracted from the
     /// instance exports, and after instantiation is complete, this will
@@ -127,6 +147,9 @@ impl WasmInstanceEnv {
     pub fn new(instance_env: InstanceEnv) -> Self {
         Self {
             instance_env,
+            module_def: None,
+            call_view: None,
+            call_view_anon: None,
             mem: None,
             bytes_sources: IntMap::default(),
             next_bytes_source_id: NonZeroU32::new(1).unwrap(),
@@ -184,6 +207,15 @@ impl WasmInstanceEnv {
         self.mem = Some(mem);
     }
 
+    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+        self.module_def = Some(module_def)
+    }
+
+    pub fn set_call_view_exports(&mut self, call_view: Option<CallViewType>, call_view_anon: Option<CallViewAnonType>) {
+        self.call_view = call_view;
+        self.call_view_anon = call_view_anon;
+    }
+
     /// Returns a reference to the memory, assumed to be initialized.
     pub fn get_mem(&self) -> Mem {
         self.mem.expect("Initialized memory")
@@ -218,7 +250,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: &str,
+        name: Identifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -235,16 +267,10 @@ impl WasmInstanceEnv {
         (args, errors)
     }
 
-    /// Returns the name of the most recent reducer or procedure to be run in this environment.
-    pub fn funcall_name(&self) -> &str {
-        &self.instance_env.func_name
-    }
-
     /// Returns the name of the most recent reducer or procedure to be run in this environment,
     /// or `None` if no reducer or procedure is actively being invoked.
-    fn log_record_function(&self) -> Option<&str> {
-        let function = self.funcall_name();
-        (!function.is_empty()).then_some(function)
+    pub fn log_record_function(&self) -> Option<&str> {
+        self.instance_env.log_record_function()
     }
 
     /// Returns the start time of the most recent reducer or procedure to be run in this environment.
@@ -281,22 +307,47 @@ impl WasmInstanceEnv {
         (timings, self.take_standard_bytes_sink())
     }
 
+    /// After a procedure has finished, take its known last tx offset, if any.
+    pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
+        self.instance_env.take_procedure_tx_offset()
+    }
+
+    /// Record a span with `start`.
+    fn end_span(mut caller: Caller<'_, Self>, start: span::CallSpanStart) {
+        let span = start.end();
+        span::record_span(&mut caller.data_mut().call_times, span);
+    }
+
     fn with_span<R>(mut caller: Caller<'_, Self>, func: AbiCall, run: impl FnOnce(&mut Caller<'_, Self>) -> R) -> R {
         let span_start = span::CallSpanStart::new(func);
 
         // Call `run` with the caller and a handle to the memory.
         let result = run(&mut caller);
 
-        // Track the span of this call.
-        let span = span_start.end();
-        span::record_span(&mut caller.data_mut().call_times, span);
+        Self::end_span(caller, span_start);
 
         result
     }
 
+    fn async_with_span<'caller, R, F: Send + 'caller + Future<Output = (Caller<'caller, Self>, R)>>(
+        caller: Caller<'caller, Self>,
+        func: AbiCall,
+        run: impl Send + 'caller + FnOnce(Caller<'caller, Self>) -> F,
+    ) -> Fut<'caller, R> {
+        Box::new(async move {
+            let span_start = span::CallSpanStart::new(func);
+
+            // Call `run` with the caller and a handle to the memory.
+            let (caller, result) = run(caller).await;
+
+            Self::end_span(caller, span_start);
+            result
+        })
+    }
+
     fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
         match err {
-            WasmError::Db(err) => err_to_errno_and_log(func, err),
+            WasmError::Db(err) => err_to_errno_and_log(func, err).map(|(code, _)| code),
             WasmError::BufferTooSmall => Ok(errno::BUFFER_TOO_SMALL.get().into()),
             WasmError::Wasm(err) => Err(err),
         }
@@ -498,6 +549,69 @@ impl WasmInstanceEnv {
                 .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id.into())?;
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
+    }
+
+    /// Finds all rows in the index identified by `index_id`,
+    /// according to `point = point_ptr[..point_len]` in WASM memory.
+    ///
+    /// The index itself has a schema/type.
+    /// Matching defined by first BSATN-decoding `point` to that `AlgebraicType`
+    /// and then comparing the decoded `point` to the keys in the index
+    /// using `Ord for AlgebraicValue`.
+    /// to the keys in the index.
+    /// The `point` is BSATN-decoded to that `AlgebraicType`.
+    /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+    /// This occurs exactly when the row's BSATN-encoding
+    /// is equal to the encoding of the `AlgebraicValue`.
+    ///
+    /// This ABI is not limited to single column indices.
+    /// Multi-column indices can be queried by providing
+    /// a BSATN-encoded `ProductValue`
+    /// that is typed at the `ProductType` of the index.
+    ///
+    /// The relevant table for the index is found implicitly via the `index_id`,
+    /// which is unique for the module.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+    ///   typed at the index's key type (`AlgebraicType`).
+    pub fn datastore_index_scan_point_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        point_ptr: WasmPtr<u8>, // AlgebraicValue
+        point_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreIndexScanPointBsatn, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the `point` from WASM memory.
+            let point = mem.deref_slice(point_ptr, point_len)?;
+
+            // Find the relevant rows.
+            let chunks = env.instance_env.datastore_index_scan_point_bsatn_chunks(
+                &mut env.chunk_pool,
+                index_id.into(),
+                point,
+            )?;
+
+            // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.iters.insert(chunks.into_iter()))
         })
     }
@@ -853,6 +967,49 @@ impl WasmInstanceEnv {
     }
 
     /// Deletes all rows found in the index identified by `index_id`,
+    /// according to `point = point_ptr[..point_len]` in WASM memory.
+    ///
+    /// This syscall will delete all the rows found by
+    /// [`datastore_index_scan_point_bsatn`] with the same arguments passed.
+    /// See `datastore_index_scan_point_bsatn` for details.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+    ///   typed at the index's key type (`AlgebraicType`).
+    pub fn datastore_delete_by_index_scan_point_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        point_ptr: WasmPtr<u8>, // AlgebraicValue
+        point_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByIndexScanPointBsatn, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the `point` from WASM memory.
+            let point = mem.deref_slice(point_ptr, point_len)?;
+
+            // Delete the relevant rows.
+            Ok(env
+                .instance_env
+                .datastore_delete_by_index_scan_point_bsatn(index_id.into(), point)?)
+        })
+    }
+
+    /// Deletes all rows found in the index identified by `index_id`,
     /// according to the:
     /// - `prefix = prefix_ptr[..prefix_len]`,
     /// - `rstart = rstart_ptr[..rstart_len]`,
@@ -993,6 +1150,29 @@ impl WasmInstanceEnv {
             Ok(env
                 .instance_env
                 .datastore_delete_all_by_eq_bsatn(table_id.into(), relation)?)
+        })
+    }
+
+    /// Deletes all rows in the table identified by `table_id`.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_clear(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreClear, out, |caller| {
+            let (_, env) = Self::mem_env(caller);
+            Ok(env.instance_env.clear(table_id.into())?)
         })
     }
 
@@ -1389,14 +1569,12 @@ impl WasmInstanceEnv {
     /// - The calling WASM instance is not executing a procedure.
     // TODO(procedure-sleep-until): remove this
     pub fn procedure_sleep_until<'caller>(
-        mut caller: Caller<'caller, Self>,
+        caller: Caller<'caller, Self>,
         (wake_at_micros_since_unix_epoch,): (i64,),
-    ) -> Box<dyn Future<Output = i64> + Send + 'caller> {
-        Box::new(async move {
+    ) -> Fut<'caller, i64> {
+        Self::async_with_span(caller, AbiCall::ProcedureSleepUntil, move |caller| async move {
             use std::time::SystemTime;
-            let span_start = span::CallSpanStart::new(AbiCall::ProcedureSleepUntil);
-
-            let get_current_time = || Timestamp::now().to_micros_since_unix_epoch();
+            let get_current_time = || (caller, Timestamp::now().to_micros_since_unix_epoch());
 
             if wake_at_micros_since_unix_epoch < 0 {
                 return get_current_time();
@@ -1409,15 +1587,388 @@ impl WasmInstanceEnv {
 
             tokio::time::sleep(duration).await;
 
-            let res = get_current_time();
+            get_current_time()
+        })
+    }
 
-            let span = span_start.end();
-            span::record_span(&mut caller.data_mut().call_times, span);
+    /// Starts a mutable transaction,
+    /// blocking until a mutable transaction lock is acquired.
+    ///
+    /// Returns `0` on success,
+    /// enabling further calls that require a pending transaction,
+    /// or an error code otherwise.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<i64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
+    pub fn procedure_start_mut_tx<'caller>(caller: Caller<'caller, Self>, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureStartMutTransaction, |mut caller| {
+            let (mem, env) = Self::mem_env(&mut caller);
+            let res = env.instance_env.start_mutable_tx().map_err(WasmError::from);
+            let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+            let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
 
-            res
+            res.map(|()| 0u16.into())
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err))
+        })
+    }
+
+    /// Commits a mutable transaction,
+    /// blocking until the transaction has been committed
+    /// and subscription queries have been run and broadcast.
+    ///
+    /// Once complete, it returns `0` on success, or an error code otherwise.
+    ///
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `TRANSACTION_NOT_ANONYMOUS`,
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
+    ///   This can happen if this syscall is erroneously called by a reducer.
+    ///   The code `NOT_IN_TRANSACTION` does not happen,
+    ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+    /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+    ///   This currently does not happen as anonymous read transactions
+    ///   are not exposed to modules.
+    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |caller| {
+            let res: Result<u32, WasmError> = (|| {
+                let tx = {
+                    let env = caller.data_mut();
+                    env.instance_env.take_mutable_tx_for_commit().map_err(WasmError::from)?
+                };
+                let tx = Self::refresh_views(caller, tx)?;
+                caller
+                    .data_mut()
+                    .instance_env
+                    .commit_procedure_tx(tx)
+                    .map_err(WasmError::from)?;
+                Ok(0u16.into())
+            })();
+            res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
+        })
+    }
+
+    /// Refresh all views made stale by a procedure `tx`.
+    ///
+    /// This runs each pending view call in the same mutable transaction and writes the refreshed rows
+    /// into the corresponding backing view tables. If any step fails (missing metadata, view execution,
+    /// row decoding, SQL execution, or materialization), this method rolls back `tx` and returns an error.
+    ///
+    /// On success, it returns the same transaction handle so the caller can commit it.
+    fn refresh_views<'a>(caller: &mut Caller<'a, Self>, tx: MutTxId) -> Result<MutTxId, WasmError> {
+        let Some(module_def) = caller.data().module_def.clone() else {
+            caller.data_mut().instance_env.rollback_procedure_tx(tx);
+            return Err(WasmError::Wasm(anyhow!(
+                "module definition is unavailable while committing a procedure transaction"
+            )));
+        };
+
+        let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
+        let mut tx = Some(tx);
+        let mut tx_slot = caller.data().instance_env.tx.clone();
+
+        for view_call in views_for_refresh {
+            let res: anyhow::Result<()> = (|| {
+                let view_def = module_def
+                    .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
+                    .ok_or_else(|| anyhow!("view with fn_ptr `{}` not found", view_call.fn_ptr))?;
+
+                let current_tx = tx.take().expect("procedure tx missing during view refresh");
+                let (next_tx, call_result) =
+                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, &view_def.name));
+                tx = Some(next_tx);
+                let return_data = call_result?;
+
+                let typespace = module_def.typespace();
+                let row_product_type = typespace
+                    .resolve(view_def.product_type_ref)
+                    .resolve_refs()?
+                    .into_product()
+                    .map_err(|_| anyhow!("Error resolving row type for view"))?;
+
+                let rows = match ViewResult::from_return_data(return_data)? {
+                    ViewResult::Rows(bytes) => deserialize_view_rows(view_def.product_type_ref, bytes, typespace)
+                        .map_err(|err| anyhow!(err.to_string()))?,
+                    ViewResult::RawSql(query) => run_query_for_view(
+                        tx.as_mut().expect("procedure tx missing while running view query"),
+                        &query,
+                        &row_product_type,
+                        &view_call,
+                        *caller.data().instance_env.database_identity(),
+                    )?,
+                };
+
+                let stdb = caller.data().instance_env.relational_db().clone();
+                match view_call.sender {
+                    Some(sender) => stdb.materialize_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing authenticated view"),
+                        view_call.table_id,
+                        sender,
+                        rows,
+                    )?,
+                    None => stdb.materialize_anonymous_view(
+                        tx.as_mut()
+                            .expect("procedure tx missing while materializing anonymous view"),
+                        view_call.table_id,
+                        rows,
+                    )?,
+                }
+
+                Ok(())
+            })();
+
+            if let Err(err) = res {
+                let tx = tx.expect("procedure tx missing while rolling back failed view refresh");
+                caller.data_mut().instance_env.rollback_procedure_tx(tx);
+                return Err(WasmError::Wasm(err));
+            }
+        }
+
+        Ok(tx.expect("procedure tx missing after view refresh"))
+    }
+
+    /// Execute a view and return its payload.
+    ///
+    /// This helper is used by [`Self::refresh_views`] while a procedure transaction is being committed.
+    /// It temporarily sets the active function type to the target view for dependency tracking,
+    /// invokes the cached typed view export, restores the previous function type, and decodes the
+    /// result sink into [`ViewReturnData`].
+    fn call_view<'a>(
+        caller: &mut Caller<'a, Self>,
+        view_call: &ViewCallInfo,
+        view_name: &Identifier,
+    ) -> anyhow::Result<ViewReturnData> {
+        // Preserve the procedure's result/error sink so this view does not overwrite it.
+        let previous_standard_sink = {
+            let env = caller.data_mut();
+            env.standard_bytes_sink.take()
+        };
+
+        let prev_func_type = caller
+            .data_mut()
+            .instance_env
+            .swap_func_type(FuncCallType::View(view_call.clone()));
+
+        let call_result = (|| -> anyhow::Result<i32> {
+            let (args_source, result_sink) = {
+                let env = caller.data_mut();
+                let args_source = env.create_bytes_source(bytes::Bytes::new())?;
+                let result_sink = env.setup_standard_bytes_sink();
+                (args_source, result_sink)
+            };
+
+            let (call_view, call_view_anon) = {
+                let env = caller.data();
+                (env.call_view.clone(), env.call_view_anon.clone())
+            };
+
+            let code = call_view_export(
+                &mut *caller,
+                call_view,
+                call_view_anon,
+                view_name,
+                view_call.fn_ptr.0,
+                view_call.sender,
+                args_source.0,
+                result_sink,
+            )?;
+
+            Ok(code)
+        })();
+
+        caller.data_mut().instance_env.swap_func_type(prev_func_type);
+
+        let result_bytes = {
+            let env = caller.data_mut();
+            // Restore the outer sink of the procedure before propagating any trap/user error from the call.
+            let result = env.take_standard_bytes_sink();
+            env.standard_bytes_sink = previous_standard_sink;
+            result
+        };
+        let code = call_result?;
+
+        decode_view_result_sink_code(code, result_bytes).map_err(|err| match err {
+            ViewResultSinkError::User(err) => anyhow!("view call failed: {err}"),
+            ViewResultSinkError::UnexpectedCode(code) => anyhow!(
+                "unexpected return code {code} from view call, expected 0, 2, or {failure}",
+                failure = HOST_CALL_FAILURE.get()
+            ),
+        })
+    }
+
+    /// Aborts a mutable transaction,
+    /// blocking until the transaction has been aborted.
+    ///
+    /// Returns `0` on success, or an error code otherwise.
+    ///
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `TRANSACTION_NOT_ANONYMOUS`,
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
+    ///   This can happen if this syscall is erroneously called by a reducer.
+    ///   The code `NOT_IN_TRANSACTION` does not happen,
+    ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+    /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+    ///   This currently does not happen as anonymous read transactions
+    ///   are not exposed to modules.
+    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| {
+            let (_, env) = Self::mem_env(&mut caller);
+            env.procedure_abort_mut_tx_inner()
+        })
+    }
+
+    /// See [`WasmInstanceEnv::procedure_abort_mut_tx`] for details.
+    pub fn procedure_abort_mut_tx_inner(&mut self) -> RtResult<u32> {
+        self.instance_env
+            .abort_mutable_tx()
+            .map(|()| 0u16.into())
+            .map_err(WasmError::from)
+            .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureAbortMutTransaction, err))
+    }
+
+    /// In-case there is a anonymous tx at the end of a procedure,
+    /// it must be terminated.
+    ///
+    /// This represents a misuse by the module author of the module ABI.
+    pub fn terminate_dangling_anon_tx(&mut self) {
+        self.instance_env.terminate_dangling_anon_tx();
+    }
+
+    /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
+    /// suspending execution until the request is complete,
+    /// then return its response details via a [`BytesSource`] written to `out[0]`
+    /// and its response body via another [`BytesSource`] written to `out[1]`.
+    ///
+    /// `request_ptr[..request_len]` should store a BSATN-serialized [`spacetimedb_lib::http::Request`] object
+    /// containing the details of the request to be performed.
+    ///
+    /// `body_ptr[..body_len]` should store a byte array, which will be treated as the body of the request.
+    /// `body_ptr` should be non-null and within the bounds of linear memory even when `body_len` is 0.
+    ///
+    /// If the request is successful, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object,
+    /// another [`BytesSource`] containing the bytes of the response body are written to `out[1]`,
+    /// and this function returns 0.
+    ///
+    /// "Successful" in this context includes any connection which results in any HTTP status code,
+    /// regardless of the specified meaning of that code.
+    /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
+    ///
+    /// If the request fails, a [`BytesSource`] is written to `out[0]`
+    /// containing a BSATN-encoded `String` describing the failure,
+    /// and this function returns `HTTP_ERROR`.
+    /// In this case, `out[1]` is not written.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `WOULD_BLOCK_TRANSACTION` if there is currently a transaction open.
+    ///   In this case, `out` is not written.
+    /// - `BSATN_DECODE_ERROR` if `request_ptr[..request_len]` does not contain
+    ///   a valid BSATN-serialized [`spacetimedb_lib::http::Request`] object.
+    ///   In this case, `out` is not written.
+    /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
+    ///   In this case, a [`BytesSource`] is written to `out`
+    ///   containing a BSATN-encoded [`String`].
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
+    /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
+    pub fn procedure_http_request<'caller>(
+        caller: Caller<'caller, Self>,
+        (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),
+    ) -> Fut<'caller, RtResult<u32>> {
+        use spacetimedb_lib::http as st_http;
+
+        Self::async_with_span(caller, AbiCall::ProcedureHttpRequest, move |mut caller| async move {
+            let (mem, env) = Self::mem_env(&mut caller);
+
+            // Yes clippy, I'm calling a closure at its definition site *on purpose*,
+            // as a hacky-but-stable `try` block.
+            #[allow(clippy::redundant_closure_call)]
+            let res = (async move || {
+                // TODO(procedure-metrics): record size in bytes of request.
+
+                // Read the request from memory as a `spacetimedb_lib::http::Request`,
+                // our bespoke type with a stable layout and BSATN encoding.
+                let request_buf = mem.deref_slice(request_ptr, request_len)?;
+                let request = bsatn::from_slice::<st_http::Request>(request_buf).map_err(|err| {
+                    // This goes to `errno::BSATN_DECODE_ERROR` in `Self::convert_wasm_result`.
+                    NodesError::DecodeValue(err)
+                })?;
+
+                let body_buf = mem.deref_slice(body_ptr, body_len)?;
+                let body = bytes::Bytes::copy_from_slice(body_buf);
+
+                let result = async { env.instance_env.http_request(request, body)?.await }
+                    // TODO(perf): Evaluate whether it's better to run this future on the "global" I/O Tokio executor,
+                    // rather than the thread-local database executors.
+                    .await;
+
+                match result {
+                    Ok((response, body)) => {
+                        let result = bsatn::to_vec(&response)
+                            .with_context(|| "Failed to BSATN serialize `st_http::Response` object".to_string())?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                        bytes_source
+                            .0
+                            .write_to(mem, out.saturating_add(size_of::<u32>() as u32))?;
+
+                        Ok(0u32)
+                    }
+                    Err(NodesError::HttpError(err)) => {
+                        let result = bsatn::to_vec(&err).with_context(|| {
+                            format!("Failed to BSATN serialize `spacetimedb_lib::http::Error` object {err:#?}")
+                        })?;
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+                        Ok(errno::HTTP_ERROR.get() as u32)
+                    }
+                    Err(e) => Err(WasmError::Db(e)),
+                }
+            })()
+            .await;
+
+            (
+                caller,
+                res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureHttpRequest, err)),
+            )
         })
     }
 }
+
+type Fut<'caller, T> = Box<dyn Send + 'caller + Future<Output = T>>;
 
 impl<T> BacktraceProvider for wasmtime::StoreContext<'_, T> {
     fn capture(&self) -> Box<dyn ModuleBacktrace> {

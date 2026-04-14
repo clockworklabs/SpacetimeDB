@@ -14,6 +14,7 @@ use tracing_subscriber::{reload, EnvFilter};
 
 use crate::config::{ConfigFile, LogConfig};
 use crate::util::jobs::JobCores;
+use crate::util::thread_scheduling::apply_compute_thread_hint;
 
 pub use core_affinity::CoreId;
 
@@ -137,13 +138,13 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     let mut prev_time = conf_file.metadata().and_then(|m| m.modified()).ok();
     loop {
         std::thread::sleep(RELOAD_INTERVAL);
-        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified()) {
-            if prev_time.is_none_or(|prev| modified > prev) {
-                log::info!("reloading log config...");
-                prev_time = Some(modified);
-                if reload_handle.reload(parse_from_file(conf_file)).is_err() {
-                    break;
-                }
+        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified())
+            && prev_time.is_none_or(|prev| modified > prev)
+        {
+            log::info!("reloading log config...");
+            prev_time = Some(modified);
+            if reload_handle.reload(parse_from_file(conf_file)).is_err() {
+                break;
             }
         }
     }
@@ -317,9 +318,14 @@ impl Cores {
 
     /// Get the cores of the local host, as reported by the operating system.
     ///
-    /// Returns `None` if `num_cpus` is less than 8.
+    /// Returns `None` if `num_cpus` is less than 8
+    /// or if core pinning is disabled.
     /// If `Some` is returned, the `Vec` is non-empty.
     pub fn get_core_ids() -> Option<Vec<CoreId>> {
+        if cfg!(feature = "no-core-pinning") {
+            return None;
+        }
+
         let cores = core_affinity::get_core_ids()
             .filter(|cores| cores.len() >= 10)?
             .into_iter()
@@ -357,7 +363,7 @@ impl TokioCores {
             // so this ends up working fine
             builder.on_thread_start(move || {
                 if let Some(core) = cores_queue.pop() {
-                    core_affinity::set_for_current(core);
+                    apply_compute_thread_hint(Some(core));
                 } else {
                     #[cfg(target_os = "linux")]
                     if let Some(cpuset) = &self.blocking {
@@ -383,9 +389,8 @@ impl RayonCores {
             .spawn_handler(thread_spawn_handler(tokio_handle))
             .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
             .start_handler(move |i| {
-                if let Some(cores) = &self.0 {
-                    core_affinity::set_for_current(cores[i]);
-                }
+                let core = self.0.as_ref().and_then(|cores| cores.get(i).copied());
+                apply_compute_thread_hint(core);
             })
             .build_global()
             .unwrap()
@@ -431,18 +436,12 @@ pub struct DatabaseCores(Vec<CoreId>);
 impl DatabaseCores {
     /// Construct a [`JobCores`] manager suitable for running database WASM code on.
     ///
-    /// The `global_runtime` should be a [`tokio::runtime::Handle`] to the [`tokio::runtime::Runtime`]
-    /// constructed from the [`TokioCores`] of this [`Cores`].
-    ///
     /// ```rust
     /// # use spacetimedb::startup::pin_threads;
     /// let cores = pin_threads();
-    /// let mut builder = tokio::runtime::Builder::new_multi_thread();
-    /// cores.tokio.configure(&mut builder);
-    /// let mut rt = builder.build().unwrap();
-    /// let database_cores = cores.databases.make_database_runners(rt.handle());
+    /// let database_cores = cores.databases.make_database_runners();
     /// ```
-    pub fn make_database_runners(self, global_runtime: &tokio::runtime::Handle) -> JobCores {
-        JobCores::from_pinned_cores(self.0, global_runtime.clone())
+    pub fn make_database_runners(self) -> JobCores {
+        JobCores::from_pinned_cores(self.0)
     }
 }

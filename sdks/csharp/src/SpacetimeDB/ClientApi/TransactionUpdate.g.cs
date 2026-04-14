@@ -13,45 +13,17 @@ namespace SpacetimeDB.ClientApi
     [DataContract]
     public sealed partial class TransactionUpdate
     {
-        [DataMember(Name = "status")]
-        public UpdateStatus Status;
-        [DataMember(Name = "timestamp")]
-        public SpacetimeDB.Timestamp Timestamp;
-        [DataMember(Name = "caller_identity")]
-        public SpacetimeDB.Identity CallerIdentity;
-        [DataMember(Name = "caller_connection_id")]
-        public SpacetimeDB.ConnectionId CallerConnectionId;
-        [DataMember(Name = "reducer_call")]
-        public ReducerCallInfo ReducerCall;
-        [DataMember(Name = "energy_quanta_used")]
-        public EnergyQuanta EnergyQuantaUsed;
-        [DataMember(Name = "total_host_execution_duration")]
-        public SpacetimeDB.TimeDuration TotalHostExecutionDuration;
+        [DataMember(Name = "query_sets")]
+        public System.Collections.Generic.List<QuerySetUpdate> QuerySets;
 
-        public TransactionUpdate(
-            UpdateStatus Status,
-            SpacetimeDB.Timestamp Timestamp,
-            SpacetimeDB.Identity CallerIdentity,
-            SpacetimeDB.ConnectionId CallerConnectionId,
-            ReducerCallInfo ReducerCall,
-            EnergyQuanta EnergyQuantaUsed,
-            SpacetimeDB.TimeDuration TotalHostExecutionDuration
-        )
+        public TransactionUpdate(System.Collections.Generic.List<QuerySetUpdate> QuerySets)
         {
-            this.Status = Status;
-            this.Timestamp = Timestamp;
-            this.CallerIdentity = CallerIdentity;
-            this.CallerConnectionId = CallerConnectionId;
-            this.ReducerCall = ReducerCall;
-            this.EnergyQuantaUsed = EnergyQuantaUsed;
-            this.TotalHostExecutionDuration = TotalHostExecutionDuration;
+            this.QuerySets = QuerySets;
         }
 
         public TransactionUpdate()
         {
-            this.Status = null!;
-            this.ReducerCall = new();
-            this.EnergyQuantaUsed = new();
+            this.QuerySets = new();
         }
     }
 }

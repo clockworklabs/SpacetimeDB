@@ -1,6 +1,7 @@
 #include <assert.h>
 // #include <mono/metadata/appdomain.h>
 // #include <mono/metadata/object.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -108,6 +109,32 @@ IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* ou
 IMPORT(int16_t, get_jwt, (const uint8_t* connection_id_ptr, BytesSource* bytes_ptr), (connection_id_ptr, bytes_ptr));
 #undef SPACETIME_MODULE_VERSION
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.3"
+IMPORT(uint16_t, procedure_start_mut_tx, (int64_t* micros), (micros));
+IMPORT(uint16_t, procedure_commit_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_abort_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_http_request,
+       (const uint8_t* request_ptr, uint32_t request_len,
+        const uint8_t* body_ptr, uint32_t body_len,
+        BytesSource* out),
+       (request_ptr, request_len, body_ptr, body_len, out));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.4"
+IMPORT(Status, datastore_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, RowIter* iter),
+       (index_id, point, point_len, iter));
+IMPORT(Status, datastore_delete_by_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, uint32_t* num_deleted),
+       (index_id, point, point_len, num_deleted));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.5"
+IMPORT(Status, datastore_clear,
+       (TableId table_id, uint64_t* count),
+       (table_id, count));
+#undef SPACETIME_MODULE_VERSION
+
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
 
@@ -159,6 +186,28 @@ EXPORT(int16_t, __call_reducer__,
        &sender_0, &sender_1, &sender_2, &sender_3,
        &conn_id_0, &conn_id_1,
        &timestamp, &args, &error);
+
+EXPORT(int16_t, __call_procedure__,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        uint64_t conn_id_0, uint64_t conn_id_1,
+        uint64_t timestamp, BytesSource args, BytesSink result_sink),
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &conn_id_0, &conn_id_1,
+       &timestamp, &args, &result_sink);
+
+EXPORT(int16_t, __call_view__,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        BytesSource args, BytesSink rows),
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &args, &rows);
+
+EXPORT(int16_t, __call_view_anon__,
+       (uint32_t id, BytesSource args, BytesSink rows),
+       &id, &args, &rows);
 #endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.

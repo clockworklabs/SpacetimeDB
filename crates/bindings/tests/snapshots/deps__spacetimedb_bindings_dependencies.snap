@@ -2,9 +2,11 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 66
+total crates: 73
 spacetimedb
+├── anyhow
 ├── bytemuck
+├── bytes
 ├── derive_more
 │   ├── convert_case
 │   ├── proc_macro2
@@ -20,6 +22,10 @@ spacetimedb
 │       └── semver
 ├── getrandom
 │   └── cfg_if
+├── http
+│   ├── bytes
+│   ├── fnv
+│   └── itoa
 ├── log
 ├── rand
 │   ├── rand_chacha
@@ -79,6 +85,7 @@ spacetimedb
 │   ├── enum_as_inner (*)
 │   ├── hex
 │   ├── itertools (*)
+│   ├── log
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
@@ -99,6 +106,11 @@ spacetimedb
 │   │   │       └── serde_core
 │   │   ├── hex
 │   │   ├── itertools (*)
+│   │   ├── lean_string
+│   │   │   ├── castaway
+│   │   │   │   └── rustversion
+│   │   │   ├── itoa
+│   │   │   └── ryu
 │   │   ├── second_stack
 │   │   ├── sha3
 │   │   │   ├── digest
@@ -114,10 +126,13 @@ spacetimedb
 │   │   ├── smallvec
 │   │   ├── spacetimedb_bindings_macro (*)
 │   │   ├── spacetimedb_primitives (*)
-│   │   └── thiserror
-│   │       └── thiserror_impl
-│   │           ├── proc_macro2 (*)
-│   │           ├── quote (*)
-│   │           └── syn (*)
+│   │   ├── thiserror
+│   │   │   └── thiserror_impl
+│   │   │       ├── proc_macro2 (*)
+│   │   │       ├── quote (*)
+│   │   │       └── syn (*)
+│   │   └── uuid
 │   └── thiserror (*)
-└── spacetimedb_primitives (*)
+├── spacetimedb_primitives (*)
+└── spacetimedb_query_builder
+    └── spacetimedb_lib (*)

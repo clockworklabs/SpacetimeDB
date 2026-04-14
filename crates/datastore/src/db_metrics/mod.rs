@@ -190,6 +190,61 @@ metrics_group!(
         #[help = "How many queries are evaluated in each subscribe and unsubscribe"]
         #[labels(db: Identity, workload: WorkloadType)]
         pub num_queries_evaluated: IntCounterVec,
+
+        #[name = spacetime_procedure_http_request_size_bytes]
+        #[help = "Size in bytes of HTTP requests performed by procedures running in databases.
+
+An individual HTTP request's size in bytes is the sum of the sizes of the URI, header names, header values and body."]
+        #[labels(db: Identity)]
+        pub procedure_http_request_size_bytes: IntCounterVec,
+
+        #[name = spacetime_procedure_http_response_size_bytes]
+        #[help = "Size in bytes of HTTP responses to requests performed by procedures running in databases.
+
+An individual HTTP response's size in bytes is the sum of the sizes of the header names, header values and body."]
+        #[labels(db: Identity)]
+        pub procedure_http_response_size_bytes: IntCounterVec,
+
+        #[name = spacetime_procedure_num_http_requests]
+        #[help = "Number of HTTP requests performed by procedures running in databases.
+
+Should be the sum of `spacetime_procedure_num_successful_http_requests`,
+`spacetime_procedure_num_failed_http_requests`, `spacetime_procedure_num_timeout_http_requests`
+and `spacetime_procedure_num_in_progress_http_requests`."]
+        #[labels(db: Identity)]
+        pub procedure_num_http_requests: IntCounterVec,
+
+        #[name = spacetime_procedure_num_successful_http_requests]
+        #[help = "Number of HTTP requests performed by procedures which terminate successfully, returning a response.
+
+Each HTTP request performed by a database will be counted either here, in `spacetime_procedure_num_failed_http_requests`,
+`spacetime_procedure_num_timeout_http_requests` or in `spacetime_procedure_num_in_progress_http_requests`."]
+        #[labels(db: Identity)]
+        pub procedure_num_successful_http_requests: IntCounterVec,
+
+        #[name = spacetime_procedure_num_failed_http_requests]
+        #[help = "Number of HTTP requests performed by procedures which fail for reasons other than a timeout.
+
+Each HTTP request performed by a database will be counted either here, in `spacetime_procedure_num_successful_http_requests`,
+`spacetime_procedure_num_timeout_http_requests` or in `spacetime_procedure_num_in_progress_http_requests`."]
+        #[labels(db: Identity)]
+        pub procedure_num_failed_http_requests: IntCounterVec,
+
+        #[name = spacetime_procedure_num_timeout_http_requests]
+        #[help = "Number of HTTP requests performed by procedures which fail due to a timeout.
+
+Each HTTP request performed by a database will be counted either here, in `spacetime_procedure_num_successful_http_requests`,
+`spacetime_procedure_num_failed_http_requests`, or in `spacetime_procedure_num_in_progress_http_requests`."]
+        #[labels(db: Identity)]
+        pub procedure_num_timeout_http_requests: IntCounterVec,
+
+        #[name = spacetime_procedure_num_in_progress_http_requests]
+        #[help = "Number of HTTP requests currently in progress within procedures.
+
+Each HTTP request performed by a database will be counted either here, in `spacetime_procedure_num_successful_http_requests`,
+`spacetime_procedure_num_failed_http_requests`, or in `spacetime_procedure_num_timeout_http_requests`."]
+        #[labels(db: Identity)]
+        pub procedure_num_in_progress_http_requests: IntGaugeVec,
     }
 );
 

@@ -15,30 +15,25 @@ namespace SpacetimeDB.ClientApi
     {
         [DataMember(Name = "request_id")]
         public uint RequestId;
-        [DataMember(Name = "total_host_execution_duration_micros")]
-        public ulong TotalHostExecutionDurationMicros;
-        [DataMember(Name = "query_id")]
-        public QueryId QueryId;
+        [DataMember(Name = "query_set_id")]
+        public QuerySetId QuerySetId;
         [DataMember(Name = "rows")]
-        public SubscribeRows Rows;
+        public QueryRows? Rows;
 
         public UnsubscribeApplied(
             uint RequestId,
-            ulong TotalHostExecutionDurationMicros,
-            QueryId QueryId,
-            SubscribeRows Rows
+            QuerySetId QuerySetId,
+            QueryRows? Rows
         )
         {
             this.RequestId = RequestId;
-            this.TotalHostExecutionDurationMicros = TotalHostExecutionDurationMicros;
-            this.QueryId = QueryId;
+            this.QuerySetId = QuerySetId;
             this.Rows = Rows;
         }
 
         public UnsubscribeApplied()
         {
-            this.QueryId = new();
-            this.Rows = new();
+            this.QuerySetId = new();
         }
     }
 }

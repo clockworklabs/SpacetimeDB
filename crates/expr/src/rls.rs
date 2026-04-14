@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sql_parser::ast::BinOp;
 
 use crate::{
@@ -22,7 +23,7 @@ pub fn resolve_views_for_sub(
         return Ok(vec![expr]);
     }
 
-    let Some(return_name) = expr.return_name().map(|name| name.to_owned().into_boxed_str()) else {
+    let Some(return_name) = expr.return_name().cloned() else {
         anyhow::bail!("Could not determine return type during RLS resolution")
     };
 
@@ -287,7 +288,11 @@ fn resolve_views_for_expr(
 
     /// After we collect all the necessary view definitions and run alpha conversion,
     /// this function handles the actual replacement of the view with its definition.
-    fn expand_views(expr: RelExpr, view_def_fragments: &[(TableId, Box<str>, Vec<RelExpr>)], out: &mut Vec<RelExpr>) {
+    fn expand_views(
+        expr: RelExpr,
+        view_def_fragments: &[(TableId, RawIdentifier, Vec<RelExpr>)],
+        out: &mut Vec<RelExpr>,
+    ) {
         match view_def_fragments {
             [] => out.push(expr),
             [(table_id, alias, fragments), view_def_fragments @ ..] => {
@@ -332,19 +337,19 @@ fn resolve_views_for_expr(
 /// JOIN t AS t   ON t.id = v.id WHERE v.x = 0
 /// ```
 fn alpha_rename_fragments(
-    return_name: &str,
-    outer_alias: &str,
+    return_name: &RawIdentifier,
+    outer_alias: &RawIdentifier,
     inputs: Vec<RelExpr>,
     output: &mut Vec<RelExpr>,
     suffix: &mut usize,
 ) {
     for mut fragment in inputs {
         *suffix += 1;
-        alpha_rename(&mut fragment, &mut |name: &str| {
+        alpha_rename(&mut fragment, &mut |name: &RawIdentifier| {
             if name == return_name {
-                return outer_alias.to_owned().into_boxed_str();
+                return outer_alias.clone();
             }
-            (name.to_owned() + "_" + &suffix.to_string()).into_boxed_str()
+            RawIdentifier::new(name.to_string() + "_" + &suffix.to_string())
         });
         output.push(fragment);
     }
@@ -352,13 +357,13 @@ fn alpha_rename_fragments(
 
 /// When expanding a view, we must do an alpha conversion on the view definition.
 /// This involves renaming the table aliases before replacing the view reference.
-fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&str) -> Box<str>) {
+fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
     /// Helper for renaming a relvar
-    fn rename(relvar: &mut Relvar, f: &mut impl FnMut(&str) -> Box<str>) {
+    fn rename(relvar: &mut Relvar, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
         relvar.alias = f(&relvar.alias);
     }
     /// Helper for renaming a field reference
-    fn rename_field(field: &mut FieldProject, f: &mut impl FnMut(&str) -> Box<str>) {
+    fn rename_field(field: &mut FieldProject, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
         field.table = f(&field.table);
     }
     expr.visit_mut(&mut |expr| match expr {
