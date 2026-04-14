@@ -1872,60 +1872,72 @@ fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
 }
 
 /// Install AI assistant rules for multiple editors/tools.
-/// Writes rules to:
-/// - .cursor/rules/ (Cursor)
+/// Reads from embedded skill files (skills/*/SKILL.md) and writes to:
+/// - .cursor/rules/ (Cursor) — with .mdc frontmatter
 /// - CLAUDE.md (Claude Code)
 /// - AGENTS.md (Opencode)
 /// - .windsurfrules (Windsurf)
 /// - .github/copilot-instructions.md (VS Code Copilot)
 fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
-    let base_rules = embedded::get_ai_rules_base();
-    let ts_rules = embedded::get_ai_rules_typescript();
-    let rust_rules = embedded::get_ai_rules_rust();
-    let csharp_rules = embedded::get_ai_rules_csharp();
+    // Collect relevant skills based on server and client languages
+    let mut skills: Vec<(&str, &str)> = Vec::new();
 
-    // Check which languages are used in server or client
-    let uses_typescript = config.server_lang == Some(ServerLanguage::TypeScript)
-        || config.client_lang == Some(ClientLanguage::TypeScript);
-    let uses_rust =
-        config.server_lang == Some(ServerLanguage::Rust) || config.client_lang == Some(ClientLanguage::Rust);
-    let uses_csharp =
-        config.server_lang == Some(ServerLanguage::Csharp) || config.client_lang == Some(ClientLanguage::Csharp);
+    // Always include shared skills
+    if let Some(content) = embedded::get_skill("concepts") {
+        skills.push(("concepts", content));
+    }
+    if let Some(content) = embedded::get_skill("cli") {
+        skills.push(("cli", content));
+    }
 
-    // 1. Cursor: .cursor/rules/ directory with separate files
+    // Server language skill
+    if let Some(server_lang) = config.server_lang {
+        let name = match server_lang {
+            ServerLanguage::Rust => "rust-server",
+            ServerLanguage::TypeScript => "typescript-server",
+            ServerLanguage::Csharp => "csharp-server",
+            ServerLanguage::Cpp => "cpp-server",
+        };
+        if let Some(content) = embedded::get_skill(name) {
+            skills.push((name, content));
+        }
+        // C++ server projects use Unreal as their client SDK
+        if server_lang == ServerLanguage::Cpp {
+            if let Some(content) = embedded::get_skill("unreal") {
+                skills.push(("unreal", content));
+            }
+        }
+    }
+
+    // Client language skill(s)
+    if let Some(client_lang) = config.client_lang {
+        let names: &[&str] = match client_lang {
+            ClientLanguage::Rust => &[], // no Rust client skill yet
+            ClientLanguage::TypeScript => &["typescript-client"],
+            ClientLanguage::Csharp => &["csharp-client", "unity"],
+        };
+        for name in names {
+            if let Some(content) = embedded::get_skill(name) {
+                skills.push((name, content));
+            }
+        }
+    }
+
+    // 1. Cursor: .cursor/rules/ directory with separate .mdc files
     let cursor_dir = project_path.join(".cursor/rules");
     fs::create_dir_all(&cursor_dir)?;
-    fs::write(cursor_dir.join("spacetimedb.mdc"), base_rules)?;
-    if uses_typescript {
-        fs::write(cursor_dir.join("spacetimedb-typescript.mdc"), ts_rules)?;
-    }
-    if uses_rust {
-        fs::write(cursor_dir.join("spacetimedb-rust.mdc"), rust_rules)?;
-    }
-    if uses_csharp {
-        fs::write(cursor_dir.join("spacetimedb-csharp.mdc"), csharp_rules)?;
+    for (name, content) in &skills {
+        let mdc_content = skill_to_mdc(content);
+        fs::write(cursor_dir.join(format!("{}.mdc", name)), &mdc_content)?;
     }
 
     // Build combined content for single-file AI assistants
-    // Strip the YAML frontmatter from the .mdc files for non-Cursor tools
-    let base_content = strip_mdc_frontmatter(base_rules);
-    let mut combined_content = base_content.to_string();
-
-    if uses_typescript {
-        let ts_content = strip_mdc_frontmatter(ts_rules);
-        combined_content.push_str("\n\n");
-        combined_content.push_str(ts_content);
-    }
-    if uses_rust {
-        let rust_content = strip_mdc_frontmatter(rust_rules);
-        combined_content.push_str("\n\n");
-        combined_content.push_str(rust_content);
-    }
-    if uses_csharp {
-        let csharp_content = strip_mdc_frontmatter(csharp_rules);
-        combined_content.push_str("\n\n");
-        combined_content.push_str(csharp_content);
-    }
+    // Strip the YAML frontmatter from skills for non-Cursor tools
+    let combined_content: String = skills
+        .iter()
+        .map(|(_, content)| strip_frontmatter(content))
+        .collect::<Vec<_>>()
+        .join("\n\n");
 
     // 2. Claude Code: CLAUDE.md
     fs::write(project_path.join("CLAUDE.md"), &combined_content)?;
@@ -1944,18 +1956,58 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
     Ok(())
 }
 
-/// Strip YAML frontmatter from .mdc files (the --- delimited section at the start)
-fn strip_mdc_frontmatter(content: &str) -> &str {
-    // Look for frontmatter: starts with --- and ends with ---
+/// Convert a SKILL.md file to Cursor .mdc format.
+/// Parses the SKILL.md frontmatter for cursor_globs and cursor_always_apply,
+/// then generates Cursor-compatible frontmatter.
+fn skill_to_mdc(content: &str) -> String {
+    let (frontmatter, body) = split_frontmatter(content);
+
+    // Parse cursor-specific fields from frontmatter
+    let mut description = String::new();
+    let mut cursor_globs = String::new();
+    let mut cursor_always_apply = false;
+
+    for line in frontmatter.lines() {
+        let line = line.trim();
+        if let Some(val) = line.strip_prefix("description:") {
+            description = val.trim().trim_matches('"').to_string();
+        } else if let Some(val) = line.strip_prefix("cursor_globs:") {
+            cursor_globs = val.trim().trim_matches('"').to_string();
+        } else if let Some(val) = line.strip_prefix("cursor_always_apply:") {
+            cursor_always_apply = val.trim() == "true";
+        }
+    }
+
+    let mut mdc = String::new();
+    mdc.push_str("---\n");
+    if !description.is_empty() {
+        mdc.push_str(&format!("description: \"{}\"\n", description));
+    }
+    if !cursor_globs.is_empty() {
+        mdc.push_str(&format!("globs: {}\n", cursor_globs));
+    }
+    mdc.push_str(&format!("alwaysApply: {}\n", cursor_always_apply));
+    mdc.push_str("---\n\n");
+    mdc.push_str(body);
+    mdc
+}
+
+/// Split content into (frontmatter, body). Frontmatter is the text between --- delimiters.
+fn split_frontmatter(content: &str) -> (&str, &str) {
     if let Some(after_opening) = content.strip_prefix("---")
         && let Some(end_idx) = after_opening.find("\n---")
     {
-        // Skip past the closing --- and the newline after it
-        let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
-                                                       // Skip any leading newlines after frontmatter
-        return remaining.trim_start_matches('\n');
+        let frontmatter = &after_opening[..end_idx];
+        let body = &after_opening[end_idx + 4..]; // 4 for \n---
+        let body = body.trim_start_matches('\n');
+        return (frontmatter, body);
     }
-    content
+    ("", content)
+}
+
+/// Strip YAML frontmatter (the --- delimited section at the start)
+fn strip_frontmatter(content: &str) -> &str {
+    split_frontmatter(content).1
 }
 
 /// Check if Emscripten and CMake tooling are available in PATH.

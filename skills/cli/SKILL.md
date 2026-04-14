@@ -1,6 +1,14 @@
 ---
-name: spacetimedb-cli
+name: cli
 description: SpacetimeDB CLI reference for initializing projects, building modules, publishing databases, querying data, and managing servers
+license: Apache-2.0
+metadata:
+  author: clockworklabs
+  version: "2.0"
+  role: shared
+  language: all
+  cursor_globs: "**/*"
+  cursor_always_apply: false
 triggers:
   - spacetime init
   - spacetime build
@@ -51,7 +59,7 @@ spacetime publish my-database --yes
 spacetime publish my-database --server local --yes
 
 # Clear database and republish
-spacetime publish my-database --clear-database --yes
+spacetime publish my-database --delete-data always --yes
 ```
 
 ### Database Interaction
@@ -61,8 +69,8 @@ spacetime publish my-database --clear-database --yes
 spacetime sql my-database "SELECT * FROM users"
 spacetime sql my-database --interactive   # REPL mode
 
-# Call reducers
-spacetime call my-database my_reducer '{"arg1": "value", "arg2": 123}'
+# Call reducers (each argument is a separate positional arg)
+spacetime call my-database my_reducer '"value"' '123'
 
 # Subscribe to changes
 spacetime subscribe my-database "SELECT * FROM users" --num-updates 10
@@ -136,46 +144,6 @@ spacetime logout
 | `maincloud` | `https://maincloud.spacetimedb.com` | Production cloud (default) |
 | `local` | `http://127.0.0.1:3000` | Local development server |
 
-## Common Workflows
-
-### New Project Setup
-
-```bash
-# 1. Login
-spacetime login
-
-# 2. Create project
-spacetime init my-game --lang rust
-cd my-game
-
-# 3. Start dev mode (auto-rebuilds and publishes)
-spacetime dev
-```
-
-### Local Development
-
-```bash
-# Start local server (in separate terminal)
-spacetime start
-
-# Publish to local
-spacetime publish my-db --server local --clear-database --yes
-
-# Query local database
-spacetime sql my-db --server local "SELECT * FROM players"
-```
-
-### Generate Client Bindings
-
-```bash
-# After building module
-spacetime build
-spacetime generate --lang typescript --out-dir ./client/src/bindings --module-path .
-
-# Or use dev mode which auto-generates
-spacetime dev --client-lang typescript --module-bindings-path ./client/src/bindings
-```
-
 ## Common Flags
 
 | Flag | Short | Description |
@@ -202,7 +170,7 @@ spacetime server ping <server>
 ### "Schema conflict"
 ```bash
 # Clear data and republish
-spacetime publish my-db --clear-database --yes
+spacetime publish my-db --delete-data always --yes
 ```
 
 ### "Build failed"
@@ -216,12 +184,6 @@ rustup target add wasm32-unknown-unknown
 ## Module Languages
 
 **Server-side (modules):** Rust, C#, TypeScript, C++
-**Client SDKs:** TypeScript, C#, Rust, Python, Unreal Engine
+**Client SDKs:** TypeScript, C#, Rust, Unreal Engine
 **CLI `generate` targets:** TypeScript, C#, Rust, Unreal C++
 
-## Notes
-
-- Many commands are marked UNSTABLE and may change
-- Default server is `maincloud` unless configured otherwise
-- Use `--yes` flag in scripts to avoid interactive prompts
-- Dev mode watches files and auto-rebuilds on changes
