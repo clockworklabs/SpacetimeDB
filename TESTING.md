@@ -91,7 +91,7 @@ of either the module libraries or client SDKs:
 
 `smoketests/` defines an integration/regression test suite using a harness written in Python based around the Python `unittest` library. These are useful primarily for testing the SpacetimeDB CLI, but can also be used to run arbitrary commands.
 
-The test harness currently assumes that tested modules are written in Rust, and does not have any machinery for running client projects. It could be extended to fix either of these shortcomings, but that may not be worth the effort. As of writing, the only smoketest we have which interacts with C# modules is `smoketests/tests/csharp_module.py`, which uses `spacetime build` to compile a C# module project but does not publish it.
+The test harness currently assumes that tested modules are written in Rust, and does not have any machinery for running client projects. It could be extended to fix either of these shortcomings, but that may not be worth the effort. As of writing, the only smoketest we have which interacts with C# modules is `smoketests/tests/csharp_module.py`, which uses `spacetime build` to compile a C# module project but does not publish it, and `smoketests/tests/quickstart.py` that replay the `quickstart` guide for Rust & C#.
 
 ## Standalone integration test
 
