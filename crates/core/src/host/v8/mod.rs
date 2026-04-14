@@ -329,6 +329,8 @@ fn env_on_isolate_unwrap(isolate: &mut Isolate) -> &mut JsInstanceEnv {
 struct JsInstanceEnv {
     instance_env: InstanceEnv,
     module_def: Option<Arc<ModuleDef>>,
+    /// Last used-heap sample captured by the worker's periodic heap checks.
+    cached_used_heap_size: usize,
 
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
@@ -353,6 +355,7 @@ impl JsInstanceEnv {
         Self {
             instance_env,
             module_def: None,
+            cached_used_heap_size: 0,
             call_times: CallTimes::new(),
             iters: <_>::default(),
             chunk_pool: <_>::default(),
@@ -405,6 +408,16 @@ impl JsInstanceEnv {
             total_duration,
             wasm_instance_env_call_times,
         }
+    }
+
+    /// Refresh the cached heap usage after an explicit V8 heap sample.
+    fn set_cached_used_heap_size(&mut self, bytes: usize) {
+        self.cached_used_heap_size = bytes;
+    }
+
+    /// Return the last heap sample without forcing a fresh V8 query.
+    fn cached_used_heap_size(&self) -> usize {
+        self.cached_used_heap_size
     }
 
     fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
@@ -951,7 +964,10 @@ fn adjust_gauge(gauge: &IntGauge, delta: i64) {
 }
 
 fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
+    // Whenever we sample heap statistics, we cache them on the isolate so that
+    // the per-call execution stats can avoid querying them on each invocation.
     let stats = scope.get_heap_statistics();
+    env_on_isolate_unwrap(scope).set_cached_used_heap_size(stats.used_heap_size());
     metrics.observe(&stats);
     stats
 }
@@ -1902,9 +1918,9 @@ where
     // Derive energy stats.
     let energy = energy_from_elapsed(budget, timings.total_duration);
 
-    // Fetch the currently used heap size in V8.
-    // The used size is ostensibly fairer than the total size.
-    let memory_allocation = scope.get_heap_statistics().used_heap_size();
+    // Reuse the last periodic heap sample instead of querying V8 on every call.
+    // We use this statistic for energy tracking, so eventual consistency is fine.
+    let memory_allocation = env_on_isolate_unwrap(scope).cached_used_heap_size();
 
     let stats = ExecutionStats {
         energy,
