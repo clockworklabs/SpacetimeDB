@@ -24,7 +24,7 @@ fn test_delete_database_aborts_without_confirmation() {
     test.publish_module_named(&name, false).unwrap();
 
     let output = test
-        .spacetime_with_stdin(&["delete", "--server", &test.server_url, &name], "n\n")
+        .spacetime(&["delete", "--server", &test.server_url, &name]);
         .unwrap();
     assert_delete_prompt(&output, &name);
     assert!(output.contains("Aborting"), "expected abort message:\n{output}");
