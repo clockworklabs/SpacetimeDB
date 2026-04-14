@@ -37,7 +37,9 @@ struct IdentityRow {
 
 #[derive(Tabled)]
 struct DatabaseRow {
+    #[tabled(rename = "Database Name(s)")]
     pub db_names: String,
+    #[tabled(rename = "Identity")]
     pub db_identity: Identity,
 }
 
