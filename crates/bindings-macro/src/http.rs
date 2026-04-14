@@ -98,9 +98,7 @@ pub(crate) fn router_impl(args: TokenStream, original_function: &ItemFn) -> syn:
 
         const _: () = {
             fn _assert_router() {
-                // TODO(cleanup): Why two bindings here?
                 let _f: fn() -> spacetimedb::http::Router = #func_name;
-                let _ = _f;
             }
         };
 
