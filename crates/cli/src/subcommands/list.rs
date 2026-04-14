@@ -8,7 +8,6 @@ use anyhow::Context;
 use clap::{ArgMatches, Command};
 use futures::future::join_all;
 use serde::Deserialize;
-use spacetimedb_client_api_messages::name::DatabaseName;
 use spacetimedb_lib::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
@@ -66,7 +65,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .context("unable to retrieve databases for identity")?;
 
     if !result.identities.is_empty() {
-        let databases = lookup_database_names(&config, server, result.identities).await;
+        let config = &config;
+        let databases = join_all(result.identities.into_iter().map(|row| async move {
+            let db_identity = row.db_identity;
+            let db_names = lookup_database_names(config, server, db_identity).await;
+            DatabaseRow {
+                db_names: format_database_names(db_names),
+                db_identity,
+            }
+        }))
+        .await;
         let mut table = Table::new(databases);
         table
             .with(Style::psql())
@@ -80,38 +88,20 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-async fn lookup_database_names(
-    config: &Config,
-    server: Option<&str>,
-    identities: Vec<IdentityRow>,
-) -> Vec<DatabaseRow> {
-    let lookups = identities.iter().map(|row| async {
-        let result = util::spacetime_reverse_dns(config, &row.db_identity.to_string(), server).await;
-        (row.db_identity, result)
-    });
-
-    join_all(lookups)
-        .await
-        .into_iter()
-        .map(|(db_identity, result)| {
-            let db_names = match result {
-                Ok(response) if !response.names.is_empty() => format_database_names(response.names),
-                Ok(_) => "(unnamed)".to_string(),
-                Err(err) => {
-                    eprintln!("Warning: failed to look up names for {db_identity}: {err}");
-                    "(lookup failed)".to_string()
-                }
-            };
-
-            DatabaseRow { db_names, db_identity }
-        })
-        .collect()
+async fn lookup_database_names(config: &Config, server: Option<&str>, db_identity: Identity) -> Vec<String> {
+    match util::spacetime_reverse_dns(config, &db_identity.to_string(), server).await {
+        Ok(response) => response.names.into_iter().map(|name| name.to_string()).collect(),
+        Err(err) => {
+            eprintln!("Warning: failed to look up names for {db_identity}: {err}");
+            vec!["(lookup failed)".to_string()]
+        }
+    }
 }
 
-fn format_database_names(names: Vec<DatabaseName>) -> String {
-    names
-        .into_iter()
-        .map(|name| name.to_string())
-        .collect::<Vec<_>>()
-        .join(", ")
+fn format_database_names(names: Vec<String>) -> String {
+    if names.is_empty() {
+        "(unnamed)".to_string()
+    } else {
+        names.join(", ")
+    }
 }
