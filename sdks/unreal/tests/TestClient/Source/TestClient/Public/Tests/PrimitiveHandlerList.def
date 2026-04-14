@@ -1,0 +1,61 @@
+/* PrimitiveHandlerList.def
+ *  FOREACH_PRIMITIVE(Suffix, ExpectedLiteral, RowStructType)
+ */
+#define FOREACH_PRIMITIVE(M) \
+    M(U8 ,  0, FOneU8Type) \
+    M(U16,  0, FOneU16Type) \
+    M(U32,  0, FOneU32Type) \
+    M(U64,  0, FOneU64Type) \
+    M(U128, FSpacetimeDBUInt128(0,0), FOneU128Type) \
+    M(U256, FSpacetimeDBUInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0)), FOneU256Type) \
+    M(I8 ,  0, FOneI8Type) \
+    M(I16,  0, FOneI16Type) \
+    M(I32,  0, FOneI32Type) \
+    M(I64,  0, FOneI64Type) \
+    M(I128, FSpacetimeDBInt128(0,0), FOneI128Type) \
+    M(I256, FSpacetimeDBInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0)), FOneI256Type) \
+    M(Bool, false, FOneBoolType) \
+    M(F32 , 0.0f, FOneF32Type) \
+    M(F64 , 0.0, FOneF64Type) \
+    M(String, TEXT(""), FOneStringType)
+
+
+/*
+ * Macro list for unique tables used in tests that insert then delete rows.
+ * Arguments: (Suffix, KeyField, KeyLiteral, ExpectedValue, RowStructType)
+ */
+#define FOREACH_UNIQUE_PRIMITIVE(M) \
+    M(U8   , N, 0, 0xbeef, FUniqueU8Type) \
+    M(U16  , N, 0, 0xbeef, FUniqueU16Type) \
+    M(U32  , N, 0, 0xbeef, FUniqueU32Type) \
+    M(U64  , N, 0, 0xbeef, FUniqueU64Type) \
+    M(U128 , N, FSpacetimeDBUInt128(0,0), 0xbeef, FUniqueU128Type) \
+    M(U256 , N, FSpacetimeDBUInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0)), 0xbeef, FUniqueU256Type) \
+    M(I8   , N, 0, 0xbeef, FUniqueI8Type) \
+    M(I16  , N, 0, 0xbeef, FUniqueI16Type) \
+    M(I32  , N, 0, 0xbeef, FUniqueI32Type) \
+    M(I64  , N, 0, 0xbeef, FUniqueI64Type) \
+    M(I128 , N, FSpacetimeDBInt128(0,0), 0xbeef, FUniqueI128Type) \
+    M(I256 , N, FSpacetimeDBInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0)), 0xbeef, FUniqueI256Type) \
+    M(Bool , B, false, 0xbeef, FUniqueBoolType) \
+    M(String, S, TEXT(""), 0xbeef, FUniqueStringType)
+
+/*
+ * Macro list for primary-key tables used in update tests.
+ * Arguments: (Suffix, KeyField, KeyLiteral, ExpectedValue, UpdatedValue, RowStructType)
+ */
+#define FOREACH_PK_PRIMITIVE(M) \
+    M(U8   , N, 0, 0xbeef, 0xbabe, FPkU8Type) \
+    M(U16  , N, 0, 0xbeef, 0xbabe, FPkU16Type) \
+    M(U32  , N, 0, 0xbeef, 0xbabe, FPkU32Type) \
+    M(U64  , N, 0, 0xbeef, 0xbabe, FPkU64Type) \
+    M(U128 , N, FSpacetimeDBUInt128(0,0), 0xbeef, 0xbabe, FPkU128Type) \
+    M(U256 , N, FSpacetimeDBUInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0)), 0xbeef, 0xbabe, FPkU256Type) \
+    M(I8   , N, 0, 0xbeef, 0xbabe, FPkI8Type) \
+    M(I16  , N, 0, 0xbeef, 0xbabe, FPkI16Type) \
+    M(I32  , N, 0, 0xbeef, 0xbabe, FPkI32Type) \
+    M(I64  , N, 0, 0xbeef, 0xbabe, FPkI64Type) \
+    M(I128 , N, FSpacetimeDBInt128(0,0), 0xbeef, 0xbabe, FPkI128Type) \
+    M(I256 , N, FSpacetimeDBInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0)), 0xbeef, 0xbabe, FPkI256Type) \
+    M(Bool , B, false, 0xbeef, 0xbabe, FPkBoolType) \
+    M(String, S, TEXT(""), 0xbeef, 0xbabe, FPkStringType)

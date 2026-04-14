@@ -160,7 +160,7 @@ pub unsafe trait SafelyExchangeable<T> {}
 /// Implementation detail of the other types.
 /// Provides some convenience but users of the type are responsible
 /// for safety, invariants and variance.
-#[repr(packed)]
+#[repr(Rust, packed)]
 struct SlimRawSlice<T> {
     /// A valid pointer to the slice data.
     ptr: NonNull<T>,
@@ -201,10 +201,10 @@ impl<T> SlimRawSlice<T> {
     /// must satisfy [`std::slice::from_raw_parts`]'s requirements.
     /// That is,
     /// * `self.ptr` must be valid for reads
-    ///    for `self.len * size_of::<T>` many bytes and must be aligned.
+    ///   for `self.len * size_of::<T>` many bytes and must be aligned.
     ///
     /// * `self.ptr` must point to `self.len`
-    ///    consecutive properly initialized values of type `T`.
+    ///   consecutive properly initialized values of type `T`.
     ///
     /// * The memory referenced by the returned slice
     ///   must not be mutated for the duration of lifetime `'a`,
@@ -228,7 +228,7 @@ impl<T> SlimRawSlice<T> {
     /// must satisfy [`std::slice::from_raw_parts_mut`]'s requirements.
     /// That is,
     /// * `self.ptr` must be [valid] for both reads and writes
-    ///    for `self.len * mem::size_of::<T>()` many bytes,
+    ///   for `self.len * mem::size_of::<T>()` many bytes,
     ///   and it must be properly aligned.
     ///
     /// * `self.ptr` must point to `self.len`
@@ -256,10 +256,12 @@ impl<T> SlimRawSlice<T> {
     /// The caller must ensure that `ptr != NULL`.
     #[inline]
     const unsafe fn from_len_ptr(len: usize, ptr: *mut T) -> Self {
-        // SAFETY: caller ensured that `!ptr.is_null()`.
-        let ptr = NonNull::new_unchecked(ptr);
-        let len = len as u32;
-        Self { ptr, len }
+        unsafe {
+            // SAFETY: caller ensured that `!ptr.is_null()`.
+            let ptr = NonNull::new_unchecked(ptr);
+            let len = len as u32;
+            Self { ptr, len }
+        }
     }
 }
 
@@ -319,13 +321,15 @@ mod slim_slice_box {
         #[inline]
         // Clippy doesn't seem to consider unsafe code here.
         pub unsafe fn from_boxed_unchecked(boxed: Box<[T]>) -> Self {
-            let len = boxed.len();
-            let ptr = Box::into_raw(boxed) as *mut T;
-            // SAFETY: `Box<T>`'s ptr was a `NonNull<T>` already.
-            // and our caller has promised that `boxed.len() <= u32::MAX`.
-            let raw = SlimRawSlice::from_len_ptr(len, ptr);
-            let owned = PhantomData;
-            Self { raw, owned }
+            unsafe {
+                let len = boxed.len();
+                let ptr = Box::into_raw(boxed) as *mut T;
+                // SAFETY: `Box<T>`'s ptr was a `NonNull<T>` already.
+                // and our caller has promised that `boxed.len() <= u32::MAX`.
+                let raw = SlimRawSlice::from_len_ptr(len, ptr);
+                let owned = PhantomData;
+                Self { raw, owned }
+            }
         }
 
         /// Returns a limited shared slice to this boxed slice.
@@ -885,13 +889,15 @@ mod slim_slice {
         ///
         /// SAFETY: `slice.len() <= u32::MAX` must hold.
         pub(super) const unsafe fn from_slice_unchecked(slice: &'a [T]) -> Self {
-            let len = slice.len();
-            let ptr = slice.as_ptr().cast_mut();
-            // SAFETY: `&mut [T]` implies that the pointer is non-null.
-            let raw = SlimRawSlice::from_len_ptr(len, ptr);
-            // SAFETY: Our length invariant is satisfied by the caller.
-            let covariant = PhantomData;
-            Self { raw, covariant }
+            unsafe {
+                let len = slice.len();
+                let ptr = slice.as_ptr().cast_mut();
+                // SAFETY: `&mut [T]` implies that the pointer is non-null.
+                let raw = SlimRawSlice::from_len_ptr(len, ptr);
+                // SAFETY: Our length invariant is satisfied by the caller.
+                let covariant = PhantomData;
+                Self { raw, covariant }
+            }
         }
     }
 
@@ -1067,12 +1073,14 @@ impl<'a, T> SlimSliceMut<'a, T> {
     /// SAFETY: `slice.len() <= u32::MAX` must hold.
     #[inline]
     unsafe fn from_slice_unchecked(slice: &'a mut [T]) -> Self {
-        // SAFETY: `&mut [T]` implies that the pointer is non-null.
-        let raw = SlimRawSlice::from_len_ptr(slice.len(), slice.as_mut_ptr());
-        // SAFETY: Our invariants are satisfied by the caller
-        // and that `&mut [T]` implies exclusive access to the data.
-        let invariant = PhantomData;
-        Self { raw, invariant }
+        unsafe {
+            // SAFETY: `&mut [T]` implies that the pointer is non-null.
+            let raw = SlimRawSlice::from_len_ptr(slice.len(), slice.as_mut_ptr());
+            // SAFETY: Our invariants are satisfied by the caller
+            // and that `&mut [T]` implies exclusive access to the data.
+            let invariant = PhantomData;
+            Self { raw, invariant }
+        }
     }
 }
 
@@ -1597,8 +1605,8 @@ mod tests {
     }
 
     fn debug_properties<T: Debug, U: ?Sized + Debug>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {
-        assert_eq!(format!("{:?}", a), format!("{:?}", a_cmp));
-        assert_eq!(format!("{:?}", b), format!("{:?}", b_cmp));
+        assert_eq!(format!("{a:?}"), format!("{:?}", a_cmp));
+        assert_eq!(format!("{b:?}"), format!("{:?}", b_cmp));
     }
 
     fn display_properties<T: Debug + Display, U: ?Sized + Display>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {

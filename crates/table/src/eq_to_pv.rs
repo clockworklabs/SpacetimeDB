@@ -8,13 +8,13 @@ use crate::{
     blob_store::BlobStore,
     eq::BytesPage,
     indexes::PageOffset,
-    layout::{align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout},
     page::Page,
     row_hash::{read_from_bytes, run_vlo_bytes},
     var_len::{VarLenGranule, VarLenRef},
 };
 use core::str;
 use spacetimedb_sats::bsatn::{eq::eq_bsatn, Deserializer};
+use spacetimedb_sats::layout::{align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
 /// Equates row `lhs` in `page` with its fixed part starting at `fixed_offset` to `rhs`.

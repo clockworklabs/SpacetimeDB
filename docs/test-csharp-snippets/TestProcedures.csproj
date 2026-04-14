@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\crates\bindings-csharp\BSATN.Runtime\BSATN.Runtime.csproj" />
+    <ProjectReference Include="..\..\crates\bindings-csharp\Runtime\Runtime.csproj" />
+    <ProjectReference Include="..\..\crates\bindings-csharp\Codegen\Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

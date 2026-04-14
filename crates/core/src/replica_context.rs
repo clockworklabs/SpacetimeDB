@@ -1,3 +1,5 @@
+use spacetimedb_commitlog::SizeOnDisk;
+
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
@@ -16,15 +18,14 @@ pub struct ReplicaContext {
     pub replica_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
-    pub relational_db: Arc<RelationalDB>,
 }
 
 impl ReplicaContext {
     /// The number of bytes on disk occupied by the database's durability layer.
     ///
     /// An in-memory database will return `Ok(0)`.
-    pub fn durability_size_on_disk(&self) -> io::Result<u64> {
-        self.relational_db.size_on_disk()
+    pub fn durability_size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        self.relational_db().size_on_disk()
     }
 
     /// The size of the log file.
@@ -37,20 +38,45 @@ impl ReplicaContext {
     /// Some sources of size-on-disk may error, in which case the corresponding array element will be None.
     pub fn total_disk_usage(&self) -> TotalDiskUsage {
         TotalDiskUsage {
-            durability: self.durability_size_on_disk().ok(),
-            logs: self.log_file_size().ok(),
+            durability: self
+                .durability_size_on_disk()
+                .inspect_err(|e| {
+                    log::error!(
+                        "database={} replica={}: failed to obtain durability size on disk: {:#}",
+                        self.database.database_identity,
+                        self.replica_id,
+                        e
+                    );
+                })
+                .ok(),
+            logs: self
+                .log_file_size()
+                .inspect_err(|e| {
+                    log::error!(
+                        "database={} replica={}: failed to obtain log file size: {:#}",
+                        self.database.database_identity,
+                        self.replica_id,
+                        e
+                    );
+                })
+                .ok(),
         }
     }
 
     /// The size in bytes of all of the in-memory data of the database.
     pub fn mem_usage(&self) -> usize {
-        self.relational_db.size_in_memory()
+        self.relational_db().size_in_memory()
     }
 
     /// Update data size stats.
     pub fn update_gauges(&self) {
-        self.relational_db.update_data_size_metrics();
+        self.relational_db().update_data_size_metrics();
         self.subscriptions.update_gauges();
+    }
+
+    /// Returns a reference to the relational database.
+    pub fn relational_db(&self) -> &Arc<RelationalDB> {
+        self.subscriptions.relational_db()
     }
 }
 
@@ -64,7 +90,7 @@ impl Deref for ReplicaContext {
 
 #[derive(Copy, Clone, Default)]
 pub struct TotalDiskUsage {
-    pub durability: Option<u64>,
+    pub durability: Option<SizeOnDisk>,
     pub logs: Option<u64>,
 }
 
@@ -75,9 +101,5 @@ impl TotalDiskUsage {
             durability: self.durability.or(fallback.durability),
             logs: self.logs.or(fallback.logs),
         }
-    }
-
-    pub fn sum(&self) -> u64 {
-        self.durability.unwrap_or(0) + self.logs.unwrap_or(0)
     }
 }

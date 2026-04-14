@@ -76,7 +76,7 @@ pub(crate) fn one_of(options: &[crate::sym::Symbol]) -> String {
         }
         _ => {
             let join = options.join("`, `");
-            format!("expected one of: `{}`", join)
+            format!("expected one of: `{join}`")
         }
     }
 }

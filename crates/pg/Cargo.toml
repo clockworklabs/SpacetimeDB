@@ -1,0 +1,22 @@
+[package]
+name = "spacetimedb-pg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Postgres wire protocol Server support for SpacetimeDB"
+
+[dependencies]
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-client-api.workspace = true
+spacetimedb-lib.workspace = true
+
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+futures.workspace = true
+http.workspace = true
+log.workspace = true
+pgwire.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

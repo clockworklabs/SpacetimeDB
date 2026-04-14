@@ -27,17 +27,18 @@
 //! The `VarLenMembers` impl for `VarLenVisitorProgram`
 //! implements a simple interpreter loop for the var-len visitor bytecode.
 
-use crate::{layout::ProductTypeLayoutView, MemoryUsage};
-
 use super::{
     indexes::{Byte, Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout, SumTypeLayout},
     page::get_ref,
     var_len::{VarLenMembers, VarLenRef},
 };
 use core::fmt;
 use core::marker::PhantomData;
 use itertools::Itertools;
+use spacetimedb_sats::layout::{
+    align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout,
+};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::sync::Arc;
 
 /// Construct an implementor of `VarLenMembers`,
@@ -509,7 +510,7 @@ impl<'row> Iterator for VarLenVisitorProgramIterMut<'_, 'row> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::indexes::Size;
+    use spacetimedb_sats::layout::Size;
     use spacetimedb_sats::{AlgebraicType, ProductType};
 
     fn row_type<T: Into<ProductType>>(row_ty: T) -> RowTypeLayout {

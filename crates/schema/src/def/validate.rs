@@ -2,6 +2,7 @@
 
 use crate::error::ValidationErrors;
 
+pub mod v10;
 pub mod v8;
 pub mod v9;
 
@@ -10,9 +11,8 @@ pub type Result<T> = std::result::Result<T, ValidationErrors>;
 /// Helpers used in tests for validation modules.
 #[cfg(test)]
 pub mod tests {
-    use itertools::Itertools;
     use spacetimedb_lib::{db::raw_def::v9::RawScopedTypeNameV9, AlgebraicType};
-    use spacetimedb_sats::{Typespace, WithTypespace};
+    use spacetimedb_sats::{raw_identifier::RawIdentifier, Typespace, WithTypespace};
 
     use crate::{
         def::{ModuleDef, ScopedTypeName, TableDef},
@@ -20,8 +20,9 @@ pub mod tests {
     };
 
     /// Create an identifier, panicking if invalid.
-    pub fn expect_identifier(data: impl Into<Box<str>>) -> Identifier {
-        Identifier::new(data.into()).expect("invalid identifier")
+    pub fn expect_identifier(data: impl AsRef<str>) -> Identifier {
+        let raw = RawIdentifier::new(data.as_ref());
+        Identifier::new(raw).expect("invalid identifier")
     }
 
     /// Expect a name in the form "(scope::)*name".
@@ -30,7 +31,8 @@ pub mod tests {
         let mut scope = scoped_name
             .split("::")
             .map(|module| {
-                Identifier::new(module.into()).expect("all components of a scoped name must be valid identifiers.")
+                let raw = RawIdentifier::new(module);
+                Identifier::new(raw).expect("all components of a scoped name must be valid identifiers.")
             })
             .collect::<Vec<_>>();
         let name = scope.pop().expect("scoped names must contain at least one identifier");
@@ -42,7 +44,7 @@ pub mod tests {
     /// Expect a name in the form "(scope::)*name".
     /// Panics if the input is invalid.
     pub fn expect_raw_type_name(scoped_name: &str) -> RawScopedTypeNameV9 {
-        let mut scope = scoped_name.split("::").map_into().collect::<Vec<_>>();
+        let mut scope = scoped_name.split("::").map(RawIdentifier::new).collect::<Vec<_>>();
         let name = scope.pop().expect("scoped names must contain at least one identifier");
         let scope = scope.into();
 
@@ -67,7 +69,7 @@ pub mod tests {
             .unwrap();
 
         for (element, column) in product_type.elements.iter().zip(table_def.columns.iter()) {
-            assert_eq!(Some(&*column.name), element.name());
+            assert_eq!(Some(&column.name.clone().into()), element.name());
             assert_eq!(column.ty, element.algebraic_type);
         }
     }
@@ -77,7 +79,7 @@ pub mod tests {
         assert_eq!(
             expect_raw_type_name("foo::bar::baz"),
             RawScopedTypeNameV9 {
-                scope: Box::new(["foo".into(), "bar".into()]),
+                scope: Box::new(["foo", "bar"].map(Into::into)),
                 name: "baz".into(),
             }
         );

@@ -61,13 +61,13 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
             num_entries: 0,
             _marker: PhantomData,
         };
-        me.num_entries = me.num_entries().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        me.num_entries = me.num_entries().map_err(io::Error::other)?;
 
         Ok(me)
     }
 
     pub fn delete_index_file(path: &OffsetIndexFile) -> io::Result<()> {
-        fs::remove_file(path).map_err(Into::into)
+        fs::remove_file(path)
     }
 
     // Searches for first 0-key, to count number of entries
@@ -198,7 +198,14 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         let key = key.into();
         let (found_key, index) = self
             .find_index(Key::from(key))
-            .map(|(found, index)| (found.into(), index))?;
+            .map(|(found, index)| (found.into(), index))
+            .or_else(|e| {
+                match e {
+                    // If key is smaller than first entry, truncate all entries
+                    IndexError::KeyNotFound => Ok((key, 0)),
+                    _ => Err(e),
+                }
+            })?;
 
         // If returned key is smaller than asked key, truncate from next entry
         self.num_entries = if found_key == key {
@@ -227,7 +234,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     }
 
     /// Obtain an iterator over the entries of the index.
-    pub fn entries(&self) -> Entries<Key> {
+    pub fn entries(&self) -> Entries<'_, Key> {
         Entries {
             mmap: &self.inner,
             pos: 0,
@@ -267,9 +274,7 @@ impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
             num_entries: 0,
             _marker: PhantomData,
         };
-        inner.num_entries = inner
-            .num_entries()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        inner.num_entries = inner.num_entries().map_err(io::Error::other)?;
 
         Ok(Self { inner })
     }
@@ -279,7 +284,7 @@ impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
     }
 
     /// Obtain an iterator over the entries of the index.
-    pub fn entries(&self) -> Entries<Key> {
+    pub fn entries(&self) -> Entries<'_, Key> {
         self.inner.entries()
     }
 }
@@ -503,6 +508,27 @@ mod tests {
         // Truncating from bigger key than already present must be no-op
         index.truncate(9)?;
         assert_eq!(index.num_entries, 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_truncate_eddge_cases() -> Result<(), IndexError> {
+        // index file with no entries
+        let mut index = create_and_fill_index(10, 0)?;
+
+        // Truncate from key smaller than first entry should truncate all entries
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        // first entry will be with key 2
+        let mut index = create_and_fill_index(10, 5)?;
+        assert_eq!(index.num_entries, 4);
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        index.truncate(0)?;
+        assert_eq!(index.num_entries, 0);
 
         Ok(())
     }

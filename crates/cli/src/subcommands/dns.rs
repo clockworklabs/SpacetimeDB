@@ -50,19 +50,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if !status.is_success() {
         anyhow::bail!(match result {
             SetDomainsResult::Success => "".to_string(),
-            SetDomainsResult::PermissionDenied { domain } => format!("Permission denied for domain: {}", domain),
+            SetDomainsResult::PermissionDenied { domain } => format!("Permission denied for domain: {domain}"),
             SetDomainsResult::PermissionDeniedOnAny { domains } =>
-                format!("Permission denied for domains: {:?}", domains),
-            SetDomainsResult::DatabaseNotFound => format!("Database {} not found", database_identity),
-            SetDomainsResult::NotYourDatabase { .. } => format!(
-                "You cannot rename {} because it is owned by another identity.",
-                database_identity
-            ),
+                format!("Permission denied for domains: {domains:?}"),
+            SetDomainsResult::DatabaseNotFound => format!("Database {database_identity} not found"),
+            SetDomainsResult::NotYourDatabase { .. } =>
+                format!("You cannot rename {database_identity} because it is owned by another identity."),
             SetDomainsResult::OtherError(err) => err,
         });
     }
 
-    println!("Name set to {} for identity {}.", domain, database_identity);
+    println!("Name set to {domain} for identity {database_identity}.");
 
     Ok(())
 }

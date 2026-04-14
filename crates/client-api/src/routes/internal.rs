@@ -91,7 +91,7 @@ mod jemalloc_profiling {
             prof_ctl.activate().map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to activate heap profiling: {}", e),
+                    format!("Failed to activate heap profiling: {e}"),
                 )
             })?;
             Ok(("Heap profiling activated").into_response())
@@ -99,7 +99,7 @@ mod jemalloc_profiling {
             prof_ctl.deactivate().map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to deactivate heap profiling: {}", e),
+                    format!("Failed to deactivate heap profiling: {e}"),
                 )
             })?;
             Ok(("Heap profiling deactivated").into_response())

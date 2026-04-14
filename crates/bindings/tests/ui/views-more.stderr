@@ -1,0 +1,8 @@
+error: literal out of range for `u8`
+  --> tests/ui/views-more.rs:14:49
+   |
+14 |     ctx.from.player_info().r#where(|a| a.age.eq(4200)).build()
+   |                                                 ^^^^
+   |
+   = note: the literal `4200` does not fit into the type `u8` whose range is `0..=255`
+   = note: `#[deny(overflowing_literals)]` on by default

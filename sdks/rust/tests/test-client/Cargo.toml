@@ -1,0 +1,54 @@
+[package]
+name = "test-client"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["native"]
+
+# Builds the existing CLI test client.
+native = [
+    "dep:tokio",
+    "dep:env_logger",
+    "dep:rand",
+]
+
+# Builds the client for wasm32-unknown-unknown using the Rust SDK `browser` backend.
+browser = [
+    "spacetimedb-sdk/browser",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:console_error_panic_hook",
+    "dep:gloo-timers",
+    "dep:futures",
+    "dep:rand",
+]
+
+[[bin]]
+name = "test-client"
+path = "src/main.rs"
+required-features = ["native"]
+
+[dependencies]
+spacetimedb-sdk = { path = "../.." }
+anyhow.workspace = true
+
+test-counter = { path = "../test-counter" }
+tokio = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
+
+wasm-bindgen = { version = "0.2.100", optional = true }
+wasm-bindgen-futures = { version = "0.4.45", optional = true }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+
+[lints]
+workspace = true

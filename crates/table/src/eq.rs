@@ -2,18 +2,16 @@
 //! which, for `value_a/b = page_a/b.get_row_data(offset_a/b, fixed_row_size)` typed at `ty`,
 //! compares `value_a` and `value_b` for equality.
 
-use crate::layout::ProductTypeLayoutView;
-
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
     static_layout::StaticLayout,
     util::range_move,
     var_len::VarLenRef,
 };
+use spacetimedb_sats::layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout};
 
 /// Equates row `a` in `page_a` with its fixed part starting at `fixed_offset_a`
 /// to row `b` in `page_b` with its fixed part starting at `fixed_offset_b`.

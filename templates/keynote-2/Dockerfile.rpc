@@ -1,0 +1,14 @@
+﻿# Dockerfile.rpc
+FROM node:20.18.1-bookworm-slim
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm@9.15.3
+
+COPY package.json pnpm-lock.yaml* tsconfig.json* ./
+RUN pnpm install --frozen-lockfile || pnpm install
+
+COPY src ./src
+
+CMD ["pnpm", "tsx", "src/rpc-servers/postgres-rpc-server.ts"]

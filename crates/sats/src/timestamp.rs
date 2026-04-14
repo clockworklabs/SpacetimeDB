@@ -171,12 +171,16 @@ impl Timestamp {
     pub fn checked_sub_duration(&self, duration: Duration) -> Option<Self> {
         self.checked_sub(TimeDuration::from_duration(duration))
     }
-    /// Returns an RFC 3339 and ISO 8601 date and time string such as `1996-12-19T16:39:57-08:00`.
-    pub fn to_rfc3339(&self) -> anyhow::Result<String> {
+
+    pub fn to_chrono_date_time(&self) -> anyhow::Result<DateTime<chrono::Utc>> {
         DateTime::from_timestamp_micros(self.to_micros_since_unix_epoch())
-            .map(|t| t.to_rfc3339())
             .ok_or_else(|| anyhow::anyhow!("Timestamp with i64 microseconds since Unix epoch overflows DateTime"))
             .with_context(|| self.to_micros_since_unix_epoch())
+    }
+
+    /// Returns an RFC 3339 and ISO 8601 date and time string such as `1996-12-19T16:39:57-08:00`.
+    pub fn to_rfc3339(&self) -> anyhow::Result<String> {
+        Ok(self.to_chrono_date_time()?.to_rfc3339())
     }
 }
 

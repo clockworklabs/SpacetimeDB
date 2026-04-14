@@ -10,7 +10,7 @@ use crate::{
 
 pub fn mem_log<T: Encode>(max_segment_size: u64) -> commitlog::Generic<repo::Memory, T> {
     commitlog::Generic::open(
-        repo::Memory::new(),
+        repo::Memory::unlimited(),
         Options {
             max_segment_size,
             ..Options::default()
@@ -28,16 +28,16 @@ where
     R: Repo,
     T: Debug + Default + Encode,
 {
-    let mut total_txs = 0;
+    let mut offset = log.max_committed_offset().map(|x| x + 1).unwrap_or_default();
     for (_, n) in (0..num_commits).zip(txs_per_commit) {
-        for _ in 0..n {
-            log.append(T::default()).unwrap();
-            total_txs += 1;
-        }
-        log.commit().unwrap();
+        log.commit((0..n).map(|i| (offset + i as u64, T::default())))
+            .unwrap_or_else(|e| panic!("failed to commit offset {offset}: {e:#}"));
+        offset += n as u64;
+        log.flush().expect("failed to flush commitlog");
+        log.sync();
     }
 
-    total_txs
+    offset as usize
 }
 
 /// Put the `txes` into `log`.
@@ -48,10 +48,12 @@ where
     R: Repo,
     T: Debug + Encode,
 {
-    for tx in txes {
-        log.append(tx).unwrap();
-        log.commit().unwrap();
+    for (i, tx) in txes.into_iter().enumerate() {
+        log.commit([(i as u64, tx)])
+            .unwrap_or_else(|e| panic!("failed to commit offset {i}: {e:#}"));
     }
+    log.flush().expect("failed to flush commitlog");
+    log.sync();
 }
 
 pub fn enable_logging() {
