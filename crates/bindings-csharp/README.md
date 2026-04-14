@@ -8,7 +8,6 @@ See the [C# module library reference](https://spacetimedb.com/docs/modules/c-sha
 
 These projects contain the SpacetimeDB SATS typesystem, codegen and runtime bindings for SpacetimeDB WebAssembly modules. It also contains serialization code for SpacetimeDB C# clients.
 
-See the 
 
 The [`BSATN.Codegen`](./BSATN.Codegen/) and [`BSATN.Runtime`](./BSATN.Runtime/) libraries are used by:
 - C# Modules
