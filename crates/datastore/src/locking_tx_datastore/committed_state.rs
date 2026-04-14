@@ -88,23 +88,6 @@ pub struct CommittedState {
     ///     - Tables which back views.
     pub(super) ephemeral_tables: EphemeralTables,
 
-    /// Rows within `st_column` which should be ignored during replay
-    /// due to having been superseded by a new row representing the same column.
-    ///
-    /// During replay, we visit all of the inserts table-by-table, followed by all of the deletes table-by-table.
-    /// This means that, when multiple columns of a table change type within the same transaction,
-    /// we see all of the newly-inserted `st_column` rows first, and then later, all of the deleted rows.
-    /// We may even see inserts into the altered table before seeing the `st_column` deletes!
-    ///
-    /// In order to maintain a proper view of the schema of tables during replay,
-    /// we must remember the old versions of the `st_column` rows when we insert the new ones,
-    /// so that we can respect only the new versions.
-    ///
-    /// We insert into this set during [`Self::replay_insert`] of `st_column` rows
-    /// and delete from it during [`Self::replay_delete`] of `st_column` rows.
-    /// We assert this is empty at the end of each transaction.
-    pub(super) replay_columns_to_ignore: HashSet<RowPointer>,
-
     /// Set of tables whose `st_table` entries have been updated during the currently-replaying transaction,
     /// mapped to the current most-recent `st_table` row.
     ///
@@ -155,7 +138,6 @@ impl MemoryUsage for CommittedState {
             page_pool: _,
             read_sets,
             ephemeral_tables,
-            replay_columns_to_ignore,
             replay_table_updated,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
@@ -165,7 +147,6 @@ impl MemoryUsage for CommittedState {
             + index_id_map.heap_usage()
             + read_sets.heap_usage()
             + ephemeral_tables.heap_usage()
-            + replay_columns_to_ignore.heap_usage()
             + replay_table_updated.heap_usage()
     }
 }
@@ -254,7 +235,6 @@ impl CommittedState {
             read_sets: <_>::default(),
             page_pool,
             ephemeral_tables: <_>::default(),
-            replay_columns_to_ignore: <_>::default(),
             replay_table_updated: <_>::default(),
         }
     }

@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context};
 use core::ops::{Deref, DerefMut};
 use parking_lot::{RwLock, RwLockReadGuard};
 use spacetimedb_commitlog::payload::txdata;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
@@ -327,6 +327,23 @@ struct ReplayCommittedState<'cs> {
     /// Cleared after the end of processing each transaction,
     /// as it should be impossible to ever see another reference to the table after that point.
     replay_table_dropped: IntSet<TableId>,
+
+    /// Rows within `st_column` which should be ignored during replay
+    /// due to having been superseded by a new row representing the same column.
+    ///
+    /// During replay, we visit all of the inserts table-by-table, followed by all of the deletes table-by-table.
+    /// This means that, when multiple columns of a table change type within the same transaction,
+    /// we see all of the newly-inserted `st_column` rows first, and then later, all of the deleted rows.
+    /// We may even see inserts into the altered table before seeing the `st_column` deletes!
+    ///
+    /// In order to maintain a proper view of the schema of tables during replay,
+    /// we must remember the old versions of the `st_column` rows when we insert the new ones,
+    /// so that we can respect only the new versions.
+    ///
+    /// We insert into this set during [`Self::replay_insert`] of `st_column` rows
+    /// and delete from it during [`Self::replay_delete`] of `st_column` rows.
+    /// We assert this is empty at the end of each transaction.
+    replay_columns_to_ignore: HashSet<RowPointer>,
 }
 
 impl Deref for ReplayCommittedState<'_> {
@@ -348,8 +365,9 @@ impl MemoryUsage for ReplayCommittedState<'_> {
         let Self {
             state: _, // We don't attribute usage to `CommittedState`.
             replay_table_dropped,
+            replay_columns_to_ignore,
         } = self;
-        replay_table_dropped.heap_usage()
+        replay_table_dropped.heap_usage() + replay_columns_to_ignore.heap_usage()
     }
 }
 
@@ -358,6 +376,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         Self {
             state,
             replay_table_dropped: <_>::default(),
+            replay_columns_to_ignore: <_>::default(),
         }
     }
 
