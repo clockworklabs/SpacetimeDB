@@ -88,16 +88,6 @@ pub struct CommittedState {
     ///     - Tables which back views.
     pub(super) ephemeral_tables: EphemeralTables,
 
-    /// Whether the table was dropped within the current transaction during replay.
-    ///
-    /// While processing a transaction which drops a table, we'll first see the `st_table` delete,
-    /// then a series of deletes from the table itself.
-    /// We track the table's ID here so we know to ignore the deletes.
-    ///
-    /// Cleared after the end of processing each transaction,
-    /// as it should be impossible to ever see another reference to the table after that point.
-    pub(super) replay_table_dropped: IntSet<TableId>,
-
     /// Rows within `st_column` which should be ignored during replay
     /// due to having been superseded by a new row representing the same column.
     ///
@@ -165,7 +155,6 @@ impl MemoryUsage for CommittedState {
             page_pool: _,
             read_sets,
             ephemeral_tables,
-            replay_table_dropped,
             replay_columns_to_ignore,
             replay_table_updated,
         } = self;
@@ -177,7 +166,6 @@ impl MemoryUsage for CommittedState {
             + read_sets.heap_usage()
             + ephemeral_tables.heap_usage()
             + replay_columns_to_ignore.heap_usage()
-            + replay_table_dropped.heap_usage()
             + replay_table_updated.heap_usage()
     }
 }
@@ -266,7 +254,6 @@ impl CommittedState {
             read_sets: <_>::default(),
             page_pool,
             ephemeral_tables: <_>::default(),
-            replay_table_dropped: <_>::default(),
             replay_columns_to_ignore: <_>::default(),
             replay_table_updated: <_>::default(),
         }

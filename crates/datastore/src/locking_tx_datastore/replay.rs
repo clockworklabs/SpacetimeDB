@@ -11,11 +11,12 @@ use anyhow::{anyhow, Context};
 use core::ops::{Deref, DerefMut};
 use parking_lot::{RwLock, RwLockReadGuard};
 use spacetimedb_commitlog::payload::txdata;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::buffer::BufReader;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, Deserialize, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
@@ -37,7 +38,7 @@ impl<F> Replay<F> {
     fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
         let mut committed_state = self.committed_state.write();
         let state = &mut *committed_state;
-        let committed_state = ReplayCommittedState { state };
+        let committed_state = ReplayCommittedState::new(state);
         let mut visitor = ReplayVisitor {
             database_identity: &self.database_identity,
             committed_state,
@@ -316,6 +317,16 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 struct ReplayCommittedState<'cs> {
     /// The committed state being contructed.
     state: &'cs mut CommittedState,
+
+    /// Whether the table was dropped within the current transaction during replay.
+    ///
+    /// While processing a transaction which drops a table, we'll first see the `st_table` delete,
+    /// then a series of deletes from the table itself.
+    /// We track the table's ID here so we know to ignore the deletes.
+    ///
+    /// Cleared after the end of processing each transaction,
+    /// as it should be impossible to ever see another reference to the table after that point.
+    replay_table_dropped: IntSet<TableId>,
 }
 
 impl Deref for ReplayCommittedState<'_> {
@@ -332,7 +343,24 @@ impl DerefMut for ReplayCommittedState<'_> {
     }
 }
 
-impl ReplayCommittedState<'_> {
+impl MemoryUsage for ReplayCommittedState<'_> {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            state: _, // We don't attribute usage to `CommittedState`.
+            replay_table_dropped,
+        } = self;
+        replay_table_dropped.heap_usage()
+    }
+}
+
+impl<'cs> ReplayCommittedState<'cs> {
+    fn new(state: &'cs mut CommittedState) -> Self {
+        Self {
+            state,
+            replay_table_dropped: <_>::default(),
+        }
+    }
+
     fn replay_insert(&mut self, table_id: TableId, schema: &Arc<TableSchema>, row: &ProductValue) -> Result<()> {
         // Event table rows in the commitlog are preserved for future replay features
         // but don't rebuild state — event tables have no committed state.
@@ -649,7 +677,7 @@ mod tests {
         let row = u32_str_u32(1, "Carol", 40);
         {
             let state = &mut *datastore.committed_state.write();
-            let mut committed_state = ReplayCommittedState { state };
+            let mut committed_state = ReplayCommittedState::new(state);
             committed_state.replay_insert(table_id, &schema, &row)?;
         }
 
