@@ -1,5 +1,6 @@
+pub mod analysis;
 pub mod publishers;
-pub(crate) mod results_merge;
+pub mod results_merge;
 pub mod runner;
 mod templates;
 pub mod types;

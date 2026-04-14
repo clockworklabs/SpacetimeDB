@@ -1,3 +1,4 @@
+use crate::api::ApiClient;
 use crate::eval::{Lang, ScoreDetails};
 use crate::llm::types::Vendor;
 use crate::llm::{LlmProvider, ModelRoute};
@@ -153,7 +154,7 @@ pub struct BenchRunContext<'a> {
     pub lang: Lang,
     pub selectors: Option<&'a [String]>,
     pub host: Option<String>,
-    pub details_path: PathBuf,
+    pub api_client: Option<ApiClient>,
     pub dry_run: bool,
 }
 
@@ -168,8 +169,8 @@ pub struct RunConfig {
     pub categories: Option<HashSet<String>>,
     pub model_filter: Option<HashMap<Vendor, HashSet<String>>>,
     pub host: Option<String>,
-    /// Path to the details.json file where results will be merged
-    pub details_path: PathBuf,
-    /// When true, run benchmarks but don't save results to disk
+    /// API client for uploading results to the remote database
+    pub api_client: Option<ApiClient>,
+    /// When true, run benchmarks but don't upload results
     pub dry_run: bool,
 }

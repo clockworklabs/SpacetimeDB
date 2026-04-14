@@ -20,9 +20,6 @@ on:
         required: false
         default: 'guidelines,no_context'
 
-permissions:
-  contents: write
-
 concurrency:
   group: llm-benchmark-periodic
   cancel-in-progress: true
@@ -78,7 +75,6 @@ jobs:
       - name: Run benchmarks
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Fallback to direct keys if set
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LLM_BENCHMARK_API_KEY: ${{ secrets.LLM_BENCHMARK_API_KEY }}
@@ -92,23 +88,19 @@ jobs:
           LANGS="$INPUT_LANGUAGES"
           MODELS="$INPUT_MODELS"
           MODES="$INPUT_MODES"
-          UPLOAD_FLAG=""
-          if [ -n "$LLM_BENCHMARK_UPLOAD_URL" ]; then
-            UPLOAD_FLAG="--upload-url $LLM_BENCHMARK_UPLOAD_URL"
-          fi
 
           SUCCEEDED=0
           FAILED=0
           for LANG in $(echo "$LANGS" | tr ',' ' '); do
             if [ "$MODELS" = "all" ]; then
-              if llm_benchmark run --lang "$LANG" --modes "$MODES" $UPLOAD_FLAG; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG"
                 FAILED=$((FAILED + 1))
               fi
             else
-              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS" $UPLOAD_FLAG; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG models=$MODELS"
@@ -121,30 +113,3 @@ jobs:
             echo "::error::All benchmark runs failed"
             exit 1
           fi
-
-      - name: Generate summary
-        run: llm_benchmark summary
-
-      - name: Ensure only docs/llms changed
-        run: |
-          set -euo pipefail
-          CHANGED="$(git diff --name-only)"
-          if [ -z "$CHANGED" ]; then
-            echo "No changes."
-            exit 0
-          fi
-          if echo "$CHANGED" | grep -qvE '^docs/llms/'; then
-            echo "Benchmark produced changes outside docs/llms:"
-            echo "$CHANGED" | grep -vE '^docs/llms/'
-            exit 1
-          fi
-
-      - name: Commit and push results
-        run: |
-          git config user.name "clockwork-labs-bot"
-          git config user.email "clockwork-labs-bot@users.noreply.github.com"
-          git add docs/llms
-          git diff --cached --quiet && exit 0
-          git commit -m "Update LLM benchmark results (periodic run)"
-          git pull --rebase origin master
-          git push origin master

@@ -11,7 +11,6 @@ use tokio::sync::Mutex;
 use tokio::task;
 
 use crate::bench::publishers::{DotnetPublisher, SpacetimeRustPublisher, TypeScriptPublisher};
-use crate::bench::results_merge::merge_task_runs;
 use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
@@ -454,15 +453,33 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     println!("[runner] completed batch: ok={} err={}", outcomes.len(), errs);
 
     if cfg.dry_run {
-        eprintln!("[dry-run] skipping merge_task_runs ({} outcomes)", outcomes.len());
+        eprintln!("[dry-run] skipping upload ({} outcomes)", outcomes.len());
     } else if !outcomes.is_empty() {
-        merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
+        // Run AI analysis on failures before uploading
+        let analysis = match crate::bench::analysis::run_analysis(&outcomes, cfg.lang.as_str(), cfg.mode, cfg.llm).await
+        {
+            Ok(Some(text)) => {
+                eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
+                Some(text)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
+
+        if let Some(ref api) = cfg.api_client {
+            api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &outcomes, analysis.as_deref())?;
+        } else {
+            eprintln!("[runner] no API client configured; skipping upload");
+        }
     } else {
-        eprintln!("[runner] no successful runs; not calling merge_task_runs");
+        eprintln!("[runner] no successful runs; skipping upload");
     }
 
     println!(
-        "✓ [{}] {}: total {}",
+        "\u{2713} [{}] {}: total {}",
         lang_name,
         cfg.route.display_name,
         fmt_dur(total_wall.elapsed())
@@ -486,7 +503,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let selected: Vec<TaskPaths> = tasks
         .into_iter()
         .filter(|t| {
-            let name = t.root.file_name().and_then(|x| x.to_str()).unwrap_or("");
+            let name = t.root.file_name().and_then(|x: &std::ffi::OsStr| x.to_str()).unwrap_or("");
             wanted.iter().any(|w| name.starts_with(w))
         })
         .collect();
@@ -572,13 +589,30 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     }
 
     if cfg.dry_run {
-        eprintln!("[dry-run] skipping merge_task_runs ({} outcomes)", outcomes.len());
+        eprintln!("[dry-run] skipping upload ({} outcomes)", outcomes.len());
     } else if !outcomes.is_empty() {
-        merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
+        let analysis = match crate::bench::analysis::run_analysis(&outcomes, cfg.lang.as_str(), cfg.mode, cfg.llm).await
+        {
+            Ok(Some(text)) => {
+                eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
+                Some(text)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
+
+        if let Some(ref api) = cfg.api_client {
+            api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &outcomes, analysis.as_deref())?;
+        } else {
+            eprintln!("[runner] no API client configured; skipping upload");
+        }
     }
 
     println!(
-        "✓ [{}] {}: total {} (err={})",
+        "\u{2713} [{}] {}: total {} (err={})",
         lang_name,
         cfg.route.display_name,
         fmt_dur(total_wall.elapsed()),
@@ -601,7 +635,7 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
             lang: ctx.lang,
             selectors: Option::from(sels),
             host: ctx.host.clone(),
-            details_path: ctx.details_path.clone(),
+            api_client: ctx.api_client.clone(),
             dry_run: ctx.dry_run,
         };
         return run_selected_for_model_async_for_lang(&sel_cfg).await;
@@ -622,7 +656,7 @@ pub async fn build_goldens_only_for_lang(
         let filtered: Vec<TaskPaths> = all
             .into_iter()
             .filter(|t| {
-                let name = t.root.file_name().and_then(|x| x.to_str()).unwrap_or("");
+                let name = t.root.file_name().and_then(|x: &std::ffi::OsStr| x.to_str()).unwrap_or("");
                 wanted.iter().any(|w| name.starts_with(w))
             })
             .collect();
