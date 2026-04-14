@@ -1264,6 +1264,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_id")
             .finish();
 
         builder.add_reducer("send_ping", ProductType::unit());
