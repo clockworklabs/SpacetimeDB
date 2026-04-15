@@ -27,6 +27,15 @@ export interface ResponseInit {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8' /* { fatal: true } */);
 
+function deserializeHeaders(headers: HttpHeaders): Headers {
+  return new Headers(
+    headers.entries.map(({ name, value }): [string, string] => [
+      name,
+      textDecoder.decode(value),
+    ])
+  );
+}
+
 const makeResponse = Symbol('makeResponse');
 
 // based on deno's type of the same name
@@ -187,7 +196,7 @@ function fetch(url: URL | string, init: RequestOptions = {}) {
     url: uri,
     status: response.code,
     statusText: status(response.code),
-    headers: new Headers(),
+    headers: deserializeHeaders(response.headers),
     aborted: false,
   });
 }
