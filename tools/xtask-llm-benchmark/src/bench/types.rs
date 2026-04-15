@@ -5,8 +5,38 @@ use crate::llm::{LlmProvider, ModelRoute};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use spacetimedb_data_structures::map::{HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+// -- Upload payload types (used by api::client to build POST /api/llm-benchmark-upload) --
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Results {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_at: Option<String>,
+    pub languages: Vec<LangEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LangEntry {
+    pub lang: String,
+    pub modes: Vec<ModeEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModeEntry {
+    pub mode: String,
+    pub hash: Option<String>,
+    pub models: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelEntry {
+    pub name: String,
+    pub route_api_model: Option<String>,
+    pub tasks: BTreeMap<String, RunOutcome>,
+}
 
 /// Parameters for publishing a module (golden or LLM-generated).
 pub struct PublishParams<'a> {

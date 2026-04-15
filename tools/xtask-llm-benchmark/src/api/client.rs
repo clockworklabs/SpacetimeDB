@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use serde_json::json;
 
-use crate::bench::results_merge::{canonical_mode, normalize_model_names};
-use crate::bench::types::RunOutcome;
-use crate::results::schema::Results;
+use crate::bench::normalize::{canonical_mode, normalize_model_names};
+use crate::bench::types::{Results, RunOutcome};
 
 /// HTTP client for the SpacetimeDB LLM benchmark API (spacetime-web Postgres).
 ///
@@ -55,7 +54,7 @@ impl ApiClient {
         // Build in-memory Results so we can normalize model names
         let mut results = Results::default();
         {
-            use crate::bench::results_merge::{canonical_model_name, ensure_lang, ensure_mode, ensure_model};
+            use crate::bench::normalize::{canonical_model_name, ensure_lang, ensure_mode, ensure_model};
 
             for r in outcomes {
                 let lang_v = ensure_lang(&mut results, &r.lang);

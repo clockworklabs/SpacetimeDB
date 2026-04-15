@@ -1,4 +1,4 @@
-use crate::results::schema::{LangEntry, ModeEntry, ModelEntry, Results};
+use crate::bench::types::{LangEntry, ModeEntry, ModelEntry, Results};
 
 /// Normalize all model names in loaded results and merge duplicates.
 pub fn normalize_model_names(root: &mut Results) {

@@ -1,6 +1,6 @@
 pub mod analysis;
+pub mod normalize;
 pub mod publishers;
-pub mod results_merge;
 pub mod runner;
 mod templates;
 pub mod types;
