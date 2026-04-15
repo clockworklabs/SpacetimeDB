@@ -1,10 +1,10 @@
-use http::uri::PathAndQuery;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
+use spacetimedb_lib::http::character_is_acceptable_for_route_path;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
@@ -15,8 +15,6 @@ use crate::def::*;
 use crate::error::ValidationError;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
-use std::str::FromStr;
-
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
@@ -361,11 +359,7 @@ fn change_scheduled_functions_and_lifetimes_visibility(
 
 fn validate_http_route_path(path: &RawIdentifier) -> Result<()> {
     let path_str = path.as_ref();
-    // TODO: detect more suspicious characters. https://stackoverflow.com/a/695467 seems like a reasonable set.
-    if !path_str.starts_with('/') || path_str.contains('?') || path_str.contains('#') {
-        return Err(ValidationError::InvalidHttpRoutePath { path: path.clone() }.into());
-    }
-    if PathAndQuery::from_str(path_str).is_err() {
+    if !path_str.starts_with('/') || !path_str.chars().all(character_is_acceptable_for_route_path) {
         return Err(ValidationError::InvalidHttpRoutePath { path: path.clone() }.into());
     }
     Ok(())
@@ -1816,13 +1810,78 @@ mod tests {
 
         builder.add_http_handler("handle");
         builder.add_http_route("handle", MethodOrAny::Any, "no-slash");
-        // TODO(testing): Extend this test with more invalid paths.
+        for path in [
+            "/Uppercase",
+            "/caf\u{e9}",
+            "/ampersand&",
+            "/dollar$",
+            "/plus+",
+            "/comma,",
+            "/colon:",
+            "/semicolon;",
+            "/equals=",
+            "/question?",
+            "/at@",
+            "/hash#",
+            "/space here",
+            "/less<",
+            "/greater>",
+            "/left[",
+            "/right]",
+            "/left-brace{",
+            "/right-brace}",
+            "/pipe|",
+            "/backslash\\",
+            "/caret^",
+            "/percent%",
+        ] {
+            builder.add_http_route("handle", MethodOrAny::Any, path);
+        }
 
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::InvalidHttpRoutePath { path } => {
-            path.as_ref() == "no-slash"
-        });
+        if let Err(errs) = result {
+            let mut paths = errs
+                .iter()
+                .filter_map(|err| match err {
+                    ValidationError::InvalidHttpRoutePath { path } => Some(path.as_ref()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            paths.sort_unstable();
+
+            let mut expected = vec![
+                "no-slash",
+                "/Uppercase",
+                "/caf\u{e9}",
+                "/ampersand&",
+                "/dollar$",
+                "/plus+",
+                "/comma,",
+                "/colon:",
+                "/semicolon;",
+                "/equals=",
+                "/question?",
+                "/at@",
+                "/hash#",
+                "/space here",
+                "/less<",
+                "/greater>",
+                "/left[",
+                "/right]",
+                "/left-brace{",
+                "/right-brace}",
+                "/pipe|",
+                "/backslash\\",
+                "/caret^",
+                "/percent%",
+            ];
+            expected.sort_unstable();
+
+            assert_eq!(paths, expected);
+        } else {
+            panic!("expected invalid HTTP route path errors");
+        }
     }
 
     #[test]

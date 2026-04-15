@@ -1,5 +1,6 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
+use spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
@@ -140,7 +141,10 @@ pub enum ValidationError {
     DuplicateHttpHandlerName { name: Identifier },
     #[error("HTTP route duplicates method {method:?} for path {path}")]
     DuplicateHttpRoute { path: RawIdentifier, method: MethodOrAny },
-    #[error("HTTP route path `{path}` is invalid")]
+    #[error(
+        "HTTP route path `{path}` is invalid; allowed characters are {allowed}",
+        allowed = ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
+    )]
     InvalidHttpRoutePath { path: RawIdentifier },
     #[error("HTTP route refers to unknown HTTP handler `{handler}`")]
     MissingHttpHandler { handler: RawIdentifier },

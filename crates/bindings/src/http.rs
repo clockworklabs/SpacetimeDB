@@ -6,14 +6,16 @@
 //! while [`send`](HttpClient::send) allows more complex requests with headers, bodies and other methods.
 
 use bytes::Bytes;
-use std::str::FromStr;
 
 use crate::{
     rt::{read_bytes_source_as, read_bytes_source_into},
     IterBuf,
 };
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
-use spacetimedb_lib::{bsatn, http as st_http, TimeDuration};
+use spacetimedb_lib::http::{
+    self as st_http, character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION,
+};
+use spacetimedb_lib::{bsatn, TimeDuration};
 
 pub type Request<T = Body> = http::Request<T>;
 
@@ -228,12 +230,11 @@ fn assert_valid_path(path: &str) {
     if !path.starts_with('/') {
         panic!("Route paths must start with `/`: {path}");
     }
-    // TODO: detect more suspicious characters. https://stackoverflow.com/a/695467 seems like a reasonable set.
-    if path.contains('?') || path.contains('#') {
-        panic!("Route paths must not include `?` or `#`: {path}");
-    }
-    if http::uri::PathAndQuery::from_str(path).is_err() {
-        panic!("Route path is not a valid URL path: {path}");
+    if !path.chars().all(character_is_acceptable_for_route_path) {
+        panic!(
+            "Route paths may contain only {}: {path}",
+            ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
+        );
     }
 }
 
