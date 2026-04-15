@@ -446,6 +446,7 @@ pub struct ClientConnection {
     pub replica_id: u64,
     module_rx: watch::Receiver<ModuleHost>,
     auth: AuthCtx,
+    pending_reducers: Arc<AtomicBool>,
 }
 
 impl Deref for ClientConnection {
@@ -760,6 +761,7 @@ impl ClientConnection {
             replica_id,
             module_rx,
             auth: sql_auth,
+            pending_reducers: Arc::new(AtomicBool::new(false)),
         };
 
         let actor_fut = actor(this.clone(), receiver);
@@ -781,6 +783,7 @@ impl ClientConnection {
             replica_id,
             module_rx,
             auth,
+            pending_reducers: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -869,9 +872,10 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         _flags: ws_v2::CallReducerFlags,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
-        self.module()
-            .call_reducer(
+    ) -> Result<(), ReducerCallError> {
+        let detached = self
+            .module()
+            .call_reducer_detached(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(self.sender()),
@@ -880,7 +884,23 @@ impl ClientConnection {
                 reducer,
                 FunctionArgs::Bsatn(args),
             )
-            .await
+            .await?;
+        if detached {
+            self.pending_reducers.store(true, Relaxed);
+        }
+        Ok(())
+    }
+
+    /// Flushes any detached v2 JS reducers before handling an ordered follow-up request.
+    ///
+    /// Reducer calls themselves no longer wait on a per-request reply, so queries,
+    /// subscribe operations, and procedures use this fence to preserve the expected
+    /// per-connection ordering boundary.
+    pub async fn flush_pending_v2_reducers(&self) -> Result<(), NoSuchModule> {
+        if !self.pending_reducers.swap(false, Relaxed) {
+            return Ok(());
+        }
+        self.module().fence_reducers().await
     }
 
     pub async fn call_procedure(

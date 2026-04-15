@@ -1061,6 +1061,17 @@ impl ModuleHost {
         on_panic: impl Fn() + Send + Sync + 'static,
         database_identity: Identity,
     ) -> Self {
+        let closed = Arc::new(AtomicBool::new(false));
+        let raw_on_panic = Arc::new(on_panic);
+        let on_panic: Arc<dyn Fn() + Send + Sync + 'static> = Arc::new({
+            let closed = closed.clone();
+            let raw_on_panic = raw_on_panic.clone();
+            move || {
+                closed.store(true, std::sync::atomic::Ordering::Relaxed);
+                raw_on_panic();
+            }
+        });
+
         let info;
         let inner = match module {
             ModuleWithInstance::Wasm {
@@ -1077,7 +1088,7 @@ impl ModuleHost {
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
-                let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
+                let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst, on_panic.clone());
                 let procedure_instances = ModuleInstanceManager::new(module.clone(), None, database_identity);
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module,
@@ -1086,13 +1097,12 @@ impl ModuleHost {
                 })))
             }
         };
-        let on_panic = Arc::new(on_panic);
 
         ModuleHost {
             info,
             inner,
             on_panic,
-            closed: Arc::new(AtomicBool::new(false)),
+            closed,
         }
     }
 
@@ -1570,35 +1580,55 @@ impl ModuleHost {
         })
     }
 
-    async fn call_reducer_inner(
+    /// Performs reducer validation and argument decoding before any transaction starts.
+    ///
+    /// This keeps pre-enqueue failures synchronous so detached reducer execution only
+    /// covers work that has actually been accepted by the runtime.
+    fn resolve_reducer_call(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
-        reducer_id: ReducerId,
-        reducer_def: &ReducerDef,
+        reducer_name: &str,
         args: FunctionArgs,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
-        let args = args
-            .into_tuple_for_def(&self.info.module_def, reducer_def)
-            .map_err(InvalidReducerArguments)?;
-        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-        let call_reducer_params = CallReducerParams {
-            timestamp: Timestamp::now(),
+    ) -> Result<CallReducerParams, ReducerCallError> {
+        let (reducer_id, reducer_def) = self
+            .info
+            .module_def
+            .reducer_full(reducer_name)
+            .ok_or(ReducerCallError::NoSuchReducer)?;
+        if let Some(lifecycle) = reducer_def.lifecycle {
+            return Err(ReducerCallError::LifecycleReducer(lifecycle));
+        }
+
+        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
+
+        Self::call_reducer_params(
+            &self.info,
             caller_identity,
             caller_connection_id,
             client,
             request_id,
             timer,
             reducer_id,
+            reducer_def,
             args,
-        };
+        )
+        .map_err(Into::into)
+    }
 
+    async fn call_reducer_inner(
+        &self,
+        reducer_name: &str,
+        params: CallReducerParams,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         self.call(
-            &reducer_def.name,
-            call_reducer_params,
+            reducer_name,
+            params,
             async |p, inst| Ok(inst.call_reducer(p)),
             async |p, inst| inst.call_reducer(p).await,
         )
@@ -1616,30 +1646,16 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
-            let (reducer_id, reducer_def) = self
-                .info
-                .module_def
-                .reducer_full(reducer_name)
-                .ok_or(ReducerCallError::NoSuchReducer)?;
-            if let Some(lifecycle) = reducer_def.lifecycle {
-                return Err(ReducerCallError::LifecycleReducer(lifecycle));
-            }
-
-            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-                return Err(ReducerCallError::NoSuchReducer);
-            }
-
-            self.call_reducer_inner(
+            let params = self.resolve_reducer_call(
                 caller_identity,
                 caller_connection_id,
                 client,
                 request_id,
                 timer,
-                reducer_id,
-                reducer_def,
+                reducer_name,
                 args,
-            )
-            .await
+            )?;
+            self.call_reducer_inner(reducer_name, params).await
         }
         .await;
 
@@ -1653,6 +1669,78 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    /// Calls a reducer without waiting for the JS instance lane to reply.
+    ///
+    /// WASM continues to use the existing synchronous reducer path because it
+    /// already returns through the shared reducer execution flow. JS reducers are
+    /// enqueued detached so later ordered operations can synchronize with a fence
+    /// instead of a per-reducer reply channel.
+    pub async fn call_reducer_detached(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<bool, ReducerCallError> {
+        let res = async {
+            let params = self.resolve_reducer_call(
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_name,
+                args,
+            )?;
+            match &*self.inner {
+                ModuleHostInner::Wasm(_) => {
+                    self.call_reducer_inner(reducer_name, params).await?;
+                    Ok(false)
+                }
+                ModuleHostInner::Js(js) => {
+                    self.guard_closed()?;
+                    js.instance_lane.call_reducer_detached(params).await?;
+                    Ok(true)
+                }
+            }
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+
+        res
+    }
+
+    /// Waits for all previously enqueued detached reducers on this host to finish.
+    ///
+    /// A fence failure means the JS worker died before the ordered boundary could
+    /// be reached, so the module is treated as fatally exited rather than sending
+    /// a synthetic reducer error.
+    pub async fn fence_reducers(&self) -> Result<(), NoSuchModule> {
+        self.guard_closed()?;
+        match &*self.inner {
+            ModuleHostInner::Wasm(_) => Ok(()),
+            ModuleHostInner::Js(js) => {
+                if js.instance_lane.fence().await.is_err() {
+                    (self.on_panic)();
+                    Err(NoSuchModule)
+                } else {
+                    Ok(())
+                }
+            }
+        }
     }
 
     pub async fn call_view_add_single_subscription(

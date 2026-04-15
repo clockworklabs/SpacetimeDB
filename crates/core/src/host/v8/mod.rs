@@ -52,7 +52,7 @@ use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::Instant;
 use tokio::sync::{oneshot, Mutex as AsyncMutex, Notify};
 use tracing::Instrument;
@@ -542,10 +542,14 @@ struct JsWorkerState {
     /// Set once this JS instance has trapped or been retired and must not
     /// accept any further work from the instance lane.
     trapped: AtomicBool,
+    /// Set once the worker has fatally exited and the module should be dropped.
+    fatal: AtomicBool,
     /// Set once the worker thread has actually exited and stopped draining the queue.
     exited: AtomicBool,
     /// Wakes replacement logic waiting for this worker to finish exiting.
     exited_notify: Notify,
+    /// Called once on a fatal worker exit to close the module.
+    fatal_handler: StdMutex<Option<Arc<dyn Fn() + Send + Sync + 'static>>>,
 }
 
 impl JsWorkerState {
@@ -559,14 +563,50 @@ impl JsWorkerState {
         self.exited.load(Ordering::Relaxed)
     }
 
+    /// Returns whether this worker exited in a way that should tear down the module.
+    fn fatal(&self) -> bool {
+        self.fatal.load(Ordering::Relaxed)
+    }
+
     /// Returns whether the instance lane should replace this JS instance.
     fn needs_recovery(&self) -> bool {
         self.trapped() || self.exited()
     }
 
+    /// Installs the callback that should run if this worker fatally exits.
+    fn install_fatal_handler(&self, handler: Arc<dyn Fn() + Send + Sync + 'static>) {
+        let call_now = {
+            let mut fatal_handler = self
+                .fatal_handler
+                .lock()
+                .expect("fatal handler mutex should not be poisoned");
+            *fatal_handler = Some(handler.clone());
+            self.fatal()
+        };
+        if call_now {
+            handler();
+        }
+    }
+
     /// Marks the JS instance as poisoned so no further requests should target it.
     fn mark_trapped(&self) {
         self.trapped.store(true, Ordering::Relaxed);
+    }
+
+    /// Marks this worker as fatally failed and triggers module teardown once.
+    fn mark_fatal(&self) {
+        let already_fatal = self.fatal.swap(true, Ordering::Relaxed);
+        if already_fatal {
+            return;
+        }
+        let handler = self
+            .fatal_handler
+            .lock()
+            .expect("fatal handler mutex should not be poisoned")
+            .clone();
+        if let Some(handler) = handler {
+            handler();
+        }
     }
 
     /// Marks the worker thread as exited and wakes any replacement task waiting on it.
@@ -592,12 +632,22 @@ impl JsInstance {
         self.worker_state.trapped()
     }
 
+    /// Returns whether this instance's worker has failed in a module-fatal way.
+    fn fatal(&self) -> bool {
+        self.worker_state.fatal()
+    }
+
     fn needs_recovery(&self) -> bool {
         self.worker_state.needs_recovery()
     }
 
     async fn wait_exited(&self) {
         self.worker_state.wait_exited().await;
+    }
+
+    /// Registers the module teardown callback with the worker that backs this instance.
+    fn install_fatal_handler(&self, handler: Arc<dyn Fn() + Send + Sync + 'static>) {
+        self.worker_state.install_fatal_handler(handler);
     }
 
     async fn send_request<T>(
@@ -659,9 +709,25 @@ impl JsInstance {
     }
 
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
-        self.send_request(|reply_tx| JsWorkerRequest::CallReducer { reply_tx, params })
+        self.send_request(|reply_tx| JsWorkerRequest::CallReducer {
+            reply_tx: Some(reply_tx),
+            params,
+        })
+        .await
+        .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
+    }
+
+    /// Enqueues a reducer without waiting for a per-call reply from the worker.
+    async fn submit_reducer_detached(&self, params: CallReducerParams) -> Result<(), WorkerDisconnected> {
+        self.request_queue
+            .send_async(JsWorkerRequest::CallReducer { reply_tx: None, params })
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
+            .map_err(|_| WorkerDisconnected)
+    }
+
+    /// Waits until all earlier instance-lane requests have drained from the worker queue.
+    async fn fence(&self) -> Result<(), WorkerDisconnected> {
+        self.send_request(|reply_tx| JsWorkerRequest::Fence { reply_tx }).await
     }
 
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
@@ -733,7 +799,7 @@ impl JsInstance {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct WorkerDisconnected;
+pub(in crate::host) struct WorkerDisconnected;
 
 fn instance_lane_worker_error(label: &'static str) -> String {
     format!("instance lane worker exited while handling {label}")
@@ -760,9 +826,11 @@ enum JsWorkerRequest {
     },
     /// See [`JsInstance::call_reducer`].
     CallReducer {
-        reply_tx: JsReplyTx<ReducerCallResult>,
+        reply_tx: Option<JsReplyTx<ReducerCallResult>>,
         params: CallReducerParams,
     },
+    /// Wait until all previously queued instance-lane work has completed.
+    Fence { reply_tx: JsReplyTx<()> },
     /// See [`JsInstance::call_view`].
     CallView {
         reply_tx: JsReplyTx<ViewCommandResult>,
@@ -998,6 +1066,7 @@ struct JsInstanceLaneState {
     // - `create_lane_instance()` must not call back into `JsInstanceLane` or try to
     //   take `replace_lock`.
     replace_lock: AsyncMutex<()>,
+    fatal_handler: Arc<dyn Fn() + Send + Sync + 'static>,
 }
 
 /// A single serialized execution lane for JS module work.
@@ -1012,12 +1081,14 @@ pub struct JsInstanceLane {
 }
 
 impl JsInstanceLane {
-    pub fn new(module: JsModule, init_inst: JsInstance) -> Self {
+    pub fn new(module: JsModule, init_inst: JsInstance, fatal_handler: Arc<dyn Fn() + Send + Sync + 'static>) -> Self {
+        init_inst.install_fatal_handler(fatal_handler.clone());
         Self {
             module,
             state: Arc::new(JsInstanceLaneState {
                 active: RwLock::new(init_inst),
                 replace_lock: AsyncMutex::new(()),
+                fatal_handler,
             }),
         }
     }
@@ -1033,6 +1104,10 @@ impl JsInstanceLane {
     }
 
     async fn replace_active_if_current(&self, stale: &JsInstance) {
+        if stale.fatal() {
+            return;
+        }
+
         // `replace_lock` intentionally serializes the rare recovery path. This
         // prevents a trap observed by many callers from spawning many replacement
         // workers and racing to install them.
@@ -1042,6 +1117,10 @@ impl JsInstanceLane {
         // We only want the first one to do the swap; everybody else should notice
         // that the active handle already changed and get out of the way.
         if self.state.active.read().id() != stale.id() {
+            return;
+        }
+
+        if stale.fatal() {
             return;
         }
 
@@ -1061,6 +1140,7 @@ impl JsInstanceLane {
         // The only lock held across this await is `replace_lock`, which is why it
         // has to be async.
         let next = self.module.create_lane_instance().await;
+        next.install_fatal_handler(self.state.fatal_handler.clone());
         *self.state.active.write() = next;
     }
 
@@ -1082,8 +1162,16 @@ impl JsInstanceLane {
         // and left the current active handle stale by the time we enter. Swap in the
         // replacement before enqueueing more work.
         if active.needs_recovery() {
+            if active.fatal() {
+                log::error!("instance-lane operation {label} observed a fatal worker exit");
+                return Err(WorkerDisconnected);
+            }
             self.replace_active_if_current(&active).await;
             active = self.active_instance();
+            if active.fatal() {
+                log::error!("instance-lane operation {label} observed a fatal worker exit");
+                return Err(WorkerDisconnected);
+            }
         }
         let result = work(active.clone()).await;
         match result {
@@ -1092,8 +1180,12 @@ impl JsInstanceLane {
                 Ok(value)
             }
             Err(err) => {
-                self.replace_active_if_current(&active).await;
-                log::error!("instance-lane operation {label} lost its worker before replying");
+                if active.fatal() {
+                    log::error!("instance-lane operation {label} lost its worker fatally; module is exiting");
+                } else {
+                    self.replace_active_if_current(&active).await;
+                    log::error!("instance-lane operation {label} lost its worker before replying");
+                }
                 Err(err)
             }
         }
@@ -1166,11 +1258,36 @@ impl JsInstanceLane {
     /// that as `ReducerCallError::WorkerError`.
     pub async fn call_reducer(&self, params: CallReducerParams) -> Result<ReducerCallResult, ReducerCallError> {
         self.run_once("call_reducer", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::CallReducer { reply_tx, params })
-                .await
+            inst.send_request(|reply_tx| JsWorkerRequest::CallReducer {
+                reply_tx: Some(reply_tx),
+                params,
+            })
+            .await
         })
         .await
         .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
+    }
+
+    /// Enqueues one reducer on the instance lane without waiting for reducer completion.
+    ///
+    /// The reducer still emits its normal success or failure result through the
+    /// subscription/broadcast path. This only removes the extra request/reply hop
+    /// on the websocket receive path.
+    pub async fn call_reducer_detached(&self, params: CallReducerParams) -> Result<(), ReducerCallError> {
+        self.run_once("call_reducer_detached", |inst: JsInstance| async move {
+            inst.submit_reducer_detached(params).await
+        })
+        .await
+        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer_detached")))
+    }
+
+    /// Inserts an ordering barrier after detached reducers on this instance lane.
+    ///
+    /// If the worker dies before reaching the barrier, the disconnect is surfaced
+    /// so the caller can treat that as fatal module loss.
+    pub(in crate::host) async fn fence(&self) -> Result<(), WorkerDisconnected> {
+        self.run_once("fence", |inst: JsInstance| async move { inst.fence().await })
+            .await
     }
 
     /// Clear all instance-lane client state exactly once.
@@ -1336,6 +1453,9 @@ async fn spawn_instance_worker(
 
     std::thread::spawn(move || {
         scopeguard::defer! {
+            if std::thread::panicking() {
+                worker_state_in_thread.mark_fatal();
+            }
             worker_state_in_thread.mark_exited();
         }
 
@@ -1444,9 +1564,12 @@ async fn spawn_instance_worker(
                     if trapped {
                         worker_state_in_thread.mark_trapped();
                     }
-                    send_worker_reply("call_reducer", reply_tx, res);
+                    if let Some(reply_tx) = reply_tx {
+                        send_worker_reply("call_reducer", reply_tx, res);
+                    }
                     should_exit = trapped;
                 }
+                JsWorkerRequest::Fence { reply_tx } => send_worker_reply("fence", reply_tx, ()),
                 JsWorkerRequest::CallView { reply_tx, cmd } => {
                     let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
                     if trapped {

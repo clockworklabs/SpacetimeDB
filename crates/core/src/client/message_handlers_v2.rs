@@ -28,6 +28,19 @@ pub(super) async fn handle_decoded_message(
     message: ws_v2::ClientMessage,
     timer: Instant,
 ) -> Result<(), MessageHandleError> {
+    if !matches!(message, ws_v2::ClientMessage::CallReducer(_)) {
+        client
+            .flush_pending_v2_reducers()
+            .await
+            .map_err(|err| MessageExecutionError {
+                reducer: None,
+                reducer_id: None,
+                caller_identity: client.id.identity,
+                caller_connection_id: Some(client.id.connection_id),
+                err: err.into(),
+            })?;
+    }
+
     let module = client.module();
     let mod_info = module.info();
     let mod_metrics = &mod_info.metrics;
