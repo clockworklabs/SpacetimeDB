@@ -5,17 +5,17 @@
 //! The [`get`](HttpClient::get) helper can be used for simple `GET` requests,
 //! while [`send`](HttpClient::send) allows more complex requests with headers, bodies and other methods.
 
-use bytes::Bytes;
-
 use crate::{
     rt::{read_bytes_source_as, read_bytes_source_into},
     IterBuf,
 };
+use bytes::Bytes;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::http::{
     self as st_http, character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION,
 };
 use spacetimedb_lib::{bsatn, TimeDuration};
+use std::str::FromStr;
 
 pub type Request<T = Body> = http::Request<T>;
 
