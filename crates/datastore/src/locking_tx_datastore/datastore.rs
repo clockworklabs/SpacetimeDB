@@ -1319,16 +1319,17 @@ mod tests {
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
         system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
-        StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields,
-        ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
-        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID,
-        ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
-        ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
+        StConstraintRow, StEventTableFields, StInboundMsgFields, StIndexAlgorithm, StIndexFields, StIndexRow,
+        StOutboundMsgFields, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow, StTableRow,
+        StVarFields, StViewArgFields, StViewFields, ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID,
+        ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID,
+        ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME,
+        ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID,
+        ST_INDEX_NAME, ST_MODULE_NAME, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME, ST_RESERVED_SEQUENCE_RANGE,
+        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID,
+        ST_SEQUENCE_NAME, ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
+        ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME,
+        ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1661,6 +1662,7 @@ mod tests {
             pk,
             false,
             None,
+            None,
         )
     }
 
@@ -1797,6 +1799,8 @@ mod tests {
             TableRow { id: ST_TABLE_ACCESSOR_ID.into(), name: ST_TABLE_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StInboundMsgFields::DatabaseIdentity.into()) },
+            TableRow { id: ST_OUTBOUND_MSG_ID.into(), name: ST_OUTBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StOutboundMsgFields::MsgId.into()) },
 
         ]));
         #[rustfmt::skip]
@@ -1894,6 +1898,15 @@ mod tests {
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 0, name: "table_name", ty: AlgebraicType::String },
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 1, name: "col_name", ty: AlgebraicType::String },
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
+
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 0, name: "database_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "last_outbound_msg", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "result_status", ty: AlgebraicType::U8 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_payload", ty: AlgebraicType::bytes() },
+
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 0, name: "msg_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 1, name: "outbox_table_id", ty: TableId::get_type() },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 2, name: "row_id", ty: AlgebraicType::U64 },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1926,6 +1939,8 @@ mod tests {
             IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
+            IndexRow { id: 30, table: ST_INBOUND_MSG_ID.into(), col: col(0), name: "st_inbound_msg_database_identity_idx_btree", },
+            IndexRow { id: 31, table: ST_OUTBOUND_MSG_ID.into(), col: col(0), name: "st_outbound_msg_msg_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1938,6 +1953,7 @@ mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
                 SequenceRow { id: 6, table: ST_VIEW_ID.into(), col_pos: 0, name: "st_view_view_id_seq", start },
                 SequenceRow { id: 7, table: ST_VIEW_ARG_ID.into(), col_pos: 0, name: "st_view_arg_id_seq", start },
+                SequenceRow { id: 8, table: ST_OUTBOUND_MSG_ID.into(), col_pos: 0, name: "st_outbound_msg_msg_id_seq", start },
             ],
             |row| StSequenceRow {
                 allocated: start - 1,
@@ -1971,6 +1987,8 @@ mod tests {
             ConstraintRow { constraint_id: 23, table_id: ST_INDEX_ACCESSOR_ID.into(), unique_columns: col(1), constraint_name: "st_index_accessor_accessor_name_key", },
             ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
+            ConstraintRow { constraint_id: 26, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col(0), constraint_name: "st_inbound_msg_database_identity_key", },
+            ConstraintRow { constraint_id: 27, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col(0), constraint_name: "st_outbound_msg_msg_id_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2404,6 +2422,8 @@ mod tests {
             IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
+            IndexRow { id: 30, table: ST_INBOUND_MSG_ID.into(), col: col(0), name: "st_inbound_msg_database_identity_idx_btree", },
+            IndexRow { id: 31,  table: ST_OUTBOUND_MSG_ID.into(), col: col(0), name: "st_outbound_msg_msg_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },

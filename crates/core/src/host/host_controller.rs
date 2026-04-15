@@ -1,3 +1,4 @@
+use super::idc_actor::{IdcActor, IdcActorConfig, IdcActorSender, IdcActorStarter};
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
@@ -22,8 +23,10 @@ use crate::util::jobs::{AllocatedJobCore, JobCores};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
+use bytes::Bytes;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use scopeguard::defer;
 use spacetimedb_commitlog::SizeOnDisk;
@@ -117,6 +120,8 @@ pub struct HostController {
     db_cores: JobCores,
     /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
+    /// Local port to be used by `IdcActor` to make remote reducer calls
+    idc_http_port: OnceCell<u16>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -132,11 +137,13 @@ impl HostRuntimes {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
+    pub reducer_return_value: Option<Bytes>,
     pub energy_used: EnergyQuanta,
     pub execution_duration: Duration,
+    pub tx_offset: Option<TransactionOffset>,
 }
 
 impl ReducerCallResult {
@@ -228,12 +235,17 @@ impl HostController {
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
+            idc_http_port: OnceCell::new(),
         }
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
     pub fn set_program_storage(&mut self, ps: ProgramStorage) {
         self.program_storage = ps;
+    }
+
+    pub fn set_idc_http_port(&self, port: u16) -> Result<(), u16> {
+        self.idc_http_port.set(port)
     }
 
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
@@ -706,6 +718,7 @@ async fn make_module_host(
     runtimes: Arc<HostRuntimes>,
     replica_ctx: Arc<ReplicaContext>,
     scheduler: Scheduler,
+    idc_sender: IdcActorSender,
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
@@ -721,6 +734,7 @@ async fn make_module_host(
     let mcc = ModuleCreationContext {
         replica_ctx,
         scheduler,
+        idc_sender,
         program_hash: program.hash,
         energy_monitor,
     };
@@ -758,6 +772,7 @@ struct LaunchedModule {
     module_host: ModuleHost,
     scheduler: Scheduler,
     scheduler_starter: SchedulerStarter,
+    idc_starter: IdcActorStarter,
 }
 
 struct ModuleLauncher<F> {
@@ -794,10 +809,12 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         .await
         .map(Arc::new)?;
         let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
+        let (idc_starter, idc_sender) = IdcActor::open();
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
             replica_ctx.clone(),
             scheduler.clone(),
+            idc_sender.clone(),
             self.program,
             self.energy_monitor,
             self.on_panic,
@@ -814,6 +831,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
                 module_host,
                 scheduler,
                 scheduler_starter,
+                idc_starter,
             },
         ))
     }
@@ -879,6 +897,9 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
+    /// IDC actor: delivers outbound inter-database messages from `st_outbound_msg`.
+    /// Stopped when [`Host`] is dropped.
+    _idc_actor: IdcActor,
 }
 
 impl Host {
@@ -1072,6 +1093,7 @@ impl Host {
             module_host,
             scheduler,
             scheduler_starter,
+            idc_starter,
         } = launched;
 
         // Disconnect dangling clients.
@@ -1098,6 +1120,18 @@ impl Host {
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone());
 
+        let idc_actor = idc_starter.start(
+            replica_ctx.relational_db().clone(),
+            IdcActorConfig {
+                sender_identity: replica_ctx.database_identity,
+                http_port: *host_controller
+                    .idc_http_port
+                    .get()
+                    .ok_or_else(|| anyhow!("Port for IDC actor is not initialized"))?,
+            },
+            module_host.downgrade(),
+        );
+
         let module = watch::Sender::new(module_host);
 
         Ok(Host {
@@ -1107,6 +1141,7 @@ impl Host {
             disk_metrics_recorder_task,
             tx_metrics_recorder_task,
             view_cleanup_task,
+            _idc_actor: idc_actor,
         })
     }
 
@@ -1179,11 +1214,13 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
+        let (_idc_starter, idc_sender) = IdcActor::open();
 
         let (program, module) = make_module_host(
             runtimes,
             replica_ctx.clone(),
             scheduler.clone(),
+            idc_sender,
             program,
             energy_monitor,
             on_panic,

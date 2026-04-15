@@ -3,6 +3,7 @@ mod add_remove_index;
 mod auto_inc;
 mod auto_migration;
 mod call;
+mod call_from_database;
 mod change_host_type;
 mod cli;
 mod client_connection_errors;

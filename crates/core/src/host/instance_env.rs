@@ -1,3 +1,4 @@
+use super::idc_actor::IdcActorSender;
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
@@ -40,6 +41,8 @@ use std::vec::IntoIter;
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
+    /// Sender to notify the IDC actor of new outbox rows.
+    pub idc_sender: IdcActorSender,
     pub tx: TxSlot,
     /// The timestamp the current function began running.
     pub start_time: Timestamp,
@@ -224,10 +227,11 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcActorSender) -> Self {
         Self {
             replica_ctx,
             scheduler,
+            idc_sender,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
             start_instant: Instant::now(),
@@ -385,6 +389,10 @@ impl InstanceEnv {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
 
+        if insert_flags.is_outbox_table {
+            self.enqueue_outbox_row(stdb, tx, table_id, row_ptr)?;
+        }
+
         // Note, we update the metric for bytes written after the insert.
         // This is to capture auto-inc columns.
         tx.metrics.bytes_written += buffer.len();
@@ -420,6 +428,48 @@ impl InstanceEnv {
                 self.start_time,
             )
             .map_err(NodesError::ScheduleError)?;
+
+        Ok(())
+    }
+
+    /// Enqueue an outbox row into ST_OUTBOUND_MSG atomically within the current transaction,
+    /// and notify the IDC actor so it delivers without waiting for the next poll cycle.
+    ///
+    /// Outbox tables have:
+    ///   - Col 0: auto-inc primary key (u64) — stored as `row_id` in ST_OUTBOUND_MSG.
+    ///   - Col 1: target database Identity (stored as U256).
+    ///   - Remaining cols: args for the remote reducer.
+    ///
+    /// The `on_result_reducer` and delivery data are resolved at delivery time from the
+    /// outbox table's schema and row, so ST_OUTBOUND_MSG only stores the minimal reference.
+    fn enqueue_outbox_row(
+        &self,
+        _stdb: &RelationalDB,
+        tx: &mut MutTx,
+        table_id: TableId,
+        row_ptr: RowPointer,
+    ) -> Result<(), NodesError> {
+        use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
+
+        let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
+        let pv = row_ref.to_product_value();
+
+        // Col 0 is the auto-inc primary key — this is the row_id we store in ST_OUTBOUND_MSG.
+        let row_id = match pv.elements.first() {
+            Some(AlgebraicValue::U64(id)) => *id,
+            other => {
+                let schema = tx.schema_for_table(table_id).map_err(DBError::from)?;
+                return Err(NodesError::Internal(Box::new(DBError::Other(anyhow::anyhow!(
+                    "outbox table {}: expected col 0 to be U64 (auto-inc PK), got {other:?}",
+                    schema.table_name
+                )))));
+            }
+        };
+
+        tx.insert_st_outbound_msg(table_id.0, row_id).map_err(DBError::from)?;
+
+        // Wake the IDC actor immediately so it doesn't wait for the next poll cycle.
+        let _ = self.idc_sender.send(());
 
         Ok(())
     }
@@ -1380,7 +1430,11 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+        let (_, idc_sender) = crate::host::idc_actor::IdcActor::open();
+        Ok((
+            InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
+            runtime,
+        ))
     }
 
     /// An in-memory `RelationalDB` for testing.

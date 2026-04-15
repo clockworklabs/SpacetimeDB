@@ -946,6 +946,12 @@ pub enum ReducerCallError {
     ScheduleReducerNotFound,
     #[error("can't directly call special {0:?} lifecycle reducer")]
     LifecycleReducer(Lifecycle),
+    #[error("out-of-order inbound message id {received} from {sender}; expected {expected}")]
+    OutOfOrderInboundMessage {
+        sender: Identity,
+        expected: u64,
+        received: u64,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1605,6 +1611,42 @@ impl ModuleHost {
         .await?
     }
 
+    async fn call_reducer_with_success_action_inner(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_id: ReducerId,
+        reducer_def: &ReducerDef,
+        args: FunctionArgs,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+        let call_reducer_params = CallReducerParams {
+            timestamp: Timestamp::now(),
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_id,
+            args,
+        };
+
+        self.call(
+            &reducer_def.name,
+            (call_reducer_params, action),
+            async |(p, action), inst| Ok(inst.call_reducer_with_success_action(p, action)),
+            async |(p, action), inst| inst.call_reducer_with_success_action(p, action).await,
+        )
+        .await?
+    }
+
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
@@ -1640,6 +1682,123 @@ impl ModuleHost {
                 args,
             )
             .await
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+
+        res
+    }
+
+    pub async fn call_reducer_with_success_action(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        action: crate::host::idc_actor::ReducerSuccessActionKind,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let res = async {
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+
+            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
+
+            self.call_reducer_with_success_action_inner(
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                reducer_def,
+                args,
+                action,
+            )
+            .await
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+
+        res
+    }
+
+    pub async fn call_reducer_from_database(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        sender_database_identity: Identity,
+        sender_msg_id: u64,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let res = async {
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+
+            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+                return Err(ReducerCallError::NoSuchReducer);
+            }
+
+            let call_reducer_params = Self::call_reducer_params(
+                &self.info,
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                reducer_def,
+                args,
+            )?;
+
+            self.call(
+                &reducer_def.name,
+                (call_reducer_params, sender_database_identity, sender_msg_id),
+                async |(p, sender_database_identity, sender_msg_id), inst| {
+                    inst.call_reducer_from_database(p, sender_database_identity, sender_msg_id)
+                },
+                async |(p, sender_database_identity, sender_msg_id), inst| {
+                    inst.call_reducer_from_database(p, sender_database_identity, sender_msg_id)
+                        .await
+                },
+            )
+            .await?
         }
         .await;
 

@@ -201,6 +201,9 @@ pub struct TableSchema {
     /// Whether this is an event table.
     pub is_event: bool,
 
+    /// Outbox configuration if this is an outbox table; `None` for non-outbox tables.
+    pub outbox: Option<OutboxSchema>,
+
     /// Cache for `row_type_for_table` in the data store.
     pub row_type: ProductType,
 }
@@ -227,6 +230,7 @@ impl TableSchema {
         primary_key: Option<ColId>,
         is_event: bool,
         alias: Option<Identifier>,
+        outbox: Option<OutboxSchema>,
     ) -> Self {
         Self {
             row_type: columns_to_row_type(&columns),
@@ -243,6 +247,7 @@ impl TableSchema {
             primary_key,
             is_event,
             alias,
+            outbox,
         }
     }
 
@@ -280,6 +285,7 @@ impl TableSchema {
             None,
             None,
             false,
+            None,
             None,
         )
     }
@@ -803,6 +809,7 @@ impl TableSchema {
             view_primary_key,
             false,
             None,
+            None,
         )
     }
 
@@ -974,6 +981,7 @@ impl TableSchema {
             if *is_anonymous { view_primary_key } else { None },
             false,
             Some(accessor_name.clone()),
+            None,
         )
     }
 }
@@ -1005,6 +1013,7 @@ impl Schema for TableSchema {
             table_access,
             is_event,
             accessor_name,
+            outbox,
             ..
         } = def;
 
@@ -1031,6 +1040,11 @@ impl Schema for TableSchema {
             .as_ref()
             .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId::SENTINEL));
 
+        let outbox_schema = outbox.as_ref().map(|o| OutboxSchema {
+            remote_reducer: o.remote_reducer.clone(),
+            on_result_reducer: o.on_result_reducer.clone(),
+        });
+
         TableSchema::new(
             table_id,
             TableName::new(name.clone()),
@@ -1045,6 +1059,7 @@ impl Schema for TableSchema {
             *primary_key,
             *is_event,
             Some(accessor_name.clone()),
+            outbox_schema,
         )
     }
 
@@ -1425,6 +1440,15 @@ impl Schema for ScheduleSchema {
         );
         Ok(())
     }
+}
+
+/// Marks a table as an outbox table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboxSchema {
+    /// The name of the reducer to invoke on the target database.
+    pub remote_reducer: Identifier,
+    /// The local reducer called with the delivery result, if any.
+    pub on_result_reducer: Option<Identifier>,
 }
 
 /// A struct representing the schema of a database index.

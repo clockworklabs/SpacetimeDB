@@ -11,6 +11,7 @@
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
+use bytes::Bytes;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
@@ -89,6 +90,12 @@ pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
 /// The static ID of the table that maps canonical column names to accessor names
 pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
 
+/// The static ID of the table that tracks the last inbound msg id per sender database.
+pub const ST_INBOUND_MSG_ID: TableId = TableId(21);
+
+/// The static ID of the table that tracks outbound inter-database messages.
+pub const ST_OUTBOUND_MSG_ID: TableId = TableId(22);
+
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
 pub const ST_COLUMN_NAME: &str = "st_column";
@@ -109,6 +116,8 @@ pub(crate) const ST_EVENT_TABLE_NAME: &str = "st_event_table";
 pub(crate) const ST_TABLE_ACCESSOR_NAME: &str = "st_table_accessor";
 pub(crate) const ST_INDEX_ACCESSOR_NAME: &str = "st_index_accessor";
 pub(crate) const ST_COLUMN_ACCESSOR_NAME: &str = "st_column_accessor";
+pub(crate) const ST_INBOUND_MSG_NAME: &str = "st_inbound_msg";
+pub(crate) const ST_OUTBOUND_MSG_NAME: &str = "st_outbound_msg";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
@@ -182,7 +191,11 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StEventTableRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
-        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID => false,
+        ST_TABLE_ACCESSOR_ID
+        | ST_INDEX_ACCESSOR_ID
+        | ST_COLUMN_ACCESSOR_ID
+        | ST_INBOUND_MSG_ID
+        | ST_OUTBOUND_MSG_ID => false,
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -205,7 +218,7 @@ pub enum SystemTable {
     st_table_accessor,
 }
 
-pub fn system_tables() -> [TableSchema; 20] {
+pub fn system_tables() -> [TableSchema; 22] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -228,6 +241,8 @@ pub fn system_tables() -> [TableSchema; 20] {
         st_table_accessor_schema(),
         st_index_accessor_schema(),
         st_column_accessor_schema(),
+        st_inbound_msg_schema(),
+        st_outbound_schema(),
     ]
 }
 
@@ -276,6 +291,8 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
+pub(crate) const ST_INBOUND_MSG_IDX: usize = 20;
+pub(crate) const ST_OUTBOUND_MSG_IDX: usize = 21;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -448,6 +465,19 @@ st_fields_enum!(enum StColumnAccessorFields {
     "table_name", TableName = 0,
     "col_name", ColName = 1,
     "accessor_name", AccessorName = 2,
+});
+
+st_fields_enum!(enum StInboundMsgFields {
+    "database_identity", DatabaseIdentity = 0,
+    "last_outbound_msg", LastMsgId = 1,
+    "result_status", ResultStatus = 2,
+    "result_payload", ResultPayload = 3,
+});
+
+st_fields_enum!(enum StOutboundMsgFields {
+    "msg_id", MsgId = 0,
+    "outbox_table_id", OutboxTableId = 1,
+    "row_id", RowId = 2,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -668,6 +698,27 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_column_accessor_table_alias_cols)
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
+    let st_inbound_msg_type = builder.add_type::<StInboundMsgRow>();
+    builder
+        .build_table(
+            ST_INBOUND_MSG_NAME,
+            *st_inbound_msg_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(StInboundMsgFields::DatabaseIdentity)
+        .with_index_no_accessor_name(btree(StInboundMsgFields::DatabaseIdentity))
+        .with_primary_key(StInboundMsgFields::DatabaseIdentity);
+
+    let st_outbound_msg_type = builder.add_type::<StOutboundMsgRow>();
+    builder
+        .build_table(
+            ST_OUTBOUND_MSG_NAME,
+            *st_outbound_msg_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_auto_inc_primary_key(StOutboundMsgFields::MsgId)
+        .with_index_no_accessor_name(btree(StOutboundMsgFields::MsgId));
+
     let result = builder
         .finish()
         .try_into()
@@ -693,6 +744,8 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
+    validate_system_table::<StInboundMsgFields>(&result, ST_INBOUND_MSG_NAME);
+    validate_system_table::<StOutboundMsgFields>(&result, ST_OUTBOUND_MSG_NAME);
 
     result
 }
@@ -741,6 +794,8 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
+        m.insert("st_inbound_msg_database_identity_key", ConstraintId(26));
+        m.insert("st_outbound_msg_msg_id_key", ConstraintId(27));
         m
     };
 }
@@ -779,6 +834,8 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
+        m.insert("st_inbound_msg_database_identity_idx_btree", IndexId(30));
+        m.insert("st_outbound_msg_msg_id_idx_btree", IndexId(31));
         m
     };
 }
@@ -795,6 +852,7 @@ lazy_static::lazy_static! {
         m.insert("st_sequence_sequence_id_seq", SequenceId(5));
         m.insert("st_view_view_id_seq", SequenceId(6));
         m.insert("st_view_arg_id_seq", SequenceId(7));
+        m.insert("st_outbound_msg_msg_id_seq", SequenceId(8));
         m
     };
 }
@@ -940,6 +998,14 @@ fn st_column_accessor_schema() -> TableSchema {
     st_schema(ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ACCESSOR_ID)
 }
 
+fn st_inbound_msg_schema() -> TableSchema {
+    st_schema(ST_INBOUND_MSG_NAME, ST_INBOUND_MSG_ID)
+}
+
+fn st_outbound_schema() -> TableSchema {
+    st_schema(ST_OUTBOUND_MSG_NAME, ST_OUTBOUND_MSG_ID)
+}
+
 /// If `table_id` refers to a known system table, return its schema.
 ///
 /// Used when restoring from a snapshot; system tables are reinstantiated with this schema,
@@ -968,6 +1034,8 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_TABLE_ACCESSOR_ID => Some(st_table_accessor_schema()),
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
+        ST_INBOUND_MSG_ID => Some(st_inbound_msg_schema()),
+        ST_OUTBOUND_MSG_ID => Some(st_outbound_schema()),
         _ => None,
     }
 }
@@ -1856,6 +1924,88 @@ impl TryFrom<RowRef<'_>> for StColumnAccessorRow {
 impl From<StColumnAccessorRow> for ProductValue {
     fn from(x: StColumnAccessorRow) -> Self {
         to_product_value(&x)
+    }
+}
+
+/// System Table [ST_INBOUND_MSG_NAME]
+/// Tracks the last message id received from each sender database for deduplication.
+/// Also stores the result of the reducer call for returning on subsequent duplicate requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum StInboundMsgResultStatus {
+    /// Reducer ran and committed successfully.
+    Success = 1,
+    /// Reducer ran and returned a user-visible error.
+    ReducerError = 2,
+}
+
+impl TryFrom<u8> for StInboundMsgResultStatus {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Success),
+            2 => Ok(Self::ReducerError),
+            _ => Err("invalid st_inbound_msg result status"),
+        }
+    }
+}
+
+impl From<StInboundMsgResultStatus> for u8 {
+    fn from(value: StInboundMsgResultStatus) -> Self {
+        value as u8
+    }
+}
+
+impl_st!([] StInboundMsgResultStatus, AlgebraicType::U8);
+impl<'de> Deserialize<'de> for StInboundMsgResultStatus {
+    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = u8::deserialize(deserializer)?;
+        Self::try_from(value).map_err(D::Error::custom)
+    }
+}
+impl_serialize!([] StInboundMsgResultStatus, (self, ser) => u8::from(*self).serialize(ser));
+
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StInboundMsgRow {
+    pub database_identity: IdentityViaU256,
+    pub last_outbound_msg: u64,
+    pub result_status: StInboundMsgResultStatus,
+    /// Reducer return payload encoded as raw bytes.
+    /// For `SUCCESS`, this stores the committed reducer return value.
+    /// For `REDUCER_ERROR`, this stores the error message bytes.
+    pub result_payload: Bytes,
+}
+
+impl TryFrom<RowRef<'_>> for StInboundMsgRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+/// System Table [ST_OUTBOUND_MSG_NAME]
+/// Tracks undelivered outbound inter-database messages (outbox pattern).
+/// A row's presence means the message has not yet been fully processed.
+/// Once delivery and the on_result callback complete, the row is deleted.
+///
+/// Delivery data (target identity, reducer name, args) is read from the outbox table row.
+/// The on_result_reducer is read from the outbox table's schema (TableSchema::on_result_reducer).
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StOutboundMsgRow {
+    pub msg_id: u64,
+    /// The TableId of the outbox table that generated this message.
+    pub outbox_table_id: u32,
+    /// The auto-inc primary key (col 0) of the row in the outbox table.
+    pub row_id: u64,
+}
+
+impl TryFrom<RowRef<'_>> for StOutboundMsgRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
     }
 }
 
