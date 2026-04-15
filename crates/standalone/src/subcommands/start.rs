@@ -34,7 +34,7 @@ pub fn cli() -> clap::Command {
                 .default_value("0.0.0.0:3000")
                 .help(
                     "The address and port where SpacetimeDB should listen for connections. \
-                     This defaults to to listen on all IP addresses on port 80.",
+                     This defaults to listening on all IP addresses on port 3000.",
                 ),
         )
         .arg(
