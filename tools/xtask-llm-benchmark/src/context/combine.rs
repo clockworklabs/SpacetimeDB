@@ -1,5 +1,5 @@
-use crate::context::constants::{docs_dir, is_empty_context_mode};
-use crate::context::paths::{gather_guidelines_files, resolve_mode_paths};
+use crate::context::constants::{docs_dir, is_empty_context_mode, skills_dir};
+use crate::context::paths::{gather_skills_files, resolve_mode_paths};
 use crate::eval::lang::Lang;
 use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
@@ -38,11 +38,10 @@ pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
         return build_context_from_rustdoc_json();
     }
 
-    let base = base_for_mode(mode)?;
-    let files = if mode == "guidelines" {
-        gather_guidelines_files(base.join("static/ai-guidelines"), lang)?
+    let (base, files) = if mode == "guidelines" {
+        (skills_dir(), gather_skills_files(lang)?)
     } else {
-        resolve_mode_paths(mode)?
+        (base_for_mode(mode)?, resolve_mode_paths(mode)?)
     };
     let mut out = String::with_capacity(1024 * 1024);
     for p in files {

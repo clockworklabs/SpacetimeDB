@@ -27,6 +27,11 @@ pub fn docs_dir() -> PathBuf {
 }
 
 #[inline]
+pub fn skills_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SKILLS_DIR_DEFAULT)
+}
+
+#[inline]
 pub fn rustdoc_crate_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(RUSTDOC_CRATE_ROOT_DEFAULT)
 }

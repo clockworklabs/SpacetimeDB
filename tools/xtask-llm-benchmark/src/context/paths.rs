@@ -1,4 +1,4 @@
-use crate::context::constants::{docs_dir, is_empty_context_mode};
+use crate::context::constants::{docs_dir, is_empty_context_mode, skills_dir};
 use crate::context::hashing::gather_docs_files;
 use crate::context::{rustdoc_crate_root, rustdoc_readme_path};
 use crate::eval::lang::Lang;
@@ -17,7 +17,7 @@ pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
         "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
-        "guidelines" => gather_guidelines_files(docs_dir().join("static/ai-guidelines"), None),
+        "guidelines" => gather_skills_files(None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
         m if is_empty_context_mode(m) => Ok(Vec::new()),
         other => {
@@ -26,32 +26,39 @@ pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
     }
 }
 
-/// New constructive-only guidelines under docs/static/ai-guidelines/.
-/// Files are named spacetimedb-{lang}.md and selected by language tag.
-pub fn gather_guidelines_files(guidelines_dir: PathBuf, lang: Option<Lang>) -> Result<Vec<PathBuf>> {
-    if !guidelines_dir.is_dir() {
+/// Gather SKILL.md files from the skills/ directory.
+/// Always includes `concepts/SKILL.md`. When a language is specified,
+/// also includes the matching `{lang}-server/SKILL.md`.
+/// Without a language filter, includes all server skills.
+pub fn gather_skills_files(lang: Option<Lang>) -> Result<Vec<PathBuf>> {
+    let root = skills_dir();
+    if !root.is_dir() {
         return Ok(Vec::new());
     }
-    let mut out: Vec<PathBuf> = fs::read_dir(&guidelines_dir)
-        .with_context(|| format!("read guidelines dir {}", guidelines_dir.display()))?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e == "md" || e == "mdc")
-                .unwrap_or(false)
-        })
-        .collect();
-    if let Some(l) = lang {
-        let tag = l.as_str();
-        out.retain(|p| {
-            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-            let is_general = !name.contains("typescript") && !name.contains("rust") && !name.contains("csharp");
-            let is_lang = name.contains(tag);
-            is_general || is_lang
-        });
+
+    let mut out = Vec::new();
+
+    // Always include concepts
+    let concepts = root.join("concepts/SKILL.md");
+    if concepts.is_file() {
+        out.push(concepts);
     }
+
+    // Language-specific server skills
+    let server_dirs: Vec<&str> = match lang {
+        Some(Lang::Rust) => vec!["rust-server"],
+        Some(Lang::CSharp) => vec!["csharp-server"],
+        Some(Lang::TypeScript) => vec!["typescript-server"],
+        None => vec!["rust-server", "csharp-server", "typescript-server"],
+    };
+
+    for dir in server_dirs {
+        let skill = root.join(dir).join("SKILL.md");
+        if skill.is_file() {
+            out.push(skill);
+        }
+    }
+
     out.sort();
     Ok(out)
 }
@@ -60,7 +67,7 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
         "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
-        "guidelines" => gather_guidelines_files(docs_dir().join("static/ai-guidelines"), None),
+        "guidelines" => gather_skills_files(None),
         m if is_empty_context_mode(m) => Ok(Vec::new()),
         "rustdoc_json" => {
             if let Some(p) = rustdoc_readme_path() {
