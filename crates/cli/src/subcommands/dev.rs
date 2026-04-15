@@ -1712,6 +1712,29 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn test_detect_and_save_uses_package_manager_field() {
+        let temp = TempDir::new().unwrap();
+
+        let package_json = r#"{
+            "name": "test",
+            "packageManager": "pnpm@10.28.2",
+            "scripts": {
+                "dev": "vite"
+            }
+        }"#;
+        fs::write(temp.path().join("package.json"), package_json).unwrap();
+
+        let detected = detect_and_save_client_command(temp.path(), None);
+        assert_eq!(detected.as_deref(), Some("pnpm run dev"));
+
+        let reloaded_config = SpacetimeConfig::load(&temp.path().join("spacetime.json")).unwrap();
+        assert_eq!(
+            reloaded_config.dev.as_ref().and_then(|d| d.run.as_deref()),
+            Some("pnpm run dev")
+        );
+    }
+
+    #[test]
     fn test_detect_and_save_preserves_existing_config() {
         let temp = TempDir::new().unwrap();
 

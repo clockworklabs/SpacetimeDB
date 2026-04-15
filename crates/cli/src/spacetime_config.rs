@@ -1105,9 +1105,29 @@ pub fn setup_for_project(
     Ok(None)
 }
 
-/// Detect the package manager from lock files in the project directory.
+fn detect_package_manager_from_package_json(project_dir: &Path) -> Option<PackageManager> {
+    let package_json = project_dir.join("package.json");
+    let content = fs::read_to_string(package_json).ok()?;
+    let json = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+    let package_manager = json.get("packageManager")?.as_str()?;
+    let name = package_manager.split('@').next()?;
+
+    match name {
+        "npm" => Some(PackageManager::Npm),
+        "pnpm" => Some(PackageManager::Pnpm),
+        "yarn" => Some(PackageManager::Yarn),
+        "bun" => Some(PackageManager::Bun),
+        _ => None,
+    }
+}
+
+/// Detect the package manager from package.json metadata or lock files in the project directory.
 pub fn detect_package_manager(project_dir: &Path) -> Option<PackageManager> {
-    // Check for lock files in order of preference
+    if let Some(package_manager) = detect_package_manager_from_package_json(project_dir) {
+        return Some(package_manager);
+    }
+
+    // Check for lock files in order of preference.
     if project_dir.join("pnpm-lock.yaml").exists() {
         return Some(PackageManager::Pnpm);
     }
@@ -1120,7 +1140,7 @@ pub fn detect_package_manager(project_dir: &Path) -> Option<PackageManager> {
     if project_dir.join("package-lock.json").exists() {
         return Some(PackageManager::Npm);
     }
-    // Default to npm if package.json exists but no lock file
+    // Default to npm if package.json exists but no lock file.
     if project_dir.join("package.json").exists() {
         return Some(PackageManager::Npm);
     }
@@ -1165,6 +1185,47 @@ pub fn detect_client_command(project_dir: &Path) -> Option<(String, Option<Packa
 mod tests {
     use super::*;
     use clap::Arg;
+    use tempfile::TempDir;
+
+    #[test]
+    fn detect_package_manager_prefers_package_manager_field_over_lockfiles() {
+        let temp = TempDir::new().unwrap();
+        fs::write(
+            temp.path().join("package.json"),
+            r#"{
+                "name": "test",
+                "packageManager": "bun@1.2.13",
+                "scripts": {
+                    "dev": "vite"
+                }
+            }"#,
+        )
+        .unwrap();
+        fs::write(temp.path().join("pnpm-lock.yaml"), "lockfileVersion: '9.0'").unwrap();
+
+        assert_eq!(detect_package_manager(temp.path()), Some(PackageManager::Bun));
+    }
+
+    #[test]
+    fn detect_client_command_uses_package_manager_field_for_dev_command() {
+        let temp = TempDir::new().unwrap();
+        fs::write(
+            temp.path().join("package.json"),
+            r#"{
+                "name": "test",
+                "packageManager": "pnpm@10.28.2",
+                "scripts": {
+                    "dev": "vite"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            detect_client_command(temp.path()),
+            Some(("pnpm run dev".to_string(), Some(PackageManager::Pnpm)))
+        );
+    }
 
     #[test]
     fn test_deserialize_full_config() {
