@@ -97,6 +97,8 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
         };
         Err(*found)
     }
+
+    const IS_RANGED: bool = true;
 }
 
 impl<K: KeySize + Ord> UniqueBTreeIndex<K> {

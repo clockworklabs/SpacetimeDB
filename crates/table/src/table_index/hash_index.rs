@@ -118,6 +118,8 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
         // `self.insert` always returns `Ok(_)`.
         Ok(())
     }
+
+    const IS_RANGED: bool = false;
 }
 
 impl<K: KeySize + Eq + Hash> HashIndex<K> {

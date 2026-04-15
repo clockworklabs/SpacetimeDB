@@ -1482,6 +1482,7 @@ impl MutTxId {
                     .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id))?;
                 IndexScanPointOrRange::Range(iter)
             }
+            PointOrRange::Unsupported => return Err(IndexError::IndexCannotSeekRange(index_id).into()),
         };
         Ok((table_id, iter))
     }

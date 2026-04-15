@@ -39,17 +39,21 @@ use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
 use crate::{read_column::ReadColumn, static_assert_size};
-use core::ops::{Bound, RangeBounds};
+use core::cmp::Ordering;
+use core::ops::{Bound, Deref, RangeBounds};
 use core::{fmt, iter};
 use enum_as_inner::EnumAsInner;
 use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use spacetimedb_sats::bsatn::{decode, from_reader};
 use spacetimedb_sats::buffer::{DecodeError, DecodeResult};
+use spacetimedb_sats::de::{self, DeserializeSeed, Error, ProductVisitor};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::sum_value::SumTag;
 use spacetimedb_sats::{
-    i256, u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumValue, F32, F64,
+    i256, u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumValue, WithTypespace,
+    F32, F64,
 };
 use spacetimedb_schema::def::IndexAlgorithm;
 
@@ -298,10 +302,39 @@ table_iter! {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, derive_more::From)]
+#[derive(Clone, Debug, Eq, derive_more::From)]
 enum BowStr<'a> {
     Borrowed(&'a str),
     Owned(Box<str>),
+}
+
+impl Deref for BowStr<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Self::Borrowed(x) => x,
+            Self::Owned(ref x) => x,
+        }
+    }
+}
+
+impl PartialEq for BowStr<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl PartialOrd for BowStr<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BowStr<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.deref().cmp(other.deref())
+    }
 }
 
 impl<'a> BowStr<'a> {
@@ -326,10 +359,39 @@ impl<'a> From<&'a Box<str>> for BowStr<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, derive_more::From)]
+#[derive(Clone, Debug, Eq, derive_more::From)]
 enum CowAV<'a> {
     Borrowed(&'a AlgebraicValue),
     Owned(AlgebraicValue),
+}
+
+impl Deref for CowAV<'_> {
+    type Target = AlgebraicValue;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Self::Borrowed(x) => x,
+            Self::Owned(ref x) => x,
+        }
+    }
+}
+
+impl PartialEq for CowAV<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl PartialOrd for CowAV<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CowAV<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.deref().cmp(other.deref())
+    }
 }
 
 impl<'a> CowAV<'a> {
@@ -363,7 +425,7 @@ const BYTES_KEY_SIZE_120_H: usize = size_for_hash_bytes_key(128);
 const BYTES_KEY_SIZE_128_B: usize = size_for_btree_bytes_key(128);
 
 /// A key into a [`TypedIndex`].
-#[derive(enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum TypedIndexKey<'a> {
     Bool(bool),
     U8(u8),
@@ -1240,6 +1302,14 @@ impl TypedIndex {
         }
     }
 
+    /// Returns whether this index supports range queries.
+    fn is_ranged(&self) -> bool {
+        fn is_ranged<I: Index>(_: &I) -> bool {
+            I::IS_RANGED
+        }
+        same_for_all_types!(self, this => is_ranged(this))
+    }
+
     /// Add the relation `key -> ptr` to the index.
     ///
     /// Returns `Errs(existing_row)` if this index was a unique index that was violated.
@@ -1628,51 +1698,8 @@ impl TypedIndex {
         }
 
         Ok(match self {
-            // Hash indices are not `RangeIndex`.
-            Self::HashBool(_)
-            | Self::HashU8(_)
-            | Self::HashSumTag(_)
-            | Self::HashI8(_)
-            | Self::HashU16(_)
-            | Self::HashI16(_)
-            | Self::HashU32(_)
-            | Self::HashI32(_)
-            | Self::HashU64(_)
-            | Self::HashI64(_)
-            | Self::HashU128(_)
-            | Self::HashI128(_)
-            | Self::HashF32(_)
-            | Self::HashF64(_)
-            | Self::HashU256(_)
-            | Self::HashI256(_)
-            | Self::HashString(_)
-            | Self::HashAV(_)
-            | Self::HashBytesKey8(_)
-            | Self::HashBytesKey24(_)
-            | Self::HashBytesKey56(_)
-            | Self::HashBytesKey120(_)
-            | Self::UniqueHashBool(_)
-            | Self::UniqueHashU8(_)
-            | Self::UniqueHashSumTag(_)
-            | Self::UniqueHashI8(_)
-            | Self::UniqueHashU16(_)
-            | Self::UniqueHashI16(_)
-            | Self::UniqueHashU32(_)
-            | Self::UniqueHashI32(_)
-            | Self::UniqueHashU64(_)
-            | Self::UniqueHashI64(_)
-            | Self::UniqueHashU128(_)
-            | Self::UniqueHashI128(_)
-            | Self::UniqueHashF32(_)
-            | Self::UniqueHashF64(_)
-            | Self::UniqueHashU256(_)
-            | Self::UniqueHashI256(_)
-            | Self::UniqueHashString(_)
-            | Self::UniqueHashAV(_)
-            | Self::UniqueHashBytesKey8(_)
-            | Self::UniqueHashBytesKey24(_)
-            | Self::UniqueHashBytesKey56(_)
-            | Self::UniqueHashBytesKey120(_) => return Err(IndexCannotSeekRange),
+            // Non-rangd indices are not supported here.
+            _ if !self.is_ranged() => return Err(IndexCannotSeekRange),
 
             // Ensure we don't panic inside `BTreeMap::seek_range`.
             _ if is_empty(range) => iter::empty().into(),
@@ -1734,6 +1761,8 @@ impl TypedIndex {
             Self::UniqueDirectU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
             Self::UniqueDirectU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
             Self::UniqueDirectU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
+
+            _ => unreachable!("all index kinds should have been covered"),
         })
     }
 
@@ -1773,7 +1802,7 @@ impl TypedIndex {
 }
 
 /// A key into a [`TableIndex`].
-#[derive(Debug, derive_more::From)]
+#[derive(Clone, Debug, PartialEq, Eq, derive_more::From)]
 pub struct IndexKey<'a> {
     key: TypedIndexKey<'a>,
 }
@@ -1786,12 +1815,15 @@ impl IndexKey<'_> {
 }
 
 /// A decoded range scan bound, which may be a point or a range.
-#[derive(Debug, EnumAsInner)]
+#[derive(Debug, PartialEq, Eq, EnumAsInner)]
 pub enum PointOrRange<'a> {
     /// A point scan.
     Point(IndexKey<'a>),
     /// A range scan, with the lower and upper bound.
     Range(Bound<IndexKey<'a>>, Bound<IndexKey<'a>>),
+    /// The index does not support range scans.
+    /// It's (probably) a hash index.
+    Unsupported,
 }
 
 /// An index on a set of [`ColId`]s of a table.
@@ -1858,12 +1890,119 @@ impl TableIndex {
         self.idx.is_unique()
     }
 
+    /// Returns whether this index supports range queries.
+    pub fn is_ranged(&self) -> bool {
+        self.idx.is_ranged()
+    }
+
     /// Derives a key for this index from `value`.
     ///
     /// Panics if `value` is not consistent with this index's key type.
     #[inline]
     pub fn key_from_algebraic_value<'a>(&self, value: &'a AlgebraicValue) -> IndexKey<'a> {
         TypedIndexKey::from_algebraic_value(&self.key_type, &self.idx, value).into()
+    }
+
+    /// Derives bounds from `prefix` and `bounds`
+    /// for a ranged index scan on `self`.
+    pub fn bounds_from_algbraic_value<'a>(
+        &self,
+        prefix: &'a ProductValue,
+        bounds: &'a impl RangeBounds<AlgebraicValue>,
+    ) -> Result<PointOrRange<'a>, ValueDeserializeError> {
+        use TypedIndex::*;
+
+        if !self.is_ranged() {
+            return Ok(PointOrRange::Unsupported);
+        }
+
+        let start = bounds.start_bound();
+        let end = bounds.end_bound();
+        let prefix_elems = prefix.elements.len().into();
+
+        if let AlgebraicType::Product(key_types) = &self.key_type {
+            // Multi-column index case or single-column index on a product field.
+            // We can treat the latter as the former
+            // and allow e.g., prefix scans within the product field.
+
+            // Split `key_types` into the prefix types, the range type, and the suffix length.
+            let (prefix_types, range_type, suffix_len) = Self::split_key_types(prefix_elems, key_types)?;
+
+            macro_rules! bounds_for_bytes_key {
+                ($ctor:expr) => {
+                    Self::bounds_from_algebraic_value_for_bytes_key(
+                        prefix,
+                        prefix_types,
+                        start,
+                        end,
+                        range_type,
+                        suffix_len,
+                        $ctor,
+                    )
+                };
+            }
+
+            match &self.idx {
+                BTreeBytesKey8(_) | UniqueBTreeBytesKey8(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey8B),
+                BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey16),
+                BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey32),
+                BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey64),
+                BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey128),
+                BTreeAV(_) | UniqueBTreeAV(_) => {
+                    // The index is not specialized.
+                    // We now have the types,
+                    // so proceed to verifying the prefix, and the start/end bounds.
+                    // Finally combine all of these to a single bound pair.
+                    WithTypespace::empty(prefix_types)
+                        .validate_seq_product(ValueDeserializer::from_product_ref(prefix))?;
+
+                    let from_av = |v: AlgebraicValue| TypedIndexKey::AV(v.into()).into();
+                    let range_ts = WithTypespace::empty(range_type);
+                    let validate = |b| range_ts.validate(ValueDeserializer::from_ref(b));
+
+                    // Is this really a point scan?
+                    if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
+                        validate(point)?;
+                        let point = Self::combine_prefix_and_point(prefix.clone(), point.clone());
+                        return Ok(PointOrRange::Point(from_av(point)));
+                    }
+
+                    // It's not a point scan.
+                    let validate_bound = |b: &Bound<_>| transpose_bound(b.map(validate)).map(drop);
+                    validate_bound(&start)?;
+                    validate_bound(&end)?;
+                    let (start, end) =
+                        Self::combine_prefix_and_bounds(prefix.clone(), start.cloned(), end.cloned(), suffix_len);
+                    Ok(PointOrRange::Range(start.map(from_av), end.map(from_av)))
+                }
+                idx => unreachable!("index should be BytesKey* or AV, but was {idx:?}"),
+            }
+        } else {
+            Self::bounds_for_single_col(prefix_elems, start, end, |b| Ok(self.key_from_algebraic_value(b)))
+        }
+    }
+
+    /// Decodes `prefix` ++ `start` and `prefix` ++ `end`
+    /// as [`RangeCompatBytesKey`] bounds.
+    /// The `suffix_len` is used to determine whether this is a point scan or a range scan.
+    fn bounds_from_algebraic_value_for_bytes_key<'de, const N: usize>(
+        prefix: &'de ProductValue,
+        prefix_types: &[ProductTypeElement],
+        start: Bound<&'de AlgebraicValue>,
+        end: Bound<&'de AlgebraicValue>,
+        range_type: &AlgebraicType,
+        suffix_len: usize,
+        ctor: impl Copy + FnOnce(RangeCompatBytesKey<N>) -> TypedIndexKey<'de>,
+    ) -> Result<PointOrRange<'de>, ValueDeserializeError> {
+        Self::bounds_for_bytes_key(
+            prefix_types.is_empty(),
+            start,
+            end,
+            suffix_len,
+            || RangeCompatBytesKey::from_algebraic_value_prefix(prefix, prefix_types),
+            |b| RangeCompatBytesKey::from_algebraic_value_prefix_and_endpoint(prefix, prefix_types, b, range_type),
+            ctor,
+        )
     }
 
     /// Derives a key for this index from BSATN-encoded `bytes`.
@@ -1874,6 +2013,8 @@ impl TableIndex {
         Ok(TypedIndexKey::from_bsatn(&self.idx, &self.key_type, bytes)?.into())
     }
 
+    /// Derives bounds from `prefix`, `rstart`, and `rend`, all encoded in BSATN,
+    /// for a ranged index scan on `self`.
     pub fn bounds_from_bsatn<'de>(
         &self,
         mut prefix: &'de [u8],
@@ -1882,6 +2023,14 @@ impl TableIndex {
         rend: &'de [u8],
     ) -> DecodeResult<PointOrRange<'de>> {
         use TypedIndex::*;
+
+        if !self.is_ranged() {
+            return Ok(PointOrRange::Unsupported);
+        }
+
+        if prefix_elems.idx() == 0 && !prefix.is_empty() {
+            return Err(DecodeError::custom("a prefix was provided but `prefix_elems = 0`"));
+        }
 
         let read_bound = |mut bytes| {
             let reader = &mut bytes;
@@ -1892,98 +2041,92 @@ impl TableIndex {
         let start = read_bound(rstart)?;
         let end = read_bound(rend)?;
 
-        match &self.key_type {
+        if let AlgebraicType::Product(key_types) = &self.key_type {
             // Multi-column index case or single-column index on a product field.
             // We can treat the latter as the former
             // and allow e.g., prefix scans within the product field.
-            AlgebraicType::Product(key_types) => {
-                // Split into types for the prefix and for the rest.
-                let key_types = &*key_types.elements;
-                let (prefix_types, rest_types) = key_types
-                    .split_at_checked(prefix_elems.idx())
-                    .ok_or_else(|| DecodeError::Other("index key type has too few fields compared to prefix".into()))?;
-                // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
-                // Extract that type and determine the length of the suffix.
-                let Some((range_type, suffix_types)) = rest_types.split_first() else {
-                    return Err(DecodeError::Other(
-                        "prefix length leaves no room for a range in ranged index scan".into(),
-                    ));
+
+            // Split `key_types` into the prefix types, the range type, and the suffix length.
+            let (prefix_types, range_type, suffix_len) = Self::split_key_types::<DecodeError>(prefix_elems, key_types)?;
+
+            macro_rules! bounds_for_bytes_key {
+                ($ctor:expr) => {
+                    Self::bounds_from_bsatn_for_bytes_key(
+                        prefix,
+                        prefix_types,
+                        start,
+                        end,
+                        range_type,
+                        suffix_len,
+                        $ctor,
+                    )
                 };
-                let range_type = &range_type.algebraic_type;
-                let suffix_len = suffix_types.len();
+            }
 
-                macro_rules! bounds_from_bsatn_bytes_key {
-                    ($ctor:expr) => {
-                        Self::bounds_from_bsatn_bytes_key(
-                            prefix,
-                            prefix_types,
-                            start,
-                            end,
-                            range_type,
-                            suffix_len,
-                            $ctor,
-                        )
-                    };
-                }
+            match &self.idx {
+                BTreeBytesKey8(_) | UniqueBTreeBytesKey8(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey8B),
+                BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey16),
+                BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey32),
+                BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey64),
+                BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey128),
+                BTreeAV(_) | UniqueBTreeAV(_) => {
+                    // The index is not specialized.
+                    // We now have the types,
+                    // so proceed to decoding the prefix, and the start/end bounds.
+                    // Finally combine all of these to a single bound pair.
+                    let prefix = decode(prefix_types, &mut prefix)?;
+                    let from_av = |v: AlgebraicValue| TypedIndexKey::AV(v.into()).into();
+                    let decode = |mut b| AlgebraicValue::decode(range_type, &mut b);
 
-                match &self.idx {
-                    BTreeBytesKey8(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey8B),
-                    BTreeBytesKey16(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey16),
-                    BTreeBytesKey32(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey32),
-                    BTreeBytesKey64(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey64),
-                    BTreeBytesKey128(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey128),
-                    UniqueBTreeBytesKey8(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey8B),
-                    UniqueBTreeBytesKey16(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey16),
-                    UniqueBTreeBytesKey32(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey32),
-                    UniqueBTreeBytesKey64(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey64),
-                    UniqueBTreeBytesKey128(_) => bounds_from_bsatn_bytes_key!(TypedIndexKey::BytesKey128),
-                    BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_) => {
-                        // The index is not specialized.
-                        // We now have the types,
-                        // so proceed to decoding the prefix, and the start/end bounds.
-                        // Finally combine all of these to a single bound pair.
-                        let prefix = decode(prefix_types, &mut prefix)?;
-                        let from_av = |v: AlgebraicValue| TypedIndexKey::AV(v.into()).into();
-                        let decode = |mut b| AlgebraicValue::decode(range_type, &mut b);
-
-                        // Is this really a point scan?
-                        if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
-                            let point = decode(point)?;
-                            let point = Self::combine_prefix_and_point(prefix, point);
-                            return Ok(PointOrRange::Point(from_av(point)));
-                        }
-
-                        // It's not a point scan.
-                        let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
-                        let start = decode_bound(start)?;
-                        let end = decode_bound(end)?;
-                        let (start, end) = Self::combine_prefix_and_bounds(prefix, start, end, suffix_len);
-                        Ok(PointOrRange::Range(start.map(from_av), end.map(from_av)))
+                    // Is this really a point scan?
+                    if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
+                        let point = decode(point)?;
+                        let point = Self::combine_prefix_and_point(prefix, point);
+                        return Ok(PointOrRange::Point(from_av(point)));
                     }
-                    idx => unreachable!("index should be BytesKey* or AV, but was {idx:?}"),
-                }
-            }
-            // Single-column index case. We implicitly have a PT of len 1.
-            ty if prefix.is_empty() && prefix_elems.idx() == 0 => {
-                // Is this really a point scan?
-                if let Some(point) = Self::as_point_scan(&start, &end, 0) {
-                    return Ok(PointOrRange::Point(self.key_from_bsatn(point)?));
-                }
 
-                // It's not a point scan.
-                let decode = |b: Bound<_>| transpose_bound(b.map(|b| self.key_from_bsatn(b)));
-                Ok(PointOrRange::Range(decode(start)?, decode(end)?))
+                    // It's not a point scan.
+                    let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
+                    let start = decode_bound(start)?;
+                    let end = decode_bound(end)?;
+                    let (start, end) = Self::combine_prefix_and_bounds(prefix, start, end, suffix_len);
+                    Ok(PointOrRange::Range(start.map(from_av), end.map(from_av)))
+                }
+                idx => unreachable!("index should be BytesKey* or AV, but was {idx:?}"),
             }
-            _ => Err(DecodeError::Other(
-                "a single-column index cannot be prefix scanned".into(),
-            )),
+        } else {
+            Self::bounds_for_single_col(prefix_elems, start, end, |b| self.key_from_bsatn(b))
         }
+    }
+
+    /// Splits `key_types` into a prefix types and range type
+    /// and returns how large the suffix after the range type is.
+    fn split_key_types<E: de::Error>(
+        prefix_elems: ColId,
+        key_types: &ProductType,
+    ) -> Result<(&[ProductTypeElement], &AlgebraicType, usize), E> {
+        // Split into types for the prefix and for the rest.
+        let key_types = &*key_types.elements;
+        let (prefix_types, rest_types) = key_types
+            .split_at_checked(prefix_elems.idx())
+            .ok_or_else(|| E::custom("index key type has too few fields compared to prefix"))?;
+        // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
+        // Extract that type and determine the length of the suffix.
+        let Some((range_type, suffix_types)) = rest_types.split_first() else {
+            return Err(E::custom(
+                "prefix length leaves no room for a range in ranged index scan",
+            ));
+        };
+        let range_type = &range_type.algebraic_type;
+        let suffix_len = suffix_types.len();
+
+        Ok((prefix_types, range_type, suffix_len))
     }
 
     /// Decodes `prefix` ++ `start` and `prefix` ++ `end`
     /// as [`RangeCompatBytesKey`] bounds.
     /// The `suffix_len` is used to determine whether this is a point scan or a range scan.
-    fn bounds_from_bsatn_bytes_key<'de, const N: usize>(
+    fn bounds_from_bsatn_for_bytes_key<'de, const N: usize>(
         prefix: &'de [u8],
         prefix_types: &[ProductTypeElement],
         start: Bound<&'de [u8]>,
@@ -1992,11 +2135,29 @@ impl TableIndex {
         suffix_len: usize,
         ctor: impl Copy + FnOnce(RangeCompatBytesKey<N>) -> TypedIndexKey<'de>,
     ) -> DecodeResult<PointOrRange<'de>> {
-        // Is this really a point scan?
+        Self::bounds_for_bytes_key(
+            prefix_types.is_empty(),
+            start,
+            end,
+            suffix_len,
+            || RangeCompatBytesKey::from_bsatn_prefix(prefix, prefix_types),
+            |b| RangeCompatBytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, b, range_type),
+            ctor,
+        )
+    }
+
+    /// Derives bounds for an index with `RangeCompatByteKey` keys.
+    fn bounds_for_bytes_key<'de, E, I: ?Sized + Ord, const N: usize>(
+        prefix_is_empty: bool,
+        start: Bound<&'de I>,
+        end: Bound<&'de I>,
+        suffix_len: usize,
+        decode_prefix: impl Copy + FnOnce() -> Result<RangeCompatBytesKey<N>, E>,
+        decode: impl Copy + FnOnce(&I) -> Result<RangeCompatBytesKey<N>, E>,
+        ctor: impl Copy + FnOnce(RangeCompatBytesKey<N>) -> TypedIndexKey<'de>,
+    ) -> Result<PointOrRange<'de>, E> {
         let from = |k| ctor(k).into();
-        let decode_prefix = || RangeCompatBytesKey::from_bsatn_prefix(prefix, prefix_types);
-        let decode =
-            |bytes| RangeCompatBytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, bytes, range_type);
+        // Is this really a point scan?
         Ok(if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
             PointOrRange::Point(from(decode(point)?))
         } else {
@@ -2009,7 +2170,6 @@ impl TableIndex {
             // That is, we have e.g., `prefix ++ [] <= prefix ++ suffix`.
             //
             // The exception to this is `Excluded`, where we need to fill with `Max`.
-            let prefix_is_empty = prefix.is_empty();
             let start = match decode_bound(start)? {
                 Bound::Included(r) => Bound::Included(r),
                 Bound::Excluded(r) => Bound::Excluded(r.add_max_suffix()),
@@ -2038,9 +2198,35 @@ impl TableIndex {
         })
     }
 
+    /// Derives bounds for an index scan on a single column index.
+    fn bounds_for_single_col<'de, E: de::Error, I: 'de + ?Sized + PartialEq>(
+        prefix_elems: ColId,
+        start: Bound<&'de I>,
+        end: Bound<&'de I>,
+        decode: impl Copy + FnOnce(&'de I) -> Result<IndexKey<'de>, E>,
+    ) -> Result<PointOrRange<'de>, E> {
+        if prefix_elems.idx() != 0 {
+            return Err(E::custom("a single column index cannot be prefix scanned"));
+        }
+
+        // Single-column index case. We implicitly have a PT of len 1.
+        // Is this really a point scan?
+        if let Some(point) = Self::as_point_scan(&start, &end, 0) {
+            return Ok(PointOrRange::Point(decode(point)?));
+        }
+
+        // It's not a point scan.
+        let decode = |b: Bound<_>| transpose_bound(b.map(decode));
+        Ok(PointOrRange::Range(decode(start)?, decode(end)?))
+    }
+
     /// Returns `start` if there is no suffix and `(start, end)` represents a point bound.
     /// Otherwise, `None` is returned.
-    fn as_point_scan<'de>(start: &Bound<&'de [u8]>, end: &Bound<&'de [u8]>, suffix_len: usize) -> Option<&'de [u8]> {
+    fn as_point_scan<'de, T: ?Sized + PartialEq>(
+        start: &Bound<&'de T>,
+        end: &Bound<&'de T>,
+        suffix_len: usize,
+    ) -> Option<&'de T> {
         if let (0, Bound::Included(s), Bound::Included(e)) = (suffix_len, start, end)
             && s == e
         {
@@ -2380,6 +2566,7 @@ mod test {
     use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::cmp::Ordering;
     use core::ops::Bound::*;
+    use core::slice;
     use decorum::Total;
     use proptest::array::uniform;
     use proptest::prelude::*;
@@ -2484,11 +2671,45 @@ mod test {
 
     fn seek_range<'a>(
         index: &'a TableIndex,
-        range: &impl RangeBounds<AlgebraicValue>,
+        prefix: &[AlgebraicValue],
+        bounds: &impl RangeBounds<AlgebraicValue>,
     ) -> IndexSeekRangeResult<TableIndexRangeIter<'a>> {
-        let start = range.start_bound().map(|v| index.key_from_algebraic_value(v));
-        let end = range.end_bound().map(|v| index.key_from_algebraic_value(v));
+        // Derive the index keys via BSATN.
+        let prefix = ProductValue::from(prefix.to_vec());
+        let prefix_bsatn = to_vec(&prefix).unwrap();
+        let rstart = to_vec(&bounds.start_bound()).unwrap();
+        let rend = to_vec(&bounds.end_bound()).unwrap();
+        let por_bsatn = index
+            .bounds_from_bsatn(&prefix_bsatn, prefix.elements.len().into(), &rstart, &rend)
+            .unwrap();
+
+        // Derive the index keys via `bounds_from_bsatn`.
+        let por_av = index.bounds_from_algbraic_value(&prefix, bounds).unwrap();
+
+        // Check that we get the same key when derived via BSATN as via AV.
+        assert_eq!(por_bsatn, por_av);
+
+        let (start, end) = match por_bsatn {
+            PointOrRange::Point(index_key) => {
+                let key = Included(index_key);
+                (key.clone(), key)
+            }
+            PointOrRange::Range(start, end) => (start, end),
+            PointOrRange::Unsupported => return Err(IndexCannotSeekRange),
+        };
+
         index.seek_range(&(start, end))
+    }
+
+    fn seek_point<'a>(index: &'a TableIndex, point: &AlgebraicValue) -> TableIndexPointIter<'a> {
+        let key = index.key_from_algebraic_value(point);
+
+        // Verify that we get the same key back via BSATN as well.
+        let point_bsatn = to_vec(point).unwrap();
+        let key_bsatn = index.key_from_bsatn(&point_bsatn).unwrap();
+        assert_eq!(key, key_bsatn);
+
+        index.seek_point(&key)
     }
 
     fn find_start_mid_end<T: Ord>(a: T, b: T, c: T) -> (T, T, T) {
@@ -2515,7 +2736,7 @@ mod test {
             let index = TableIndex::new(&ty, cols.clone(), IndexKind::Hash, is_unique).unwrap();
 
             let key = pv.project(&cols).unwrap();
-            assert_eq!(seek_range(&index, &(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
+            assert_eq!(seek_range(&index, &[], &(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
         }
 
         #[test]
@@ -2644,7 +2865,10 @@ mod test {
             assert_eq!(index.num_key_bytes() as usize, 3 * size_of::<u64>());
 
             fn test_seek(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
-                check_seek(seek_range(index, &range).unwrap().collect(), val_to_ptr, expect)
+                check_seek(seek_range(index, &[], &range).unwrap().collect(), val_to_ptr, expect)
+            }
+            fn test_seek_point(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, point: &AlgebraicValue, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
+                check_seek(seek_point(index, point).collect(), val_to_ptr, expect)
             }
 
             fn check_seek(mut ptrs_in_index: Vec<RowPointer>, val_to_ptr: &HashMap<u64, RowPointer>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
@@ -2690,10 +2914,12 @@ mod test {
 
             // Test `x..=y` (`RangeInclusive`).
             test_seek(&index, &val_to_ptr, V(prev)..=V(prev), [prev])?;
+            test_seek_point(&index, &val_to_ptr, &V(prev), [prev])?;
             test_seek(&index, &val_to_ptr, V(prev)..=V(needle), [prev, needle])?;
             test_seek(&index, &val_to_ptr, V(prev)..=V(next), [prev, needle, next])?;
             test_seek(&index, &val_to_ptr, V(needle)..=V(next), [needle, next])?;
             test_seek(&index, &val_to_ptr, V(next)..=V(next), [next])?;
+            test_seek_point(&index, &val_to_ptr, &V(next), [next])?;
 
             // Test `(x, y]` (Exclusive start, inclusive end).
             test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Included(V(prev))), [])?;
@@ -2734,28 +2960,29 @@ mod test {
             assert_eq!(index.num_rows(), 1);
 
             // Seek the empty ranges.
-            let rows = seek_range(&index, &(&succ..&val)).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(&succ..&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(&succ..=&val)).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(&succ..=&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
         }
 
         #[test]
-        fn btree_multi_col_range_scans_work(
+        fn multi_col_range_scans_work(
             is_unique: bool,
+            index_kind in IndexKind::gen_for_ranged(),
             (prefix_ty, prefix_val) in generate_typed_value(),
             (middle_ty, [start, middle, end]) in gen_with(generate_algebraic_type(), |ty| uniform(generate_algebraic_value(ty))),
             (suffix_ty, suffix_val) in generate_typed_value(),
         ) {
             // Make the product type.
             let ty = ProductType::from([prefix_ty, middle_ty, suffix_ty]);
-            let index = new_index(&ty, &[0, 1, 2].into(), is_unique, IndexKind::BTree);
+            let index = new_index(&ty, &[0, 1, 2].into(), is_unique, index_kind);
 
             // Find the actual start, middle, and end.
             let (start, middle, end) = find_start_mid_end(start, middle, end);
@@ -2770,44 +2997,66 @@ mod test {
 
             // Test sanity of various bounds.
             let seek = |start, end| {
-                let prefix = to_vec(&prefix_val).unwrap();
-                let rstart = to_vec(&start).unwrap();
-                let rend = to_vec(&end).unwrap();
-                let range = index
-                    .bounds_from_bsatn(&prefix, 1.into(), &rstart, &rend)
-                    .unwrap()
-                    .into_range()
-                    .unwrap();
-                index.seek_range(&range).unwrap().collect::<Vec<_>>()
+                let iter = seek_range(index, slice::from_ref(&prefix_val), &(start, end));
+                iter.unwrap().collect::<Vec<_>>()
             };
             use Bound::*;
             // An unbounded range on both ends will find the row.
-            assert_eq!(seek(Unbounded, Unbounded), [row_ptr]);
+            prop_assert_eq!(seek(Unbounded::<AlgebraicValue>, Unbounded), [row_ptr]);
             // Including middle as the start/end should find the row.
-            assert_eq!(seek(Included(middle.clone()), Unbounded), [row_ptr]);
-            assert_eq!(seek(Unbounded, Included(middle.clone())), [row_ptr]);
-            assert_eq!(seek(Included(middle.clone()), Included(middle.clone())), [row_ptr]);
+            prop_assert_eq!(seek(Included(middle.clone()), Unbounded), [row_ptr]);
+            prop_assert_eq!(seek(Unbounded, Included(middle.clone())), [row_ptr]);
+            prop_assert_eq!(seek(Included(middle.clone()), Included(middle.clone())), [row_ptr]);
             // Excluding middle as the start/end shouldn't find the row.
-            assert_eq!(seek(Excluded(middle.clone()), Unbounded), []);
-            assert_eq!(seek(Excluded(middle.clone()), Included(end.clone())), []);
-            assert_eq!(seek(Unbounded, Excluded(middle.clone())), []);
-            assert_eq!(seek(Included(start.clone()), Excluded(middle.clone())), []);
+            prop_assert_eq!(seek(Excluded(middle.clone()), Unbounded), []);
+            prop_assert_eq!(seek(Excluded(middle.clone()), Included(end.clone())), []);
+            prop_assert_eq!(seek(Unbounded, Excluded(middle.clone())), []);
+            prop_assert_eq!(seek(Included(start.clone()), Excluded(middle.clone())), []);
             // Including start and end should find the row.
-            assert_eq!(seek(Included(start.clone()), Unbounded), [row_ptr]);
-            assert_eq!(seek(Unbounded, Included(end.clone())), [row_ptr]);
-            assert_eq!(seek(Included(start.clone()), Included(end.clone())), [row_ptr]);
+            prop_assert_eq!(seek(Included(start.clone()), Unbounded), [row_ptr]);
+            prop_assert_eq!(seek(Unbounded, Included(end.clone())), [row_ptr]);
+            prop_assert_eq!(seek(Included(start.clone()), Included(end.clone())), [row_ptr]);
             // Excluding start/end should find the row when `start, end != middle`.
             if start < middle && middle < end {
-                assert_eq!(seek(Excluded(start.clone()), Excluded(end.clone())), [row_ptr]);
+                prop_assert_eq!(seek(Excluded(start.clone()), Excluded(end.clone())), [row_ptr]);
             }
             if start < middle {
-                assert_eq!(seek(Excluded(start.clone()), Included(end.clone())), [row_ptr]);
-                assert_eq!(seek(Excluded(start.clone()), Unbounded), [row_ptr]);
+                prop_assert_eq!(seek(Excluded(start.clone()), Included(end.clone())), [row_ptr]);
+                prop_assert_eq!(seek(Excluded(start.clone()), Unbounded), [row_ptr]);
             }
             if middle < end {
-                assert_eq!(seek(Included(start.clone()), Excluded(end.clone())), [row_ptr]);
-                assert_eq!(seek(Unbounded, Excluded(end.clone())), [row_ptr]);
+                prop_assert_eq!(seek(Included(start.clone()), Excluded(end.clone())), [row_ptr]);
+                prop_assert_eq!(seek(Unbounded, Excluded(end.clone())), [row_ptr]);
             }
+        }
+
+        #[test]
+        fn multi_col_point_scans_work(
+            is_unique: bool,
+            index_kind: IndexKind,
+            (prefix_ty, prefix_val) in generate_typed_value(),
+            (middle_ty, [included, excluded]) in gen_with(generate_algebraic_type(), |ty| uniform(generate_algebraic_value(ty))),
+            (suffix_ty, suffix_val) in generate_typed_value(),
+        ) {
+            prop_assume!(included != excluded);
+
+            // Make the product type.
+            let ty = ProductType::from([prefix_ty, middle_ty, suffix_ty]);
+            let index = new_index(&ty, &[0, 1, 2].into(), is_unique, index_kind);
+
+            // Make the row and the other one.
+            let row = product![prefix_val.clone(), included.clone(), suffix_val.clone()];
+            let other_row = product![prefix_val, excluded, suffix_val];
+
+            // Make a table, add the index, and insert the row.
+            let (mut table, pool, mut blob_store) = setup(ty);
+            unsafe { table.add_index(IndexId::SENTINEL, index) };
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &row).unwrap();
+            let row_ptr = row_ref.pointer();
+            let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
+
+            prop_assert_eq!(seek_point(index, &row.into()).collect::<Vec<_>>(), [row_ptr]);
+            prop_assert_eq!(seek_point(index, &other_row.into()).collect::<Vec<_>>(), []);
         }
     }
 }

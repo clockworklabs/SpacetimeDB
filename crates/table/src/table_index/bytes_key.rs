@@ -5,12 +5,17 @@ use core::cmp::Ordering;
 use core::hash::{Hash, Hasher};
 use core::mem;
 use core::ops::Deref;
-use spacetimedb_lib::buffer::{CountWriter, TeeWriter};
+use spacetimedb_lib::de::ProductVisitor;
+use spacetimedb_lib::ser::{SerializeSeqProduct, Serializer as _};
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_primitives::ColList;
+use spacetimedb_sats::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use spacetimedb_sats::bsatn::{DecodeError, Deserializer, Serializer};
+use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
 use spacetimedb_sats::de::{DeserializeSeed, Error as _};
-use spacetimedb_sats::{i256, u256, AlgebraicType, AlgebraicValue, ProductTypeElement, Serialize as _, WithTypespace};
+use spacetimedb_sats::{
+    i256, u256, AlgebraicType, AlgebraicValue, ProductTypeElement, ProductValue, Serialize as _, WithTypespace,
+};
 
 /// A key for an all-primitive multi-column index
 /// serialized to a byte array.
@@ -416,6 +421,66 @@ impl<const N: usize> RangeCompatBytesKey<N> {
         // SAFETY: same as caller requirements.
         let key = unsafe { BytesKey::from_row_ref(cols, row_ref) };
         Self::from_bytes_key(key, ty)
+    }
+
+    /// Decodes `prefix`  in `AlgebraicValue` form to a [`RangeCompatBytesKey<N>`]
+    /// by serializing the prefix and massaging.
+    pub(super) fn from_algebraic_value_prefix(
+        prefix: &ProductValue,
+        prefix_types: &[ProductTypeElement],
+    ) -> Result<Self, ValueDeserializeError> {
+        // Validate the prefix.
+        WithTypespace::empty(prefix_types).validate_seq_product(ValueDeserializer::from_product_ref(prefix))?;
+
+        // Serialize the `prefix` and the `endpoint` over.
+        let bytes = BytesKey::via_serializer(|ser| {
+            prefix
+                .serialize(ser)
+                .expect("should've serialized to BSATN successfully");
+        });
+        let BytesKey { mut bytes, length } = bytes;
+
+        // Massage the bytes.
+        let mut slice = bytes.as_mut_slice();
+        for ty in prefix_types {
+            slice = Self::process_from_bytes_key(slice, &ty.algebraic_type);
+        }
+
+        Ok(Self::new(length as usize, bytes))
+    }
+
+    /// Decodes `prefix` and `endpoint` in `AlgebraicValue` form to a [`RangeCompatBytesKey<N>`]
+    /// by serializing over both and massaging if they fit into the key.
+    pub(super) fn from_algebraic_value_prefix_and_endpoint(
+        prefix: &ProductValue,
+        prefix_types: &[ProductTypeElement],
+        endpoint: &AlgebraicValue,
+        range_type: &AlgebraicType,
+    ) -> Result<Self, ValueDeserializeError> {
+        // Validate the values.
+        WithTypespace::empty(prefix_types).validate_seq_product(ValueDeserializer::from_product_ref(prefix))?;
+        WithTypespace::empty(range_type).validate(ValueDeserializer::from_ref(endpoint))?;
+
+        // Serialize the `prefix` and the `endpoint` over.
+        let bytes = BytesKey::via_serializer(|ser| {
+            (|| {
+                let mut ser = ser.serialize_seq_product(2)?;
+                ser.serialize_element(&prefix)?;
+                ser.serialize_element(&endpoint)?;
+                ser.end()
+            })()
+            .expect("should've serialized to BSATN successfully");
+        });
+        let BytesKey { mut bytes, length } = bytes;
+
+        // Massage the bytes.
+        let mut slice = bytes.as_mut_slice();
+        for ty in prefix_types {
+            slice = Self::process_from_bytes_key(slice, &ty.algebraic_type);
+        }
+        Self::process_from_bytes_key(slice, range_type);
+
+        Ok(Self::new(length as usize, bytes))
     }
 
     /// Serializes `av` to a [`BytesKey<N>`].
