@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that uses multiple product types as table columns.
+Write a SpacetimeDB backend module in TypeScript that defines product types and uses them as columns in a table.
 
 TYPES
 - Address

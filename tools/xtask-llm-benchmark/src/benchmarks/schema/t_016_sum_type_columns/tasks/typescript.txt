@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that uses sum types in multiple table columns.
+Write a SpacetimeDB backend module in TypeScript that defines a sum type and uses it in multiple table columns.
 
 TYPES
 - Rect

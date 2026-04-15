@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that models many-to-many relationships with a junction table.
+Write a SpacetimeDB backend module in TypeScript that defines three tables modeling a many-to-many relationship and seeds rows.
 
 TABLES
 - user

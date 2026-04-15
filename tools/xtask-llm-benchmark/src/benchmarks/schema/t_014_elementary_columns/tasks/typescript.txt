@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that tests all elementary/primitive column types.
+Write a SpacetimeDB backend module in TypeScript that defines one table and seeds one row.
 
 TABLE
 - primitive

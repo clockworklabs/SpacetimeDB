@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that demonstrates unique constraints and B-Tree indexes.
+Write a SpacetimeDB backend module in TypeScript that defines one table and seeds two rows.
 
 TABLE
 - account

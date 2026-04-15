@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that demonstrates multi-column B-Tree indexes.
+Write a SpacetimeDB backend module in TypeScript that defines one table with a multi-column B-Tree index and seeds rows.
 
 TABLE
 - log

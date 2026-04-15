@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that demonstrates client lifecycle events.
+Write a SpacetimeDB backend module in TypeScript that defines one table and two reducers for client lifecycle events.
 
 TABLE
 - event

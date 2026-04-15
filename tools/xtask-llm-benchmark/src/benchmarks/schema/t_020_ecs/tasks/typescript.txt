@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that models a minimal Entity Component System with joins.
+Write a SpacetimeDB backend module in TypeScript that models a minimal ECS and computes next positions.
 
 TABLES
 - entity
