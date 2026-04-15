@@ -3,6 +3,7 @@ import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
 import type { UntypedSchemaDef } from './schema';
 import type { UntypedTableSchema } from './table_schema';
+import { TimeDuration } from './time_duration';
 import { Timestamp } from './timestamp';
 import type {
   ColumnBuilder,
@@ -624,6 +625,7 @@ type LiteralValue =
   | boolean
   | Identity
   | Timestamp
+  | TimeDuration
   | ConnectionId;
 
 type ValueLike = LiteralValue | ColumnExpr<any, any> | LiteralExpr<any>;
@@ -851,12 +853,15 @@ function literalValueToSql(value: unknown): string {
   if (value === null || value === undefined) {
     return 'NULL';
   }
-  if (value instanceof Identity || value instanceof ConnectionId) {
+  if (isHexSerializableLike(value)) {
     // We use this hex string syntax.
     return `0x${value.toHexString()}`;
   }
-  if (value instanceof Timestamp) {
+  if (isTimestampLike(value)) {
     return `'${value.toISOString()}'`;
+  }
+  if (isTimeDurationLike(value)) {
+    return `'${value.toString()}'`;
   }
   switch (typeof value) {
     case 'number':
@@ -930,6 +935,11 @@ function resolveValue(
 
 type TimestampLike = {
   __timestamp_micros_since_unix_epoch__: bigint;
+  toISOString: () => string;
+};
+
+type TimeDurationLike = {
+  __time_duration_micros__: bigint;
 };
 
 type HexSerializableLike = {
@@ -952,9 +962,17 @@ function isTimestampLike(value: unknown): value is TimestampLike {
 
   if (value instanceof Timestamp) return true;
 
-  const micros = (value as Record<string, unknown>)[
-    '__timestamp_micros_since_unix_epoch__'
-  ];
+  const record = value as Record<string, unknown>;
+  const micros = record['__timestamp_micros_since_unix_epoch__'];
+  return typeof micros === 'bigint' && typeof record.toISOString === 'function';
+}
+
+function isTimeDurationLike(value: unknown): value is TimeDurationLike {
+  if (!value || typeof value !== 'object') return false;
+
+  if (value instanceof TimeDuration) return true;
+
+  const micros = (value as Record<string, unknown>)['__time_duration_micros__'];
   return typeof micros === 'bigint';
 }
 
@@ -966,6 +984,9 @@ export function toComparableValue(value: any): any {
   }
   if (isTimestampLike(value)) {
     return value.__timestamp_micros_since_unix_epoch__;
+  }
+  if (isTimeDurationLike(value)) {
+    return value.__time_duration_micros__;
   }
   return value;
 }

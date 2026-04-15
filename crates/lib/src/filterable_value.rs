@@ -1,4 +1,4 @@
-use crate::{ConnectionId, Identity, Uuid};
+use crate::{ConnectionId, Identity, TimeDuration, Timestamp, Uuid};
 use core::ops;
 use spacetimedb_sats::bsatn;
 use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
@@ -18,6 +18,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - [`Identity`].
 /// - [`Uuid`].
 /// - [`ConnectionId`].
+/// - [`Timestamp`].
+/// - [`TimeDuration`].
 /// - [`Hash`](struct@Hash).
 /// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
 ///   No-payload enums are sometimes called "plain," "simple" or "C-style."
@@ -48,8 +50,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 //   E.g. `&str: FilterableValue<Column = String>` is desirable.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
-    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
+    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `ConnectionId`, `Timestamp`, `TimeDuration`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `ConnectionId`, `Timestamp`, `TimeDuration`, `Hash` and no-payload enums which derive `SpacetimeType`,"
 )]
 pub trait FilterableValue: Serialize + Private {
     type Column;
@@ -107,6 +109,8 @@ impl_filterable_value! {
     Identity: Copy,
     Uuid: Copy,
     ConnectionId: Copy,
+    Timestamp: Copy,
+    TimeDuration: Copy,
     Hash: Copy,
 
     // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
@@ -187,3 +191,24 @@ impl_terminator!(
     ops::RangeToInclusive<T>,
     (ops::Bound<T>, ops::Bound<T>),
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_filterable<T: FilterableValue>() {}
+    fn assert_range_terminator<T: IndexScanRangeBoundsTerminator>() {}
+
+    #[test]
+    fn timestamp_and_time_duration_are_filterable() {
+        assert_filterable::<Timestamp>();
+        assert_filterable::<&Timestamp>();
+        assert_filterable::<TimeDuration>();
+        assert_filterable::<&TimeDuration>();
+
+        assert_range_terminator::<Timestamp>();
+        assert_range_terminator::<ops::Range<Timestamp>>();
+        assert_range_terminator::<TimeDuration>();
+        assert_range_terminator::<ops::Range<TimeDuration>>();
+    }
+}
