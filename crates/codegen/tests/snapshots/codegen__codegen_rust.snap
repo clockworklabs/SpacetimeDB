@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "add_player_reducer.rs" = '''
@@ -1052,13 +1053,11 @@ pub mod delete_player_reducer;
 pub mod delete_players_by_name_reducer;
 pub mod list_over_age_reducer;
 pub mod log_module_identity_reducer;
-pub mod nonrepeating_test_reducer;
 pub mod query_private_reducer;
 pub mod say_hello_reducer;
 pub mod test_reducer;
 pub mod test_btree_index_args_reducer;
 pub mod logged_out_player_table;
-pub mod nonrepeating_test_arg_table;
 pub mod person_table;
 pub mod player_table;
 pub mod test_d_table;
@@ -1088,32 +1087,11 @@ pub use test_foobar_type::TestFoobar;
 pub use namespace_test_c_type::NamespaceTestC;
 pub use namespace_test_f_type::NamespaceTestF;
 pub use logged_out_player_table::*;
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-pub use nonrepeating_test_arg_table::*;
-=======
 pub use my_player_table::*;
->>>>>>> master
 pub use person_table::*;
 pub use player_table::*;
 pub use test_d_table::*;
 pub use test_f_table::*;
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-pub use add_reducer::{add, set_flags_for_add, AddCallbackId};
-pub use add_player_reducer::{add_player, set_flags_for_add_player, AddPlayerCallbackId};
-pub use add_private_reducer::{add_private, set_flags_for_add_private, AddPrivateCallbackId};
-pub use assert_caller_identity_is_module_identity_reducer::{assert_caller_identity_is_module_identity, set_flags_for_assert_caller_identity_is_module_identity, AssertCallerIdentityIsModuleIdentityCallbackId};
-pub use client_connected_reducer::{client_connected, set_flags_for_client_connected, ClientConnectedCallbackId};
-pub use delete_player_reducer::{delete_player, set_flags_for_delete_player, DeletePlayerCallbackId};
-pub use delete_players_by_name_reducer::{delete_players_by_name, set_flags_for_delete_players_by_name, DeletePlayersByNameCallbackId};
-pub use list_over_age_reducer::{list_over_age, set_flags_for_list_over_age, ListOverAgeCallbackId};
-pub use log_module_identity_reducer::{log_module_identity, set_flags_for_log_module_identity, LogModuleIdentityCallbackId};
-pub use nonrepeating_test_reducer::{nonrepeating_test, set_flags_for_nonrepeating_test, NonrepeatingTestCallbackId};
-pub use query_private_reducer::{query_private, set_flags_for_query_private, QueryPrivateCallbackId};
-pub use repeating_test_reducer::{repeating_test, set_flags_for_repeating_test, RepeatingTestCallbackId};
-pub use say_hello_reducer::{say_hello, set_flags_for_say_hello, SayHelloCallbackId};
-pub use test_reducer::{test, set_flags_for_test, TestCallbackId};
-pub use test_btree_index_args_reducer::{test_btree_index_args, set_flags_for_test_btree_index_args, TestBtreeIndexArgsCallbackId};
-=======
 pub use add_reducer::add;
 pub use add_player_reducer::add_player;
 pub use add_private_reducer::add_private;
@@ -1130,7 +1108,6 @@ pub use get_my_schema_via_http_procedure::get_my_schema_via_http;
 pub use return_value_procedure::return_value;
 pub use sleep_one_second_procedure::sleep_one_second;
 pub use with_tx_procedure::with_tx;
->>>>>>> master
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -1161,9 +1138,6 @@ pub enum Reducer {
         age: u8,
 }    ,
     LogModuleIdentity ,
-    NonrepeatingTest {
-        arg: NonrepeatingTestArg,
-}    ,
     QueryPrivate ,
     SayHello ,
     Test {
@@ -1191,7 +1165,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeletePlayersByName { .. } => "delete_players_by_name",
             Reducer::ListOverAge { .. } => "list_over_age",
             Reducer::LogModuleIdentity => "log_module_identity",
-            Reducer::NonrepeatingTest { .. } => "nonrepeating_test",
             Reducer::QueryPrivate => "query_private",
             Reducer::SayHello => "say_hello",
             Reducer::Test { .. } => "test",
@@ -1199,40 +1172,6 @@ impl __sdk::Reducer for Reducer {
             _ => unreachable!(),
 }
 }
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-}
-impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
-        type Error = __sdk::Error;
-fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
-        match &value.reducer_name[..] {
-                        "add" => Ok(__sdk::parse_reducer_args::<add_reducer::AddArgs>("add", &value.args)?.into()),
-            "add_player" => Ok(__sdk::parse_reducer_args::<add_player_reducer::AddPlayerArgs>("add_player", &value.args)?.into()),
-            "add_private" => Ok(__sdk::parse_reducer_args::<add_private_reducer::AddPrivateArgs>("add_private", &value.args)?.into()),
-            "assert_caller_identity_is_module_identity" => Ok(__sdk::parse_reducer_args::<assert_caller_identity_is_module_identity_reducer::AssertCallerIdentityIsModuleIdentityArgs>("assert_caller_identity_is_module_identity", &value.args)?.into()),
-            "client_connected" => Ok(__sdk::parse_reducer_args::<client_connected_reducer::ClientConnectedArgs>("client_connected", &value.args)?.into()),
-            "delete_player" => Ok(__sdk::parse_reducer_args::<delete_player_reducer::DeletePlayerArgs>("delete_player", &value.args)?.into()),
-            "delete_players_by_name" => Ok(__sdk::parse_reducer_args::<delete_players_by_name_reducer::DeletePlayersByNameArgs>("delete_players_by_name", &value.args)?.into()),
-            "list_over_age" => Ok(__sdk::parse_reducer_args::<list_over_age_reducer::ListOverAgeArgs>("list_over_age", &value.args)?.into()),
-            "log_module_identity" => Ok(__sdk::parse_reducer_args::<log_module_identity_reducer::LogModuleIdentityArgs>("log_module_identity", &value.args)?.into()),
-            "nonrepeating_test" => Ok(__sdk::parse_reducer_args::<nonrepeating_test_reducer::NonrepeatingTestArgs>("nonrepeating_test", &value.args)?.into()),
-            "query_private" => Ok(__sdk::parse_reducer_args::<query_private_reducer::QueryPrivateArgs>("query_private", &value.args)?.into()),
-            "repeating_test" => Ok(__sdk::parse_reducer_args::<repeating_test_reducer::RepeatingTestArgs>("repeating_test", &value.args)?.into()),
-            "say_hello" => Ok(__sdk::parse_reducer_args::<say_hello_reducer::SayHelloArgs>("say_hello", &value.args)?.into()),
-            "test" => Ok(__sdk::parse_reducer_args::<test_reducer::TestArgs>("test", &value.args)?.into()),
-            "test_btree_index_args" => Ok(__sdk::parse_reducer_args::<test_btree_index_args_reducer::TestBtreeIndexArgsArgs>("test_btree_index_args", &value.args)?.into()),
-            unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
-}
-}
-}
-
-#[derive(Default)]
-#[allow(non_snake_case)]
-#[doc(hidden)]
-pub struct DbUpdate {
-        has_special_stuff: __sdk::TableUpdate<HasSpecialStuff>,
-    logged_out_player: __sdk::TableUpdate<Player>,
-    nonrepeating_test_arg: __sdk::TableUpdate<NonrepeatingTestArg>,
-=======
     #[allow(clippy::clone_on_copy)]
 fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
@@ -1300,7 +1239,6 @@ _ => unreachable!(),
 pub struct DbUpdate {
         logged_out_player: __sdk::TableUpdate<Player>,
     my_player: __sdk::TableUpdate<Player>,
->>>>>>> master
     person: __sdk::TableUpdate<Person>,
     player: __sdk::TableUpdate<Player>,
     test_d: __sdk::TableUpdate<TestD>,
@@ -1315,14 +1253,8 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
 
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-        "has_special_stuff" => db_update.has_special_stuff.append(has_special_stuff_table::parse_table_update(table_update)?),
-    "logged_out_player" => db_update.logged_out_player.append(logged_out_player_table::parse_table_update(table_update)?),
-    "nonrepeating_test_arg" => db_update.nonrepeating_test_arg.append(nonrepeating_test_arg_table::parse_table_update(table_update)?),
-=======
         "logged_out_player" => db_update.logged_out_player.append(logged_out_player_table::parse_table_update(table_update)?),
     "my_player" => db_update.my_player.append(my_player_table::parse_table_update(table_update)?),
->>>>>>> master
     "person" => db_update.person.append(person_table::parse_table_update(table_update)?),
     "player" => db_update.player.append(player_table::parse_table_update(table_update)?),
     "test_d" => db_update.test_d.append(test_d_table::parse_table_update(table_update)?),
@@ -1349,13 +1281,7 @@ impl __sdk::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
                     let mut diff = AppliedDiff::default();
                 
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-                diff.has_special_stuff = cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
-        diff.logged_out_player = cache.apply_diff_to_table::<Player>("logged_out_player", &self.logged_out_player).with_updates_by_pk(|row| &row.identity);
-        diff.nonrepeating_test_arg = cache.apply_diff_to_table::<NonrepeatingTestArg>("nonrepeating_test_arg", &self.nonrepeating_test_arg).with_updates_by_pk(|row| &row.scheduled_id);
-=======
                 diff.logged_out_player = cache.apply_diff_to_table::<Player>("logged_out_player", &self.logged_out_player).with_updates_by_pk(|row| &row.identity);
->>>>>>> master
         diff.person = cache.apply_diff_to_table::<Person>("person", &self.person).with_updates_by_pk(|row| &row.id);
         diff.player = cache.apply_diff_to_table::<Player>("player", &self.player).with_updates_by_pk(|row| &row.identity);
         diff.test_d = cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
@@ -1396,14 +1322,8 @@ for table_rows in raw.tables {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-        has_special_stuff: __sdk::TableAppliedDiff<'r, HasSpecialStuff>,
-    logged_out_player: __sdk::TableAppliedDiff<'r, Player>,
-    nonrepeating_test_arg: __sdk::TableAppliedDiff<'r, NonrepeatingTestArg>,
-=======
         logged_out_player: __sdk::TableAppliedDiff<'r, Player>,
     my_player: __sdk::TableAppliedDiff<'r, Player>,
->>>>>>> master
     person: __sdk::TableAppliedDiff<'r, Person>,
     player: __sdk::TableAppliedDiff<'r, Player>,
     test_d: __sdk::TableAppliedDiff<'r, TestD>,
@@ -1418,14 +1338,8 @@ impl __sdk::InModule for AppliedDiff<'_> {
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-                callbacks.invoke_table_row_callbacks::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff, event);
-        callbacks.invoke_table_row_callbacks::<Player>("logged_out_player", &self.logged_out_player, event);
-        callbacks.invoke_table_row_callbacks::<NonrepeatingTestArg>("nonrepeating_test_arg", &self.nonrepeating_test_arg, event);
-=======
                 callbacks.invoke_table_row_callbacks::<Player>("logged_out_player", &self.logged_out_player, event);
         callbacks.invoke_table_row_callbacks::<Player>("my_player", &self.my_player, event);
->>>>>>> master
         callbacks.invoke_table_row_callbacks::<Person>("person", &self.person, event);
         callbacks.invoke_table_row_callbacks::<Player>("player", &self.player, event);
         callbacks.invoke_table_row_callbacks::<TestD>("test_d", &self.test_d, event);
@@ -2081,14 +1995,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
 fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-                has_special_stuff_table::register_table(client_cache);
-        logged_out_player_table::register_table(client_cache);
-        nonrepeating_test_arg_table::register_table(client_cache);
-=======
                 logged_out_player_table::register_table(client_cache);
         my_player_table::register_table(client_cache);
->>>>>>> master
         person_table::register_table(client_cache);
         player_table::register_table(client_cache);
         test_d_table::register_table(client_cache);
@@ -2281,154 +2189,6 @@ impl __sdk::InModule for NamespaceTestF {
 }
 
 '''
-"nonrepeating_test_arg_table.rs" = '''
-// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
-// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
-
-#![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-use super::nonrepeating_test_arg_type::NonrepeatingTestArg;
-
-/// Table handle for the table `nonrepeating_test_arg`.
-///
-/// Obtain a handle from the [`NonrepeatingTestArgTableAccess::nonrepeating_test_arg`] method on [`super::RemoteTables`],
-/// like `ctx.db.nonrepeating_test_arg()`.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.nonrepeating_test_arg().on_insert(...)`.
-pub struct NonrepeatingTestArgTableHandle<'ctx> {
-    imp: __sdk::TableHandle<NonrepeatingTestArg>,
-    ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the table `nonrepeating_test_arg`.
-///
-/// Implemented for [`super::RemoteTables`].
-pub trait NonrepeatingTestArgTableAccess {
-    #[allow(non_snake_case)]
-    /// Obtain a [`NonrepeatingTestArgTableHandle`], which mediates access to the table `nonrepeating_test_arg`.
-    fn nonrepeating_test_arg(&self) -> NonrepeatingTestArgTableHandle<'_>;
-}
-
-impl NonrepeatingTestArgTableAccess for super::RemoteTables {
-    fn nonrepeating_test_arg(&self) -> NonrepeatingTestArgTableHandle<'_> {
-        NonrepeatingTestArgTableHandle {
-            imp: self.imp.get_table::<NonrepeatingTestArg>("nonrepeating_test_arg"),
-            ctx: std::marker::PhantomData,
-        }
-    }
-}
-
-pub struct NonrepeatingTestArgInsertCallbackId(__sdk::CallbackId);
-pub struct NonrepeatingTestArgDeleteCallbackId(__sdk::CallbackId);
-
-impl<'ctx> __sdk::Table for NonrepeatingTestArgTableHandle<'ctx> {
-    type Row = NonrepeatingTestArg;
-    type EventContext = super::EventContext;
-
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = NonrepeatingTestArg> + '_ { self.imp.iter() }
-
-    type InsertCallbackId = NonrepeatingTestArgInsertCallbackId;
-
-    fn on_insert(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> NonrepeatingTestArgInsertCallbackId {
-        NonrepeatingTestArgInsertCallbackId(self.imp.on_insert(Box::new(callback)))
-    }
-
-    fn remove_on_insert(&self, callback: NonrepeatingTestArgInsertCallbackId) {
-        self.imp.remove_on_insert(callback.0)
-    }
-
-    type DeleteCallbackId = NonrepeatingTestArgDeleteCallbackId;
-
-    fn on_delete(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
-    ) -> NonrepeatingTestArgDeleteCallbackId {
-        NonrepeatingTestArgDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
-    }
-
-    fn remove_on_delete(&self, callback: NonrepeatingTestArgDeleteCallbackId) {
-        self.imp.remove_on_delete(callback.0)
-    }
-}
-
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<NonrepeatingTestArg>("nonrepeating_test_arg");
-    _table.add_unique_constraint::<u64>("scheduled_id", |row| &row.scheduled_id);
-}
-pub struct NonrepeatingTestArgUpdateCallbackId(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableWithPrimaryKey for NonrepeatingTestArgTableHandle<'ctx> {
-    type UpdateCallbackId = NonrepeatingTestArgUpdateCallbackId;
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> NonrepeatingTestArgUpdateCallbackId {
-        NonrepeatingTestArgUpdateCallbackId(self.imp.on_update(Box::new(callback)))
-    }
-
-    fn remove_on_update(&self, callback: NonrepeatingTestArgUpdateCallbackId) {
-        self.imp.remove_on_update(callback.0)
-    }
-}
-
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<NonrepeatingTestArg>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<NonrepeatingTestArg>",
-            "TableUpdate",
-        ).with_cause(e).into()
-    })
-}
-
-        /// Access to the `scheduled_id` unique index on the table `nonrepeating_test_arg`,
-        /// which allows point queries on the field of the same name
-        /// via the [`NonrepeatingTestArgScheduledIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.nonrepeating_test_arg().scheduled_id().find(...)`.
-        pub struct NonrepeatingTestArgScheduledIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<NonrepeatingTestArg, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
-
-        impl<'ctx> NonrepeatingTestArgTableHandle<'ctx> {
-            /// Get a handle on the `scheduled_id` unique index on the table `nonrepeating_test_arg`.
-            pub fn scheduled_id(&self) -> NonrepeatingTestArgScheduledIdUnique<'ctx> {
-                NonrepeatingTestArgScheduledIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("scheduled_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
-        }
-
-        impl<'ctx> NonrepeatingTestArgScheduledIdUnique<'ctx> {
-            /// Find the subscribed row whose `scheduled_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<NonrepeatingTestArg> {
-                self.imp.find(col_val)
-            }
-        }
-        '''
 "nonrepeating_test_arg_type.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
@@ -2455,115 +2215,46 @@ impl __sdk::InModule for NonrepeatingTestArg {
     type Module = super::RemoteModule;
 }
 
-'''
-"nonrepeating_test_reducer.rs" = '''
-// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
-// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
-#![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
-use super::nonrepeating_test_arg_type::NonrepeatingTestArg;
-
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-pub(super) struct NonrepeatingTestArgs {
-    pub arg: NonrepeatingTestArg,
-}
-
-impl From<NonrepeatingTestArgs> for super::Reducer {
-    fn from(args: NonrepeatingTestArgs) -> Self {
-        Self::NonrepeatingTest {
-            arg: args.arg,
-}
-}
-}
-
-impl __sdk::InModule for NonrepeatingTestArgs {
-    type Module = super::RemoteModule;
-}
-
-pub struct NonrepeatingTestCallbackId(__sdk::CallbackId);
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `nonrepeating_test`.
+/// Column accessor struct for the table `NonrepeatingTestArg`.
 ///
-/// Implemented for [`super::RemoteReducers`].
-pub trait nonrepeating_test {
-    /// Request that the remote module invoke the reducer `nonrepeating_test` to run as soon as possible.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_nonrepeating_test`] callbacks.
-    fn nonrepeating_test(&self, arg: NonrepeatingTestArg,
-) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `nonrepeating_test`.
-    ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`NonrepeatingTestCallbackId`] can be passed to [`Self::remove_on_nonrepeating_test`]
-    /// to cancel the callback.
-    fn on_nonrepeating_test(&self, callback: impl FnMut(&super::ReducerEventContext, &NonrepeatingTestArg, ) + Send + 'static) -> NonrepeatingTestCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_nonrepeating_test`],
-    /// causing it not to run in the future.
-    fn remove_on_nonrepeating_test(&self, callback: NonrepeatingTestCallbackId);
+/// Provides typed access to columns for query building.
+pub struct NonrepeatingTestArgCols {
+    pub scheduled_id: __sdk::__query_builder::Col<NonrepeatingTestArg, u64>,
+    pub scheduled_at: __sdk::__query_builder::Col<NonrepeatingTestArg, __sdk::ScheduleAt>,
+    pub prev_time: __sdk::__query_builder::Col<NonrepeatingTestArg, __sdk::Timestamp>,
 }
 
-impl nonrepeating_test for super::RemoteReducers {
-    fn nonrepeating_test(&self, arg: NonrepeatingTestArg,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("nonrepeating_test", NonrepeatingTestArgs { arg,  })
-    }
-    fn on_nonrepeating_test(
-        &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &NonrepeatingTestArg, ) + Send + 'static,
-    ) -> NonrepeatingTestCallbackId {
-        NonrepeatingTestCallbackId(self.imp.on_reducer(
-            "nonrepeating_test",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::NonrepeatingTest {
-                            arg, 
-                        },
-                        ..
-                    },
-                    ..
-                } = ctx else { unreachable!() };
-                callback(ctx, arg, )
-            }),
-        ))
-    }
-    fn remove_on_nonrepeating_test(&self, callback: NonrepeatingTestCallbackId) {
-        self.imp.remove_on_reducer("nonrepeating_test", callback.0)
+impl __sdk::__query_builder::HasCols for NonrepeatingTestArg {
+    type Cols = NonrepeatingTestArgCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        NonrepeatingTestArgCols {
+            scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
+            scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+            prev_time: __sdk::__query_builder::Col::new(table_name, "prev_time"),
+
+        }
     }
 }
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `nonrepeating_test`.
+/// Indexed column accessor struct for the table `NonrepeatingTestArg`.
 ///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_nonrepeating_test {
-    /// Set the call-reducer flags for the reducer `nonrepeating_test` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn nonrepeating_test(&self, flags: __ws::CallReducerFlags);
+/// Provides typed access to indexed columns for query building.
+pub struct NonrepeatingTestArgIxCols {
+    pub scheduled_id: __sdk::__query_builder::IxCol<NonrepeatingTestArg, u64>,
 }
 
-impl set_flags_for_nonrepeating_test for super::SetReducerFlags {
-    fn nonrepeating_test(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("nonrepeating_test", flags);
+impl __sdk::__query_builder::HasIxCols for NonrepeatingTestArg {
+    type IxCols = NonrepeatingTestArgIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        NonrepeatingTestArgIxCols {
+            scheduled_id: __sdk::__query_builder::IxCol::new(table_name, "scheduled_id"),
+
+        }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for NonrepeatingTestArg {}
 
 '''
 "person_table.rs" = '''

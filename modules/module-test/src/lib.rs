@@ -4,12 +4,8 @@ use std::time::Duration;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
-=======
     duration, table, CaseConversionPolicy, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table,
-    Timestamp, ViewContext,
->>>>>>> master
+    TimeDuration, Timestamp, ViewContext,
 };
 use spacetimedb::{log, ProcedureContext};
 
@@ -165,8 +161,7 @@ pub struct RepeatingTestArg {
     prev_time: Timestamp,
 }
 
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-#[spacetimedb::table(name = nonrepeating_test_arg, scheduled(nonrepeating_test))]
+#[spacetimedb::table(accessor = nonrepeating_test_arg, scheduled(nonrepeating_test))]
 pub struct NonrepeatingTestArg {
     #[primary_key]
     #[auto_inc]
@@ -175,10 +170,7 @@ pub struct NonrepeatingTestArg {
     prev_time: Timestamp,
 }
 
-#[spacetimedb::table(name = has_special_stuff)]
-=======
 #[spacetimedb::table(accessor = has_special_stuff)]
->>>>>>> master
 pub struct HasSpecialStuff {
     identity: Identity,
     connection_id: ConnectionId,
