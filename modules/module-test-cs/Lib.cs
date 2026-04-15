@@ -152,8 +152,7 @@ public partial struct RepeatingTestArg
     public Timestamp prev_time;
 }
 
-<<<<<<< rekhoff/nonrepeating-scheduled-reducer-test
-[Table(Name = "nonrepeating_test_arg", Scheduled = nameof(Module.nonrepeating_test), ScheduledAt = nameof(scheduled_at))]
+[Table(Accessor = "nonrepeating_test_arg", Scheduled = nameof(Module.nonrepeating_test), ScheduledAt = nameof(scheduled_at))]
 public partial struct NonrepeatingTestArg
 {
     [PrimaryKey]
@@ -163,10 +162,7 @@ public partial struct NonrepeatingTestArg
     public Timestamp prev_time;
 }
 
-[Table(Name = "has_special_stuff")]
-=======
 [Table(Accessor = "has_special_stuff")]
->>>>>>> master
 public partial struct HasSpecialStuff
 {
     public Identity identity;
