@@ -732,7 +732,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let (mut outcomes, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash);
 
     // Retry provider-error tasks until all pass or none make progress
-    let mut dropped = 0usize;
+    let dropped;
     {
         const MAX_RETRY_ROUNDS: usize = 3;
         let mut pending = retry_tasks;
