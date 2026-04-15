@@ -309,8 +309,13 @@ pub async fn exec_with_options(
         // First, try to load config from current directory
         owned_loaded = find_and_load_with_env(env)?;
 
-        // If no config found and --module-path is specified, try loading from module path
+        // If no config found and --module-path is specified, try loading from module path.
+        // Only do this when the user did NOT provide a database name via CLI, because if they
+        // explicitly named a database, they intend to use CLI args directly — searching the
+        // module path for a config would just cause a mismatch error when the config's database
+        // name (which may include a random suffix from `spacetime init`) doesn't match.
         if owned_loaded.is_none()
+            && !schema.is_from_cli(args, "database")
             && args.contains_id("module_path")
             && let Some(module_path) = args.get_one::<PathBuf>("module_path")
         {
