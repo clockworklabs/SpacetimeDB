@@ -1,0 +1,31 @@
+{
+  "scenario": "stress-throughput",
+  "backend": "spacetime",
+  "startedAt": "2026-04-10T20:58:03.239Z",
+  "durationSec": 60,
+  "writers": 30,
+  "sent": 203607,
+  "received": 203607,
+  "errors": 0,
+  "msgsPerSec": 3393.45,
+  "ackLatencyMs": {
+    "count": 203607,
+    "min": 1.4432,
+    "max": 336.8629,
+    "mean": 8.851035666258934,
+    "p50": 7.6655,
+    "p95": 15.0864,
+    "p99": 34.6726,
+    "p999": 112.1487
+  },
+  "fanoutLatencyMs": {
+    "count": 203607,
+    "min": 1.47,
+    "max": 336.956,
+    "mean": 8.931776826926374,
+    "p50": 7.7354,
+    "p95": 15.268,
+    "p99": 34.7533,
+    "p999": 112.1026
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "scenario": "stress-throughput",
+  "backend": "postgres",
+  "startedAt": "2026-04-10T14:59:41.562Z",
+  "durationSec": 8,
+  "writers": 5,
+  "sent": 80,
+  "received": 80,
+  "errors": 0,
+  "msgsPerSec": 10,
+  "ackLatencyMs": {
+    "count": 80,
+    "min": 6.9825,
+    "max": 13.0341,
+    "mean": 9.518181250000001,
+    "p50": 9.4003,
+    "p95": 12.4578,
+    "p99": 13.0341,
+    "p999": 13.0341
+  },
+  "fanoutLatencyMs": {
+    "count": 80,
+    "min": 6.9222,
+    "max": 12.9591,
+    "mean": 9.431728750000001,
+    "p50": 9.3118,
+    "p95": 12.5412,
+    "p99": 12.9591,
+    "p999": 12.9591
+  },
+  "notes": "PG send_message handler enforces 500ms-per-user rate limit; writers fire at ~510ms cadence. Add writers to scale throughput."
+}

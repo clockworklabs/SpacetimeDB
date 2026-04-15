@@ -1,0 +1,32 @@
+{
+  "scenario": "realistic-chat",
+  "backend": "spacetime",
+  "startedAt": "2026-04-10T15:04:15.653Z",
+  "durationSec": 60,
+  "writers": 50,
+  "sent": 320,
+  "received": 320,
+  "errors": 0,
+  "msgsPerSec": 5.333333333333333,
+  "ackLatencyMs": {
+    "count": 0,
+    "min": 0,
+    "max": 0,
+    "mean": 0,
+    "p50": 0,
+    "p95": 0,
+    "p99": 0,
+    "p999": 0
+  },
+  "fanoutLatencyMs": {
+    "count": 320,
+    "min": 2.202,
+    "max": 431.7397,
+    "mean": 30.132149999999996,
+    "p50": 4.4108,
+    "p95": 357.6404,
+    "p99": 423.8881,
+    "p999": 431.7397
+  },
+  "notes": "50 users, jitter 5000-15000ms"
+}

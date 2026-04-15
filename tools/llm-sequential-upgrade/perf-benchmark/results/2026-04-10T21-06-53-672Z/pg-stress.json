@@ -1,0 +1,32 @@
+{
+  "scenario": "stress-throughput",
+  "backend": "postgres",
+  "startedAt": "2026-04-10T21:06:55.357Z",
+  "durationSec": 60,
+  "writers": 30,
+  "sent": 12837480,
+  "received": 0,
+  "errors": 0,
+  "msgsPerSec": 0,
+  "ackLatencyMs": {
+    "count": 0,
+    "min": 0,
+    "max": 0,
+    "mean": 0,
+    "p50": 0,
+    "p95": 0,
+    "p99": 0,
+    "p999": 0
+  },
+  "fanoutLatencyMs": {
+    "count": 0,
+    "min": 0,
+    "max": 0,
+    "mean": 0,
+    "p50": 0,
+    "p95": 0,
+    "p99": 0,
+    "p999": 0
+  },
+  "notes": "30 writers firing as fast as possible"
+}
