@@ -19,9 +19,11 @@ use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{
     deserialize_view_rows, run_query_for_view, AnonymousViewOp, ProcedureOp, ViewOp, ViewResult, ViewReturnData,
 };
-use crate::host::wasm_common::{RowIterIdx, TimingSpan, TimingSpanIdx};
+use crate::host::instance_env::HttpStreamState;
+use crate::host::wasm_common::{HttpStreamIdx, RowIterIdx, TimingSpan, TimingSpanIdx};
 use anyhow::Context;
 use bytes::Bytes;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId};
@@ -585,10 +587,14 @@ pub fn identity<'scope>(
 ///
 /// Accepts a BSATN-encoded [`spacetimedb_lib::http::Request`] and a request body, and
 /// returns a BSATN-encoded [`spacetimedb_lib::http::Response`] and the response body.
-pub fn procedure_http_request<'scope>(
+/// Deserialize an HTTP request and body from V8 syscall arguments.
+///
+/// `args.get(0)` must be a `Uint8Array` containing the BSATN-encoded request.
+/// `args.get(1)` must be a `Uint8Array` or `string` containing the request body.
+fn deserialize_http_request_args<'scope>(
     scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<Local<'scope, v8::Array>> {
+    args: &FunctionCallbackArguments<'scope>,
+) -> SysCallResult<(spacetimedb_lib::http::Request, Bytes)> {
     use spacetimedb_lib::http as st_http;
 
     let request =
@@ -610,6 +616,15 @@ pub fn procedure_http_request<'scope>(
         .map_err(|e| e.throw(scope))?;
         Bytes::copy_from_slice(bytes.get_contents(&mut []))
     };
+
+    Ok((request, request_body))
+}
+
+pub fn procedure_http_request<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'scope>,
+) -> SysCallResult<Local<'scope, v8::Array>> {
+    let (request, request_body) = deserialize_http_request_args(scope, &args)?;
 
     let env = get_env(scope)?;
 
@@ -846,4 +861,130 @@ fn call_view(
         .into(),
         ErrorOrException::Exception(exc) => exc.into(),
     })
+}
+
+/// # Signature
+///
+/// ```ignore
+/// function procedure_http_stream_open(
+///     request: Uint8Array,
+///     body: Uint8Array | string
+/// ): [handle: number, response: Uint8Array];
+/// ```
+///
+/// Initiates a streaming HTTP request. Returns a handle for reading chunks
+/// and the BSATN-encoded response metadata (status, headers).
+pub fn procedure_http_stream_open<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'scope>,
+) -> SysCallResult<Local<'scope, v8::Array>> {
+    let (request, request_body) = deserialize_http_request_args(scope, &args)?;
+
+    let env = get_env(scope)?;
+
+    let fut = env.instance_env.http_stream_open(request, request_body)?;
+
+    let rt = tokio::runtime::Handle::current();
+    let (response, receiver, abort_handle) = rt.block_on(fut)?;
+
+    // Record the response header size; body bytes are recorded per-chunk in stream_next.
+    DB_METRICS
+        .procedure_http_response_size_bytes
+        .with_label_values(env.instance_env.database_identity())
+        .inc_by(response.size_in_bytes() as _);
+
+    let handle = env.http_streams.insert(HttpStreamState { receiver, abort_handle });
+
+    let response = bsatn::to_vec(&response).expect("failed to serialize `HttpResponse`");
+    let response = make_uint8array(scope, response);
+    let handle_val = v8::Integer::new_from_unsigned(scope, handle.0);
+
+    Ok(v8::Array::new_with_elements(
+        scope,
+        &[handle_val.into(), response.into()],
+    ))
+}
+
+/// # Signature
+///
+/// ```ignore
+/// function procedure_http_stream_next(
+///     handle: number,
+/// ): Uint8Array | null;
+/// ```
+///
+/// Reads the next chunk from a streaming HTTP response.
+/// Returns `null` when the stream is exhausted.
+///
+/// **Threading note:** This blocks the V8 worker thread until a chunk arrives.
+/// Since there is one V8 worker thread per module instance, all other reducers
+/// and procedures for this instance are blocked while waiting. A slow remote
+/// server will stall the entire module instance per chunk.
+///
+/// **Transaction guard:** Unlike `http_request` and `http_stream_open`, whose
+/// guards live in [`InstanceEnv`], the `in_tx()` check here is at the syscall
+/// layer because `InstanceEnv` does not own the stream handles — they live in
+/// [`JsInstanceEnv`].
+pub fn procedure_http_stream_next<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'scope>,
+) -> SysCallResult<Local<'scope, Value>> {
+    let handle_u32: u32 = deserialize_js(scope, args.get(0))?;
+    let handle = HttpStreamIdx(handle_u32);
+
+    let env = get_env(scope)?;
+
+    // Refuse to block on a stream chunk while holding a mutable transaction open.
+    if env.instance_env.in_tx() {
+        return Err(NodesError::WouldBlockTransaction(crate::host::AbiCall::ProcedureHttpStreamNext).into());
+    }
+
+    let stream = env.http_streams.get_mut(handle).ok_or(SysCallError::NO_SUCH_ITER)?;
+
+    let rt = tokio::runtime::Handle::current();
+    let chunk = rt.block_on(stream.receiver.recv());
+
+    match chunk {
+        Some(Ok(bytes)) => {
+            DB_METRICS
+                .procedure_http_response_size_bytes
+                .with_label_values(env.instance_env.database_identity())
+                .inc_by(bytes.len() as _);
+            let arr = match bytes.try_into_mut() {
+                Ok(bytes_mut) => make_uint8array(scope, Box::new(bytes_mut)),
+                Err(bytes) => make_uint8array(scope, Vec::from(bytes)),
+            };
+            Ok(arr.into())
+        }
+        Some(Err(err)) => {
+            // Stream error — clean up and throw.
+            env.http_streams.take(handle);
+            Err(TypeError(format!("http stream error: {err}")).throw(scope).into())
+        }
+        None => {
+            // Stream ended — clean up the handle.
+            env.http_streams.take(handle);
+            Ok(v8::null(scope).into())
+        }
+    }
+}
+
+/// # Signature
+///
+/// ```ignore
+/// function procedure_http_stream_close(handle: number): void;
+/// ```
+///
+/// Closes a streaming HTTP response handle, canceling the background reader.
+pub fn procedure_http_stream_close(
+    scope: &mut PinScope<'_, '_>,
+    args: FunctionCallbackArguments<'_>,
+) -> SysCallResult<()> {
+    let handle_u32: u32 = deserialize_js(scope, args.get(0))?;
+    let handle = HttpStreamIdx(handle_u32);
+
+    let env = get_env(scope)?;
+    // `HttpStreamState::drop` aborts the background reader task.
+    env.http_streams.take(handle);
+    Ok(())
 }

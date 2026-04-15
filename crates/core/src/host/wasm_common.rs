@@ -334,6 +334,9 @@ impl<I: ResourceIndex> ResourceSlab<I> {
 decl_index!(RowIterIdx => std::vec::IntoIter<Vec<u8>>);
 pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
+decl_index!(HttpStreamIdx => crate::host::instance_env::HttpStreamState);
+pub(super) type HttpStreams = ResourceSlab<HttpStreamIdx>;
+
 pub(crate) struct TimingSpan {
     pub start: Instant,
     pub name: String,
