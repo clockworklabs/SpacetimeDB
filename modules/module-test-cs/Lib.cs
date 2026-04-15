@@ -267,7 +267,7 @@ static partial class Module
     public static void nonrepeating_test(ReducerContext ctx, NonrepeatingTestArg arg)
     {
         var deltaTime = ctx.Timestamp.TimeDurationSince(arg.prev_time);
-        Log.Trace($"Timestamp: {ctx.Timestamp}, Delta time: {deltaTime}");
+        Log.Trace($"This reducers runs only once, at Timestamp: {ctx.Timestamp}, Delta time: {deltaTime}");
     }
 
     [Reducer]

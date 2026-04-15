@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { ScheduleAt } from 'spacetimedb';
+import { ScheduleAt, Timestamp } from 'spacetimedb';
 import {
   schema,
   table,
@@ -270,9 +270,9 @@ export const init = spacetimedb.init(ctx => {
     scheduled_at: ScheduleAt.interval(1000000n), // 1000ms
   });
 
-  const currentTime = ctx.timestamp;
+  const currentTimeMicros = ctx.timestamp.microsSinceUnixEpoch;
   const oneSecond = 1_000_000n; // 1 second in microseconds
-  const futureTimestamp = currentTime.plus(oneSecond);
+  const futureTimestamp = new Timestamp(currentTimeMicros + oneSecond);
 
   ctx.db.nonrepeatingTestArg.insert({
     prev_time: ctx.timestamp,
