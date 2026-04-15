@@ -16,7 +16,6 @@ use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::buffer::BufReader;
-use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, Deserialize, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
@@ -353,17 +352,6 @@ impl Deref for ReplayCommittedState<'_> {
 impl DerefMut for ReplayCommittedState<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.state
-    }
-}
-
-impl MemoryUsage for ReplayCommittedState<'_> {
-    fn heap_usage(&self) -> usize {
-        let Self {
-            state: _, // We don't attribute usage to `CommittedState`.
-            replay_table_dropped,
-            replay_columns_to_ignore,
-        } = self;
-        replay_table_dropped.heap_usage() + replay_columns_to_ignore.heap_usage()
     }
 }
 
