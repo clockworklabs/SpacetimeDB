@@ -14,7 +14,7 @@ use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{
     CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
-    ReducerCallResult,
+    ReducerCallResult, ReducerDispatch,
 };
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
@@ -873,7 +873,7 @@ impl ClientConnection {
         timer: Instant,
         _flags: ws_v2::CallReducerFlags,
     ) -> Result<(), ReducerCallError> {
-        let detached = self
+        let dispatch = self
             .module()
             .call_reducer_detached(
                 self.id.identity,
@@ -885,7 +885,7 @@ impl ClientConnection {
                 FunctionArgs::Bsatn(args),
             )
             .await?;
-        if detached {
+        if matches!(dispatch, ReducerDispatch::Detached) {
             self.pending_reducers.store(true, Relaxed);
         }
         Ok(())

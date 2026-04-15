@@ -28,7 +28,9 @@ pub use host_controller::{
     extract_schema, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage, HostController,
     MigratePlanResult, ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
-pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
+pub use module_host::{
+    ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, ReducerDispatch, UpdateDatabaseResult,
+};
 pub use scheduler::Scheduler;
 
 /// Encoded arguments to a database function.

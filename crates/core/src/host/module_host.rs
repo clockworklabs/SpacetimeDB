@@ -948,6 +948,14 @@ pub enum ReducerCallError {
     LifecycleReducer(Lifecycle),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReducerDispatch {
+    /// The reducer finished on the existing synchronous path.
+    Completed,
+    /// The reducer was accepted by the JS instance lane and will complete later.
+    Detached,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ViewOutcome {
     Success,
@@ -1088,7 +1096,8 @@ impl ModuleHost {
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
-                let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst, on_panic.clone());
+                let instance_lane =
+                    super::v8::JsInstanceLane::new(module.clone(), init_inst, on_panic.clone(), closed.clone());
                 let procedure_instances = ModuleInstanceManager::new(module.clone(), None, database_identity);
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module,
@@ -1635,6 +1644,18 @@ impl ModuleHost {
         .await?
     }
 
+    /// Mirrors legacy reducer-call logging for synchronous validation failures.
+    fn inject_reducer_call_error_log<T>(&self, reducer_name: &str, res: &Result<T, ReducerCallError>) {
+        let log_message = match res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+    }
+
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
@@ -1659,15 +1680,7 @@ impl ModuleHost {
         }
         .await;
 
-        let log_message = match &res {
-            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
-            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
-            _ => None,
-        };
-        if let Some(log_message) = log_message {
-            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
-        }
-
+        self.inject_reducer_call_error_log(reducer_name, &res);
         res
     }
 
@@ -1686,7 +1699,7 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_name: &str,
         args: FunctionArgs,
-    ) -> Result<bool, ReducerCallError> {
+    ) -> Result<ReducerDispatch, ReducerCallError> {
         let res = async {
             let params = self.resolve_reducer_call(
                 caller_identity,
@@ -1700,46 +1713,29 @@ impl ModuleHost {
             match &*self.inner {
                 ModuleHostInner::Wasm(_) => {
                     self.call_reducer_inner(reducer_name, params).await?;
-                    Ok(false)
+                    Ok(ReducerDispatch::Completed)
                 }
                 ModuleHostInner::Js(js) => {
                     self.guard_closed()?;
                     js.instance_lane.call_reducer_detached(params).await?;
-                    Ok(true)
+                    Ok(ReducerDispatch::Detached)
                 }
             }
         }
         .await;
 
-        let log_message = match &res {
-            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
-            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
-            _ => None,
-        };
-        if let Some(log_message) = log_message {
-            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
-        }
-
+        self.inject_reducer_call_error_log(reducer_name, &res);
         res
     }
 
     /// Waits for all previously enqueued detached reducers on this host to finish.
     ///
-    /// A fence failure means the JS worker died before the ordered boundary could
-    /// be reached, so the module is treated as fatally exited rather than sending
-    /// a synthetic reducer error.
+    /// If the ordered boundary itself is lost, the module is treated as exited.
     pub async fn fence_reducers(&self) -> Result<(), NoSuchModule> {
         self.guard_closed()?;
         match &*self.inner {
             ModuleHostInner::Wasm(_) => Ok(()),
-            ModuleHostInner::Js(js) => {
-                if js.instance_lane.fence().await.is_err() {
-                    (self.on_panic)();
-                    Err(NoSuchModule)
-                } else {
-                    Ok(())
-                }
-            }
+            ModuleHostInner::Js(js) => js.instance_lane.fence().await,
         }
     }
 

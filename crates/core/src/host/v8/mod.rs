@@ -10,7 +10,7 @@ use self::syscall::{
     get_registered_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
-use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
+use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance, NoSuchModule};
 use super::UpdateDatabaseResult;
 use crate::client::ClientActorId;
 use crate::config::V8HeapPolicyConfig;
@@ -542,14 +542,12 @@ struct JsWorkerState {
     /// Set once this JS instance has trapped or been retired and must not
     /// accept any further work from the instance lane.
     trapped: AtomicBool,
-    /// Set once the worker has fatally exited and the module should be dropped.
-    fatal: AtomicBool,
     /// Set once the worker thread has actually exited and stopped draining the queue.
     exited: AtomicBool,
     /// Wakes replacement logic waiting for this worker to finish exiting.
     exited_notify: Notify,
-    /// Called once on a fatal worker exit to close the module.
-    fatal_handler: StdMutex<Option<Arc<dyn Fn() + Send + Sync + 'static>>>,
+    /// Called if the worker thread unwinds so the owning module can be dropped.
+    panic_handler: StdMutex<Option<Arc<dyn Fn() + Send + Sync + 'static>>>,
 }
 
 impl JsWorkerState {
@@ -563,29 +561,18 @@ impl JsWorkerState {
         self.exited.load(Ordering::Relaxed)
     }
 
-    /// Returns whether this worker exited in a way that should tear down the module.
-    fn fatal(&self) -> bool {
-        self.fatal.load(Ordering::Relaxed)
-    }
-
     /// Returns whether the instance lane should replace this JS instance.
     fn needs_recovery(&self) -> bool {
         self.trapped() || self.exited()
     }
 
-    /// Installs the callback that should run if this worker fatally exits.
-    fn install_fatal_handler(&self, handler: Arc<dyn Fn() + Send + Sync + 'static>) {
-        let call_now = {
-            let mut fatal_handler = self
-                .fatal_handler
-                .lock()
-                .expect("fatal handler mutex should not be poisoned");
-            *fatal_handler = Some(handler.clone());
-            self.fatal()
-        };
-        if call_now {
-            handler();
-        }
+    /// Installs the callback that should run if this worker thread unwinds.
+    fn install_panic_handler(&self, handler: Arc<dyn Fn() + Send + Sync + 'static>) {
+        let mut panic_handler = self
+            .panic_handler
+            .lock()
+            .expect("panic handler mutex should not be poisoned");
+        *panic_handler = Some(handler);
     }
 
     /// Marks the JS instance as poisoned so no further requests should target it.
@@ -593,16 +580,12 @@ impl JsWorkerState {
         self.trapped.store(true, Ordering::Relaxed);
     }
 
-    /// Marks this worker as fatally failed and triggers module teardown once.
-    fn mark_fatal(&self) {
-        let already_fatal = self.fatal.swap(true, Ordering::Relaxed);
-        if already_fatal {
-            return;
-        }
+    /// Triggers module teardown if this worker unwinds.
+    fn handle_panic(&self) {
         let handler = self
-            .fatal_handler
+            .panic_handler
             .lock()
-            .expect("fatal handler mutex should not be poisoned")
+            .expect("panic handler mutex should not be poisoned")
             .clone();
         if let Some(handler) = handler {
             handler();
@@ -632,11 +615,6 @@ impl JsInstance {
         self.worker_state.trapped()
     }
 
-    /// Returns whether this instance's worker has failed in a module-fatal way.
-    fn fatal(&self) -> bool {
-        self.worker_state.fatal()
-    }
-
     fn needs_recovery(&self) -> bool {
         self.worker_state.needs_recovery()
     }
@@ -646,8 +624,8 @@ impl JsInstance {
     }
 
     /// Registers the module teardown callback with the worker that backs this instance.
-    fn install_fatal_handler(&self, handler: Arc<dyn Fn() + Send + Sync + 'static>) {
-        self.worker_state.install_fatal_handler(handler);
+    fn install_panic_handler(&self, handler: Arc<dyn Fn() + Send + Sync + 'static>) {
+        self.worker_state.install_panic_handler(handler);
     }
 
     async fn send_request<T>(
@@ -1066,7 +1044,8 @@ struct JsInstanceLaneState {
     // - `create_lane_instance()` must not call back into `JsInstanceLane` or try to
     //   take `replace_lock`.
     replace_lock: AsyncMutex<()>,
-    fatal_handler: Arc<dyn Fn() + Send + Sync + 'static>,
+    module_closed: Arc<AtomicBool>,
+    on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
 }
 
 /// A single serialized execution lane for JS module work.
@@ -1081,14 +1060,20 @@ pub struct JsInstanceLane {
 }
 
 impl JsInstanceLane {
-    pub fn new(module: JsModule, init_inst: JsInstance, fatal_handler: Arc<dyn Fn() + Send + Sync + 'static>) -> Self {
-        init_inst.install_fatal_handler(fatal_handler.clone());
+    pub fn new(
+        module: JsModule,
+        init_inst: JsInstance,
+        on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
+        module_closed: Arc<AtomicBool>,
+    ) -> Self {
+        init_inst.install_panic_handler(on_panic.clone());
         Self {
             module,
             state: Arc::new(JsInstanceLaneState {
                 active: RwLock::new(init_inst),
                 replace_lock: AsyncMutex::new(()),
-                fatal_handler,
+                module_closed,
+                on_panic,
             }),
         }
     }
@@ -1097,14 +1082,51 @@ impl JsInstanceLane {
         self.state.active.read().clone()
     }
 
+    /// Returns whether the owning module has already been closed.
+    fn is_module_closed(&self) -> bool {
+        self.state.module_closed.load(Ordering::Relaxed)
+    }
+
+    /// Returns the active worker, replacing it first if the previous generation trapped or retired.
+    async fn prepare_active_instance(&self, label: &'static str) -> Result<JsInstance, WorkerDisconnected> {
+        if self.is_module_closed() {
+            log::error!("instance-lane operation {label} observed module shutdown");
+            return Err(WorkerDisconnected);
+        }
+        let mut active = self.active_instance();
+        if active.needs_recovery() {
+            self.replace_active_if_current(&active).await;
+            if self.is_module_closed() {
+                log::error!("instance-lane operation {label} observed module shutdown");
+                return Err(WorkerDisconnected);
+            }
+            active = self.active_instance();
+        }
+        Ok(active)
+    }
+
     async fn after_successful_call(&self, active: &JsInstance) {
         if active.trapped() {
             self.replace_active_if_current(active).await;
         }
     }
 
+    /// Records a lost reply, replacing the worker unless the module has already been closed.
+    async fn handle_worker_disconnect(&self, label: &'static str, active: &JsInstance) {
+        if self.is_module_closed() {
+            log::error!("instance-lane operation {label} lost its worker while the module was exiting");
+        } else {
+            self.replace_active_if_current(active).await;
+            if self.is_module_closed() {
+                log::error!("instance-lane operation {label} lost its worker while the module was exiting");
+            } else {
+                log::error!("instance-lane operation {label} lost its worker before replying");
+            }
+        }
+    }
+
     async fn replace_active_if_current(&self, stale: &JsInstance) {
-        if stale.fatal() {
+        if self.is_module_closed() {
             return;
         }
 
@@ -1116,11 +1138,10 @@ impl JsInstanceLane {
         // The same trapped instance can be observed by multiple callers at once.
         // We only want the first one to do the swap; everybody else should notice
         // that the active handle already changed and get out of the way.
-        if self.state.active.read().id() != stale.id() {
+        if self.is_module_closed() {
             return;
         }
-
-        if stale.fatal() {
+        if self.state.active.read().id() != stale.id() {
             return;
         }
 
@@ -1130,6 +1151,9 @@ impl JsInstanceLane {
             stale.wait_exited().await;
         }
 
+        if self.is_module_closed() {
+            return;
+        }
         if self.state.active.read().id() != stale.id() {
             return;
         }
@@ -1140,7 +1164,10 @@ impl JsInstanceLane {
         // The only lock held across this await is `replace_lock`, which is why it
         // has to be async.
         let next = self.module.create_lane_instance().await;
-        next.install_fatal_handler(self.state.fatal_handler.clone());
+        next.install_panic_handler(self.state.on_panic.clone());
+        if self.is_module_closed() {
+            return;
+        }
         *self.state.active.write() = next;
     }
 
@@ -1157,22 +1184,10 @@ impl JsInstanceLane {
     ) -> Result<R, WorkerDisconnected> {
         assert_not_on_js_module_thread(label);
 
-        let mut active = self.active_instance();
         // Another caller may already have observed a trap or heap-triggered retirement
         // and left the current active handle stale by the time we enter. Swap in the
         // replacement before enqueueing more work.
-        if active.needs_recovery() {
-            if active.fatal() {
-                log::error!("instance-lane operation {label} observed a fatal worker exit");
-                return Err(WorkerDisconnected);
-            }
-            self.replace_active_if_current(&active).await;
-            active = self.active_instance();
-            if active.fatal() {
-                log::error!("instance-lane operation {label} observed a fatal worker exit");
-                return Err(WorkerDisconnected);
-            }
-        }
+        let active = self.prepare_active_instance(label).await?;
         let result = work(active.clone()).await;
         match result {
             Ok(value) => {
@@ -1180,12 +1195,7 @@ impl JsInstanceLane {
                 Ok(value)
             }
             Err(err) => {
-                if active.fatal() {
-                    log::error!("instance-lane operation {label} lost its worker fatally; module is exiting");
-                } else {
-                    self.replace_active_if_current(&active).await;
-                    log::error!("instance-lane operation {label} lost its worker before replying");
-                }
+                self.handle_worker_disconnect(label, &active).await;
                 Err(err)
             }
         }
@@ -1283,11 +1293,25 @@ impl JsInstanceLane {
 
     /// Inserts an ordering barrier after detached reducers on this instance lane.
     ///
-    /// If the worker dies before reaching the barrier, the disconnect is surfaced
-    /// so the caller can treat that as fatal module loss.
-    pub(in crate::host) async fn fence(&self) -> Result<(), WorkerDisconnected> {
-        self.run_once("fence", |inst: JsInstance| async move { inst.fence().await })
-            .await
+    /// Unlike ordinary request/reply operations, a fence losing its reply is fatal:
+    /// once the ordered boundary was accepted by a worker, failing to acknowledge it
+    /// means the module can no longer prove reducer ordering for the connection.
+    pub(in crate::host) async fn fence(&self) -> Result<(), NoSuchModule> {
+        assert_not_on_js_module_thread("fence");
+        let active = self.prepare_active_instance("fence").await.map_err(|_| NoSuchModule)?;
+        match active.fence().await {
+            Ok(()) => {
+                self.after_successful_call(&active).await;
+                Ok(())
+            }
+            Err(_) => {
+                log::error!("instance-lane fence lost its worker before acknowledging the ordered boundary");
+                if !self.is_module_closed() {
+                    (self.state.on_panic)();
+                }
+                Err(NoSuchModule)
+            }
+        }
     }
 
     /// Clear all instance-lane client state exactly once.
@@ -1454,7 +1478,7 @@ async fn spawn_instance_worker(
     std::thread::spawn(move || {
         scopeguard::defer! {
             if std::thread::panicking() {
-                worker_state_in_thread.mark_fatal();
+                worker_state_in_thread.handle_panic();
             }
             worker_state_in_thread.mark_exited();
         }
