@@ -186,6 +186,8 @@ pub struct BenchRunContext<'a> {
     pub host: Option<String>,
     pub api_client: Option<ApiClient>,
     pub dry_run: bool,
+    pub local_analysis: bool,
+    pub dry_run_id: Option<String>,
 }
 
 pub struct RunConfig {
@@ -203,4 +205,8 @@ pub struct RunConfig {
     pub api_client: Option<ApiClient>,
     /// When true, run benchmarks but don't upload results
     pub dry_run: bool,
+    /// When true, generate analysis markdown locally during dry runs
+    pub local_analysis: bool,
+    /// Shared identifier used to group dry-run artifacts
+    pub dry_run_id: Option<String>,
 }

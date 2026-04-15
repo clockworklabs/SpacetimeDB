@@ -127,6 +127,10 @@ struct RunArgs {
     /// Run benchmarks without uploading results
     #[arg(long)]
     dry_run: bool,
+
+    /// When used with --dry-run, also generate local markdown analysis files
+    #[arg(long, requires = "dry_run")]
+    local_analysis: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -211,13 +215,17 @@ fn cmd_run(args: RunArgs) -> Result<()> {
 
 /// Core benchmark runner used by both `run` and `ci-quickfix`
 fn run_benchmarks(args: RunArgs) -> Result<()> {
-    let api_client = if args.dry_run {
+    let dry_run = args.dry_run;
+    let local_analysis = args.local_analysis;
+    let dry_run_id = dry_run.then(|| chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string());
+
+    let api_client = if dry_run {
         None
     } else {
         ApiClient::from_env().context("failed to initialize API client")?
     };
 
-    if api_client.is_none() && !args.dry_run {
+    if api_client.is_none() && !dry_run {
         eprintln!("[warn] LLM_BENCHMARK_UPLOAD_URL not set; results will not be uploaded");
     }
 
@@ -233,7 +241,9 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         model_filter: model_filter_from_groups(args.models),
         host: None,
         api_client: api_client.clone(),
-        dry_run: args.dry_run,
+        dry_run,
+        local_analysis,
+        dry_run_id: dry_run_id.clone(),
     };
 
     let bench_root = find_bench_root();
@@ -288,11 +298,11 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     }
 
     // Write local run log on --dry-run so results aren't lost
-    if args.dry_run && !all_outcomes.is_empty() {
+    if dry_run && !all_outcomes.is_empty() {
         let runs_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runs");
         let _ = fs::create_dir_all(&runs_dir);
-        let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
-        let log_path = runs_dir.join(format!("run-{timestamp}.json"));
+        let run_id = dry_run_id.as_deref().unwrap_or("dry-run");
+        let log_path = runs_dir.join(format!("run-{run_id}.json"));
         match serde_json::to_string_pretty(&all_outcomes) {
             Ok(json) => {
                 if let Err(e) = fs::write(&log_path, json) {
@@ -645,10 +655,13 @@ async fn run_many_routes_for_mode(
     let host = config.host.clone();
     let api_client = config.api_client.clone();
     let dry_run = config.dry_run;
+    let local_analysis = config.local_analysis;
+    let dry_run_id = config.dry_run_id.clone();
 
     futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
         let api_client = api_client.clone();
+        let dry_run_id = dry_run_id.clone();
 
         async move {
             println!("\u{2192} running {}", route.display_name);
@@ -665,6 +678,8 @@ async fn run_many_routes_for_mode(
                 host,
                 api_client,
                 dry_run,
+                local_analysis,
+                dry_run_id,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
