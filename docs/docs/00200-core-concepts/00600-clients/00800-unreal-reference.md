@@ -21,6 +21,7 @@ Before diving into the reference, you may want to review:
 | [Access the client cache](#access-the-client-cache)         | Access to your local view of the database.                                                              |
 | [Observe and invoke reducers](#observe-and-invoke-reducers) | Send requests to the database to run reducers, and register callbacks for reducer results on the calling connection. |
 | [Subscriptions](#subscriptions)                             | Subscribe to queries and manage subscription lifecycle.                                                 |
+| [Query Builder API](#query-builder-api)                     | Build typed subscription queries in Unreal C++ and Blueprint.                                           |
 | [Identify a client](#identify-a-client)                     | Types for identifying users and client connections.                                                     |
 
 ## Project setup
@@ -496,6 +497,8 @@ The generated `On<Reducer>` delegates are the Unreal equivalent of a per-call ca
 
 Create subscriptions to receive updates for specific queries using the `USubscriptionBuilder` and `USubscriptionHandle` classes.
 
+For Unreal C++, the recommended default is to build subscriptions with `AddQuery(...)` and then call parameterless `Subscribe()`. Raw SQL subscriptions remain available when you need to provide SQL directly.
+
 | Name                                               | Description                        |
 | -------------------------------------------------- | ---------------------------------- |
 | [USubscriptionBuilder](#type-usubscriptionbuilder) | Build and configure subscriptions. |
@@ -511,6 +514,11 @@ class USubscriptionBuilder
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     USubscriptionBuilder* OnError(FOnSubscriptionError Callback);
+
+    USubscriptionBuilder* AddQuery(TFunctionRef<FQuery(const FQueryBuilder&)> BuildQuery);
+
+    UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+    USubscriptionHandle* Subscribe();
 
     UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
     USubscriptionHandle* Subscribe(const TArray<FString>& SQL);
@@ -536,13 +544,29 @@ USubscriptionBuilder* OnError(FOnSubscriptionError Callback);
 
 Register a callback to run if the subscription fails.
 
+#### Method `AddQuery`
+
+```cpp
+USubscriptionBuilder* AddQuery(TFunctionRef<FQuery(const FQueryBuilder&)> BuildQuery);
+```
+
+Append a typed query to the builder. The callback receives an `FQueryBuilder`, typically named `Q`, and returns a generated query source or filtered query. Call `AddQuery(...)` once per table or view query you want to subscribe to, then finish with parameterless `Subscribe()`.
+
 #### Method `Subscribe`
+
+```cpp
+USubscriptionHandle* Subscribe();
+```
+
+Subscribe to the typed queries accumulated with `AddQuery(...)` and return a handle for managing the subscription.
+
+#### Method `Subscribe` (SQL overload)
 
 ```cpp
 USubscriptionHandle* Subscribe(const TArray<FString>& SQL);
 ```
 
-Subscribe to the provided SQL queries and return a handle for managing the subscription.
+Subscribe to the provided SQL queries and return a handle for managing the subscription. Use this when you need to write SQL directly instead of using the typed query builder.
 
 #### Method `SubscribeToAllTables`
 
@@ -551,6 +575,8 @@ USubscriptionHandle* SubscribeToAllTables();
 ```
 
 Subscribe to all public tables in the module.
+
+`SubscribeToAllTables()` is useful for quick prototypes and small modules. Prefer typed queries for production subscriptions so the subscription set stays explicit.
 
 ### Type `USubscriptionHandle`
 
@@ -614,6 +640,129 @@ TArray<FString> GetQuerySqls() const;
 
 Get the SQL queries associated with this subscription.
 
+## Query Builder API
+
+Use the Unreal query builder to build typed subscriptions in C++ and Blueprint.
+
+In C++, a query typically starts from the generated `FQueryBuilder` passed to `AddQuery(...)`, selects a source from `Q.From`, and optionally applies `Where(...)` with generated column objects:
+
+```cpp
+USubscriptionHandle* Handle = Conn->SubscriptionBuilder()
+    ->OnApplied(FOnSubscriptionApplied::CreateUObject(this, &AMyActor::OnSubscriptionApplied))
+    ->OnError(FOnSubscriptionError::CreateUObject(this, &AMyActor::OnSubscriptionError))
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.Player().Where([](const FPlayerCols& Cols)
+        {
+            return Cols.Level.Gte(1).And(Cols.DisplayName.Neq(TEXT("Guest")));
+        });
+    })
+    ->Subscribe();
+```
+
+The generated query-builder surface is module-specific. Sources, column sets, and query return types are generated from your schema and views.
+
+### Query sources
+
+Each public table or subscribed query source is available under `Q.From` using a generated method:
+
+```cpp
+Q.From.Player()
+Q.From.ActivePlayerLocations()
+Q.From.PlayersAtLevel0()
+```
+
+Event tables are not subscribed implicitly. Subscribe to them with an explicit query just like any other source:
+
+```cpp
+Conn->SubscriptionBuilder()
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.DamageEvent();
+    })
+    ->Subscribe();
+```
+
+### Predicates
+
+Generated column objects expose typed predicate methods such as:
+
+- `Eq`
+- `Neq`
+- `Gt`
+- `Lt`
+- `Gte`
+- `Lte`
+
+Predicates can be combined with:
+
+- `And`
+- `Or`
+- `Not`
+
+Example:
+
+```cpp
+Conn->SubscriptionBuilder()
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.Player().Where([](const FPlayerCols& Cols)
+        {
+            return Cols.Level.Gte(3).And(Cols.IsOnline.Eq(true));
+        });
+    })
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.ActivePlayerLocations().Where([](const FActivePlayerLocationsCols& Cols)
+        {
+            return Cols.X.Gte(10).And(Cols.Y.Lte(400));
+        });
+    })
+    ->Subscribe();
+```
+
+### Blueprint availability
+
+The Unreal query builder is available in both C++ and Blueprint.
+
+In Blueprint, generated nodes expose the same overall flow:
+
+- source query nodes
+- column nodes
+- predicate nodes
+- `Where`
+- `AddQuery`
+- `Subscribe`
+
+Blueprint uses generated source-specific query types for authoring and converts them at the `AddQuery` boundary automatically.
+
+For example, a Blueprint subscription to online players at level 3 or higher would follow this node flow:
+
+```text
+From Player
+├─> Player Level
+│   └─> Int32 Greater Equal (3)
+├─> Player IsOnline
+│   └─> Bool Equal (true)
+└─> Player Where
+    └─> AND
+        ├─> Int32 Greater Equal (3)
+        └─> Bool Equal (true)
+
+Player Where
+└─> AddQuery
+    └─> Subscribe
+```
+
+The exact node names are generated from your schema, so `Player`, `Level`, and `IsOnline` will vary by module.
+
+### Notes and limitations
+
+- `OnApplied` is the right place to inspect the initial subscribed result set in the client cache.
+- `OnInsert`, `OnUpdate`, and `OnDelete` are for subsequent live changes after the subscription is active.
+- `TimeDuration` query predicates are currently unsupported.
+- Raw SQL subscriptions remain available when you need manual SQL control.
+
 ## Identify a client
 
 ### Type `FSpacetimeDBIdentity`
@@ -669,7 +818,7 @@ struct FSpacetimeDBTimestamp
 
 ## Example usage
 
-Here's a complete example of connecting to SpacetimeDB, subscribing to tables, and handling events:
+Here's a complete example of connecting to SpacetimeDB, subscribing with the typed query builder, and handling events:
 
 ```cpp
 // In your Actor's BeginPlay()
@@ -706,10 +855,22 @@ void AMyActor::OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Ident
     // Save token for future connections
     UCredentials::SaveToken(Token);
 
-    // Subscribe to all tables
+    // Subscribe with typed queries
     USubscriptionHandle* Handle = Connection->SubscriptionBuilder()
         ->OnApplied(FOnSubscriptionApplied::CreateUObject(this, &AMyActor::OnSubscriptionApplied))
-        ->SubscribeToAllTables();
+        ->OnError(FOnSubscriptionError::CreateUObject(this, &AMyActor::OnSubscriptionError))
+        ->AddQuery([](const FQueryBuilder& Q)
+        {
+            return Q.From.User();
+        })
+        ->AddQuery([](const FQueryBuilder& Q)
+        {
+            return Q.From.Message().Where([](const FMessageCols& Cols)
+            {
+                return Cols.ChannelId.Eq(1);
+            });
+        })
+        ->Subscribe();
 }
 
 void AMyActor::OnUserInsert(const FEventContext& Context, const FUserType& NewRow)
@@ -729,4 +890,12 @@ void AMyActor::SendMessage(const FString& Text)
         Conn->Reducers->SendMessage(Text);
     }
 }
+```
+
+For small modules or quick debugging sessions, you can still subscribe to every public table:
+
+```cpp
+USubscriptionHandle* Handle = Conn->SubscriptionBuilder()
+    ->OnApplied(FOnSubscriptionApplied::CreateUObject(this, &AMyActor::OnSubscriptionApplied))
+    ->SubscribeToAllTables();
 ```
