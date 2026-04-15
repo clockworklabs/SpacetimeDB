@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { TimeDuration, Timestamp } from '../src';
 import { AlgebraicType } from '../src/lib/algebraic_type';
 
 describe('AlgebraicType', () => {
@@ -40,6 +41,18 @@ describe('AlgebraicType', () => {
     expect(typeof mapKey).toEqual('string');
     // 42 as i32 little-endian is 2A000000, which is KgAAAA== in base64
     expect(mapKey).toEqual('KgAAAA==');
+  });
+
+  test('intoMapKey recognizes timestamp and time duration product wrappers', () => {
+    const timestamp = new Timestamp(1_706_000_000_000_000n);
+    const duration = new TimeDuration(2_500_000n);
+
+    expect(
+      AlgebraicType.intoMapKey(Timestamp.getAlgebraicType(), timestamp)
+    ).toEqual(timestamp.__timestamp_micros_since_unix_epoch__);
+    expect(
+      AlgebraicType.intoMapKey(TimeDuration.getAlgebraicType(), duration)
+    ).toEqual(duration.__time_duration_micros__);
   });
 
   test('intoMapKey fallback serializes array types', () => {

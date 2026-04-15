@@ -197,6 +197,15 @@ public static partial class BSATNRuntimeTests
     }
 
     [Fact]
+    public static void TimeDurationHashCodeMatchesEqualValue()
+    {
+        var left = new TimeDuration(1_500_000);
+        var right = new TimeDuration(1_500_000);
+
+        Assert.Equal(left.GetHashCode(), right.GetHashCode());
+    }
+
+    [Fact]
     public static void ConnectionIdComparableChecks()
     {
         var str = "00112233445566778899AABBCCDDEEFF";
