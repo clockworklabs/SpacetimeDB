@@ -1902,10 +1902,10 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
             skills.push((name, content));
         }
         // C++ server projects use Unreal as their client SDK
-        if server_lang == ServerLanguage::Cpp {
-            if let Some(content) = embedded::get_skill("unreal") {
-                skills.push(("unreal", content));
-            }
+        if server_lang == ServerLanguage::Cpp
+            && let Some(content) = embedded::get_skill("unreal")
+        {
+            skills.push(("unreal", content));
         }
     }
 
