@@ -45,14 +45,7 @@ impl ApiClient {
     /// Upload a batch of run outcomes for a single (lang, mode) combination.
     /// Normalizes model names and sanitizes volatile fields before upload.
     /// If `analysis` is provided, it is stored in the `llm_benchmark_analysis` table.
-    pub fn upload_batch(
-        &self,
-        lang: &str,
-        mode: &str,
-        hash: &str,
-        outcomes: &[RunOutcome],
-        analysis: Option<&str>,
-    ) -> Result<usize> {
+    pub fn upload_batch(&self, mode: &str, outcomes: &[RunOutcome], analysis: Option<&str>) -> Result<usize> {
         if outcomes.is_empty() {
             return Ok(0);
         }
@@ -128,8 +121,6 @@ impl ApiClient {
             }
         }
 
-        let _ = lang;
-        let _ = hash;
         Ok(total_uploaded)
     }
 

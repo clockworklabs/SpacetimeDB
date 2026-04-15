@@ -431,7 +431,6 @@ fn build_analysis_prompt_from_json(lang: &str, mode: &str, model: &str, failures
 
     let ctx_desc = match mode {
         "guidelines" => "the SpacetimeDB AI guidelines (concise cheat-sheets for code generation)",
-        "cursor_rules" => "SpacetimeDB Cursor/IDE rules (anti-hallucination guardrails)",
         "docs" => "SpacetimeDB markdown documentation",
         "rustdoc_json" => "SpacetimeDB rustdoc JSON (auto-generated API reference)",
         "llms.md" => "the SpacetimeDB llms.md file",
@@ -475,7 +474,10 @@ fn build_analysis_prompt_from_json(lang: &str, mode: &str, model: &str, failures
         }
 
         if let Some(output) = f["llmOutput"].as_str() {
-            let truncated = if output.len() > 1500 { &output[..1500] } else { output };
+            let truncated = match output.char_indices().nth(1500) {
+                Some((i, _)) => &output[..i],
+                None => output,
+            };
             prompt.push_str(&format!("```{}\n{}\n```\n", lang, truncated));
         }
         prompt.push('\n');

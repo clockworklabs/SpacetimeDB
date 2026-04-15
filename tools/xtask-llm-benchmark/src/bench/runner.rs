@@ -577,7 +577,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         };
 
         if let Some(ref api) = cfg.api_client {
-            api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &good, analysis.as_deref())?;
+            api.upload_batch(cfg.mode, &good, analysis.as_deref())?;
         } else {
             eprintln!("[runner] no API client configured; skipping upload");
         }
@@ -779,7 +779,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         };
 
         if let Some(ref api) = cfg.api_client {
-            api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &good, analysis.as_deref())?;
+            api.upload_batch(cfg.mode, &good, analysis.as_deref())?;
         } else {
             eprintln!("[runner] no API client configured; skipping upload");
         }
