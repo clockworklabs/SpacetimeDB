@@ -103,14 +103,14 @@ Each committed datastore transaction is encoded into a record called `txdata` wi
 └───────┴──────────┴─────────┴───────────┘
 ```
 
-The `flags` byte is a bitfield. The high bits indicate which sections are present:
+The `flags` byte is a bitfield. The three most significant bits indicate which sections are present:
 
-| Bit | Meaning |
-|-----|---------|
-| 7 | Inputs present |
-| 6 | Outputs present |
-| 5 | Mutations present |
-| 0-4 | Reserved |
+| Mask | Meaning |
+|------|---------|
+| `0x80` | Inputs present |
+| `0x40` | Outputs present |
+| `0x20` | Mutations present |
+| `0x1f` | Reserved |
 
 Each section is present only if its corresponding bit is set.
 
