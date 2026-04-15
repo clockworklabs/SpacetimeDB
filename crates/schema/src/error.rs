@@ -1,7 +1,7 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
-use spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
+use spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION;
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
