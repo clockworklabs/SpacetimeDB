@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+use xtask_llm_benchmark::api::ApiClient;
 use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
     build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
 };
-use xtask_llm_benchmark::api::ApiClient;
 use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
 use xtask_llm_benchmark::context::constants::ALL_MODES;
 use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash};
@@ -365,9 +365,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
     );
 
     // Initialize LLM provider for analysis
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     let provider = make_provider_from_env()?;
 
     let analysis_route = ModelRoute::new(
@@ -378,7 +376,13 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
     );
 
     for ((lang, mode, model), group_failures) in &groups {
-        println!("\nAnalyzing {}/{}/{} ({} failures)...", lang, mode, model, group_failures.len());
+        println!(
+            "\nAnalyzing {}/{}/{} ({} failures)...",
+            lang,
+            mode,
+            model,
+            group_failures.len()
+        );
 
         // Build prompt from the JSON failure data
         let prompt = build_analysis_prompt_from_json(lang, mode, model, group_failures);

@@ -479,7 +479,9 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         }
         eprintln!(
             "[runner] retry round {}/{}: {} tasks with provider errors",
-            round, MAX_RETRY_ROUNDS, retry_tasks.len()
+            round,
+            MAX_RETRY_ROUNDS,
+            retry_tasks.len()
         );
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
@@ -507,7 +509,13 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                         host,
                     };
                     let res = runner.run_one(&task, &run_cfg).await;
-                    (task, res.map(|mut o| { o.started_at.get_or_insert(started); o }))
+                    (
+                        task,
+                        res.map(|mut o| {
+                            o.started_at.get_or_insert(started);
+                            o
+                        }),
+                    )
                 }
             }))
             .buffer_unordered(buf)
@@ -542,26 +550,31 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         );
     }
 
-    println!(
-        "[runner] completed batch: {} uploadable results",
-        good.len()
-    );
+    println!("[runner] completed batch: {} uploadable results", good.len());
 
     if cfg.dry_run {
         eprintln!("[dry-run] skipping upload ({} outcomes)", good.len());
     } else if !good.is_empty() {
-        let analysis =
-            match crate::bench::analysis::run_analysis(&good, cfg.lang.as_str(), cfg.mode, &cfg.route.display_name, cfg.bench_root, cfg.llm).await {
-                Ok(Some(text)) => {
-                    eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
-                    Some(text)
-                }
-                Ok(None) => None,
-                Err(e) => {
-                    eprintln!("[runner] analysis failed (non-fatal): {e}");
-                    None
-                }
-            };
+        let analysis = match crate::bench::analysis::run_analysis(
+            &good,
+            cfg.lang.as_str(),
+            cfg.mode,
+            &cfg.route.display_name,
+            cfg.bench_root,
+            cfg.llm,
+        )
+        .await
+        {
+            Ok(Some(text)) => {
+                eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
+                Some(text)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
 
         if let Some(ref api) = cfg.api_client {
             api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &good, analysis.as_deref())?;
@@ -597,7 +610,11 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let selected: Vec<TaskPaths> = tasks
         .into_iter()
         .filter(|t| {
-            let name = t.root.file_name().and_then(|x: &std::ffi::OsStr| x.to_str()).unwrap_or("");
+            let name = t
+                .root
+                .file_name()
+                .and_then(|x: &std::ffi::OsStr| x.to_str())
+                .unwrap_or("");
             wanted.iter().any(|w| name.starts_with(w))
         })
         .collect();
@@ -669,7 +686,9 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
             }
             eprintln!(
                 "[runner] retry round {}/{}: {} tasks with provider errors",
-                round, MAX_RETRY_ROUNDS, pending.len()
+                round,
+                MAX_RETRY_ROUNDS,
+                pending.len()
             );
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
@@ -697,7 +716,13 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                             host,
                         };
                         let res = runner.run_one(&task, &run_cfg).await;
-                        (task, res.map(|mut o| { o.started_at.get_or_insert(started); o }))
+                        (
+                            task,
+                            res.map(|mut o| {
+                                o.started_at.get_or_insert(started);
+                                o
+                            }),
+                        )
                     }
                 }))
                 .buffer_unordered(buf)
@@ -732,18 +757,26 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     if cfg.dry_run {
         eprintln!("[dry-run] skipping upload ({} outcomes)", good.len());
     } else if !good.is_empty() {
-        let analysis =
-            match crate::bench::analysis::run_analysis(&good, cfg.lang.as_str(), cfg.mode, &cfg.route.display_name, cfg.bench_root, cfg.llm).await {
-                Ok(Some(text)) => {
-                    eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
-                    Some(text)
-                }
-                Ok(None) => None,
-                Err(e) => {
-                    eprintln!("[runner] analysis failed (non-fatal): {e}");
-                    None
-                }
-            };
+        let analysis = match crate::bench::analysis::run_analysis(
+            &good,
+            cfg.lang.as_str(),
+            cfg.mode,
+            &cfg.route.display_name,
+            cfg.bench_root,
+            cfg.llm,
+        )
+        .await
+        {
+            Ok(Some(text)) => {
+                eprintln!("[runner] generated analysis for {}/{}", cfg.lang.as_str(), cfg.mode);
+                Some(text)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
 
         if let Some(ref api) = cfg.api_client {
             api.upload_batch(cfg.lang.as_str(), cfg.mode, cfg.hash, &good, analysis.as_deref())?;
@@ -796,7 +829,11 @@ pub async fn build_goldens_only_for_lang(
         let filtered: Vec<TaskPaths> = all
             .into_iter()
             .filter(|t| {
-                let name = t.root.file_name().and_then(|x: &std::ffi::OsStr| x.to_str()).unwrap_or("");
+                let name = t
+                    .root
+                    .file_name()
+                    .and_then(|x: &std::ffi::OsStr| x.to_str())
+                    .unwrap_or("");
                 wanted.iter().any(|w| name.starts_with(w))
             })
             .collect();

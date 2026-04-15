@@ -20,9 +20,9 @@ pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
         "guidelines" => gather_guidelines_files(docs_dir().join("static/ai-guidelines"), None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
         m if is_empty_context_mode(m) => Ok(Vec::new()),
-        other => bail!(
-            "unknown mode `{other}` (expected: docs | llms.md | guidelines | rustdoc_json | no_context | search)"
-        ),
+        other => {
+            bail!("unknown mode `{other}` (expected: docs | llms.md | guidelines | rustdoc_json | no_context | search)")
+        }
     }
 }
 
@@ -69,9 +69,9 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
                 bail!("README not found under {}", rustdoc_crate_root().display())
             }
         }
-        other => bail!(
-            "unknown mode `{other}` (expected: docs | llms.md | guidelines | rustdoc_json | no_context | search)"
-        ),
+        other => {
+            bail!("unknown mode `{other}` (expected: docs | llms.md | guidelines | rustdoc_json | no_context | search)")
+        }
     }
 }
 

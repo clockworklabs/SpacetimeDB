@@ -103,13 +103,7 @@ fn read_golden(bench_root: &Path, task_id: &str, lang: &str) -> Option<String> {
     None
 }
 
-pub fn build_prompt(
-    lang: &str,
-    mode: &str,
-    model_name: &str,
-    bench_root: &Path,
-    failures: &[&RunOutcome],
-) -> String {
+pub fn build_prompt(lang: &str, mode: &str, model_name: &str, bench_root: &Path, failures: &[&RunOutcome]) -> String {
     let lang_display = match lang {
         "rust" => "Rust",
         "csharp" => "C#",
@@ -125,44 +119,26 @@ pub fn build_prompt(
     );
 
     for f in failures.iter().take(15) {
-        prompt.push_str(&format!(
-            "### {} ({}/{})\n",
-            f.task, f.passed_tests, f.total_tests
-        ));
+        prompt.push_str(&format!("### {} ({}/{})\n", f.task, f.passed_tests, f.total_tests));
 
-        let reasons = f
-            .scorer_details
-            .as_ref()
-            .map(extract_reasons)
-            .unwrap_or_default();
+        let reasons = f.scorer_details.as_ref().map(extract_reasons).unwrap_or_default();
         if !reasons.is_empty() {
             prompt.push_str(&format!("Error: {}\n", reasons.join("; ")));
         }
 
         if let Some(ref out) = f.llm_output {
-            prompt.push_str(&format!(
-                "Generated:\n```{}\n{}\n```\n",
-                lang,
-                truncate(out, 1500)
-            ));
+            prompt.push_str(&format!("Generated:\n```{}\n{}\n```\n", lang, truncate(out, 1500)));
         }
 
         if let Some(golden) = read_golden(bench_root, &f.task, lang) {
-            prompt.push_str(&format!(
-                "Expected:\n```{}\n{}\n```\n",
-                lang,
-                truncate(&golden, 1500)
-            ));
+            prompt.push_str(&format!("Expected:\n```{}\n{}\n```\n", lang, truncate(&golden, 1500)));
         }
 
         prompt.push('\n');
     }
 
     if failures.len() > 15 {
-        prompt.push_str(&format!(
-            "({} more failures not shown)\n\n",
-            failures.len() - 15
-        ));
+        prompt.push_str(&format!("({} more failures not shown)\n\n", failures.len() - 15));
     }
 
     prompt.push_str(&analysis_instructions(mode));

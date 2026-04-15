@@ -235,11 +235,7 @@ impl ApiClient {
     }
 
     /// Fetch available run dates from `GET /api/llm-benchmark-results?dates=true`.
-    pub fn fetch_run_dates(
-        &self,
-        lang: Option<&str>,
-        mode: Option<&str>,
-    ) -> Result<Vec<String>> {
+    pub fn fetch_run_dates(&self, lang: Option<&str>, mode: Option<&str>) -> Result<Vec<String>> {
         let mut params = vec!["dates=true".to_string()];
         if let Some(l) = lang {
             params.push(format!("lang={}", urlencoding::encode(l)));
@@ -302,10 +298,7 @@ impl ApiClient {
         if resp.status().is_success() {
             let body: serde_json::Value = resp.json().context("parse failures response")?;
             let date = body["date"].as_str().map(String::from);
-            let results = body["results"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
+            let results = body["results"].as_array().cloned().unwrap_or_default();
             Ok((results, date))
         } else {
             let status = resp.status();
@@ -315,14 +308,7 @@ impl ApiClient {
     }
 
     /// Upload analysis for a specific (lang, mode, model) via the upload endpoint.
-    pub fn upload_analysis(
-        &self,
-        lang: &str,
-        mode: &str,
-        model_name: &str,
-        analysis: &str,
-        date: &str,
-    ) -> Result<()> {
+    pub fn upload_analysis(&self, lang: &str, mode: &str, model_name: &str, analysis: &str, date: &str) -> Result<()> {
         let payload = json!({
             "lang": lang,
             "mode": mode,
