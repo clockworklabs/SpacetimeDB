@@ -435,6 +435,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
             }
+
+            // Clear publish_configs so they're rebuilt after init with the correct
+            // spacetimedb_dir. Without this, configs built before init contain the
+            // pre-init (stale) module path and the block below would overwrite the
+            // correctly-updated spacetimedb_dir.
+            publish_configs.clear();
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
