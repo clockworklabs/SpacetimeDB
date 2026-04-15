@@ -1,8 +1,10 @@
 #pragma once
 
-#if 0
-// bindings-cpp source include kept here for traceability:
-// #include "spacetimedb/bsatn/traits.h"
+#ifndef SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN
+#define SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN 0
+#endif
+
+#if SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN
 #include "BSATN/Core/traits.h"
 #endif
 #include "QueryBuilder/expr.h"
@@ -25,16 +27,13 @@ template<typename TRow, typename TCols, typename TIxCols>
 class FromWhere;
 
 template<typename T>
-struct CanBeLookupTable : std::false_type {};
+struct HasCols;
 
 template<typename T>
-inline constexpr bool can_be_lookup_table_v = CanBeLookupTable<std::remove_cvref_t<T>>::value;
+struct HasIxCols;
 
-template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols>
-class LeftSemiJoin;
-
-template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols>
-class RightSemiJoin;
+template<typename T>
+struct CanBeLookupTable : std::false_type {};
 
 template<typename T>
 using query_row_type_t = typename query_row_type<std::remove_cvref_t<T>>::type;
@@ -71,6 +70,31 @@ template<typename T>
 concept QueryBuilderReturn = requires {
     typename query_row_type_t<T>;
 } && QueryLike<std::remove_cvref_t<T>>;
+
+namespace detail {
+
+template<typename TRow>
+struct row_tag {};
+
+inline std::false_type lookup_table_allowed(...);
+
+template<typename TRow>
+auto adl_lookup_table_allowed(int) -> decltype(lookup_table_allowed(row_tag<TRow>{}));
+
+template<typename TRow>
+std::false_type adl_lookup_table_allowed(...);
+
+} // namespace detail
+
+template<typename TRow>
+inline constexpr bool can_be_lookup_row_v =
+    CanBeLookupTable<TRow>::value || decltype(detail::adl_lookup_table_allowed<TRow>(0))::value;
+
+template<typename T>
+inline constexpr bool can_be_lookup_table_v = CanBeLookupTable<std::remove_cvref_t<T>>::value;
+
+template<typename TRow, typename TCols, typename TIxCols>
+struct CanBeLookupTable<Table<TRow, TCols, TIxCols>> : std::bool_constant<can_be_lookup_row_v<TRow>> {};
 
 template<typename TRow, typename TCols, typename TIxCols>
 class Table {
@@ -244,14 +268,7 @@ struct query_row_type<FromWhere<TRow, TCols, TIxCols>> {
 
 } // namespace SpacetimeDB::query_builder
 
-#if 0
-// Intentionally disabled in Unreal v1.
-// These bindings-cpp-only bsatn/algebraic_type hooks support module-side query-view
-// metadata handling for RawQuery<TRow>. The Unreal client query builder reuses the SQL
-// generation core but does not participate in bindings-cpp module view registration.
-//
-// Source of truth: jlarabie/cpp-query-builder
-//   crates/bindings-cpp/include/spacetimedb/query_builder/table.h
+#if SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN
 namespace SpacetimeDB::bsatn {
 template<typename TRow>
 struct algebraic_type_of<::SpacetimeDB::query_builder::RawQuery<TRow>> {
@@ -282,5 +299,5 @@ struct bsatn_traits<::SpacetimeDB::query_builder::RawQuery<TRow>> {
         return algebraic_type_of<::SpacetimeDB::query_builder::RawQuery<TRow>>::get();
     }
 };
-}
+} // namespace SpacetimeDB::bsatn
 #endif

@@ -267,7 +267,7 @@ template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename T
 [[nodiscard]] auto left_semijoin_impl(const Table<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(
         can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>,
-        "Semijoin predicates require the right-hand source to opt into CanBeLookupTable."
+        "Lookup side of a semijoin must opt in via CanBeLookupTable."
     );
     const auto join = std::forward<TFn>(predicate)(left.ix_cols(), right.ix_cols());
     return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
@@ -277,7 +277,7 @@ template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename T
 [[nodiscard]] auto left_semijoin_impl(const FromWhere<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(
         can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>,
-        "Semijoin predicates require the right-hand source to opt into CanBeLookupTable."
+        "Lookup side of a semijoin must opt in via CanBeLookupTable."
     );
     const auto join = std::forward<TFn>(predicate)(left.table().ix_cols(), right.ix_cols());
     return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
@@ -287,7 +287,7 @@ template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename T
 [[nodiscard]] auto right_semijoin_impl(const Table<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(
         can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>,
-        "Semijoin predicates require the right-hand source to opt into CanBeLookupTable."
+        "Lookup side of a semijoin must opt in via CanBeLookupTable."
     );
     const auto join = std::forward<TFn>(predicate)(left.ix_cols(), right.ix_cols());
     return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
@@ -297,7 +297,7 @@ template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename T
 [[nodiscard]] auto right_semijoin_impl(const FromWhere<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(
         can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>,
-        "Semijoin predicates require the right-hand source to opt into CanBeLookupTable."
+        "Lookup side of a semijoin must opt in via CanBeLookupTable."
     );
     const auto join = std::forward<TFn>(predicate)(left.table().ix_cols(), right.ix_cols());
     return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
