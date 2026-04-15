@@ -97,7 +97,10 @@ partial class CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.IS
             this.StringField == null
                 ? that.StringField == null
                 : this.StringField.Equals(that.StringField);
-        var ___eqNullableIntField = this.NullableIntField.Equals(that.NullableIntField);
+        var ___eqNullableIntField = System.Nullable.Equals(
+            this.NullableIntField,
+            that.NullableIntField
+        );
         var ___eqNullableStringField =
             this.NullableStringField == null
                 ? that.NullableStringField == null

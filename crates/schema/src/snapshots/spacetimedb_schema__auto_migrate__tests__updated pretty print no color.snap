@@ -1,6 +1,6 @@
 ---
 source: crates/schema/src/auto_migrate.rs
-expression: "plan.pretty_print(true).expect(\"should pretty print\")"
+expression: "plan.pretty_print(PrettyPrintStyle::NoColor).expect(\"should pretty print\")"
 ---
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Database Migration Plan
@@ -10,6 +10,14 @@ Database Migration Plan
 ▸ Removed unique constraint Apples_id_key on [id] of table Apples
 ▸ Removed auto-increment constraint Apples_id_seq on column id of table Apples
 ▸ Removed schedule for table Deliveries_sched calling reducer check_deliveries
+▸ ▸ Removed anonymous view: my_view
+    Parameters:
+        • x: U32
+        • y: U32
+    Columns:
+        • a: U64
+        • b: U64
+
 ▸ Removed row level security policy:
     `SELECT * FROM Apples`
 ▸ Changed columns for table Apples
@@ -31,6 +39,12 @@ Database Migration Plan
 ▸ Created index Apples_id_count_idx_btree on [id, count] of table Apples
 ▸ Created auto-increment constraint Bananas_id_seq on column id of table Bananas
 ▸ Created schedule for table Inspections_sched calling reducer perform_inspection
+▸ ▸ Created anonymous view: my_view
+    Parameters:
+        • x: U32
+    Columns:
+        • a: U64
+
 ▸ Created row level security policy:
     `SELECT * FROM Bananas`
 ▸ Changed access for table Bananas (public → private)

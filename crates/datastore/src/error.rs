@@ -1,10 +1,10 @@
 use super::system_tables::SystemTable;
-use enum_as_inner::EnumAsInner;
 use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
-use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::buffer::DecodeError;
-use spacetimedb_sats::{product_value::InvalidFieldError, satn::Satn};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::{
@@ -13,7 +13,7 @@ use spacetimedb_table::{
 };
 use thiserror::Error;
 
-#[derive(Error, Debug, EnumAsInner)]
+#[derive(Error, Debug)]
 pub enum DatastoreError {
     #[error("LibError: {0}")]
     Lib(#[from] LibError),
@@ -29,16 +29,40 @@ pub enum DatastoreError {
     // TODO(cloutiertyler): should this be a TableError? I couldn't get it to compile
     #[error("Error reading a value from a table through BSATN: {0}")]
     ReadViaBsatnError(#[from] ReadViaBsatnError),
+
+    #[error("ViewError: {0}")]
+    View(#[from] ViewError),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
-#[derive(Error, Debug, EnumAsInner)]
+#[derive(Error, Debug)]
+pub enum ViewError {
+    #[error("view '{0}' not found")]
+    NotFound(RawIdentifier),
+    #[error("Table backing View '{0}' not found")]
+    TableNotFound(ViewId),
+    #[error("failed to deserialize view arguments from row")]
+    DeserializeArgs,
+    #[error("failed to deserialize view return value: {0}")]
+    DeserializeReturn(String),
+    #[error("failed to serialize row to BSATN")]
+    SerializeRow,
+    #[error("invalid return type: expected Array or Option, got {0:?}")]
+    InvalidReturnType(AlgebraicType),
+    #[error("return type is Array but deserialized value is not Array")]
+    TypeMismatchArray,
+    #[error("return type is Option but deserialized value is not Option")]
+    TypeMismatchOption,
+    #[error("expected ProductValue in view result")]
+    ExpectedProduct,
+    #[error("failed to serialize view arguments")]
+    SerializeArgs,
+}
+
+#[derive(Error, Debug)]
 pub enum TableError {
-    #[error("Table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    System(Box<str>),
-    #[error("Table with name `{0}` already exists.")]
-    Exist(String),
     #[error("Table with name `{0}` not found.")]
     NotFound(String),
     #[error("Table with ID `{1}` not found in `{0}`.")]
@@ -47,31 +71,8 @@ pub enum TableError {
     RawSqlNotFound(SystemTable, RawSql),
     #[error("Table with ID `{0}` not found in `TxState`.")]
     IdNotFoundState(TableId),
-    #[error("Column `{0}.{1}` is missing a name")]
-    ColumnWithoutName(String, ColId),
-    #[error("schema_for_table: Table has invalid schema: {0} Err: {1}")]
-    InvalidSchema(TableId, LibError),
-    #[error("Row has invalid row type for table: {0} Err: {1}", table_id, row.to_satn())]
-    RowInvalidType { table_id: TableId, row: ProductValue },
-    #[error("failed to decode row in table")]
-    RowDecodeError(DecodeError),
-    #[error("Column with name `{0}` already exists")]
-    DuplicateColumnName(String),
     #[error("Column `{0}` not found")]
     ColumnNotFound(ColId),
-    #[error(
-        "DecodeError for field `{0}.{1}`, expect `{2}` but found `{3}`",
-        table,
-        field,
-        expect,
-        found
-    )]
-    DecodeField {
-        table: String,
-        field: Box<str>,
-        expect: String,
-        found: String,
-    },
     #[error(transparent)]
     Bflatn(#[from] bflatn_to::Error),
     #[error(transparent)]
@@ -81,6 +82,8 @@ pub enum TableError {
     #[error(transparent)]
     // Error here is `Box`ed to avoid triggering https://rust-lang.github.io/rust-clippy/master/index.html#result_large_err .
     ChangeColumnsError(#[from] Box<table::ChangeColumnsError>),
+    #[error(transparent)]
+    AddColumnsError(#[from] Box<table::AddColumnsError>),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -99,6 +102,8 @@ pub enum IndexError {
     NotUnique(IndexId),
     #[error("Key {1:?} was not found in index {0:?}")]
     KeyNotFound(IndexId, AlgebraicValue),
+    #[error("IndexId {0:?} does not support seeking for a range")]
+    IndexCannotSeekRange(IndexId),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]

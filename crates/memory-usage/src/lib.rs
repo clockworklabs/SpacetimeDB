@@ -103,12 +103,19 @@ impl<T: MemoryUsage> MemoryUsage for Vec<T> {
     }
 }
 
-#[cfg(feature = "hashbrown")]
+#[cfg(feature = "hash_map")]
 impl<K: MemoryUsage + Eq + core::hash::Hash, V: MemoryUsage, S: core::hash::BuildHasher> MemoryUsage
     for hashbrown::HashMap<K, V, S>
 {
     fn heap_usage(&self) -> usize {
         self.allocation_size() + self.iter().map(|(k, v)| k.heap_usage() + v.heap_usage()).sum::<usize>()
+    }
+}
+
+#[cfg(feature = "hash_map")]
+impl<K: MemoryUsage + Eq + core::hash::Hash, S: core::hash::BuildHasher> MemoryUsage for hashbrown::HashSet<K, S> {
+    fn heap_usage(&self) -> usize {
+        self.allocation_size() + self.iter().map(|k| k.heap_usage()).sum::<usize>()
     }
 }
 

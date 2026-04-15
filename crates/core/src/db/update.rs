@@ -1,16 +1,14 @@
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;
-use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::TableDef;
+use spacetimedb_schema::def::{TableDef, ViewDef};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
-use std::sync::Arc;
 
 /// The logger used for by [`update_database`] and friends.
 pub trait UpdateLogger {
@@ -21,6 +19,15 @@ impl UpdateLogger for SystemLogger {
     fn info(&self, msg: &str) {
         self.info(msg);
     }
+}
+
+/// The result of a database update.
+/// Indicates whether clients should be disconnected when the update is complete.
+#[must_use]
+pub enum UpdateResult {
+    Success,
+    RequiresClientDisconnect,
+    EvaluateSubscribedViews,
 }
 
 /// Update the database according to the migration plan.
@@ -39,14 +46,14 @@ pub fn update_database(
     auth_ctx: AuthCtx,
     plan: MigratePlan,
     logger: &dyn UpdateLogger,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     let existing_tables = stdb.get_all_tables_mut(tx)?;
 
     // TODO: consider using `ErrorStream` here.
     let old_module_def = plan.old_def();
     for table in existing_tables
         .iter()
-        .filter(|table| table.table_type != StTableType::System)
+        .filter(|table| table.table_type != StTableType::System && !table.is_view())
     {
         let old_def = old_module_def
             .table(&table.table_name[..])
@@ -56,8 +63,8 @@ pub fn update_database(
     }
 
     match plan {
-        MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, logger, existing_tables),
-        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, logger, existing_tables),
+        MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, logger),
+        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, logger),
     }
 }
 
@@ -67,8 +74,7 @@ fn manual_migrate_database(
     _tx: &mut MutTxId,
     _plan: ManualMigratePlan,
     _logger: &dyn UpdateLogger,
-    _existing_tables: Vec<Arc<TableSchema>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     unimplemented!("Manual database migrations are not yet implemented")
 }
 
@@ -87,49 +93,67 @@ fn auto_migrate_database(
     auth_ctx: AuthCtx,
     plan: AutoMigratePlan,
     logger: &dyn UpdateLogger,
-    existing_tables: Vec<Arc<TableSchema>>,
-) -> anyhow::Result<()> {
-    // We have already checked in `migrate_database` that `existing_tables` are compatible with the `old` definition in `plan`.
-    // So we can look up tables in there using unwrap.
-
-    let table_schemas_by_name = existing_tables
-        .into_iter()
-        .map(|table| (table.table_name.clone(), table))
-        .collect::<HashMap<_, _>>();
-
+) -> anyhow::Result<UpdateResult> {
     log::info!("Running database update prechecks: {}", stdb.database_identity());
+    // We used to memoize all table schemas upfront, which cause issue #3441.
+    // Schema should be queries only when needed to ensure that any schema changes made during earlier migration steps are visible
+    // to later steps.
 
     for precheck in plan.prechecks {
         match precheck {
             spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
                 let sequence_def = &table_def.sequences[sequence_name];
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
 
-                let table_schema = &table_schemas_by_name[&table_def.name[..]];
+                let ty = table_def
+                    .get_column(sequence_def.column)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} refers to unknown column")
+                    })?
+                    .ty
+                    .clone();
 
-                let min: AlgebraicValue = sequence_def.min_value.unwrap_or(1).into();
-                let max: AlgebraicValue = sequence_def.max_value.unwrap_or(i128::MAX).into();
+                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                let min = AlgebraicValue::from_i128(&ty, sequence_def.min_value.unwrap_or(1)).ok_or_else(|| {
+                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
+                })?;
+
+                let max =
+                    AlgebraicValue::from_i128(&ty, sequence_def.max_value.unwrap_or(i128::MAX)).ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                    })?;
 
                 let range = min..max;
-
                 if stdb
-                    .iter_by_col_range_mut(tx, table_schema.table_id, sequence_def.column, range)?
+                    .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
                     .next()
                     .is_some()
                 {
-                    anyhow::bail!(
-                        "Precheck failed: added sequence {} already has values in range",
-                        sequence_name,
-                    );
+                    anyhow::bail!("Precheck failed: added sequence {sequence_name} already has values in range",);
                 }
             }
         }
     }
 
     log::info!("Running database update steps: {}", stdb.database_identity());
+    let mut res = UpdateResult::Success;
 
     for step in plan.steps {
         match step {
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name) => {
+                let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
+
+                if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
+                    anyhow::bail!(
+                        "Cannot remove table `{table_name}`: table contains data. \
+                         Clear the table's rows (e.g. via a reducer) before removing it from your schema."
+                    );
+                }
+
+                log!(logger, "Dropping table `{table_name}`");
+                stdb.drop_table(tx, table_id)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name) => {
                 let table_def: &TableDef = plan.new.expect_lookup(table_name);
 
@@ -141,10 +165,25 @@ fn auto_migrate_database(
 
                 stdb.create_table(tx, table_schema)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddView(view_name) => {
+                let view_def: &ViewDef = plan.new.expect_lookup(view_name);
+                stdb.create_view(tx, plan.new, view_def)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveView(view_name) => {
+                let view_id = stdb.view_id_from_name_mut(tx, view_name)?.unwrap();
+                stdb.drop_view(tx, view_id)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::UpdateView(_) => {
+                // if we already have to disconnect clients, no need to set
+                // `EvaluateSubscribedViews` as clients will be disconnected anyway
+                if !matches!(res, UpdateResult::RequiresClientDisconnect) {
+                    res = UpdateResult::EvaluateSubscribedViews;
+                }
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
                 let table_def = plan.new.stored_in_table_def(index_name).unwrap();
                 let index_def = table_def.indexes.get(index_name).unwrap();
-                let table_id = table_schemas_by_name[&table_def.name[..]].table_id;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
 
                 let index_cols = ColSet::from(index_def.algorithm.columns());
 
@@ -163,7 +202,9 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveIndex(index_name) => {
                 let table_def = plan.old.stored_in_table_def(index_name).unwrap();
 
-                let table_schema = &table_schemas_by_name[&table_def.name[..]];
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
+
                 let index_schema = table_schema
                     .indexes
                     .iter()
@@ -175,7 +216,9 @@ fn auto_migrate_database(
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(constraint_name) => {
                 let table_def = plan.old.stored_in_table_def(constraint_name).unwrap();
-                let table_schema = &table_schemas_by_name[&table_def.name[..]];
+
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
                 let constraint_schema = table_schema
                     .constraints
                     .iter()
@@ -193,7 +236,9 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
                 let sequence_def = table_def.sequences.get(sequence_name).unwrap();
-                let table_schema = &table_schemas_by_name[&table_def.name[..]];
+
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
 
                 log!(
                     logger,
@@ -207,7 +252,9 @@ fn auto_migrate_database(
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSequence(sequence_name) => {
                 let table_def = plan.old.stored_in_table_def(sequence_name).unwrap();
-                let table_schema = &table_schemas_by_name[&table_def.name[..]];
+
+                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
                 let sequence_schema = table_schema
                     .sequences
                     .iter()
@@ -223,7 +270,7 @@ fn auto_migrate_database(
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 
@@ -232,8 +279,13 @@ fn auto_migrate_database(
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
-                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name) => {
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
+                log!(logger, "Changing primary key for table `{table_name}`");
+                stdb.alter_table_primary_key(tx, table_name, table_def.primary_key)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");
@@ -252,12 +304,32 @@ fn auto_migrate_database(
                 log!(logger, "Removing-row level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
-            _ => anyhow::bail!("migration step not implemented: {step:?}"),
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
+                let table_def = plan
+                    .new
+                    .stored_in_table_def(&table_name.clone().into())
+                    .expect("table must exist");
+                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+
+                let default_values: Vec<AlgebraicValue> = table_def
+                    .columns
+                    .iter()
+                    .filter_map(|col_def| col_def.default_value.clone())
+                    .collect();
+                stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
+                log!(logger, "Disconnecting all users");
+                // It does not disconnect clients right away,
+                // but send response indicated that caller should drop clients
+                res = UpdateResult::RequiresClientDisconnect;
+            }
         }
     }
 
     log::info!("Database update complete");
-    Ok(())
+    Ok(res)
 }
 
 #[cfg(test)]
@@ -269,7 +341,7 @@ mod test {
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
-    use spacetimedb_sats::{product, AlgebraicType::U64};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
@@ -337,7 +409,8 @@ mod test {
         // Try to update the db.
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&old, &new)?;
-        update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        matches!(res, UpdateResult::Success);
 
         // Expect the schema change.
         let idx_b_id = stdb
@@ -348,6 +421,163 @@ mod test {
             [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
         );
 
+        Ok(())
+    }
+
+    /// Regression test for #3934: removing a primary key annotation and then
+    /// re-publishing causes "Primary key mismatch" on the NEXT publish.
+    #[test]
+    fn update_db_remove_primary_key_issue_3934() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        // Step 1: Table with a primary key (requires unique constraint + index).
+        let module_v1 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_primary_key(0)
+                .with_unique_constraint(0)
+                .with_index(btree(0), "person_name_idx")
+                .with_access(TableAccess::Public)
+                .finish();
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Step 2: Same table, but primary key removed.
+        let module_v2 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Step 3: Trivially different module (same as v2, simulates "change anything").
+        let module_v3 = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            builder.add_reducer("noop", spacetimedb_sats::ProductType::unit(), None);
+            let raw: ModuleDef = builder.finish().try_into().expect("valid module def");
+            raw
+        };
+
+        // Publish v1.
+        let mut tx = begin_mut_tx(&stdb);
+        for def in module_v1.tables() {
+            create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        // Migrate v1 → v2 (remove primary key). Should succeed.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
+        assert!(matches!(res, UpdateResult::Success), "v1 → v2 migration failed");
+        stdb.commit_tx(tx)?;
+
+        // Migrate v2 → v3 (trivial change). This is where #3934 crashes.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v2, &module_v3)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        assert!(
+            matches!(res, UpdateResult::Success),
+            "v2 → v3 migration failed (issue #3934)"
+        );
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    fn empty_module() -> ModuleDef {
+        RawModuleDefV9Builder::new()
+            .finish()
+            .try_into()
+            .expect("empty module should be valid")
+    }
+
+    fn single_table_module() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type("droppable", [("id", U64)], true)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn remove_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "removing a table should disconnect clients"
+        );
+        assert!(stdb.table_id_from_name_mut(&tx, "droppable")?.is_none());
+        assert!(
+            tx.pending_schema_changes()
+                .iter()
+                .any(|c| matches!(c, PendingSchemaChange::TableRemoved(..))),
+            "dropping a table should produce a TableRemoved pending schema change: {:?}",
+            tx.pending_schema_changes()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn remove_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_table_module();
+        let new = empty_module();
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "droppable")?
+            .expect("table should exist");
+        insert(&stdb, &mut tx, table_id, &product![42u64])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
+        let err = result.err().expect("removing a non-empty table should fail");
+        assert!(
+            err.to_string().contains("table contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
+        assert!(
+            tx.pending_schema_changes().is_empty(),
+            "failed migration should leave no pending schema changes: {:?}",
+            tx.pending_schema_changes()
+        );
         Ok(())
     }
 }

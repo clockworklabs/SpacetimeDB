@@ -90,7 +90,7 @@ namespace SpacetimeDB
     /// </summary>
     /// <typeparam name="EventContext"></typeparam>
     /// <typeparam name="Row"></typeparam>
-    public abstract class RemoteTableHandle<EventContext, Row> : RemoteBase, IRemoteTableHandle
+    public abstract class RemoteTableHandleBase<EventContext, Row> : RemoteBase, IRemoteTableHandle
         where EventContext : class, IEventContext
         where Row : class, IStructuralReadWrite, new()
     {
@@ -110,7 +110,7 @@ namespace SpacetimeDB
         {
             private readonly Dictionary<Column, Row> cache = new();
 
-            public UniqueIndexBase(RemoteTableHandle<EventContext, Row> table)
+            public UniqueIndexBase(RemoteTableHandleBase<EventContext, Row> table)
             {
                 table.OnInternalInsert += row => cache.Add(GetKey(row), row);
                 table.OnInternalDelete += row => cache.Remove(GetKey(row));
@@ -125,7 +125,7 @@ namespace SpacetimeDB
             // TODO: change to SortedDictionary when adding support for range queries.
             private readonly Dictionary<Column, HashSet<Row>> cache = new();
 
-            public BTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
+            public BTreeIndexBase(RemoteTableHandleBase<EventContext, Row> table)
             {
                 table.OnInternalInsert += row =>
                 {
@@ -164,12 +164,26 @@ namespace SpacetimeDB
             /// Stores the set of changes for the table, mapping primary keys to updated rows.
             /// </summary>
             internal MultiDictionaryDelta<object, Row> Delta = new(EqualityComparer<object>.Default, EqualityComparer<Row>.Default);
+
+            /// <summary>
+            /// For event tables: stores the event rows directly (bypassing delta merge).
+            /// </summary>
+            internal List<Row>? EventRows;
         }
 
         protected abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
 
-        public RemoteTableHandle(IDbConnection conn) : base(conn) { }
+        /// <summary>
+        /// Whether this table is an event table.
+        /// Event tables don't persist rows in the client cache — they only fire insert callbacks.
+        /// </summary>
+        internal bool IsEventTable { get; }
+
+        public RemoteTableHandleBase(IDbConnection conn, bool isEventTable = false) : base(conn)
+        {
+            IsEventTable = isEventTable;
+        }
 
         // This method needs to be overridden by autogen.
         protected virtual object? GetPrimaryKey(Row row) => null;
@@ -195,7 +209,7 @@ namespace SpacetimeDB
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
 
-        // These are provided by RemoteTableHandle.
+        // These are provided by RemoteTableHandleBase.
         Type IRemoteTableHandle.ClientTableType => typeof(Row);
 
         // THE DATA IN THE TABLE.
@@ -271,18 +285,30 @@ namespace SpacetimeDB
         {
             var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
 
-            foreach (var cqu in update.Updates)
+            foreach (var rowSet in update.Rows)
             {
-                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
-                if (qu.Deletes.RowsData.Count > 0)
+                if (rowSet is TableUpdateRows.PersistentTable(var persistent))
                 {
-                    Log.Warn("Non-insert during an insert-only server message!");
+                    if (persistent.Deletes.RowsData.Count > 0)
+                    {
+                        Log.Warn("Non-insert during an insert-only server message!");
+                    }
+                    var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
+                    for (var i = 0; i < insertRowCount; i++)
+                    {
+                        var obj = Decode(insertReader, out var pk);
+                        delta.Delta.Add(pk, obj);
+                    }
                 }
-                var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(qu.Inserts);
-                for (var i = 0; i < insertRowCount; i++)
+                else if (rowSet is TableUpdateRows.EventTable(var events))
                 {
-                    var obj = Decode(insertReader, out var pk);
-                    delta.Delta.Add(pk, obj);
+                    var (eventReader, eventRowCount) = CompressionHelpers.ParseRowList(events.Events);
+                    delta.EventRows ??= new();
+                    for (var i = 0; i < eventRowCount; i++)
+                    {
+                        var obj = DecodeValue(eventReader);
+                        delta.EventRows.Add(obj);
+                    }
                 }
             }
         }
@@ -295,19 +321,24 @@ namespace SpacetimeDB
         void IRemoteTableHandle.ParseDeleteOnly(TableUpdate update, ParsedDatabaseUpdate dbOps)
         {
             var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
-            foreach (var cqu in update.Updates)
+            foreach (var rowSet in update.Rows)
             {
-                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
-                if (qu.Inserts.RowsData.Count > 0)
+                if (rowSet is TableUpdateRows.PersistentTable(var persistent))
                 {
-                    Log.Warn("Non-delete during a delete-only operation!");
+                    if (persistent.Inserts.RowsData.Count > 0)
+                    {
+                        Log.Warn("Non-delete during a delete-only operation!");
+                    }
+                    var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
+                    for (var i = 0; i < deleteRowCount; i++)
+                    {
+                        var obj = Decode(deleteReader, out var pk);
+                        delta.Delta.Remove(pk, obj);
+                    }
                 }
-
-                var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(qu.Deletes);
-                for (var i = 0; i < deleteRowCount; i++)
+                else if (rowSet is TableUpdateRows.EventTable(var events))
                 {
-                    var obj = Decode(deleteReader, out var pk);
-                    delta.Delta.Remove(pk, obj);
+                    // Event tables never have deletes; ignore event rows in delete-only context.
                 }
             }
         }
@@ -320,25 +351,35 @@ namespace SpacetimeDB
         void IRemoteTableHandle.Parse(TableUpdate update, ParsedDatabaseUpdate dbOps)
         {
             var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
-            foreach (var cqu in update.Updates)
+            foreach (var rowSet in update.Rows)
             {
-                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
-
-                // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
-                // to the table, it doesn't matter that we call Add before Remove here.
-
-                var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(qu.Inserts);
-                for (var i = 0; i < insertRowCount; i++)
+                if (rowSet is TableUpdateRows.PersistentTable(var persistent))
                 {
-                    var obj = Decode(insertReader, out var pk);
-                    delta.Delta.Add(pk, obj);
+                    // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
+                    // to the table, it doesn't matter that we call Add before Remove here.
+                    var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
+                    for (var i = 0; i < insertRowCount; i++)
+                    {
+                        var obj = Decode(insertReader, out var pk);
+                        delta.Delta.Add(pk, obj);
+                    }
+
+                    var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
+                    for (var i = 0; i < deleteRowCount; i++)
+                    {
+                        var obj = Decode(deleteReader, out var pk);
+                        delta.Delta.Remove(pk, obj);
+                    }
                 }
-
-                var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(qu.Deletes);
-                for (var i = 0; i < deleteRowCount; i++)
+                else if (rowSet is TableUpdateRows.EventTable(var events))
                 {
-                    var obj = Decode(deleteReader, out var pk);
-                    delta.Delta.Remove(pk, obj);
+                    var (eventReader, eventRowCount) = CompressionHelpers.ParseRowList(events.Events);
+                    delta.EventRows ??= new();
+                    for (var i = 0; i < eventRowCount; i++)
+                    {
+                        var obj = DecodeValue(eventReader);
+                        delta.EventRows.Add(obj);
+                    }
                 }
             }
 
@@ -351,26 +392,7 @@ namespace SpacetimeDB
             add => OnInsertHandler.AddListener(value);
             remove => OnInsertHandler.RemoveListener(value);
         }
-        private CustomRowEventHandler OnDeleteHandler { get; } = new();
-        public event RowEventHandler OnDelete
-        {
-            add => OnDeleteHandler.AddListener(value);
-            remove => OnDeleteHandler.RemoveListener(value);
-        }
-        private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
-        public event RowEventHandler OnBeforeDelete
-        {
-            add => OnBeforeDeleteHandler.AddListener(value);
-            remove => OnBeforeDeleteHandler.RemoveListener(value);
-        }
-
         public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
-        private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
-        public event UpdateEventHandler OnUpdate
-        {
-            add => OnUpdateHandler.AddListener(value);
-            remove => OnUpdateHandler.RemoveListener(value);
-        }
 
         public int Count => (int)Entries.CountDistinct;
 
@@ -391,41 +413,11 @@ namespace SpacetimeDB
             }
         }
 
-        void InvokeDelete(IEventContext context, IStructuralReadWrite row)
-        {
-            try
-            {
-                OnDeleteHandler.Invoke((EventContext)context, (Row)row);
-            }
-            catch (Exception e)
-            {
-                Log.Exception(e);
-            }
-        }
+        protected virtual void InvokeDelete(IEventContext context, IStructuralReadWrite row) { }
 
-        void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row)
-        {
-            try
-            {
-                OnBeforeDeleteHandler.Invoke((EventContext)context, (Row)row);
-            }
-            catch (Exception e)
-            {
-                Log.Exception(e);
-            }
-        }
+        protected virtual void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row) { }
 
-        void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow)
-        {
-            try
-            {
-                OnUpdateHandler.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
-            }
-            catch (Exception e)
-            {
-                Log.Exception(e);
-            }
-        }
+        protected virtual void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow) { }
 
         List<KeyValuePair<object, Row>> wasInserted = new();
         List<(object key, Row oldValue, Row newValue)> wasUpdated = new();
@@ -440,6 +432,7 @@ namespace SpacetimeDB
         void IRemoteTableHandle.PreApply(IEventContext context, IParsedTableUpdate parsedTableUpdate)
         {
             Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
+            if (IsEventTable) return; // Event tables have no deletes.
             var delta = (ParsedTableUpdate)parsedTableUpdate;
             foreach (var (_, value) in Entries.WillRemove(delta.Delta))
             {
@@ -454,9 +447,24 @@ namespace SpacetimeDB
         /// </summary>
         void IRemoteTableHandle.Apply(IEventContext context, IParsedTableUpdate parsedTableUpdate)
         {
+            var delta = (ParsedTableUpdate)parsedTableUpdate;
+
+            if (IsEventTable)
+            {
+                // Event tables: don't store rows in the cache or update indices.
+                // Just collect the event rows so PostApply can fire OnInsert callbacks.
+                if (delta.EventRows != null)
+                {
+                    foreach (var row in delta.EventRows)
+                    {
+                        wasInserted.Add(new KeyValuePair<object, Row>(row, row));
+                    }
+                }
+                return;
+            }
+
             try
             {
-                var delta = (ParsedTableUpdate)parsedTableUpdate;
                 Entries.Apply(delta.Delta, wasInserted, wasUpdated, wasRemoved);
             }
             catch (Exception e)
@@ -528,13 +536,16 @@ namespace SpacetimeDB
             {
                 InvokeInsert(context, value);
             }
-            foreach (var (_, oldValue, newValue) in wasUpdated)
+            if (!IsEventTable)
             {
-                InvokeUpdate(context, oldValue, newValue);
-            }
-            foreach (var (_, value) in wasRemoved)
-            {
-                InvokeDelete(context, value);
+                foreach (var (_, oldValue, newValue) in wasUpdated)
+                {
+                    InvokeUpdate(context, oldValue, newValue);
+                }
+                foreach (var (_, value) in wasRemoved)
+                {
+                    InvokeDelete(context, value);
+                }
             }
             wasInserted.Clear();
             wasUpdated.Clear();
@@ -542,7 +553,7 @@ namespace SpacetimeDB
 
         }
 
-        private class CustomRowEventHandler
+        protected class CustomRowEventHandler
         {
             private EventListeners<RowEventHandler> Listeners { get; } = new();
 
@@ -557,7 +568,7 @@ namespace SpacetimeDB
             public void AddListener(RowEventHandler listener) => Listeners.Add(listener);
             public void RemoveListener(RowEventHandler listener) => Listeners.Remove(listener);
         }
-        private class CustomUpdateEventHandler
+        protected class CustomUpdateEventHandler
         {
             private EventListeners<UpdateEventHandler> Listeners { get; } = new();
 
@@ -572,6 +583,83 @@ namespace SpacetimeDB
             public void AddListener(UpdateEventHandler listener) => Listeners.Add(listener);
             public void RemoveListener(UpdateEventHandler listener) => Listeners.Remove(listener);
         }
+    }
+
+    /// <summary>
+    /// A table handle for persistent tables, exposing insert/delete/update callbacks.
+    /// </summary>
+    public abstract class RemoteTableHandle<EventContext, Row> : RemoteTableHandleBase<EventContext, Row>
+        where EventContext : class, IEventContext
+        where Row : class, IStructuralReadWrite, new()
+    {
+        protected RemoteTableHandle(IDbConnection conn) : base(conn) { }
+
+        private CustomRowEventHandler OnDeleteHandler { get; } = new();
+        public event RowEventHandler OnDelete
+        {
+            add => OnDeleteHandler.AddListener(value);
+            remove => OnDeleteHandler.RemoveListener(value);
+        }
+        private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
+        public event RowEventHandler OnBeforeDelete
+        {
+            add => OnBeforeDeleteHandler.AddListener(value);
+            remove => OnBeforeDeleteHandler.RemoveListener(value);
+        }
+        private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
+        public event UpdateEventHandler OnUpdate
+        {
+            add => OnUpdateHandler.AddListener(value);
+            remove => OnUpdateHandler.RemoveListener(value);
+        }
+
+        protected override void InvokeDelete(IEventContext context, IStructuralReadWrite row)
+        {
+            try
+            {
+                OnDeleteHandler.Invoke((EventContext)context, (Row)row);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
+
+        protected override void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row)
+        {
+            try
+            {
+                OnBeforeDeleteHandler.Invoke((EventContext)context, (Row)row);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
+
+        protected override void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow)
+        {
+            try
+            {
+                OnUpdateHandler.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A table handle for event tables, which only expose OnInsert callbacks.
+    /// Event tables do not persist rows in the client cache and do not support
+    /// OnDelete, OnBeforeDelete, or OnUpdate callbacks.
+    /// </summary>
+    public abstract class RemoteEventTableHandle<EventContext, Row> : RemoteTableHandleBase<EventContext, Row>
+        where EventContext : class, IEventContext
+        where Row : class, IStructuralReadWrite, new()
+    {
+        protected RemoteEventTableHandle(IDbConnection conn) : base(conn, isEventTable: true) { }
     }
 }
 #nullable disable

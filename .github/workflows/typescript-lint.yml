@@ -9,8 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,14 +17,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - uses: pnpm/action-setup@v4
         with:
           run_install: true
 
       - name: Get pnpm store directory
-        working-directory: sdks/typescript
         shell: bash
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
@@ -39,5 +37,4 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - name: Lint
-        working-directory: sdks/typescript
         run: pnpm lint

@@ -2,8 +2,12 @@ use std::io::Write;
 use std::{fmt, io};
 
 use spacetimedb_lib::{db::raw_def::v9::TableAccess, AlgebraicType};
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use termcolor::{Buffer, Color, ColorChoice, ColorSpec, WriteColor};
+
+use crate::auto_migrate::formatter::ViewInfo;
+use crate::identifier::Identifier;
 
 use super::formatter::{
     AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
@@ -219,7 +223,57 @@ impl MigrationFormatter for TermColorFormatter {
         if let Some(s) = &table.schedule {
             self.write_colored_line("Schedule:", Some(self.colors.section_header), true)?;
             self.indent();
-            self.write_bullet(&format!("Calls reducer: {}", s.reducer_name))?;
+            self.write_bullet(&format!("Calls {}: {}", s.function_kind, s.function_name))?;
+            self.dedent();
+        }
+
+        self.dedent();
+        self.write_line("")
+    }
+
+    fn format_remove_table(&mut self, table_name: &Identifier) -> io::Result<()> {
+        self.write_action_prefix(&Action::Removed)?;
+        self.buffer.write_all(b" table: ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")?;
+        self.write_line("")
+    }
+
+    fn format_view(&mut self, view: &ViewInfo, action: Action) -> io::Result<()> {
+        self.write_indent()?;
+        self.buffer.write_all("▸ ".to_string().as_bytes())?;
+        self.write_action_prefix(&action)?;
+        self.buffer.write_all(if view.is_anonymous {
+            b" anonymous view: "
+        } else {
+            b" view: "
+        })?;
+        self.write_colored(&view.name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")?;
+
+        self.indent();
+
+        if !view.params.is_empty() {
+            self.write_colored_line("Parameters:", Some(self.colors.section_header), true)?;
+            self.indent();
+            for col in &view.params {
+                self.write_indent()?;
+                self.buffer.write_all(format!("• {}: ", col.name).as_bytes())?;
+                self.write_type_name(&col.type_name)?;
+                self.buffer.write_all(b"\n")?;
+            }
+            self.dedent();
+        }
+
+        if !view.columns.is_empty() {
+            self.write_colored_line("Columns:", Some(self.colors.section_header), true)?;
+            self.indent();
+            for col in &view.columns {
+                self.write_indent()?;
+                self.buffer.write_all(format!("• {}: ", col.name).as_bytes())?;
+                self.write_type_name(&col.type_name)?;
+                self.buffer.write_all(b"\n")?;
+            }
             self.dedent();
         }
 
@@ -271,12 +325,30 @@ impl MigrationFormatter for TermColorFormatter {
         self.buffer.write_all(b")\n")
     }
 
+    fn format_change_primary_key(
+        &mut self,
+        table_name: &str,
+        old_pk: Option<ColId>,
+        new_pk: Option<ColId>,
+    ) -> io::Result<()> {
+        let description = match (old_pk, new_pk) {
+            (Some(_), None) => "removed".to_string(),
+            (None, Some(col)) => format!("added on column {col}"),
+            (Some(_), Some(col)) => format!("changed to column {col}"),
+            (None, None) => return Ok(()),
+        };
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" primary key on table ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(format!(" ({description})\n").as_bytes())
+    }
+
     fn format_schedule(&mut self, s: &ScheduleInfo, action: Action) -> io::Result<()> {
         self.write_action_prefix(&action)?;
         self.buffer.write_all(b" schedule for table ")?;
         self.write_colored(&s.table_name, Some(self.colors.table_name), true)?;
         self.buffer
-            .write_all(format!(" calling reducer {}\n", s.reducer_name).as_bytes())
+            .write_all(format!(" calling {} {}\n", s.function_kind, s.function_name).as_bytes())
     }
 
     fn format_rls(&mut self, r: &RlsInfo, action: Action) -> io::Result<()> {

@@ -2,18 +2,17 @@
 
 use std::io;
 
-use super::{AutoMigratePlan, IndexAlgorithm, ModuleDefLookup, TableDef};
+use super::{AutoMigratePlan, ModuleDefLookup, TableDef};
 use crate::{
     auto_migrate::AutoMigrateStep,
-    def::{ConstraintData, ModuleDef, ScheduleDef},
+    def::{ConstraintData, FunctionKind, ModuleDef, ScheduleDef, ViewDef},
     identifier::Identifier,
 };
 use itertools::Itertools;
-use spacetimedb_lib::{
-    db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType},
-    AlgebraicType, AlgebraicValue,
-};
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};
+use spacetimedb_primitives::ColId;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
 use thiserror::Error;
 
 pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> Result<(), FormattingErrors> {
@@ -32,6 +31,22 @@ fn format_step<F: MigrationFormatter>(
     plan: &super::AutoMigratePlan,
 ) -> Result<(), FormattingErrors> {
     match step {
+        AutoMigrateStep::AddView(view) => {
+            let view_info = extract_view_info(*view, plan.new)?;
+            f.format_view(&view_info, Action::Created)
+        }
+        AutoMigrateStep::RemoveView(view) => {
+            let view_info = extract_view_info(*view, plan.old)?;
+            f.format_view(&view_info, Action::Removed)
+        }
+        // This means the body of the view may have been updated.
+        // So we must recompute it and send any updates to clients.
+        // No need to include this step in the formatted plan.
+        AutoMigrateStep::UpdateView(_) => Ok(()),
+        AutoMigrateStep::RemoveTable(t) => {
+            let table_def: &TableDef = plan.old.expect_lookup(*t);
+            f.format_remove_table(&table_def.name)
+        }
         AutoMigrateStep::AddTable(t) => {
             let table_info = extract_table_info(*t, plan)?;
             f.format_add_table(&table_info)
@@ -59,6 +74,11 @@ fn format_step<F: MigrationFormatter>(
         AutoMigrateStep::ChangeAccess(table) => {
             let access_info = extract_access_change_info(*table, plan)?;
             f.format_change_access(&access_info)
+        }
+        AutoMigrateStep::ChangePrimaryKey(table) => {
+            let old_table = plan.old.lookup_expect::<TableDef>(*table);
+            let new_table = plan.new.lookup_expect::<TableDef>(*table);
+            f.format_change_primary_key(table, old_table.primary_key, new_table.primary_key)
         }
         AutoMigrateStep::AddSchedule(schedule) => {
             let schedule_info = extract_schedule_info(*schedule, plan.new)?;
@@ -98,6 +118,8 @@ fn format_step<F: MigrationFormatter>(
 pub enum FormattingErrors {
     #[error("Table not found: {table}")]
     TableNotFound { table: Box<str> },
+    #[error("View not found: {view}")]
+    ViewNotFound { view: Box<str> },
     #[error("Index not found")]
     IndexNotFound,
     #[error("Constraint not found")]
@@ -128,10 +150,18 @@ pub enum Action {
 pub trait MigrationFormatter {
     fn format_header(&mut self) -> io::Result<()>;
     fn format_add_table(&mut self, table_info: &TableInfo) -> io::Result<()>;
+    fn format_remove_table(&mut self, table_name: &Identifier) -> io::Result<()>;
+    fn format_view(&mut self, view_info: &ViewInfo, action: Action) -> io::Result<()>;
     fn format_index(&mut self, index_info: &IndexInfo, action: Action) -> io::Result<()>;
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_change_primary_key(
+        &mut self,
+        table_name: &str,
+        old_pk: Option<ColId>,
+        new_pk: Option<ColId>,
+    ) -> io::Result<()>;
     fn format_schedule(&mut self, schedule_info: &ScheduleInfo, action: Action) -> io::Result<()>;
     fn format_rls(&mut self, rls_info: &RlsInfo, action: Action) -> io::Result<()>;
     fn format_change_columns(&mut self, column_changes: &ColumnChanges) -> io::Result<()>;
@@ -141,7 +171,7 @@ pub trait MigrationFormatter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableInfo {
-    pub name: String,
+    pub name: RawIdentifier,
     pub is_system: bool,
     pub access: TableAccess,
     pub columns: Vec<ColumnInfo>,
@@ -149,6 +179,26 @@ pub struct TableInfo {
     pub indexes: Vec<IndexInfo>,
     pub sequences: Vec<SequenceInfo>,
     pub schedule: Option<ScheduleInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewInfo {
+    pub name: RawIdentifier,
+    pub params: Vec<ViewParamInfo>,
+    pub columns: Vec<ViewColumnInfo>,
+    pub is_anonymous: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewColumnInfo {
+    pub name: Identifier,
+    pub type_name: AlgebraicType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewParamInfo {
+    pub name: Identifier,
+    pub type_name: AlgebraicType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -160,21 +210,21 @@ pub struct ColumnInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstraintInfo {
-    pub name: String,
+    pub name: RawIdentifier,
     pub columns: Vec<Identifier>,
     pub table_name: Identifier,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndexInfo {
-    pub name: String,
+    pub name: RawIdentifier,
     pub columns: Vec<Identifier>,
-    pub table_name: Identifier,
+    pub table_name: RawIdentifier,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SequenceInfo {
-    pub name: String,
+    pub name: RawIdentifier,
     pub column_name: Identifier,
     pub table_name: Identifier,
 }
@@ -187,8 +237,9 @@ pub struct AccessChangeInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleInfo {
-    pub table_name: String,
-    pub reducer_name: Identifier,
+    pub table_name: Identifier,
+    pub function_name: Identifier,
+    pub function_kind: FunctionKind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -252,7 +303,7 @@ fn extract_table_info(
         .map(|constraint| {
             let ConstraintData::Unique(unique) = &constraint.data;
             Ok(ConstraintInfo {
-                name: constraint.name.to_string(),
+                name: constraint.name.clone(),
                 columns: unique
                     .columns
                     .iter()
@@ -271,27 +322,20 @@ fn extract_table_info(
         .values()
         .sorted_by_key(|c| c.name.clone())
         .map(|index| {
-            let columns = match &index.algorithm {
-                IndexAlgorithm::BTree(btree) => btree
-                    .columns
-                    .iter()
-                    .map(|col_id| {
-                        let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
-                        Ok(column.name.clone())
-                    })
-                    .collect::<Result<Vec<_>, FormattingErrors>>()?,
-                IndexAlgorithm::Direct(direct) => {
-                    let column = table_def
-                        .get_column(direct.column)
-                        .ok_or(FormattingErrors::ColumnNotFound)?;
-                    vec![column.name.clone()]
-                }
-            };
+            let columns = index
+                .algorithm
+                .columns()
+                .iter()
+                .map(|col_id| {
+                    let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
+                    Ok(column.name.clone())
+                })
+                .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
             Ok(IndexInfo {
-                name: index.name.to_string(),
+                name: index.name.clone(),
                 columns,
-                table_name: table_def.name.clone(),
+                table_name: table_def.name.clone().into(),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
@@ -305,7 +349,7 @@ fn extract_table_info(
                 .get_column(sequence.column)
                 .ok_or(FormattingErrors::ColumnNotFound)?;
             Ok(SequenceInfo {
-                name: sequence.name.to_string(),
+                name: sequence.name.clone(),
                 column_name: column.name.clone(),
                 table_name: table_def.name.clone(),
             })
@@ -313,12 +357,13 @@ fn extract_table_info(
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     let schedule = table_def.schedule.as_ref().map(|schedule| ScheduleInfo {
-        table_name: table_def.name.to_string().clone(),
-        reducer_name: schedule.reducer_name.clone(),
+        table_name: table_def.name.clone(),
+        function_name: schedule.function_name.clone(),
+        function_kind: schedule.function_kind,
     });
 
     Ok(TableInfo {
-        name: table_def.name.to_string(),
+        name: table_def.name.clone().into(),
         is_system: table_def.table_type == TableType::System,
         access: table_def.table_access,
         columns,
@@ -326,6 +371,53 @@ fn extract_table_info(
         indexes,
         sequences,
         schedule,
+    })
+}
+
+fn extract_view_info(
+    view: <ViewDef as crate::def::ModuleDefLookup>::Key<'_>,
+    module_def: &ModuleDef,
+) -> Result<ViewInfo, FormattingErrors> {
+    let view_def = module_def.view(view).ok_or_else(|| FormattingErrors::ViewNotFound {
+        view: view.to_string().into(),
+    })?;
+
+    let name = view_def.name.clone().into();
+    let is_anonymous = view_def.is_anonymous;
+
+    let params = view_def
+        .param_columns
+        .iter()
+        .map(|column| {
+            let type_name = WithTypespace::new(module_def.typespace(), &column.ty)
+                .resolve_refs()
+                .map_err(|_| FormattingErrors::TypeResolution)?;
+            Ok(ViewParamInfo {
+                name: column.name.clone(),
+                type_name,
+            })
+        })
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    let columns = view_def
+        .return_columns
+        .iter()
+        .map(|column| {
+            let type_name = WithTypespace::new(module_def.typespace(), &column.ty)
+                .resolve_refs()
+                .map_err(|_| FormattingErrors::TypeResolution)?;
+            Ok(ViewColumnInfo {
+                name: column.name.clone(),
+                type_name,
+            })
+        })
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    Ok(ViewInfo {
+        name,
+        params,
+        columns,
+        is_anonymous,
     })
 }
 
@@ -338,27 +430,20 @@ fn extract_index_info(
         .ok_or(FormattingErrors::IndexNotFound)?;
     let index_def = table_def.indexes.get(index).ok_or(FormattingErrors::IndexNotFound)?;
 
-    let columns = match &index_def.algorithm {
-        IndexAlgorithm::BTree(btree) => btree
-            .columns
-            .iter()
-            .map(|col_id| {
-                let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
-                Ok(column.name.clone())
-            })
-            .collect::<Result<Vec<_>, FormattingErrors>>()?,
-        IndexAlgorithm::Direct(direct) => {
-            let column = table_def
-                .get_column(direct.column)
-                .ok_or(FormattingErrors::ColumnNotFound)?;
-            vec![column.name.clone()]
-        }
-    };
+    let columns = index_def
+        .algorithm
+        .columns()
+        .iter()
+        .map(|col_id| {
+            let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
+            Ok(column.name.clone())
+        })
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     Ok(IndexInfo {
-        name: index_def.name.to_string(),
+        name: index_def.name.clone(),
         columns,
-        table_name: table_def.name.clone(),
+        table_name: table_def.name.clone().into(),
     })
 }
 
@@ -385,7 +470,7 @@ fn extract_constraint_info(
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     Ok(ConstraintInfo {
-        name: constraint_def.name.to_string(),
+        name: constraint_def.name.clone(),
         columns,
         table_name: table_def.name.clone(),
     })
@@ -408,7 +493,7 @@ fn extract_sequence_info(
         .ok_or(FormattingErrors::ColumnNotFound)?;
 
     Ok(SequenceInfo {
-        name: sequence_def.name.to_string(),
+        name: sequence_def.name.clone(),
         column_name: column.name.clone(),
         table_name: table_def.name.clone(),
     })
@@ -437,8 +522,9 @@ fn extract_schedule_info(
         .ok_or(FormattingErrors::ScheduleNotFound)?;
 
     Ok(ScheduleInfo {
-        table_name: schedule_def.name.to_string().clone(),
-        reducer_name: schedule_def.reducer_name.clone(),
+        table_name: schedule_def.name.clone(),
+        function_name: schedule_def.function_name.clone(),
+        function_kind: schedule_def.function_kind,
     })
 }
 

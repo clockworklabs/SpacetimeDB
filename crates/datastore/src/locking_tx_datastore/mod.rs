@@ -3,13 +3,15 @@
 pub mod committed_state;
 pub mod datastore;
 mod mut_tx;
-pub use mut_tx::MutTxId;
+pub use mut_tx::{FuncCallType, IndexScanPointOrRange, MutTxId, ViewCallInfo};
 mod sequence;
 pub mod state_view;
 pub use state_view::{IterByColEqTx, IterByColRangeTx};
 pub mod delete_table;
+mod replay;
+pub use replay::ErrorBehavior;
 mod tx;
-pub use tx::TxId;
+pub use tx::{NumDistinctValues, TxId};
 mod tx_state;
 #[cfg(any(test, feature = "test"))]
 pub use tx_state::PendingSchemaChange;

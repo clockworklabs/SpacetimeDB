@@ -8,6 +8,7 @@ description = "Low-level interfaces for capturing and restoring snapshots of dat
 
 [dependencies]
 spacetimedb-table.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-durability.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-sats = { workspace = true, features = ["blake3"] }
@@ -33,6 +34,7 @@ zstd-framed.workspace = true
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-schema = { path = "../schema" }
 spacetimedb-datastore = { path = "../datastore", features = ["test"] }
+spacetimedb-durability = { workspace = true, features = ["test"] }
 
 anyhow.workspace = true
 env_logger.workspace = true

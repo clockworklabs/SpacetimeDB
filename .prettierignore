@@ -3,3 +3,4 @@ pnpm-lock.yaml
 dist
 target
 .github
+coverage

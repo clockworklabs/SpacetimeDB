@@ -1,0 +1,13 @@
+[package]
+name = "spacetimedb-query-builder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Rust query builder for SpacetimeDB"
+
+[dependencies]
+spacetimedb-lib = { workspace = true }
+
+[lints]
+workspace = true

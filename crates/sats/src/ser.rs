@@ -2,7 +2,7 @@
 // See `serde` version `v1.0.169` for the parts where MIT / Apache-2.0 applies.
 
 mod impls;
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde;
 
 use crate::de::DeserializeSeed;
@@ -126,7 +126,7 @@ pub trait Serializer: Sized {
         assert_eq!(val.len(), value.ty().elements.len());
         let mut prod = self.serialize_named_product(val.len())?;
         for (val, el_ty) in val.iter().zip(&*value.ty().elements) {
-            prod.serialize_element(el_ty.name(), &value.with(&el_ty.algebraic_type, val))?
+            prod.serialize_element(el_ty.name().map(|n| &**n), &value.with(&el_ty.algebraic_type, val))?
         }
         prod.end()
     }
@@ -139,7 +139,7 @@ pub trait Serializer: Sized {
         let sv = sum.value();
         let (tag, val) = (sv.tag, &*sv.value);
         let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
-        self.serialize_variant(tag, var_ty.name(), &sum.with(&var_ty.algebraic_type, val))
+        self.serialize_variant(tag, var_ty.name().map(|n| &**n), &sum.with(&var_ty.algebraic_type, val))
     }
 
     /// Serialize a sum value provided the chosen `tag`, `name`, and `value`.
@@ -277,7 +277,7 @@ pub trait Serializer: Sized {
 /// See the documentation of `serde::Serialize` for more information of the data model.
 ///
 /// Do not manually implement this trait unless you know what you are doing.
-/// Implementations must be consistent with `Deerialize<'de> for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations must be consistent with `Deserialize<'de> for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
 /// Implementations that are inconsistent across these traits may result in data loss.
 ///
 /// [`serde`]: https://crates.io/crates/serde

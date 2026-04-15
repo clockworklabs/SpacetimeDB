@@ -5,7 +5,7 @@
 use super::b_tree_u_32_type::BTreeU32;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-/// Table handle for the table `btree_u32`.
+/// Table handle for the table `btree_u_32`.
 ///
 /// Obtain a handle from the [`BtreeU32TableAccess::btree_u_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.btree_u_32()`.
@@ -19,19 +19,19 @@ pub struct BtreeU32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `btree_u32`.
+/// Extension trait for access to the table `btree_u_32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait BtreeU32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`BtreeU32TableHandle`], which mediates access to the table `btree_u32`.
+    /// Obtain a [`BtreeU32TableHandle`], which mediates access to the table `btree_u_32`.
     fn btree_u_32(&self) -> BtreeU32TableHandle<'_>;
 }
 
 impl BtreeU32TableAccess for super::RemoteTables {
     fn btree_u_32(&self) -> BtreeU32TableHandle<'_> {
         BtreeU32TableHandle {
-            imp: self.imp.get_table::<BTreeU32>("btree_u32"),
+            imp: self.imp.get_table::<BTreeU32>("btree_u_32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -80,16 +80,30 @@ impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<BTreeU32>("btree_u32");
+    let _table = client_cache.get_or_make_table::<BTreeU32>("btree_u_32");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<BTreeU32>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<BTreeU32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<BTreeU32>", "TableUpdate")
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BTreeU32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait btree_u_32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BTreeU32`.
+    fn btree_u_32(&self) -> __sdk::__query_builder::Table<BTreeU32>;
+}
+
+impl btree_u_32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn btree_u_32(&self) -> __sdk::__query_builder::Table<BTreeU32> {
+        __sdk::__query_builder::Table::new("btree_u_32")
+    }
 }

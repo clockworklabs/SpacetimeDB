@@ -1,9 +1,10 @@
-from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime, parse_sql_result
-from ..docker import DockerManager
-
 import time
-from typing import Callable
 import unittest
+from typing import Callable
+import json
+
+from .. import COMPOSE_FILE, Smoketest, random_string, requires_docker, spacetime, parse_sql_result
+from ..docker import DockerManager
 
 def retry(func: Callable, max_retries: int = 3, retry_delay: int = 2):
     """Retry a function on failure with delay."""
@@ -113,6 +114,18 @@ where replication_state.database_id={database_id} \
         # TODO: Replace with confirmed read.
         time.sleep(0.6)
 
+    def wait_counter_value(self, id, value, max_attempts=10, delay=1):
+        """Wait for the value for `id` in the counter table to reach `value`"""
+
+        for _ in range(max_attempts):
+            rows = self.sql(f"select * from counter where id={id}")
+            if len(rows) >= 1 and int(rows[0]['value']) >= value:
+                return
+            else:
+                time.sleep(delay)
+
+        raise ValueError(f"Counter {id} below {value}")
+
 
     def fail_leader(self, action='kill'):
         """Force leader failure through either killing or network disconnect."""
@@ -145,7 +158,7 @@ class ReplicationTest(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{duration, ReducerContext, Table};
 
-#[spacetimedb::table(name = counter, public)]
+#[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
     #[auto_inc]
@@ -154,7 +167,7 @@ pub struct Counter {
     value: u64,
 }
 
-#[spacetimedb::table(name = schedule_counter, public, scheduled(increment, at = sched_at))]
+#[spacetimedb::table(accessor = schedule_counter, public, scheduled(increment, at = sched_at))]
 pub struct ScheduledCounter {
     #[primary_key]
     #[auto_inc]
@@ -194,7 +207,7 @@ fn start(ctx: &ReducerContext, id: u64, count: u64) {
     });
 }
 
-#[spacetimedb::table(name = message, public)]
+#[spacetimedb::table(accessor = message, public)]
 pub struct Message {
     #[primary_key]
     #[auto_inc]
@@ -212,20 +225,18 @@ fn send_message(ctx: &ReducerContext, text: String) {
     def setUpClass(cls):
         super().setUpClass()
         cls.root_config = cls.project_path / "root_config"
+        spacetime("--config-path", cls.root_config, "server", "set-default", "local")
+
+    def setUp(self):
+        self.docker = DockerManager(COMPOSE_FILE)
+        self.root_token = self.docker.generate_root_token()
+
+        self.cluster = Cluster(self.docker, self)
 
     def tearDown(self):
         # Ensure containers that were brought down during a test are back up.
         self.docker.compose("up", "-d")
         super().tearDown()
-
-    # TODO: This function seems to run even when `--docker` is not passed, leading to errors unless `-x replication` is passed, due to the docker-related code below.
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.docker = DockerManager(COMPOSE_FILE)
-        self.root_token = self.docker.generate_root_token()
-
-        self.cluster = Cluster(self.docker, self)
 
     def add_me_as_admin(self):
         """Add the current user as an admin account"""
@@ -239,6 +250,9 @@ fn send_message(ctx: &ReducerContext, text: String) {
 
     def collect_counter_rows(self):
         return int_vals(self.cluster.sql("select * from counter"))
+
+    def call_control(self, reducer, *args):
+        self.spacetime("call", "spacetime-control", reducer, *map(json.dumps, args))
 
 
 class LeaderElection(ReplicationTest):
@@ -393,3 +407,101 @@ class QuorumLoss(ReplicationTest):
         with self.assertRaises(Exception):
             for i in range(1001):
                 self.call("send_message", "terminal")
+
+
+class EnableReplicationTest(ReplicationTest):
+    AUTOPUBLISH = False
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.expected_counter_rows = []
+
+    def run_counter(self, id, n = 100):
+        self.start(id, n)
+        self.cluster.wait_counter_value(id, n)
+        self.expected_counter_rows.append({"id": id, "value": n})
+        self.assertEqual(self.collect_counter_rows(), self.expected_counter_rows)
+
+    def subscribe_to_enable_replication_events(self):
+        id = self.cluster.get_db_id()
+        return self.subscribe(
+            f"select * from staged_enable_replication_event where database_id={id}",
+            n = 2,
+            database = "spacetime-control"
+        )
+
+    def assert_bootstrap_complete(self, sub):
+        events = sub()
+        self.assertEqual(
+            events[-1]['staged_enable_replication_event']['inserts'][0]['message'],
+            'bootstrap complete',
+        )
+
+    def enable_replication(self, database_name):
+        sub = self.subscribe_to_enable_replication_events()
+        self.call_control("enable_replication", {"Name": database_name}, 3)
+        self.assert_bootstrap_complete(sub)
+
+class EnableReplicationUnsuspended(EnableReplicationTest):
+    def test_enable_replication_fails_if_not_suspended(self):
+        """Tests that the database to enable replication on must be suspended"""
+
+        self.add_me_as_admin()
+        name = random_string()
+
+        self.publish_module(name, num_replicas = 1)
+        self.cluster.wait_for_leader_change(None)
+
+        with self.assertRaises(Exception):
+            self.call_control("enable_replication", {"Name": name}, 3)
+
+
+class EnableReplicationSuspended(EnableReplicationTest):
+    def test_enable_replication_on_suspended_database(self):
+        """Tests that we can enable replication on a suspended database"""
+
+        self.add_me_as_admin()
+        name = random_string()
+
+        self.publish_module(name, num_replicas = 1)
+        self.cluster.wait_for_leader_change(None)
+        self.cluster.ensure_leader_health(1)
+
+        self.call_control("suspend_database", {"Name": name})
+        # Database is now unreachable.
+        with self.assertRaises(Exception):
+            self.call("send_message", "hi")
+
+        self.enable_replication(name)
+        # Still unreachable until we call unsuspend.
+        with self.assertRaises(Exception):
+            self.call("send_message", "hi")
+
+        self.call_control("unsuspend_database", {"Name": name})
+        self.cluster.wait_for_leader_change(None)
+        self.cluster.ensure_leader_health(2)
+
+class EnableDisableReplication(EnableReplicationTest):
+    def test_enable_disable_replication(self):
+        """Tests that we can enable then disable replication"""
+
+        self.add_me_as_admin()
+        name = random_string()
+
+        self.publish_module(name, num_replicas = 1)
+        # ensure database is up and commitlog ends up non-empty
+        self.run_counter(1, 100)
+
+        # suspend first
+        self.call_control("suspend_database", {"Name": name})
+        # enable replication and wait for it to complete
+        self.enable_replication(name)
+        # unsuspend
+        self.call_control("unsuspend_database", {"Name": name})
+
+        self.cluster.wait_for_leader_change(None)
+        self.run_counter(2, 100)
+
+        self.call_control("disable_replication", {"Name": name})
+        self.run_counter(3, 100)

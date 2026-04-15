@@ -36,3 +36,34 @@ Temporary Items
 *.icloud
 
 # End of https://www.toptal.com/developers/gitignore/api/macos
+
+# Unreal plugin build artifacts
+Binaries/
+Intermediate/
+DerivedDataCache/
+Saved/
+.vs/
+.idea/
+*.VC.db
+*.VC.opendb
+*.sln
+*.opensdf
+*.sdf
+*.suo
+*.user
+*.userprefs
+*.log
+*.tlog
+*.ipch
+*.obj
+*.pch
+*.pdb
+*.idb
+*.aps
+*.ncb
+*.cache
+*.sbr
+*.db
+*.xcodeproj
+xcuserdata/
+/sdks/unreal/tests/TestClient/TestResults

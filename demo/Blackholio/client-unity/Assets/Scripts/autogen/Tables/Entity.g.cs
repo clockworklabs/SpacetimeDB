@@ -17,9 +17,9 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "entity";
 
-            public sealed class EntityIdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
             {
-                protected override uint GetKey(Entity row) => row.EntityId;
+                protected override int GetKey(Entity row) => row.EntityId;
 
                 public EntityIdUniqueIndex(EntityHandle table) : base(table) { }
             }
@@ -35,5 +35,29 @@ namespace SpacetimeDB.Types
         }
 
         public readonly EntityHandle Entity;
+    }
+
+    public sealed class EntityCols
+    {
+        public global::SpacetimeDB.Col<Entity, int> EntityId { get; }
+        public global::SpacetimeDB.Col<Entity, DbVector2> Position { get; }
+        public global::SpacetimeDB.Col<Entity, int> Mass { get; }
+
+        public EntityCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.Col<Entity, int>(tableName, "entity_id");
+            Position = new global::SpacetimeDB.Col<Entity, DbVector2>(tableName, "position");
+            Mass = new global::SpacetimeDB.Col<Entity, int>(tableName, "mass");
+        }
+    }
+
+    public sealed class EntityIxCols
+    {
+        public global::SpacetimeDB.IxCol<Entity, int> EntityId { get; }
+
+        public EntityIxCols(string tableName)
+        {
+            EntityId = new global::SpacetimeDB.IxCol<Entity, int>(tableName, "entity_id");
+        }
     }
 }

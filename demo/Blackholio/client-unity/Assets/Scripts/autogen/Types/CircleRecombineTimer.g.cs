@@ -18,12 +18,12 @@ namespace SpacetimeDB.Types
         [DataMember(Name = "scheduled_at")]
         public SpacetimeDB.ScheduleAt ScheduledAt;
         [DataMember(Name = "player_id")]
-        public uint PlayerId;
+        public int PlayerId;
 
         public CircleRecombineTimer(
             ulong ScheduledId,
             SpacetimeDB.ScheduleAt ScheduledAt,
-            uint PlayerId
+            int PlayerId
         )
         {
             this.ScheduledId = ScheduledId;
