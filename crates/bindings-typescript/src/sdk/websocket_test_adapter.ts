@@ -1,8 +1,8 @@
 import { BinaryReader, BinaryWriter } from '../';
 import { ClientMessage, ServerMessage } from './client_api/types';
-import type { WebsocketAdapter } from './websocket_decompress_adapter';
+import type { WebSocketAdapter, WebSocketFactory } from './ws';
 
-class WebsocketTestAdapter implements WebsocketAdapter {
+class WebsocketTestAdapter implements WebSocketAdapter {
   onclose: any;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   onopen!: () => void;
@@ -19,7 +19,7 @@ class WebsocketTestAdapter implements WebsocketAdapter {
     this.closed = false;
   }
 
-  send(message: any): void {
+  send(message: Uint8Array<ArrayBuffer>): void {
     const parsedMessage = ClientMessage.deserialize(new BinaryReader(message));
     this.outgoingMessages.push(parsedMessage);
     // console.ClientMessageSerde.deserialize(message);
@@ -47,18 +47,7 @@ class WebsocketTestAdapter implements WebsocketAdapter {
     this.onmessage({ data: rawBytes });
   }
 
-  async createWebSocketFn(_args: {
-    url: URL;
-    wsProtocol: string;
-    nameOrAddress: string;
-    authToken?: string;
-    compression: 'gzip' | 'none';
-    lightMode: boolean;
-    confirmedReads?: boolean;
-  }): Promise<WebsocketTestAdapter> {
-    return this;
-  }
+  openWebSocket: WebSocketFactory = async () => this;
 }
 
-export type { WebsocketTestAdapter };
 export default WebsocketTestAdapter;
