@@ -147,7 +147,8 @@ pub mod advisory {
 
         fn lock_inner(path: &Path) -> io::Result<Self> {
             create_parent_dir(path)?;
-            let lock = File::create(path)?;
+            // This will create the file if it doesn't already exist.
+            let lock = File::options().write(true).create(true).open(path)?;
             // TODO: Use `File::lock` (available since rust 1.89) instead?
             lock.try_lock_exclusive()?;
 
@@ -156,19 +157,62 @@ pub mod advisory {
                 lock,
             })
         }
-
-        /// Release the lock and optionally remove the locked file.
-        pub fn release(self, remove: bool) -> io::Result<()> {
-            if remove {
-                fs::remove_file(&self.path)?;
-            }
-            Ok(())
-        }
     }
 
     impl fmt::Debug for LockedFile {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("LockedFile").field("path", &self.path).finish()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{self, File};
+
+    use tempdir::TempDir;
+
+    use super::{advisory::LockedFile, Lockfile};
+
+    #[test]
+    fn lockedfile_can_create_a_file() {
+        let tmp = TempDir::new("lockfile_test").unwrap();
+        let path = tmp.path().join("db.lock");
+        let _lock1 = LockedFile::lock(&path).unwrap();
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn lockedfile_can_create_a_directory_file() {
+        let tmp = TempDir::new("lockfile_test").unwrap();
+        let path = tmp.path().join("new_dir").join("db.lock");
+        let _lock1 = LockedFile::lock(&path).unwrap();
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn only_one_exclusive_lock_can_be_held() {
+        let tmp = TempDir::new("lockfile_test").unwrap();
+        let path = tmp.path().join("db.lock");
+        let _lock1 = LockedFile::lock(&path).unwrap();
+
+        assert!(LockedFile::lock(&path).is_err());
+    }
+
+    #[test]
+    fn lockedfile_path_cannot_be_written() {
+        let tmp = TempDir::new("lockfile_test").unwrap();
+        let path = tmp.path().join("db.lock");
+        let _lock1 = LockedFile::lock(&path).unwrap();
+    }
+
+    #[test]
+    fn lockedfile_can_handle_existing_file() {
+        let tmp = TempDir::new("locked_file_test").unwrap();
+        let path = tmp.path().join("db.lock");
+        let original = b"existing lock metadata";
+        fs::write(&path, original).unwrap();
+
+        let lock = LockedFile::lock(&path).unwrap();
     }
 }
