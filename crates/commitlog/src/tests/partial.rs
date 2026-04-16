@@ -46,6 +46,7 @@ fn fill_log(mut log: commitlog::Generic<ShortMem, [u8; 32]>, range: Range<TxOffs
         Err(e) if e.kind() == io::ErrorKind::StorageFull
     );
 }
+
 /// Tests that, when a partial write occurs, we can read all flushed commits
 /// up until the faulty one.
 #[test]
@@ -270,7 +271,7 @@ impl fmt::Display for ShortMem {
 
 impl Repo for ShortMem {
     type SegmentWriter = ShortSegment;
-    type SegmentReader = io::BufReader<repo::mem::Segment>;
+    type SegmentReader = repo::mem::ReadOnlySegment;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         self.inner.create_segment(offset).map(|inner| ShortSegment {

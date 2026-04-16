@@ -44,3 +44,4 @@ __screenshots__/
 Thumbs.db
 
 spacetime.local.json
+src/environments/environment.local.ts

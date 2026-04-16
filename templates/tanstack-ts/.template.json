@@ -1,5 +1,16 @@
 {
   "description": "TanStack Start (React + TanStack Query/Router) with TypeScript server",
+  "client_framework": "TanStack",
   "client_lang": "typescript",
-  "server_lang": "typescript"
+  "server_lang": "typescript",
+  "builtWith": [
+    "tanstack",
+    "react",
+    "react-dom",
+    "vitejs",
+    "typescript",
+    "vite",
+    "vite-tsconfig-paths",
+    "spacetimedb"
+  ]
 }

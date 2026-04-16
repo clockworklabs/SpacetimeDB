@@ -230,9 +230,10 @@ export const update_score = spacetimedb.reducer({ id: t.u64(), points: t.i32() }
 
 // Query examples
 const player = ctx.db.player.id.find(123n);           // Find by primary key
-const players = ctx.db.player.username.filter('Alice'); // Filter by index
-const all = ctx.db.player.iter();                      // Iterate all
-ctx.db.player.id.delete(123n);                         // Delete by primary key
+const players = ctx.db.player.username.find('Alice'); // Find by unique index
+const players = ctx.db.player.score.filter(100);      // Filter by BTree index
+const all = ctx.db.player.iter();                     // Iterate all
+ctx.db.player.id.delete(123n);                        // Delete by primary key
 ```
 
 </TabItem>
@@ -260,7 +261,8 @@ public static void UpdateScore(ReducerContext ctx, ulong id, int points)
 
 // Query examples
 var player = ctx.Db.Player.Id.Find(123);           // Find by primary key
-var players = ctx.Db.Player.Username.Filter("Alice"); // Filter by index
+var player = ctx.Db.Player.Username.Find("Alice"); // Find by unique index
+var players = ctx.Db.Player.Score.Filter(100);     // Filter by BTree index
 var all = ctx.Db.Player.Iter();                    // Iterate all
 ctx.Db.Player.Id.Delete(123);                      // Delete by primary key
 ```
@@ -293,7 +295,8 @@ pub fn update_score(ctx: &ReducerContext, id: u64, points: i32) -> Result<(), St
 
 // Query examples
 let player = ctx.db.player().id().find(123);           // Find by primary key
-let players = ctx.db.player().username().filter("Alice"); // Filter by index
+let player = ctx.db.player().username().find("Alice"); // Find by unique index
+let players = ctx.db.player().score().filter(100)      // Filter by BTree index
 let all = ctx.db.player().iter();                      // Iterate all
 ctx.db.player().id().delete(123);                      // Delete by primary key
 ```
@@ -325,7 +328,8 @@ SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint64_t id, int32_t point
 
 // Query examples
 auto player = ctx.db[player_id].find((uint64_t)123);            // Find by primary key
-auto player_by_name = ctx.db[player_username].find(std::string("Alice")); // Filter by unique index
+auto player_by_name = ctx.db[player_username].find(std::string("Alice")); // Find by unique index
+auto players_by_score = ctx.db[player_score].filter((int32_t)100); // Filter by BTree index.
 for (const auto& p : ctx.db[player]) { /* iterate all */ }      // Iterate all
 ctx.db[player_id].delete_by_key((uint64_t)123);                 // Delete by primary key
 ```
@@ -354,10 +358,10 @@ export const onDisconnect = spacetimedb.clientDisconnected(ctx => { /* ... */ })
 public static void Init(ReducerContext ctx) { /* ... */ }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-public static void OnConnect(ReducerContext ctx) { /* ... */ }
+public static void ClientConnect(ReducerContext ctx) { /* ... */ }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-public static void OnDisconnect(ReducerContext ctx) { /* ... */ }
+public static void ClientDisconnect(ReducerContext ctx) { /* ... */ }
 ```
 
 </TabItem>
@@ -610,6 +614,13 @@ export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array
 export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
+
+// Count rows in a table.
+export const player_count = spacetimedb.anonymousView({ name: 'player_count' }, {}, t.array(t.row('PlayerCount', {
+  count: t.u64(),
+})), ctx => {
+  return [{ count: ctx.db.player.count() }];
+});
 ```
 
 </TabItem>
@@ -619,14 +630,14 @@ export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t
 using SpacetimeDB;
 
 // Return single row
-[SpacetimeDB.View(Public = true)]
+[SpacetimeDB.View(Accessor = "MyPlayer", Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
     return ctx.Db.Player.Identity.Find(ctx.Sender);
 }
 
 // Return potentially multiple rows
-[SpacetimeDB.View(Public = true)]
+[SpacetimeDB.View(Accessor = "TopPlayers", Public = true)]
 public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 {
     return ctx.Db.Player.Score.Filter(1000);
@@ -634,10 +645,23 @@ public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-[SpacetimeDB.View(Public = true)]
+[SpacetimeDB.View(Accessor = "BottomPlayers", Public = true)]
 public static IQuery<Player> BottomPlayers(ViewContext ctx)
 {
-    return ctx.From.Player.Where(p => p.Score.Lt(1000));
+    return ctx.From.Player().Where(p => p.Score.Lt(1000));
+}
+
+// Count rows in a table.
+[SpacetimeDB.Type]
+public partial struct PlayerCount
+{
+    public ulong Count;
+}
+
+[SpacetimeDB.View(Accessor = "PlayerCount", Public = true)]
+public static List<PlayerCount> PlayerCountView(AnonymousViewContext ctx)
+{
+    return new List<PlayerCount> { new PlayerCount { Count = ctx.Db.Player.Count } };
 }
 ```
 
@@ -645,7 +669,7 @@ public static IQuery<Player> BottomPlayers(ViewContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{view, Query, ViewContext};
+use spacetimedb::{view, AnonymousViewContext, Query, SpacetimeType, ViewContext};
 
 // Return single row
 #[view(accessor = my_player, public)]
@@ -665,6 +689,19 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
 fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|p| p.score.lt(1000))
 }
+
+#[derive(SpacetimeType)]
+struct PlayerCount {
+    count: u64,
+}
+
+// Count rows in a table.
+#[view(accessor = player_count, public)]
+fn player_count(ctx: &AnonymousViewContext) -> Vec<PlayerCount> {
+    vec![PlayerCount {
+        count: ctx.db.player().count(),
+    }]
+}
 ```
 
 </TabItem>
@@ -675,12 +712,22 @@ using namespace SpacetimeDB;
 
 // Return single row using unique indexed field
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-    return ctx.db[player_identity].find(ctx.sender);
+    return ctx.db[player_identity].find(ctx.sender());
 }
 
 // Return multiple rows using indexed field
 SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+
+struct PlayerCount {
+    uint64_t count;
+};
+SPACETIMEDB_STRUCT(PlayerCount, count)
+
+// Count rows in a table.
+SPACETIMEDB_VIEW(std::optional<PlayerCount>, player_count, Public, AnonymousViewContext ctx) {
+    return std::optional<PlayerCount>(PlayerCount{ctx.db[player].count()});
 }
 ```
 
@@ -729,7 +776,7 @@ ctx.rng()               // Random number generator
 
 ```cpp
 ctx.db                  // Database access (Table accessor)
-ctx.sender              // Identity of caller (Identity type)
+ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
 ctx.identity()          // Module's own identity (Identity type)

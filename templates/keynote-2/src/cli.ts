@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import { readdir, mkdir, writeFile } from 'node:fs/promises';
 import { CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
@@ -6,101 +6,26 @@ import type { TestCaseModule } from './tests/types';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { RunResult } from './core/types.ts';
+import { parseBenchOptions } from './opts.ts';
 
-const args = process.argv.slice(2);
+const options = parseBenchOptions();
+const {
+  testName,
+  seconds,
+  concurrency,
+  accounts,
+  alpha,
+  connectors,
+  contentionTests,
+  concurrencyTests,
+} = options;
 
-let testName = 'test-1';
-let posArgs = args;
+type RunOneArgs = Parameters<typeof runOne>[0];
 
-if (args.length > 0 && !args[0].startsWith('--')) {
-  testName = args[0];
-  posArgs = args.slice(1);
-}
-
-let seconds = 1,
-  concurrency = 10,
-  accounts = process.env.SEED_ACCOUNTS
-    ? Number(process.env.SEED_ACCOUNTS)
-    : 100_000,
-  alpha = 0.5,
-  connectors: string[] | null = null,
-  contentionTests: {
-    startAlpha: number;
-    endAlpha: number;
-    step: number;
-    concurrency: number;
-  } | null = null,
-  concurrencyTests: {
-    startConc: number;
-    endConc: number;
-    step: number;
-    alpha: number;
-  } | null = null;
-
-for (let i = 0; i < posArgs.length; ) {
-  const arg = posArgs[i];
-  if (!arg.startsWith('--')) {
-    i++;
-    continue;
-  }
-  const key = arg.slice(2);
-  const val = posArgs[i + 1];
-  if (!val || val.startsWith('--')) {
-    i++;
-    continue;
-  }
-
-  switch (key) {
-    case 'seconds':
-      seconds = Number(val);
-      i += 2;
-      break;
-    case 'concurrency':
-      concurrency = Number(val);
-      i += 2;
-      break;
-    case 'alpha':
-      alpha = Number(val);
-      i += 2;
-      break;
-    case 'connectors':
-      connectors = val
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      i += 2;
-      break;
-    case 'contention-tests':
-      contentionTests = {
-        startAlpha: Number(posArgs[i + 1]),
-        endAlpha: Number(posArgs[i + 2]),
-        step: Number(posArgs[i + 3]),
-        concurrency: Number(posArgs[i + 4]),
-      };
-      concurrency = Number(posArgs[i + 4]);
-
-      i += 5;
-      break;
-    case 'concurrency-tests':
-      concurrencyTests = {
-        startConc: Number(posArgs[i + 1]),
-        endConc: Number(posArgs[i + 2]),
-        step: Number(posArgs[i + 3]),
-        alpha: Number(posArgs[i + 4]),
-      };
-      alpha = Number(posArgs[i + 4]);
-
-      i += 5;
-      break;
-  }
-}
-
-interface BenchmarkConfig {
-  connector: any;
-  scenario: any;
-  seconds: number;
-  accounts: number;
-}
+type BenchmarkConfig = Pick<
+  RunOneArgs,
+  'connector' | 'scenario' | 'seconds' | 'accounts' | 'runtimeConfig'
+>;
 
 class BenchmarkTester {
   private config: BenchmarkConfig;
@@ -173,7 +98,7 @@ class BenchmarkTester {
     startConc: number = 1,
     endConc: number = 100,
     step: number = 1,
-    alpha: number = 1,
+    alpha: number = 1.5,
   ) {
     const results: { concurrency: number; avgResult: RunResult }[] = [];
     for (let conc = startConc; conc <= endConc; conc += step) {
@@ -189,7 +114,7 @@ class BenchmarkTester {
     startConc: number = 1,
     endConc: number = 100,
     factor: number = 2,
-    alpha: number = 1,
+    alpha: number = 1.5,
   ) {
     if (factor <= 1) {
       throw new Error('factor must be > 1 to avoid infinite loop');
@@ -226,14 +151,20 @@ const testDirPath = fileURLToPath(testDirUrl);
 
     if (connectors && !connectors.includes(tc.system)) continue;
 
-    const makeConnector = (CONNECTORS as any)[tc.system];
+    const makeConnector = CONNECTORS[tc.system];
     if (!makeConnector) throw new Error(`Unknown connector ${tc.system}`);
 
-    const connector = makeConnector();
+    const connector = makeConnector(options);
 
     let res: any;
 
-    const config = { connector, scenario: tc.run, seconds, accounts };
+    const config = {
+      connector,
+      scenario: tc.run,
+      seconds,
+      accounts,
+      runtimeConfig: options,
+    };
 
     const tester = new BenchmarkTester(config);
 
@@ -259,6 +190,7 @@ const testDirPath = fileURLToPath(testDirUrl);
         concurrency,
         accounts,
         alpha,
+        runtimeConfig: options,
       });
     }
 

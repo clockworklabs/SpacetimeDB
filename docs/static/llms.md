@@ -111,11 +111,10 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 
 | Language | Rules |
 |----------|-------|
-| All Languages | [spacetimedb.mdc](https://spacetimedb.com/ai-rules/spacetimedb.mdc) |
-| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/ai-rules/spacetimedb-typescript.mdc) |
-| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/ai-rules/spacetimedb-rust.mdc) |
-| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/ai-rules/spacetimedb-csharp.mdc) |
-
+| All Languages | [spacetimedb.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb.mdc) |
+| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-typescript.mdc) |
+| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-rust.mdc) |
+| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/docs/ai-rules/spacetimedb-csharp.mdc) |
 ## Basic Project Workflow
 
 Getting started with SpacetimeDB involves a few key steps:
@@ -965,13 +964,13 @@ Both contexts provide read-only access to tables and indexes through `ctx.db`.
 Views can return:
 - `Option<T>` - For at-most-one row (e.g., looking up a specific player)
 - `Vec<T>` - For multiple rows (e.g., listing all players at a level)
-- `impl Query<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
+- `impl IQuery<T>` - A typed SQL query that behaves like the deprecated RLS (Row-Level Security) feature
 
 Where `T` can be a table type or any custom type derived with `SpacetimeType`.
 
-**impl Query<T> Return Type**
+**impl IQuery<T> Return Type**
 
-When a view returns `impl Query<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `impl Query<T>`, you must use indexed column lookups to access tables inside view functions.
+When a view returns `impl IQuery<T>`, SpacetimeDB computes results incrementally as the underlying data changes. This enables efficient table scanning because query results are maintained incrementally rather than recomputed from scratch. Without `impl IQuery<T>`, you must use indexed column lookups to access tables inside view functions.
 
 The query builder provides a fluent API for constructing type-safe SQL queries:
 
@@ -979,7 +978,7 @@ The query builder provides a fluent API for constructing type-safe SQL queries:
 use spacetimedb::{view, ViewContext, Query};
 
 // This view can scan the whole table efficiently because
-// impl Query<T> results are computed incrementally
+// impl IQuery<T> results are computed incrementally
 #[view(accessor = my_messages, public)]
 fn my_messages(ctx: &ViewContext) -> impl Query<Message> {
     // Return a typed query builder directly

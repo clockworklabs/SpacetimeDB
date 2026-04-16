@@ -873,14 +873,14 @@ SPACETIMEDB_PROCEDURE(Unit, get_request_with_short_timeout, ProcedureContext ctx
 }
 ```
 
-:::note
-All timeouts are clamped to a maximum of 500ms by the host.
-:::
-
 Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
 
 </TabItem>
 </Tabs>
+
+:::note
+If no timeout is specified, HTTP requests default to 30 seconds. User-specified timeouts are clamped to a maximum of 180 seconds by the host.
+:::
 
 ## Calling Reducers from Procedures
 

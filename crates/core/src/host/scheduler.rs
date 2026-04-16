@@ -268,12 +268,20 @@ struct SchedulerActor {
     module_host: WeakModuleHost,
 }
 
+#[derive(Clone)]
 enum QueueItem {
     Id { id: ScheduledFunctionId, at: Timestamp },
     VolatileNonatomicImmediate { function_name: String, args: FunctionArgs },
 }
 
+#[derive(Clone)]
 pub(crate) struct ScheduledFunctionParams(QueueItem);
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum CallScheduledFunctionError {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+}
 
 #[cfg(target_pointer_width = "64")]
 spacetimedb_table::static_assert_size!(QueueItem, 64);
@@ -320,8 +328,8 @@ impl SchedulerActor {
 
     async fn handle_queued(&mut self, id: Expired<QueueItem>) {
         let item = id.into_inner();
-        let id: Option<ScheduledFunctionId> = match item {
-            QueueItem::Id { id, .. } => Some(id),
+        let id: Option<ScheduledFunctionId> = match &item {
+            QueueItem::Id { id, .. } => Some(*id),
             QueueItem::VolatileNonatomicImmediate { .. } => None,
         };
         if let Some(id) = id {
@@ -337,7 +345,7 @@ impl SchedulerActor {
         match result {
             // If the module already exited, leave the `ScheduledFunction` in
             // the database for when the module restarts.
-            Err(NoSuchModule) => {}
+            Err(CallScheduledFunctionError::NoSuchModule(_)) => {}
             Ok(CallScheduledFunctionResult { reschedule: None }) => {
                 // nothing to do
             }
@@ -379,21 +387,6 @@ pub(super) async fn call_scheduled_function(
     };
     let db = &**module_info.relational_db();
 
-    let delete_scheduled_function_row = |tx: Option<MutTxId>, timestamp: Option<_>| {
-        id.and_then(|id| {
-            let (timestamp, instant) = timestamp.unwrap_or_else(|| (Timestamp::now(), Instant::now()));
-            let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
-            let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id)?;
-            let ScheduleAt::Interval(dur) = schedule_at else {
-                return None;
-            };
-            Some(Reschedule {
-                at_ts: schedule_at.to_timestamp_from(timestamp),
-                at_real: instant + dur.to_duration_abs(),
-            })
-        })
-    };
-
     enum Function {
         Reducer(CallScheduledFunctionResult, bool),
         Procedure {
@@ -416,7 +409,7 @@ pub(super) async fn call_scheduled_function(
             Err(err) => {
                 // All we can do here is log an error.
                 log::error!("could not determine scheduled function or its parameters: {err:#}");
-                let reschedule = delete_scheduled_function_row(Some(tx), None);
+                let reschedule = delete_scheduled_function_row(module_info, db, id, Some(tx), None, inst_common, inst);
                 return (CallScheduledFunctionResult { reschedule }, false);
             }
         };
@@ -452,7 +445,7 @@ pub(super) async fn call_scheduled_function(
                 let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                     inst_common.call_reducer_with_tx(Some(tx), params, inst)
                 }));
-                let reschedule = delete_scheduled_function_row(None, None);
+                let reschedule = delete_scheduled_function_row(module_info, db, id, None, None, inst_common, inst);
                 // Currently, we drop the return value from the function call. In the future,
                 // we might want to handle it somehow.
                 let trapped = match result {
@@ -463,7 +456,15 @@ pub(super) async fn call_scheduled_function(
             }
             CallParams::Procedure(params) => {
                 // Delete scheduled row.
-                let reschedule = delete_scheduled_function_row(Some(tx), Some((timestamp, instant)));
+                let reschedule = delete_scheduled_function_row(
+                    module_info,
+                    db,
+                    id,
+                    Some(tx),
+                    Some((timestamp, instant)),
+                    inst_common,
+                    inst,
+                );
                 Function::Procedure { params, reschedule }
             }
         }
@@ -492,40 +493,96 @@ pub(super) async fn call_scheduled_function(
     }
 }
 
+/// Deletes a scheduled-row entry after its function runs, reusing `tx` when one is already
+/// open and otherwise creating an internal transaction for the cleanup.
+///
+/// One-shot schedules are deleted and committed immediately. Interval schedules are not
+/// deleted here; instead their `ScheduleAt` is returned to the caller as a `Reschedule`.
+fn delete_scheduled_function_row(
+    module_info: &ModuleInfo,
+    db: &RelationalDB,
+    id: Option<ScheduledFunctionId>,
+    tx: Option<MutTxId>,
+    timestamp: Option<(Timestamp, Instant)>,
+    inst_common: &mut InstanceCommon,
+    inst: &mut impl WasmInstance,
+) -> Option<Reschedule> {
+    id.and_then(|id| {
+        let (timestamp, instant) = timestamp.unwrap_or_else(|| (Timestamp::now(), Instant::now()));
+        let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+        let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
+        let ScheduleAt::Interval(dur) = schedule_at else {
+            return None;
+        };
+        Some(Reschedule {
+            at_ts: schedule_at.to_timestamp_from(timestamp),
+            at_real: instant + dur.to_duration_abs(),
+        })
+    })
+}
+
+/// Deletes a scheduled-row entry inside an existing mutable transaction.
+///
+/// If the row describes a one-shot schedule, this also refreshes any stale views and
+/// broadcasts the resulting delete in the same transaction.
+///
+/// Interval schedules are left in place and returned to the caller for rescheduling.
 fn delete_scheduled_function_row_with_tx(
     module_info: &ModuleInfo,
     db: &RelationalDB,
     mut tx: MutTxId,
     id: ScheduledFunctionId,
+    inst_common: &mut InstanceCommon,
+    inst: &mut impl WasmInstance,
 ) -> Option<ScheduleAt> {
     if let Ok(Some(schedule_row)) = get_schedule_row_mut(&tx, db, id) {
-        if let Ok(schedule_at) = read_schedule_at(&schedule_row, id.at_column) {
-            // If the schedule is an interval, we handle it as a repeated schedule
-            if let ScheduleAt::Interval(_) = schedule_at {
-                return Some(schedule_at);
-            }
-            let row_ptr = schedule_row.pointer();
-            db.delete(&mut tx, id.table_id, [row_ptr]);
+        match read_schedule_at(&schedule_row, id.at_column) {
+            Ok(schedule_at) => {
+                // If the schedule is an interval, we handle it as a repeated schedule
+                if let ScheduleAt::Interval(_) = schedule_at {
+                    return Some(schedule_at);
+                }
+                let row_ptr = schedule_row.pointer();
+                db.delete(&mut tx, id.table_id, [row_ptr]);
 
-            commit_and_broadcast_deletion_event(tx, module_info);
-        } else {
-            log::debug!(
-                "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
-                id.table_id,
-                id.schedule_id
-            );
+                refresh_views_then_commit_and_broadcast(tx, module_info, inst_common, inst);
+            }
+            _ => {
+                log::debug!(
+                    "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
+                    id.table_id,
+                    id.schedule_id
+                );
+            }
         }
     }
     None
 }
 
-fn commit_and_broadcast_deletion_event(tx: MutTxId, module_info: &ModuleInfo) {
+/// Refreshes stale views, commits transaction, and broadcasts subscription updates.
+fn refresh_views_then_commit_and_broadcast(
+    tx: MutTxId,
+    module_info: &ModuleInfo,
+    inst_common: &mut InstanceCommon,
+    inst: &mut impl WasmInstance,
+) {
+    let timestamp = Timestamp::now();
+    let (view_result, trapped) = inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
+    let mut status = match view_result.outcome {
+        crate::host::module_host::ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
+        crate::host::module_host::ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
+        crate::host::module_host::ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
+    };
+    if trapped && matches!(status, EventStatus::Committed(_)) {
+        status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
+    }
+
     let event = ModuleEvent {
-        timestamp: Timestamp::now(),
+        timestamp,
         caller_identity: module_info.database_identity,
         caller_connection_id: None,
         function_call: ModuleFunctionCall::default(),
-        status: EventStatus::Committed(DatabaseUpdate::default()),
+        status,
         reducer_return_value: None,
         //Keeping them 0 as it is internal transaction, not by reducer
         energy_quanta_used: EnergyQuanta { quanta: 0 },
@@ -534,7 +591,10 @@ fn commit_and_broadcast_deletion_event(tx: MutTxId, module_info: &ModuleInfo) {
         timer: None,
     };
 
-    if let Err(e) = module_info.subscriptions.commit_and_broadcast_event(None, event, tx) {
+    if let Err(e) = module_info
+        .subscriptions
+        .commit_and_broadcast_event(None, event, view_result.tx)
+    {
         log::error!("Failed to broadcast deletion event: {e:#}");
     }
 }

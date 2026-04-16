@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines two tables and a reducer that looks up a row by primary-key index and writes a projection to another table.
+Write a SpacetimeDB backend module in C# that defines two tables and a reducer that looks up a row by primary-key index and writes a projection to another table.
 
 TABLES
 - User

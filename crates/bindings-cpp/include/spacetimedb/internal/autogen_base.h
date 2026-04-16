@@ -113,6 +113,15 @@ public:
 #define SPACETIMEDB_INTERNAL_PRODUCT_TYPE(TypeName) \
     struct TypeName
 
+// Public aliases used by generated non-internal code paths.
+#ifndef SPACETIMEDB_PRODUCT_TYPE
+#define SPACETIMEDB_PRODUCT_TYPE(TypeName) SPACETIMEDB_INTERNAL_PRODUCT_TYPE(TypeName)
+#endif
+
+#ifndef SPACETIMEDB_TAGGED_ENUM
+#define SPACETIMEDB_TAGGED_ENUM(TypeName, ...) SPACETIMEDB_INTERNAL_TAGGED_ENUM(TypeName, __VA_ARGS__)
+#endif
+
 // Macro for product type equality - generates == and != operators
 // This generates a simple equality comparison using std::tie
 #define SPACETIMEDB_PRODUCT_TYPE_EQUALITY(...) \

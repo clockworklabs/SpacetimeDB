@@ -14,14 +14,13 @@ use crate::client::messages::{
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol, WsVersion};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
-use crate::estimation::estimate_rows_scanned;
+use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, RefInstance, WasmInstance};
 use crate::host::{self, ModuleHost};
 use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
-use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use core::panic;
 use parking_lot::RwLock;
@@ -1056,20 +1055,26 @@ impl ModuleSubscriptions {
         let mut new_queries = 0;
 
         for (sql, hash, hash_with_param) in query_hashes {
-            if let Some(unit) = guard.query(&hash) {
-                plans.push(unit);
-            } else if let Some(unit) = guard.query(&hash_with_param) {
-                plans.push(unit);
-            } else {
-                plans.push(Arc::new(
-                    compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
-                        DBError::WithSql {
-                            error: Box::new(DBError::Other(err.into())),
-                            sql: sql.into(),
-                        }
-                    })?,
-                ));
-                new_queries += 1;
+            match guard.query(&hash) {
+                Some(unit) => {
+                    plans.push(unit);
+                }
+                _ => match guard.query(&hash_with_param) {
+                    Some(unit) => {
+                        plans.push(unit);
+                    }
+                    _ => {
+                        plans.push(Arc::new(
+                            compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
+                                DBError::WithSql {
+                                    error: Box::new(DBError::Other(err.into())),
+                                    sql: sql.into(),
+                                }
+                            })?,
+                        ));
+                        new_queries += 1;
+                    }
+                },
             }
         }
 
@@ -1554,8 +1559,24 @@ impl ModuleSubscriptions {
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
-        let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
+        let removed_queries = {
+            let mut subscriptions = self.subscriptions.write();
+            subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id))
+        };
+
+        if removed_queries.is_empty() {
+            return;
+        }
+
+        // TODO(perf): Removing a subscriber is currently O(subscribed_queries).
+        // Instead we should maintain an index to make this O(subscribed_views).
+        if let Err(err) = self.unsubscribe_views(&removed_queries, client_id.identity) {
+            log::error!(
+                "failed to unsubscribe views for disconnected client ({}, {}): {err}",
+                client_id.identity,
+                client_id.connection_id
+            );
+        }
     }
 
     /// Rolls back `tx` and returns the offset as it was before `tx`.
@@ -1618,7 +1639,7 @@ impl ModuleSubscriptions {
                                 message,
                             );
                         }
-                        WsVersion::V2 => {
+                        WsVersion::V2 | WsVersion::V3 => {
                             if let Some(request_id) = event.request_id {
                                 self.send_reducer_failure_result_v2(client, &event, request_id);
                             }
@@ -1858,7 +1879,8 @@ mod tests {
         Protocol, WsVersion,
     };
     use crate::db::relational_db::tests_utils::{
-        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
+        begin_mut_tx, begin_tx, create_view_for_test, insert, insert_into_view, with_auto_commit, with_read_only,
+        TestDB,
     };
     use crate::db::relational_db::{Persistence, RelationalDB, Txdata};
     use crate::error::DBError;
@@ -1878,7 +1900,7 @@ mod tests {
     use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use spacetimedb_durability::{Durability, EmptyHistory, Transaction, TxOffset};
+    use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
@@ -1896,6 +1918,8 @@ mod tests {
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc::{self};
     use tokio::sync::watch;
+
+    const TEST_MESSAGE_TIMEOUT: Duration = Duration::from_millis(20);
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
@@ -1963,7 +1987,8 @@ mod tests {
     impl Durability for ManualDurability {
         type TxData = Txdata;
 
-        fn append_tx(&self, tx: Transaction<Self::TxData>) {
+        fn append_tx(&self, tx: spacetimedb_durability::PreparedTx<Self::TxData>) {
+            let tx = tx.into_transaction();
             let mut commitlog = self.commitlog.write().unwrap();
             commitlog.commit([tx]).expect("commit failed");
             commitlog.flush().expect("error flushing commitlog");
@@ -2158,6 +2183,24 @@ mod tests {
         )
     }
 
+    /// Instantiate a v2 client connection with the default test settings.
+    fn v2_client_connection(
+        client_id: ClientActorId,
+        db: &Arc<RelationalDB>,
+    ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
+        client_connection_with_config(
+            client_id,
+            db,
+            ClientConfig {
+                protocol: Protocol::Binary,
+                version: WsVersion::V2,
+                compression: ws_v1::Compression::None,
+                tx_update_full: true,
+                confirmed_reads: false,
+            },
+        )
+    }
+
     /// Insert rules into the RLS system table
     fn insert_rls_rules(
         db: &RelationalDB,
@@ -2241,17 +2284,7 @@ mod tests {
         let db = relational_db()?;
 
         let client_id = client_id_from_u8(1);
-        let (sender, mut rx) = client_connection_with_config(
-            client_id,
-            &db,
-            ClientConfig {
-                protocol: Protocol::Binary,
-                version: WsVersion::V2,
-                compression: ws_v1::Compression::None,
-                tx_update_full: true,
-                confirmed_reads: false,
-            },
-        );
+        let (sender, mut rx) = v2_client_connection(client_id, &db);
 
         let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
@@ -2311,17 +2344,7 @@ mod tests {
         let db = relational_db()?;
 
         let client_id = client_id_from_u8(1);
-        let (sender, mut rx) = client_connection_with_config(
-            client_id,
-            &db,
-            ClientConfig {
-                protocol: Protocol::Binary,
-                version: WsVersion::V2,
-                compression: ws_v1::Compression::None,
-                tx_update_full: true,
-                confirmed_reads: false,
-            },
-        );
+        let (sender, mut rx) = v2_client_connection(client_id, &db);
 
         let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
@@ -2383,17 +2406,7 @@ mod tests {
         let db = relational_db()?;
 
         let client_id = client_id_from_u8(1);
-        let (sender, mut rx) = client_connection_with_config(
-            client_id,
-            &db,
-            ClientConfig {
-                protocol: Protocol::Binary,
-                version: WsVersion::V2,
-                compression: ws_v1::Compression::None,
-                tx_update_full: true,
-                confirmed_reads: false,
-            },
-        );
+        let (sender, mut rx) = v2_client_connection(client_id, &db);
 
         let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
@@ -2438,8 +2451,84 @@ mod tests {
 
         let _ = commit_tx(&db, &subs, [], [(table_id, product![2_u8])])?;
 
-        let recv = tokio::time::timeout(Duration::from_millis(20), rx.recv()).await;
-        assert!(recv.is_err(), "expected no updates after unsubscribe");
+        assert_no_outbound_message(rx.recv()).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_v2_other_clients_receive_sender_view_updates() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
+        let id_for_a = identity_from_u8(1);
+        let client_id_for_a = client_id_from_u8(1);
+        let client_id_for_b = client_id_from_u8(2);
+
+        let (tx_for_a, mut rx_for_a) = v2_client_connection(client_id_for_a, &db);
+        let (tx_for_b, mut rx_for_b) = v2_client_connection(client_id_for_b, &db);
+
+        let auth_for_a = AuthCtx::new(db.owner_identity(), client_id_for_a.identity);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), client_id_for_b.identity);
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let (_, view_table_id) = create_view_for_test(&db, "my_view", &[("counter", AlgebraicType::U8)], false)?;
+
+        // Seed a sender-scoped row that only client A should observe through the view.
+        with_auto_commit(&db, |tx| -> anyhow::Result<_> {
+            insert_into_view(&db, tx, view_table_id, Some(id_for_a), product![7_u8])?;
+            Ok(())
+        })?;
+
+        subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+            None,
+            tx_for_a.clone(),
+            auth_for_a,
+            ws_v2::Subscribe {
+                request_id: 1,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                query_strings: ["select * from my_view".into()].into(),
+            },
+            Instant::now(),
+            None,
+        )?;
+        subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+            None,
+            tx_for_b.clone(),
+            auth_for_b,
+            ws_v2::Subscribe {
+                request_id: 2,
+                query_set_id: ws_v2::QuerySetId::new(2),
+                query_strings: ["select * from my_view".into()].into(),
+            },
+            Instant::now(),
+            None,
+        )?;
+
+        assert!(matches!(
+            rx_for_a.recv().await,
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(_)))
+        ));
+        assert!(matches!(
+            rx_for_b.recv().await,
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(_)))
+        ));
+
+        // Dropping client B must not break client A's sender-view bookkeeping.
+        subs.remove_subscriber(client_id_for_b);
+
+        // Delete the backing row and verify the surviving subscriber still receives the view delta.
+        let _ = commit_tx(&db, &subs, [(view_table_id, product![id_for_a, 7_u8])], [])?;
+
+        let schema = ProductType::from([AlgebraicType::U8]);
+        assert_v2_tx_update_for_table(
+            rx_for_a.recv(),
+            ws_v2::QuerySetId::new(1),
+            "my_view",
+            &schema,
+            [],
+            [product![7_u8]],
+        )
+        .await;
 
         Ok(())
     }
@@ -2455,6 +2544,59 @@ mod tests {
         Ok(())
     }
 
+    fn update_row_counts<I, D, BI, BD>(
+        rows_received: &mut HashMap<ProductValue, i32>,
+        schema: &ProductType,
+        inserts: I,
+        deletes: D,
+    ) where
+        I: IntoIterator<Item = BI>,
+        D: IntoIterator<Item = BD>,
+        BI: AsRef<[u8]>,
+        BD: AsRef<[u8]>,
+    {
+        for row in inserts.into_iter().map(|bytes| {
+            let mut bytes = bytes.as_ref();
+            ProductValue::decode(schema, &mut bytes).unwrap()
+        }) {
+            *rows_received.entry(row).or_insert(0) += 1;
+        }
+
+        for row in deletes.into_iter().map(|bytes| {
+            let mut bytes = bytes.as_ref();
+            ProductValue::decode(schema, &mut bytes).unwrap()
+        }) {
+            *rows_received.entry(row).or_insert(0) -= 1;
+        }
+    }
+
+    fn assert_received_rows(
+        rows_received: HashMap<ProductValue, i32>,
+        inserts: impl IntoIterator<Item = ProductValue>,
+        deletes: impl IntoIterator<Item = ProductValue>,
+    ) {
+        assert_eq!(
+            rows_received
+                .iter()
+                .filter(|(_, n)| n > &&0)
+                .map(|(row, _)| row)
+                .cloned()
+                .sorted()
+                .collect::<Vec<_>>(),
+            inserts.into_iter().sorted().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            rows_received
+                .iter()
+                .filter(|(_, n)| n < &&0)
+                .map(|(row, _)| row)
+                .cloned()
+                .sorted()
+                .collect::<Vec<_>>(),
+            deletes.into_iter().sorted().collect::<Vec<_>>()
+        );
+    }
+
     /// Pull a message from receiver and assert that it is a `TxUpdate` with the expected rows
     async fn assert_tx_update_for_table(
         rx: impl Future<Output = Option<OutboundMessage>>,
@@ -2463,7 +2605,7 @@ mod tests {
         inserts: impl IntoIterator<Item = ProductValue>,
         deletes: impl IntoIterator<Item = ProductValue>,
     ) {
-        match rx.await {
+        match recv_outbound_message(rx, "TxUpdate").await {
             Some(OutboundMessage::V1(SerializableMessage::TxUpdate(TransactionUpdateMessage {
                 database_update:
                     SubscriptionUpdateMessage {
@@ -2490,46 +2632,67 @@ mod tests {
                         panic!("expected an uncompressed table update")
                     };
 
-                    for row in table_update
-                        .inserts
-                        .into_iter()
-                        .map(|bytes| ProductValue::decode(schema, &mut &*bytes).unwrap())
-                    {
-                        *rows_received.entry(row).or_insert(0) += 1;
-                    }
-
-                    for row in table_update
-                        .deletes
-                        .into_iter()
-                        .map(|bytes| ProductValue::decode(schema, &mut &*bytes).unwrap())
-                    {
-                        *rows_received.entry(row).or_insert(0) -= 1;
-                    }
+                    update_row_counts(&mut rows_received, schema, &table_update.inserts, &table_update.deletes);
                 }
 
-                assert_eq!(
-                    rows_received
-                        .iter()
-                        .filter(|(_, n)| n > &&0)
-                        .map(|(row, _)| row)
-                        .cloned()
-                        .sorted()
-                        .collect::<Vec<_>>(),
-                    inserts.into_iter().sorted().collect::<Vec<_>>()
-                );
-                assert_eq!(
-                    rows_received
-                        .iter()
-                        .filter(|(_, n)| n < &&0)
-                        .map(|(row, _)| row)
-                        .cloned()
-                        .sorted()
-                        .collect::<Vec<_>>(),
-                    deletes.into_iter().sorted().collect::<Vec<_>>()
-                );
+                assert_received_rows(rows_received, inserts, deletes);
             }
             Some(msg) => panic!("expected a TxUpdate, but got {msg:#?}"),
             None => panic!("The receiver closed due to an error"),
+        }
+    }
+
+    /// Pull a message from receiver and assert that it is a v2 `TransactionUpdate`
+    /// with the expected rows for a single table in a single query set.
+    async fn assert_v2_tx_update_for_table(
+        rx: impl Future<Output = Option<OutboundMessage>>,
+        query_set_id: ws_v2::QuerySetId,
+        table_name: &str,
+        schema: &ProductType,
+        inserts: impl IntoIterator<Item = ProductValue>,
+        deletes: impl IntoIterator<Item = ProductValue>,
+    ) {
+        match recv_outbound_message(rx, "v2 TransactionUpdate").await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(update))) => {
+                assert_eq!(update.query_sets.len(), 1);
+                let query_set = &update.query_sets[0];
+                assert_eq!(query_set.query_set_id, query_set_id);
+                assert_eq!(query_set.tables.len(), 1);
+
+                let table_update = &query_set.tables[0];
+                assert_eq!(table_update.table_name.as_ref(), table_name);
+
+                let mut rows_received: HashMap<ProductValue, i32> = HashMap::new();
+
+                for rows in table_update.rows.iter() {
+                    let ws_v2::TableUpdateRows::PersistentTable(rows) = rows else {
+                        panic!("expected a persistent-table update")
+                    };
+
+                    update_row_counts(&mut rows_received, schema, &rows.inserts, &rows.deletes);
+                }
+
+                assert_received_rows(rows_received, inserts, deletes);
+            }
+            Some(msg) => panic!("expected a v2 TransactionUpdate, but got {msg:#?}"),
+            None => panic!("The receiver closed due to an error"),
+        }
+    }
+
+    async fn recv_outbound_message(
+        rx: impl Future<Output = Option<OutboundMessage>>,
+        expected: &str,
+    ) -> Option<OutboundMessage> {
+        tokio::time::timeout(TEST_MESSAGE_TIMEOUT, rx)
+            .await
+            .unwrap_or_else(|_| panic!("timed out waiting for {expected}"))
+    }
+
+    async fn assert_no_outbound_message(rx: impl Future<Output = Option<OutboundMessage>>) {
+        match tokio::time::timeout(TEST_MESSAGE_TIMEOUT, rx).await {
+            Err(_) => {}
+            Ok(Some(msg)) => panic!("expected no message, got {msg:#?}"),
+            Ok(None) => panic!("the receiver closed due to an error"),
         }
     }
 
@@ -4110,7 +4273,7 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_confirmed_reads() -> anyhow::Result<()> {
         let (db, durability) = relational_db_with_manual_durability(tokio::runtime::Handle::current())?;
 

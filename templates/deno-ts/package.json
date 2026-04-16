@@ -10,5 +10,8 @@
   },
   "dependencies": {
     "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "deno": "^2.6.0"
   }
 }

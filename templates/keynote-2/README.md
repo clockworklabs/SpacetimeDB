@@ -7,13 +7,16 @@ A benchmark suite comparing SpacetimeDB against traditional web application stac
 See SpacetimeDB's performance advantage with one command:
 
 ```bash
-npm install
+pnpm install
 npm run demo
 ```
 
 The demo compares SpacetimeDB and Convex by default, since both are easy for anyone to set up and run locally without additional infrastructure. Other systems (Postgres, CockroachDB, SQLite, etc.) are also supported but require more setup. The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results.
 
 **Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
+
+**Note:** `demo` always runs the built-in `test-1` scenario. Use `bench` if you need to specify a test name directly.
+**Note:** `demo` selects targets with `--systems`; `bench` filters test connectors with `--connectors`.
 
 ## Results Summary
 
@@ -32,6 +35,8 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 
 **Key Finding:** SpacetimeDB achieves **~14x higher throughput** than the next best option (SQLite RPC) and maintains nearly identical performance under high contention (only ~4% drop), while traditional databases suffer significant degradation (CockroachDB drops 96%).
 
+> **Note:** SpacetimeDB runs on ARM architectures (including Apple M-series Macs), but has not yet been optimized for them.
+
 ### Contention Impact
 
 ![Contention Chart](./contention-chart.png)
@@ -44,7 +49,7 @@ All systems were tested with **out-of-the-box default settings** - no custom tun
 
 For cloud services, we tested paid tiers to give them their best chance:
 
-- **PlanetScale**: PS-256G (32 cores, 256 GB RAM)
+- **PlanetScale**: PS-2560 (32 vCPUs, 256 GB RAM), single node, us-central1.
 - **Supabase**: Pro tier
 - **Convex**: Pro tier
 
@@ -86,6 +91,7 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 - `--concurrency 50`: Number of concurrent client connections
 - `--alpha 0`: ~0% contention (uniform account distribution)
 - `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
+- `--stdb-compression none|gzip`: SpacetimeDB client compression mode (default: `none`)
 
 ### Hardware Configuration
 
@@ -97,10 +103,12 @@ docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connect
 
 - c4-standard-32-lssd (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
 - RAID 0 on 5 Local SSDs
+- Region: us-central1
 
 **Client Machine:**
 
 - c4-standard-32 (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
+- Region: us-central1
 - Runs on a **separate machine** from the server
 
 **Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
@@ -155,7 +163,7 @@ PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud dat
 
 | System                            | Architecture                                            |
 | --------------------------------- | ------------------------------------------------------- |
-| SpacetimeDB                       | Integrated platform (Rust)                              |
+| SpacetimeDB                       | Integrated platform.                                    |
 | SQLite + Node HTTP + Drizzle      | Node.js HTTP server → Drizzle ORM → SQLite              |
 | Bun + Drizzle + Postgres          | Bun HTTP server → Drizzle ORM → PostgreSQL              |
 | Postgres + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → PostgreSQL          |
@@ -167,6 +175,7 @@ PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud dat
 ## Running the Benchmarks
 
 See [DEVELOP.md](./DEVELOP.md) for detailed setup and execution instructions.
+The distributed TypeScript SpacetimeDB workflow is documented there as `Run the distributed TypeScript SpacetimeDB benchmark`.
 
 ### Quick Start
 
@@ -184,7 +193,7 @@ docker compose up -d pg crdb
 npm run prep
 
 # Run benchmark
-npm run bench -- --seconds 10 --concurrency 50 --alpha 0 --connectors spacetimedb,postgres_rpc,sqlite_rpc
+npm run bench -- test-1 --seconds 10 --concurrency 50 --alpha 1.5 --connectors spacetimedb,postgres_rpc,sqlite_rpc
 ```
 
 ## Output

@@ -12,6 +12,7 @@ packages:
   - 'templates/nuxt-ts'
   - 'templates/remix-ts'
   - 'templates/bun-ts'
+  - 'templates/keynote-2'
   - 'modules/benchmarks-ts'
   - 'modules/module-test-ts'
   - 'templates/chat-react-ts/spacetimedb'

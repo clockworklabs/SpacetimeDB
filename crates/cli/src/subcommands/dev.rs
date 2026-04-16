@@ -7,7 +7,7 @@ use crate::spacetime_config::{
 use crate::subcommands::init;
 use crate::util::{
     add_auth_header_opt, database_identity, find_module_path, get_auth_header, get_login_token_or_log_in,
-    spacetime_reverse_dns, ResponseExt,
+    spacetime_reverse_dns, strip_verbatim_prefix, ResponseExt,
 };
 use crate::{common_args, generate};
 use crate::{publish, tasks};
@@ -228,7 +228,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 .map(|lc| {
                     lc.loaded_files
                         .iter()
-                        .map(|f| f.display().to_string())
+                        .map(|f| strip_verbatim_prefix(f).display().to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
                 })
@@ -279,11 +279,27 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
             // Save to root `spacetime.json` (not env/local overlays), then reload merged config.
             let saved_path = save_root_module_path_to_spacetime_json(&config_dir, &provided_module_path)?;
-            println!("{} Updated {}", "✓".green(), saved_path.display());
+            println!(
+                "{} Updated {}",
+                "✓".green(),
+                strip_verbatim_prefix(&saved_path).display()
+            );
 
             loaded_config = find_and_load_with_env_from(Some(env), project_dir.clone())
                 .with_context(|| "Failed to reload spacetime.json after updating module-path")?;
         }
+    }
+
+    // If config has a module-path and CLI didn't provide one, resolve spacetimedb_dir from it.
+    // This handles the case where spacetime.json specifies module-path but has no publish targets.
+    if module_path_from_cli.is_none()
+        && let Some(config_module_path) = loaded_config
+            .as_ref()
+            .and_then(|lc| lc.config.additional_fields.get("module-path"))
+            .and_then(|v| v.as_str())
+    {
+        let p = PathBuf::from(config_module_path);
+        spacetimedb_dir = if p.is_absolute() { p } else { project_dir.join(p) };
     }
 
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
@@ -361,6 +377,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         &publish_schema,
         &publish_args,
         resolved_server,
+        &spacetimedb_dir,
     )?;
 
     // Check if we are in a SpacetimeDB project directory, but only if we don't have any
@@ -368,10 +385,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if !has_any_config_files
         && module_path_from_cli.is_none()
         && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir())
+        && let Some(found_module) = find_module_path(&std::env::current_dir()?)
     {
-        if let Some(found_module) = find_module_path(&std::env::current_dir()?) {
-            spacetimedb_dir = found_module;
-        }
+        spacetimedb_dir = found_module;
     }
 
     if !has_any_config_files && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
@@ -402,10 +418,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             // If the project was created in a subdirectory, hint the user to cd into it
             // and show useful CLI commands they can run from there.
             let current_dir = std::env::current_dir().context("Failed to get current directory")?;
-            if canonical_created_path != current_dir {
-                let rel_path = canonical_created_path
-                    .strip_prefix(&current_dir)
-                    .unwrap_or(&canonical_created_path);
+            let display_path = strip_verbatim_prefix(&canonical_created_path);
+            if display_path != current_dir {
+                let rel_path = display_path.strip_prefix(&current_dir).unwrap_or(display_path);
                 println!(
                     "\n{} To interact with your database, open a new terminal and run:",
                     "Tip:".yellow().bold(),
@@ -420,6 +435,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
             }
+
+            // Clear publish_configs so they're rebuilt after init with the correct
+            // spacetimedb_dir. Without this, configs built before init contain the
+            // pre-init (stale) module path and the block below would overwrite the
+            // correctly-updated spacetimedb_dir.
+            publish_configs.clear();
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
@@ -455,8 +476,23 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
     let using_spacetime_config = spacetime_config.is_some();
-    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> =
-        spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
+    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> = {
+        let mut entries = spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
+        // Inherit top-level `module-path` into generate entries that don't specify their own.
+        // Without this, `generate` entries fall back to the hardcoded "spacetimedb" default
+        // even when the top-level config has a module-path set.
+        if let Some(top_level_module_path) = spacetime_config
+            .and_then(|c| c.additional_fields.get("module-path"))
+            .cloned()
+        {
+            for entry in &mut entries {
+                entry
+                    .entry("module-path".to_string())
+                    .or_insert(top_level_module_path.clone());
+            }
+        }
+        entries
+    };
 
     // Re-resolve publish targets now that config files may have been created by init.
     if publish_configs.is_empty() {
@@ -467,15 +503,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             &publish_schema,
             &publish_args,
             resolved_server,
+            &spacetimedb_dir,
         )?;
     }
 
     let use_local = resolved_server == "local";
 
-    if !no_config {
-        if let Some(path) = create_default_spacetime_config_if_missing(&project_dir)? {
-            println!("{} Created {}", "✓".green(), path.display());
-        }
+    if !no_config && let Some(path) = create_default_spacetime_config_if_missing(&project_dir)? {
+        println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
     }
 
     // If we don't have any publish configs by now, we need to ask the user about the
@@ -525,10 +560,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 .and_then(|cfg| cfg.get_config_value("database"))
                 .and_then(|v| v.as_str())
         });
-        if let Some(db_name) = db_to_persist {
-            if let Some(path) = create_local_spacetime_config_if_missing(&project_dir, db_name)? {
-                println!("{} Created {}", "✓".green(), path.display());
-            }
+        if let Some(db_name) = db_to_persist
+            && let Some(path) = create_local_spacetime_config_if_missing(&project_dir, db_name)?
+        {
+            println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
         }
     }
 
@@ -601,7 +636,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else if let Some(sc) = spacetime_config {
         // Reuse already-loaded config instead of loading again
         if let Some(ref lc) = loaded_config {
-            let files: Vec<_> = lc.loaded_files.iter().map(|f| f.display().to_string()).collect();
+            let files: Vec<_> = lc
+                .loaded_files
+                .iter()
+                .map(|f| strip_verbatim_prefix(f).display().to_string())
+                .collect();
             println!("{} Using configuration from {}", "✓".green(), files.join(", "));
         }
 
@@ -631,7 +670,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let db_name_for_client = &db_names_for_logging[0];
 
     // Extract watch directories from publish configs
-    let watch_dirs = extract_watch_dirs(&publish_configs, &spacetimedb_dir);
+    let watch_dirs = extract_watch_dirs(&publish_configs, &spacetimedb_dir, &project_dir);
 
     println!("\n{}", "Starting development mode...".green().bold());
     if db_names_for_logging.len() == 1 {
@@ -644,17 +683,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if watch_dirs.len() == 1 {
         println!(
             "Watching for changes in: {}",
-            watch_dirs.iter().next().unwrap().display().to_string().cyan()
+            strip_verbatim_prefix(watch_dirs.iter().next().unwrap())
+                .display()
+                .to_string()
+                .cyan()
         );
     } else {
         let watch_dirs_vec: Vec<_> = watch_dirs.iter().collect();
         println!("Watching for changes in {} directories:", watch_dirs.len());
         for dir in &watch_dirs_vec {
-            println!("  - {}", dir.display().to_string().cyan());
+            println!("  - {}", strip_verbatim_prefix(dir).display().to_string().cyan());
         }
     }
 
     // Safety prompt: warn if any selected database target is defined in spacetime.json.
+    // spacetime.local.json is gitignored and personal, so it's fine for dev use.
     if let Some(ref lc) = loaded_config {
         let database_sources = resolve_database_sources(&lc.config);
         let databases_from_main_config: Vec<String> = db_names_for_logging
@@ -741,7 +784,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .and_then(|c| c.get_one::<String>("server").ok().flatten());
     let server_for_client = server_opt_client.as_deref().unwrap_or(resolved_server);
     let server_host_url = config.get_host_url(Some(server_for_client))?;
-    let _client_handle = if let Some(ref cmd) = client_command {
+    let mut client_handle = if let Some(ref cmd) = client_command {
         let mut child = start_client_process(cmd, &project_dir, db_name_for_client, &server_host_url)?;
 
         // Give the process a moment to fail fast (e.g., command not found, missing deps)
@@ -772,14 +815,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
         move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
-                if matches!(
+            if let Ok(event) = res
+                && matches!(
                     event.kind,
                     notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_)
-                ) && event.paths.iter().any(|p| !should_ignore_path(p, &gitignore))
-                {
-                    let _ = tx.send(());
-                }
+                )
+                && event.paths.iter().any(|p| !should_ignore_path(p, &gitignore))
+            {
+                let _ = tx.send(());
             }
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
@@ -792,40 +835,74 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let mut debounce_timer;
     loop {
-        if rx.recv().is_ok() {
-            debounce_timer = std::time::Instant::now();
-            while debounce_timer.elapsed() < Duration::from_millis(300) {
-                if rx.recv_timeout(Duration::from_millis(100)).is_ok() {
-                    debounce_timer = std::time::Instant::now();
+        // Use recv_timeout so we can periodically check if the client process exited
+        match rx.recv_timeout(Duration::from_secs(1)) {
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Ok(()),
+            Ok(()) => {
+                debounce_timer = std::time::Instant::now();
+                while debounce_timer.elapsed() < Duration::from_millis(300) {
+                    if rx.recv_timeout(Duration::from_millis(100)).is_ok() {
+                        debounce_timer = std::time::Instant::now();
+                    }
                 }
-            }
 
-            println!("\n{}", "File change detected, rebuilding...".yellow());
-            match generate_build_and_publish(
-                &config,
-                &project_dir,
-                loaded_config_dir.as_deref(),
-                &spacetimedb_dir,
-                &module_bindings_dir,
-                client_language,
-                clear_database,
-                &publish_configs,
-                &generate_configs_from_file,
-                using_spacetime_config,
-                server_from_cli,
-                force,
-                skip_publish,
-                skip_generate,
-            )
-            .await
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("{} {}", "Error:".red().bold(), e);
-                    println!("{}", "Waiting for next change...".dimmed());
+                println!("\n{}", "File change detected, rebuilding...".yellow());
+                match generate_build_and_publish(
+                    &config,
+                    &project_dir,
+                    loaded_config_dir.as_deref(),
+                    &spacetimedb_dir,
+                    &module_bindings_dir,
+                    client_language,
+                    clear_database,
+                    &publish_configs,
+                    &generate_configs_from_file,
+                    using_spacetime_config,
+                    server_from_cli,
+                    force,
+                    skip_publish,
+                    skip_generate,
+                )
+                .await
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red().bold(), e);
+                        println!("{}", "Waiting for next change...".dimmed());
+                    }
                 }
             }
-        }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // No rebuild yet. Check if the client process has exited.
+                let Some(ref mut child) = client_handle else {
+                    continue;
+                };
+                match child.try_wait() {
+                    Ok(None) => {}
+                    Ok(Some(status)) => {
+                        client_handle = None;
+                        let code = status
+                            .code()
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        println!(
+                            "\n{} {}. {}",
+                            "Client process exited with code".yellow(),
+                            code,
+                            "File watcher is still active.".dimmed()
+                        );
+                    }
+                    Err(e) => {
+                        client_handle = None;
+                        eprintln!(
+                            "\n{} Failed to check client process status: {}",
+                            "Warning:".yellow().bold(),
+                            e
+                        );
+                    }
+                }
+            }
+        };
     }
 }
 
@@ -836,6 +913,7 @@ fn determine_publish_configs<'a>(
     publish_schema: &'a CommandSchema,
     publish_args: &'a ArgMatches,
     resolved_server: &str,
+    default_module_path: &Path,
 ) -> anyhow::Result<Vec<CommandConfig<'a>>> {
     // Build publish configs. It is easier to work with one type of data,
     // so if we don't have publish configs from the config file, we build a single
@@ -859,7 +937,7 @@ fn determine_publish_configs<'a>(
         let mut config_map = HashMap::new();
         config_map.insert("database".to_string(), json!(db_name));
         config_map.insert("server".to_string(), json!(resolved_server));
-        config_map.insert("module-path".to_string(), json!("spacetimedb"));
+        config_map.insert("module-path".to_string(), json!(default_module_path.to_string_lossy()));
 
         Ok(vec![CommandConfig::new(publish_schema, config_map, publish_args)?])
     } else {
@@ -936,6 +1014,29 @@ async fn generate_build_and_publish(
         tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
+    // For TypeScript client, always update .env.local with the database name
+    // from config so the client connects to the correct database.
+    if let Some(first_config) = publish_configs.first() {
+        let is_ts_client = client_language == Some(&Language::TypeScript)
+            || generate::resolve_language(spacetimedb_dir, client_language.copied())
+                .map(|l| l == Language::TypeScript)
+                .unwrap_or(false);
+
+        if is_ts_client && let Some(first_db_name) = first_config.get_config_value("database").and_then(|v| v.as_str())
+        {
+            let server_for_env = server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
+
+            println!(
+                "{} {}...",
+                "Updating .env.local with database name".cyan(),
+                first_db_name
+            );
+            let env_path = project_dir.join(".env.local");
+            let server_host_url = config.get_host_url(server_for_env)?;
+            upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
+        }
+    }
+
     if skip_generate {
         println!("{}", "Skipping generate step (--skip-generate).".dimmed());
     } else if using_spacetime_config {
@@ -956,27 +1057,6 @@ async fn generate_build_and_publish(
         }
     } else {
         let resolved_client_language = generate::resolve_language(spacetimedb_dir, client_language.copied())?;
-
-        // For TypeScript client, update .env.local with first database name
-        if resolved_client_language == Language::TypeScript {
-            let first_config = publish_configs.first().expect("publish_configs cannot be empty");
-            let first_db_name = first_config
-                .get_config_value("database")
-                .and_then(|v| v.as_str())
-                .expect("database is a required field");
-
-            // CLI server takes precedence, otherwise use server from config
-            let server_for_env = server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
-
-            println!(
-                "{} {}...",
-                "Updating .env.local with database name".cyan(),
-                first_db_name
-            );
-            let env_path = project_dir.join(".env.local");
-            let server_host_url = config.get_host_url(server_for_env)?;
-            upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
-        }
 
         println!("{}", "Generating module bindings...".cyan());
         let generate_entry = generate::build_generate_entry(
@@ -1032,10 +1112,10 @@ async fn generate_build_and_publish(
         }
 
         // Forward per-target build options if set
-        if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str()) {
-            if !build_opts.is_empty() {
-                publish_entry.insert("build-options".to_string(), json!(build_opts));
-            }
+        if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str())
+            && !build_opts.is_empty()
+        {
+            publish_entry.insert("build-options".to_string(), json!(build_opts));
         }
 
         // Forward break-clients if set
@@ -1310,28 +1390,28 @@ fn format_log_record<W: WriteColor>(
     let mut need_space_before_filename = false;
     let mut need_colon_sep = false;
     let dimmed = ColorSpec::new().set_dimmed(true).clone();
-    if let Some(function) = &record.function {
-        if function.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            write!(out, "{function}")?;
-            out.reset()?;
-            need_space_before_filename = true;
-            need_colon_sep = true;
-        }
+    if let Some(function) = &record.function
+        && function.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        write!(out, "{function}")?;
+        out.reset()?;
+        need_space_before_filename = true;
+        need_colon_sep = true;
     }
-    if let Some(filename) = &record.filename {
-        if filename.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            if need_space_before_filename {
-                write!(out, " ")?;
-            }
-            write!(out, "{filename}")?;
-            if let Some(line) = record.line_number {
-                write!(out, ":{line}")?;
-            }
-            out.reset()?;
-            need_colon_sep = true;
+    if let Some(filename) = &record.filename
+        && filename.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        if need_space_before_filename {
+            write!(out, " ")?;
         }
+        write!(out, "{filename}")?;
+        if let Some(line) = record.line_number {
+            write!(out, ":{line}")?;
+        }
+        out.reset()?;
+        need_colon_sep = true;
     }
     if need_colon_sep {
         write!(out, ": ")?;
@@ -1417,12 +1497,11 @@ fn build_gitignore_matcher(project_dir: &Path, spacetimedb_dir: &Path) -> Gitign
 fn should_ignore_path(path: &Path, gitignore: &Gitignore) -> bool {
     // Layer 1: always-ignore directories
     for component in path.components() {
-        if let std::path::Component::Normal(c) = component {
-            if let Some(s) = c.to_str() {
-                if ALWAYS_IGNORE_DIRS.contains(&s) {
-                    return true;
-                }
-            }
+        if let std::path::Component::Normal(c) = component
+            && let Some(s) = c.to_str()
+            && ALWAYS_IGNORE_DIRS.contains(&s)
+        {
+            return true;
         }
     }
 
@@ -1454,6 +1533,7 @@ fn resolve_database_sources(config: &SpacetimeConfig) -> HashMap<String, Option<
 fn extract_watch_dirs(
     publish_configs: &[CommandConfig<'_>],
     default_spacetimedb_dir: &Path,
+    project_dir: &Path,
 ) -> std::collections::HashSet<PathBuf> {
     use std::collections::HashSet;
     let mut watch_dirs = HashSet::new();
@@ -1462,10 +1542,17 @@ fn extract_watch_dirs(
         let module_path = config_entry
             .get_config_value("module_path")
             .and_then(|v| v.as_str())
-            .map(PathBuf::from)
+            .map(|s| {
+                let p = PathBuf::from(s);
+                if p.is_absolute() {
+                    p
+                } else {
+                    project_dir.join(p)
+                }
+            })
             .unwrap_or_else(|| default_spacetimedb_dir.to_path_buf());
 
-        // Canonicalize to handle relative paths
+        // Canonicalize to normalize the path
         let canonical_path = module_path.canonicalize().unwrap_or(module_path);
 
         watch_dirs.insert(canonical_path);
@@ -1501,7 +1588,7 @@ fn detect_and_save_client_command(project_dir: &Path, existing_config: Option<Sp
             println!(
                 "{} Detected client command and saved to {}",
                 "✓".green(),
-                path.display()
+                strip_verbatim_prefix(&path).display()
             );
         }
         Some(detected_cmd)
@@ -1603,7 +1690,7 @@ fn start_client_process(
         .env("SPACETIMEDB_HOST", host_url)
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
-        .stdin(std::process::Stdio::null())
+        .stdin(std::process::Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .with_context(|| format!("Failed to start client command: {}", command))?;
@@ -1616,7 +1703,7 @@ fn start_client_process(
         .env("SPACETIMEDB_HOST", host_url)
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
-        .stdin(std::process::Stdio::null())
+        .stdin(std::process::Stdio::inherit())
         .kill_on_drop(true)
         .spawn()
         .with_context(|| format!("Failed to start client command: {}", command))?;
@@ -1706,8 +1793,16 @@ mod tests {
         let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
         let publish_args = publish_cmd.clone().get_matches_from(vec!["publish"]);
 
-        let result =
-            determine_publish_configs(None, None, &publish_cmd, &publish_schema, &publish_args, "local").unwrap();
+        let result = determine_publish_configs(
+            None,
+            None,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+            Path::new("spacetimedb"),
+        )
+        .unwrap();
 
         assert!(result.is_empty());
     }
@@ -1726,6 +1821,7 @@ mod tests {
             &publish_schema,
             &publish_args,
             "local",
+            Path::new("spacetimedb"),
         )
         .unwrap();
 
@@ -1761,6 +1857,7 @@ mod tests {
             &publish_schema,
             &publish_args,
             "local",
+            Path::new("spacetimedb"),
         )
         .unwrap();
 
@@ -1792,6 +1889,7 @@ mod tests {
             &publish_schema,
             &publish_args,
             "local",
+            Path::new("spacetimedb"),
         )
         .unwrap();
 
@@ -1800,6 +1898,33 @@ mod tests {
         assert_eq!(
             result[0].get_config_value("database").and_then(|v| v.as_str()),
             Some("cli-db")
+        );
+    }
+
+    #[test]
+    fn test_determine_publish_configs_fallback_uses_provided_module_path() {
+        // When falling through to CLI database, the fallback should use the provided
+        // default_module_path instead of hardcoding "spacetimedb"
+        let publish_cmd = publish::cli();
+        let publish_schema = publish::build_publish_schema(&publish_cmd).unwrap();
+        let publish_args = publish_cmd.clone().get_matches_from(vec!["publish", "my-db"]);
+
+        let custom_path = Path::new("/custom/module/path");
+        let result = determine_publish_configs(
+            Some("my-db".to_string()),
+            None,
+            &publish_cmd,
+            &publish_schema,
+            &publish_args,
+            "local",
+            custom_path,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].get_config_value("module_path").and_then(|v| v.as_str()),
+            Some("/custom/module/path")
         );
     }
 

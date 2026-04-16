@@ -105,7 +105,7 @@ const inventory = table(
     name: 'inventory',
     public: true,
     indexes: [
-      { name: 'by_user_item', algorithm: 'btree', columns: ['userId', 'itemId'] },
+      { accessor: 'by_user_item', algorithm: 'btree', columns: ['userId', 'itemId'] },
     ],
   },
   {

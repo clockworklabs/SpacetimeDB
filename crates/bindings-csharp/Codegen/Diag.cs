@@ -215,9 +215,10 @@ internal static class ErrorDescriptor
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewInvalidReturn =
         new(
             group,
-            "Views must return Vec<T> or Option<T>",
-            method => $"View '{method.Identifier}' must return Vec<T> or Option<T>.",
-            method => method
+            "Views must return T?, List<T>, IQuery<T>, or IEnumerable<T>",
+            method =>
+                $"View '{method.Identifier}' must return T?, List<T>, IQuery<T>, or IEnumerable<T>.",
+            method => method.ReturnType
         );
 
     // TODO: Remove once Views support Private: Views must be Public currently
@@ -256,5 +257,14 @@ internal static class ErrorDescriptor
             fullNames =>
                 $"[SpacetimeDB.Settings] is declared multiple times: {string.Join(", ", fullNames)}",
             _ => Location.None
+        );
+
+    public static readonly ErrorDescriptor<AttributeData> TableLevelIndexMissingAccessor =
+        new(
+            group,
+            "Table-level index attributes must specify Accessor",
+            _ =>
+                $"Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.",
+            attr => attr
         );
 }

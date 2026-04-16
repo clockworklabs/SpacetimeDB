@@ -2035,11 +2035,13 @@ namespace SpacetimeDB
 
     public sealed class TestDCols
     {
-        public global::SpacetimeDB.NullableCol<TestD, NamespaceTestC> TestC { get; }
+        public global::SpacetimeDB.Col<TestD, NamespaceTestC> TestC { get; }
+        public global::SpacetimeDB.Col<TestD, System.Collections.Generic.List<NamespaceTestC>> TestCNested { get; }
 
         public TestDCols(string tableName)
         {
-            TestC = new global::SpacetimeDB.NullableCol<TestD, NamespaceTestC>(tableName, "test_c");
+            TestC = new global::SpacetimeDB.Col<TestD, NamespaceTestC>(tableName, "test_c");
+            TestCNested = new global::SpacetimeDB.Col<TestD, System.Collections.Generic.List<NamespaceTestC>>(tableName, "test_c_nested");
         }
     }
 
@@ -2566,10 +2568,16 @@ namespace SpacetimeDB
     {
         [DataMember(Name = "test_c")]
         public NamespaceTestC? TestC;
+        [DataMember(Name = "test_c_nested")]
+        public System.Collections.Generic.List<NamespaceTestC>? TestCNested;
 
-        public TestD(NamespaceTestC? TestC)
+        public TestD(
+            NamespaceTestC? TestC,
+            System.Collections.Generic.List<NamespaceTestC>? TestCNested
+        )
         {
             this.TestC = TestC;
+            this.TestCNested = TestCNested;
         }
 
         public TestD()

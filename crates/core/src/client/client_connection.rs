@@ -47,6 +47,7 @@ pub enum Protocol {
 pub enum WsVersion {
     V1,
     V2,
+    V3,
 }
 
 impl Protocol {
@@ -139,7 +140,7 @@ impl DurableOffsetSupply for watch::Receiver<ModuleHost> {
             self.borrow()
         };
 
-        Ok(module.replica_ctx().relational_db.durable_tx_offset())
+        Ok(module.relational_db().durable_tx_offset())
     }
 }
 
@@ -384,7 +385,7 @@ impl ClientConnectionSender {
         debug_assert!(
             matches!(
                 (&self.config.version, &message),
-                (WsVersion::V1, OutboundMessage::V1(_)) | (WsVersion::V2, OutboundMessage::V2(_))
+                (WsVersion::V1, OutboundMessage::V1(_)) | (WsVersion::V2 | WsVersion::V3, OutboundMessage::V2(_))
             ),
             "attempted to send message variant that does not match client websocket version"
         );
