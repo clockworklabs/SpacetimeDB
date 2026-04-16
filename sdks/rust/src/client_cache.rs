@@ -637,9 +637,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{UniqueIndexDyn, UniqueIndexImpl};
+    use super::{HashMap, UniqueIndexDyn, UniqueIndexImpl};
     use spacetimedb_lib::{TimeDuration, Timestamp};
-    use std::{any::Any, collections::HashMap};
+    use std::any::Any;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TimestampRow {
