@@ -1,13 +1,35 @@
-﻿type LabelFilter = Record<string, string>;
+import { deriveMetricsUrl } from './stdbUrl';
 
-export async function fetchMetrics(url: string): Promise<string> {
-  const res = await fetch(url);
+type LabelFilter = Record<string, string>;
+
+function formatErrorWithCause(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return String(err);
+  }
+
+  const cause =
+    'cause' in err && err.cause != null ? `; cause: ${String(err.cause)}` : '';
+  return `${err.message}${cause}`;
+}
+
+async function fetchText(url: string, label: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    throw new Error(`${label} GET ${url} failed: ${formatErrorWithCause(err)}`);
+  }
+
   if (!res.ok) {
     throw new Error(
-      `metrics GET ${url} failed: ${res.status} ${res.statusText}`,
+      `${label} GET ${url} failed: ${res.status} ${res.statusText}`,
     );
   }
   return await res.text();
+}
+
+export async function fetchMetrics(url: string): Promise<string> {
+  return await fetchText(url, 'metrics');
 }
 
 export function parseMetricCounter(
@@ -61,9 +83,10 @@ export function parseMetricCounter(
   return null;
 }
 
-export async function getSpacetimeCommittedTransfers(): Promise<bigint | null> {
-  const url =
-    process.env.STDB_METRICS_URL ?? 'http://127.0.0.1:3000/v1/metrics';
+export async function getSpacetimeCommittedTransfers(
+  rawStdbUrl: string,
+): Promise<bigint | null> {
+  const url = deriveMetricsUrl(rawStdbUrl);
 
   const labels: LabelFilter = {
     committed: 'true',

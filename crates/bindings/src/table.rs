@@ -113,6 +113,14 @@ pub trait Table: TableInternal + ExplicitNames {
         count > 0
     }
 
+    /// Clears the table of all rows.
+    ///
+    /// Returns the number of rows that were deleted,
+    /// i.e., the value of [`self.count()`](Table::count) before this call.
+    fn clear(&self) -> u64 {
+        sys::datastore_clear(Self::table_id()).expect("datastore_clear() call failed")
+    }
+
     // Re-integrates the BSATN of the `generated_cols` into `row`.
     #[doc(hidden)]
     fn integrate_generated_columns(row: &mut Self::Row, generated_cols: &[u8]);

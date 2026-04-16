@@ -54,8 +54,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.NullableVecView())
         .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)))
         .AddQuery(qb =>
-            qb.From.Player()
-                .LeftSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
+            qb.From.Player().LeftSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
         )
         .AddQuery(qb =>
             qb.From.Player()
@@ -80,6 +79,9 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.WhereTestView())
         .AddQuery(qb => qb.From.FindWhereTest())
         .AddQuery(qb => qb.From.WhereTestQuery())
+        .AddQuery(qb => qb.From.IenumerablePlayersFromIter())
+        .AddQuery(qb => qb.From.IenumerableAdminsFromFilter())
+        .AddQuery(qb => qb.From.IenumerablePlayersWithLevels())
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -206,6 +208,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 
         ValidateWhereSubscription(ctx, UPDATED_WHERE_TEST_NAME);
         ValidateWhereTestViews(ctx, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
+        ValidateIEnumerableViews(ctx);
     };
 
     conn.Db.TestEvent.OnInsert += (EventContext ctx, TestEvent row) =>
@@ -238,8 +241,14 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             ctx.Event.Status is Status.Committed,
             $"EmitTestEvent should commit, got {ctx.Event.Status}"
         );
-        Debug.Assert(name == EXPECTED_TEST_EVENT_NAME, $"Expected name={EXPECTED_TEST_EVENT_NAME}, got {name}");
-        Debug.Assert(value == EXPECTED_TEST_EVENT_VALUE, $"Expected value={EXPECTED_TEST_EVENT_VALUE}, got {value}");
+        Debug.Assert(
+            name == EXPECTED_TEST_EVENT_NAME,
+            $"Expected name={EXPECTED_TEST_EVENT_NAME}, got {name}"
+        );
+        Debug.Assert(
+            value == EXPECTED_TEST_EVENT_VALUE,
+            $"Expected value={EXPECTED_TEST_EVENT_VALUE}, got {value}"
+        );
     };
 
     conn.Reducers.OnNoop += (ReducerEventContext ctx) =>
@@ -298,9 +307,7 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
     Log.Debug("Checking indexes...");
     foreach (var data in conn.Db.ExampleData.Iter())
     {
-        Debug.Assert(
-            conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data)
-        );
+        Debug.Assert(conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data));
     }
     var outOfIndex = conn.Db.ExampleData.Iter().ToHashSet();
 
@@ -437,12 +444,18 @@ void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
         "Advanced predicate rows should satisfy admin || name == Charlie"
     );
     Debug.Assert(
-        advancedUsers.Select(u => u.Name).OrderBy(n => n).SequenceEqual(new[] { "Alice", "Charlie" }),
+        advancedUsers
+            .Select(u => u.Name)
+            .OrderBy(n => n)
+            .SequenceEqual(new[] { "Alice", "Charlie" }),
         "Expected Alice and Charlie from advanced predicate"
     );
 }
 
-void ValidateWhereSubscription(IRemoteDbContext conn, string expectedTestName = "this_name_will_get_updated")
+void ValidateWhereSubscription(
+    IRemoteDbContext conn,
+    string expectedTestName = "this_name_will_get_updated"
+)
 {
     Log.Debug("Checking typed WHERE subscription...");
     Debug.Assert(conn.Db.WhereTest != null, "conn.Db.WhereTest != null");
@@ -467,10 +480,7 @@ void ValidateWhereTestViews(
 )
 {
     Log.Debug("Checking where_test views...");
-    Debug.Assert(
-        conn.Db.WhereTestView != null,
-        "WhereTestView should not be null"
-    );
+    Debug.Assert(conn.Db.WhereTestView != null, "WhereTestView should not be null");
     Debug.Assert(
         conn.Db.WhereTestView.Count == 1,
         $"Expected exactly one WhereTestView row, got {conn.Db.WhereTestView.Count}"
@@ -486,10 +496,7 @@ void ValidateWhereTestViews(
         $"Expected WhereTestView row name={expectedId2Name}, got {viewRow.Name}"
     );
 
-    Debug.Assert(
-        conn.Db.WhereTestQuery != null,
-        "WhereTestQuery should not be null"
-    );
+    Debug.Assert(conn.Db.WhereTestQuery != null, "WhereTestQuery should not be null");
     Debug.Assert(
         conn.Db.WhereTestQuery.Count == 1,
         $"Expected exactly one WhereTestQuery row, got {conn.Db.WhereTestQuery.Count}"
@@ -505,16 +512,62 @@ void ValidateWhereTestViews(
         $"Expected WhereTestQuery row name={expectedId2Name}, got {queryRow.Name}"
     );
 
-    Debug.Assert(
-        conn.Db.FindWhereTest != null,
-        "FindWhereTest should not be null"
-    );
+    Debug.Assert(conn.Db.FindWhereTest != null, "FindWhereTest should not be null");
     Debug.Assert(
         conn.Db.FindWhereTest.Count == 1,
         $"Expected exactly one FindWhereTest row, got {conn.Db.FindWhereTest.Count}"
     );
     var anonRow = conn.Db.FindWhereTest.Iter().First();
     Debug.Assert(anonRow.Id == 3, $"Expected FindWhereTest row id=3, got {anonRow.Id}");
+}
+
+void ValidateIEnumerableViews(IRemoteDbContext conn)
+{
+    Log.Debug("Checking IEnumerable views...");
+
+    // Validate IEnumerablePlayersFromIter - should return all players
+    Debug.Assert(
+        conn.Db.IenumerablePlayersFromIter != null,
+        "IenumerablePlayersFromIter should not be null"
+    );
+    var players = conn.Db.IenumerablePlayersFromIter.Iter().ToList();
+    Debug.Assert(players.Count >= 1, $"Expected at least 1 player, got {players.Count}");
+
+    // Validate IEnumerableAdminsFromFilter - should return only admin users
+    Debug.Assert(
+        conn.Db.IenumerableAdminsFromFilter != null,
+        "IenumerableAdminsFromFilter should not be null"
+    );
+    var admins = conn.Db.IenumerableAdminsFromFilter.Iter().ToList();
+    Debug.Assert(admins.Count >= 1, $"Expected at least 1 admin user, got {admins.Count}");
+    Debug.Assert(
+        admins.All(u => u.IsAdmin),
+        "All users in IenumerableAdminsFromFilter should be admins"
+    );
+
+    // Validate IEnumerablePlayersWithLevels - should return players with their levels
+    Debug.Assert(
+        conn.Db.IenumerablePlayersWithLevels != null,
+        "IenumerablePlayersWithLevels should not be null"
+    );
+    var playersWithLevels = conn.Db.IenumerablePlayersWithLevels.Iter().ToList();
+    Debug.Assert(
+        playersWithLevels.Count >= 1,
+        $"Expected at least 1 player with level, got {playersWithLevels.Count}"
+    );
+
+    // Verify the structure matches PlayerAndLevel
+    foreach (var playerWithLevel in playersWithLevels)
+    {
+        Debug.Assert(playerWithLevel.Id > 0, "PlayerAndLevel.Id should be > 0");
+        Debug.Assert(
+            !string.IsNullOrEmpty(playerWithLevel.Name),
+            "PlayerAndLevel.Name should not be null or empty"
+        );
+        Debug.Assert(playerWithLevel.Level > 0, "PlayerAndLevel.Level should be > 0");
+    }
+
+    Log.Debug("IEnumerable views validation completed successfully");
 }
 
 void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
@@ -604,8 +657,7 @@ void ExecViewPkOnUpdate()
     SubscriptionHandle? phaseHandle = null;
 
     Log.Debug($"Starting {testName}");
-    phaseHandle = db
-        .SubscriptionBuilder()
+    phaseHandle = db.SubscriptionBuilder()
         .OnApplied(ctx =>
         {
             void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
@@ -638,10 +690,12 @@ void ExecViewPkOnUpdate()
             waiting++;
             ctx.Reducers.UpdateViewPkPlayer(playerId, after);
         })
-        .OnError((_, err) =>
-        {
-            throw err;
-        })
+        .OnError(
+            (_, err) =>
+            {
+                throw err;
+            }
+        )
         .AddQuery(q => q.From.AllViewPkPlayers())
         .Subscribe();
 }
@@ -677,8 +731,7 @@ void ExecViewPkJoinQueryBuilder()
     SubscriptionHandle? phaseHandle = null;
 
     Log.Debug($"Starting {testName}");
-    phaseHandle = db
-        .SubscriptionBuilder()
+    phaseHandle = db.SubscriptionBuilder()
         .OnApplied(ctx =>
         {
             void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
@@ -714,15 +767,18 @@ void ExecViewPkJoinQueryBuilder()
             waiting++;
             ctx.Reducers.UpdateViewPkPlayer(playerId, after);
         })
-        .OnError((_, err) =>
-        {
-            throw err;
-        })
+        .OnError(
+            (_, err) =>
+            {
+                throw err;
+            }
+        )
         .AddQuery(q =>
-            q.From.ViewPkMembership().RightSemijoin(
-                q.From.AllViewPkPlayers(),
-                (membership, player) => membership.PlayerId.Eq(player.Id)
-            )
+            q.From.ViewPkMembership()
+                .RightSemijoin(
+                    q.From.AllViewPkPlayers(),
+                    (membership, player) => membership.PlayerId.Eq(player.Id)
+                )
         )
         .Subscribe();
 }
@@ -760,8 +816,7 @@ void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
     SubscriptionHandle? phaseHandle = null;
 
     Log.Debug($"Starting {testName}");
-    phaseHandle = db
-        .SubscriptionBuilder()
+    phaseHandle = db.SubscriptionBuilder()
         .OnApplied(ctx =>
         {
             void OnSenderViewPkPlayersBUpdate(
@@ -804,15 +859,18 @@ void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
             waiting++;
             ctx.Reducers.UpdateViewPkPlayer(playerId, after);
         })
-        .OnError((_, err) =>
-        {
-            throw err;
-        })
+        .OnError(
+            (_, err) =>
+            {
+                throw err;
+            }
+        )
         .AddQuery(q =>
-            q.From.SenderViewPkPlayersA().RightSemijoin(
-                q.From.SenderViewPkPlayersB(),
-                (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
-            )
+            q.From.SenderViewPkPlayersA()
+                .RightSemijoin(
+                    q.From.SenderViewPkPlayersB(),
+                    (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
+                )
         )
         .Subscribe();
 }
@@ -821,6 +879,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     ValidateWhereSubscription(context);
     ValidateWhereTestViews(context);
+    ValidateIEnumerableViews(context);
     ValidateSemijoinSubscriptions(context, context.Identity!.Value);
 
     // Do some operations that alter row state;

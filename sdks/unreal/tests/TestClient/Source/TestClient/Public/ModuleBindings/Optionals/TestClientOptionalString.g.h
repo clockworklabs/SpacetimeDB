@@ -15,7 +15,7 @@ struct TESTCLIENT_API FTestClientOptionalString
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    FString Value;
+    FString Value = {};
 
     FTestClientOptionalString() = default;
 

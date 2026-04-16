@@ -20,7 +20,7 @@ class TESTCLIENT_API UVecI8Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for vec_i8 table*/
+    /** Update function for vec_i_8 table*/
     FTableAppliedDiff<FVecI8Type> Update(TArray<FWithBsatn<FVecI8Type>> InsertsRef, TArray<FWithBsatn<FVecI8Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnVecI8Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("vec_i8");
+    const FString TableName = TEXT("vec_i_8");
 
     TSharedPtr<UClientCache<FVecI8Type>> Data;
 };
