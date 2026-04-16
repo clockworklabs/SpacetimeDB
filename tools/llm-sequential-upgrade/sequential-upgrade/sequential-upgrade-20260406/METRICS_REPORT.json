@@ -1,0 +1,175 @@
+{
+  "meta": {
+    "date": "2026-04-07",
+    "l12_added": "2026-04-10",
+    "variant": "sequential-upgrade",
+    "model": "claude-sonnet-4-6",
+    "levels_completed": 12,
+    "run_id": "sequential-upgrade-20260406"
+  },
+  "guidelines": {
+    "spacetime": {
+      "files": 3,
+      "total_lines": 529,
+      "breakdown": {
+        "spacetime.md": 130,
+        "spacetime-sdk-rules.md": 258,
+        "spacetime-templates.md": 141
+      }
+    },
+    "postgres": {
+      "files": 1,
+      "total_lines": 314,
+      "breakdown": {
+        "postgres.md": 314
+      }
+    }
+  },
+  "cost": {
+    "spacetime": {
+      "upgrades_usd": 11.81,
+      "fixes_usd": 0.81,
+      "total_usd": 12.62,
+      "per_feature_usd": 1.05,
+      "per_feature_upgrades_usd": 0.98,
+      "per_feature_fixes_usd": 0.07
+    },
+    "postgres": {
+      "upgrades_usd": 14.56,
+      "fixes_usd": 5.11,
+      "total_usd": 19.68,
+      "per_feature_usd": 1.64,
+      "per_feature_upgrades_usd": 1.21,
+      "per_feature_fixes_usd": 0.43
+    },
+    "combined_usd": 32.30,
+    "pg_premium_usd": 7.06,
+    "pg_premium_pct": 56
+  },
+  "tokens": {
+    "spacetime": {
+      "fresh_input": 21490,
+      "fresh_output": 226079,
+      "cache_read": 22870337,
+      "cache_creation": 661888,
+      "total_api_calls": 390,
+      "output_per_feature": 18840,
+      "calls_per_feature": 32.5
+    },
+    "postgres": {
+      "fresh_input": 29081,
+      "fresh_output": 304198,
+      "cache_read": 40443349,
+      "cache_creation": 792679,
+      "total_api_calls": 718,
+      "output_per_feature": 25350,
+      "calls_per_feature": 59.8
+    }
+  },
+  "lines_of_code": {
+    "methodology_note": "L12 LOC re-measured with consistent rules across both runs: counts .ts and .tsx files in backend/server src/ and client/src/ directories, excluding node_modules, dist, level-N snapshots, CSS files, and generated SpacetimeDB bindings (counted separately). CSS excluded because it's orthogonal to backend architecture and varies stylistically between runs.",
+    "spacetime": {
+      "backend_handwritten": 876,
+      "frontend_handwritten": 1589,
+      "generated_bindings": 1174,
+      "total_handwritten": 2465,
+      "loc_per_feature": 205
+    },
+    "postgres": {
+      "backend_handwritten": 1710,
+      "frontend_handwritten": 1922,
+      "generated_bindings": 0,
+      "total_handwritten": 3632,
+      "loc_per_feature": 303
+    }
+  },
+  "bugs": {
+    "by_level": [
+      { "level": 1, "feature": "Basic Chat + Typing + Read Receipts + Unread Counts", "stdb": 1, "pg": 1 },
+      { "level": 2, "feature": "Scheduled Messages", "stdb": 0, "pg": 0 },
+      { "level": 3, "feature": "Ephemeral Messages", "stdb": 1, "pg": 1 },
+      { "level": 4, "feature": "Message Reactions", "stdb": 0, "pg": 0 },
+      { "level": 5, "feature": "Message Editing with History", "stdb": 0, "pg": 0 },
+      { "level": 6, "feature": "Real-Time Permissions", "stdb": 0, "pg": 2 },
+      { "level": 7, "feature": "Rich User Presence", "stdb": 0, "pg": 1 },
+      { "level": 8, "feature": "Message Threading", "stdb": 0, "pg": 0 },
+      { "level": 9, "feature": "Private Rooms + Direct Messages", "stdb": 0, "pg": 0 },
+      { "level": 10, "feature": "Room Activity Indicators", "stdb": 0, "pg": 2 },
+      { "level": 11, "feature": "Draft Sync", "stdb": 0, "pg": 0 },
+      { "level": 12, "feature": "Anonymous to Registered Migration", "stdb": 0, "pg": 1 }
+    ],
+    "summary": {
+      "spacetime": {
+        "total_bugs": 2,
+        "bugs_per_feature": 0.17,
+        "zero_bug_levels": 10,
+        "zero_bug_rate_pct": 83,
+        "fix_sessions": 1,
+        "multi_attempt_bugs": 0,
+        "categories": {
+          "realtime_state_not_updating": 1,
+          "sdk_api_misuse": 1
+        }
+      },
+      "postgres": {
+        "total_bugs": 8,
+        "bugs_per_feature": 0.67,
+        "zero_bug_levels": 6,
+        "zero_bug_rate_pct": 50,
+        "fix_sessions": 10,
+        "multi_attempt_bugs": 2,
+        "categories": {
+          "realtime_state_not_updating": 4,
+          "data_not_persisted": 1,
+          "logic_error": 2,
+          "runtime_crash": 1
+        }
+      }
+    }
+  },
+  "timing_seconds": {
+    "spacetime": {
+      "total_duration": 3400.08,
+      "upgrade_total": 3133.85,
+      "fix_total": 266.23,
+      "upgrade_avg": 261.2,
+      "fix_avg": 266.23,
+      "total_minutes": 56.7
+    },
+    "postgres": {
+      "total_duration": 5066.39,
+      "upgrade_total": 3272.32,
+      "fix_total": 1794.07,
+      "upgrade_avg": 272.7,
+      "fix_avg": 179.4,
+      "total_minutes": 84.4
+    }
+  },
+  "efficiency": {
+    "spacetime": {
+      "fix_cost_pct_of_total": 6.4,
+      "avg_fix_cost_per_bug_usd": 0.40,
+      "multi_attempt_bugs": 0,
+      "fix_sessions_per_bug": 0.5
+    },
+    "postgres": {
+      "fix_cost_pct_of_total": 26.0,
+      "avg_fix_cost_per_bug_usd": 0.64,
+      "multi_attempt_bugs": 2,
+      "fix_sessions_per_bug": 1.25
+    }
+  },
+  "vs_previous_run": {
+    "run_id_previous": "sequential-upgrade-20260403",
+    "spacetime": {
+      "cost_change_pct": -5,
+      "bugs_change": -3,
+      "fix_sessions_change": -3
+    },
+    "postgres": {
+      "cost_change_pct": 11,
+      "bugs_change": -11,
+      "fix_sessions_change": -7
+    }
+  }
+}

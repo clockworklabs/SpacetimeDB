@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SpacetimeDB vs PostgreSQL — Benchmark Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d0e; color: #e6e9f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; background: linear-gradient(266deg, #4cf490 0%, #8a38f5 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { color: #6f7987; font-size: 13px; margin-bottom: 12px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar-label { font-size: 12px; color: #6f7987; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; background: #141416; border: 1px solid #3a3a42; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; color: #e6e9f0; transition: border-color 0.15s, color 0.15s; white-space: nowrap; }
+  .btn:hover { border-color: #4cf490; color: #4cf490; }
+  .file-label { display: inline-flex; align-items: center; gap: 6px; }
+  .file-label input { display: none; }
+  /* Run list panel */
+  #run-panel { display: none; background: #141416; border: 1px solid #202126; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+  #run-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #202126; }
+  #run-panel-title { font-size: 12px; font-weight: 600; color: #6f7987; text-transform: uppercase; letter-spacing: 0.05em; }
+  #run-panel-close { background: none; border: none; color: #6f7987; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+  #run-panel-close:hover { color: #e6e9f0; }
+  #run-list { list-style: none; max-height: 240px; overflow-y: auto; }
+  #run-list li { display: flex; align-items: baseline; gap: 10px; padding: 9px 14px; border-bottom: 1px solid #181820; cursor: pointer; transition: background 0.1s; }
+  #run-list li:last-child { border-bottom: none; }
+  #run-list li:hover { background: #1e1e24; }
+  #run-list li.active { background: #1a2a1e; }
+  #run-list li.active .run-name { color: #4cf490; }
+  .run-name { font-size: 13px; color: #e6e9f0; font-weight: 500; }
+  .run-path { font-size: 11px; color: #6f7987; }
+  #run-scanning { padding: 12px 14px; font-size: 12px; color: #6f7987; }
+  #loaded-file { font-size: 12px; color: #4cf490; }
+  #error-banner { display: none; background: #2a1010; border: 1px solid #5a2020; border-radius: 8px; padding: 12px 16px; color: #f87171; font-size: 12px; margin-bottom: 12px; }
+  #error-banner code { background: #1a1010; padding: 2px 5px; border-radius: 3px; }
+  #empty-state { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 60px 24px; border: 1px dashed #2a2a32; border-radius: 12px; margin-bottom: 28px; text-align: center; }
+  #empty-state .empty-icon { font-size: 40px; }
+  #empty-state h3 { font-size: 16px; font-weight: 600; color: #e6e9f0; }
+  #empty-state p { font-size: 13px; color: #6f7987; max-width: 420px; line-height: 1.6; }
+  #empty-state kbd { background: #1e1e24; border: 1px solid #3a3a42; border-radius: 4px; padding: 2px 7px; font-size: 12px; font-family: inherit; color: #e6e9f0; }
+  .summary-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+  .stat { background: #141416; border: 1px solid #202126; border-radius: 8px; padding: 14px 18px; flex: 1; min-width: 140px; }
+  .stat-label { font-size: 11px; color: #6f7987; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .stat-row { display: flex; gap: 16px; }
+  .stat-val { font-size: 20px; font-weight: 700; }
+  .stat-val.stdb { color: #4cf490; }
+  .stat-val.pg { color: #336791; }
+  .stat-sub { font-size: 11px; color: #6f7987; margin-top: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 20px; }
+  .card { background: #141416; border: 1px solid #202126; border-radius: 10px; padding: 20px; }
+  .card h2 { font-size: 13px; font-weight: 600; color: #6f7987; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 240px; }
+  .legend { display: flex; gap: 16px; margin-bottom: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #e6e9f0; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .note { font-size: 11px; color: #6f7987; margin-top: 10px; font-style: italic; }
+  .full-width { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+
+<h1>SpacetimeDB vs PostgreSQL — AI App Generation Benchmark</h1>
+<p class="subtitle">Sequential upgrade · L1–L11 · 13 feature groups · Claude Sonnet 4.6 · Chat app</p>
+
+<div class="toolbar">
+  <span class="toolbar-label">Load data:</span>
+  <button class="btn" id="btn-dir" title="Browse a folder — skips node_modules (Chrome/Edge)">📁 Open folder…</button>
+  <label class="btn file-label" title="Pick a single METRICS_DATA*.json file">
+    <input type="file" id="file-picker" accept=".json">
+    📄 Open file…
+  </label>
+  <span id="loaded-file"></span>
+</div>
+
+<div id="run-panel">
+  <div id="run-panel-header">
+    <span id="run-panel-title">Runs found</span>
+    <button id="run-panel-close" title="Close">✕</button>
+  </div>
+  <div id="run-scanning" style="display:none">Scanning…</div>
+  <ul id="run-list"></ul>
+</div>
+
+<div id="error-banner"></div>
+
+<div id="empty-state">
+  <div class="empty-icon">📊</div>
+  <h3>No run loaded</h3>
+  <p>
+    Click <kbd>📁 Open folder…</kbd> to select the <code>llm-sequential-upgrade/</code> directory —
+    the viewer will find all <code>METRICS_DATA*.json</code> files inside and list them for selection.<br><br>
+    Or click <kbd>📄 Open file…</kbd> to load a single file directly.
+  </p>
+</div>
+
+<div class="summary-bar">
+  <div class="stat">
+    <div class="stat-label">Total Cost</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb" id="stat-stdb-cost">—</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg"   id="stat-pg-cost">—</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Bugs</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb" id="stat-stdb-bugs">—</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg"   id="stat-pg-bugs">—</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Fix Sessions</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb" id="stat-stdb-sessions">—</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg"   id="stat-pg-sessions">—</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Final LOC (hand-written)</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb" id="stat-stdb-loc">—</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg"   id="stat-pg-loc">—</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Time</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb" id="stat-stdb-time">—</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg"   id="stat-pg-time">—</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Fix Success (1st attempt)</div>
+    <div class="stat-row">
+      <div><div class="stat-val stdb" id="stat-stdb-success">—</div><div class="stat-sub">SpacetimeDB</div></div>
+      <div><div class="stat-val pg"   id="stat-pg-success">—</div><div class="stat-sub">PostgreSQL</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4cf490"></div>SpacetimeDB</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#336791"></div>PostgreSQL</div>
+</div>
+
+<div class="grid">
+
+  <!-- Upgrade Cost per Level -->
+  <div class="card">
+    <h2>Upgrade Cost per Level ($)</h2>
+    <div class="chart-wrap"><canvas id="upgradeCost"></canvas></div>
+  </div>
+
+  <!-- Fix Cost per Level -->
+  <div class="card">
+    <h2>Fix Cost per Level ($)</h2>
+    <div class="chart-wrap"><canvas id="fixCost"></canvas></div>
+    <p class="note">Fix costs attributed to the level where the bug was introduced.</p>
+  </div>
+
+  <!-- Total Cost per Level (stacked) -->
+  <div class="card">
+    <h2>Total Cost per Level — Upgrade + Fix ($)</h2>
+    <div class="chart-wrap"><canvas id="totalCostPerLevel"></canvas></div>
+  </div>
+
+  <!-- Cumulative Cost -->
+  <div class="card">
+    <h2>Cumulative Cost over Levels ($)</h2>
+    <div class="chart-wrap"><canvas id="cumulativeCost"></canvas></div>
+  </div>
+
+  <!-- Bugs per Level -->
+  <div class="card">
+    <h2>Bugs Found per Level</h2>
+    <div class="chart-wrap"><canvas id="bugsPerLevel"></canvas></div>
+  </div>
+
+  <!-- Cumulative Bugs -->
+  <div class="card">
+    <h2>Cumulative Bugs over Levels</h2>
+    <div class="chart-wrap"><canvas id="cumulativeBugs"></canvas></div>
+  </div>
+
+  <!-- LOC over Levels (full width) -->
+  <div class="card full-width">
+    <h2>Lines of Code over Levels (hand-written, excl. generated bindings)</h2>
+    <div class="chart-wrap" style="height:280px"><canvas id="locOverLevels"></canvas></div>
+  </div>
+
+  <!-- Backend LOC only -->
+  <div class="card">
+    <h2>Backend LOC over Levels</h2>
+    <div class="chart-wrap"><canvas id="backendLoc"></canvas></div>
+  </div>
+
+  <!-- Frontend LOC only -->
+  <div class="card">
+    <h2>Frontend LOC over Levels</h2>
+    <div class="chart-wrap"><canvas id="frontendLoc"></canvas></div>
+  </div>
+
+  <!-- Upgrade Duration -->
+  <div class="card">
+    <h2>Upgrade Duration per Level (seconds)</h2>
+    <div class="chart-wrap"><canvas id="duration"></canvas></div>
+  </div>
+
+  <!-- Output Tokens -->
+  <div class="card">
+    <h2>Output Tokens per Upgrade</h2>
+    <div class="chart-wrap"><canvas id="outputTokens"></canvas></div>
+  </div>
+
+</div>
+
+<script>
+// Data is loaded from METRICS_DATA.json inside each run folder at runtime.
+// Open this file via a local HTTP server, e.g.:
+//   python -m http.server 8080
+//   npx serve .
+
+const LEVELS   = ['L1','L2','L3','L4','L5','L6','L7','L8','L9','L10','L11'];
+const FEATURES = [
+  'Basic Chat + Typing + Read Receipts + Unread',
+  'Scheduled Messages','Ephemeral Messages','Message Reactions',
+  'Message Editing w/ History','Real-Time Permissions','Rich User Presence',
+  'Message Threading','Private Rooms + DMs','Room Activity Indicators','Draft Sync'
+];
+
+const STDB_COLOR = '#4cf490';
+const PG_COLOR   = '#336791';
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+
+function cumSum(arr) {
+  let s = 0;
+  return arr.map(v => parseFloat((s += v).toFixed(4)));
+}
+
+function add(a, b) { return a.map((v, i) => parseFloat((v + b[i]).toFixed(4))); }
+
+function fmtMins(seconds) {
+  return Math.round(seconds / 60) + 'm';
+}
+
+function fmtLocK(n) {
+  return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+}
+
+// ── CHART FACTORIES ───────────────────────────────────────────────────────────
+
+Chart.defaults.color = '#6f7987';
+Chart.defaults.borderColor = '#202126';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+Chart.defaults.font.size = 11;
+
+const baseTooltip = {
+  backgroundColor: '#1a1a1e',
+  borderColor: '#202126',
+  borderWidth: 1,
+  titleColor: '#e6e9f0',
+  bodyColor: '#a0aab8',
+  padding: 10,
+  callbacks: {
+    title: (items) => `${LEVELS[items[0].dataIndex]} — ${FEATURES[items[0].dataIndex]}`
+  }
+};
+
+function lineDataset(label, data, color, fill = false) {
+  return {
+    label, data,
+    borderColor: color,
+    backgroundColor: fill ? color + '22' : 'transparent',
+    pointBackgroundColor: color,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+    borderWidth: 2,
+    tension: 0.3,
+    fill,
+  };
+}
+
+function barDataset(label, data, color) {
+  return {
+    label, data,
+    backgroundColor: color + 'cc',
+    borderColor: color,
+    borderWidth: 1,
+    borderRadius: 4,
+  };
+}
+
+const baseScales = {
+  x: { grid: { color: '#202126' } },
+  y: { grid: { color: '#202126' }, beginAtZero: true }
+};
+
+// makeLineChart / makeBarChart are defined in the BOOT section below
+// (they track instances so data can be reloaded without page refresh)
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+
+function render(d) {
+  const pl = d.per_level;
+  const bugsStdb = d.bugs_by_level.map(r => r.spacetime);
+  const bugsPg   = d.bugs_by_level.map(r => r.postgres);
+
+  const upgradeCostStdb = pl.upgrade_cost.spacetime;
+  const upgradeCostPg   = pl.upgrade_cost.postgres;
+  const fixCostStdb     = pl.fix_cost.spacetime;
+  const fixCostPg       = pl.fix_cost.postgres;
+
+  const stdbBackendLoc  = pl.loc_backend.spacetime;
+  const stdbFrontendLoc = pl.loc_frontend.spacetime;
+  const stdbBindingsLoc = pl.loc_bindings.spacetime;
+  const pgBackendLoc    = pl.loc_backend.postgres;
+  const pgFrontendLoc   = pl.loc_frontend.postgres;
+
+  const durationStdb = pl.duration_seconds.spacetime;
+  const durationPg   = pl.duration_seconds.postgres;
+  const tokensStdb   = pl.output_tokens.spacetime;
+  const tokensPg     = pl.output_tokens.postgres;
+
+  const totalStdb    = add(upgradeCostStdb, fixCostStdb);
+  const totalPg      = add(upgradeCostPg,   fixCostPg);
+  const stdbTotalLoc = stdbBackendLoc.map((v, i) => v + stdbFrontendLoc[i]);
+  const pgTotalLoc   = pgBackendLoc.map((v, i) => v + pgFrontendLoc[i]);
+
+  // ── STAT BARS ───────────────────────────────────────────────────────────────
+  document.getElementById('stat-stdb-cost').textContent    = '$' + d.cost.spacetime.total.toFixed(2);
+  document.getElementById('stat-pg-cost').textContent      = '$' + d.cost.postgres.total.toFixed(2);
+  document.getElementById('stat-stdb-bugs').textContent    = d.quality.spacetime.total_bugs;
+  document.getElementById('stat-pg-bugs').textContent      = d.quality.postgres.total_bugs;
+  document.getElementById('stat-stdb-sessions').textContent = d.quality.spacetime.fix_sessions;
+  document.getElementById('stat-pg-sessions').textContent  = d.quality.postgres.fix_sessions;
+  document.getElementById('stat-stdb-loc').textContent     = d.loc.spacetime.total_handwritten.toLocaleString();
+  document.getElementById('stat-pg-loc').textContent       = d.loc.postgres.total_handwritten.toLocaleString();
+  document.getElementById('stat-stdb-time').textContent    = fmtMins(d.time_seconds.spacetime.total);
+  document.getElementById('stat-pg-time').textContent      = fmtMins(d.time_seconds.postgres.total);
+  document.getElementById('stat-stdb-success').textContent = d.quality.spacetime.first_attempt_fix_rate_pct + '%';
+  document.getElementById('stat-pg-success').textContent   = d.quality.postgres.first_attempt_fix_rate_pct + '%';
+
+  // ── CHARTS ──────────────────────────────────────────────────────────────────
+  makeLineChart('upgradeCost', [
+    lineDataset('SpacetimeDB', upgradeCostStdb, STDB_COLOR),
+    lineDataset('PostgreSQL',  upgradeCostPg,   PG_COLOR),
+  ], '$');
+
+  makeBarChart('fixCost', [
+    barDataset('SpacetimeDB', fixCostStdb, STDB_COLOR),
+    barDataset('PostgreSQL',  fixCostPg,   PG_COLOR),
+  ], false, '$');
+
+  makeBarChart('totalCostPerLevel', [
+    { ...barDataset('STDB Upgrade', upgradeCostStdb, STDB_COLOR), stack: 'stdb' },
+    { ...barDataset('STDB Fix',     fixCostStdb,     '#4cf49066'), stack: 'stdb', borderColor: '#4cf490' },
+    { ...barDataset('PG Upgrade',   upgradeCostPg,   PG_COLOR),   stack: 'pg' },
+    { ...barDataset('PG Fix',       fixCostPg,       '#33679166'), stack: 'pg',   borderColor: '#336791' },
+  ], true, '$');
+
+  makeLineChart('cumulativeCost', [
+    lineDataset('SpacetimeDB', cumSum(totalStdb), STDB_COLOR, true),
+    lineDataset('PostgreSQL',  cumSum(totalPg),   PG_COLOR,   true),
+  ], '$');
+
+  makeBarChart('bugsPerLevel', [
+    barDataset('SpacetimeDB', bugsStdb, STDB_COLOR),
+    barDataset('PostgreSQL',  bugsPg,   PG_COLOR),
+  ], false, 'bugs');
+
+  makeLineChart('cumulativeBugs', [
+    lineDataset('SpacetimeDB', cumSum(bugsStdb), STDB_COLOR),
+    lineDataset('PostgreSQL',  cumSum(bugsPg),   PG_COLOR),
+  ], 'bugs');
+
+  makeLineChart('locOverLevels', [
+    lineDataset('STDB Total (hand-written)', stdbTotalLoc, STDB_COLOR),
+    lineDataset('PG Total',                 pgTotalLoc,   PG_COLOR),
+    lineDataset('STDB incl. bindings', stdbBackendLoc.map((v,i) => v + stdbFrontendLoc[i] + stdbBindingsLoc[i]), '#4cf49055'),
+  ], 'LOC');
+
+  makeLineChart('backendLoc', [
+    lineDataset('SpacetimeDB backend', stdbBackendLoc, STDB_COLOR),
+    lineDataset('PostgreSQL server',   pgBackendLoc,   PG_COLOR),
+  ], 'LOC');
+
+  makeLineChart('frontendLoc', [
+    lineDataset('SpacetimeDB client', stdbFrontendLoc, STDB_COLOR),
+    lineDataset('PostgreSQL client',  pgFrontendLoc,   PG_COLOR),
+  ], 'LOC');
+
+  makeBarChart('duration', [
+    barDataset('SpacetimeDB', durationStdb, STDB_COLOR),
+    barDataset('PostgreSQL',  durationPg,   PG_COLOR),
+  ], false, 'seconds');
+
+  makeBarChart('outputTokens', [
+    barDataset('SpacetimeDB', tokensStdb, STDB_COLOR),
+    barDataset('PostgreSQL',  tokensPg,   PG_COLOR),
+  ], false, 'tokens');
+}
+
+// ── BOOT ─────────────────────────────────────────────────────────────────────
+
+const chartInstances = {};
+const _OrigChart = Chart;
+function makeLineChart(id, datasets, yLabel = '') {
+  if (chartInstances[id]) chartInstances[id].destroy();
+  chartInstances[id] = new _OrigChart(document.getElementById(id), {
+    type: 'line',
+    data: { labels: LEVELS, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: baseTooltip },
+      scales: { ...baseScales, y: { ...baseScales.y, title: { display: !!yLabel, text: yLabel, color: '#6f7987' } } }
+    }
+  });
+}
+
+function makeBarChart(id, datasets, stacked = false, yLabel = '') {
+  if (chartInstances[id]) chartInstances[id].destroy();
+  chartInstances[id] = new _OrigChart(document.getElementById(id), {
+    type: 'bar',
+    data: { labels: LEVELS, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: baseTooltip },
+      scales: {
+        x: { ...baseScales.x, stacked },
+        y: { ...baseScales.y, stacked, title: { display: !!yLabel, text: yLabel, color: '#6f7987' } }
+      }
+    }
+  });
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.style.display = 'block';
+  el.innerHTML = msg;
+}
+
+function clearError() {
+  const el = document.getElementById('error-banner');
+  el.style.display = 'none';
+  el.textContent = '';
+}
+
+function loadFromText(text, filename) {
+  clearError();
+  try {
+    render(JSON.parse(text));
+    document.getElementById('loaded-file').textContent = filename || '';
+    document.getElementById('empty-state').style.display = 'none';
+  } catch (e) {
+    showError(`<strong>Parse error in ${filename}:</strong> ${e.message}`);
+  }
+}
+
+// ── FILE PICKER (single file) ─────────────────────────────────────────────────
+document.getElementById('file-picker').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => loadFromText(e.target.result, file.name);
+  reader.readAsText(file);
+  this.value = '';
+});
+
+// ── DIRECTORY BROWSER ─────────────────────────────────────────────────────────
+// Uses showDirectoryPicker (Chrome/Edge) so we can skip node_modules during
+// traversal rather than forcing the browser to enumerate every file first.
+
+const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', '.cache', '__pycache__']);
+
+async function scanDir(dirHandle, pathParts, depth, results) {
+  if (depth === 0) return;
+  try {
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind === 'file' && /^METRICS_DATA.*\.json$/i.test(name)) {
+        results.push({ name, pathParts: [...pathParts], handle });
+      } else if (handle.kind === 'directory' && !SKIP_DIRS.has(name) && !name.startsWith('.')) {
+        await scanDir(handle, [...pathParts, name], depth - 1, results);
+      }
+    }
+  } catch (_) { /* permission denied — skip */ }
+}
+
+function renderRunList(runs) {
+  const panel = document.getElementById('run-panel');
+  const list  = document.getElementById('run-list');
+  const title = document.getElementById('run-panel-title');
+  document.getElementById('run-scanning').style.display = 'none';
+
+  title.textContent = `${runs.length} run${runs.length !== 1 ? 's' : ''} found`;
+  list.innerHTML = '';
+
+  if (runs.length === 0) {
+    list.innerHTML = '<li style="padding:10px 14px;color:#6f7987;font-size:12px;">No METRICS_DATA*.json files found here.</li>';
+    panel.style.display = 'block';
+    return;
+  }
+
+  runs.forEach((run) => {
+    const li = document.createElement('li');
+    const dir = run.pathParts.join(' / ') || '(root)';
+    li.innerHTML = `<span class="run-name">${dir}</span><span class="run-path">${run.name}</span>`;
+    li.title = [...run.pathParts, run.name].join('/');
+    li.addEventListener('click', async () => {
+      list.querySelectorAll('li').forEach(el => el.classList.remove('active'));
+      li.classList.add('active');
+      clearError();
+      try {
+        const file = await run.handle.getFile();
+        loadFromText(await file.text(), li.title);
+      } catch (e) {
+        showError(`<strong>Could not read file:</strong> ${e.message}`);
+      }
+    });
+    list.appendChild(li);
+  });
+
+  panel.style.display = 'block';
+  list.firstElementChild.click();
+}
+
+document.getElementById('btn-dir').addEventListener('click', async () => {
+  if (!window.showDirectoryPicker) {
+    showError(
+      `<strong>Folder browsing requires Chrome or Edge.</strong> ` +
+      `Use <em>📄 Open file…</em> to load a <code>METRICS_DATA*.json</code> directly — ` +
+      `it's in the <code>llm-sequential-upgrade/</code> root or inside a run directory.`
+    );
+    return;
+  }
+  let dirHandle;
+  try { dirHandle = await window.showDirectoryPicker({ mode: 'read' }); }
+  catch (e) { if (e.name !== 'AbortError') showError('Could not open folder: ' + e.message); return; }
+
+  clearError();
+  const panel    = document.getElementById('run-panel');
+  const scanning = document.getElementById('run-scanning');
+  document.getElementById('run-list').innerHTML = '';
+  document.getElementById('run-panel-title').textContent = 'Scanning…';
+  scanning.style.display = 'block';
+  panel.style.display = 'block';
+
+  const runs = [];
+  await scanDir(dirHandle, [dirHandle.name], 6, runs);
+  runs.sort((a, b) => a.pathParts.join('/').localeCompare(b.pathParts.join('/')));
+  renderRunList(runs);
+});
+
+document.getElementById('run-panel-close').addEventListener('click', () => {
+  document.getElementById('run-panel').style.display = 'none';
+});
+
+// ── INITIAL STATE ─────────────────────────────────────────────────────────────
+// Show a welcome placeholder; user loads data via the toolbar buttons.
+document.getElementById('empty-state').style.display = 'flex';
+
+</script>
+</body>
+</html>

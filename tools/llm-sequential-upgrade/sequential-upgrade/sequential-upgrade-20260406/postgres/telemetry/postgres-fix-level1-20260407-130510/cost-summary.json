@@ -1,0 +1,18 @@
+{
+  "backend": "postgres",
+  "level": 1,
+  "variant": "sequential-upgrade",
+  "rules": "guided",
+  "runIndex": 0,
+  "sessionId": "99959a8e-87ac-43b2-8544-bcdb90945f6c",
+  "startedAt": "2026-04-07T17:05:11Z",
+  "endedAt": "2026-04-07T17:10:04Z",
+  "totalInputTokens": 18,
+  "totalOutputTokens": 5807,
+  "totalTokens": 5825,
+  "cacheReadTokens": 682516,
+  "cacheCreationTokens": 24173,
+  "totalCostUsd": 0.38256255,
+  "apiCalls": 16,
+  "totalDurationSec": 123.317
+}

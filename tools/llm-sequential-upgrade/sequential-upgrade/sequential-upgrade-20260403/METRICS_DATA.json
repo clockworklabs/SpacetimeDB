@@ -1,0 +1,136 @@
+{
+  "meta": {
+    "date": "2026-04-04",
+    "l12_added": "2026-04-10",
+    "variant": "sequential-upgrade",
+    "model": "claude-sonnet-4-6",
+    "levels_completed": 12,
+    "feature_groups": 14
+  },
+
+  "cost": {
+    "spacetime": {
+      "upgrades": 11.85,
+      "fixes": 1.47,
+      "total": 13.33,
+      "per_feature_all_in": 0.95,
+      "per_feature_upgrades_only": 0.85,
+      "per_feature_fixes_only": 0.11,
+      "fix_pct_of_total": 11.0
+    },
+    "postgres": {
+      "upgrades": 8.74,
+      "fixes": 9.06,
+      "total": 17.80,
+      "per_feature_all_in": 1.27,
+      "per_feature_upgrades_only": 0.62,
+      "per_feature_fixes_only": 0.65,
+      "fix_pct_of_total": 50.9
+    }
+  },
+
+  "tokens": {
+    "spacetime": {
+      "fresh_input": 417,
+      "fresh_output": 192025,
+      "cache_read": 28123377,
+      "cache_creation": 544253,
+      "api_calls": 399,
+      "fresh_output_per_feature": 13716,
+      "api_calls_per_feature": 28.5
+    },
+    "postgres": {
+      "fresh_input": 651,
+      "fresh_output": 285844,
+      "cache_read": 34631117,
+      "cache_creation": 832727,
+      "api_calls": 613,
+      "fresh_output_per_feature": 20417,
+      "api_calls_per_feature": 43.8
+    }
+  },
+
+  "loc": {
+    "methodology_note": "L12 LOC re-measured with consistent rules across both runs: counts .ts and .tsx files in backend/server src/ and client/src/ directories, excluding node_modules, dist, level-N snapshots, CSS files, and generated SpacetimeDB bindings (counted separately). CSS excluded because it's orthogonal to backend architecture and varies stylistically between runs.",
+    "spacetime": {
+      "backend_handwritten": 678,
+      "frontend_handwritten": 1465,
+      "generated_bindings": 1183,
+      "total_handwritten": 2143,
+      "per_feature": 153
+    },
+    "postgres": {
+      "backend_handwritten": 1192,
+      "frontend_handwritten": 1751,
+      "generated_bindings": 0,
+      "total_handwritten": 2943,
+      "per_feature": 210
+    }
+  },
+
+  "time_seconds": {
+    "spacetime": {
+      "l1_generation": 366,
+      "avg_upgrade": 231,
+      "avg_fix_session": 96,
+      "total": 3160
+    },
+    "postgres": {
+      "l1_generation": 300,
+      "avg_upgrade": 173,
+      "avg_fix_session": 176,
+      "total": 4894
+    }
+  },
+
+  "quality": {
+    "spacetime": {
+      "total_bugs": 5,
+      "bugs_per_feature": 0.36,
+      "zero_bug_levels": 8,
+      "total_levels": 12,
+      "zero_bug_rate_pct": 67,
+      "fix_sessions": 4,
+      "first_attempt_fix_success": 4,
+      "first_attempt_fix_rate_pct": 100,
+      "multi_attempt_fixes": 0,
+      "avg_fix_cost_per_bug": 0.29
+    },
+    "postgres": {
+      "total_bugs": 19,
+      "bugs_per_feature": 1.36,
+      "zero_bug_levels": 5,
+      "total_levels": 12,
+      "zero_bug_rate_pct": 42,
+      "fix_sessions": 17,
+      "first_attempt_fix_success": 17,
+      "first_attempt_fix_rate_pct": 89,
+      "multi_attempt_fixes": 2,
+      "avg_fix_cost_per_bug": 0.48
+    }
+  },
+
+  "bugs_by_level": [
+    { "level": 1,  "feature": "Basic Chat + Typing + Read Receipts + Unread", "spacetime": 1, "postgres": 3 },
+    { "level": 2,  "feature": "Scheduled Messages",                            "spacetime": 0, "postgres": 0 },
+    { "level": 3,  "feature": "Ephemeral Messages",                            "spacetime": 0, "postgres": 0 },
+    { "level": 4,  "feature": "Message Reactions",                             "spacetime": 0, "postgres": 0 },
+    { "level": 5,  "feature": "Message Editing with History",                  "spacetime": 2, "postgres": 1 },
+    { "level": 6,  "feature": "Real-Time Permissions",                         "spacetime": 1, "postgres": 2 },
+    { "level": 7,  "feature": "Rich User Presence",                            "spacetime": 0, "postgres": 3 },
+    { "level": 8,  "feature": "Message Threading",                             "spacetime": 0, "postgres": 2 },
+    { "level": 9,  "feature": "Private Rooms + DMs",                           "spacetime": 0, "postgres": 7 },
+    { "level": 10, "feature": "Room Activity Indicators",                      "spacetime": 0, "postgres": 0 },
+    { "level": 11, "feature": "Draft Sync",                                    "spacetime": 1, "postgres": 0 },
+    { "level": 12, "feature": "Anonymous to Registered Migration",             "spacetime": 0, "postgres": 1 }
+  ],
+
+  "postgres_bug_categories": [
+    { "category": "Real-time state not updating",       "count": 5 },
+    { "category": "Missing UI element",                 "count": 5 },
+    { "category": "Data not persisted server-side",     "count": 3 },
+    { "category": "Data not persisted client-side",     "count": 1 },
+    { "category": "Logic error (wrong value/calc)",     "count": 2 },
+    { "category": "Race condition / stale reference",   "count": 3 }
+  ]
+}

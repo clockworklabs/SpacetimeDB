@@ -60,7 +60,7 @@ spacetime publish chat-app-20260106-183045 --module-path backend/spacetimedb
   "type": "module",
   "version": "1.0.0",
   "dependencies": {
-    "spacetimedb": "^1.11.0"
+    "spacetimedb": "^2.0.0"
   }
 }
 ```
@@ -109,7 +109,7 @@ src/index.ts    → Import schema, define all reducers and lifecycle hooks
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "spacetimedb": "^1.11.0"
+    "spacetimedb": "^2.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
