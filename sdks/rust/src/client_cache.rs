@@ -638,6 +638,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{HashMap, UniqueIndexDyn, UniqueIndexImpl};
+    use spacetimedb_data_structures::map::HashCollectionExt;
     use spacetimedb_lib::{TimeDuration, Timestamp};
     use std::any::Any;
 
