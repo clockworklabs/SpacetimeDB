@@ -91,24 +91,41 @@ impl Drop for Lockfile {
 }
 
 pub mod advisory {
+    use chrono::{DateTime, Utc};
     use std::{
+        error::Error as StdError,
         fmt,
-        fs::{self, File},
-        io,
+        fs::File,
+        io::{self, Read, Seek, SeekFrom, Write},
         path::{Path, PathBuf},
+        process,
+        time::SystemTime,
     };
 
-    use fs2::FileExt as _;
-    use thiserror::Error;
-
     use crate::create_parent_dir;
+    use fs2::FileExt as _;
 
-    #[derive(Debug, Error)]
-    #[error("failed to lock {}", path.display())]
+    #[derive(Debug)]
     pub struct LockError {
         pub path: PathBuf,
-        #[source]
         pub source: io::Error,
+        pub existing_contents: Option<String>,
+    }
+
+    impl fmt::Display for LockError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "failed to lock {}", self.path.display())?;
+            if let Some(contents) = &self.existing_contents {
+                write!(f, " (existing contents: {:?})", contents)?;
+            }
+            Ok(())
+        }
+    }
+
+    impl StdError for LockError {
+        fn source(&self) -> Option<&(dyn StdError + 'static)> {
+            Some(&self.source)
+        }
     }
 
     /// A file locked with an exclusive, filesystem-level lock.
@@ -139,23 +156,94 @@ pub mod advisory {
         /// created.
         pub fn lock(path: impl AsRef<Path>) -> Result<Self, LockError> {
             let path = path.as_ref();
-            Self::lock_inner(path).map_err(|source| LockError {
-                path: path.into(),
-                source,
-            })
+            Self::lock_inner(path)
         }
 
-        fn lock_inner(path: &Path) -> io::Result<Self> {
-            create_parent_dir(path)?;
-            // This will create the file if it doesn't already exist.
-            let lock = File::options().write(true).create(true).open(path)?;
-            // TODO: Use `File::lock` (available since rust 1.89) instead?
-            lock.try_lock_exclusive()?;
+        /// Replace the lock file contents with `metadata` while holding the lock.
+        pub fn write_metadata(&mut self, metadata: impl AsRef<[u8]>) -> io::Result<()> {
+            self.lock.set_len(0)?;
+            self.lock.seek(SeekFrom::Start(0))?;
+            self.lock.write_all(metadata.as_ref())?;
+            self.lock.sync_data()?;
+            Ok(())
+        }
 
-            Ok(Self {
+        fn lock_inner(path: &Path) -> Result<Self, LockError> {
+            create_parent_dir(path).map_err(|source| LockError {
+                path: path.to_path_buf(),
+                source,
+                existing_contents: None,
+            })?;
+            // This will create the file if it doesn't already exist.
+            let mut lock = File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(path)
+                .map_err(|source| LockError {
+                    path: path.to_path_buf(),
+                    source,
+                    existing_contents: None,
+                })?;
+            // TODO: Use `File::lock` (available since rust 1.89) instead?
+            if let Err(source) = lock.try_lock_exclusive() {
+                let existing_contents = if source.kind() == io::ErrorKind::WouldBlock {
+                    Self::read_existing_contents(&mut lock).ok().flatten()
+                } else {
+                    None
+                };
+                return Err(LockError {
+                    path: path.to_path_buf(),
+                    source,
+                    existing_contents,
+                });
+            }
+            // Now that we own the lock, clear any content that may have been written by a previous holder.
+            lock.set_len(0).map_err(|source| LockError {
+                path: path.to_path_buf(),
+                source,
+                existing_contents: None,
+            })?;
+            lock.seek(SeekFrom::Start(0)).map_err(|source| LockError {
+                path: path.to_path_buf(),
+                source,
+                existing_contents: None,
+            })?;
+
+            let mut locked = Self {
                 path: path.to_path_buf(),
                 lock,
-            })
+            };
+            // Write the default metadata.
+            locked
+                .write_metadata(Self::default_metadata())
+                .map_err(|source| LockError {
+                    path: path.to_path_buf(),
+                    source,
+                    existing_contents: None,
+                })?;
+
+            Ok(locked)
+        }
+
+        fn read_existing_contents(lock: &mut File) -> io::Result<Option<String>> {
+            lock.seek(SeekFrom::Start(0))?;
+            let mut bytes = Vec::new();
+            lock.read_to_end(&mut bytes)?;
+            if bytes.is_empty() {
+                return Ok(None);
+            }
+            Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+        }
+
+        // Default contents of a lockfile, which has the pid and timestamp.
+        fn default_metadata() -> String {
+            let timestamp_ms = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            let timestamp = DateTime::<Utc>::from_timestamp_millis(timestamp_ms).unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
+            format!("pid={};timestamp_utc={}", process::id(), timestamp.to_rfc3339())
         }
     }
 
@@ -168,11 +256,11 @@ pub mod advisory {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{self, File};
+    use std::{fs, io::ErrorKind};
 
     use tempdir::TempDir;
 
-    use super::{advisory::LockedFile, Lockfile};
+    use super::advisory::LockedFile;
 
     #[test]
     fn lockedfile_can_create_a_file() {
@@ -180,6 +268,9 @@ mod tests {
         let path = tmp.path().join("db.lock");
         let _lock1 = LockedFile::lock(&path).unwrap();
         assert!(path.exists());
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains(&format!("pid={}", std::process::id())));
+        assert!(contents.contains("timestamp_utc="));
     }
 
     #[test]
@@ -200,19 +291,41 @@ mod tests {
     }
 
     #[test]
-    fn lockedfile_path_cannot_be_written() {
-        let tmp = TempDir::new("lockfile_test").unwrap();
-        let path = tmp.path().join("db.lock");
-        let _lock1 = LockedFile::lock(&path).unwrap();
-    }
-
-    #[test]
     fn lockedfile_can_handle_existing_file() {
         let tmp = TempDir::new("locked_file_test").unwrap();
         let path = tmp.path().join("db.lock");
         let original = b"existing lock metadata";
         fs::write(&path, original).unwrap();
 
-        let lock = LockedFile::lock(&path).unwrap();
+        let _lock = LockedFile::lock(&path).unwrap();
+
+        // Previous metadata should be replaced when we acquire the lock.
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains(&format!("pid={}", std::process::id())));
+        assert!(contents.contains("timestamp_utc="));
+    }
+
+    #[test]
+    fn lockedfile_can_store_metadata() {
+        let tmp = TempDir::new("locked_file_test").unwrap();
+        let path = tmp.path().join("db.lock");
+        let mut lock = LockedFile::lock(&path).unwrap();
+
+        lock.write_metadata("pid=1234").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "pid=1234");
+    }
+
+    #[test]
+    fn lock_error_includes_existing_contents_when_already_locked() {
+        let tmp = TempDir::new("locked_file_test").unwrap();
+        let path = tmp.path().join("db.lock");
+        let mut lock = LockedFile::lock(&path).unwrap();
+        lock.write_metadata("pid=1234").unwrap();
+
+        let err = LockedFile::lock(&path).unwrap_err();
+        assert_eq!(err.source.kind(), ErrorKind::WouldBlock);
+        assert_eq!(err.existing_contents.as_deref(), Some("pid=1234"));
+        assert!(err.to_string().contains("pid=1234"));
     }
 }
