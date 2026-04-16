@@ -1187,44 +1187,55 @@ mod tests {
     use clap::Arg;
     use tempfile::TempDir;
 
+    fn write_package_json_with_manager(temp: &TempDir, package_manager: &str) {
+        fs::write(
+            temp.path().join("package.json"),
+            format!(
+                r#"{{
+                "name": "test",
+                "packageManager": "{package_manager}",
+                "scripts": {{
+                    "dev": "vite"
+                }}
+            }}"#
+            ),
+        )
+        .unwrap();
+    }
+
     #[test]
     fn detect_package_manager_prefers_package_manager_field_over_lockfiles() {
         let temp = TempDir::new().unwrap();
-        fs::write(
-            temp.path().join("package.json"),
-            r#"{
-                "name": "test",
-                "packageManager": "bun@1.2.13",
-                "scripts": {
-                    "dev": "vite"
-                }
-            }"#,
-        )
-        .unwrap();
+        write_package_json_with_manager(&temp, "bun@1.2.13");
         fs::write(temp.path().join("pnpm-lock.yaml"), "lockfileVersion: '9.0'").unwrap();
 
         assert_eq!(detect_package_manager(temp.path()), Some(PackageManager::Bun));
     }
 
     #[test]
-    fn detect_client_command_uses_package_manager_field_for_dev_command() {
-        let temp = TempDir::new().unwrap();
-        fs::write(
-            temp.path().join("package.json"),
-            r#"{
-                "name": "test",
-                "packageManager": "pnpm@10.28.2",
-                "scripts": {
-                    "dev": "vite"
-                }
-            }"#,
-        )
-        .unwrap();
+    fn run_dev_command_uses_expected_syntax_for_every_package_manager() {
+        assert_eq!(PackageManager::Npm.run_dev_command(), "npm run dev");
+        assert_eq!(PackageManager::Pnpm.run_dev_command(), "pnpm run dev");
+        assert_eq!(PackageManager::Yarn.run_dev_command(), "yarn dev");
+        assert_eq!(PackageManager::Bun.run_dev_command(), "bun run dev");
+    }
 
-        assert_eq!(
-            detect_client_command(temp.path()),
-            Some(("pnpm run dev".to_string(), Some(PackageManager::Pnpm)))
-        );
+    #[test]
+    fn detect_client_command_uses_package_manager_field_for_every_package_manager() {
+        for (package_manager, expected_manager, expected_cmd) in [
+            ("npm@10.9.0", PackageManager::Npm, "npm run dev"),
+            ("pnpm@10.28.2", PackageManager::Pnpm, "pnpm run dev"),
+            ("yarn@4.9.1", PackageManager::Yarn, "yarn dev"),
+            ("bun@1.2.13", PackageManager::Bun, "bun run dev"),
+        ] {
+            let temp = TempDir::new().unwrap();
+            write_package_json_with_manager(&temp, package_manager);
+
+            assert_eq!(
+                detect_client_command(temp.path()),
+                Some((expected_cmd.to_string(), Some(expected_manager)))
+            );
+        }
     }
 
     #[test]

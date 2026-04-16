@@ -1713,25 +1713,34 @@ mod tests {
 
     #[test]
     fn test_detect_and_save_uses_package_manager_field() {
-        let temp = TempDir::new().unwrap();
+        for (package_manager, expected_command) in [
+            ("npm@10.9.0", "npm run dev"),
+            ("pnpm@10.28.2", "pnpm run dev"),
+            ("yarn@4.9.1", "yarn dev"),
+            ("bun@1.2.13", "bun run dev"),
+        ] {
+            let temp = TempDir::new().unwrap();
 
-        let package_json = r#"{
+            let package_json = format!(
+                r#"{{
             "name": "test",
-            "packageManager": "pnpm@10.28.2",
-            "scripts": {
+            "packageManager": "{package_manager}",
+            "scripts": {{
                 "dev": "vite"
-            }
-        }"#;
-        fs::write(temp.path().join("package.json"), package_json).unwrap();
+            }}
+        }}"#
+            );
+            fs::write(temp.path().join("package.json"), package_json).unwrap();
 
-        let detected = detect_and_save_client_command(temp.path(), None);
-        assert_eq!(detected.as_deref(), Some("pnpm run dev"));
+            let detected = detect_and_save_client_command(temp.path(), None);
+            assert_eq!(detected.as_deref(), Some(expected_command));
 
-        let reloaded_config = SpacetimeConfig::load(&temp.path().join("spacetime.json")).unwrap();
-        assert_eq!(
-            reloaded_config.dev.as_ref().and_then(|d| d.run.as_deref()),
-            Some("pnpm run dev")
-        );
+            let reloaded_config = SpacetimeConfig::load(&temp.path().join("spacetime.json")).unwrap();
+            assert_eq!(
+                reloaded_config.dev.as_ref().and_then(|d| d.run.as_deref()),
+                Some(expected_command)
+            );
+        }
     }
 
     #[test]
