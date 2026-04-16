@@ -24,6 +24,7 @@ use futures::TryStreamExt;
 use http::StatusCode;
 use log::{info, warn};
 use serde::Deserialize;
+use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
@@ -518,22 +519,46 @@ pub async fn sql_direct<S>(
     SqlParams { name_or_identity }: SqlParams,
     SqlQueryParams { confirmed }: SqlQueryParams,
     caller_identity: Identity,
+    caller_auth: ConnectionAuthCtx,
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    // Anyone is authorized to execute SQL queries. The SQL engine will determine
-    // which queries this identity is allowed to execute against the database.
+    let connection_id = generate_random_connection_id();
 
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
-    let auth = worker_ctx
-        .authorize_sql(caller_identity, database.database_identity)
-        .await?;
-
-    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+    // Run the module's client_connected reducer, if any.
+    // If it rejects the connection, bail before executing SQL.
+    let module = host.module().await.map_err(log_and_500)?;
+    module
+        .call_identity_connected(caller_auth, connection_id)
         .await
+        .map_err(client_connected_error_to_response)?;
+
+    let result = async {
+        let sql_auth = worker_ctx
+            .authorize_sql(caller_identity, database.database_identity)
+            .await?;
+
+        host.exec_sql(
+            sql_auth,
+            database,
+            confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
+            sql,
+        )
+        .await
+    }
+    .await;
+
+    // Always disconnect, even if authorization or execution failed.
+    module
+        .call_identity_disconnected(caller_identity, connection_id)
+        .await
+        .map_err(client_disconnected_error_to_response)?;
+
+    result
 }
 
 pub async fn sql<S>(
@@ -546,7 +571,9 @@ pub async fn sql<S>(
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    let json = sql_direct(worker_ctx, name_or_identity, params, auth.claims.identity, body).await?;
+    let caller_identity = auth.claims.identity;
+    let caller_auth: ConnectionAuthCtx = auth.into();
+    let json = sql_direct(worker_ctx, name_or_identity, params, caller_identity, caller_auth, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
@@ -616,7 +643,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
     }): Query<ResetDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    program_bytes: Option<Bytes>,
+    program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let database_identity = name_or_identity.resolve(&ctx).await?;
     let database = worker_ctx_find_database(&ctx, &database_identity)
@@ -631,7 +658,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         &auth.claims.identity,
         DatabaseResetDef {
             database_identity,
-            program_bytes,
+            program_bytes: Some(program_bytes),
             num_replicas,
             host_type: Some(host_type),
         },
@@ -716,7 +743,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                         host_type,
                     }),
                     Extension(auth),
-                    Some(program_bytes),
+                    program_bytes,
                 )
                 .await;
             }
@@ -1244,7 +1271,7 @@ where
             .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
-            .route("/call/:reducer", self.call_reducer_procedure_post)
+            .route("/call/{reducer}", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
@@ -1254,7 +1281,7 @@ where
 
         axum::Router::new()
             .route("/", self.root_post)
-            .nest("/:name_or_identity", db_router)
+            .nest("/{name_or_identity}", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }
 }
