@@ -370,6 +370,14 @@ sealed class demo_viewViewDispatcher : global::SpacetimeDB.Internal.IView
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -477,7 +485,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.DemoReducer((SpacetimeDB.ReducerContext)ctx, valueRW.Read(reader));
         }
@@ -495,7 +509,13 @@ static class ModuleRegistration
                 Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
             );
 
-        public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx)
+        public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static byte[] __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx)
         {
             Reducers.DemoProcedure((SpacetimeDB.ProcedureContext)ctx);
             return System.Array.Empty<byte>();
