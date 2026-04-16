@@ -112,9 +112,12 @@ impl ApiClient {
                 } else {
                     let status = resp.status();
                     let body = resp.text().unwrap_or_default();
-                    eprintln!(
-                        "\u{26a0}\u{fe0f} upload failed for {}/{}: {} \u{2014} {}",
-                        lang_entry.lang, mode_entry.mode, status, body
+                    anyhow::bail!(
+                        "upload failed for {}/{}: {} — {}",
+                        lang_entry.lang,
+                        mode_entry.mode,
+                        status,
+                        body
                     );
                 }
             }
@@ -302,6 +305,7 @@ impl ApiClient {
         let payload = json!({
             "lang": lang,
             "mode": mode,
+            "date": date,
             "hash": null,
             "models": [{
                 "name": model_name,

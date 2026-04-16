@@ -31,7 +31,6 @@ static DEFAULT_ROUTES: LazyLock<Vec<ModelRoute>> = LazyLock::new(|| {
             Some("anthropic/claude-sonnet-4.6"),
         ),
         // Grok: Best Grok 4, Cheaper Grok Code
-        // grok-4 → x-ai/grok-4.20-beta on OpenRouter; grok-code-fast-1 not on OpenRouter → x-ai/grok-3
         ModelRoute::new("Grok 4", Xai, "grok-4", Some("x-ai/grok-4.20-beta")),
         ModelRoute::new("Grok Code", Xai, "grok-code-fast-1", Some("x-ai/grok-code-fast-1")),
         // Gemini: direct via GOOGLE_API_KEY, falls back to OpenRouter if not set
