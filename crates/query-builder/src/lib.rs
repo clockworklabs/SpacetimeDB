@@ -7,6 +7,8 @@ pub use join::*;
 use spacetimedb_lib::{sats::impl_st, AlgebraicType, SpacetimeType};
 pub use table::*;
 
+const QUERY_VIEW_RETURN_TAG: &str = "__query__";
+
 /// Trait implemented by all query builder types. Use `impl Query<T>` as a
 /// return type for view functions and helpers.
 pub trait Query<T> {
@@ -38,7 +40,10 @@ impl<T> Query<T> for RawQuery<T> {
     }
 }
 
-impl_st!([T: SpacetimeType] RawQuery<T>, ts => AlgebraicType::option(T::make_type(ts)));
+impl_st!(
+    [T: SpacetimeType] RawQuery<T>,
+    ts => AlgebraicType::product([(QUERY_VIEW_RETURN_TAG, T::make_type(ts))])
+);
 
 #[cfg(test)]
 mod tests {
@@ -51,6 +56,7 @@ mod tests {
         pub id: Col<User, i32>,
         pub name: Col<User, String>,
         pub age: Col<User, i32>,
+        pub online: Col<User, bool>,
     }
     impl UserCols {
         fn new(table_name: &'static str) -> Self {
@@ -58,6 +64,7 @@ mod tests {
                 id: Col::new(table_name, "id"),
                 name: Col::new(table_name, "name"),
                 age: Col::new(table_name, "age"),
+                online: Col::new(table_name, "online"),
             }
         }
     }
@@ -129,6 +136,13 @@ mod tests {
     fn test_where_multiple_predicates() {
         let q = users().r#where(|c| c.id.eq(10)).r#where(|c| c.age.gt(18)).build();
         let expected = r#"SELECT * FROM "users" WHERE (("users"."id" = 10) AND ("users"."age" > 18))"#;
+        assert_eq!(norm(q.sql()), norm(expected));
+    }
+
+    #[test]
+    fn test_where_bool_column_directly() {
+        let q = users().r#where(|c| c.online).build();
+        let expected = r#"SELECT * FROM "users" WHERE ("users"."online" = TRUE)"#;
         assert_eq!(norm(q.sql()), norm(expected));
     }
 

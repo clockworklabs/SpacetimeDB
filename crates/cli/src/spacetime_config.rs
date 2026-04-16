@@ -1,11 +1,12 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// The filename for configuration
@@ -163,46 +164,53 @@ pub struct LoadedConfig {
 
 impl SpacetimeConfig {
     /// Collect all database targets with parent→child inheritance.
-    /// Children inherit unset `additional_fields` and `generate` from their parent.
-    /// `dev` and `children` are NOT propagated to child targets.
+    /// Children inherit unset `additional_fields` from their parent.
+    /// `dev`, `generate`, and `children` are NOT propagated to child targets.
     /// Returns `Vec<FlatTarget>` with fully resolved fields.
     pub fn collect_all_targets_with_inheritance(&self) -> Vec<FlatTarget> {
-        self.collect_targets_inner(None, None)
+        self.collect_targets_inner(None)
     }
 
-    fn collect_targets_inner(
-        &self,
-        parent_fields: Option<&HashMap<String, Value>>,
-        parent_generate: Option<&Vec<HashMap<String, Value>>>,
-    ) -> Vec<FlatTarget> {
+    fn collect_targets_inner(&self, parent_fields: Option<&HashMap<String, Value>>) -> Vec<FlatTarget> {
+        // module-path, bin-path, and js-path are mutually exclusive module sources.
+        // If a child specifies any one, the other two are not inherited from the parent.
+        const MODULE_SOURCE_KEYS: &[&str] = &["module-path", "bin-path", "js-path"];
+        let child_specifies_source = MODULE_SOURCE_KEYS
+            .iter()
+            .any(|k| self.additional_fields.contains_key(*k));
+
         // Build this node's fields by inheriting from parent
         let mut fields = self.additional_fields.clone();
         if let Some(parent) = parent_fields {
             for (key, value) in parent {
-                if !fields.contains_key(key) {
-                    fields.insert(key.clone(), value.clone());
+                if fields.contains_key(key) {
+                    continue;
                 }
+                // If the child specifies any module source, skip inheriting the others
+                if child_specifies_source && MODULE_SOURCE_KEYS.contains(&key.as_str()) {
+                    continue;
+                }
+                fields.insert(key.clone(), value.clone());
             }
         }
 
-        // Generate: child's generate replaces parent's; if absent, inherit parent's
-        let effective_generate = if self.generate.is_some() {
-            self.generate.clone()
-        } else {
-            parent_generate.cloned()
-        };
+        // Generate is never inherited. It is tied to a specific module and output location:
+        // inheriting is redundant when the child shares the parent's module (deduplication
+        // handles it) and dangerous when the child uses a different module (two modules
+        // would write bindings to the same output directory).
+        let effective_generate = self.generate.clone();
 
         let target = FlatTarget {
             fields: fields.clone(),
             source_config: self.source_config.clone(),
-            generate: effective_generate.clone(),
+            generate: effective_generate,
         };
 
         let mut result = vec![target];
 
         if let Some(children) = &self.children {
             for child in children {
-                let child_targets = child.collect_targets_inner(Some(&fields), effective_generate.as_ref());
+                let child_targets = child.collect_targets_inner(Some(&fields));
                 result.extend(child_targets);
             }
         }
@@ -310,13 +318,13 @@ impl CommandSchemaBuilder {
             }
 
             // Validate alias if present
-            if let Some(alias) = &key.clap_alias {
-                if !clap_arg_names.contains(alias) {
-                    return Err(CommandConfigError::InvalidAliasReference {
-                        config_name: key.config_name().to_string(),
-                        alias: alias.clone(),
-                    });
-                }
+            if let Some(alias) = &key.clap_alias
+                && !clap_arg_names.contains(alias)
+            {
+                return Err(CommandConfigError::InvalidAliasReference {
+                    config_name: key.config_name().to_string(),
+                    alias: alias.clone(),
+                });
             }
         }
 
@@ -398,23 +406,20 @@ impl CommandSchema {
             .unwrap_or(config_name);
 
         // Only return the value if it was actually provided by the user, not from defaults
-        if let Some(source) = matches.value_source(clap_name) {
-            if source == clap::parser::ValueSource::CommandLine {
-                if let Some(value) = matches.get_one::<T>(clap_name) {
-                    return Ok(Some(value.clone()));
-                }
-            }
+        if let Some(source) = matches.value_source(clap_name)
+            && source == clap::parser::ValueSource::CommandLine
+            && let Some(value) = matches.get_one::<T>(clap_name)
+        {
+            return Ok(Some(value.clone()));
         }
 
         // Try clap with the alias if it exists
-        if let Some(alias) = self.config_to_alias.get(config_name) {
-            if let Some(source) = matches.value_source(alias) {
-                if source == clap::parser::ValueSource::CommandLine {
-                    if let Some(value) = matches.get_one::<T>(alias) {
-                        return Ok(Some(value.clone()));
-                    }
-                }
-            }
+        if let Some(alias) = self.config_to_alias.get(config_name)
+            && let Some(source) = matches.value_source(alias)
+            && source == clap::parser::ValueSource::CommandLine
+            && let Some(value) = matches.get_one::<T>(alias)
+        {
+            return Ok(Some(value.clone()));
         }
 
         Ok(None)
@@ -431,19 +436,18 @@ impl CommandSchema {
             .unwrap_or(config_name);
 
         // Use value_source to check if the value was actually provided by the user
-        if let Some(source) = matches.value_source(clap_name) {
-            if source == clap::parser::ValueSource::CommandLine {
-                return true;
-            }
+        if let Some(source) = matches.value_source(clap_name)
+            && source == clap::parser::ValueSource::CommandLine
+        {
+            return true;
         }
 
         // Check clap with alias
-        if let Some(alias) = self.config_to_alias.get(config_name) {
-            if let Some(source) = matches.value_source(alias) {
-                if source == clap::parser::ValueSource::CommandLine {
-                    return true;
-                }
-            }
+        if let Some(alias) = self.config_to_alias.get(config_name)
+            && let Some(source) = matches.value_source(alias)
+            && source == clap::parser::ValueSource::CommandLine
+        {
+            return true;
         }
 
         false
@@ -753,7 +757,7 @@ impl<'a> CommandConfig<'a> {
             } else {
                 p
             };
-            normalize_path_lexical(&resolved)
+            resolved.clean()
         }))
     }
 
@@ -775,24 +779,6 @@ impl<'a> CommandConfig<'a> {
             }
         }
         Ok(())
-    }
-}
-
-fn normalize_path_lexical(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    if normalized.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        normalized
     }
 }
 
@@ -1146,16 +1132,15 @@ pub fn detect_package_manager(project_dir: &Path) -> Option<PackageManager> {
 pub fn detect_client_command(project_dir: &Path) -> Option<(String, Option<PackageManager>)> {
     // JavaScript/TypeScript: package.json with "dev" script
     let package_json = project_dir.join("package.json");
-    if package_json.exists() {
-        if let Ok(content) = fs::read_to_string(&package_json) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                let has_dev = json.get("scripts").and_then(|s| s.get("dev")).is_some();
-                if has_dev {
-                    let pm = detect_package_manager(project_dir);
-                    let cmd = pm.map(|p| p.run_dev_command()).unwrap_or("npm run dev");
-                    return Some((cmd.to_string(), pm));
-                }
-            }
+    if package_json.exists()
+        && let Ok(content) = fs::read_to_string(&package_json)
+        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+    {
+        let has_dev = json.get("scripts").and_then(|s| s.get("dev")).is_some();
+        if has_dev {
+            let pm = detect_package_manager(project_dir);
+            let cmd = pm.map(|p| p.run_dev_command()).unwrap_or("npm run dev");
+            return Some((cmd.to_string(), pm));
         }
     }
 
@@ -2617,8 +2602,8 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_inheritance_from_parent() {
-        // Children inherit generate from parent if they don't define their own
+    fn test_generate_not_inherited_from_parent() {
+        // Generate is never inherited. Children must define their own.
         let json = r#"{
             "database": "parent-db",
             "server": "local",
@@ -2649,15 +2634,10 @@ mod tests {
             Some("typescript")
         );
 
-        // Child 1 inherits parent's generate
-        let child1_gen = targets[1].generate.as_ref().unwrap();
-        assert_eq!(child1_gen.len(), 1);
-        assert_eq!(
-            child1_gen[0].get("language").and_then(|v| v.as_str()),
-            Some("typescript")
-        );
+        // Child 1 does not inherit parent's generate
+        assert!(targets[1].generate.is_none());
 
-        // Child 2 overrides with its own generate
+        // Child 2 has its own generate
         let child2_gen = targets[2].generate.as_ref().unwrap();
         assert_eq!(child2_gen.len(), 1);
         assert_eq!(child2_gen[0].get("language").and_then(|v| v.as_str()), Some("csharp"));
@@ -3101,9 +3081,11 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_dedup_with_inherited_generate() {
-        // Two sibling databases sharing parent's generate + same module path
-        // should deduplicate to a single generate entry
+    /// Even when children share the parent's module-path, generate is not inherited.
+    ///
+    /// Deduplication in generate.rs handles the common case; inheritance would be
+    /// dangerous when a child overrides module-path.
+    fn test_generate_not_inherited_for_children_sharing_module() {
         let json = r#"{
             "module-path": "./server",
             "generate": [
@@ -3118,20 +3100,22 @@ mod tests {
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
         let targets = config.collect_all_targets_with_inheritance();
 
-        // All 3 targets (parent + 2 children) share the same module-path and generate
         assert_eq!(targets.len(), 3);
+
+        // Parent has generate
+        assert!(targets[0].generate.is_some());
+
+        // Children do not inherit generate
+        assert!(targets[1].generate.is_none());
+        assert!(targets[2].generate.is_none());
+
+        // All share the same module-path via field inheritance
         for target in &targets {
             assert_eq!(
                 target.fields.get("module-path").and_then(|v| v.as_str()),
                 Some("./server")
             );
-            let gen = target.generate.as_ref().unwrap();
-            assert_eq!(gen.len(), 1);
-            assert_eq!(gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
         }
-
-        // All have the same (module-path, generate) so dedup should reduce to 1
-        // (this is verified in generate.rs tests, but we confirm the data here)
     }
 
     #[test]
@@ -3182,5 +3166,47 @@ mod tests {
 
         let config: SpacetimeConfig = json5::from_str(json).unwrap();
         assert_eq!(config.count_targets(), 4); // root + child-1 + child-2 + grandchild
+    }
+
+    #[test]
+    fn test_path_clean_preserves_leading_dotdot() {
+        // Regression test for #4429: leading `..` must be preserved.
+        // All config paths (--out-dir, --module-path, etc.) go through
+        // get_resolved_path which calls PathClean::clean().
+        use path_clean::PathClean;
+        use std::path::Path;
+
+        // --out-dir cases
+        assert_eq!(Path::new("../foo").clean(), PathBuf::from("../foo"));
+        assert_eq!(Path::new("../../a/b").clean(), PathBuf::from("../../a/b"));
+        assert_eq!(
+            Path::new("../frontend-ts-src/module-bindings").clean(),
+            PathBuf::from("../frontend-ts-src/module-bindings")
+        );
+        // Inner `..` should still resolve.
+        assert_eq!(Path::new("a/b/../c").clean(), PathBuf::from("a/c"));
+        // Pure `..` should stay.
+        assert_eq!(Path::new("..").clean(), PathBuf::from(".."));
+        // Absolute paths
+        assert_eq!(
+            Path::new("/home/user/project/../foo").clean(),
+            PathBuf::from("/home/user/foo")
+        );
+        // Current dir collapses.
+        assert_eq!(Path::new("./foo").clean(), PathBuf::from("foo"));
+        // Empty result → "."
+        assert_eq!(Path::new(".").clean(), PathBuf::from("."));
+        assert_eq!(Path::new("a/..").clean(), PathBuf::from("."));
+
+        // --module-path cases (same bug, reported by user on #4431)
+        assert_eq!(Path::new("../server").clean(), PathBuf::from("../server"));
+        assert_eq!(
+            Path::new("../../repos/server").clean(),
+            PathBuf::from("../../repos/server")
+        );
+        assert_eq!(
+            Path::new("../repos/server/spacetimedb").clean(),
+            PathBuf::from("../repos/server/spacetimedb")
+        );
     }
 }

@@ -1,4 +1,4 @@
-﻿// convex/balances.ts
+// convex/balances.ts
 import { ShardedCounter } from '@convex-dev/sharded-counter';
 import { components } from './_generated/api';
 

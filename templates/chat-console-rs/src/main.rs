@@ -140,7 +140,7 @@ fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
 
 /// Our `Message::on_insert` callback: print new messages.
 fn on_message_inserted(ctx: &EventContext, message: &Message) {
-    if !matches!(ctx.event, Event::SubscribeApplied) {
+    if matches!(ctx.event, Event::Reducer(_) | Event::Transaction) {
         print_message(ctx, message);
     }
 }

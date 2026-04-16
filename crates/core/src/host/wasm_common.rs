@@ -314,6 +314,14 @@ impl<I: ResourceIndex> ResourceSlab<I> {
         I::from_u32(idx)
     }
 
+    pub fn len(&self) -> usize {
+        self.slab.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.slab.clear();
+    }
+
     pub fn get_mut(&mut self, handle: I) -> Option<&mut I::Resource> {
         self.slab.get_mut(handle.to_u32() as usize)
     }
@@ -431,6 +439,7 @@ macro_rules! abi_funcs {
             "spacetime_10.4"::datastore_index_scan_point_bsatn,
             "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
 
+            "spacetime_10.5"::datastore_clear,
         }
 
         $link_async! {

@@ -95,10 +95,8 @@ pub async fn exec_with_argstring(
     project_path: &Path,
     arg_string: &str,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
-    // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
-    // If we don't include this, the args will be misinterpreted (e.g. as commands).
-    let arg_string = format!("build {} --module-path {}", arg_string, project_path.display());
-    let arg_matches = cli().get_matches_from(arg_string.split_whitespace());
+    let argv = exec_with_argstring_argv(project_path, arg_string);
+    let arg_matches = cli().get_matches_from(argv);
 
     let module_path = arg_matches
         .get_one::<PathBuf>("module_path")
@@ -114,4 +112,36 @@ pub async fn exec_with_argstring(
     let build_debug = arg_matches.get_flag("debug");
 
     run_build(module_path, lint_dir, build_debug, features)
+}
+
+fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsString> {
+    // Note: "build" must be the first argv token because `build::cli()` is the entire build subcommand.
+    // Keep module-path as its own argv item so paths containing spaces are not split.
+    let mut argv: Vec<OsString> = vec!["build".into()];
+    argv.extend(arg_string.split_whitespace().map(OsString::from));
+    argv.push("--module-path".into());
+    argv.push(project_path.as_os_str().to_os_string());
+    argv
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exec_with_argstring_argv;
+    use std::path::Path;
+
+    #[test]
+    fn exec_with_argstring_keeps_module_path_with_spaces_as_single_argv_item() {
+        let project_path = Path::new("SpacetimeDB Projects/My SpacetimeDB App/spacetimedb");
+        let argv = exec_with_argstring_argv(project_path, "--debug --lint-dir src");
+
+        assert_eq!(argv[0].to_string_lossy(), "build");
+        assert_eq!(argv[1].to_string_lossy(), "--debug");
+        assert_eq!(argv[2].to_string_lossy(), "--lint-dir");
+        assert_eq!(argv[3].to_string_lossy(), "src");
+        assert_eq!(argv[4].to_string_lossy(), "--module-path");
+        assert_eq!(
+            argv[5].to_string_lossy(),
+            "SpacetimeDB Projects/My SpacetimeDB App/spacetimedb"
+        );
+    }
 }

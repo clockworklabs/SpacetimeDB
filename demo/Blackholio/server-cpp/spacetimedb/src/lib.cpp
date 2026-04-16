@@ -177,6 +177,13 @@ SPACETIMEDB_TABLE(CircleRecombineTimer, circle_recombine_timer, Private)
 FIELD_PrimaryKeyAutoInc(circle_recombine_timer, scheduled_id)
 SPACETIMEDB_SCHEDULE(circle_recombine_timer, 1, circle_recombine)
 
+struct ConsumeEntityEvent {
+    int32_t consumed_entity_id;
+    int32_t consumer_entity_id;
+};
+SPACETIMEDB_STRUCT(ConsumeEntityEvent, consumed_entity_id, consumer_entity_id)
+SPACETIMEDB_TABLE(ConsumeEntityEvent, consume_entity_event, Public, true)
+
 struct ConsumeEntityTimer {
     uint64_t scheduled_id;
     ScheduleAt scheduled_at;
@@ -294,7 +301,7 @@ SPACETIMEDB_INIT(init, ReducerContext ctx) {
 }
 
 SPACETIMEDB_CLIENT_CONNECTED(connect, ReducerContext ctx) {
-    auto logged_out = ctx.db[logged_out_player_identity].find(ctx.sender);
+    auto logged_out = ctx.db[logged_out_player_identity].find(ctx.sender());
     if (logged_out.has_value()) {
         ctx.db[player].insert(logged_out.value());
         (void)ctx.db[logged_out_player_identity].delete_by_key(logged_out->identity);
@@ -313,14 +320,14 @@ SPACETIMEDB_CLIENT_CONNECTED(connect, ReducerContext ctx) {
             (void)ctx.db[logged_out_circle_entity_id].delete_by_key(circle_row.entity_id);
         }
     } else {
-        Player new_player{ctx.sender, 0, std::string()};
+        Player new_player{ctx.sender(), 0, std::string()};
         ctx.db[player].insert(new_player);
     }
     return Ok();
 }
 
 SPACETIMEDB_CLIENT_DISCONNECTED(disconnect, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Player not found");
     }
@@ -349,7 +356,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(disconnect, ReducerContext ctx) {
 
 SPACETIMEDB_REDUCER(enter_game, ReducerContext ctx, std::string name) {
     LOG_INFO("Creating player with name " + name);
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Player not found");
     }
@@ -367,7 +374,7 @@ SPACETIMEDB_REDUCER(enter_game, ReducerContext ctx, std::string name) {
 }
 
 SPACETIMEDB_REDUCER(respawn, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("No such player found");
     }
@@ -381,7 +388,7 @@ SPACETIMEDB_REDUCER(respawn, ReducerContext ctx) {
 }
 
 SPACETIMEDB_REDUCER(suicide, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("No such player found");
     }
@@ -397,7 +404,7 @@ SPACETIMEDB_REDUCER(suicide, ReducerContext ctx) {
 }
 
 SPACETIMEDB_REDUCER(update_player_input, ReducerContext ctx, DbVector2 direction) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Player not found");
     }
@@ -594,6 +601,12 @@ SPACETIMEDB_REDUCER(consume_entity, ReducerContext ctx, ConsumeEntityTimer reque
     Entity consumed_entity = consumed_opt.value();
     Entity consumer_entity = consumer_opt.value();
     consumer_entity.mass += consumed_entity.mass;
+	
+	ConsumeEntityEvent consume_event{
+		consumed_entity.entity_id,
+		consumer_entity.entity_id
+	};
+	ctx.db[consume_entity_event].insert(consume_event);
 
     auto destroy_result = destroy_entity(ctx, consumed_entity.entity_id);
     if (destroy_result.is_err()) {
@@ -605,7 +618,7 @@ SPACETIMEDB_REDUCER(consume_entity, ReducerContext ctx, ConsumeEntityTimer reque
 }
 
 SPACETIMEDB_REDUCER(player_split, ReducerContext ctx) {
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(ctx.sender());
     if (!player_opt.has_value()) {
         return Err("Sender has no player");
     }

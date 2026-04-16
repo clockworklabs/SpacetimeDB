@@ -513,22 +513,22 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
 }
 
 pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {
-    if let Some(sels) = ctx.selectors {
-        if !sels.is_empty() {
-            let sel_cfg = BenchRunContext {
-                bench_root: ctx.bench_root,
-                mode: ctx.mode,
-                hash: ctx.hash,
-                route: ctx.route,
-                context: ctx.context,
-                llm: ctx.llm,
-                lang: ctx.lang,
-                selectors: Option::from(sels),
-                host: ctx.host.clone(),
-                details_path: ctx.details_path.clone(),
-            };
-            return run_selected_for_model_async_for_lang(&sel_cfg).await;
-        }
+    if let Some(sels) = ctx.selectors
+        && !sels.is_empty()
+    {
+        let sel_cfg = BenchRunContext {
+            bench_root: ctx.bench_root,
+            mode: ctx.mode,
+            hash: ctx.hash,
+            route: ctx.route,
+            context: ctx.context,
+            llm: ctx.llm,
+            lang: ctx.lang,
+            selectors: Option::from(sels),
+            host: ctx.host.clone(),
+            details_path: ctx.details_path.clone(),
+        };
+        return run_selected_for_model_async_for_lang(&sel_cfg).await;
     }
 
     run_all_for_model_async_for_lang(ctx).await
@@ -690,6 +690,7 @@ fn load_golden_source(task: &TaskPaths, lang: Lang) -> Result<String> {
 }
 
 // "1" | "01" | "001" | "t_001" -> "t_001"
+// "t_000_empty_reducers" | "t_001_basic_tables" -> accepted as-is (full task dir name)
 fn normalize_task_selector(raw: &str) -> Result<String> {
     let s = raw.trim().to_ascii_lowercase();
     if s.is_empty() {
@@ -699,6 +700,12 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
         if rest.chars().all(|c| c.is_ascii_digit()) {
             let n: u32 = rest.parse()?;
             return Ok(format!("t_{:03}", n));
+        }
+        // Full task dir name: t_000_empty_reducers, t_001_basic_tables, etc.
+        if rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+            && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Ok(s);
         }
         bail!("invalid task selector: {raw}");
     }

@@ -190,13 +190,13 @@ const tablesSchema = __schema({
   logged_out_player: __table({
     name: 'logged_out_player',
     indexes: [
-      { name: 'identity', algorithm: 'btree', columns: [
+      { accessor: 'identity', name: 'logged_out_player_identity_idx_btree', algorithm: 'btree', columns: [
         'identity',
       ] },
-      { name: 'name', algorithm: 'btree', columns: [
+      { accessor: 'name', name: 'logged_out_player_name_idx_btree', algorithm: 'btree', columns: [
         'name',
       ] },
-      { name: 'player_id', algorithm: 'btree', columns: [
+      { accessor: 'player_id', name: 'logged_out_player_player_id_idx_btree', algorithm: 'btree', columns: [
         'playerId',
       ] },
     ],
@@ -209,10 +209,10 @@ const tablesSchema = __schema({
   person: __table({
     name: 'person',
     indexes: [
-      { name: 'age', algorithm: 'btree', columns: [
+      { accessor: 'age', name: 'person_age_idx_btree', algorithm: 'btree', columns: [
         'age',
       ] },
-      { name: 'id', algorithm: 'btree', columns: [
+      { accessor: 'id', name: 'person_id_idx_btree', algorithm: 'btree', columns: [
         'id',
       ] },
     ],
@@ -223,13 +223,13 @@ const tablesSchema = __schema({
   player: __table({
     name: 'player',
     indexes: [
-      { name: 'identity', algorithm: 'btree', columns: [
+      { accessor: 'identity', name: 'player_identity_idx_btree', algorithm: 'btree', columns: [
         'identity',
       ] },
-      { name: 'name', algorithm: 'btree', columns: [
+      { accessor: 'name', name: 'player_name_idx_btree', algorithm: 'btree', columns: [
         'name',
       ] },
-      { name: 'player_id', algorithm: 'btree', columns: [
+      { accessor: 'player_id', name: 'player_player_id_idx_btree', algorithm: 'btree', columns: [
         'playerId',
       ] },
     ],
@@ -289,7 +289,7 @@ const proceduresSchema = __procedures(
 /** The remote SpacetimeDB module schema, both runtime and type information. */
 const REMOTE_MODULE = {
   versionInfo: {
-    cliVersion: "2.0.2" as const,
+    cliVersion: "2.1.0" as const,
   },
   tables: tablesSchema.schemaType.tables,
   reducers: reducersSchema.reducersType.reducers,
@@ -548,6 +548,9 @@ export default __t.row({
   get testC() {
     return __t.option(NamespaceTestC).name("test_c");
   },
+  get testCNested() {
+    return __t.option(__t.array(NamespaceTestC)).name("test_c_nested");
+  },
 });
 '''
 "test_f_table.ts" = '''
@@ -700,6 +703,9 @@ export type TestB = __Infer<typeof TestB>;
 export const TestD = __t.object("TestD", {
   get testC() {
     return __t.option(NamespaceTestC);
+  },
+  get testCNested() {
+    return __t.option(__t.array(NamespaceTestC));
   },
 });
 export type TestD = __Infer<typeof TestD>;

@@ -4,11 +4,8 @@ import { pickTwoDistinct, zipfSampler } from './zipf.ts';
 import { getSpacetimeCommittedTransfers } from './spacetimeMetrics.ts';
 import { makeCollisionTracker } from './collision_tracker.ts';
 import { RunResult } from './types.ts';
-
-const OP_TIMEOUT_MS = Number(process.env.BENCH_OP_TIMEOUT_MS ?? '15000');
-const MIN_OP_TIMEOUT_MS = Number(process.env.MIN_OP_TIMEOUT_MS ?? '250');
-const TAIL_SLACK_MS = Number(process.env.TAIL_SLACK_MS ?? '1000');
-const DEFAULT_PRECOMPUTED_TRANSFER_PAIRS = 10_000_000;
+import { BaseConnector } from './connectors.ts';
+import type { RunnerRuntimeConfig } from '../config.ts';
 
 function precomputeZipfTransferPairs(
   accounts: number,
@@ -31,9 +28,10 @@ function precomputeZipfTransferPairs(
 async function withOpTimeout<T>(
   promise: Promise<T>,
   label: string,
+  defaultTimeoutMs: number,
   timeoutOverrideMs?: number,
 ): Promise<T> {
-  const timeoutMs = timeoutOverrideMs ?? OP_TIMEOUT_MS;
+  const timeoutMs = timeoutOverrideMs ?? defaultTimeoutMs;
   let timer: NodeJS.Timeout | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -56,19 +54,11 @@ export async function runOne({
   concurrency,
   accounts,
   alpha,
+  runtimeConfig,
 }: {
-  connector: {
-    name: string;
-    open(workers?: number): Promise<void>;
-    close: () => Promise<void>;
-    verify: () => Promise<void>;
-    createWorker?: (opts?: {
-      index: number;
-      total: number;
-    }) => Promise<unknown>;
-  } & Record<string, any>;
+  connector: BaseConnector;
   scenario: (
-    conn: unknown,
+    conn: BaseConnector,
     from: number,
     to: number,
     amount: number,
@@ -77,7 +67,21 @@ export async function runOne({
   concurrency: number;
   accounts: number;
   alpha: number;
+  runtimeConfig: RunnerRuntimeConfig;
 }): Promise<RunResult> {
+  const {
+    benchPipelined,
+    logErrors,
+    maxInflightPerWorker,
+    minOpTimeoutMs,
+    opTimeoutMs,
+    precomputedTransferPairs,
+    stdbUrl,
+    tailSlackMs,
+    useSpacetimeMetricsEndpoint,
+    verifyTransactions,
+  } = runtimeConfig;
+
   console.log(
     `[${connector.name}] Running ${seconds}s with ${concurrency} workers, ${accounts} accounts, alpha=${alpha}`,
   );
@@ -90,18 +94,12 @@ export async function runOne({
     numberOfSignificantValueDigits: 3,
   });
 
-  const hasWorkerFactory =
-    typeof (connector as any).createWorker === 'function';
+  const { createWorker } = connector;
 
-  const workers: unknown[] = [];
+  const workers: BaseConnector[] = [];
 
-  if (hasWorkerFactory) {
+  if (createWorker) {
     await connector.open(concurrency);
-
-    const createWorker = (connector as any).createWorker as (opts?: {
-      index: number;
-      total: number;
-    }) => Promise<unknown>;
 
     for (let i = 0; i < concurrency; i++) {
       const workerConn = await createWorker({ index: i, total: concurrency });
@@ -115,13 +113,12 @@ export async function runOne({
   }
 
   const useSpacetimeMetrics =
-    process.env.USE_SPACETIME_METRICS_ENDPOINT === '1' &&
-    connector.name === 'spacetimedb';
+    useSpacetimeMetricsEndpoint && connector.name === 'spacetimedb';
   let beforeTransfers: bigint | null = null;
 
   if (useSpacetimeMetrics) {
     try {
-      beforeTransfers = await getSpacetimeCommittedTransfers();
+      beforeTransfers = await getSpacetimeCommittedTransfers(stdbUrl);
       if (beforeTransfers !== null) {
         console.log(
           `[spacetimedb] metrics before run: committed transfer txns = ${beforeTransfers.toString()}`,
@@ -140,13 +137,7 @@ export async function runOne({
     }
   }
 
-  const precomputedPairsRaw = Number(
-    process.env.BENCH_PRECOMPUTED_TRANSFER_PAIRS ??
-      DEFAULT_PRECOMPUTED_TRANSFER_PAIRS,
-  );
-  const precomputedPairs = Number.isFinite(precomputedPairsRaw)
-    ? Math.max(1, Math.floor(precomputedPairsRaw))
-    : DEFAULT_PRECOMPUTED_TRANSFER_PAIRS;
+  const precomputedPairs = precomputedTransferPairs;
 
   console.log(
     `[${connector.name}] precomputing ${precomputedPairs} Zipf transfer pairs...`,
@@ -162,242 +153,263 @@ export async function runOne({
     `[${connector.name}] precomputed ${transferPairs.count} pairs in ${(precomputeElapsedMs / 1000).toFixed(2)}s`,
   );
 
-  const start = performance.now();
-  const endAt = start + seconds * 1000;
-
-  let completedWithinWindow = 0;
-  let completedTotal = 0;
-
-  const PIPELINED = process.env.BENCH_PIPELINED === '1';
-  const MAX_INFLIGHT_ENV = process.env.MAX_INFLIGHT_PER_WORKER;
+  const PIPELINED = benchPipelined ?? !!connector.maxInflightPerWorker;
   const MAX_INFLIGHT_PER_WORKER =
-    MAX_INFLIGHT_ENV === '0' ? Infinity : Number(MAX_INFLIGHT_ENV ?? '8');
+    maxInflightPerWorker === undefined
+      ? (connector.maxInflightPerWorker ?? 8)
+      : maxInflightPerWorker == 0
+        ? Infinity
+        : maxInflightPerWorker;
 
   console.log(
     `[${connector.name}] max inflight per worker: ${MAX_INFLIGHT_PER_WORKER}`,
   );
+  const run = async (seconds: number) => {
+    const start = performance.now();
+    const endAt = start + seconds * 1000;
 
-  // Track when workers reach end of test window (before waiting for in-flight ops)
-  let workersReachedEnd = 0;
-  let resolveTestWindowEnd: () => void;
-  const testWindowEndPromise = new Promise<void>((resolve) => {
-    resolveTestWindowEnd = resolve;
-  });
+    let completedWithinWindow = 0;
+    let completedTotal = 0;
 
-  function signalWorkerReachedEnd() {
-    workersReachedEnd++;
-    if (workersReachedEnd >= concurrency) {
-      resolveTestWindowEnd();
+    // Track when workers reach end of test window (before waiting for in-flight ops)
+    let workersReachedEnd = 0;
+    let resolveTestWindowEnd: () => void;
+    const testWindowEndPromise = new Promise<void>((resolve) => {
+      resolveTestWindowEnd = resolve;
+    });
+
+    function signalWorkerReachedEnd() {
+      workersReachedEnd++;
+      if (workersReachedEnd >= concurrency) {
+        resolveTestWindowEnd();
+      }
     }
-  }
 
-  async function worker(workerIndex: number) {
-    const conn = workers[workerIndex];
-    const pairsPerWorker = Math.max(
-      1,
-      Math.floor(transferPairs.count / concurrency),
-    );
-    let pairIndex = workerIndex * pairsPerWorker;
+    async function worker(workerIndex: number) {
+      const conn = workers[workerIndex];
+      const pairsPerWorker = Math.max(
+        1,
+        Math.floor(transferPairs.count / concurrency),
+      );
+      let pairIndex = workerIndex * pairsPerWorker;
 
-    const nextTransferPair = (): [number, number] => {
-      if (pairIndex >= transferPairs.count) {
-        pairIndex = 0;
+      const nextTransferPair = (): [number, number] => {
+        if (pairIndex >= transferPairs.count) {
+          pairIndex = 0;
+        }
+
+        const from = transferPairs.from[pairIndex]!;
+        const to = transferPairs.to[pairIndex]!;
+        pairIndex++;
+        return [from, to];
+      };
+
+      // non-pipelined
+      if (!PIPELINED) {
+        while (true) {
+          const now = performance.now();
+          if (now >= endAt) break;
+
+          const timeLeft = endAt - now;
+          const dynamicTimeout = Math.max(
+            minOpTimeoutMs,
+            Math.min(opTimeoutMs, timeLeft + tailSlackMs),
+          );
+
+          const [from, to] = nextTransferPair();
+
+          collisionTracker.begin(from);
+          collisionTracker.begin(to);
+
+          const t0 = performance.now();
+          let ok = false;
+          try {
+            await withOpTimeout(
+              scenario(conn, from, to, 1),
+              `${connector.name} scenario ${from}->${to}`,
+              opTimeoutMs,
+              dynamicTimeout,
+            );
+            ok = true;
+          } catch (err) {
+            if (logErrors) {
+              const msg =
+                err instanceof Error
+                  ? `${err.name}: ${err.message}`
+                  : String(err);
+              console.warn(
+                `[${connector.name}] Scenario failed for ${from} -> ${to}: ${msg}`,
+              );
+            }
+          } finally {
+            collisionTracker.end(from);
+            collisionTracker.end(to);
+          }
+
+          const t1 = performance.now();
+          if (ok) {
+            completedTotal++;
+            if (t1 <= endAt) {
+              completedWithinWindow++;
+              hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
+            }
+          }
+        }
+        signalWorkerReachedEnd();
+        return;
       }
 
-      const from = transferPairs.from[pairIndex]!;
-      const to = transferPairs.to[pairIndex]!;
-      pairIndex++;
-      return [from, to];
-    };
+      // pipelined
+      const inflight = new Set<Promise<void>>();
+      const unlimitedInflight = !Number.isFinite(MAX_INFLIGHT_PER_WORKER);
 
-    // non-pipelined
-    if (!PIPELINED) {
+      const launchOp = (dynamicTimeout: number) => {
+        const [from, to] = nextTransferPair();
+
+        collisionTracker.begin(from);
+        collisionTracker.begin(to);
+
+        const p = (async () => {
+          const t0 = performance.now();
+          try {
+            await withOpTimeout(
+              scenario(conn, from, to, 1),
+              `${connector.name} scenario ${from}->${to}`,
+              opTimeoutMs,
+              dynamicTimeout,
+            );
+            const t1 = performance.now();
+            completedTotal++;
+            if (t1 <= endAt) {
+              completedWithinWindow++;
+              hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
+            }
+          } catch (err) {
+            if (logErrors) {
+              const msg =
+                err instanceof Error
+                  ? `${err instanceof Error ? err.message : String(err)}`
+                  : String(err);
+              console.warn(
+                `[${connector.name}] Scenario failed for ${from} -> ${to}: ${msg}`,
+              );
+            }
+          } finally {
+            collisionTracker.end(from);
+            collisionTracker.end(to);
+          }
+        })();
+
+        inflight.add(p);
+        p.finally(() => {
+          inflight.delete(p);
+        });
+      };
+
       while (true) {
         const now = performance.now();
         if (now >= endAt) break;
 
         const timeLeft = endAt - now;
         const dynamicTimeout = Math.max(
-          MIN_OP_TIMEOUT_MS,
-          Math.min(OP_TIMEOUT_MS, timeLeft + TAIL_SLACK_MS),
+          minOpTimeoutMs,
+          Math.min(opTimeoutMs, timeLeft + tailSlackMs),
         );
 
-        const [from, to] = nextTransferPair();
-
-        collisionTracker.begin(from);
-        collisionTracker.begin(to);
-
-        const t0 = performance.now();
-        let ok = false;
-        try {
-          await withOpTimeout(
-            scenario(conn as unknown, from, to, 1),
-            `${connector.name} scenario ${from}->${to}`,
-            dynamicTimeout,
-          );
-          ok = true;
-        } catch (err) {
-          if (process.env.LOG_ERRORS === '1') {
-            const msg =
-              err instanceof Error
-                ? `${err.name}: ${err.message}`
-                : String(err);
-            console.warn(
-              `[${connector.name}] Scenario failed for ${from} -> ${to}: ${msg}`,
-            );
-          }
-        } finally {
-          collisionTracker.end(from);
-          collisionTracker.end(to);
-        }
-
-        const t1 = performance.now();
-        if (ok) {
-          completedTotal++;
-          if (t1 <= endAt) {
-            completedWithinWindow++;
-            hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
-          }
+        if (unlimitedInflight || inflight.size < MAX_INFLIGHT_PER_WORKER) {
+          launchOp(dynamicTimeout);
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 0));
         }
       }
+
+      // Signal that this worker has reached end of test window
       signalWorkerReachedEnd();
-      return;
+
+      await Promise.all(inflight);
     }
 
-    // pipelined
-    const inflight = new Set<Promise<void>>();
-    const unlimitedInflight = !Number.isFinite(MAX_INFLIGHT_PER_WORKER);
+    // Start all workers - they run in parallel
+    const workerPromises = Array.from({ length: concurrency }, (_, i) =>
+      worker(i),
+    );
 
-    const launchOp = (dynamicTimeout: number) => {
-      const [from, to] = nextTransferPair();
+    // Wait for all workers to reach end of test window (before they wait for in-flight ops)
+    await testWindowEndPromise;
 
-      collisionTracker.begin(from);
-      collisionTracker.begin(to);
+    const testWindowEndTime = performance.now();
+    console.log(
+      `[${connector.name}] Test window ended at ${((testWindowEndTime - start) / 1000).toFixed(2)}s; capturing metrics...`,
+    );
 
-      const p = (async () => {
-        const t0 = performance.now();
-        try {
-          await withOpTimeout(
-            scenario(conn as unknown, from, to, 1),
-            `${connector.name} scenario ${from}->${to}`,
-            dynamicTimeout,
+    // Capture metrics immediately when test window ends
+    let committedDelta: number | null = null;
+
+    if (useSpacetimeMetrics && beforeTransfers !== null) {
+      try {
+        const afterTransfers = await getSpacetimeCommittedTransfers(stdbUrl);
+        if (afterTransfers !== null && afterTransfers >= beforeTransfers) {
+          const deltaBig = afterTransfers - beforeTransfers;
+          const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+          committedDelta =
+            deltaBig <= maxSafe ? Number(deltaBig) : Number(maxSafe);
+
+          console.log(
+            `[spacetimedb] metrics at test window end: committed transfer txns = ${afterTransfers.toString()} (delta = ${deltaBig.toString()})`,
           );
-          const t1 = performance.now();
-          completedTotal++;
-          if (t1 <= endAt) {
-            completedWithinWindow++;
-            hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
-          }
-        } catch (err) {
-          if (process.env.LOG_ERRORS === '1') {
-            const msg =
-              err instanceof Error
-                ? `${err instanceof Error ? err.message : String(err)}`
-                : String(err);
-            console.warn(
-              `[${connector.name}] Scenario failed for ${from} -> ${to}: ${msg}`,
-            );
-          }
-        } finally {
-          collisionTracker.end(from);
-          collisionTracker.end(to);
+        } else {
+          console.warn(
+            '[spacetimedb] metrics at test window end missing or decreased; ignoring metrics delta',
+          );
         }
-      })();
-
-      inflight.add(p);
-      p.finally(() => {
-        inflight.delete(p);
-      });
-    };
-
-    while (true) {
-      const now = performance.now();
-      if (now >= endAt) break;
-
-      const timeLeft = endAt - now;
-      const dynamicTimeout = Math.max(
-        MIN_OP_TIMEOUT_MS,
-        Math.min(OP_TIMEOUT_MS, timeLeft + TAIL_SLACK_MS),
-      );
-
-      if (unlimitedInflight || inflight.size < MAX_INFLIGHT_PER_WORKER) {
-        launchOp(dynamicTimeout);
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      } catch (err) {
+        console.warn(
+          '[spacetimedb] failed to read metrics at test window end; ignoring metrics delta:',
+          err,
+        );
       }
     }
 
-    // Signal that this worker has reached end of test window
-    signalWorkerReachedEnd();
+    // Now wait for all workers to fully complete (including in-flight ops)
+    await Promise.all(workerPromises);
 
-    await Promise.all(inflight);
-  }
+    return { start, completedWithinWindow, completedTotal, committedDelta };
+  };
 
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
-  // Start all workers - they run in parallel
-  const workerPromises = Array.from({ length: concurrency }, (_, i) =>
-    worker(i),
-  );
-
-  // Wait for all workers to reach end of test window (before they wait for in-flight ops)
-  await testWindowEndPromise;
-
-  const testWindowEndTime = performance.now();
-  console.log(
-    `[${connector.name}] Test window ended at ${((testWindowEndTime - start) / 1000).toFixed(2)}s; capturing metrics...`,
-  );
-
-  // Capture metrics immediately when test window ends
-  let committedDelta: number | null = null;
-
-  if (useSpacetimeMetrics && beforeTransfers !== null) {
-    try {
-      const afterTransfers = await getSpacetimeCommittedTransfers();
-      if (afterTransfers !== null && afterTransfers >= beforeTransfers) {
-        const deltaBig = afterTransfers - beforeTransfers;
-        const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
-        committedDelta =
-          deltaBig <= maxSafe ? Number(deltaBig) : Number(maxSafe);
-
-        console.log(
-          `[spacetimedb] metrics at test window end: committed transfer txns = ${afterTransfers.toString()} (delta = ${deltaBig.toString()})`,
-        );
-      } else {
-        console.warn(
-          '[spacetimedb] metrics at test window end missing or decreased; ignoring metrics delta',
-        );
-      }
-    } catch (err) {
-      console.warn(
-        '[spacetimedb] failed to read metrics at test window end; ignoring metrics delta:',
-        err,
-      );
-    }
-  }
-
-  // Now wait for all workers to fully complete (including in-flight ops)
-  await Promise.all(workerPromises);
+  const { start, completedWithinWindow, completedTotal, committedDelta } =
+    await run(seconds);
 
   console.log(
     `[${connector.name}] All workers finished (including in-flight ops)`,
   );
 
-  if (process.env.VERIFY === '1') {
+  if (verifyTransactions) {
     console.log(`[${connector.name}] Running verification pass...`);
     try {
-      await withOpTimeout(connector.verify(), `${connector.name} verify()`);
+      await withOpTimeout(
+        connector.verify(),
+        `${connector.name} verify()`,
+        opTimeoutMs,
+      );
+      console.log(`[${connector.name}] Verification passed`);
     } catch (err) {
-      console.error(`[${connector.name}] Verification failed:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[${connector.name}] Verification failed: ${msg}`);
     }
   }
 
-  if (hasWorkerFactory) {
+  if (createWorker) {
     for (const w of workers) {
       const c = w as { close?: () => Promise<void> };
       if (typeof c.close === 'function') {
         try {
-          await withOpTimeout(c.close(), `${connector.name} worker close`);
+          await withOpTimeout(
+            c.close(),
+            `${connector.name} worker close`,
+            opTimeoutMs,
+          );
         } catch (err) {
           console.warn(
             `[${connector.name}] Worker close failed: ${
@@ -409,7 +421,11 @@ export async function runOne({
     }
   }
 
-  await withOpTimeout(connector.close(), `${connector.name} root close`);
+  await withOpTimeout(
+    connector.close(),
+    `${connector.name} root close`,
+    opTimeoutMs,
+  );
 
   const q = (p: number) => hist.getValueAtPercentile(p) / 1000;
 

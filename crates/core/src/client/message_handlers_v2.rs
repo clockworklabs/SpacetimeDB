@@ -20,11 +20,19 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             )))
         }
     };
+    handle_decoded_message(client, message, timer).await
+}
+
+pub(super) async fn handle_decoded_message(
+    client: &ClientConnection,
+    message: ws_v2::ClientMessage,
+    timer: Instant,
+) -> Result<(), MessageHandleError> {
     let module = client.module();
     let mod_info = module.info();
     let mod_metrics = &mod_info.metrics;
     let database_identity = mod_info.database_identity;
-    let db = &module.replica_ctx().relational_db;
+    let db = module.relational_db();
     let record_metrics = |wl| {
         move |metrics| {
             if let Some(metrics) = metrics {

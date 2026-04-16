@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import http from 'node:http';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -81,11 +81,13 @@ async function rpcTransfer(args: Record<string, unknown>) {
 
     tx.update(accounts)
       .set({ balance: Number(newFrom) })
-      .where(eq(accounts.id, fromId));
+      .where(eq(accounts.id, fromId))
+      .run();
 
     tx.update(accounts)
       .set({ balance: Number(newTo) })
-      .where(eq(accounts.id, toId));
+      .where(eq(accounts.id, toId))
+      .run();
   });
 }
 
@@ -204,6 +206,10 @@ async function rpcSeed(args: Record<string, unknown>) {
   );
 }
 
+function rpcErr(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 async function handleRpc(body: RpcRequest): Promise<RpcResponse> {
   const name = body?.name;
   const args = body?.args ?? {};
@@ -226,10 +232,9 @@ async function handleRpc(body: RpcRequest): Promise<RpcResponse> {
       default:
         return { ok: false, error: `unknown method: ${name}` };
     }
-  } catch (err: any) {
-    // Log full error details on the server, but return a generic message to the client.
+  } catch (err: unknown) {
     console.error('Unhandled error in handleRpc:', err);
-    return { ok: false, error: 'internal error' };
+    return { ok: false, error: rpcErr(err) };
   }
 }
 
@@ -244,20 +249,27 @@ const server = http.createServer((req, res) => {
       buf += chunk;
     });
     req.on('end', async () => {
-      let body: RpcRequest;
       try {
-        body = JSON.parse(buf) as RpcRequest;
-      } catch {
-        res.statusCode = 400;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ ok: false, error: 'invalid json' }));
-        return;
-      }
+        let body: RpcRequest;
+        try {
+          body = JSON.parse(buf) as RpcRequest;
+        } catch {
+          res.statusCode = 400;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: 'invalid json' }));
+          return;
+        }
 
-      const rsp = await handleRpc(body);
-      res.statusCode = rsp.ok ? 200 : 500;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(rsp));
+        const rsp = await handleRpc(body);
+        res.statusCode = rsp.ok ? 200 : 500;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(rsp));
+      } catch (err: unknown) {
+        console.error('[sqlite-rpc] request handler error:', err);
+        res.statusCode = 500;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ ok: false, error: rpcErr(err) }));
+      }
     });
     return;
   }

@@ -258,6 +258,7 @@
       STDB_MODULE: ${STDB_MODULE}
       STDB_MODULE_PATH: ${STDB_MODULE_PATH}
       STDB_METRICS_URL: ${STDB_METRICS_URL}
+      STDB_CONFIRMED_READS: ${STDB_CONFIRMED_READS}
       BUN_URL: ${BUN_URL}
       SQLITE_FILE: ${SQLITE_FILE}
       SQLITE_MODE: ${SQLITE_MODE}
@@ -276,7 +277,7 @@
     volumes:
       - sqlite_data:/data
       - ./runs:/app/runs
-    command: ["--seconds", "5", "--concurrency", "50", "--alpha", "1", "--connectors", "sqlite"]
+    command: ["--seconds", "5", "--concurrency", "50", "--alpha", "1.5", "--connectors", "sqlite"]
     network_mode: host
 
   sqlite-seed:
