@@ -7,6 +7,7 @@ pub mod consume_each_list;
 mod message_handlers;
 mod message_handlers_v1;
 mod message_handlers_v2;
+mod message_handlers_v3;
 pub mod messages;
 
 pub use client_connection::{

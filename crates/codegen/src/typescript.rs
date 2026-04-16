@@ -733,6 +733,16 @@ fn write_object_type_builder_fields(
     Ok(())
 }
 
+/// Returns whether `ty` recursively contains an `AlgebraicTypeUse::Ref`
+fn type_contains_ref(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Ref(_) => true,
+        AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => type_contains_ref(inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => type_contains_ref(ok_ty) || type_contains_ref(err_ty),
+        _ => false,
+    }
+}
+
 fn write_type_builder_field(
     module: &ModuleDef,
     out: &mut Indenter,
@@ -741,17 +751,8 @@ fn write_type_builder_field(
     ty: &AlgebraicTypeUse,
     is_primary_key: bool,
 ) -> fmt::Result {
-    // Do we need a getter? (Option/Array only if their inner is a Ref)
-    let needs_getter = match ty {
-        AlgebraicTypeUse::Ref(_) => true,
-        AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => {
-            matches!(inner.as_ref(), AlgebraicTypeUse::Ref(_))
-        }
-        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            matches!(ok_ty.as_ref(), AlgebraicTypeUse::Ref(_)) || matches!(err_ty.as_ref(), AlgebraicTypeUse::Ref(_))
-        }
-        _ => false,
-    };
+    // If the type contains a ref, we need to use a getter to prevent access-before-initialization.
+    let needs_getter = type_contains_ref(ty);
 
     if needs_getter {
         writeln!(out, "get {name}() {{");
