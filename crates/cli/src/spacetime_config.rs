@@ -1140,7 +1140,7 @@ pub fn detect_package_manager(project_dir: &Path) -> Option<PackageManager> {
     if project_dir.join("package-lock.json").exists() {
         return Some(PackageManager::Npm);
     }
-    // Default to npm if package.json exists but no lock file.
+    // Default to npm if package.json exists but no lock file
     if project_dir.join("package.json").exists() {
         return Some(PackageManager::Npm);
     }
