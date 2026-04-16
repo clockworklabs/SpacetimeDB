@@ -5,10 +5,10 @@ use spacetimedb_smoketests::Smoketest;
 fn test_set_name() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    let orig_name = format!("test-db-{}", std::process::id());
+    let orig_name = format!("domains-set-name-{}", std::process::id());
     test.publish_module_named(&orig_name, false).unwrap();
 
-    let rand_name = format!("test-db-{}-renamed", std::process::id());
+    let rand_name = format!("domains-set-name-{}-renamed", std::process::id());
 
     // This should fail before there's a db with this name
     let result = test.spacetime(&["logs", "--server", &test.server_url, &rand_name]);
@@ -33,7 +33,7 @@ fn test_set_name() {
 fn test_subdomain_behavior() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    let root_name = format!("test-db-{}", std::process::id());
+    let root_name = format!("domains-subdomain-behavior-{}", std::process::id());
     test.publish_module_named(&root_name, false).unwrap();
 
     // Double slash should fail
@@ -57,7 +57,7 @@ fn test_set_to_existing_name() {
     let id_to_rename = test.database_identity.clone().unwrap();
 
     // Publish second database with a name
-    let rename_to = format!("test-db-{}-target", std::process::id());
+    let rename_to = format!("domains-set-existing-target-{}", std::process::id());
     test.publish_module_named(&rename_to, false).unwrap();
 
     // Try to rename first db to the name of the second - should fail
@@ -80,9 +80,9 @@ fn test_set_to_existing_name() {
 fn test_replace_names() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    let orig_name = format!("test-db-{}", std::process::id());
-    let alt_name1 = format!("test-db-{}-alt1", std::process::id());
-    let alt_name2 = format!("test-db-{}-alt2", std::process::id());
+    let orig_name = format!("domains-replace-names-{}", std::process::id());
+    let alt_name1 = format!("domains-replace-names-{}-alt1", std::process::id());
+    let alt_name2 = format!("domains-replace-names-{}-alt2", std::process::id());
     test.publish_module_named(&orig_name, false).unwrap();
 
     // Use the API to replace names

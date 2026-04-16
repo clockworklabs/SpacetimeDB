@@ -5,11 +5,7 @@ import { getSpacetimeCommittedTransfers } from './spacetimeMetrics.ts';
 import { makeCollisionTracker } from './collision_tracker.ts';
 import { RunResult } from './types.ts';
 import { BaseConnector } from './connectors.ts';
-
-const OP_TIMEOUT_MS = Number(process.env.BENCH_OP_TIMEOUT_MS ?? '15000');
-const MIN_OP_TIMEOUT_MS = Number(process.env.MIN_OP_TIMEOUT_MS ?? '250');
-const TAIL_SLACK_MS = Number(process.env.TAIL_SLACK_MS ?? '1000');
-const DEFAULT_PRECOMPUTED_TRANSFER_PAIRS = 10_000_000;
+import type { RunnerRuntimeConfig } from '../config.ts';
 
 function precomputeZipfTransferPairs(
   accounts: number,
@@ -32,9 +28,10 @@ function precomputeZipfTransferPairs(
 async function withOpTimeout<T>(
   promise: Promise<T>,
   label: string,
+  defaultTimeoutMs: number,
   timeoutOverrideMs?: number,
 ): Promise<T> {
-  const timeoutMs = timeoutOverrideMs ?? OP_TIMEOUT_MS;
+  const timeoutMs = timeoutOverrideMs ?? defaultTimeoutMs;
   let timer: NodeJS.Timeout | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -57,6 +54,7 @@ export async function runOne({
   concurrency,
   accounts,
   alpha,
+  runtimeConfig,
 }: {
   connector: BaseConnector;
   scenario: (
@@ -69,7 +67,21 @@ export async function runOne({
   concurrency: number;
   accounts: number;
   alpha: number;
+  runtimeConfig: RunnerRuntimeConfig;
 }): Promise<RunResult> {
+  const {
+    benchPipelined,
+    logErrors,
+    maxInflightPerWorker,
+    minOpTimeoutMs,
+    opTimeoutMs,
+    precomputedTransferPairs,
+    stdbUrl,
+    tailSlackMs,
+    useSpacetimeMetricsEndpoint,
+    verifyTransactions,
+  } = runtimeConfig;
+
   console.log(
     `[${connector.name}] Running ${seconds}s with ${concurrency} workers, ${accounts} accounts, alpha=${alpha}`,
   );
@@ -101,13 +113,12 @@ export async function runOne({
   }
 
   const useSpacetimeMetrics =
-    process.env.USE_SPACETIME_METRICS_ENDPOINT === '1' &&
-    connector.name === 'spacetimedb';
+    useSpacetimeMetricsEndpoint && connector.name === 'spacetimedb';
   let beforeTransfers: bigint | null = null;
 
   if (useSpacetimeMetrics) {
     try {
-      beforeTransfers = await getSpacetimeCommittedTransfers();
+      beforeTransfers = await getSpacetimeCommittedTransfers(stdbUrl);
       if (beforeTransfers !== null) {
         console.log(
           `[spacetimedb] metrics before run: committed transfer txns = ${beforeTransfers.toString()}`,
@@ -126,13 +137,7 @@ export async function runOne({
     }
   }
 
-  const precomputedPairsRaw = Number(
-    process.env.BENCH_PRECOMPUTED_TRANSFER_PAIRS ??
-      DEFAULT_PRECOMPUTED_TRANSFER_PAIRS,
-  );
-  const precomputedPairs = Number.isFinite(precomputedPairsRaw)
-    ? Math.max(1, Math.floor(precomputedPairsRaw))
-    : DEFAULT_PRECOMPUTED_TRANSFER_PAIRS;
+  const precomputedPairs = precomputedTransferPairs;
 
   console.log(
     `[${connector.name}] precomputing ${precomputedPairs} Zipf transfer pairs...`,
@@ -148,27 +153,13 @@ export async function runOne({
     `[${connector.name}] precomputed ${transferPairs.count} pairs in ${(precomputeElapsedMs / 1000).toFixed(2)}s`,
   );
 
-  const getEnvTernary = (envVal: string | undefined) => {
-    switch (envVal) {
-      case '0':
-        return false;
-      case '1':
-        return true;
-      default:
-        return null;
-    }
-  };
-
-  const PIPELINED =
-    getEnvTernary(process.env.BENCH_PIPELINED) ??
-    !!connector.maxInflightPerWorker;
-  const MAX_INFLIGHT_ENV = process.env.MAX_INFLIGHT_PER_WORKER;
+  const PIPELINED = benchPipelined ?? !!connector.maxInflightPerWorker;
   const MAX_INFLIGHT_PER_WORKER =
-    MAX_INFLIGHT_ENV == null
+    maxInflightPerWorker === undefined
       ? (connector.maxInflightPerWorker ?? 8)
-      : MAX_INFLIGHT_ENV === '0'
+      : maxInflightPerWorker == 0
         ? Infinity
-        : Number(MAX_INFLIGHT_ENV);
+        : maxInflightPerWorker;
 
   console.log(
     `[${connector.name}] max inflight per worker: ${MAX_INFLIGHT_PER_WORKER}`,
@@ -221,8 +212,8 @@ export async function runOne({
 
           const timeLeft = endAt - now;
           const dynamicTimeout = Math.max(
-            MIN_OP_TIMEOUT_MS,
-            Math.min(OP_TIMEOUT_MS, timeLeft + TAIL_SLACK_MS),
+            minOpTimeoutMs,
+            Math.min(opTimeoutMs, timeLeft + tailSlackMs),
           );
 
           const [from, to] = nextTransferPair();
@@ -236,11 +227,12 @@ export async function runOne({
             await withOpTimeout(
               scenario(conn, from, to, 1),
               `${connector.name} scenario ${from}->${to}`,
+              opTimeoutMs,
               dynamicTimeout,
             );
             ok = true;
           } catch (err) {
-            if (process.env.LOG_ERRORS === '1') {
+            if (logErrors) {
               const msg =
                 err instanceof Error
                   ? `${err.name}: ${err.message}`
@@ -283,6 +275,7 @@ export async function runOne({
             await withOpTimeout(
               scenario(conn, from, to, 1),
               `${connector.name} scenario ${from}->${to}`,
+              opTimeoutMs,
               dynamicTimeout,
             );
             const t1 = performance.now();
@@ -292,7 +285,7 @@ export async function runOne({
               hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
             }
           } catch (err) {
-            if (process.env.LOG_ERRORS === '1') {
+            if (logErrors) {
               const msg =
                 err instanceof Error
                   ? `${err instanceof Error ? err.message : String(err)}`
@@ -319,8 +312,8 @@ export async function runOne({
 
         const timeLeft = endAt - now;
         const dynamicTimeout = Math.max(
-          MIN_OP_TIMEOUT_MS,
-          Math.min(OP_TIMEOUT_MS, timeLeft + TAIL_SLACK_MS),
+          minOpTimeoutMs,
+          Math.min(opTimeoutMs, timeLeft + tailSlackMs),
         );
 
         if (unlimitedInflight || inflight.size < MAX_INFLIGHT_PER_WORKER) {
@@ -354,7 +347,7 @@ export async function runOne({
 
     if (useSpacetimeMetrics && beforeTransfers !== null) {
       try {
-        const afterTransfers = await getSpacetimeCommittedTransfers();
+        const afterTransfers = await getSpacetimeCommittedTransfers(stdbUrl);
         if (afterTransfers !== null && afterTransfers >= beforeTransfers) {
           const deltaBig = afterTransfers - beforeTransfers;
           const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
@@ -383,11 +376,6 @@ export async function runOne({
     return { start, completedWithinWindow, completedTotal, committedDelta };
   };
 
-  const warmUpSeconds = 5;
-  console.log(`[${connector.name}] Warming up for ${warmUpSeconds}s...`);
-  await run(warmUpSeconds);
-  console.log(`[${connector.name}] Finished warmup.`);
-
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
   const { start, completedWithinWindow, completedTotal, committedDelta } =
@@ -397,12 +385,18 @@ export async function runOne({
     `[${connector.name}] All workers finished (including in-flight ops)`,
   );
 
-  if (process.env.VERIFY === '1') {
+  if (verifyTransactions) {
     console.log(`[${connector.name}] Running verification pass...`);
     try {
-      await withOpTimeout(connector.verify(), `${connector.name} verify()`);
+      await withOpTimeout(
+        connector.verify(),
+        `${connector.name} verify()`,
+        opTimeoutMs,
+      );
+      console.log(`[${connector.name}] Verification passed`);
     } catch (err) {
-      console.error(`[${connector.name}] Verification failed:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[${connector.name}] Verification failed: ${msg}`);
     }
   }
 
@@ -411,7 +405,11 @@ export async function runOne({
       const c = w as { close?: () => Promise<void> };
       if (typeof c.close === 'function') {
         try {
-          await withOpTimeout(c.close(), `${connector.name} worker close`);
+          await withOpTimeout(
+            c.close(),
+            `${connector.name} worker close`,
+            opTimeoutMs,
+          );
         } catch (err) {
           console.warn(
             `[${connector.name}] Worker close failed: ${
@@ -423,7 +421,11 @@ export async function runOne({
     }
   }
 
-  await withOpTimeout(connector.close(), `${connector.name} root close`);
+  await withOpTimeout(
+    connector.close(),
+    `${connector.name} root close`,
+    opTimeoutMs,
+  );
 
   const q = (p: number) => hist.getValueAtPercentile(p) / 1000;
 

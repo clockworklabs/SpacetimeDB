@@ -161,6 +161,7 @@ void SubscribeAllThen(UDbConnection* Conn,
 		};
 	TestHelper->OnSubscriptionError = [](FErrorContext Ctx)
 		{
+			UE_LOG(LogTemp, Error, TEXT("Subscription errored: %s"), *Ctx.Error);
 			checkf(false, TEXT("Subscription errored: %s"), *Ctx.Error);
 		};
 
@@ -190,6 +191,7 @@ void SubscribeTheseThen(UDbConnection* Conn,
 		};
 	TestHelper->OnSubscriptionError = [](FErrorContext Ctx)
 		{
+			UE_LOG(LogTemp, Error, TEXT("Subscription errored: %s"), *Ctx.Error);
 			checkf(false, TEXT("Subscription errored: %s"), *Ctx.Error);
 		};
 

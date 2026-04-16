@@ -1655,28 +1655,16 @@ impl From<StVarRow> for AlgebraicValue {
 /// If the cardinality of a query is estimated to exceed this limit,
 /// it will be rejected before being executed.
 pub const ST_VARNAME_ROW_LIMIT: &str = "row_limit";
-/// A system variable that defines a threshold for logging slow queries.
-pub const ST_VARNAME_SLOW_QRY: &str = "slow_ad_hoc_query_ms";
-/// A system variable that defines a threshold for logging slow subscriptions.
-pub const ST_VARNAME_SLOW_SUB: &str = "slow_subscription_query_ms";
-/// A system variable that defines a threshold for logging slow tx updates.
-pub const ST_VARNAME_SLOW_INC: &str = "slow_tx_update_ms";
 
 /// The name of a system variable in `st_var`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StVarName {
     RowLimit,
-    SlowQryThreshold,
-    SlowSubThreshold,
-    SlowIncThreshold,
 }
 impl From<StVarName> for &'static str {
     fn from(value: StVarName) -> Self {
         match value {
             StVarName::RowLimit => ST_VARNAME_ROW_LIMIT,
-            StVarName::SlowQryThreshold => ST_VARNAME_SLOW_QRY,
-            StVarName::SlowSubThreshold => ST_VARNAME_SLOW_SUB,
-            StVarName::SlowIncThreshold => ST_VARNAME_SLOW_INC,
         }
     }
 }
@@ -1692,9 +1680,6 @@ impl FromStr for StVarName {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             ST_VARNAME_ROW_LIMIT => Ok(StVarName::RowLimit),
-            ST_VARNAME_SLOW_QRY => Ok(StVarName::SlowQryThreshold),
-            ST_VARNAME_SLOW_SUB => Ok(StVarName::SlowSubThreshold),
-            ST_VARNAME_SLOW_INC => Ok(StVarName::SlowIncThreshold),
             _ => Err(anyhow::anyhow!("Invalid system variable {s}")),
         }
     }
@@ -1711,10 +1696,7 @@ impl<'de> Deserialize<'de> for StVarName {
 impl StVarName {
     pub fn type_of(&self) -> AlgebraicType {
         match self {
-            StVarName::RowLimit
-            | StVarName::SlowQryThreshold
-            | StVarName::SlowSubThreshold
-            | StVarName::SlowIncThreshold => AlgebraicType::U64,
+            StVarName::RowLimit => AlgebraicType::U64,
         }
     }
 }

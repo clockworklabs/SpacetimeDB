@@ -12,12 +12,52 @@
 #include "DBCache/TableCache.h"
 #include "ConfigTable.g.generated.h"
 
+UCLASS(Blueprintable)
+class CLIENT_UNREAL_API UConfigIdUniqueIndex : public UObject
+{
+    GENERATED_BODY()
+
+private:
+    // Declare an instance of your templated helper.
+    // It's private because the UObject wrapper will expose its functionality.
+    FUniqueIndexHelper<FConfigType, int32, FTableCache<FConfigType>> IdIndexHelper;
+
+public:
+    UConfigIdUniqueIndex()
+        // Initialize the helper with the specific unique index name
+        : IdIndexHelper("id") {
+    }
+
+    /**
+     * Finds a Config by their unique id.
+     * @param Key The id to search for.
+     * @return The found FConfigType, or a default-constructed FConfigType if not found.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ConfigIndex")
+    FConfigType Find(int32 Key)
+    {
+        // Simply delegate the call to the internal helper
+        return IdIndexHelper.FindUniqueIndex(Key);
+    }
+
+    // A public setter to provide the cache to the helper after construction
+    // This is a common pattern when the cache might be created or provided by another system.
+    void SetCache(TSharedPtr<const FTableCache<FConfigType>> InConfigCache)
+    {
+        IdIndexHelper.Cache = InConfigCache;
+    }
+};
+/***/
+
 UCLASS(BlueprintType)
 class CLIENT_UNREAL_API UConfigTable : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
+    UPROPERTY(BlueprintReadOnly)
+    UConfigIdUniqueIndex* Id;
+
     void PostInitialize();
 
     /** Update function for config table*/
