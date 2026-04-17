@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 use std::{fmt, io};
 
+use anyhow::Context;
 use serde::Deserialize;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
@@ -12,7 +13,11 @@ use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
 /// **WARNING**: Comments and formatting in the file will be lost.
 pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<Option<T>> {
     match std::fs::read_to_string(path) {
-        Ok(contents) => Ok(Some(toml::from_str(&contents)?)),
+        Ok(contents) => {
+            let config =
+                toml::from_str(&contents).with_context(|| format!("invalid TOML syntax in {}", path.display()))?;
+            Ok(Some(config))
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
     }
@@ -310,6 +315,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn mkver(major: u64, minor: u64, patch: u64) -> semver::Version {
         semver::Version::new(major, minor, patch)
@@ -339,6 +345,21 @@ mod tests {
             edition: "standalone".to_owned(),
             client_connection_id: None,
         }
+    }
+
+    #[test]
+    fn parse_config_reports_the_invalid_file_path() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, "[module]\nname = \"my-project\n").unwrap();
+
+        let err = match parse_config::<ConfigFile>(&path) {
+            Ok(_) => panic!("expected invalid TOML to fail"),
+            Err(err) => format!("{err:#}"),
+        };
+        assert!(err.contains("invalid TOML syntax"));
+        assert!(err.contains("config.toml"));
+        assert!(err.contains("line 2"));
     }
 
     #[test]
