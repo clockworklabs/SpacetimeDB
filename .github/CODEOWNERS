@@ -1,6 +1,5 @@
 /crates/core/src/db/datastore/traits.rs @cloutiertyler
 /rust-toolchain.toml @cloutiertyler
-/.github/CODEOWNERS @cloutiertyler
 LICENSE @cloutiertyler
 LICENSE.txt @cloutiertyler
 /licenses/ @cloutiertyler
@@ -14,3 +13,5 @@ LICENSE.txt @cloutiertyler
 
 /crates/sdk/examples/quickstart-chat/ @gefjon
 /modules/quickstart-chat/ @gefjon
+
+/.github/CODEOWNERS @cloutiertyler
