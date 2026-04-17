@@ -27,7 +27,7 @@ jobs:
           - name: Linux
             runner: spacetimedb-new-runner-2
           - name: Windows
-            runner: windows-latest
+            runner: spacetimedb-windows-runner
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:

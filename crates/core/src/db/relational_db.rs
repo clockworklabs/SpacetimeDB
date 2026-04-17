@@ -1650,7 +1650,7 @@ where
         progress,
         // We don't want to instantiate an incorrect state;
         // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
-        spacetimedb_datastore::locking_tx_datastore::datastore::ErrorBehavior::FailFast,
+        spacetimedb_datastore::locking_tx_datastore::ErrorBehavior::FailFast,
     );
     let start_tx_offset = replay.next_tx_offset();
     history
