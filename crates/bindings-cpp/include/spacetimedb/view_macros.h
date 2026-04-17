@@ -1,6 +1,7 @@
 #pragma once
 
 #include "spacetimedb/view_context.h"
+#include "spacetimedb/query_builder.h"
 #include "spacetimedb/internal/Module.h"
 #include "spacetimedb/internal/v10_builder.h"
 #include "spacetimedb/macros.h"  // For parseParameterNames
@@ -22,17 +23,33 @@ namespace Internal {
  * This is enforced at compile-time via static_assert in the macro.
  */
 template<typename T>
-struct is_valid_view_return_type : std::false_type {};
+struct is_valid_view_return_type_impl : std::false_type {};
 
 // Specialization for std::vector<T> where T is Serializable
 template<typename T>
-struct is_valid_view_return_type<std::vector<T>> 
+struct is_valid_view_return_type_impl<std::vector<T>> 
     : std::integral_constant<bool, bsatn::Serializable<T>> {};
 
 // Specialization for std::optional<T> where T is Serializable
 template<typename T>
-struct is_valid_view_return_type<std::optional<T>>
+struct is_valid_view_return_type_impl<std::optional<T>>
     : std::integral_constant<bool, bsatn::Serializable<T>> {};
+
+template<typename T, typename = void>
+struct is_valid_query_builder_view_return_type : std::false_type {};
+
+template<typename T>
+struct is_valid_query_builder_view_return_type<T, std::void_t<query_builder::query_row_type_t<T>>>
+    : std::integral_constant<
+          bool,
+          query_builder::QueryBuilderReturn<T> && bsatn::Serializable<query_builder::query_row_type_t<T>>> {};
+
+template<typename T>
+struct is_valid_view_return_type
+    : std::conditional_t<
+          is_valid_query_builder_view_return_type<T>::value,
+          is_valid_query_builder_view_return_type<T>,
+          is_valid_view_return_type_impl<T>> {};
 
 } // namespace Internal
 } // namespace SpacetimeDB
@@ -49,6 +66,7 @@ struct is_valid_view_return_type<std::optional<T>>
  * Allowed return types:
  * - std::vector<T> where T is a SpacetimeType
  * - std::optional<T> where T is a SpacetimeType
+ * - Query<T> (or another query-builder return) where T is a SpacetimeType
  * 
  * @param return_type The return type (e.g., std::vector<Person>, std::optional<Person>)
  * @param view_name The name of the view function
@@ -89,11 +107,12 @@ struct is_valid_view_return_type<std::optional<T>>
     \
     /* Validate return type at compile-time */ \
     static_assert(::SpacetimeDB::Internal::is_valid_view_return_type<return_type>::value, \
-        "View return type must be std::vector<T> or std::optional<T> where T is a SpacetimeType"); \
+        "View return type must be std::vector<T>, std::optional<T>, Query<T>, or another query-builder return where T is a SpacetimeType"); \
     \
     /* TODO: When parameters are supported, forward declaration becomes: */ \
     /* return_type view_name(ctx_param, __VA_ARGS__); */ \
     return_type view_name(ctx_param); \
+    inline constexpr auto CONCAT(view_name, _view) = ::SpacetimeDB::detail::MakeQuerySourceTag<return_type>(#view_name); \
     \
     /* Preinit registration function */ \
     /* Views run at priority 40 to ensure tables/reducers are registered first */ \
@@ -120,8 +139,9 @@ struct is_valid_view_return_type<std::optional<T>>
     static_assert(access_enum == SpacetimeDB::Internal::TableAccess::Public, \
         "Views must be Public - Private views are not yet supported"); \
     static_assert(::SpacetimeDB::Internal::is_valid_view_return_type<return_type>::value, \
-        "View return type must be std::vector<T> or std::optional<T> where T is a SpacetimeType"); \
+        "View return type must be std::vector<T>, std::optional<T>, Query<T>, or another query-builder return where T is a SpacetimeType"); \
     return_type view_name(ctx_param); \
+    inline constexpr auto CONCAT(view_name, _view) = ::SpacetimeDB::detail::MakeQuerySourceTag<return_type>(canonical_name); \
     __attribute__((export_name("__preinit__40_view_" #view_name))) \
     extern "C" void CONCAT(_spacetimedb_preinit_register_view_, view_name)() { \
         bool is_public = (access_enum == SpacetimeDB::Internal::TableAccess::Public); \
