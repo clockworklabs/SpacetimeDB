@@ -882,10 +882,12 @@ async fn connect_shared_database_clients(
                 shared_clients.insert(database_number, client);
             }
             Ok(Err(err)) => {
+                log::error!("driver {} failed to connect a shared database client: {err:#}", config.driver_id);
                 connect_tasks.abort_all();
                 return Err(err);
             }
             Err(err) => {
+                log::error!("driver {} failed to connect a shared database client: {err:#}", config.driver_id);
                 connect_tasks.abort_all();
                 return Err(anyhow!("shared database connection task failed: {}", err));
             }
