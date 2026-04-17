@@ -2316,7 +2316,10 @@ static class ModuleRegistration
         [System.Runtime.CompilerServices.MethodImpl(
             System.Runtime.CompilerServices.MethodImplOptions.NoInlining
         )]
-        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        private static void __spacetimedb_begin_short_backtrace(
+            BinaryReader reader,
+            SpacetimeDB.Internal.IReducerContext ctx
+        )
         {
             Timers.Init((SpacetimeDB.ReducerContext)ctx);
         }
@@ -2345,7 +2348,10 @@ static class ModuleRegistration
         [System.Runtime.CompilerServices.MethodImpl(
             System.Runtime.CompilerServices.MethodImplOptions.NoInlining
         )]
-        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        private static void __spacetimedb_begin_short_backtrace(
+            BinaryReader reader,
+            SpacetimeDB.Internal.IReducerContext ctx
+        )
         {
             Reducers.InsertData((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
@@ -2374,7 +2380,10 @@ static class ModuleRegistration
         [System.Runtime.CompilerServices.MethodImpl(
             System.Runtime.CompilerServices.MethodImplOptions.NoInlining
         )]
-        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        private static void __spacetimedb_begin_short_backtrace(
+            BinaryReader reader,
+            SpacetimeDB.Internal.IReducerContext ctx
+        )
         {
             Test.NestingNamespaces.AndClasses.InsertData2(
                 (SpacetimeDB.ReducerContext)ctx,
@@ -2406,7 +2415,10 @@ static class ModuleRegistration
         [System.Runtime.CompilerServices.MethodImpl(
             System.Runtime.CompilerServices.MethodImplOptions.NoInlining
         )]
-        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        private static void __spacetimedb_begin_short_backtrace(
+            BinaryReader reader,
+            SpacetimeDB.Internal.IReducerContext ctx
+        )
         {
             MultiTableRow.InsertMultiData((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
@@ -2435,7 +2447,10 @@ static class ModuleRegistration
         [System.Runtime.CompilerServices.MethodImpl(
             System.Runtime.CompilerServices.MethodImplOptions.NoInlining
         )]
-        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        private static void __spacetimedb_begin_short_backtrace(
+            BinaryReader reader,
+            SpacetimeDB.Internal.IReducerContext ctx
+        )
         {
             Reducers.ScheduleImmediate((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
@@ -2464,7 +2479,10 @@ static class ModuleRegistration
         [System.Runtime.CompilerServices.MethodImpl(
             System.Runtime.CompilerServices.MethodImplOptions.NoInlining
         )]
-        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        private static void __spacetimedb_begin_short_backtrace(
+            BinaryReader reader,
+            SpacetimeDB.Internal.IReducerContext ctx
+        )
         {
             Timers.SendScheduledMessage((SpacetimeDB.ReducerContext)ctx, argRW.Read(reader));
         }
