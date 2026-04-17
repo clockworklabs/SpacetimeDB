@@ -1,4 +1,4 @@
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::sync::Arc;
@@ -188,7 +188,7 @@ fn run_one_database(
         let mut client = ModuleClient::connect(&config.connection, database_identity)?;
         progress.set_message(format!("{database_name}: subscribing to load state"));
         client.subscribe_load_state()?;
-        if has_load_state(config, &database_name, &client) {
+        if has_load_state(&client) {
             progress.set_message(format!("{database_name}: existing load state detected"));
             Ok(())
         } else {
@@ -236,7 +236,7 @@ fn run_one_database(
     })
 }
 
-fn has_load_state(config: &LoadConfig, database_name: &str, client: &ModuleClient) -> bool {
+fn has_load_state(client: &ModuleClient) -> bool {
     client.load_state().is_some()
 }
 
