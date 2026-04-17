@@ -87,6 +87,7 @@ impl ModuleClient {
                     Some(error) => format!("connection closed: {error}"),
                     None => "connection closed".to_string(),
                 };
+                log::error!("{message}");
                 *disconnect_error_callback.lock().expect("disconnect mutex poisoned") = Some(message);
             });
 
