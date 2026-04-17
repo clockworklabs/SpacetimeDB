@@ -73,7 +73,7 @@ async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Res
 // In reality, `append_tx` will fail at some point in the future.
 // I.e. transactions can be lost when the host runs out of disk space.
 #[tokio::test(flavor = "multi_thread")]
-#[should_panic = "durability actor crashed"]
+#[should_panic = "local durability: actor vanished"]
 async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
     enable_logging();
 

@@ -989,6 +989,15 @@ impl RelationalDB {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
     }
 
+    pub(crate) fn alter_table_primary_key(
+        &self,
+        tx: &mut MutTx,
+        name: &str,
+        primary_key: Option<ColId>,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
+    }
+
     pub(crate) fn alter_table_row_type(
         &self,
         tx: &mut MutTx,
@@ -1641,7 +1650,7 @@ where
         progress,
         // We don't want to instantiate an incorrect state;
         // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
-        spacetimedb_datastore::locking_tx_datastore::datastore::ErrorBehavior::FailFast,
+        spacetimedb_datastore::locking_tx_datastore::ErrorBehavior::FailFast,
     );
     let start_tx_offset = replay.next_tx_offset();
     history
