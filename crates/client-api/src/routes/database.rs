@@ -1445,7 +1445,7 @@ where
         // Keep these routes merged separately from the authenticated database router.
         let http_route_router = axum::Router::<S>::new()
             .route("/{name_or_identity}/route", any(handle_http_route_root::<S>))
-            .route("/{name_or_identity}/route/*path", any(handle_http_route::<S>));
+            .route("/{name_or_identity}/route/{*path}", any(handle_http_route::<S>));
 
         axum::Router::new()
             .merge(authed_root_router)
