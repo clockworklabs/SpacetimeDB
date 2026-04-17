@@ -42,6 +42,7 @@ pub async fn connect_metrics_module_async(config: &ConnectionConfig) -> Result<D
     let success_tx = Arc::clone(&ready_tx);
     let error_tx = Arc::clone(&ready_tx);
     let database_identity = format!("{}-metrics", config.database_prefix);
+    log::info!("connecting to metrics database {} at {}", database_identity, config.uri);
     let mut builder = DbConnection::builder()
         .with_uri(config.uri.clone())
         .with_database_name(database_identity)
@@ -68,5 +69,6 @@ pub async fn connect_metrics_module_async(config: &ConnectionConfig) -> Result<D
         .context("timed out waiting for connection")?
         .map_err(|_| anyhow!("metrics connection readiness callback dropped"))??;
 
+    log::info!("metrics database connected");
     Ok(conn)
 }

@@ -53,10 +53,23 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     let (config, schedule) = resolve_driver_setup(config).await?;
     let run_id = schedule.run_id.clone();
     let output_dir = resolve_output_dir(&config, &run_id);
+    log::info!(
+        "driver {} resolved setup for run {}; creating output dir {}",
+        config.driver_id,
+        run_id,
+        output_dir.display()
+    );
     fs::create_dir_all(&output_dir).with_context(|| format!("failed to create {}", output_dir.display()))?;
     let topology = DatabaseTopology::for_driver(&config).await?;
     let used_database_numbers = databases_for_warehouse_slice(&config);
     let database_summary = describe_databases(&topology, &used_database_numbers);
+    log::info!(
+        "driver {} topology ready; warehouse slice {}..={} uses databases {:?}",
+        config.driver_id,
+        config.warehouse_start,
+        config.warehouse_end(),
+        used_database_numbers
+    );
 
     let events_path = output_dir.join("txn_events.ndjson");
     let summary_path = output_dir.join("summary.json");
@@ -71,8 +84,20 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     let start_logged = Arc::new(AtomicBool::new(false));
     let request_ids = Arc::new(AtomicU64::new(1));
     let mut tasks = JoinSet::new();
+    log::info!("driver {} connecting to metrics database", config.driver_id);
     let metrics_client = Arc::new(connect_metrics_module_async(&config.connection).await?);
+    log::info!("driver {} metrics database connected", config.driver_id);
+    log::info!(
+        "driver {} connecting shared database clients for {} database(s)",
+        config.driver_id,
+        used_database_numbers.len()
+    );
     let shared_database_clients = connect_shared_database_clients(&config, &topology, &used_database_numbers).await?;
+    log::info!(
+        "driver {} connected {} shared database client(s)",
+        config.driver_id,
+        shared_database_clients.len()
+    );
 
     log::info!(
         "driver {} ready for run {}: warehouses {}..={} terminals={} warmup_start_ms={} measure_start_ms={} measure_end_ms={}",
@@ -589,6 +614,11 @@ async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, Run
         let register = RegisterDriverRequest {
             driver_id: config.driver_id.clone(),
         };
+        log::info!(
+            "driver {} registering with coordinator {}",
+            config.driver_id,
+            coordinator_url
+        );
         let mut last_error = None;
         let mut response = None;
         for attempt in 1..=REGISTER_ATTEMPTS {
@@ -640,7 +670,16 @@ async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, Run
         let Some(assignment) = response.assignment else {
             bail!("coordinator accepted driver registration without an assignment");
         };
+        log::info!(
+            "driver {} got assignment: warehouse_count={} warehouse_start={} driver_warehouse_count={} warehouses_per_database={}",
+            config.driver_id,
+            assignment.warehouse_count,
+            assignment.warehouse_start,
+            assignment.driver_warehouse_count,
+            assignment.warehouses_per_database
+        );
         let config = config.with_assignment(&assignment);
+        log::info!("driver {} waiting for coordinator schedule", config.driver_id);
         loop {
             let response: ScheduleResponse = client
                 .get(format!("{}/schedule", coordinator_url))
@@ -653,6 +692,14 @@ async fn resolve_driver_setup(config: DriverConfig) -> Result<(DriverConfig, Run
                 .await
                 .context("failed to decode schedule response")?;
             if let Some(schedule) = response.schedule {
+                log::info!(
+                    "driver {} received schedule: run_id={} warmup_start_ms={} measure_start_ms={} measure_end_ms={}",
+                    config.driver_id,
+                    schedule.run_id,
+                    schedule.warmup_start_ms,
+                    schedule.measure_start_ms,
+                    schedule.measure_end_ms
+                );
                 return Ok((config, schedule));
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -808,6 +855,12 @@ async fn connect_shared_database_clients(
         let database_number = *database_number;
         let database_identity = topology.identity_for_database_number(database_number)?;
         let database_name = topology.database_name(database_number);
+        log::info!(
+            "driver {} starting shared client connection to {} ({})",
+            config.driver_id,
+            database_name,
+            database_identity
+        );
         let connection = config.connection.clone();
         connect_tasks.spawn(async move {
             let client = ModuleClient::connect_async(&connection, database_identity)
