@@ -175,6 +175,7 @@ public static class Utils
                 "SpacetimeDB.I256" => "SpacetimeDB.BSATN.I256",
                 "SpacetimeDB.U256" => "SpacetimeDB.BSATN.U256",
                 "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
+                "System.Collections.Generic.IEnumerable<T>" => $"SpacetimeDB.BSATN.List",
                 // If we're here, then this is nullable *value* type like `int?`.
                 "System.Nullable<T>" => $"SpacetimeDB.BSATN.ValueOption",
                 var name when name.StartsWith("System.") => throw new InvalidOperationException(

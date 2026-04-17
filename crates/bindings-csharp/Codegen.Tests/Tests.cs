@@ -8,6 +8,16 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 
+/// <summary>
+/// Snapshot tests for the <c>SpacetimeDB.Codegen</c> library.
+///
+/// These run code generation for the sample projects in <c>fixtures</c>. We compare the generated code
+/// to known-good examples of generated code using the Verify library: https://github.com/VerifyTests/Verify
+///
+/// If you need to update the generated code, you probably want to install the Verify.Terminal tool: https://github.com/VerifyTests/Verify.Terminal
+/// Run <c>dotnet tool restore; dotnet verify accept</c> after changing the code generation to compare the old and new generated code and approve it.
+/// You'll need to check the updated snapshots into Git with your PR; the .gitignores in this project are set up to add the right files.
+/// </summary>
 public static class GeneratorSnapshotTests
 {
     // Note that we can't use assembly path here because it will be put in some deep nested folder.
@@ -381,7 +391,7 @@ public static class GeneratorSnapshotTests
                         Method = method,
                     })
             )
-            .Single(entry => entry.Method.Identifier.Text == "ViewDefIEnumerableReturnFromIter");
+            .Single(entry => entry.Method.Identifier.Text == "ViewDefWrongReturn");
 
         var returnTypeSpan = method.Method.ReturnType.Span;
         var diagnostics = runResult
@@ -389,8 +399,7 @@ public static class GeneratorSnapshotTests
             .Where(d => d.Id == "STDB0024")
             .ToList();
         var diagnostic = diagnostics.FirstOrDefault(d =>
-            d.GetMessage().Contains("ViewDefIEnumerableReturnFromIter")
-            && d.Location.SourceTree == method.Tree
+            d.GetMessage().Contains("ViewDefWrongReturn") && d.Location.SourceTree == method.Tree
         );
 
         Assert.NotNull(diagnostic);
@@ -400,6 +409,6 @@ public static class GeneratorSnapshotTests
         var returnTypeText = method
             .Root.ToFullString()
             .Substring(returnTypeSpan.Start, returnTypeSpan.Length);
-        Assert.Contains("IEnumerable", returnTypeText);
+        Assert.Contains("Player", returnTypeText);
     }
 }

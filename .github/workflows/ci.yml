@@ -27,7 +27,7 @@ jobs:
           - name: Linux
             runner: spacetimedb-new-runner-2
           - name: Windows
-            runner: windows-latest
+            runner: spacetimedb-windows-runner
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -237,6 +237,30 @@ jobs:
           cd ~/emsdk
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
+
+      - name: Install wasm-bindgen CLI
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+
+          INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
+          if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+          fi
+
+          wasm-bindgen --version
 
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript

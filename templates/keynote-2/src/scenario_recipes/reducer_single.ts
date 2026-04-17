@@ -1,4 +1,4 @@
-﻿import type { ReducerConnector } from '../core/connectors';
+import type { ReducerConnector } from '../core/connectors';
 
 export async function reducer_single(
   conn: ReducerConnector,
