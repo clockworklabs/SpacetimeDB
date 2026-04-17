@@ -440,7 +440,7 @@ function makeBarChart(id, datasets, stacked = false, yLabel = '') {
 function showError(msg) {
   const el = document.getElementById('error-banner');
   el.style.display = 'block';
-  el.innerHTML = msg;
+  el.textContent = msg;
 }
 
 function clearError() {
@@ -456,7 +456,7 @@ function loadFromText(text, filename) {
     document.getElementById('loaded-file').textContent = filename || '';
     document.getElementById('empty-state').style.display = 'none';
   } catch (e) {
-    showError(`<strong>Parse error in ${filename}:</strong> ${e.message}`);
+    showError(`Parse error in ${filename}: ${e.message}`);
   }
 }
 
@@ -507,7 +507,14 @@ function renderRunList(runs) {
   runs.forEach((run) => {
     const li = document.createElement('li');
     const dir = run.pathParts.join(' / ') || '(root)';
-    li.innerHTML = `<span class="run-name">${dir}</span><span class="run-path">${run.name}</span>`;
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'run-name';
+    nameSpan.textContent = dir;
+    const pathSpan = document.createElement('span');
+    pathSpan.className = 'run-path';
+    pathSpan.textContent = run.name;
+    li.appendChild(nameSpan);
+    li.appendChild(pathSpan);
     li.title = [...run.pathParts, run.name].join('/');
     li.addEventListener('click', async () => {
       list.querySelectorAll('li').forEach(el => el.classList.remove('active'));
