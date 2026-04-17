@@ -40,7 +40,7 @@ impl OneU128TableAccess for super::RemoteTables {
 pub struct OneU128InsertCallbackId(__sdk::CallbackId);
 pub struct OneU128DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OneU128TableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OneU128TableHandle<'ctx> {
     type Row = OneU128;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for OneU128TableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OneU128> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OneU128TableHandle<'ctx> {
     type InsertCallbackId = OneU128InsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for OneU128TableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OneU128InsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OneU128TableHandle<'ctx> {
     type DeleteCallbackId = OneU128DeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for OneU128TableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OneU128TableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

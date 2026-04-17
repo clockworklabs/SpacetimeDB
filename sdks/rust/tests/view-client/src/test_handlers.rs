@@ -1,6 +1,6 @@
 use crate::module_bindings::*;
 use spacetimedb_lib::Identity;
-use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext, Table};
+use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext, WithDelete, WithInsert};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";

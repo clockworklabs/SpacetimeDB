@@ -41,7 +41,7 @@ impl MyTableTableAccess for super::RemoteTables {
 pub struct MyTableInsertCallbackId(__sdk::CallbackId);
 pub struct MyTableDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for MyTableTableHandle<'ctx> {
     type Row = MyTable;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = MyTable> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for MyTableTableHandle<'ctx> {
     type InsertCallbackId = MyTableInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: MyTableInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for MyTableTableHandle<'ctx> {
     type DeleteCallbackId = MyTableDeleteCallbackId;
 
     fn on_delete(
@@ -78,6 +82,8 @@ impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

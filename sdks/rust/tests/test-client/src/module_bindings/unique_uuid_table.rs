@@ -40,7 +40,7 @@ impl UniqueUuidTableAccess for super::RemoteTables {
 pub struct UniqueUuidInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueUuidDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for UniqueUuidTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for UniqueUuidTableHandle<'ctx> {
     type Row = UniqueUuid;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for UniqueUuidTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = UniqueUuid> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for UniqueUuidTableHandle<'ctx> {
     type InsertCallbackId = UniqueUuidInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for UniqueUuidTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: UniqueUuidInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for UniqueUuidTableHandle<'ctx> {
     type DeleteCallbackId = UniqueUuidDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for UniqueUuidTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for UniqueUuidTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

@@ -41,7 +41,7 @@ impl VecSimpleEnumTableAccess for super::RemoteTables {
 pub struct VecSimpleEnumInsertCallbackId(__sdk::CallbackId);
 pub struct VecSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for VecSimpleEnumTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for VecSimpleEnumTableHandle<'ctx> {
     type Row = VecSimpleEnum;
     type EventContext = super::EventContext;
 
@@ -51,7 +51,9 @@ impl<'ctx> __sdk::Table for VecSimpleEnumTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = VecSimpleEnum> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for VecSimpleEnumTableHandle<'ctx> {
     type InsertCallbackId = VecSimpleEnumInsertCallbackId;
 
     fn on_insert(
@@ -64,7 +66,9 @@ impl<'ctx> __sdk::Table for VecSimpleEnumTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: VecSimpleEnumInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for VecSimpleEnumTableHandle<'ctx> {
     type DeleteCallbackId = VecSimpleEnumDeleteCallbackId;
 
     fn on_delete(
@@ -78,6 +82,8 @@ impl<'ctx> __sdk::Table for VecSimpleEnumTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for VecSimpleEnumTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

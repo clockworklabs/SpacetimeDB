@@ -40,7 +40,7 @@ impl OneF64TableAccess for super::RemoteTables {
 pub struct OneF64InsertCallbackId(__sdk::CallbackId);
 pub struct OneF64DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OneF64TableHandle<'ctx> {
     type Row = OneF64;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OneF64> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OneF64TableHandle<'ctx> {
     type InsertCallbackId = OneF64InsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OneF64InsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OneF64TableHandle<'ctx> {
     type DeleteCallbackId = OneF64DeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

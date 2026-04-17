@@ -40,7 +40,7 @@ impl PlayerLevelTableAccess for super::RemoteTables {
 pub struct PlayerLevelInsertCallbackId(__sdk::CallbackId);
 pub struct PlayerLevelDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PlayerLevelTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PlayerLevelTableHandle<'ctx> {
     type Row = PlayerLevel;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PlayerLevelTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PlayerLevel> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PlayerLevelTableHandle<'ctx> {
     type InsertCallbackId = PlayerLevelInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PlayerLevelTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PlayerLevelInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PlayerLevelTableHandle<'ctx> {
     type DeleteCallbackId = PlayerLevelDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for PlayerLevelTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for PlayerLevelTableHandle<'ctx> {}
 
 /// Access to the `entity_id` unique index on the table `player_level`,
 /// which allows point queries on the field of the same name

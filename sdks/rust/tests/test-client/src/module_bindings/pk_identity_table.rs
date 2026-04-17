@@ -40,7 +40,7 @@ impl PkIdentityTableAccess for super::RemoteTables {
 pub struct PkIdentityInsertCallbackId(__sdk::CallbackId);
 pub struct PkIdentityDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkIdentityTableHandle<'ctx> {
     type Row = PkIdentity;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkIdentity> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkIdentityTableHandle<'ctx> {
     type InsertCallbackId = PkIdentityInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkIdentityInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkIdentityTableHandle<'ctx> {
     type DeleteCallbackId = PkIdentityDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {}
+
 pub struct PkIdentityUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkIdentityTableHandle<'ctx> {
     type UpdateCallbackId = PkIdentityUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {}
 
 /// Access to the `i` unique index on the table `pk_identity`,
 /// which allows point queries on the field of the same name

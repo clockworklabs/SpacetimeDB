@@ -40,7 +40,7 @@ impl OneTimestampTableAccess for super::RemoteTables {
 pub struct OneTimestampInsertCallbackId(__sdk::CallbackId);
 pub struct OneTimestampDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for OneTimestampTableHandle<'ctx> {
     type Row = OneTimestamp;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = OneTimestamp> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for OneTimestampTableHandle<'ctx> {
     type InsertCallbackId = OneTimestampInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: OneTimestampInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for OneTimestampTableHandle<'ctx> {
     type DeleteCallbackId = OneTimestampDeleteCallbackId;
 
     fn on_delete(
@@ -77,6 +81,8 @@ impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
         self.imp.remove_on_delete(callback.0)
     }
 }
+
+impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {}
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {

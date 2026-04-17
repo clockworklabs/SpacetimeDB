@@ -40,7 +40,7 @@ impl PkBoolTableAccess for super::RemoteTables {
 pub struct PkBoolInsertCallbackId(__sdk::CallbackId);
 pub struct PkBoolDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
+impl<'ctx> __sdk::TableLike for PkBoolTableHandle<'ctx> {
     type Row = PkBool;
     type EventContext = super::EventContext;
 
@@ -50,7 +50,9 @@ impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     fn iter(&self) -> impl Iterator<Item = PkBool> + '_ {
         self.imp.iter()
     }
+}
 
+impl<'ctx> __sdk::WithInsert for PkBoolTableHandle<'ctx> {
     type InsertCallbackId = PkBoolInsertCallbackId;
 
     fn on_insert(
@@ -63,7 +65,9 @@ impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     fn remove_on_insert(&self, callback: PkBoolInsertCallbackId) {
         self.imp.remove_on_insert(callback.0)
     }
+}
 
+impl<'ctx> __sdk::WithDelete for PkBoolTableHandle<'ctx> {
     type DeleteCallbackId = PkBoolDeleteCallbackId;
 
     fn on_delete(
@@ -78,9 +82,11 @@ impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {}
+
 pub struct PkBoolUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
+impl<'ctx> __sdk::WithUpdate for PkBoolTableHandle<'ctx> {
     type UpdateCallbackId = PkBoolUpdateCallbackId;
 
     fn on_update(
@@ -94,6 +100,8 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
         self.imp.remove_on_update(callback.0)
     }
 }
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {}
 
 /// Access to the `b` unique index on the table `pk_bool`,
 /// which allows point queries on the field of the same name
