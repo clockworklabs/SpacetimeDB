@@ -893,6 +893,42 @@ jobs:
               exit 1
           }
 
+  # NativeAOT-LLVM smoketest runs on Windows because runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM
+  # does not have 8.0.0 versions available on the dotnet-experimental NuGet feed.
+  csharp-aot-smoketest:
+    needs: [lints]
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+          
+      - name: Install emscripten (Windows)
+        shell: pwsh
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
+          cd $env:USERPROFILE\emsdk
+          .\emsdk install 4.0.21
+          .\emsdk activate 4.0.21
+
+      - name: Smoketest C# AOT build (NativeAOT-LLVM)
+        shell: pwsh
+        run: |
+          $env:EXPERIMENTAL_WASM_AOT = "1"
+          if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
+            & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
+          }
+          dotnet publish -c Release modules/sdk-test-cs
+          if (-not (Test-Path "modules/sdk-test-cs/bin/Release/net8.0/wasi-wasm/publish/StdbModule.wasm")) {
+            Write-Error "StdbModule.wasm not found"
+            exit 1
+          }
+
   internal-tests:
     name: Internal Tests
     needs: [lints]
