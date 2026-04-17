@@ -782,8 +782,8 @@ fn test_typescript_query_builder_view_query() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
     test.publish_typescript_module_source(
-        "views-subscribe-typescript",
-        "views-subscribe-typescript",
+        "views-query-builder-typescript",
+        "views-query-builder-typescript",
         TS_VIEWS_SUBSCRIBE_MODULE,
     )
     .unwrap();
