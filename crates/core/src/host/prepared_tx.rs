@@ -68,8 +68,12 @@ mod tests {
         prepared_txs.deliver_or_remember_decision("prepare-id", false);
 
         let (decision_tx, decision_rx) = std::sync::mpsc::channel();
-        let early_decision =
-            prepared_txs.register_waiter("prepare-id".to_string(), PreparedTxInfo { decision_sender: decision_tx });
+        let early_decision = prepared_txs.register_waiter(
+            "prepare-id".to_string(),
+            PreparedTxInfo {
+                decision_sender: decision_tx,
+            },
+        );
 
         assert_eq!(early_decision, Some(false));
         assert!(decision_rx.try_recv().is_err());
@@ -79,8 +83,12 @@ mod tests {
     fn waiting_entry_receives_decision_immediately() {
         let prepared_txs = PreparedTransactions::new();
         let (decision_tx, decision_rx) = std::sync::mpsc::channel();
-        let early_decision =
-            prepared_txs.register_waiter("prepare-id".to_string(), PreparedTxInfo { decision_sender: decision_tx });
+        let early_decision = prepared_txs.register_waiter(
+            "prepare-id".to_string(),
+            PreparedTxInfo {
+                decision_sender: decision_tx,
+            },
+        );
 
         assert_eq!(early_decision, None);
         prepared_txs.deliver_or_remember_decision("prepare-id", false);
@@ -95,8 +103,12 @@ mod tests {
         prepared_txs.deliver_or_remember_decision("prepare-id", true);
 
         let (decision_tx, _decision_rx) = std::sync::mpsc::channel();
-        let early_decision =
-            prepared_txs.register_waiter("prepare-id".to_string(), PreparedTxInfo { decision_sender: decision_tx });
+        let early_decision = prepared_txs.register_waiter(
+            "prepare-id".to_string(),
+            PreparedTxInfo {
+                decision_sender: decision_tx,
+            },
+        );
 
         assert_eq!(early_decision, Some(false));
     }

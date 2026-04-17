@@ -130,7 +130,7 @@ run_node() {
   local host="ubuntu@tpc-c-benchmark-spacetimedb-${node_index}"
 
   echo "==> ${host}"
-  ssh "$host" "bash -lc $(printf '%q' "$remote_script")"
+  ssh -oStrictHostKeyChecking=accept-new "$host" "bash -lc $(printf '%q' "$remote_script")"
 }
 
 running_pids=()

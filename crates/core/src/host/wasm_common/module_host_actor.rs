@@ -867,11 +867,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     let decision_label = if commit { "commit" } else { "abort" };
                     WORKER_METRICS
                         .two_pc_participant_decisions_total
-                        .with_label_values(
-                            &database_identity,
-                            decision_label,
-                            "channel",
-                        )
+                        .with_label_values(&database_identity, decision_label, "channel")
                         .inc();
                     WORKER_METRICS
                         .two_pc_participant_decision_wait_seconds
@@ -915,11 +911,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     let decision_label = if commit { "commit" } else { "abort" };
                     WORKER_METRICS
                         .two_pc_participant_decisions_total
-                        .with_label_values(
-                            &database_identity,
-                            decision_label,
-                            "poll",
-                        )
+                        .with_label_values(&database_identity, decision_label, "poll")
                         .inc();
                     WORKER_METRICS
                         .two_pc_participant_decision_wait_seconds
@@ -1450,7 +1442,9 @@ impl InstanceCommon {
                     }
                     Err(e) => {
                         if committed {
-                            log::error!("2PC {action}: transport error for {prepare_id} on {db_identity}: {e}; url={url}");
+                            log::error!(
+                                "2PC {action}: transport error for {prepare_id} on {db_identity}: {e}; url={url}"
+                            );
                         } else {
                             log::warn!(
                                 "2PC {action}: best-effort abort transport error for {prepare_id} on {db_identity}: {e}; url={url}"

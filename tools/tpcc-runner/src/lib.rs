@@ -8,6 +8,7 @@ mod metrics_module_bindings;
 mod metrics_module_client;
 mod module_bindings;
 mod protocol;
+pub mod status;
 pub mod summary;
 mod topology;
 mod tpcc;
@@ -24,6 +25,7 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
 
     match cli.command {
         Command::Load(args) => loader::run(args.resolve(&file_config)?).await,
+        Command::Status(args) => status::run(args.resolve(&file_config)?).await,
         Command::LoadClient(args) => legacy_loader::run(args.resolve(&file_config)?).await,
         Command::Driver(args) => driver::run(args.resolve(&file_config)?).await,
         Command::Coordinator(args) => coordinator::run(args.resolve(&file_config)?).await,

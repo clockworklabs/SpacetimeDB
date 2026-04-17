@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::sync::Arc;
@@ -41,7 +41,7 @@ pub async fn run(config: LoadConfig) -> Result<()> {
                     if let Err(error) = run_one_database(&config, database_number, &topology, &progress_bar) {
                         let database_name = topology.database_name(database_number);
                         let database_identity = topology.identity_for_database_number(database_number).ok();
-                        progress_bar.abandon_with_message(format!("{database_name} failed"));
+                        progress_bar.abandon_with_message(format!("{database_name} failed: {error:#}"));
                         failures.push(DatabaseRunFailure {
                             database_number,
                             database_name,
@@ -188,31 +188,42 @@ fn run_one_database(
         let mut client = ModuleClient::connect(&config.connection, database_identity)?;
         progress.set_message(format!("{database_name}: subscribing to load state"));
         client.subscribe_load_state()?;
-        fail_if_partial_load_detected(config, &database_name, &client)?;
+        if has_load_state(config, &database_name, &client) {
+            progress.set_message(format!("{database_name}: existing load state detected"));
+            Ok(())
+        } else {
+            progress.set_message(format!("{database_name}: no existing load state"));
+            let request = time!("build_load_request" {
+                build_load_request(config, database_number, topology)?
+            });
+            progress.set_message(format!("{database_name}: configuring load"));
+            time!("configure_tpcc_load" {client
+                                         .configure_tpcc_load(request)
+                                         .context("failed to configure tpcc load")})?;
 
-        time!("reset" {
-            if config.reset {
-                progress.set_message(format!("{database_name}: resetting existing data"));
-                client.reset_tpcc().context("failed to reset tpcc data")?;
-            }
-        });
+            progress.set_message(format!("{database_name}: starting load"));
+            time!("start_tpcc_load" {
+                client.start_tpcc_load().context("failed to start tpcc load")?
+            });
 
-        let request = time!("build_load_request" {
-            build_load_request(config, database_number, topology)?
-        });
-        progress.set_message(format!("{database_name}: configuring load"));
-        time!("configure_tpcc_load" {client
-                                     .configure_tpcc_load(request)
-                                     .context("failed to configure tpcc load")})?;
+            // Maybe add a flag for whether to wait for completion or not.
+            /*
+            time!("wait_for_load_completion" {
+                wait_for_load_completion(&client, &database_name, database_identity, progress)?
+            });
+            */
+            Ok(())
+        }?;
 
-        progress.set_message(format!("{database_name}: starting load"));
-        time!("start_tpcc_load" {
-            client.start_tpcc_load().context("failed to start tpcc load")?
-        });
+        // fail_if_partial_load_detected(config, &database_name, &client)?;
 
-        time!("wait_for_load_completion" {
-            wait_for_load_completion(&client, &database_name, database_identity, progress)?
-        });
+        // time!("reset" {
+        //     if config.reset {
+        //         progress.set_message(format!("{database_name}: resetting existing data"));
+        //         client.reset_tpcc().context("failed to reset tpcc data")?;
+        //     }
+        // });
+
 
         progress.set_message(format!("{database_name}: shutting down client"));
         time!("shutdown" {
@@ -223,6 +234,10 @@ fn run_one_database(
         log::info!("tpcc load for database {database_identity} finished");
        Ok(())
     })
+}
+
+fn has_load_state(config: &LoadConfig, database_name: &str, client: &ModuleClient) -> bool {
+    client.load_state().is_some()
 }
 
 fn fail_if_partial_load_detected(config: &LoadConfig, database_name: &str, client: &ModuleClient) -> Result<()> {

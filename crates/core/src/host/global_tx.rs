@@ -653,10 +653,13 @@ impl GlobalTxManager {
         if let Some(wait_entry) = state.wait_entries.remove(&wait_id) {
             log::info!("Removing waiter with wait_id {}, tx_id {}", wait_id, wait_entry.tx_id);
             state.waiter_ids_by_tx.remove(&wait_entry.tx_id);
-            self.remove_waiter_key_locked(state, &WaitKey {
-                tx_id: wait_entry.tx_id,
-                wait_id,
-            });
+            self.remove_waiter_key_locked(
+                state,
+                &WaitKey {
+                    tx_id: wait_entry.tx_id,
+                    wait_id,
+                },
+            );
             if was_head && state.owner.is_none() {
                 self.notify_next_waiter_locked(state);
             }
@@ -730,7 +733,10 @@ mod tests {
     use tokio::runtime::Runtime;
 
     fn manager(local_database_identity: Identity) -> Arc<GlobalTxManager> {
-        Arc::new(GlobalTxManager::new(local_database_identity, DEFAULT_WOUND_GRACE_PERIOD))
+        Arc::new(GlobalTxManager::new(
+            local_database_identity,
+            DEFAULT_WOUND_GRACE_PERIOD,
+        ))
     }
 
     fn tx_id(ts: i64, db_byte: u8, nonce: u32) -> GlobalTxId {
@@ -890,7 +896,11 @@ mod tests {
         let remote_waiter = tx_id(20, 2, 0);
         manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
         manager.ensure_session(local_waiter, super::GlobalTxRole::Coordinator, local_waiter.creator_db);
-        manager.ensure_session(remote_waiter, super::GlobalTxRole::Participant, remote_waiter.creator_db);
+        manager.ensure_session(
+            remote_waiter,
+            super::GlobalTxRole::Participant,
+            remote_waiter.creator_db,
+        );
 
         let rt = Runtime::new().unwrap();
         let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
@@ -928,11 +938,15 @@ mod tests {
         drop(owner_guard);
 
         assert_eq!(
-            order_rx.recv_timeout(Duration::from_millis(100)).expect("first waiter should acquire"),
+            order_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("first waiter should acquire"),
             "remote"
         );
         assert_eq!(
-            order_rx.recv_timeout(Duration::from_millis(100)).expect("second waiter should acquire"),
+            order_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("second waiter should acquire"),
             "local"
         );
         assert!(rt.block_on(local_task).expect("local task should complete"));
@@ -947,7 +961,11 @@ mod tests {
         let younger_remote = tx_id(20, 3, 0);
         manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
         manager.ensure_session(older_remote, super::GlobalTxRole::Participant, older_remote.creator_db);
-        manager.ensure_session(younger_remote, super::GlobalTxRole::Participant, younger_remote.creator_db);
+        manager.ensure_session(
+            younger_remote,
+            super::GlobalTxRole::Participant,
+            younger_remote.creator_db,
+        );
 
         let rt = Runtime::new().unwrap();
         let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
@@ -985,11 +1003,15 @@ mod tests {
         drop(owner_guard);
 
         assert_eq!(
-            order_rx.recv_timeout(Duration::from_millis(100)).expect("first remote waiter should acquire"),
+            order_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("first remote waiter should acquire"),
             "older"
         );
         assert_eq!(
-            order_rx.recv_timeout(Duration::from_millis(100)).expect("second remote waiter should acquire"),
+            order_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("second remote waiter should acquire"),
             "younger"
         );
         assert!(rt.block_on(older_task).expect("older task should complete"));
@@ -1005,7 +1027,11 @@ mod tests {
         let younger_local = tx_id(20, 1, 1);
         manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
         manager.ensure_session(older_local, super::GlobalTxRole::Coordinator, older_local.creator_db);
-        manager.ensure_session(younger_local, super::GlobalTxRole::Coordinator, younger_local.creator_db);
+        manager.ensure_session(
+            younger_local,
+            super::GlobalTxRole::Coordinator,
+            younger_local.creator_db,
+        );
 
         let rt = Runtime::new().unwrap();
         let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {
@@ -1043,11 +1069,15 @@ mod tests {
         drop(owner_guard);
 
         assert_eq!(
-            order_rx.recv_timeout(Duration::from_millis(100)).expect("first local waiter should acquire"),
+            order_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("first local waiter should acquire"),
             "older"
         );
         assert_eq!(
-            order_rx.recv_timeout(Duration::from_millis(100)).expect("second local waiter should acquire"),
+            order_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("second local waiter should acquire"),
             "younger"
         );
         assert!(rt.block_on(older_task).expect("older task should complete"));
@@ -1188,7 +1218,11 @@ mod tests {
         let remote_waiter = tx_id(15, 3, 0);
         manager.ensure_session(owner, super::GlobalTxRole::Participant, owner.creator_db);
         manager.ensure_session(local_waiter, super::GlobalTxRole::Coordinator, local_waiter.creator_db);
-        manager.ensure_session(remote_waiter, super::GlobalTxRole::Participant, remote_waiter.creator_db);
+        manager.ensure_session(
+            remote_waiter,
+            super::GlobalTxRole::Participant,
+            remote_waiter.creator_db,
+        );
 
         let rt = Runtime::new().unwrap();
         let owner_guard = match rt.block_on(manager.acquire(owner, |_| async {})) {

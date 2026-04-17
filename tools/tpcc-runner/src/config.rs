@@ -21,6 +21,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Load(LoadArgs),
+    Status(StatusArgs),
     LoadClient(LoadArgs),
     Driver(DriverArgs),
     Coordinator(CoordinatorArgs),
@@ -45,6 +46,12 @@ pub struct LoadConfig {
     pub reset: bool,
     pub warehouse_id_offset: u32,
     pub skip_items: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct StatusConfig {
+    pub connection: ConnectionConfig,
+    pub num_databases: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +108,14 @@ pub struct LoadArgs {
     /// when adding warehouses to an existing database.
     #[arg(long)]
     pub skip_items: Option<bool>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct StatusArgs {
+    #[command(flatten)]
+    pub connection: ConnectionArgs,
+    #[arg(long)]
+    pub num_databases: Option<u32>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -303,6 +318,20 @@ impl LoadArgs {
     }
 }
 
+impl StatusArgs {
+    pub fn resolve(&self, file: &FileConfig) -> Result<StatusConfig> {
+        let num_databases = self.num_databases.or(file.load.num_databases).unwrap_or(1);
+        if num_databases == 0 {
+            bail!("num_databases must be positive");
+        }
+
+        Ok(StatusConfig {
+            connection: self.connection.resolve(&file.connection),
+            num_databases,
+        })
+    }
+}
+
 impl DriverArgs {
     pub fn resolve(&self, file: &FileConfig) -> Result<DriverConfig> {
         let connection = self.connection.resolve(&file.connection);
@@ -487,5 +516,23 @@ mod tests {
 
         let config = args.resolve(&FileConfig::default()).unwrap();
         assert_eq!(config.batch_size, DEFAULT_LOAD_BATCH_SIZE);
+    }
+
+    #[test]
+    fn status_args_use_load_num_databases_default() {
+        let file = FileConfig {
+            load: FileLoadConfig {
+                num_databases: Some(4),
+                ..FileLoadConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let args = StatusArgs {
+            connection: ConnectionArgs::default(),
+            num_databases: None,
+        };
+
+        let config = args.resolve(&file).unwrap();
+        assert_eq!(config.num_databases, 4);
     }
 }

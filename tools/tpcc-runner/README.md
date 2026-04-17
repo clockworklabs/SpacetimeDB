@@ -2,9 +2,10 @@
 
 `tpcc-runner` is the Rust-side harness for the SpacetimeDB TPC-C module in `modules/tpcc`.
 
-It supports four subcommands:
+It supports five subcommands:
 
 - `load`: configure and start server-side generation of the initial TPC-C dataset
+- `status`: print the current public load-state row for each database
 - `load-client`: use the legacy client-push loader that sends row batches over the SDK connection
 - `driver`: run one benchmark driver with one logical terminal per SDK connection
 - `coordinator`: synchronize multiple remote drivers and aggregate their summaries
@@ -157,6 +158,18 @@ Repeat that for each database, for example:
 cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-0 resume_tpcc_load
 cargo run -p spacetimedb-cli -- call -s http://127.0.0.1:3000 tpcc-1 resume_tpcc_load
 ```
+
+To inspect the current load state for each database:
+
+```bash
+cargo run --release -p tpcc-runner -- status \
+  --uri http://127.0.0.1:3000 \
+  --database-prefix tpcc \
+  --num-databases 2
+```
+
+The command prints one line per database with the load status, phase, chunk and
+row counters, next cursor position, timestamps, and any last error.
 
 To discard partial progress for a database and start that shard over from the
 saved load configuration, call:

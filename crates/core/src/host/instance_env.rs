@@ -38,7 +38,7 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
-use tracing::{info_span};
+use tracing::info_span;
 
 const PREPARE_ID_HEADER: &str = "X-Prepare-Id";
 
