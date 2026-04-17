@@ -190,7 +190,6 @@ fn run_one_database(
         client.subscribe_load_state()?;
         if has_load_state(&client) {
             progress.set_message(format!("{database_name}: existing load state detected"));
-            Ok(())
         } else {
             progress.set_message(format!("{database_name}: no existing load state"));
             let request = time!("build_load_request" {
@@ -212,8 +211,7 @@ fn run_one_database(
                 wait_for_load_completion(&client, &database_name, database_identity, progress)?
             });
             */
-            Ok(())
-        }?;
+        }
 
         // fail_if_partial_load_detected(config, &database_name, &client)?;
 
