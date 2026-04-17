@@ -22,6 +22,7 @@ pub struct Cli {
 pub enum Command {
     Load(LoadArgs),
     Status(StatusArgs),
+    Wait(WaitArgs),
     LoadClient(LoadArgs),
     Driver(DriverArgs),
     Coordinator(CoordinatorArgs),
@@ -52,6 +53,14 @@ pub struct LoadConfig {
 pub struct StatusConfig {
     pub connection: ConnectionConfig,
     pub num_databases: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct WaitConfig {
+    pub connection: ConnectionConfig,
+    pub num_databases: u32,
+    pub parallelism: usize,
+    pub poll_interval_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +125,18 @@ pub struct StatusArgs {
     pub connection: ConnectionArgs,
     #[arg(long)]
     pub num_databases: Option<u32>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct WaitArgs {
+    #[command(flatten)]
+    pub connection: ConnectionArgs,
+    #[arg(long)]
+    pub num_databases: Option<u32>,
+    #[arg(long)]
+    pub parallelism: Option<usize>,
+    #[arg(long)]
+    pub poll_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -193,6 +214,8 @@ pub struct FileConfig {
     #[serde(default)]
     load: FileLoadConfig,
     #[serde(default)]
+    wait: FileWaitConfig,
+    #[serde(default)]
     driver: FileDriverConfig,
     #[serde(default)]
     coordinator: FileCoordinatorConfig,
@@ -216,6 +239,13 @@ struct FileLoadConfig {
     reset: Option<bool>,
     warehouse_id_offset: Option<u32>,
     skip_items: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct FileWaitConfig {
+    num_databases: Option<u32>,
+    parallelism: Option<usize>,
+    poll_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -328,6 +358,40 @@ impl StatusArgs {
         Ok(StatusConfig {
             connection: self.connection.resolve(&file.connection),
             num_databases,
+        })
+    }
+}
+
+impl WaitArgs {
+    pub fn resolve(&self, file: &FileConfig) -> Result<WaitConfig> {
+        let num_databases = self
+            .num_databases
+            .or(file.wait.num_databases)
+            .or(file.load.num_databases)
+            .unwrap_or(1);
+        if num_databases == 0 {
+            bail!("num_databases must be positive");
+        }
+
+        let parallelism = self
+            .parallelism
+            .or(file.wait.parallelism)
+            .or(file.load.load_parallelism)
+            .unwrap_or_else(|| usize::try_from(num_databases).unwrap_or(usize::MAX).min(8));
+        if parallelism == 0 {
+            bail!("parallelism must be positive");
+        }
+
+        let poll_interval_ms = self.poll_interval_ms.or(file.wait.poll_interval_ms).unwrap_or(1_000);
+        if poll_interval_ms == 0 {
+            bail!("poll_interval_ms must be positive");
+        }
+
+        Ok(WaitConfig {
+            connection: self.connection.resolve(&file.connection),
+            num_databases,
+            parallelism: parallelism.min(usize::try_from(num_databases).unwrap_or(usize::MAX)),
+            poll_interval_ms,
         })
     }
 }
@@ -534,5 +598,27 @@ mod tests {
 
         let config = args.resolve(&file).unwrap();
         assert_eq!(config.num_databases, 4);
+    }
+
+    #[test]
+    fn wait_args_use_clamped_parallelism_default() {
+        let file = FileConfig {
+            load: FileLoadConfig {
+                num_databases: Some(3),
+                ..FileLoadConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let args = WaitArgs {
+            connection: ConnectionArgs::default(),
+            num_databases: None,
+            parallelism: Some(5),
+            poll_interval_ms: None,
+        };
+
+        let config = args.resolve(&file).unwrap();
+        assert_eq!(config.num_databases, 3);
+        assert_eq!(config.parallelism, 3);
+        assert_eq!(config.poll_interval_ms, 1_000);
     }
 }
