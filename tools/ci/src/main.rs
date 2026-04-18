@@ -318,10 +318,24 @@ fn main() -> Result<()> {
                 "spacetimedb-smoketests",
                 "--exclude",
                 "spacetimedb-sdk",
+                "--exclude",
+                "spacetimedb",
                 "--",
                 "--test-threads=2",
                 "--skip",
                 "unreal"
+            )
+            .run()?;
+            // Bindings snapshot tests rely on the unstable feature.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb",
+                "--features",
+                "unstable",
+                "--",
+                "--test-threads=2",
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.

@@ -18,6 +18,7 @@
 //! Instead, if/when we want to add new functionality which requires sending additional information,
 //! we'll define a new versioned ABI call which uses new types for interchange.
 
+use bytes::Bytes;
 use spacetimedb_sats::{time_duration::TimeDuration, SpacetimeType};
 
 /// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
@@ -45,7 +46,7 @@ impl Request {
 }
 
 /// Represents an HTTP method.
-#[derive(Clone, SpacetimeType, PartialEq, Eq)]
+#[derive(Clone, Debug, SpacetimeType, PartialEq, Eq, PartialOrd, Ord)]
 #[sats(crate = crate, name = "HttpMethod")]
 pub enum Method {
     Get,
@@ -165,3 +166,35 @@ impl Response {
         self.headers.size_in_bytes()
     }
 }
+
+/// An HTTP request plus a body, used for host <-> module interchange in HTTP handlers.
+#[derive(Clone, SpacetimeType)]
+#[sats(crate = crate, name = "HttpRequestAndBody")]
+pub struct RequestAndBody {
+    pub request: Request,
+    pub body: Bytes,
+}
+
+/// An HTTP response plus a body, used for host <-> module interchange in HTTP handlers.
+#[derive(Clone, SpacetimeType)]
+#[sats(crate = crate, name = "HttpResponseAndBody")]
+pub struct ResponseAndBody {
+    pub response: Response,
+    pub body: Bytes,
+}
+
+/// True if `c` is a valid character to appear in the path of a user-defined HTTP route.
+///
+/// We permit only lowercase ASCII letters, ASCII digits, and `-_~/`.
+/// `/` is allowed specifically because it's the segment separator character.
+/// `-_~` seem harmless enough.
+///
+/// We've chosen an intentionally very restrictive set so that we can assign meaning to other characters in the future,
+/// e.g. we may want to use `*` as a wildcard, `:` or `{}` to introduce path parameters, &c.
+pub fn character_is_acceptable_for_route_path(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_digit() || "-_~/".contains(c)
+}
+
+/// A human-readable description of the characters accepted by [`character_is_acceptable_for_route_path`],
+/// for use in error reporting.
+pub const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION: &str = "ASCII lowercase letters, digits and `-_~/`";
