@@ -1,0 +1,5 @@
+{
+  "description": "A basic Kotlin client and Rust server template with only stubs for code",
+  "client_lang": "kotlin",
+  "server_lang": "rust"
+}

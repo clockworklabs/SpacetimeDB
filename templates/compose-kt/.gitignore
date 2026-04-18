@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+**/build/
+
+# Kotlin
+.kotlin/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# SpacetimeDB server module build artifacts
+target/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Local configuration
+local.properties
+spacetime.local.json
+.env
+.env.local
