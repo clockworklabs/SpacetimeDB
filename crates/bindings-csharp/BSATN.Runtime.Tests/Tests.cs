@@ -184,6 +184,25 @@ public static partial class BSATNRuntimeTests
         Assert.False(laterStamp < stamp);
         Assert.Equal(-1, stamp.CompareTo(laterStamp));
         Assert.Equal(+1, laterStamp.CompareTo(stamp));
+
+#pragma warning disable CS1718
+        Assert.True(duration == duration);
+#pragma warning restore CS1718
+        Assert.False(duration == newInterval);
+        Assert.True(duration > newInterval);
+        Assert.False(newInterval > duration);
+        Assert.True(newInterval <= duration);
+        Assert.Equal(+1, duration.CompareTo(newInterval));
+        Assert.Equal(-1, newInterval.CompareTo(duration));
+    }
+
+    [Fact]
+    public static void TimeDurationHashCodeMatchesEqualValue()
+    {
+        var left = new TimeDuration(1_500_000);
+        var right = new TimeDuration(1_500_000);
+
+        Assert.Equal(left.GetHashCode(), right.GetHashCode());
     }
 
     [Fact]

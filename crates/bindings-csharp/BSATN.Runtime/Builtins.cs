@@ -452,7 +452,9 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
 /// This type has less precision than TimeSpan (units of microseconds rather than units of 100ns).
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
-public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
+public record struct TimeDuration(long Microseconds)
+    : IStructuralReadWrite,
+        IComparable<TimeDuration>
 {
     public static readonly TimeDuration ZERO = new(0);
 
@@ -497,6 +499,31 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
+
+    public readonly int CompareTo(TimeDuration that)
+    {
+        return this.Microseconds.CompareTo(that.Microseconds);
+    }
+
+    public static bool operator <(TimeDuration l, TimeDuration r)
+    {
+        return l.CompareTo(r) == -1;
+    }
+
+    public static bool operator >(TimeDuration l, TimeDuration r)
+    {
+        return l.CompareTo(r) == 1;
+    }
+
+    public static bool operator <=(TimeDuration l, TimeDuration r)
+    {
+        return l.CompareTo(r) is -1 or 0;
+    }
+
+    public static bool operator >=(TimeDuration l, TimeDuration r)
+    {
+        return l.CompareTo(r) is 1 or 0;
+    }
 
     // Should be consistent with Rust implementation of Display.
     public override readonly string ToString()

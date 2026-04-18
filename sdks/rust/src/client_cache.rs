@@ -634,3 +634,55 @@ where
         self.rows.get(col)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{HashMap, UniqueIndexDyn, UniqueIndexImpl};
+    use spacetimedb_data_structures::map::HashCollectionExt;
+    use spacetimedb_lib::{TimeDuration, Timestamp};
+    use std::any::Any;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TimestampRow {
+        timestamp: Timestamp,
+        payload: i32,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TimeDurationRow {
+        duration: TimeDuration,
+        payload: i32,
+    }
+
+    #[test]
+    fn unique_index_impl_supports_timestamp_keys() {
+        let mut index = UniqueIndexImpl {
+            rows: HashMap::new(),
+            get_unique_col: |row: &TimestampRow| &row.timestamp,
+        };
+        let row = TimestampRow {
+            timestamp: Timestamp::from_micros_since_unix_epoch(1_706_000_000_000_000),
+            payload: 7,
+        };
+
+        index.add_row(row.clone());
+
+        assert_eq!(index.find_row(&row.timestamp as &dyn Any), Some(&row));
+    }
+
+    #[test]
+    fn unique_index_impl_supports_time_duration_keys() {
+        let mut index = UniqueIndexImpl {
+            rows: HashMap::new(),
+            get_unique_col: |row: &TimeDurationRow| &row.duration,
+        };
+        let row = TimeDurationRow {
+            duration: TimeDuration::from_micros(1_500_000),
+            payload: 9,
+        };
+
+        index.add_row(row.clone());
+
+        assert_eq!(index.find_row(&row.duration as &dyn Any), Some(&row));
+    }
+}

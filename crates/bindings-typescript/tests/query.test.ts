@@ -11,7 +11,7 @@ import {
 import { ModuleContext, tablesToSchema } from '../src/lib/schema';
 import { table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
-import { Timestamp } from '../src';
+import { TimeDuration, Timestamp } from '../src';
 
 const personTable = table(
   {
@@ -64,14 +64,25 @@ const renamedColumnsTable = table(
   }
 );
 
+const timeTable = table(
+  {
+    name: 'time_values',
+  },
+  {
+    createdAt: t.timestamp().name('created_at'),
+    elapsed: t.timeDuration(),
+  }
+);
+
 const schemaDef = tablesToSchema(new ModuleContext(), {
   person: personTable,
   orders: ordersTable,
   renamedColumns: renamedColumnsTable,
+  timeValues: timeTable,
 });
 
-describe('Timestamp thing', () => {
-  it('Compares them', () => {
+describe('special comparable values', () => {
+  it('compares timestamps', () => {
     const d1 = new Date('2024-01-01T00:00:00Z');
     const d2 = new Date('2024-01-02T00:00:00Z');
     const t1 = Timestamp.fromDate(d1);
@@ -79,6 +90,14 @@ describe('Timestamp thing', () => {
 
     expect(toComparableValue(t1) <= toComparableValue(t2)).toBe(true);
     expect(toComparableValue(t1) >= toComparableValue(t2)).toBe(false);
+  });
+
+  it('compares time durations', () => {
+    const d1 = new TimeDuration(1_000_000n);
+    const d2 = new TimeDuration(2_000_000n);
+
+    expect(toComparableValue(d1) <= toComparableValue(d2)).toBe(true);
+    expect(toComparableValue(d1) >= toComparableValue(d2)).toBe(false);
   });
 });
 
@@ -169,6 +188,30 @@ describe('TableScan.toSql', () => {
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."id" = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
+    );
+  });
+
+  it('renders timestamp literals using their host string form', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const timestamp = new Timestamp(1_706_745_600_000_000n);
+    const sql = toSql(
+      qb.timeValues.where(row => row.createdAt.eq(timestamp)).build()
+    );
+
+    expect(sql).toBe(
+      `SELECT * FROM "time_values" WHERE "time_values"."created_at" = '2024-02-01T00:00:00.000000Z'`
+    );
+  });
+
+  it('renders time duration literals using their display form', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const elapsed = new TimeDuration(1_500_000n);
+    const sql = toSql(
+      qb.timeValues.where(row => row.elapsed.eq(elapsed)).build()
+    );
+
+    expect(sql).toBe(
+      `SELECT * FROM "time_values" WHERE "time_values"."elapsed" = '+1.500000'`
     );
   });
 

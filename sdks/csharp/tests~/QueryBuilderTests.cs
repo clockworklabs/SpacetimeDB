@@ -222,6 +222,23 @@ public sealed class QueryBuilderTests
     }
 
     [Fact]
+    public void IxCol_TimeTypes_FormatCorrectly()
+    {
+        Timestamp timestamp = new DateTimeOffset(2024, 2, 1, 0, 0, 0, TimeSpan.Zero);
+        var duration = new TimeDuration(1_500_000);
+
+        Assert.Equal(
+            "(\"T\".\"CreatedAt\" = '2024-02-01T00:00:00.000000+00:00')",
+            new IxCol<Row, Timestamp>("T", "CreatedAt").Eq(timestamp).Sql
+        );
+
+        Assert.Equal(
+            "(\"T\".\"Elapsed\" > '+1.500000')",
+            new IxCol<Row, TimeDuration>("T", "Elapsed").Gt(duration).Sql
+        );
+    }
+
+    [Fact]
     public void LeftSemijoin_Build_FormatsCorrectly()
     {
         var left = MakeLeftTable("users");
