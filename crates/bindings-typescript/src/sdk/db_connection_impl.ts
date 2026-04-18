@@ -856,7 +856,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#subscriptionManager.subscriptions.get(querySetId);
         if (!subscription) {
           stdbLogger(
-            'error',
+            'warn',
             `Received SubscribeApplied for unknown querySetId ${querySetId}.`
           );
           return;
@@ -882,7 +882,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#subscriptionManager.subscriptions.get(querySetId);
         if (!subscription) {
           stdbLogger(
-            'error',
+            'warn',
             `Received UnsubscribeApplied for unknown querySetId ${querySetId}.`
           );
           return;
@@ -936,7 +936,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#subscriptionManager.subscriptions.delete(querySetId);
         } else {
           stdbLogger(
-            'error',
+            'warn',
             `Received SubscriptionError for unknown querySetId ${querySetId}:`,
             error
           );
@@ -1061,7 +1061,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const data = this.#inboundQueue[this.#inboundQueueOffset];
         this.#inboundQueueOffset += 1;
         if (data) {
-          this.#processMessage(data);
+          try {
+            this.#processMessage(data);
+          } catch (e) {
+            stdbLogger(
+              'error',
+              'Uncaught error while processing server message:',
+              e
+            );
+          }
         }
       }
     } finally {
