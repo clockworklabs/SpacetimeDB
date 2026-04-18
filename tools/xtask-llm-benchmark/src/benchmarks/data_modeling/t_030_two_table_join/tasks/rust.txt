@@ -1,0 +1,30 @@
+Write a SpacetimeDB backend module in Rust that defines a customer table, an order table with a foreign key to customer, and a denormalized result table. Include a reducer that joins the two tables and writes results.
+
+TABLES
+- customer
+  - Struct: Customer
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - name: String
+
+- order
+  - Struct: Order
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - customer_id: u64 (index btree)
+    - product: String
+    - amount: u32
+
+- order_detail
+  - Struct: OrderDetail
+  - Fields:
+    - order_id: u64 (primary key)
+    - customer_name: String
+    - product: String
+    - amount: u32
+
+REDUCERS
+- build_order_details(ctx)
+  - Iterate all orders
+  - For each order, look up the customer by customer_id
+  - If the customer is found, insert an OrderDetail row with the joined data

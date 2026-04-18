@@ -1,0 +1,12 @@
+Write a SpacetimeDB backend module in Rust that maintains a table of currently connected players using lifecycle reducers.
+
+TABLE
+- online_player (public)
+  - Struct: OnlinePlayer
+  - Fields:
+    - identity: Identity (primary key)
+    - connected_at: Timestamp
+
+REDUCERS
+- client_connected: lifecycle reducer that inserts an OnlinePlayer row using ctx.sender() as the identity and ctx.timestamp as connected_at
+- client_disconnected: lifecycle reducer that deletes the OnlinePlayer row for ctx.sender()

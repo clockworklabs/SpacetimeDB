@@ -14,11 +14,11 @@ TABLE
 - Profile (public)
   - Struct: Profile
   - Fields:
-    - Id: int (primary key)
+    - Id: ulong (primary key, auto-increment)
     - Home: Address
     - Work: Address
     - Pos: Position
 
 REDUCERS
-- Seed: insert exactly one row into Profile
-  - (Id=1, Home=Address{Street="1 Main", Zip=11111}, Work=Address{Street="2 Broad", Zip=22222}, Pos=Position{X=7, Y=9})
+- Seed: insert exactly one row into Profile (Id is auto-assigned)
+  - (Home=Address{Street="1 Main", Zip=11111}, Work=Address{Street="2 Broad", Zip=22222}, Pos=Position{X=7, Y=9})
