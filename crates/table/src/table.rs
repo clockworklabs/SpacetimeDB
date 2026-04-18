@@ -1413,36 +1413,57 @@ impl Table {
     /// # Safety
     ///
     /// Caller must promise that `index` was constructed with the same row type/layout as this table.
-    pub unsafe fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: TableIndex) {
+    pub unsafe fn insert_index(
+        &mut self,
+        blob_store: &dyn BlobStore,
+        index_id: IndexId,
+        mut index: TableIndex,
+    ) -> Result<(), String> {
         let rows = self.scan_rows(blob_store);
         // SAFETY: Caller promised that table's row type/layout
         // matches that which `index` was constructed with.
         // It follows that this applies to any `rows`, as required.
         let violation = unsafe { index.build_from_rows(rows) };
-        violation.unwrap_or_else(|ptr| {
-            let index_schema = &self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id).expect("Index should exist");
-            let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
-                Some(columns)
-            } else { None };
-            let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
-            let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+        violation.map_err(|ptr| {
             // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
             let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
-            panic!(
-                "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.
 
-Found violation at pointer {ptr:?} to row {:?}.",
-                index_schema.index_name,
-                index_schema.index_id,
-                self.schema.table_name,
-                self.schema.table_id,
-                indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
-                indexed_column,
-                row,
-            );
-        });
+            if let Some(index_schema) = self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id) {
+                let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
+                    Some(columns)
+                } else {
+                    None
+                };
+                let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
+                let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+
+                format!(
+                    "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.\
+                    Found violation at pointer {ptr:?} to row {:?}.",
+                    index_schema.index_name,
+                    index_schema.index_id,
+                    self.schema.table_name,
+                    self.schema.table_id,
+                    indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
+                    indexed_column,
+                    row,
+                )
+            } else {
+                format!(
+                    "Adding index to table `{}` {:?} on columns `{:?}` with key type {:?} should cause no unique constraint violations.\
+                    Found violation at pointer {ptr:?} to row {:?}.",
+                    self.schema.table_name,
+                    self.schema.table_id,
+                    index.indexed_columns,
+                    index.key_type,
+                    row,
+                )
+            }
+        })?;
+
         // SAFETY: Forward caller requirement.
         unsafe { self.add_index(index_id, index) };
+        Ok(())
     }
 
     /// Adds an index to the table without populating.
@@ -2453,7 +2474,7 @@ pub(crate) mod test {
 
         let index = table.new_index(&algo, true).unwrap();
         // SAFETY: Index was derived from `table`.
-        unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) };
+        unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) }.unwrap();
 
         // Reserve a page so that we can check the hash.
         let pi = table.inner.pages.reserve_empty_page(&pool, table.row_size()).unwrap();
@@ -2553,6 +2574,8 @@ pub(crate) mod test {
         ty: ProductType,
         vals: Vec<ProductValue>,
         indexed_columns: ColList,
+        index_kind: IndexKind,
+        is_unique: bool,
     ) -> Result<(), TestCaseError> {
         let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
@@ -2565,13 +2588,13 @@ pub(crate) mod test {
         // We haven't added any indexes yet, so there should be 0 rows in indexes.
         prop_assert_eq!(table.num_rows_in_indexes(), 0);
 
-        let index_id = IndexId(0);
+        let index_id = IndexId::SENTINEL;
 
-        let index = TableIndex::new(&ty, indexed_columns.clone(), IndexKind::BTree, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns.clone(), index_kind, is_unique).unwrap();
         // Add an index on column 0.
         // Safety:
         // We're using `ty` as the row type for both `table` and the new index.
-        unsafe { table.insert_index(&blob_store, index_id, index) };
+        prop_assume!(unsafe { table.insert_index(&blob_store, index_id, index) }.is_ok());
 
         // We have one index, which should be fully populated,
         // so in total we should have the same number of rows in indexes as we have rows.
@@ -2595,14 +2618,15 @@ pub(crate) mod test {
         let key_size_in_pvs = vals
             .iter()
             .map(|row| crate::table_index::KeySize::key_size_in_bytes(&row.project(&indexed_columns).unwrap()) as u64)
-            .sum();
+            .sum::<u64>();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 
         let index = TableIndex::new(&ty, indexed_columns, IndexKind::BTree, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
         // As above, we're using `ty` as the row type for both `table` and the new index.
-        unsafe { table.insert_index(&blob_store, IndexId(1), index) };
+        unsafe { table.insert_index(&blob_store, IndexId(1), index) }
+            .expect("already inserted this index, should not error");
 
         prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows() * 2);
         prop_assert_eq!(table.bytes_used_by_index_keys(), key_size_in_pvs * 2);
@@ -2722,13 +2746,21 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048)) {
-            test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
+        fn index_size_reporting_matches_slow_implementations_single_column(
+            (ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048),
+            index_kind: IndexKind,
+            is_unique: bool
+        ) {
+            test_index_size_reporting(ty, vals, [0].into(), index_kind, is_unique)?;
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048)) {
-            test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
+        fn index_size_reporting_matches_slow_implementations_two_column(
+            (ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048),
+            index_kind: IndexKind,
+            is_unique: bool
+        ) {
+            test_index_size_reporting(ty, vals, [0, 1].into(), index_kind, is_unique)?
         }
     }
 
