@@ -8,6 +8,7 @@ description = "Assorted utilities for filesystem operations used in SpacetimeDB"
 
 [dependencies]
 anyhow.workspace = true
+chrono = { workspace = true, features = ["alloc", "std"] }
 fs2.workspace = true
 hex.workspace = true
 rand.workspace = true
