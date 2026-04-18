@@ -6,6 +6,7 @@ members = [
   "crates/bindings-sys",
   "crates/bindings",
   "crates/bindings-macro",
+  "crates/bindings-cpp-ffi",
   "crates/cli",
   "crates/client-api",
   "crates/client-api-messages",
