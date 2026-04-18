@@ -58,6 +58,9 @@ public static class SqlLit
 
     public static SqlLiteral<Uuid> Uuid(Uuid value) =>
         new(SqlFormat.FormatHexLiteral(value.ToString()));
+
+    public static SqlLiteral<Timestamp> Timestamp(Timestamp value) =>
+        new(SqlFormat.FormatTimestampLiteral(value));
 }
 
 public interface IQuery<TRow>
@@ -744,6 +747,42 @@ public static class QueryBuilderExtensions
     public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, Uuid> col, Uuid value) =>
         col.Neq(SqlLit.Uuid(value));
 
+    public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, Timestamp> col, Timestamp value) =>
+        col.Eq(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, Timestamp> col, Timestamp value) =>
+        col.Neq(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, Timestamp> col, Timestamp value) =>
+        col.Lt(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, Timestamp> col, Timestamp value) =>
+        col.Lte(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, Timestamp> col, Timestamp value) =>
+        col.Gt(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, Timestamp> col, Timestamp value) =>
+        col.Gte(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Eq(new Timestamp(microsSinceUnixEpoch));
+
+    public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Neq(new Timestamp(microsSinceUnixEpoch));
+
+    public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Lt(new Timestamp(microsSinceUnixEpoch));
+
+    public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Lte(new Timestamp(microsSinceUnixEpoch));
+
+    public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Gt(new Timestamp(microsSinceUnixEpoch));
+
+    public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Gte(new Timestamp(microsSinceUnixEpoch));
+
     public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, string> col, ReadOnlySpan<char> value) =>
         col.Eq(SqlLit.String(value));
 
@@ -831,6 +870,18 @@ public static class QueryBuilderExtensions
 
     public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Uuid> col, Uuid value) =>
         col.Neq(SqlLit.Uuid(value));
+
+    public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, Timestamp> col, Timestamp value) =>
+        col.Eq(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Timestamp> col, Timestamp value) =>
+        col.Neq(SqlLit.Timestamp(value));
+
+    public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Eq(new Timestamp(microsSinceUnixEpoch));
+
+    public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
+        col.Neq(new Timestamp(microsSinceUnixEpoch));
 }
 
 internal static class SqlFormat
@@ -873,4 +924,7 @@ internal static class SqlFormat
 
         return $"0x{s}";
     }
+
+    public static string FormatTimestampLiteral(Timestamp timestamp) =>
+        FormatStringLiteral(timestamp.ToString());
 }

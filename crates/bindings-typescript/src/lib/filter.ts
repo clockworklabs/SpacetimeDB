@@ -1,7 +1,8 @@
 import type { RowType, UntypedTableDef } from './table';
+import { Timestamp } from './timestamp';
 import { Uuid } from './uuid';
 
-export type Value = string | number | boolean | Uuid;
+export type Value = string | number | boolean | Uuid | Timestamp;
 
 export type Expr<Column extends string> =
   | { type: 'eq'; key: Column; value: Value }
@@ -77,6 +78,24 @@ export function evaluate<Column extends string>(
         if (v instanceof Uuid && typeof expr.value === 'string') {
           return v.toString() === expr.value;
         }
+
+        if (v instanceof Timestamp) {
+          // Value of the Column and passed Value are both Timestamps so compare microseconds.
+          if (expr.value instanceof Timestamp) {
+            return v.microsSinceUnixEpoch === expr.value.microsSinceUnixEpoch;
+          }
+          // Value of the Column is a Timestamp but passed Value is a String so compare via ISO string.
+          if (typeof expr.value === 'string') {
+            return v.toISOString() === expr.value;
+          }
+          // Value of the Column is a Timestamp and passed Value is a Number microsecond count.
+          if (typeof expr.value === 'number') {
+            return (
+              Number.isInteger(expr.value) &&
+              BigInt(expr.value) === v.microsSinceUnixEpoch
+            );
+          }
+        }
       }
       return false;
     }
@@ -102,6 +121,9 @@ function formatValue(v: Value): string {
     case 'object': {
       if (v instanceof Uuid) {
         return `'${v.toString()}'`;
+      }
+      if (v instanceof Timestamp) {
+        return `'${v.toISOString()}'`;
       }
 
       return '';

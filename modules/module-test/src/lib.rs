@@ -398,6 +398,8 @@ pub fn query_private(ctx: &ReducerContext) {
 /// and therefore that all of the different accesses listed here are well-typed.
 // TODO(testing): Add tests (in smoketests?) for index arg combos which are expected not to compile.
 fn test_btree_index_args(ctx: &ReducerContext) {
+    fn assert_filterable<T: spacetimedb::FilterableValue>() {}
+
     // Single-column string index on `test_e.name`:
     // Tests that we can pass `&String` or `&str`, but not `str`.
     let string = "String".to_string();
@@ -466,6 +468,9 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     let _ = ctx.db.points().multi_column_index().filter((&0i64, &1i64..&3i64));
 
     // ctx.db.points().multi_column_index().filter((0i64..3i64, 1i64)); // SHOULD FAIL
+    // Timestamp filterability coverage.
+    assert_filterable::<Timestamp>();
+    assert_filterable::<&Timestamp>();
 }
 
 #[spacetimedb::reducer]
