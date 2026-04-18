@@ -9788,6 +9788,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
+name = "tpcc-module"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "spacetimedb 2.1.0",
+]
+
+[[package]]
+name = "tpcc-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap 4.5.50",
+ "env_logger 0.10.2",
+ "log",
+ "parking_lot 0.12.5",
+ "rand 0.9.2",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+ "spacetimedb-sdk",
+ "tokio",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
