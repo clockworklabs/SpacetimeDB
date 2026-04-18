@@ -1,0 +1,23 @@
+{
+  "level": 8,
+  "backend": "postgres",
+  "timestamp": "20260407-121331",
+  "startedAt": "2026-04-07T12:13:31-0400",
+  "startedAtUtc": "2026-04-07T16:13:31Z",
+  "runId": "postgres-upgrade-to-level8-20260407-121331",
+  "appDir": "sequential-upgrade\\sequential-upgrade-20260406\\postgres\\results\\chat-app-20260406-153732",
+  "promptFile": "exhaust-prompt-0-08_threading.md",
+  "phase": "upgrade",
+  "variant": "sequential-upgrade",
+  "rules": "guided",
+  "testMode": "none",
+  "runIndex": 0,
+  "vitePort": 6173,
+  "expressPort": 6001,
+  "pgDatabase": "spacetime",
+  "sessionId": "19da991a-1c75-4be0-81d0-c6bb4676a9ee",
+  "endedAt": "2026-04-07T12:22:40-0400",
+  "endedAtUtc": "2026-04-07T16:22:40Z",
+  "exitCode": 0,
+  "mode": "upgrade"
+}

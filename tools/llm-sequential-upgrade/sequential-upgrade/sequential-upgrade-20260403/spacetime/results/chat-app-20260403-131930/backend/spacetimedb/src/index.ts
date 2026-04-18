@@ -1,0 +1,482 @@
+import spacetimedb from './schema';
+import { t, SenderError } from 'spacetimedb/server';
+import { ScheduleAt } from 'spacetimedb';
+export { default, sendScheduledMessage, deleteExpiredMessage } from './schema';
+
+// Lifecycle hooks
+export const onConnect = spacetimedb.clientConnected((ctx) => {
+  const existing = ctx.db.user.identity.find(ctx.sender);
+  if (existing) {
+    // Restore online=true, but only if not invisible
+    const online = existing.status !== 'invisible';
+    ctx.db.user.identity.update({ ...existing, online });
+  } else {
+    // Auto-create a guest user with a temporary name
+    const shortHex = ctx.sender.toHexString().slice(0, 5).toUpperCase();
+    ctx.db.user.insert({
+      identity: ctx.sender,
+      name: `Guest-${shortHex}`,
+      online: true,
+      status: 'online',
+      lastActiveAt: ctx.timestamp,
+      isGuest: true,
+    });
+  }
+});
+
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
+  const existing = ctx.db.user.identity.find(ctx.sender);
+  if (existing) {
+    ctx.db.user.identity.update({ ...existing, online: false, lastActiveAt: ctx.timestamp });
+  }
+  // Clear typing indicators for this user
+  const indicators = [...ctx.db.typingIndicator.userIdentity.filter(ctx.sender)];
+  for (const indicator of indicators) {
+    ctx.db.typingIndicator.id.delete(indicator.id);
+  }
+});
+
+// Register / set name (also promotes guest users to registered)
+export const register = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) throw new SenderError('Name cannot be empty');
+    if (trimmed.length > 32) throw new SenderError('Name too long (max 32 characters)');
+    // Prevent registering with a name already taken by another registered user
+    const taken = [...ctx.db.user.iter()].find(
+      u => u.name === trimmed && u.identity.toHexString() !== ctx.sender.toHexString() && !u.isGuest
+    );
+    if (taken) throw new SenderError('That username is already taken');
+    const existing = ctx.db.user.identity.find(ctx.sender);
+    if (existing) {
+      ctx.db.user.identity.update({ ...existing, name: trimmed, online: true, status: existing.status || 'online', isGuest: false });
+    } else {
+      ctx.db.user.insert({ identity: ctx.sender, name: trimmed, online: true, status: 'online', lastActiveAt: ctx.timestamp, isGuest: false });
+    }
+  }
+);
+
+// Create a room
+export const createRoom = spacetimedb.reducer(
+  { name: t.string(), isPrivate: t.bool() },
+  (ctx, { name, isPrivate }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const trimmed = name.trim();
+    if (trimmed.length === 0) throw new SenderError('Room name cannot be empty');
+    if (trimmed.length > 64) throw new SenderError('Room name too long');
+    const newRoom = ctx.db.room.insert({ id: 0n, name: trimmed, createdBy: ctx.sender, createdAt: ctx.timestamp, isPrivate: isPrivate ?? false, isDm: false });
+    // Creator automatically joins as admin
+    ctx.db.roomMember.insert({ id: 0n, roomId: newRoom.id, userIdentity: ctx.sender, isAdmin: true });
+  }
+);
+
+// Join a room
+export const joinRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const room = ctx.db.room.id.find(roomId);
+    if (!room) throw new SenderError('Room not found');
+    // Private/DM rooms require an invitation
+    if (room.isPrivate || room.isDm) throw new SenderError('This room is private. You need an invitation to join.');
+    // Check if banned
+    const banned = [...ctx.db.roomBan.roomId.filter(roomId)].find(
+      b => b.userIdentity.toHexString() === ctx.sender.toHexString()
+    );
+    if (banned) throw new SenderError('You have been banned from this room');
+    // Check if already a member
+    const existing = [...ctx.db.roomMember.roomId.filter(roomId)].find(
+      m => m.userIdentity.toHexString() === ctx.sender.toHexString()
+    );
+    if (!existing) {
+      ctx.db.roomMember.insert({ id: 0n, roomId, userIdentity: ctx.sender, isAdmin: false });
+    }
+  }
+);
+
+// Leave a room
+export const leaveRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const members = [...ctx.db.roomMember.roomId.filter(roomId)];
+    const member = members.find(m => m.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (member) {
+      ctx.db.roomMember.id.delete(member.id);
+    }
+    // Clear typing indicator
+    const indicators = [...ctx.db.typingIndicator.roomId.filter(roomId)];
+    const myIndicator = indicators.find(i => i.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (myIndicator) {
+      ctx.db.typingIndicator.id.delete(myIndicator.id);
+    }
+  }
+);
+
+// Send a message
+export const sendMessage = spacetimedb.reducer(
+  { roomId: t.u64(), text: t.string() },
+  (ctx, { roomId, text }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const room = ctx.db.room.id.find(roomId);
+    if (!room) throw new SenderError('Room not found');
+    // Check membership
+    const members = [...ctx.db.roomMember.roomId.filter(roomId)];
+    const isMember = members.some(m => m.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (!isMember) throw new SenderError('Not a member of this room');
+    const trimmed = text.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 2000) throw new SenderError('Message too long');
+    ctx.db.message.insert({ id: 0n, roomId, sender: ctx.sender, text: trimmed, sentAt: ctx.timestamp, expiresAtMicros: 0n });
+    // Clear typing indicator
+    const indicators = [...ctx.db.typingIndicator.roomId.filter(roomId)];
+    const myIndicator = indicators.find(i => i.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (myIndicator) {
+      ctx.db.typingIndicator.id.delete(myIndicator.id);
+    }
+  }
+);
+
+// Update typing indicator
+export const setTyping = spacetimedb.reducer(
+  { roomId: t.u64(), isTyping: t.bool() },
+  (ctx, { roomId, isTyping }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const indicators = [...ctx.db.typingIndicator.roomId.filter(roomId)];
+    const existing = indicators.find(i => i.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (isTyping) {
+      if (existing) {
+        ctx.db.typingIndicator.id.update({ ...existing, updatedAt: ctx.timestamp });
+      } else {
+        ctx.db.typingIndicator.insert({ id: 0n, roomId, userIdentity: ctx.sender, updatedAt: ctx.timestamp });
+      }
+    } else {
+      if (existing) {
+        ctx.db.typingIndicator.id.delete(existing.id);
+      }
+    }
+  }
+);
+
+// Schedule a message to be sent at a future time
+export const scheduleMessage = spacetimedb.reducer(
+  { roomId: t.u64(), text: t.string(), sendAtMicros: t.u64() },
+  (ctx, { roomId, text, sendAtMicros }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const room = ctx.db.room.id.find(roomId);
+    if (!room) throw new SenderError('Room not found');
+    const members = [...ctx.db.roomMember.roomId.filter(roomId)];
+    const isMember = members.some(m => m.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (!isMember) throw new SenderError('Not a member of this room');
+    const trimmed = text.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 2000) throw new SenderError('Message too long');
+    ctx.db.scheduledMessage.insert({
+      scheduledId: 0n,
+      scheduledAt: ScheduleAt.time(sendAtMicros),
+      roomId,
+      sender: ctx.sender,
+      text: trimmed,
+    });
+  }
+);
+
+// Cancel a scheduled message
+export const cancelScheduledMessage = spacetimedb.reducer(
+  { scheduledId: t.u64() },
+  (ctx, { scheduledId }) => {
+    const scheduled = ctx.db.scheduledMessage.scheduledId.find(scheduledId);
+    if (!scheduled) throw new SenderError('Scheduled message not found');
+    if (scheduled.sender.toHexString() !== ctx.sender.toHexString()) throw new SenderError('Not authorized');
+    ctx.db.scheduledMessage.scheduledId.delete(scheduledId);
+  }
+);
+
+// Send an ephemeral message that auto-deletes after a set duration
+export const sendEphemeralMessage = spacetimedb.reducer(
+  { roomId: t.u64(), text: t.string(), durationSeconds: t.u32() },
+  (ctx, { roomId, text, durationSeconds }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const room = ctx.db.room.id.find(roomId);
+    if (!room) throw new SenderError('Room not found');
+    const members = [...ctx.db.roomMember.roomId.filter(roomId)];
+    const isMember = members.some(m => m.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (!isMember) throw new SenderError('Not a member of this room');
+    const trimmed = text.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 2000) throw new SenderError('Message too long');
+    if (durationSeconds < 10 || durationSeconds > 3600) throw new SenderError('Duration must be 10s–3600s');
+
+    const durationMicros = BigInt(durationSeconds) * 1_000_000n;
+    const expiresAtMicros = ctx.timestamp.microsSinceUnixEpoch + durationMicros;
+
+    const msg = ctx.db.message.insert({ id: 0n, roomId, sender: ctx.sender, text: trimmed, sentAt: ctx.timestamp, expiresAtMicros });
+    ctx.db.messageExpiryTimer.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(expiresAtMicros), messageId: msg.id });
+
+    // Clear typing indicator
+    const indicators = [...ctx.db.typingIndicator.roomId.filter(roomId)];
+    const myIndicator = indicators.find(i => i.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (myIndicator) {
+      ctx.db.typingIndicator.id.delete(myIndicator.id);
+    }
+  }
+);
+
+// Toggle a reaction on a message (add if not present, remove if already reacted with same emoji)
+export const toggleReaction = spacetimedb.reducer(
+  { messageId: t.u64(), roomId: t.u64(), emoji: t.string() },
+  (ctx, { messageId, roomId, emoji }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const msg = ctx.db.message.id.find(messageId);
+    if (!msg) throw new SenderError('Message not found');
+    const members = [...ctx.db.roomMember.roomId.filter(roomId)];
+    const isMember = members.some(m => m.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (!isMember) throw new SenderError('Not a member of this room');
+    if (emoji.length === 0 || emoji.length > 8) throw new SenderError('Invalid emoji');
+    // Check if already reacted
+    const existing = [...ctx.db.messageReaction.messageId.filter(messageId)].find(
+      r => r.userIdentity.toHexString() === ctx.sender.toHexString() && r.emoji === emoji
+    );
+    if (existing) {
+      ctx.db.messageReaction.id.delete(existing.id);
+    } else {
+      ctx.db.messageReaction.insert({ id: 0n, messageId, roomId, userIdentity: ctx.sender, emoji });
+    }
+  }
+);
+
+// Edit a message (owner only) and store history
+export const editMessage = spacetimedb.reducer(
+  { messageId: t.u64(), newText: t.string() },
+  (ctx, { messageId, newText }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const msg = ctx.db.message.id.find(messageId);
+    if (!msg) throw new SenderError('Message not found');
+    if (msg.sender.toHexString() !== ctx.sender.toHexString()) throw new SenderError('Can only edit own messages');
+    const trimmed = newText.trim();
+    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
+    if (trimmed.length > 2000) throw new SenderError('Message too long');
+    ctx.db.messageEdit.insert({ id: 0n, messageId, editedBy: ctx.sender, oldText: msg.text, newText: trimmed, editedAt: ctx.timestamp });
+    ctx.db.message.id.update({ ...msg, text: trimmed });
+  }
+);
+
+// Kick (ban) a user from a room — admin only
+export const kickUser = spacetimedb.reducer(
+  { roomId: t.u64(), targetIdentityHex: t.string() },
+  (ctx, { roomId, targetIdentityHex }) => {
+    const adminMember = [...ctx.db.roomMember.roomId.filter(roomId)].find(
+      m => m.userIdentity.toHexString() === ctx.sender.toHexString()
+    );
+    if (!adminMember || !adminMember.isAdmin) throw new SenderError('Not an admin of this room');
+    // Cannot kick self
+    if (targetIdentityHex === ctx.sender.toHexString()) throw new SenderError('Cannot kick yourself');
+    // Remove target from room members
+    const targetMember = [...ctx.db.roomMember.roomId.filter(roomId)].find(
+      m => m.userIdentity.toHexString() === targetIdentityHex
+    );
+    if (!targetMember) throw new SenderError('User is not a member of this room');
+    ctx.db.roomMember.id.delete(targetMember.id);
+    // Add to ban list
+    const alreadyBanned = [...ctx.db.roomBan.roomId.filter(roomId)].find(
+      b => b.userIdentity.toHexString() === targetIdentityHex
+    );
+    if (!alreadyBanned) {
+      ctx.db.roomBan.insert({ id: 0n, roomId, userIdentity: targetMember.userIdentity });
+    }
+    // Remove their typing indicator
+    const indicators = [...ctx.db.typingIndicator.roomId.filter(roomId)];
+    const targetIndicator = indicators.find(i => i.userIdentity.toHexString() === targetIdentityHex);
+    if (targetIndicator) {
+      ctx.db.typingIndicator.id.delete(targetIndicator.id);
+    }
+  }
+);
+
+// Promote a user to admin in a room — admin only
+export const promoteUser = spacetimedb.reducer(
+  { roomId: t.u64(), targetIdentityHex: t.string() },
+  (ctx, { roomId, targetIdentityHex }) => {
+    const adminMember = [...ctx.db.roomMember.roomId.filter(roomId)].find(
+      m => m.userIdentity.toHexString() === ctx.sender.toHexString()
+    );
+    if (!adminMember || !adminMember.isAdmin) throw new SenderError('Not an admin of this room');
+    const targetMember = [...ctx.db.roomMember.roomId.filter(roomId)].find(
+      m => m.userIdentity.toHexString() === targetIdentityHex
+    );
+    if (!targetMember) throw new SenderError('User is not a member of this room');
+    if (targetMember.isAdmin) throw new SenderError('User is already an admin');
+    ctx.db.roomMember.id.update({ ...targetMember, isAdmin: true });
+  }
+);
+
+// Set user status (online, away, dnd, invisible)
+export const setStatus = spacetimedb.reducer(
+  { status: t.string() },
+  (ctx, { status }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const allowed = ['online', 'away', 'dnd', 'invisible'];
+    if (!allowed.includes(status)) throw new SenderError('Invalid status');
+    // Invisible users appear offline (online=false)
+    const online = status !== 'invisible';
+    ctx.db.user.identity.update({ ...user, status, online, lastActiveAt: ctx.timestamp });
+  }
+);
+
+// Reply to a message, creating a thread
+export const replyToMessage = spacetimedb.reducer(
+  { parentMessageId: t.u64(), roomId: t.u64(), text: t.string() },
+  (ctx, { parentMessageId, roomId, text }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const msg = ctx.db.message.id.find(parentMessageId);
+    if (!msg) throw new SenderError('Message not found');
+    if (msg.roomId !== roomId) throw new SenderError('Message not in this room');
+    const members = [...ctx.db.roomMember.roomId.filter(roomId)];
+    const isMember = members.some(m => m.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (!isMember) throw new SenderError('Not a member of this room');
+    const trimmed = text.trim();
+    if (trimmed.length === 0) throw new SenderError('Reply cannot be empty');
+    if (trimmed.length > 2000) throw new SenderError('Reply too long');
+    ctx.db.threadReply.insert({ id: 0n, parentMessageId, roomId, sender: ctx.sender, text: trimmed, sentAt: ctx.timestamp });
+  }
+);
+
+// Invite a user to a private room (admin only)
+export const inviteUser = spacetimedb.reducer(
+  { roomId: t.u64(), targetName: t.string() },
+  (ctx, { roomId, targetName }) => {
+    const adminMember = [...ctx.db.roomMember.roomId.filter(roomId)].find(
+      m => m.userIdentity.toHexString() === ctx.sender.toHexString()
+    );
+    if (!adminMember || !adminMember.isAdmin) throw new SenderError('Not an admin of this room');
+    const room = ctx.db.room.id.find(roomId);
+    if (!room || !room.isPrivate) throw new SenderError('Room is not private');
+    // Find target user by name
+    const target = [...ctx.db.user.iter()].find(u => u.name === targetName.trim());
+    if (!target) throw new SenderError('User not found');
+    if (target.identity.toHexString() === ctx.sender.toHexString()) throw new SenderError('Cannot invite yourself');
+    // Check if already a member
+    const alreadyMember = [...ctx.db.roomMember.roomId.filter(roomId)].find(
+      m => m.userIdentity.toHexString() === target.identity.toHexString()
+    );
+    if (alreadyMember) throw new SenderError('User is already a member');
+    // Check if already invited
+    const alreadyInvited = [...ctx.db.roomInvitation.roomId.filter(roomId)].find(
+      i => i.invitedUser.toHexString() === target.identity.toHexString()
+    );
+    if (alreadyInvited) throw new SenderError('User is already invited');
+    ctx.db.roomInvitation.insert({ id: 0n, roomId, invitedBy: ctx.sender, invitedUser: target.identity, createdAt: ctx.timestamp });
+  }
+);
+
+// Accept an invitation to a private room
+export const acceptInvitation = spacetimedb.reducer(
+  { invitationId: t.u64() },
+  (ctx, { invitationId }) => {
+    const invitation = ctx.db.roomInvitation.id.find(invitationId);
+    if (!invitation) throw new SenderError('Invitation not found');
+    if (invitation.invitedUser.toHexString() !== ctx.sender.toHexString()) throw new SenderError('Not your invitation');
+    // Check if banned
+    const banned = [...ctx.db.roomBan.roomId.filter(invitation.roomId)].find(
+      b => b.userIdentity.toHexString() === ctx.sender.toHexString()
+    );
+    if (banned) throw new SenderError('You have been banned from this room');
+    // Add as member
+    const alreadyMember = [...ctx.db.roomMember.roomId.filter(invitation.roomId)].find(
+      m => m.userIdentity.toHexString() === ctx.sender.toHexString()
+    );
+    if (!alreadyMember) {
+      ctx.db.roomMember.insert({ id: 0n, roomId: invitation.roomId, userIdentity: ctx.sender, isAdmin: false });
+    }
+    // Remove invitation
+    ctx.db.roomInvitation.id.delete(invitationId);
+  }
+);
+
+// Decline an invitation to a private room
+export const declineInvitation = spacetimedb.reducer(
+  { invitationId: t.u64() },
+  (ctx, { invitationId }) => {
+    const invitation = ctx.db.roomInvitation.id.find(invitationId);
+    if (!invitation) throw new SenderError('Invitation not found');
+    if (invitation.invitedUser.toHexString() !== ctx.sender.toHexString()) throw new SenderError('Not your invitation');
+    ctx.db.roomInvitation.id.delete(invitationId);
+  }
+);
+
+// Create a DM room between the sender and another user
+export const createDm = spacetimedb.reducer(
+  { targetName: t.string() },
+  (ctx, { targetName }) => {
+    const me = ctx.db.user.identity.find(ctx.sender);
+    if (!me) throw new SenderError('Not registered');
+    const target = [...ctx.db.user.iter()].find(u => u.name === targetName.trim());
+    if (!target) throw new SenderError('User not found');
+    if (target.identity.toHexString() === ctx.sender.toHexString()) throw new SenderError('Cannot DM yourself');
+    // Build deterministic room name from sorted hex strings
+    const hexes = [ctx.sender.toHexString(), target.identity.toHexString()].sort();
+    const dmName = `dm-${hexes[0].slice(0, 8)}-${hexes[1].slice(0, 8)}`;
+    // Check if DM room already exists
+    const existing = ctx.db.room.name.find(dmName);
+    if (existing) {
+      // Ensure both are members (they may have been removed somehow)
+      const members = [...ctx.db.roomMember.roomId.filter(existing.id)];
+      if (!members.find(m => m.userIdentity.toHexString() === ctx.sender.toHexString())) {
+        ctx.db.roomMember.insert({ id: 0n, roomId: existing.id, userIdentity: ctx.sender, isAdmin: false });
+      }
+      return;
+    }
+    const dmRoom = ctx.db.room.insert({ id: 0n, name: dmName, createdBy: ctx.sender, createdAt: ctx.timestamp, isPrivate: true, isDm: true });
+    ctx.db.roomMember.insert({ id: 0n, roomId: dmRoom.id, userIdentity: ctx.sender, isAdmin: true });
+    ctx.db.roomMember.insert({ id: 0n, roomId: dmRoom.id, userIdentity: target.identity, isAdmin: false });
+  }
+);
+
+// Save (or clear) a message draft for the current user in a room
+export const saveDraft = spacetimedb.reducer(
+  { roomId: t.u64(), text: t.string() },
+  (ctx, { roomId, text }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const drafts = [...ctx.db.messageDraft.userIdentity.filter(ctx.sender)];
+    const existing = drafts.find(d => d.roomId === roomId);
+    if (text.length === 0) {
+      if (existing) ctx.db.messageDraft.id.delete(existing.id);
+    } else {
+      if (text.length > 2000) return;
+      if (existing) {
+        ctx.db.messageDraft.id.update({ ...existing, text });
+      } else {
+        ctx.db.messageDraft.insert({ id: 0n, userIdentity: ctx.sender, roomId, text });
+      }
+    }
+  }
+);
+
+// Mark messages as read up to a given message ID
+export const markRead = spacetimedb.reducer(
+  { roomId: t.u64(), lastReadMessageId: t.u64() },
+  (ctx, { roomId, lastReadMessageId }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const receipts = [...ctx.db.readReceipt.roomId.filter(roomId)];
+    const existing = receipts.find(r => r.userIdentity.toHexString() === ctx.sender.toHexString());
+    if (existing) {
+      if (lastReadMessageId > existing.lastReadMessageId) {
+        ctx.db.readReceipt.id.update({ ...existing, lastReadMessageId });
+      }
+    } else {
+      ctx.db.readReceipt.insert({ id: 0n, roomId, userIdentity: ctx.sender, lastReadMessageId });
+    }
+  }
+);

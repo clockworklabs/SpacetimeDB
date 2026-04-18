@@ -1,0 +1,23 @@
+{
+  "level": 12,
+  "backend": "postgres",
+  "timestamp": "20260410-151905",
+  "startedAt": "2026-04-10T15:19:05-0400",
+  "startedAtUtc": "2026-04-10T19:19:05Z",
+  "runId": "postgres-fix-level12-20260410-151905",
+  "appDir": "sequential-upgrade\\sequential-upgrade-20260403\\postgres\\results\\chat-app-20260403-131935",
+  "promptFile": "seq-upgrade-prompt-0-12_anon_migration.md",
+  "phase": "fix",
+  "variant": "sequential-upgrade",
+  "rules": "guided",
+  "testMode": "none",
+  "runIndex": 0,
+  "vitePort": 6173,
+  "expressPort": 6001,
+  "pgDatabase": "spacetime",
+  "sessionId": "0613710c-3210-4f91-b03c-20cb251dfa87",
+  "endedAt": "2026-04-10T15:22:16-0400",
+  "endedAtUtc": "2026-04-10T19:22:16Z",
+  "exitCode": 0,
+  "mode": "fix"
+}
