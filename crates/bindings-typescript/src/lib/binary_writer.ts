@@ -93,6 +93,12 @@ export default class BinaryWriter {
     this.offset += 1;
   }
 
+  writeBytes(value: Uint8Array): void {
+    this.expandBuffer(value.length);
+    new Uint8Array(this.buffer.buffer, this.offset, value.length).set(value);
+    this.offset += value.length;
+  }
+
   writeI8(value: number): void {
     this.expandBuffer(1);
     this.view.setInt8(this.offset, value);
