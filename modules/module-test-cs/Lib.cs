@@ -272,7 +272,7 @@ static partial class Module
     public static void log_module_identity(ReducerContext ctx)
     {
         // Note: converting to lowercase to match the Rust formatting.
-        Log.Info($"Module identity: {ctx.Identity.ToString().ToLower()}");
+        Log.Info($"Module identity: {ctx.DatabaseIdentity.ToString().ToLower()}");
     }
 
     [Reducer]
@@ -464,7 +464,7 @@ static partial class Module
     public static void assert_caller_identity_is_module_identity(ReducerContext ctx)
     {
         var caller = ctx.Sender;
-        var owner = ctx.Identity;
+        var owner = ctx.DatabaseIdentity;
         if (!caller.Equals(owner))
         {
             throw new Exception($"Caller {caller} is not the owner {owner}");
