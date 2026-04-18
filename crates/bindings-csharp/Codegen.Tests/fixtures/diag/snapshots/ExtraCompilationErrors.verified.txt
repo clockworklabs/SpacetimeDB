@@ -23,7 +23,53 @@
     }
   },
   {/*
-SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
+    {
+        var _ = ctx.Db.ViewAuditEvent;
+                       ^^^^^^^^^^^^^^
+        return null;
+*/
+    Message: 'LocalReadOnly' does not contain a definition for 'ViewAuditEvent' and no accessible extension method 'ViewAuditEvent' accepting a first argument of type 'LocalReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        var _ = ctx.Db.ViewAuditEvent;
+                       ^^^^^^^^^^^^^^
+        return null;
+*/
+    Message: 'LocalReadOnly' does not contain a definition for 'ViewAuditEvent' and no accessible extension method 'ViewAuditEvent' accepting a first argument of type 'LocalReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+SpacetimeDB.Internal.Module.RegisterTable<global::ViewAuditEvent, SpacetimeDB.Internal.TableHandles.ViewAuditEvent>();
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
                                                                                   ^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
@@ -144,6 +190,52 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
         return null;
 */
     Message: 'PlayerReadOnly' does not contain a definition for 'Iter' and no accessible extension method 'Iter' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        return ctx.From.ViewAuditEvent();
+                        ^^^^^^^^^^^^^^
+    }
+*/
+    Message: 'QueryBuilder' does not contain a definition for 'ViewAuditEvent' and no accessible extension method 'ViewAuditEvent' accepting a first argument of type 'QueryBuilder' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        return ctx.From.ViewAuditEvent();
+                        ^^^^^^^^^^^^^^
+    }
+*/
+    Message: 'QueryBuilder' does not contain a definition for 'ViewAuditEvent' and no accessible extension method 'ViewAuditEvent' accepting a first argument of type 'QueryBuilder' could be found (are you missing a using directive or an assembly reference?),
     Severity: Error,
     Descriptor: {
       Id: CS1061,

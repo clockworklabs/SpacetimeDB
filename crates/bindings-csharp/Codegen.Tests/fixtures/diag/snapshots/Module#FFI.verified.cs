@@ -835,6 +835,7 @@ namespace SpacetimeDB
             new();
         public global::SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
             new();
+        public global::SpacetimeDB.Internal.TableHandles.ViewAuditEvent ViewAuditEvent => new();
     }
 
     public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
@@ -2030,6 +2031,177 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public PrimaryKeyFieldUniqueIndex PrimaryKeyField => new();
     }
+
+    public readonly struct ViewAuditEvent
+        : global::SpacetimeDB.Internal.ITableView<ViewAuditEvent, global::ViewAuditEvent>
+    {
+        public static global::ViewAuditEvent ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::ViewAuditEvent row
+        )
+        {
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(ViewAuditEvent),
+                ProductTypeRef: (uint)
+                    new global::ViewAuditEvent.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "ViewAuditEvent_Id_idx_btree",
+                        AccessorName: "Id",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        ViewAuditEvent,
+                        global::ViewAuditEvent
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences: [],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: true
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                ViewAuditEvent,
+                global::ViewAuditEvent
+            >.DoCount();
+
+        public IEnumerable<global::ViewAuditEvent> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                ViewAuditEvent,
+                global::ViewAuditEvent
+            >.DoIter();
+
+        public global::ViewAuditEvent Insert(global::ViewAuditEvent row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                ViewAuditEvent,
+                global::ViewAuditEvent
+            >.DoInsert(row);
+
+        public bool Delete(global::ViewAuditEvent row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                ViewAuditEvent,
+                global::ViewAuditEvent
+            >.DoDelete(row);
+
+        public sealed class IdUniqueIndex
+            : UniqueIndex<ViewAuditEvent, global::ViewAuditEvent, ulong, SpacetimeDB.BSATN.U64>
+        {
+            internal IdUniqueIndex()
+                : base("ViewAuditEvent_Id_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::ViewAuditEvent? Find(ulong key) => FindSingle(key);
+
+            public global::ViewAuditEvent Update(global::ViewAuditEvent row) => DoUpdate(row);
+        }
+
+        public IdUniqueIndex Id => new();
+    }
+}
+
+sealed class event_table_viewViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "event_table_view",
+            Index: 0,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.EventTableView((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                Player,
+                Player.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'event_table_view': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class event_table_view_query_builderViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "event_table_view_query_builder",
+            Index: 1,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<
+                ViewAuditEvent,
+                ViewAuditEvent.BSATN
+            >().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.EventTableViewQueryBuilder((SpacetimeDB.ViewContext)ctx);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RawSql(
+                returnValue.ToSql()
+            );
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'event_table_view_query_builder': " + e);
+            throw;
+        }
+    }
 }
 
 sealed class view_def_ienumerable_return_from_filterViewDispatcher
@@ -2040,7 +2212,7 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_ienumerable_return_from_filter",
-            Index: 0,
+            Index: 2,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2091,7 +2263,7 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_ienumerable_return_from_iter",
-            Index: 1,
+            Index: 3,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2135,7 +2307,7 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_no_context",
-            Index: 2,
+            Index: 4,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2177,7 +2349,7 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_no_public",
-            Index: 3,
+            Index: 5,
             IsPublic: false,
             IsAnonymous: false,
             Params: [],
@@ -2219,7 +2391,7 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_wrong_context",
-            Index: 4,
+            Index: 6,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2261,7 +2433,7 @@ sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_wrong_return",
-            Index: 5,
+            Index: 7,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2300,7 +2472,7 @@ sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_no_delete",
-            Index: 6,
+            Index: 8,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2345,7 +2517,7 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_no_insert",
-            Index: 7,
+            Index: 9,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -2383,6 +2555,98 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
     }
 }
 
+sealed class event_table_view_anonViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "event_table_view_anon",
+            Index: 0,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.EventTableViewAnon((SpacetimeDB.AnonymousViewContext)ctx);
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                Player,
+                Player.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'event_table_view_anon': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class event_table_view_anon_query_builderViewDispatcher
+    : global::SpacetimeDB.Internal.IAnonymousView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "event_table_view_anon_query_builder",
+            Index: 1,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<
+                ViewAuditEvent,
+                ViewAuditEvent.BSATN
+            >().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.EventTableViewAnonQueryBuilder(
+                (SpacetimeDB.AnonymousViewContext)ctx
+            );
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RawSql(
+                returnValue.ToSql()
+            );
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'event_table_view_anon_query_builder': " + e
+            );
+            throw;
+        }
+    }
+}
+
 sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
@@ -2390,7 +2654,7 @@ sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Inte
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_index_no_mutation",
-            Index: 0,
+            Index: 2,
             IsPublic: true,
             IsAnonymous: true,
             Params: [],
@@ -2435,7 +2699,7 @@ sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Inter
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_no_anon_identity",
-            Index: 1,
+            Index: 3,
             IsPublic: true,
             IsAnonymous: true,
             Params: [],
@@ -2480,7 +2744,7 @@ sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnon
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_no_iter",
-            Index: 2,
+            Index: 4,
             IsPublic: true,
             IsAnonymous: true,
             Params: [],
@@ -2526,7 +2790,7 @@ sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_def_returns_not_a_spacetime_type",
-            Index: 3,
+            Index: 5,
             IsPublic: true,
             IsAnonymous: true,
             Params: [],
@@ -3195,6 +3459,8 @@ static class ModuleRegistration
         // IMPORTANT: The order in which we register views matters.
         // It must correspond to the order in which we call `GenerateDispatcherClass`.
         // See the comment on `GenerateDispatcherClass` for more explanation.
+        SpacetimeDB.Internal.Module.RegisterView<event_table_viewViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<event_table_view_query_builderViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_ienumerable_return_from_filterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_ienumerable_return_from_iterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_def_no_contextViewDispatcher>();
@@ -3203,6 +3469,8 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterView<view_def_wrong_returnViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_no_deleteViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_no_insertViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<event_table_view_anonViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<event_table_view_anon_query_builderViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_index_no_mutationViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_anon_identityViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_iterViewDispatcher>();
@@ -3251,6 +3519,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterTable<
             global::TestUniqueNotEquatable,
             SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::ViewAuditEvent,
+            SpacetimeDB.Internal.TableHandles.ViewAuditEvent
         >();
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);

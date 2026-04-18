@@ -223,6 +223,15 @@ type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
   : CoerceArray<[]>;
 
 /**
+ * Extracts the event-table flag from TableOpts, defaulting to false.
+ */
+type OptsIsEvent<Opts extends TableOpts<any>> = Opts extends {
+  event: infer IsEvent extends boolean;
+}
+  ? IsEvent
+  : false;
+
+/**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
  *
  * - Row: row shape
@@ -330,7 +339,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>, OptsIsEvent<Opts>> {
   const {
     name,
     public: isPublic = false,
@@ -543,5 +552,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     idxs: userIndexes as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
     schedule,
+    isEvent: isEvent as OptsIsEvent<Opts>,
   };
 }
