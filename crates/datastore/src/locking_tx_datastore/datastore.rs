@@ -3881,4 +3881,39 @@ pub(crate) mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_create_constraint_fails_without_backing_index() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with ZERO indices.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(Vec::<IndexSchema>::new(), Vec::<ConstraintSchema>::new());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: try to add a unique constraint on col 0 — no backing index exists.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(
+            result.is_err(),
+            "create_constraint must fail when no backing index covers the constrained columns"
+        );
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(
+            err_msg.contains("requires at least one backing index"),
+            "error message should mention the missing backing index, got: {err_msg}",
+        );
+
+        // Verify no orphan st_constraint row was persisted: `constraint_id_from_name`
+        // must return `None` because pre-validation fired before `create_st_constraint`.
+        let orphan = tx.constraint_id_from_name("Foo_id_unique")?;
+        assert!(
+            orphan.is_none(),
+            "pre-validation must run before create_st_constraint; no st_constraint row may be written on failure",
+        );
+        Ok(())
+    }
 }

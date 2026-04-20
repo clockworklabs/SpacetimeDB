@@ -1833,128 +1833,144 @@ impl MutTxId {
     /// This inserts constraint metadata AND converts the in-memory indices
     /// from non-unique to unique. If the existing data contains duplicate
     /// values in the constrained columns, an error is returned.
+    ///
+    /// Pre-validation (before any system-table mutation):
+    /// - the constraint must be a unique one (the only kind supported today);
+    /// - the target table must already have at least one index on the constrained columns.
     pub fn create_constraint(&mut self, constraint: ConstraintSchema) -> Result<ConstraintId> {
         let table_id = constraint.table_id;
-        let unique_cols = constraint.data.unique_columns().cloned();
 
-        // Step 1: Insert metadata into system tables.
+        // (a) Only unique constraints are supported at the moment. Reject anything else
+        //     up front, before writing to `st_constraint`.
+        let Some(cols) = constraint.data.unique_columns().cloned() else {
+            return Err(anyhow::anyhow!(
+                "adding non-unique constraints is not supported (constraint on table {table_id})"
+            )
+            .into());
+        };
+        let col_list: ColList = cols.into();
+
+        // (b) A unique constraint must be backed by at least one index on the same columns.
+        //     Check on the committed table; the tx table's index set is kept in lockstep
+        //     with the committed one by the datastore, so agreement is an invariant.
+        {
+            let (_, (commit_table, _, _)) = self.get_or_create_insert_table_mut(table_id)?;
+            if commit_table.get_indexes_by_cols(&col_list).is_empty() {
+                return Err(anyhow::anyhow!(
+                    "unique constraint on table {table_id} column(s) {col_list:?} \
+                     requires at least one backing index on those columns"
+                )
+                .into());
+            }
+        }
+
+        // (c) Validation passed — insert metadata into system tables. On any failure
+        //     beyond this point, the tx rollback unwinds both the st_constraint row and
+        //     the pending schema change.
         let constraint_id = self.create_st_constraint(constraint)?;
 
-        // Step 2: If this is a unique constraint, make all matching indices unique.
-        let (made_unique_index_ids, pointer_map) = if let Some(cols) = unique_cols {
-            let col_list: ColList = cols.into();
+        // Re-borrow after the system-table write (self was reborrowed by create_st_constraint).
+        let ((tx_table, _, tx_delete_table), (commit_table, commit_blob_store, _)) =
+            self.get_or_create_insert_table_mut(table_id)?;
 
-            let ((tx_table, _, tx_delete_table), (commit_table, commit_blob_store, _)) =
-                self.get_or_create_insert_table_mut(table_id)?;
+        // Find all indices matching these columns. Pre-validation guarantees non-empty.
+        let index_ids: Vec<_> = commit_table
+            .get_indexes_by_cols(&col_list)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        debug_assert!(
+            !index_ids.is_empty(),
+            "pre-validation guaranteed at least one backing index",
+        );
 
-            // Find all indices matching these columns.
-            let index_ids: Vec<_> = commit_table
-                .get_indexes_by_cols(&col_list)
-                .into_iter()
-                .map(|(id, _)| id)
-                .collect();
+        // Check for duplicates in the first committed index (all share the same data).
+        let duplicates = commit_table
+            .indexes
+            .get(&index_ids[0])
+            .expect("index must exist")
+            .iter_duplicates();
 
-            if !index_ids.is_empty() {
-                // Check for duplicates in the first committed index (all share the same data).
-                let duplicates = commit_table
-                    .indexes
-                    .get(&index_ids[0])
-                    .expect("index must exist")
-                    .iter_duplicates();
+        if !duplicates.is_empty() {
+            let total_groups = duplicates.len();
+            let examples: String = duplicates
+                .iter()
+                .take(10)
+                .map(|(val, count)| format!("  - {val:?} appears {count} times"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(anyhow::anyhow!(
+                "Cannot add unique constraint on table {table_id} column(s) {col_list:?}:\n\
+                 {total_groups} duplicate group(s) found.\n{examples}{}",
+                if total_groups > 10 { "\n  ... and more" } else { "" }
+            )
+            .into());
+        }
 
-                if !duplicates.is_empty() {
-                    let total_groups = duplicates.len();
-                    let examples: String = duplicates
-                        .iter()
-                        .take(10)
-                        .map(|(val, count)| format!("  - {val:?} appears {count} times"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    return Err(anyhow::anyhow!(
-                        "Cannot add unique constraint on table {table_id} column(s) {col_list:?}:\n\
-                         {total_groups} duplicate group(s) found.\n{examples}{}",
-                        if total_groups > 10 { "\n  ... and more" } else { "" }
-                    )
-                    .into());
-                }
+        // Record whether this table had a unique index before.
+        let had_unique = commit_table.has_unique_index();
 
-                // Record whether this table had a unique index before.
-                let had_unique = commit_table.has_unique_index();
+        // Make all matching indices unique on both tables.
+        for &index_id in &index_ids {
+            commit_table
+                .indexes
+                .get_mut(&index_id)
+                .expect("index must exist")
+                .make_unique()
+                .expect("duplicates were already checked");
 
-                // Make all matching indices unique on both tables.
-                for &index_id in &index_ids {
-                    commit_table
-                        .indexes
-                        .get_mut(&index_id)
-                        .expect("index must exist")
-                        .make_unique()
-                        .expect("duplicates were already checked");
+            tx_table
+                .indexes
+                .get_mut(&index_id)
+                .expect("tx index must exist")
+                .make_unique()
+                .expect("tx table should have no duplicates");
+        }
 
-                    tx_table
-                        .indexes
-                        .get_mut(&index_id)
-                        .expect("tx index must exist")
-                        .make_unique()
-                        .expect("tx table should have no duplicates");
-                }
-
-                // Check that each pair of unique indices can be merged.
-                for &index_id in &index_ids {
-                    let can_merge_result = {
-                        let commit_idx = &commit_table.indexes[&index_id];
-                        let tx_idx = &tx_table.indexes[&index_id];
-                        let is_deleted = |ptr: &RowPointer| tx_delete_table.contains(*ptr);
-                        commit_idx.can_merge(tx_idx, is_deleted)
-                    };
-                    if let Err(violation) = can_merge_result {
-                        // Revert all indices before returning the error.
-                        for &id in &index_ids {
-                            if let Some(idx) = commit_table.indexes.get_mut(&id) {
-                                idx.make_non_unique();
-                            }
-                            if let Some(idx) = tx_table.indexes.get_mut(&id) {
-                                idx.make_non_unique();
-                            }
-                        }
-                        let cols = commit_table.indexes[&index_id].indexed_columns.clone();
-                        let violation = commit_table
-                            .get_row_ref(commit_blob_store, violation)
-                            .expect("row came from scanning the table")
-                            .project(&cols)
-                            .expect("cols should be valid for this table");
-                        return Err(anyhow::anyhow!(
-                            "Unique constraint violation during merge: {violation:?}"
-                        )
-                        .into());
+        // Check that each pair of unique indices can be merged.
+        for &index_id in &index_ids {
+            let can_merge_result = {
+                let commit_idx = &commit_table.indexes[&index_id];
+                let tx_idx = &tx_table.indexes[&index_id];
+                let is_deleted = |ptr: &RowPointer| tx_delete_table.contains(*ptr);
+                commit_idx.can_merge(tx_idx, is_deleted)
+            };
+            if let Err(violation) = can_merge_result {
+                // Revert all indices before returning the error.
+                for &id in &index_ids {
+                    if let Some(idx) = commit_table.indexes.get_mut(&id) {
+                        idx.make_non_unique();
+                    }
+                    if let Some(idx) = tx_table.indexes.get_mut(&id) {
+                        idx.make_non_unique();
                     }
                 }
-
-                // Take the pointer map if this is the first unique index.
-                let pointer_map = if !had_unique {
-                    tx_table.take_pointer_map();
-                    commit_table.take_pointer_map()
-                } else {
-                    None
-                };
-
-                (index_ids, pointer_map)
-            } else {
-                (vec![], None)
+                let cols = commit_table.indexes[&index_id].indexed_columns.clone();
+                let violation = commit_table
+                    .get_row_ref(commit_blob_store, violation)
+                    .expect("row came from scanning the table")
+                    .project(&cols)
+                    .expect("cols should be valid for this table");
+                return Err(anyhow::anyhow!(
+                    "Unique constraint violation during merge: {violation:?}"
+                )
+                .into());
             }
+        }
+
+        // Take the pointer map if this is the first unique index.
+        let pointer_map = if !had_unique {
+            tx_table.take_pointer_map();
+            commit_table.take_pointer_map()
         } else {
-            (vec![], None)
+            None
         };
 
         // Update the pending schema change with index info.
         // The last pushed change is our ConstraintAdded from create_st_constraint.
         // Replace it with the enriched version.
         if let Some(last) = self.tx_state.pending_schema_changes.last_mut() {
-            *last = PendingSchemaChange::ConstraintAdded(
-                table_id,
-                constraint_id,
-                made_unique_index_ids,
-                pointer_map,
-            );
+            *last = PendingSchemaChange::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map);
         }
 
         Ok(constraint_id)
