@@ -283,13 +283,29 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         }
     }
 
+    let mut first_transaction = true;
     while !abort.load(Ordering::Relaxed) {
         if crate::summary::now_millis() >= schedule.stop_ms {
             break;
         }
 
         let kind = choose_transaction(&mut rng);
-        let keying_delay = keying_time(kind, config.keying_time_scale);
+        let keying_delay = if first_transaction {
+            first_transaction = false;
+            let full_keying_delay = keying_time(kind, config.keying_time_scale);
+            let full_keying_ms = u64::try_from(full_keying_delay.as_millis()).unwrap_or(u64::MAX);
+            if full_keying_ms == 0 {
+                Duration::ZERO
+            } else {
+                let keying_phase_offset_ms = {
+                    let mut startup_rng = rand::rng();
+                    startup_rng.random_range(0..=full_keying_ms)
+                };
+                Duration::from_millis(full_keying_ms.saturating_sub(keying_phase_offset_ms))
+            }
+        } else {
+            keying_time(kind, config.keying_time_scale)
+        };
         if !keying_delay.is_zero() && crate::summary::now_millis() < schedule.stop_ms {
             tokio::time::sleep(keying_delay).await;
         }
