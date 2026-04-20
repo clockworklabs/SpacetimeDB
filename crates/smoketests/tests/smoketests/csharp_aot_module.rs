@@ -45,12 +45,6 @@ fn test_build_csharp_module_aot() {
     );
 
     // Verify StdbModule.wasm was produced
-    let wasm_path = workspace.join(
-        "modules/sdk-test-cs/bin/Release/net8.0/wasi-wasm/publish/StdbModule.wasm",
-    );
-    assert!(
-        wasm_path.exists(),
-        "StdbModule.wasm not found at {:?}",
-        wasm_path
-    );
+    let wasm_path = workspace.join("modules/sdk-test-cs/bin/Release/net8.0/wasi-wasm/publish/StdbModule.wasm");
+    assert!(wasm_path.exists(), "StdbModule.wasm not found at {:?}", wasm_path);
 }
