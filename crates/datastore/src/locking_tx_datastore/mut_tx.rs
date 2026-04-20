@@ -703,8 +703,10 @@ impl MutTxId {
         }
 
         // Insert constraints into `st_constraints`.
+        // The fresh table has no `st_constraint` rows yet, so every row here is newly
+        // inserted — the `bool` in the returned tuple is always `true` and is ignored.
         for constraint in constraints {
-            self.create_st_constraint(constraint)?;
+            let _ = self.create_st_constraint(constraint)?;
         }
 
         // Insert sequences into `st_sequences`.
@@ -1762,7 +1764,11 @@ impl MutTxId {
     /// Ensures:
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `ConstraintId::SENTINEL`.
-    fn create_st_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
+    /// - The `bool` in the return value is `true` iff a new `st_constraint` row was
+    ///   inserted (and therefore a `PendingSchemaChange::ConstraintAdded` was pushed).
+    ///   It is `false` if an identical row already existed (idempotent re-insertion);
+    ///   in that case the schema and pending-changes list are untouched.
+    fn create_st_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<(ConstraintId, bool)> {
         if constraint.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{constraint:#?}`").into());
         }
@@ -1790,7 +1796,7 @@ impl MutTxId {
         let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
         if let RowRefInsertion::Existed(_) = constraint_row.1 {
             log::trace!("CONSTRAINT ALREADY EXISTS: {constraint_id}");
-            return Ok(constraint_id);
+            return Ok((constraint_id, false));
         }
 
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
@@ -1800,7 +1806,7 @@ impl MutTxId {
         self.push_schema_change(PendingSchemaChange::ConstraintAdded(table_id, constraint_id, vec![], None));
 
         log::trace!("CONSTRAINT CREATED: {constraint_id}");
-        Ok(constraint_id)
+        Ok((constraint_id, true))
     }
 
     /// Removes constraint metadata from system tables only.
@@ -1867,7 +1873,15 @@ impl MutTxId {
         // (c) Validation passed — insert metadata into system tables. On any failure
         //     beyond this point, the tx rollback unwinds both the st_constraint row and
         //     the pending schema change.
-        let constraint_id = self.create_st_constraint(constraint)?;
+        let (constraint_id, newly_inserted) = self.create_st_constraint(constraint)?;
+
+        // If the constraint already existed in `st_constraint`, nothing new was pushed
+        // to `pending_schema_changes`, and the backing indices are already in the
+        // correct state. Return early — in particular, do NOT overwrite
+        // `pending_schema_changes.last_mut()`, which would clobber an unrelated change.
+        if !newly_inserted {
+            return Ok(constraint_id);
+        }
 
         // Re-borrow after the system-table write (self was reborrowed by create_st_constraint).
         let ((tx_table, _, tx_delete_table), (commit_table, commit_blob_store, _)) =

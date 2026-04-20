@@ -3941,6 +3941,70 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_create_constraint_is_idempotent_and_does_not_clobber_pending_changes() -> ResultTest<()> {
+        // `create_st_constraint` short-circuits when the exact `st_constraint` row already
+        // exists in the tx insert table (`RowRefInsertion::Existed`), and in that case does
+        // NOT push a `PendingSchemaChange`. Previously `create_constraint` would then
+        // blindly overwrite `pending_schema_changes.last_mut()`, clobbering whichever
+        // unrelated change happened to be at the end of the list.
+        //
+        // This test drives that exact scenario: run `create_constraint` once on a fresh
+        // schema, inject an unrelated marker `PendingSchemaChange` at the end of the tx
+        // pending list, then call `create_constraint` again with a byte-identical
+        // `ConstraintSchema` (same constraint_id). The second call must hit the Existed
+        // path and leave the marker untouched.
+        use super::super::tx_state::PendingSchemaChange;
+
+        let datastore = get_datastore()?;
+
+        // TX1: create table with a non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: first call — adds the constraint, makes the index unique.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint_a = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint_a.table_id = table_id;
+        let constraint_id = datastore.create_constraint_mut_tx(&mut tx, constraint_a)?;
+
+        // Inject an unrelated marker at the end of the pending-changes list.
+        // If `create_constraint` clobbers `last_mut()` on the Existed path, this marker
+        // gets overwritten with a ConstraintAdded; otherwise it stays a TableAdded.
+        tx.tx_state
+            .pending_schema_changes
+            .push(PendingSchemaChange::TableAdded(TableId::SENTINEL));
+        let expected_len = tx.tx_state.pending_schema_changes.len();
+
+        // Second call — identical ConstraintSchema with the now-known constraint_id.
+        // The row bytes match the one just inserted, so `create_st_constraint` takes the
+        // `RowRefInsertion::Existed` short-circuit and pushes nothing.
+        let mut constraint_b = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint_b.table_id = table_id;
+        constraint_b.constraint_id = constraint_id;
+        let returned_id = datastore.create_constraint_mut_tx(&mut tx, constraint_b)?;
+        assert_eq!(
+            returned_id, constraint_id,
+            "idempotent re-add must return the existing constraint id",
+        );
+
+        // Length unchanged (no new push), and — critically — the marker is still the last
+        // element (not clobbered into a ConstraintAdded).
+        assert_eq!(
+            tx.tx_state.pending_schema_changes.len(),
+            expected_len,
+            "Existed path must not push a new pending schema change",
+        );
+        assert_eq!(
+            tx.tx_state.pending_schema_changes.last(),
+            Some(&PendingSchemaChange::TableAdded(TableId::SENTINEL)),
+            "Existed path must not overwrite an unrelated trailing pending schema change",
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_create_constraint_fails_without_backing_index() -> ResultTest<()> {
         let datastore = get_datastore()?;
 
