@@ -1873,6 +1873,11 @@ impl TypedIndex {
             BTreeF64 <=> UniqueBTreeF64 : |k: &F64| AlgebraicValue::F64(*k),
             BTreeString <=> UniqueBTreeString : |k: &Box<str>| AlgebraicValue::String(k.clone()),
             BTreeAV <=> UniqueBTreeAV : |k: &AlgebraicValue| k.clone(),
+            // TODO(#4733): `BTreeBytesKey{8,24,56,120} <=> UniqueBTreeBytesKey{8,24,56,120}`
+            // variants are not added here — they need `RangeCompatBytesKey` from PR #4733
+            // to provide the range-compatible ordering required for bytes-keyed btrees.
+            // The adjacent `HashBytesKey*` closures below also need the revision called
+            // out in the review thread once #4733 lands.
         }
         hash {
             HashBool <=> UniqueHashBool : |k: &bool| AlgebraicValue::Bool(*k),
