@@ -107,14 +107,14 @@ public class SpacetimeManager : MonoBehaviour
 
     private void OnSubscriptionApplied(SubscriptionEventContext ctx)
     {
-        Debug.Log("Subscription applied — game state loaded");
+        Debug.Log("Subscription applied: game state loaded");
     }
 }
 ```
 
 ---
 
-## FrameTick — Critical
+## FrameTick (Critical)
 
 **`FrameTick()` must be called every frame in `Update()`.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it, no callbacks fire and the client appears frozen. See the `Update()` method in the SpacetimeManager above.
 

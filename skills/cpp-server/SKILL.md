@@ -40,10 +40,10 @@ FIELD_Index(entity, name)
 Options: `SPACETIMEDB_TABLE(Type, accessor, Public|Private)`
 
 Field constraints:
-- `FIELD_PrimaryKey(accessor, field)` — primary key
-- `FIELD_PrimaryKeyAutoInc(accessor, field)` — primary key with auto-increment (use 0 on insert)
-- `FIELD_Unique(accessor, field)` — unique constraint
-- `FIELD_Index(accessor, field)` — btree index (enables `.filter()`)
+- `FIELD_PrimaryKey(accessor, field)`: primary key
+- `FIELD_PrimaryKeyAutoInc(accessor, field)`: primary key with auto-increment (use 0 on insert)
+- `FIELD_Unique(accessor, field)`: unique constraint
+- `FIELD_Index(accessor, field)`: btree index (enables `.filter()`)
 
 ## Column Types
 
@@ -83,7 +83,7 @@ ctx.db[user_age].filter(range_from(uint8_t(18)));
 
 ## Reducers
 
-All reducers return `ReducerResult` — use `Ok()` or `Err(message)`:
+All reducers return `ReducerResult`. Use `Ok()` or `Err(message)`:
 
 ```cpp
 SPACETIMEDB_REDUCER(create_entity, ReducerContext ctx, std::string name) {
@@ -152,6 +152,8 @@ Timestamp later = ctx.timestamp + TimeDuration::from_seconds(10);
 ```
 
 ## Reducer Context
+
+`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
 
 ```cpp
 ctx.db[table]          // Table access (bracket notation)

@@ -23,7 +23,7 @@ import { ScheduleAt } from 'spacetimedb';        // for scheduled tables only
 
 ## Tables
 
-`table(OPTIONS, COLUMNS)` — two arguments. The `name` field MUST be snake_case:
+`table(OPTIONS, COLUMNS)` takes two arguments. The `name` field MUST be snake_case:
 
 ```typescript
 const entity = table(
@@ -95,7 +95,7 @@ export const createEntity = spacetimedb.reducer(
   }
 );
 
-// No arguments — just the callback:
+// No arguments, just the callback:
 export const doReset = spacetimedb.reducer((ctx) => { ... });
 ```
 
@@ -115,7 +115,7 @@ Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `
 
 ## Lifecycle Hooks
 
-MUST be `export const` — bare calls are silently ignored:
+MUST be `export const`. Bare calls are silently ignored:
 
 ```typescript
 export const init = spacetimedb.init((ctx) => { ... });
@@ -123,14 +123,21 @@ export const onConnect = spacetimedb.clientConnected((ctx) => { ... });
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 ```
 
-## Authentication & Timestamps
+## Reducer Context API
+
+`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
 
 ```typescript
 // Auth: ctx.sender is the caller's Identity
 if (!row.owner.equals(ctx.sender)) throw new SenderError('unauthorized');
 
-// Server timestamps
+// Server timestamp (deterministic per reducer call)
 ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
+
+// Deterministic RNG
+const f: number = ctx.random();                          // [0.0, 1.0)
+const roll: number = ctx.random.integerInRange(1, 6);    // inclusive
+const bytes: Uint8Array = ctx.random.fill(new Uint8Array(16));
 
 // Client: Timestamp → Date
 new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));

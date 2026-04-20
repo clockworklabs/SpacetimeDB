@@ -13,7 +13,7 @@ metadata:
 
 # SpacetimeDB TypeScript Client
 
-## React — main.tsx
+## React: main.tsx
 
 ```typescript
 import React, { useEffect, useMemo } from 'react';
@@ -41,7 +41,7 @@ function Root() {
 ReactDOM.createRoot(document.getElementById('root')!).render(<Root />);
 ```
 
-## React — App.tsx
+## React: App.tsx
 
 ```typescript
 import { useTable, useSpacetimeDB } from 'spacetimedb/react';
@@ -54,7 +54,7 @@ function App() {
   // Save auth token
   useEffect(() => { if (token) localStorage.setItem('auth_token', token); }, [token]);
 
-  // Subscribe when connected — prefer typed query builders over raw SQL
+  // Subscribe when connected. Prefer typed query builders over raw SQL
   useEffect(() => {
     if (!conn || !isActive) return;
     conn.subscriptionBuilder()
@@ -64,7 +64,7 @@ function App() {
       // Or raw SQL:      'SELECT * FROM entity'
   }, [conn, isActive]);
 
-  // Reactive data — returns [rows, isReady]
+  // Reactive data. Returns [rows, isReady]
   const [entities, entitiesReady] = useTable(tables.entity);
   const [records, recordsReady] = useTable(tables.record);
 

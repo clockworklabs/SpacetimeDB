@@ -425,7 +425,7 @@ This means you can build the entire connection and callback flow in Blueprints w
 // Option 1: Call FrameTick() manually in your Actor's Tick() (shown in GameManager above)
 void Tick(float DeltaTime) { Conn->FrameTick(); }
 
-// Option 2: Enable auto ticking — the SDK then processes messages every frame automatically
+// Option 2: Enable auto ticking. The SDK then processes messages every frame automatically
 Conn->SetAutoTicking(true);
 ```
 

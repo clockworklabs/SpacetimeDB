@@ -43,7 +43,7 @@ var conn = DbConnection.Builder()
     .Build();
 ```
 
-## Event Loop — Critical
+## Event Loop (Critical)
 
 **`FrameTick()` must be called in your main loop.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it, no callbacks fire.
 

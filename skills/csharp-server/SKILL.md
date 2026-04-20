@@ -34,7 +34,7 @@ public static partial class Module
 
 ## Tables
 
-`[SpacetimeDB.Table(...)]` on a `public partial struct` — `Accessor` should be PascalCase:
+`[SpacetimeDB.Table(...)]` on a `public partial struct`. `Accessor` should be PascalCase:
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "Entity", Public = true)]
@@ -160,18 +160,24 @@ public static Entity? MyProfile(ViewContext ctx)
 }
 ```
 
-## Authentication & Timestamps
+## Reducer Context API
+
+`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
 
 ```csharp
 // Auth: ctx.Sender is the caller's Identity
 if (row.Owner != ctx.Sender)
     throw new Exception("unauthorized");
 
-// Server timestamps
+// Server timestamp (deterministic per reducer call)
 ctx.Db.Item.Insert(new Item { CreatedAt = ctx.Timestamp, .. });
 
 // Timestamp arithmetic
 var expiry = ctx.Timestamp + new TimeDuration(delayMicros);
+
+// Deterministic RNG
+int roll = ctx.Rng.Next(1, 7);          // [1, 7): inclusive 1, exclusive 7
+double f = ctx.Rng.NextDouble();        // [0.0, 1.0)
 
 // Client: Timestamp → milliseconds since epoch
 timestamp.MicrosecondsSinceUnixEpoch / 1000

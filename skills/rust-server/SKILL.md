@@ -22,11 +22,11 @@ use spacetimedb::{
 };
 ```
 
-**`Table` is required** — without it, `ctx.db.*.insert()`, `.iter()`, `.find()` etc. won't compile (`no method named 'insert' found`).
+**`Table` is required.** Without it, `ctx.db.*.insert()`, `.iter()`, `.find()` etc. won't compile (`no method named 'insert' found`).
 
 ## Tables
 
-`#[spacetimedb::table(...)]` on a `pub struct` — `accessor` must be snake_case:
+`#[spacetimedb::table(...)]` on a `pub struct`. `accessor` must be snake_case:
 
 ```rust
 #[spacetimedb::table(accessor = entity, public)]
@@ -162,7 +162,9 @@ fn my_profile(ctx: &ViewContext) -> Option<Entity> {
 }
 ```
 
-## Authentication & Timestamps
+## Reducer Context API
+
+`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
 
 ```rust
 // Auth: ctx.sender() is the caller's Identity
@@ -171,11 +173,15 @@ if row.owner != ctx.sender() {
     // or: return Err(anyhow::anyhow!("unauthorized"));
 }
 
-// Server timestamps
+// Server timestamp (deterministic per reducer call)
 ctx.db.item().insert(Item { id: 0, owner: ctx.sender(), created_at: ctx.timestamp, .. });
 
 // Timestamp arithmetic
 let expiry = ctx.timestamp + TimeDuration::from_micros(delay_micros);
+
+// Deterministic RNG
+use rand::Rng;
+let roll: u32 = ctx.rng().gen_range(1..=6);
 
 // Client: Timestamp → milliseconds since epoch
 timestamp.to_micros_since_unix_epoch() / 1000
