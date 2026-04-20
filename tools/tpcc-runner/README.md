@@ -215,6 +215,7 @@ cargo run --release -p tpcc-runner -- driver \
   --database-prefix tpcc \
   --warehouses 1 \
   --warehouses-per-database 1 \
+  --connections-per-database 2 \
   --warmup-secs 5 \
   --measure-secs 30
 ```
@@ -230,6 +231,7 @@ cargo run --release -p tpcc-runner -- driver \
   --database-prefix tpcc \
   --warehouses 2 \
   --warehouses-per-database 1 \
+  --connections-per-database 2 \
   --warmup-secs 5 \
   --measure-secs 30
 ```
@@ -270,11 +272,13 @@ example assumes two databases with one warehouse each:
 cargo run --release -p tpcc-runner -- driver \
   --uri http://public-server-host:3000 \
   --database-prefix tpcc \
+  --connections-per-database 2 \
   --coordinator-url http://coordinator-host:7878
 
 cargo run --release -p tpcc-runner -- driver \
   --uri http://public-server-host:3000 \
   --database-prefix tpcc \
+  --connections-per-database 2 \
   --coordinator-url http://coordinator-host:7878
 ```
 
@@ -309,6 +313,7 @@ warehouse_count = 1
 warmup_secs = 5
 measure_secs = 30
 delivery_wait_secs = 60
+connections_per_database = 2
 keying_time_scale = 1.0
 think_time_scale = 1.0
 

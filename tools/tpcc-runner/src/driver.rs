@@ -23,6 +23,8 @@ use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 
 const STARTUP_STAGGER_WINDOW_MS: u64 = 18_000;
+type DatabaseClientPool = Vec<Arc<ModuleClient>>;
+type SharedDatabaseClients = BTreeMap<u32, DatabaseClientPool>;
 
 struct TerminalRuntime {
     config: DriverConfig,
@@ -88,14 +90,17 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     let metrics_client = Arc::new(connect_metrics_module_async(&config.connection).await?);
     log::info!("driver {} metrics database connected", config.driver_id);
     log::info!(
-        "driver {} connecting shared database clients for {} database(s)",
+        "driver {} connecting {} shared database client(s) across {} database(s) with pool size {}",
         config.driver_id,
-        used_database_numbers.len()
+        used_database_numbers.len() * config.connections_per_database,
+        used_database_numbers.len(),
+        config.connections_per_database
     );
     let shared_database_clients = connect_shared_database_clients(&config, &topology, &used_database_numbers).await?;
     log::info!(
-        "driver {} connected {} shared database client(s)",
+        "driver {} connected {} shared database client(s) across {} database(s)",
         config.driver_id,
+        total_shared_database_clients(&shared_database_clients),
         shared_database_clients.len()
     );
 
@@ -111,27 +116,31 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         schedule.measure_end_ms
     );
     log::info!(
-        "driver {} shared metrics connection ready; launching {} terminal task(s) across {} shared database connection(s)",
+        "driver {} shared metrics connection ready; launching {} terminal task(s) across {} database(s) with {} shared database connection(s)",
         config.driver_id,
         config.terminals(),
-        shared_database_clients.len()
+        shared_database_clients.len(),
+        total_shared_database_clients(&shared_database_clients)
     );
 
     for warehouse_id in config.warehouse_start..=config.warehouse_end() {
         let database_number = topology.database_number_for_warehouse(warehouse_id)?;
         let database_identity = topology.identity_for_warehouse(warehouse_id)?;
-        let client = shared_database_clients.get(&database_number).cloned().ok_or_else(|| {
-            anyhow!(
-                "missing shared database client for {}",
-                topology.database_name(database_number)
-            )
-        })?;
         for district_id in 1..=DISTRICTS_PER_WAREHOUSE {
             let assignment = TerminalAssignment {
                 terminal_id: terminal_id(warehouse_id, district_id),
                 warehouse_id,
                 district_id,
             };
+            let client =
+                select_pooled_database_client(&shared_database_clients, database_number, assignment.terminal_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "missing shared database client pool for {}",
+                            topology.database_name(database_number)
+                        )
+                    })?;
             let terminal_seed = schedule.measure_start_ms ^ ((assignment.terminal_id as u64) << 32) ^ 0xabcdu64;
             let terminal_config = config.clone();
             let terminal_metrics = metrics.clone();
@@ -763,13 +772,19 @@ async fn harvest_delivery_completions(
     config: &DriverConfig,
     schedule: &RunSchedule,
     metrics: &SharedMetrics,
-    shared_database_clients: &BTreeMap<u32, Arc<ModuleClient>>,
+    shared_database_clients: &SharedDatabaseClients,
 ) -> Result<()> {
     let expected = metrics.delivery_queued();
     if expected == 0 {
         return Ok(());
     }
-    let harvest_clients: Vec<_> = shared_database_clients.iter().collect();
+    let harvest_clients: Vec<_> = shared_database_clients
+        .iter()
+        .map(|(database_number, clients)| {
+            let client = representative_database_client(clients).expect("database client pool should not be empty");
+            (*database_number, client)
+        })
+        .collect();
 
     let mut pending_jobs = 0u64;
     let mut completed_jobs = 0u64;
@@ -788,14 +803,20 @@ async fn harvest_delivery_completions(
     );
     let deadline = crate::summary::now_millis() + (config.delivery_wait_secs * 1_000);
     let mut seen_for_driver = 0u64;
-    let mut after_completion_ids = vec![0u64; harvest_clients.len()];
+    let mut after_completion_ids: BTreeMap<u32, u64> = harvest_clients
+        .iter()
+        .map(|(database_number, _)| (*database_number, 0))
+        .collect();
 
     loop {
         if seen_for_driver >= expected {
             break;
         }
         let mut saw_rows = false;
-        for ((_, client), after_completion_id) in harvest_clients.iter().zip(after_completion_ids.iter_mut()) {
+        for (database_number, client) in &harvest_clients {
+            let after_completion_id = after_completion_ids
+                .get_mut(database_number)
+                .expect("after_completion_ids should have one entry per database");
             let batch = expect_ok(
                 "fetch_delivery_completions",
                 client
@@ -886,37 +907,58 @@ async fn connect_shared_database_clients(
     config: &DriverConfig,
     topology: &DatabaseTopology,
     used_database_numbers: &[u32],
-) -> Result<BTreeMap<u32, Arc<ModuleClient>>> {
+) -> Result<SharedDatabaseClients> {
+    let pool_size = config.connections_per_database;
     let mut connect_tasks = JoinSet::new();
     for database_number in used_database_numbers {
         let database_number = *database_number;
         let database_identity = topology.identity_for_database_number(database_number)?;
         let database_name = topology.database_name(database_number);
-        log::info!(
-            "driver {} starting shared client connection to {} ({})",
-            config.driver_id,
-            database_name,
-            database_identity
-        );
-        let connection = config.connection.clone();
-        connect_tasks.spawn(async move {
-            let client = ModuleClient::connect_async(&connection, database_identity)
-                .await
-                .with_context(|| format!("failed to connect shared client to {database_name}"))?;
-            Ok::<_, anyhow::Error>((database_number, database_name, Arc::new(client)))
-        });
+        for connection_index in 0..pool_size {
+            log::info!(
+                "driver {} starting shared client connection {}/{} to {} ({})",
+                config.driver_id,
+                connection_index + 1,
+                pool_size,
+                database_name,
+                database_identity
+            );
+            let connection = config.connection.clone();
+            let database_name = database_name.clone();
+            connect_tasks.spawn(async move {
+                let client = ModuleClient::connect_async(&connection, database_identity)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "failed to connect shared client {}/{} to {database_name}",
+                            connection_index + 1,
+                            pool_size
+                        )
+                    })?;
+                Ok::<_, anyhow::Error>((database_number, database_name, connection_index, Arc::new(client)))
+            });
+        }
     }
 
-    let mut shared_clients = BTreeMap::new();
+    let mut shared_clients: BTreeMap<u32, Vec<(usize, Arc<ModuleClient>)>> = used_database_numbers
+        .iter()
+        .copied()
+        .map(|database_number| (database_number, Vec::with_capacity(pool_size)))
+        .collect();
     while let Some(result) = connect_tasks.join_next().await {
         match result {
-            Ok(Ok((database_number, database_name, client))) => {
+            Ok(Ok((database_number, database_name, connection_index, client))) => {
                 log::info!(
-                    "driver {} shared database client connected to {}",
+                    "driver {} shared database client connection {}/{} connected to {}",
                     config.driver_id,
+                    connection_index + 1,
+                    pool_size,
                     database_name
                 );
-                shared_clients.insert(database_number, client);
+                shared_clients
+                    .get_mut(&database_number)
+                    .expect("shared client pool should exist for database")
+                    .push((connection_index, client));
             }
             Ok(Err(err)) => {
                 log::error!(
@@ -936,13 +978,74 @@ async fn connect_shared_database_clients(
             }
         }
     }
-    Ok(shared_clients)
+    Ok(shared_clients
+        .into_iter()
+        .map(|(database_number, mut clients)| {
+            clients.sort_by_key(|(connection_index, _)| *connection_index);
+            (
+                database_number,
+                clients.into_iter().map(|(_, client)| client).collect::<Vec<_>>(),
+            )
+        })
+        .collect())
 }
 
-async fn shutdown_shared_database_clients(shared_database_clients: BTreeMap<u32, Arc<ModuleClient>>) {
-    for (_, client) in shared_database_clients {
-        if let Some(client) = Arc::into_inner(client) {
-            client.shutdown_async().await;
+async fn shutdown_shared_database_clients(shared_database_clients: SharedDatabaseClients) {
+    for (_, clients) in shared_database_clients {
+        for client in clients {
+            if let Some(client) = Arc::into_inner(client) {
+                client.shutdown_async().await;
+            }
         }
+    }
+}
+
+fn select_pooled_database_client(
+    shared_database_clients: &SharedDatabaseClients,
+    database_number: u32,
+    terminal_id: u32,
+) -> Option<&Arc<ModuleClient>> {
+    let clients = shared_database_clients.get(&database_number)?;
+    if clients.is_empty() {
+        return None;
+    }
+    let index = pooled_client_index(clients.len(), terminal_id)?;
+    clients.get(index)
+}
+
+fn representative_database_client(clients: &DatabaseClientPool) -> Option<&Arc<ModuleClient>> {
+    clients.first()
+}
+
+fn total_shared_database_clients<T>(shared_database_clients: &BTreeMap<u32, Vec<T>>) -> usize {
+    shared_database_clients.values().map(Vec::len).sum()
+}
+
+fn pooled_client_index(pool_size: usize, terminal_id: u32) -> Option<usize> {
+    if pool_size == 0 {
+        return None;
+    }
+    Some(usize::try_from(terminal_id).unwrap_or(usize::MAX) % pool_size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pooled_client_index_uses_deterministic_modulo() {
+        assert_eq!(pooled_client_index(3, 10), Some(1));
+        assert_eq!(pooled_client_index(3, 13), Some(1));
+    }
+
+    #[test]
+    fn pooled_client_index_rejects_empty_pool() {
+        assert_eq!(pooled_client_index(0, 1), None);
+    }
+
+    #[test]
+    fn total_shared_database_clients_counts_all_pooled_connections() {
+        let clients: BTreeMap<u32, Vec<usize>> = [(1, vec![0]), (2, vec![0, 1])].into_iter().collect();
+        assert_eq!(total_shared_database_clients(&clients), 3);
     }
 }

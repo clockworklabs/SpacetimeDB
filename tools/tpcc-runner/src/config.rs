@@ -77,6 +77,7 @@ pub struct DriverConfig {
     pub output_dir: Option<PathBuf>,
     pub coordinator_url: Option<String>,
     pub delivery_wait_secs: u64,
+    pub connections_per_database: usize,
     pub keying_time_scale: f64,
     pub think_time_scale: f64,
 }
@@ -165,6 +166,8 @@ pub struct DriverArgs {
     pub coordinator_url: Option<String>,
     #[arg(long)]
     pub delivery_wait_secs: Option<u64>,
+    #[arg(long)]
+    pub connections_per_database: Option<usize>,
     #[arg(long)]
     pub keying_time_scale: Option<f64>,
     #[arg(long)]
@@ -262,6 +265,7 @@ struct FileDriverConfig {
     output_dir: Option<PathBuf>,
     coordinator_url: Option<String>,
     delivery_wait_secs: Option<u64>,
+    connections_per_database: Option<usize>,
     keying_time_scale: Option<f64>,
     think_time_scale: Option<f64>,
 }
@@ -438,6 +442,13 @@ impl DriverArgs {
         if warehouses_per_database == 0 {
             bail!("warehouses_per_database must be positive");
         }
+        let connections_per_database = self
+            .connections_per_database
+            .or(file.driver.connections_per_database)
+            .unwrap_or(2);
+        if connections_per_database == 0 {
+            bail!("connections_per_database must be positive");
+        }
         Ok(DriverConfig {
             connection,
             run_id: self.run_id.clone().or_else(|| file.driver.run_id.clone()),
@@ -458,6 +469,7 @@ impl DriverArgs {
                 .clone()
                 .or_else(|| file.driver.coordinator_url.clone()),
             delivery_wait_secs: self.delivery_wait_secs.or(file.driver.delivery_wait_secs).unwrap_or(60),
+            connections_per_database,
             keying_time_scale: self.keying_time_scale.or(file.driver.keying_time_scale).unwrap_or(1.0),
             think_time_scale: self.think_time_scale.or(file.driver.think_time_scale).unwrap_or(1.0),
         })
@@ -598,6 +610,85 @@ mod tests {
 
         let config = args.resolve(&file).unwrap();
         assert_eq!(config.num_databases, 4);
+    }
+
+    #[test]
+    fn driver_args_default_connections_per_database_is_two() {
+        let args = DriverArgs {
+            connection: ConnectionArgs::default(),
+            run_id: None,
+            driver_id: None,
+            warehouse_start: Some(1),
+            driver_warehouse_count: Some(1),
+            warehouses: Some(1),
+            warehouses_per_database: Some(1),
+            warmup_secs: None,
+            measure_secs: None,
+            output_dir: None,
+            coordinator_url: None,
+            delivery_wait_secs: None,
+            connections_per_database: None,
+            keying_time_scale: None,
+            think_time_scale: None,
+        };
+
+        let config = args.resolve(&FileConfig::default()).unwrap();
+        assert_eq!(config.connections_per_database, 2);
+    }
+
+    #[test]
+    fn driver_args_reject_zero_connections_per_database() {
+        let args = DriverArgs {
+            connection: ConnectionArgs::default(),
+            run_id: None,
+            driver_id: None,
+            warehouse_start: Some(1),
+            driver_warehouse_count: Some(1),
+            warehouses: Some(1),
+            warehouses_per_database: Some(1),
+            warmup_secs: None,
+            measure_secs: None,
+            output_dir: None,
+            coordinator_url: None,
+            delivery_wait_secs: None,
+            connections_per_database: Some(0),
+            keying_time_scale: None,
+            think_time_scale: None,
+        };
+
+        let err = args.resolve(&FileConfig::default()).unwrap_err().to_string();
+        assert!(err.contains("connections_per_database must be positive"), "{err}");
+    }
+
+    #[test]
+    fn driver_args_cli_overrides_file_connections_per_database() {
+        let file = FileConfig {
+            driver: FileDriverConfig {
+                connections_per_database: Some(2),
+                ..FileDriverConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let args = DriverArgs {
+            connection: ConnectionArgs::default(),
+            run_id: None,
+            driver_id: None,
+            warehouse_start: Some(1),
+            driver_warehouse_count: Some(1),
+            warehouses: Some(1),
+            warehouses_per_database: Some(1),
+            warmup_secs: None,
+            measure_secs: None,
+            output_dir: None,
+            coordinator_url: None,
+            delivery_wait_secs: None,
+            connections_per_database: Some(4),
+            keying_time_scale: None,
+            think_time_scale: None,
+        };
+
+        let config = args.resolve(&file).unwrap();
+        assert_eq!(config.connections_per_database, 4);
     }
 
     #[test]
