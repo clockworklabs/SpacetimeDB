@@ -263,6 +263,26 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
     }
 
     let mut rng = StdRng::seed_from_u64(seed);
+    let initial_kind = choose_transaction(&mut rng);
+    let initial_think_delay = think_time(initial_kind, config.think_time_scale, &mut rng);
+    let initial_keying_delay = keying_time(initial_kind, config.keying_time_scale);
+    let synthetic_cycle_ms = u64::try_from(
+        initial_think_delay
+            .as_millis()
+            .saturating_add(initial_keying_delay.as_millis()),
+    )
+    .unwrap_or(u64::MAX);
+    if synthetic_cycle_ms > 0 && crate::summary::now_millis() < schedule.stop_ms {
+        let phase_offset_ms = {
+            let mut startup_rng = rand::rng();
+            startup_rng.random_range(0..=synthetic_cycle_ms)
+        };
+        let remaining_ms = synthetic_cycle_ms.saturating_sub(phase_offset_ms);
+        if remaining_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
+        }
+    }
+
     while !abort.load(Ordering::Relaxed) {
         if crate::summary::now_millis() >= schedule.stop_ms {
             break;
