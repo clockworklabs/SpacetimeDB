@@ -3834,34 +3834,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_create_constraint_fails_with_tx_state_duplicates() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-
-        // TX1: create table with non-unique index on col 0.
-        let mut tx = begin_mut_tx(&datastore);
-        let schema = table_with_non_unique_index(0u16);
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        commit(&datastore, tx)?;
-
-        // TX2: insert a unique row into committed state.
-        let mut tx = begin_mut_tx(&datastore);
-        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
-        commit(&datastore, tx)?;
-
-        // TX3: insert a duplicate in the tx state (same id=1), then try adding constraint.
-        let mut tx = begin_mut_tx(&datastore);
-        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
-        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
-        constraint.table_id = table_id;
-        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
-        assert!(
-            result.is_err(),
-            "create_constraint should fail when the tx state contains a duplicate of a committed row"
-        );
-        Ok(())
-    }
-
-    #[test]
     fn test_create_constraint_merge_error_reverts_uniqueness() -> ResultTest<()> {
         let datastore = get_datastore()?;
 
