@@ -179,9 +179,10 @@ ctx.db.item().insert(Item { id: 0, owner: ctx.sender(), created_at: ctx.timestam
 // Timestamp arithmetic
 let expiry = ctx.timestamp + TimeDuration::from_micros(delay_micros);
 
-// Deterministic RNG
-use rand::Rng;
-let roll: u32 = ctx.rng().gen_range(1..=6);
+// Deterministic RNG: ctx.random() for a single value, ctx.rng() for the rand::Rng trait
+use spacetimedb::rand::Rng;
+let n: u32 = ctx.random();                    // random u32
+let roll: u32 = ctx.rng().gen_range(1..=6);   // any rand::Rng method
 
 // Client: Timestamp → milliseconds since epoch
 timestamp.to_micros_since_unix_epoch() / 1000
