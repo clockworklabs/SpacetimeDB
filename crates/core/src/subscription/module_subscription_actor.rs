@@ -343,6 +343,12 @@ impl ModuleSubscriptions {
         event: &ModuleEvent,
         request_id: u32,
     ) {
+        if matches!(event.status, EventStatus::Wounded(_)) {
+            // WebSocket v2 client-initiated reducer calls retry wounded outcomes in
+            // `ClientConnection::call_reducer_v2`. Suppress the intermediate failure
+            // here so only the final exhausted attempt is surfaced to the SDK caller.
+            return;
+        }
         let error = match &event.status {
             EventStatus::FailedUser(err) => err.clone(),
             EventStatus::FailedInternal(err) => err.clone(),

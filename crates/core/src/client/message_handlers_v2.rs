@@ -72,8 +72,17 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
                 .observe(timer.elapsed().as_secs_f64());
             match res {
-                Ok(_) => {
-                    // If this was not a success, we would have already sent an error message.
+                Ok(result) => {
+                    if let crate::host::ReducerOutcome::Wounded(err_msg) = result.outcome {
+                        let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                            request_id,
+                            timestamp: Timestamp::now(),
+                            result: ws_v2::ReducerOutcome::InternalError((*err_msg).into()),
+                        });
+                        if let Err(send_err) = client.send_message(None, server_message) {
+                            log::warn!("Failed to send reducer wounded error to client: {send_err}");
+                        }
+                    }
                     Ok(())
                 }
                 Err(e) => {
