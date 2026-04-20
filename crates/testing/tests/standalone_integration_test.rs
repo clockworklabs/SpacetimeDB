@@ -128,7 +128,7 @@ fn test_calling_a_reducer_with_private_table() {
             let logs = read_logs(&module)
                 .await
                 .into_iter()
-                .skip_while(|r| r.starts_with("Timestamp"))
+                .filter(|r| !is_scheduled_test_log(r))
                 .collect::<Vec<_>>();
 
             assert_eq!(logs, ["Private, Tyrion!", "Private, World!",].map(String::from));
@@ -136,13 +136,18 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
+/// Returns `true` if `line` was produced by the `repeating_test` or `nonrepeating_test` scheduled reducers.
+fn is_scheduled_test_log(line: &str) -> bool {
+    line.starts_with("Timestamp: ") || line.starts_with("This reducers runs only once")
+}
+
 async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
     let logs = read_logs(module).await;
     let mut logs = logs
         .into_iter()
-        // Filter out log lines from the `repeating_test` reducer,
-        // which runs frequently enough to appear in our logs after we've slept a second.
-        .filter(|line| !line.starts_with("Timestamp: Timestamp { __timestamp_micros_since_unix_epoch__: "))
+        // Filter out log lines from the `repeating_test` and `nonrepeating_test` reducers,
+        // which run on a schedule and can appear in our logs after we've slept.
+        .filter(|line| !is_scheduled_test_log(line))
         .collect::<Vec<_>>();
 
     if logs.len() != 1 {
@@ -150,6 +155,44 @@ async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
     };
 
     logs.swap_remove(0)
+}
+
+fn test_nonrepeating_scheduled_reducer_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            // The `init` reducer schedules `nonrepeating_test` to run 1 second in the future.
+            // Wait long enough for it to fire.
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            let logs = read_logs(&module).await;
+
+            assert!(
+                logs.iter().any(|line| line.starts_with("This reducers runs only once")),
+                "Expected nonrepeating_test reducer to have logged, but got: {logs:#?}",
+            );
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test");
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer_csharp() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer_typescript() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test-ts");
 }
 
 fn test_calling_a_procedure_in_module(module_name: &'static str) {
