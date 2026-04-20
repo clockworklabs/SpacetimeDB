@@ -124,7 +124,7 @@ public:
     }
 
     template<typename TFn>
-    [[nodiscard]] auto where(TFn&& predicate) const {
+    [[nodiscard]] auto where_col(TFn&& predicate) const {
         auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
         return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
     }
@@ -135,22 +135,30 @@ public:
         return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
     }
 
+    // `where` is the ergonomic entry point: it dispatches to `where_col` or
+    // `where_ix` based on the predicate signature.
     template<typename TFn>
-    [[nodiscard]] auto Where(TFn&& predicate) const {
+    [[nodiscard]] auto where(TFn&& predicate) const {
         if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
-            return where(std::forward<TFn>(predicate));
+            return where_col(std::forward<TFn>(predicate));
         }
+    }
+
+    template<typename TFn>
+    [[nodiscard]] auto Where(TFn&& predicate) const {
+        return where(std::forward<TFn>(predicate));
     }
 
     template<typename TFn>
     [[nodiscard]] auto filter(TFn&& predicate) const {
         return where(std::forward<TFn>(predicate));
     }
+
     template<typename TFn>
     [[nodiscard]] auto Filter(TFn&& predicate) const {
-        return Where(std::forward<TFn>(predicate));
+        return where(std::forward<TFn>(predicate));
     }
 
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
@@ -203,7 +211,7 @@ public:
     }
 
     template<typename TFn>
-    [[nodiscard]] FromWhere where(TFn&& predicate) const {
+    [[nodiscard]] FromWhere where_col(TFn&& predicate) const {
         auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
         return FromWhere(table_, expr_.and_(extra));
     }
@@ -214,22 +222,30 @@ public:
         return FromWhere(table_, expr_.and_(extra));
     }
 
+    // `where` is the ergonomic entry point: it dispatches to `where_col` or
+    // `where_ix` based on the predicate signature.
     template<typename TFn>
-    [[nodiscard]] FromWhere Where(TFn&& predicate) const {
+    [[nodiscard]] FromWhere where(TFn&& predicate) const {
         if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
-            return where(std::forward<TFn>(predicate));
+            return where_col(std::forward<TFn>(predicate));
         }
+    }
+
+    template<typename TFn>
+    [[nodiscard]] FromWhere Where(TFn&& predicate) const {
+        return where(std::forward<TFn>(predicate));
     }
 
     template<typename TFn>
     [[nodiscard]] FromWhere filter(TFn&& predicate) const {
         return where(std::forward<TFn>(predicate));
     }
+
     template<typename TFn>
     [[nodiscard]] FromWhere Filter(TFn&& predicate) const {
-        return Where(std::forward<TFn>(predicate));
+        return where(std::forward<TFn>(predicate));
     }
 
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
