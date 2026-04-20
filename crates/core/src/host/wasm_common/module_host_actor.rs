@@ -23,7 +23,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
-use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, CommitAndBroadcastEventSuccess};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
@@ -33,6 +33,7 @@ use core::future::Future;
 use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
@@ -617,8 +618,6 @@ impl InstanceCommon {
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
         let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
-        let mut energy_quanta_used = FunctionBudget::ZERO;
-        let mut host_execution_duration = Duration::ZERO;
 
         match res {
             Err(e) => {
@@ -631,14 +630,43 @@ impl InstanceCommon {
             Ok(res) => {
                 system_logger.info("Database updated");
                 log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
+
+                let succeed = |info: Arc<ModuleInfo>,
+                               energy_quanta_used: EnergyQuanta,
+                               host_execution_duration: Duration,
+                               tx: MutTxId|
+                 -> TransactionOffset {
+                    let event = ModuleEvent {
+                        timestamp: Timestamp::now(),
+                        caller_identity: info.owner_identity,
+                        caller_connection_id: None,
+                        function_call: ModuleFunctionCall::update(),
+                        status: EventStatus::Committed(DatabaseUpdate::default()),
+                        reducer_return_value: None,
+                        energy_quanta_used,
+                        host_execution_duration,
+                        request_id: None,
+                        timer: None,
+                    };
+                    //TODO: Return back event in `UpdateDatabaseResult`?
+                    let CommitAndBroadcastEventSuccess { tx_offset, .. } =
+                        commit_and_broadcast_event(&info.subscriptions, None, event, tx);
+
+                    tx_offset
+                };
+                let durable_offset = stdb.durable_tx_offset();
+
                 let res: UpdateDatabaseResult = match res {
-                    crate::db::update::UpdateResult::Success => UpdateDatabaseResult::UpdatePerformed,
+                    crate::db::update::UpdateResult::Success => {
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        UpdateDatabaseResult::UpdatePerformed {
+                            tx_offset,
+                            durable_offset,
+                        }
+                    }
                     crate::db::update::UpdateResult::EvaluateSubscribedViews => {
                         let (out, trapped) = self.evaluate_subscribed_views(tx, inst)?;
                         tx = out.tx;
-                        energy_quanta_used = out.energy_used;
-                        host_execution_duration = out.total_duration;
-
                         if trapped || out.outcome != ViewOutcome::Success {
                             let msg = match trapped {
                                 true => "Trapped while evaluating views during database update".to_string(),
@@ -648,35 +676,26 @@ impl InstanceCommon {
                                 ),
                             };
 
+                            let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                            stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                             UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
                         } else {
-                            UpdateDatabaseResult::UpdatePerformed
+                            let tx_offset = succeed(self.info.clone(), out.energy_used.into(), out.total_duration, tx);
+                            UpdateDatabaseResult::UpdatePerformed {
+                                tx_offset,
+                                durable_offset,
+                            }
                         }
                     }
                     crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                            tx_offset,
+                            durable_offset,
+                        }
                     }
                 };
 
-                if res.was_successful() {
-                    let event = ModuleEvent {
-                        timestamp: Timestamp::now(),
-                        caller_identity: self.info.owner_identity,
-                        caller_connection_id: None,
-                        function_call: ModuleFunctionCall::update(),
-                        status: EventStatus::Committed(DatabaseUpdate::default()),
-                        reducer_return_value: None,
-                        energy_quanta_used: energy_quanta_used.into(),
-                        host_execution_duration,
-                        request_id: None,
-                        timer: None,
-                    };
-                    //TODO: Return back event in `UpdateDatabaseResult`?
-                    let _ = commit_and_broadcast_event(&self.info.subscriptions, None, event, tx);
-                } else {
-                    let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                    stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
-                }
                 Ok(res)
             }
         }
