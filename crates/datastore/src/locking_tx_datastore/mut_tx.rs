@@ -1748,7 +1748,16 @@ impl MutTxId {
     ///
     /// This is used during `create_table` where the index is already created
     /// with the correct uniqueness. For adding constraints to existing tables,
-    /// use [`create_constraint`] instead.
+    /// use [`Self::create_constraint`] instead.
+    ///
+    /// Requires:
+    /// - `constraint.constraint_name` must not be used for any other database entity.
+    /// - `constraint.constraint_id == ConstraintId::SENTINEL`.
+    /// - `constraint.table_id != TableId::SENTINEL`.
+    /// - The caller is responsible for ensuring that the backing indices on
+    ///   `ColSet::from(&constraint.data.unique_columns())` already have the correct
+    ///   uniqueness — this method does not touch the in-memory index uniqueness.
+    ///   Use [`Self::create_constraint`] if the indices need to be converted.
     ///
     /// Ensures:
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
@@ -1808,6 +1817,7 @@ impl MutTxId {
         let table_id = st_constraint_ref.read_col(StConstraintFields::TableId)?;
         self.delete(ST_CONSTRAINT_ID, st_constraint_ref.pointer())?;
 
+        // Remove constraint in transaction's insert table.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This likely will do a clone-write as over time
         // the schema might have found other referents.
@@ -1983,6 +1993,11 @@ impl MutTxId {
             schema,
             made_non_unique_index_ids,
         ));
+        // TODO(1.0): we should also re-initialize `table` without a unique constraint.
+        // unless some other unique constraint on the same columns exists.
+        // NOTE(centril): is this already handled by dropping the corresponding index?
+        // Probably not in the case where an index
+        // with the same name goes from being unique to not unique.
 
         Ok(())
     }
