@@ -767,6 +767,14 @@ impl CommittedState {
                         idx.make_unique().expect("rollback: index should have no duplicates");
                     }
                 }
+                // Forward `drop_constraint` calls `Table::make_index_non_unique`, which
+                // rebuilds the pointer map when no unique index remained. Whatever the
+                // forward path did, the table invariant "pointer map is present iff no
+                // unique index exists" (see `table.rs`) is about to be re-established
+                // by the `make_unique` calls above — drop any rebuilt map now.
+                // `take_pointer_map` is idempotent: it returns `None` when the map is
+                // already absent, so it is safe to call unconditionally.
+                table.take_pointer_map();
             }
             // A constraint was added. Remove it.
             ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {

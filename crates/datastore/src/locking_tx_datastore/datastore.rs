@@ -3883,6 +3883,64 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_drop_constraint_rollback_restores_pointer_map_invariant() -> ResultTest<()> {
+        // Invariant (table.rs): a table holds a pointer map iff it has no unique index.
+        //
+        // Forward `drop_constraint` on a table with EXACTLY ONE unique constraint makes
+        // the backing index non-unique and rebuilds the pointer map (because no unique
+        // index remains to enforce set semantics). On rollback we must (a) restore the
+        // index to unique AND (b) drop the rebuilt pointer map — otherwise the table
+        // ends up with BOTH a unique index AND a pointer map, breaking the invariant.
+        //
+        // The schema must have exactly one unique constraint, otherwise the forward
+        // path's `!has_unique_index()` check short-circuits the rebuild and the test
+        // would pass trivially on broken code.
+        let datastore = get_datastore()?;
+
+        // TX1: create table with a single unique constraint on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let indices = vec![IndexSchema::for_test("Foo_id_idx_btree", BTreeAlgorithm::from(0))];
+        let constraints = vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)];
+        let schema = basic_table_schema_with_indices(indices, constraints);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // Baseline: with a unique index in place there should be no pointer map.
+        {
+            let committed = datastore.committed_state.read();
+            let table = committed.tables.get(&table_id).expect("table should exist");
+            assert!(table.has_unique_index(), "baseline: table should have a unique index");
+            assert!(
+                !table.has_pointer_map(),
+                "baseline: a unique index subsumes the pointer map",
+            );
+        }
+
+        // TX2: drop the only unique constraint, then rollback. Forward drop rebuilds the
+        // pointer map; rollback must drop it.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // After rollback: the unique index must be restored AND the pointer map that the
+        // forward path rebuilt must be discarded.
+        let committed = datastore.committed_state.read();
+        let table = committed.tables.get(&table_id).expect("table should exist");
+        assert!(
+            table.has_unique_index(),
+            "rollback of drop_constraint must restore the unique index",
+        );
+        assert!(
+            !table.has_pointer_map(),
+            "rollback must discard the pointer map rebuilt by forward drop_constraint — having both a unique index and a pointer map breaks the table invariant",
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_create_constraint_fails_without_backing_index() -> ResultTest<()> {
         let datastore = get_datastore()?;
 

@@ -1524,6 +1524,13 @@ impl Table {
         self.indexes.values().any(|idx| idx.is_unique())
     }
 
+    /// Returns whether this table currently holds a pointer map.
+    ///
+    /// Verifies the invariant "pointer map is present iff no unique index exists".
+    pub fn has_pointer_map(&self) -> bool {
+        self.pointer_map.is_some()
+    }
+
     /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
     pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
