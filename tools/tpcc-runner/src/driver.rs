@@ -253,15 +253,22 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         );
     }
 
+    let startup_stagger_window_ms = STARTUP_STAGGER_WINDOW_MS.min(config.warmup_secs.saturating_mul(1_000) / 2);
     let startup_stagger_ms = {
         let mut startup_rng = rand::rng();
-        startup_rng.random_range(0..=STARTUP_STAGGER_WINDOW_MS)
+        startup_rng.random_range(0..=startup_stagger_window_ms)
     };
     if startup_stagger_ms > 0 && crate::summary::now_millis() < schedule.stop_ms {
         tokio::time::sleep(Duration::from_millis(startup_stagger_ms)).await;
     }
 
     let mut rng = StdRng::seed_from_u64(seed);
+    let initial_think_kind = choose_transaction(&mut rng);
+    let initial_think_delay = think_time(initial_think_kind, config.think_time_scale, &mut rng);
+    if !initial_think_delay.is_zero() && crate::summary::now_millis() < schedule.stop_ms {
+        tokio::time::sleep(initial_think_delay).await;
+    }
+
     while !abort.load(Ordering::Relaxed) {
         if crate::summary::now_millis() >= schedule.stop_ms {
             break;
@@ -882,12 +889,18 @@ async fn connect_shared_database_clients(
                 shared_clients.insert(database_number, client);
             }
             Ok(Err(err)) => {
-                log::error!("driver {} failed to connect a shared database client: {err:#}", config.driver_id);
+                log::error!(
+                    "driver {} failed to connect a shared database client: {err:#}",
+                    config.driver_id
+                );
                 connect_tasks.abort_all();
                 return Err(err);
             }
             Err(err) => {
-                log::error!("driver {} failed to connect a shared database client: {err:#}", config.driver_id);
+                log::error!(
+                    "driver {} failed to connect a shared database client: {err:#}",
+                    config.driver_id
+                );
                 connect_tasks.abort_all();
                 return Err(anyhow!("shared database connection task failed: {}", err));
             }
