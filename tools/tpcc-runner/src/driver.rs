@@ -253,7 +253,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         );
     }
 
-    let startup_stagger_window_ms = STARTUP_STAGGER_WINDOW_MS.min(config.warmup_secs.saturating_mul(1_000) / 2);
+    let startup_stagger_window_ms = STARTUP_STAGGER_WINDOW_MS.max(config.warmup_secs.saturating_mul(1_000) / 2);
     let startup_stagger_ms = {
         let mut startup_rng = rand::rng();
         startup_rng.random_range(0..=startup_stagger_window_ms)
