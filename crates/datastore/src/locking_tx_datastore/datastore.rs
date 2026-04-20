@@ -3862,6 +3862,15 @@ pub(crate) mod tests {
             "create_constraint should fail when tx state conflicts with committed state"
         );
 
+        // Before rolling back, verify the merge-error revert path already restored the
+        // index to non-unique within the still-open failing tx: a further duplicate
+        // insert on the same key must succeed.
+        let pre_rollback_dup = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Dave", 19));
+        assert!(
+            pre_rollback_dup.is_ok(),
+            "index must be non-unique inside the failing tx: the merge-error path should revert `make_unique` before returning",
+        );
+
         // Rollback and verify the index is still non-unique.
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
