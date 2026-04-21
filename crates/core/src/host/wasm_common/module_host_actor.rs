@@ -648,7 +648,6 @@ impl InstanceCommon {
                         request_id: None,
                         timer: None,
                     };
-                    //TODO: Return back event in `UpdateDatabaseResult`?
                     let CommitAndBroadcastEventSuccess { tx_offset, .. } =
                         commit_and_broadcast_event(&info.subscriptions, None, event, tx);
 
