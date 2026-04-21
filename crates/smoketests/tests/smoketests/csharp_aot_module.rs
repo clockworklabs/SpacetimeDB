@@ -17,11 +17,14 @@ fn test_build_csharp_module_aot() {
         return;
     }
 
-    // Check for emscripten - skip if not available
+    // Check for emscripten - fail with helpful message if not available
     let emscripten_check = Command::new("emcc").arg("--version").output();
     if emscripten_check.is_err() || !emscripten_check.unwrap().status.success() {
-        eprintln!("Skipping AOT test - emscripten not available");
-        return;
+        panic!(
+            "NativeAOT-LLVM test requires emscripten but it was not found.\n\
+             Install from: https://emscripten.org/docs/getting_started/downloads.html\n\
+             Or ensure `emcc` is in your PATH."
+        );
     }
 
     let workspace = workspace_root();
