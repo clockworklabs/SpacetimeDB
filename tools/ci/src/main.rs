@@ -572,9 +572,6 @@ fn run_dlls() -> Result<()> {
     Ok(())
 }
 
-fn run_update_flow(target: Option<String>, github_token_auth: bool) -> Result<()> {
-}
-
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -783,8 +780,6 @@ fn main() -> Result<()> {
                 spacetime_path.set_extension(std::env::consts::EXE_EXTENSION);
             }
             cmd(spacetime_path, [&root_arg, "help"]).run()?;
-
-            Ok(())
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
