@@ -1,7 +1,10 @@
+pub mod bugbase;
 pub mod datastore;
+pub mod datastore_sim;
 pub mod runner;
 pub mod scheduler;
 pub mod seed;
+pub mod shrink;
 pub mod subsystem;
 pub mod sync;
 pub mod trace;

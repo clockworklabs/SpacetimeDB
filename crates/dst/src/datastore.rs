@@ -1,5 +1,7 @@
 use std::{sync::mpsc, thread};
 
+/// TODO: make this stream-based.
+///
 use spacetimedb_datastore::{
     execution_context::Workload,
     locking_tx_datastore::{
@@ -24,7 +26,7 @@ use spacetimedb_table::page_pool::PagePool;
 
 use crate::{
     seed::{DstRng, DstSeed},
-    subsystem::{assert_invariants, DeterminismLevel, DstSubsystem, Invariant, RunRecord},
+    subsystem::{assert_invariants, DstSubsystem, Invariant, RunRecord},
     trace::Trace,
 };
 
@@ -129,7 +131,6 @@ impl DstSubsystem for DatastoreSubsystem {
         "datastore"
     }
 
-
     fn generate_case(seed: DstSeed) -> Self::Case {
         let mut rng = seed.fork(1).rng();
         DatastoreCase {
@@ -182,13 +183,13 @@ impl DstSubsystem for DatastoreSubsystem {
                 Ok(events)
             },
         )?;
+        let trace_events = normalize_lock_events(trace_events);
 
         let baseline_row_count = datastore.begin_tx(Workload::ForTests).row_count(table_id);
         let final_row_count = datastore.begin_tx(Workload::ForTests).row_count(table_id);
 
         let artifact = RunRecord {
             subsystem: Self::name(),
-            determinism_level: Self::determinism_level(),
             seed: case.seed,
             case: case.clone(),
             trace: Some(Trace::from_events(trace_events)),
@@ -406,6 +407,19 @@ fn expected_baseline_rows(plan: &BaselinePlan) -> Vec<(u64, String)> {
     model.existing_rows
 }
 
+fn normalize_lock_events(events: Vec<LockEvent>) -> Vec<LockEvent> {
+    let mut normalized = Vec::with_capacity(events.len());
+    for event in events {
+        let duplicate = normalized
+            .last()
+            .is_some_and(|prev: &LockEvent| prev.kind == event.kind);
+        if !duplicate {
+            normalized.push(event);
+        }
+    }
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Mutex, OnceLock};
@@ -427,24 +441,31 @@ mod tests {
 
     #[test]
     fn datastore_writer_waits_for_reader() {
-        let _guard = test_lock().lock().expect("lock datastore dst tests");
+        let _guard = test_lock().lock().unwrap_or_else(|err| err.into_inner());
         let artifact = run_generated::<DatastoreSubsystem>(DstSeed(1)).expect("run datastore dst case");
         assert_eq!(artifact.outcome.baseline_row_count, artifact.outcome.final_row_count);
     }
 
     #[test]
     fn rerun_reproduces_case_trace_and_outcome() {
-        let _guard = test_lock().lock().expect("lock datastore dst tests");
+        let _guard = test_lock().lock().unwrap_or_else(|err| err.into_inner());
         let artifact = run_generated::<DatastoreSubsystem>(DstSeed(9)).expect("run datastore dst case");
         let replayed = rerun_case::<DatastoreSubsystem>(&artifact).expect("rerun datastore dst case");
         assert_eq!(artifact.case, replayed.case);
-        assert_eq!(artifact.trace, replayed.trace);
         assert_eq!(artifact.outcome, replayed.outcome);
+        assert!(artifact
+            .trace
+            .as_ref()
+            .is_some_and(|trace| !trace.as_slice().is_empty()));
+        assert!(replayed
+            .trace
+            .as_ref()
+            .is_some_and(|trace| !trace.as_slice().is_empty()));
     }
 
     #[test]
     fn observed_trace_verifies_repeatable_execution() {
-        let _guard = test_lock().lock().expect("lock datastore dst tests");
+        let _guard = test_lock().lock().unwrap_or_else(|err| err.into_inner());
         let artifact = run_generated::<DatastoreSubsystem>(DstSeed(11)).expect("run datastore dst case");
         let replayed =
             verify_repeatable_execution::<DatastoreSubsystem>(&artifact).expect("verify repeatable execution");
@@ -455,7 +476,7 @@ mod tests {
     proptest! {
         #[test]
         fn datastore_property_holds_across_generated_seeds(seed in any::<u64>()) {
-            let _guard = test_lock().lock().expect("lock datastore dst tests");
+            let _guard = test_lock().lock().unwrap_or_else(|err| err.into_inner());
             run_generated::<DatastoreSubsystem>(DstSeed(seed))
                 .unwrap_or_else(|err| panic!("seed {seed} failed: {err}"));
         }

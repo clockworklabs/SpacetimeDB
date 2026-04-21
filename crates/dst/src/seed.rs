@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct DstSeed(pub u64);
 
 impl DstSeed {

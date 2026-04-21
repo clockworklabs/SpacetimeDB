@@ -8127,6 +8127,8 @@ dependencies = [
  "anyhow",
  "pretty_assertions",
  "proptest",
+ "serde",
+ "serde_json",
  "spacetimedb-datastore",
  "spacetimedb-execution",
  "spacetimedb-lib 2.1.0",
@@ -8134,6 +8136,7 @@ dependencies = [
  "spacetimedb-sats 2.1.0",
  "spacetimedb-schema",
  "spacetimedb-table",
+ "tempfile",
 ]
 
 [[package]]

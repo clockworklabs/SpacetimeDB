@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 spacetimedb-datastore = { workspace = true, features = ["test"] }
 spacetimedb-execution.workspace = true
 spacetimedb-lib.workspace = true
@@ -19,3 +21,4 @@ spacetimedb-table.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 proptest.workspace = true
+tempfile.workspace = true
