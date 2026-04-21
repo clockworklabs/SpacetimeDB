@@ -299,6 +299,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Set up Node.js
+       uses: actions/setup-node@v4
+       with:
+         node-version: 22
+
       - uses: pnpm/action-setup@v4
         with:
           run_install: true
