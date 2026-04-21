@@ -59,6 +59,7 @@ pub(crate) fn handler_impl(args: TokenStream, original_function: &ItemFn) -> syn
     Ok(quote! {
         #inner_fn
 
+        #[allow(non_upper_case_globals)]
         #vis const #func_name: spacetimedb::http::Handler = spacetimedb::http::Handler::new(#handler_name);
 
         const _: () = {
