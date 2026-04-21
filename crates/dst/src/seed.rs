@@ -1,5 +1,12 @@
+//! Stable seed and RNG utilities used across DST runs.
+//!
+//! The important property here is repeatability, not statistical quality.
+//! `DstSeed::fork` is used to derive independent substreams without requiring
+//! callers to manually coordinate RNG state.
+
 use serde::{Deserialize, Serialize};
 
+/// Top-level seed value for a deterministic run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct DstSeed(pub u64);
 
@@ -16,6 +23,7 @@ impl DstSeed {
     }
 }
 
+/// Small deterministic RNG for simulator code.
 #[derive(Clone, Debug)]
 pub struct DstRng {
     state: u64,

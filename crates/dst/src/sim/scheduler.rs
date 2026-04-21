@@ -1,5 +1,12 @@
+//! Generic scheduler for actor-style deterministic simulations.
+//!
+//! The scheduler is deliberately small. It repeatedly selects a runnable actor,
+//! lets it emit events into the trace, and stops once every actor reports that
+//! it is complete.
+
 use crate::{seed::DstRng, trace::Trace};
 
+/// Result of asking an actor to make one step of progress.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StepState {
     Progressed,
@@ -7,6 +14,7 @@ pub enum StepState {
     Complete,
 }
 
+/// Minimal interface for something the scheduler can drive.
 pub trait Actor {
     type Event: Clone;
 
@@ -14,12 +22,14 @@ pub trait Actor {
     fn is_complete(&self) -> bool;
 }
 
+/// Policy for choosing the next runnable actor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScheduleMode {
     RoundRobin,
     Seeded,
 }
 
+/// Deterministic actor scheduler with either round-robin or seeded selection.
 pub struct Scheduler<A: Actor> {
     actors: Vec<A>,
     cursor: usize,

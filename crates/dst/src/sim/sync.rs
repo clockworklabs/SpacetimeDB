@@ -1,5 +1,11 @@
+//! Tiny synchronization primitives for deterministic tests.
+//!
+//! This file models only the behavior needed by crate tests; it is not trying
+//! to be a full synchronization library.
+
 use std::collections::VecDeque;
 
+/// Lock lifecycle events emitted by [`SimRwLock`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LockEventKind {
     ReadRequested,
@@ -10,12 +16,14 @@ pub enum LockEventKind {
     WriteReleased,
 }
 
+/// One simulated lock event tagged with the actor that caused it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LockEvent {
     pub actor_id: usize,
     pub kind: LockEventKind,
 }
 
+/// Minimal FIFO read/write lock model used in deterministic tests.
 #[derive(Clone, Debug, Default)]
 pub struct SimRwLock {
     readers: usize,

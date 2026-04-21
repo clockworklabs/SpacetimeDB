@@ -1,3 +1,10 @@
+//! Trace representation for deterministic runs.
+//!
+//! Each event gets a monotonically increasing `step_id`. Additional metadata is
+//! optional so simple simulations can use plain event streams while richer
+//! schedulers can attach logical time, actor ids, or resource ids.
+
+/// One event plus optional metadata captured during execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StampedEvent<E> {
     pub step_id: u64,
@@ -7,6 +14,7 @@ pub struct StampedEvent<E> {
     pub event: E,
 }
 
+/// Ordered event log for one deterministic run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trace<E> {
     events: Vec<StampedEvent<E>>,
