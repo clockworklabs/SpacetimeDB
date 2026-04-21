@@ -625,9 +625,10 @@ macro_rules! impl_reducer_procedure_view {
             Ret: IntoReducerResult
         {
             #[allow(non_snake_case)]
+            #[inline(always)]
             fn invoke(&self, ctx: &ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
                 let ($($T,)*) = args;
-                self(ctx, $($T),*).into_result()
+                __rust_begin_short_backtrace(|| self(ctx, $($T),*).into_result())
             }
         }
 
@@ -638,9 +639,10 @@ macro_rules! impl_reducer_procedure_view {
             Ret: IntoProcedureResult,
         {
             #[allow(non_snake_case)]
+            #[inline(always)]
             fn invoke(&self, ctx: &mut ProcedureContext, args: ($($T,)*)) -> Ret {
                 let ($($T,)*) = args;
-                self(ctx, $($T),*)
+                __rust_begin_short_backtrace(|| self(ctx, $($T),*))
             }
         }
 
@@ -653,9 +655,10 @@ macro_rules! impl_reducer_procedure_view {
             Retn: ViewReturn,
         {
             #[allow(non_snake_case)]
+            #[inline(always)]
             fn invoke(&self, ctx: &ViewContext, args: ($($T,)*)) -> Retn {
                 let ($($T,)*) = args;
-                self(ctx, $($T),*)
+                __rust_begin_short_backtrace(|| self(ctx, $($T),*))
             }
         }
 
@@ -668,9 +671,10 @@ macro_rules! impl_reducer_procedure_view {
             Retn: ViewReturn,
         {
             #[allow(non_snake_case)]
+            #[inline(always)]
             fn invoke(&self, ctx: &AnonymousViewContext, args: ($($T,)*)) -> Retn {
                 let ($($T,)*) = args;
-                self(ctx, $($T),*)
+                __rust_begin_short_backtrace(|| self(ctx, $($T),*))
             }
         }
     };
@@ -1331,4 +1335,18 @@ pub trait ExplicitNames {
     fn explicit_names() -> RawExplicitNames {
         RawExplicitNames::default()
     }
+}
+
+// Used to tidy up the backtrace in `crates/core/src/host/wasmtime/wasmtime_instance_env.rs`
+#[inline(never)]
+pub(crate) fn __rust_begin_short_backtrace<F, T>(f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let result = f();
+
+    // prevent this frame from being tail-call optimised away
+    std::hint::black_box(());
+
+    result
 }
