@@ -98,6 +98,10 @@ jobs:
           cd $env:USERPROFILE\emsdk
           .\emsdk install 4.0.21
           .\emsdk activate 4.0.21
+          # Add emscripten to PATH for subsequent steps and subprocesses
+          $emsdkPath = "$env:USERPROFILE\emsdk\upstream\emscripten"
+          Add-Content -Path $env:GITHUB_PATH -Value $emsdkPath
+          Write-Host "Added $emsdkPath to PATH"
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
