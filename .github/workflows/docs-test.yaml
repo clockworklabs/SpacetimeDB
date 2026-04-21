@@ -35,10 +35,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Install dependencies
-        working-directory: docs
-        run: pnpm install
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Docusaurus build
-        working-directory: docs
-        run: pnpm build
+        run: cargo ci docs
