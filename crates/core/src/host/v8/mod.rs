@@ -549,10 +549,30 @@ fn startup_instance_worker<'scope>(
     Ok((hook_functions, module_common))
 }
 
+/// Amount by which the V8 heap limit is extended each time V8 signals it is
+/// close to OOM. V8 will call the callback repeatedly as the isolate keeps
+/// growing, so this just needs to be enough slack to avoid hot-looping the
+/// callback on every allocation.
+const NEAR_HEAP_LIMIT_SLACK_BYTES: usize = 256 * 1024 * 1024;
+
+/// Called by V8 right before it would abort the process on heap exhaustion.
+///
+/// Without this hook, V8 aborts the entire host when a module's working set
+/// outgrows V8's default ~1.4 GiB soft limit. We instead grant more heap on
+/// demand so the module can keep running.
+unsafe extern "C" fn grow_heap_limit_callback(
+    _data: *mut core::ffi::c_void,
+    current_heap_limit: usize,
+    _initial_heap_limit: usize,
+) -> usize {
+    current_heap_limit.saturating_add(NEAR_HEAP_LIMIT_SLACK_BYTES)
+}
+
 /// Returns a new isolate.
 fn new_isolate() -> OwnedIsolate {
     let mut isolate = Isolate::new(<_>::default());
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
+    isolate.add_near_heap_limit_callback(grow_heap_limit_callback, core::ptr::null_mut());
     isolate
 }
 
