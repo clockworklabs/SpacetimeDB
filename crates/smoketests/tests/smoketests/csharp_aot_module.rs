@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use spacetimedb_guard::ensure_binaries_built;
-use spacetimedb_smoketests::{require_dotnet, workspace_root};
+use spacetimedb_smoketests::{have_emscripten, require_dotnet, workspace_root};
 use std::process::Command;
 
 /// Test NativeAOT-LLVM build path for C# modules.
@@ -18,8 +18,8 @@ fn test_build_csharp_module_aot() {
     }
 
     // Check for emscripten - fail with helpful message if not available
-    let emscripten_check = Command::new("emcc").arg("--version").output();
-    if emscripten_check.is_err() || !emscripten_check.unwrap().status.success() {
+    // Uses have_emscripten() which checks for both `emcc` and `emcc.bat` on Windows
+    if !have_emscripten() {
         panic!(
             "NativeAOT-LLVM test requires emscripten but it was not found.\n\
              Install from: https://emscripten.org/docs/getting_started/downloads.html\n\
