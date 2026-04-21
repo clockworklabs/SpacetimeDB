@@ -179,7 +179,11 @@ fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Res
     let status = cmd.args(&args).status()?;
 
     ensure!(status.success(), "Tests failed");
-    cmd!("bash", "tools/check-diff.sh", "crates/smoketests").run()?;
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "crates/smoketests").run()?;
+    ensure!(
+        diff_status.status.success(),
+        "There is a diff in the smoketests directory."
+    );
     Ok(())
 }
 
