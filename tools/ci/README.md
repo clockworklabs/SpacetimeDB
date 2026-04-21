@@ -102,8 +102,8 @@ Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 
 When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
 
-- `--dotnet`: Whether to run smoketests that require the .NET toolchain
-- `args`: Additional arguments to pass to the test runner
+- `--dotnet`: 
+- `args`: 
 - `--help`: Print help (see a summary with '-h')
 
 #### `prepare`
@@ -130,7 +130,7 @@ Usage: check-mod-list
 
 **Options:**
 
-- `--help`: Print help
+- `--help`: 
 
 #### `help`
 
@@ -141,7 +141,7 @@ Usage: help [COMMAND]...
 
 **Options:**
 
-- `subcommand`: Print help for the subcommand(s)
+- `subcommand`: 
 
 ### `update-flow`
 
@@ -193,7 +193,7 @@ Usage: global-json-policy
 
 **Options:**
 
-- `--help`: Print help
+- `--help`: 
 
 ### `publish-checks`
 
@@ -204,7 +204,7 @@ Usage: publish-checks
 
 **Options:**
 
-- `--help`: Print help
+- `--help`: 
 
 ### `typescript-test`
 
@@ -215,7 +215,7 @@ Usage: typescript-test
 
 **Options:**
 
-- `--help`: Print help
+- `--help`: 
 
 ### `docs`
 
@@ -226,7 +226,7 @@ Usage: docs
 
 **Options:**
 
-- `--help`: Print help
+- `--help`: 
 
 ### `csharp-tests`
 
@@ -237,7 +237,7 @@ Usage: csharp-tests
 
 **Options:**
 
-- `--help`: Print help
+- `--help`: 
 
 ### `unity-tests`
 
@@ -248,7 +248,7 @@ Usage: unity-tests
 
 **Options:**
 
-- `--help`: Print help
+- `--help`: 
 
 ### `help`
 
@@ -259,7 +259,7 @@ Usage: help [COMMAND]...
 
 **Options:**
 
-- `subcommand`: Print help for the subcommand(s)
+- `subcommand`: 
 
 
 ---
