@@ -5,13 +5,14 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::task::JoinHandle;
 use tokio::task::JoinSet;
 
 use crate::client::{expect_ok, ModuleClient};
 use crate::config::{default_run_id, DriverConfig};
-use crate::metrics_module_bindings::{record_txn_bucket, DbConnection as MetricsDbConnection};
+use crate::metrics_module_bindings::{record_txn_bucket_count, DbConnection as MetricsDbConnection};
 use crate::metrics_module_client::connect_metrics_module_async;
 use crate::module_bindings::*;
 use crate::protocol::{
@@ -24,6 +25,7 @@ use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 
 const STARTUP_STAGGER_WINDOW_MS: u64 = 18_000;
+const METRICS_FLUSH_INTERVAL_MS: u64 = 500;
 type MetricsClientPool = Vec<Arc<MetricsDbConnection>>;
 type DatabaseClientPool = Vec<Arc<ModuleClient>>;
 type SharedDatabaseClients = BTreeMap<u32, DatabaseClientPool>;
@@ -32,7 +34,7 @@ struct TerminalRuntime {
     config: DriverConfig,
     client: Arc<ModuleClient>,
     metrics: SharedMetrics,
-    metrics_client: Arc<MetricsDbConnection>,
+    txn_bucket_reporter: Arc<TxnBucketReporter>,
     abort: Arc<AtomicBool>,
     start_logged: Arc<AtomicBool>,
     request_ids: Arc<AtomicU64>,
@@ -41,6 +43,13 @@ struct TerminalRuntime {
     assignment: TerminalAssignment,
     database_identity: spacetimedb_sdk::Identity,
     seed: u64,
+}
+
+struct TxnBucketReporter {
+    run_start_ms: u64,
+    pending: Mutex<BTreeMap<u64, u64>>,
+    metrics_clients: MetricsClientPool,
+    next_client: AtomicU64,
 }
 
 struct TransactionContext<'a> {
@@ -99,6 +108,13 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         config.driver_id,
         metrics_clients.len()
     );
+    let txn_bucket_reporter = Arc::new(TxnBucketReporter::new(
+        schedule.warmup_start_ms,
+        metrics_clients.clone(),
+    ));
+    let txn_bucket_reporter_shutdown = Arc::new(AtomicBool::new(false));
+    let txn_bucket_reporter_task =
+        spawn_txn_bucket_reporter(txn_bucket_reporter.clone(), txn_bucket_reporter_shutdown.clone());
     log::info!(
         "driver {} connecting {} shared database client(s) across {} database(s) with pool size {}",
         config.driver_id,
@@ -151,9 +167,6 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                             topology.database_name(database_number)
                         )
                     })?;
-            let metrics_client = select_pooled_metrics_client(&metrics_clients, assignment.terminal_id)
-                .cloned()
-                .ok_or_else(|| anyhow!("missing pooled metrics client"))?;
             let terminal_seed = schedule.measure_start_ms ^ ((assignment.terminal_id as u64) << 32) ^ 0xabcdu64;
             let terminal_config = config.clone();
             let terminal_metrics = metrics.clone();
@@ -166,7 +179,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                 config: terminal_config,
                 client: client.clone(),
                 metrics: terminal_metrics,
-                metrics_client,
+                txn_bucket_reporter: txn_bucket_reporter.clone(),
                 abort: terminal_abort,
                 start_logged: terminal_start_logged,
                 request_ids: terminal_request_ids,
@@ -212,11 +225,31 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         }
     }
     if let Some(err) = first_error {
+        if let Err(flush_err) = stop_txn_bucket_reporter(
+            txn_bucket_reporter.as_ref(),
+            txn_bucket_reporter_shutdown,
+            txn_bucket_reporter_task,
+        )
+        .await
+        {
+            log::error!(
+                "driver {} failed to stop txn bucket reporter after terminal error: {flush_err:#}",
+                config.driver_id
+            );
+        }
+        drop(txn_bucket_reporter);
         shutdown_shared_database_clients(shared_database_clients).await;
         shutdown_metrics_clients(metrics_clients).await;
         return Err(err);
     }
 
+    stop_txn_bucket_reporter(
+        txn_bucket_reporter.as_ref(),
+        txn_bucket_reporter_shutdown,
+        txn_bucket_reporter_task,
+    )
+    .await?;
+    drop(txn_bucket_reporter);
     harvest_delivery_completions(&config, &schedule, &metrics, &shared_database_clients).await?;
     shutdown_shared_database_clients(shared_database_clients).await;
     shutdown_metrics_clients(metrics_clients).await;
@@ -249,7 +282,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
         config,
         client,
         metrics,
-        metrics_client,
+        txn_bucket_reporter,
         abort,
         start_logged,
         request_ids,
@@ -355,7 +388,7 @@ async fn run_terminal(runtime: TerminalRuntime) -> Result<()> {
                 // Some metrics depend on knowing all completed orders, even outside the
                 // measurement window
                 if record.kind == TransactionKind::NewOrder && record.success {
-                    let _ = metrics_client.reducers.record_txn_bucket();
+                    txn_bucket_reporter.record(record.timestamp_ms);
                 }
 
                 if record.timestamp_ms >= schedule.measure_start_ms && record.timestamp_ms < schedule.measure_end_ms {
@@ -1063,6 +1096,99 @@ async fn connect_metrics_clients(config: &DriverConfig) -> Result<MetricsClientP
     Ok(metrics_clients.into_iter().map(|(_, client)| client).collect())
 }
 
+impl TxnBucketReporter {
+    fn new(run_start_ms: u64, metrics_clients: MetricsClientPool) -> Self {
+        Self {
+            run_start_ms,
+            pending: Mutex::new(BTreeMap::new()),
+            metrics_clients,
+            next_client: AtomicU64::new(0),
+        }
+    }
+
+    fn record(&self, timestamp_ms: u64) {
+        let bucket_start_ms = bucket_start_ms(self.run_start_ms, timestamp_ms);
+        let mut pending = self.pending.lock().expect("txn bucket reporter mutex poisoned");
+        let count = pending.entry(bucket_start_ms).or_insert(0);
+        *count = count.saturating_add(1);
+    }
+
+    async fn flush(&self) -> Result<()> {
+        let drained = {
+            let mut pending = self.pending.lock().expect("txn bucket reporter mutex poisoned");
+            if pending.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending)
+        };
+
+        if let Err(err) = self.send_counts(&drained).await {
+            let mut pending = self.pending.lock().expect("txn bucket reporter mutex poisoned");
+            for (bucket_start_ms, count) in drained {
+                let pending_count = pending.entry(bucket_start_ms).or_insert(0);
+                *pending_count = pending_count.saturating_add(count);
+            }
+            return Err(err);
+        }
+
+        Ok(())
+    }
+
+    async fn send_counts(&self, counts: &BTreeMap<u64, u64>) -> Result<()> {
+        for (bucket_start_ms, count) in counts {
+            let client = self.next_metrics_client().context("missing metrics client")?;
+            client
+                .reducers
+                .record_txn_bucket_count(*bucket_start_ms, *count)
+                .with_context(|| {
+                    format!(
+                        "failed to send txn bucket count bucket_start_ms={} count={}",
+                        bucket_start_ms, count
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    fn next_metrics_client(&self) -> Option<&Arc<MetricsDbConnection>> {
+        if self.metrics_clients.is_empty() {
+            return None;
+        }
+        let index = self.next_client.fetch_add(1, Ordering::Relaxed);
+        let index = usize::try_from(index).unwrap_or(usize::MAX) % self.metrics_clients.len();
+        self.metrics_clients.get(index)
+    }
+}
+
+fn spawn_txn_bucket_reporter(reporter: Arc<TxnBucketReporter>, shutdown: Arc<AtomicBool>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(METRICS_FLUSH_INTERVAL_MS)).await;
+            if let Err(err) = reporter.flush().await {
+                log::warn!("failed to flush txn bucket metrics; will retry: {err:#}");
+            }
+            if shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+    })
+}
+
+async fn stop_txn_bucket_reporter(
+    reporter: &TxnBucketReporter,
+    shutdown: Arc<AtomicBool>,
+    reporter_task: JoinHandle<()>,
+) -> Result<()> {
+    shutdown.store(true, Ordering::Relaxed);
+    reporter_task.await.context("txn bucket reporter task failed")?;
+    reporter.flush().await.context("failed final txn bucket metrics flush")
+}
+
+fn bucket_start_ms(run_start_ms: u64, timestamp_ms: u64) -> u64 {
+    let bucket_offset_ms = timestamp_ms.saturating_sub(run_start_ms);
+    run_start_ms + ((bucket_offset_ms / 1_000) * 1_000)
+}
+
 async fn shutdown_metrics_clients(metrics_clients: MetricsClientPool) {
     for client in metrics_clients {
         if let Some(client) = Arc::into_inner(client) {
@@ -1088,13 +1214,6 @@ fn select_pooled_database_client(
 ) -> Option<&Arc<ModuleClient>> {
     let clients = shared_database_clients.get(&database_number)?;
     select_pooled_client(clients, terminal_id)
-}
-
-fn select_pooled_metrics_client(
-    metrics_clients: &MetricsClientPool,
-    terminal_id: u32,
-) -> Option<&Arc<MetricsDbConnection>> {
-    select_pooled_client(metrics_clients, terminal_id)
 }
 
 fn representative_database_client(clients: &DatabaseClientPool) -> Option<&Arc<ModuleClient>> {
@@ -1143,5 +1262,12 @@ mod tests {
         let metrics_clients = vec![Arc::new(()), Arc::new(()), Arc::new(())];
         let selected = select_pooled_client(&metrics_clients, 10).expect("client");
         assert!(Arc::ptr_eq(selected, &metrics_clients[1]));
+    }
+
+    #[test]
+    fn bucket_start_ms_snaps_to_run_relative_second() {
+        assert_eq!(bucket_start_ms(1_234, 1_234), 1_234);
+        assert_eq!(bucket_start_ms(1_234, 2_233), 1_234);
+        assert_eq!(bucket_start_ms(1_234, 2_234), 2_234);
     }
 }

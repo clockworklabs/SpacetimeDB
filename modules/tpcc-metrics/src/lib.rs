@@ -125,3 +125,25 @@ pub fn record_txn_bucket_2(ctx: &ReducerContext, count: u64) {
         });
     }
 }
+
+#[reducer]
+pub fn record_txn_bucket_count(ctx: &ReducerContext, bucket_start_ms: u64, count: u64) {
+    if count == 0 {
+        return;
+    }
+    let Some(state) = ctx.db.state().id().find(0) else {
+        return;
+    };
+
+    let bucket_offset_ms = bucket_start_ms.saturating_sub(state.run_start_ms);
+    let bucket_start_ms = state.run_start_ms + ((bucket_offset_ms / BUCKET_SIZE_MS) * BUCKET_SIZE_MS);
+
+    if let Some(bucket) = ctx.db.txn_bucket().bucket_start_ms().find(bucket_start_ms) {
+        ctx.db.txn_bucket().bucket_start_ms().update(TxnBucket {
+            count: bucket.count.saturating_add(count),
+            ..bucket
+        });
+    } else {
+        ctx.db.txn_bucket().insert(TxnBucket { bucket_start_ms, count });
+    }
+}

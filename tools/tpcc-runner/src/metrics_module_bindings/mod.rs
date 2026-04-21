@@ -7,6 +7,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod clear_state_reducer;
+pub mod record_txn_bucket_count_reducer;
 pub mod record_txn_bucket_reducer;
 pub mod record_txn_reducer;
 pub mod reset_reducer;
@@ -18,6 +19,7 @@ pub mod txn_table;
 pub mod txn_type;
 
 pub use clear_state_reducer::clear_state;
+pub use record_txn_bucket_count_reducer::record_txn_bucket_count;
 pub use record_txn_bucket_reducer::record_txn_bucket;
 pub use record_txn_reducer::record_txn;
 pub use reset_reducer::reset;
@@ -41,6 +43,10 @@ pub enum Reducer {
         latency_ms: u16,
     },
     RecordTxnBucket,
+    RecordTxnBucketCount {
+        bucket_start_ms: u64,
+        count: u64,
+    },
     Reset {
         warehouse_count: u64,
         warmup_duration_ms: u64,
@@ -59,6 +65,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ClearState => "clear_state",
             Reducer::RecordTxn { .. } => "record_txn",
             Reducer::RecordTxnBucket => "record_txn_bucket",
+            Reducer::RecordTxnBucketCount { .. } => "record_txn_bucket_count",
             Reducer::Reset { .. } => "reset",
             _ => unreachable!(),
         }
@@ -71,6 +78,12 @@ impl __sdk::Reducer for Reducer {
                 latency_ms: latency_ms.clone(),
             }),
             Reducer::RecordTxnBucket => __sats::bsatn::to_vec(&record_txn_bucket_reducer::RecordTxnBucketArgs {}),
+            Reducer::RecordTxnBucketCount { bucket_start_ms, count } => {
+                __sats::bsatn::to_vec(&record_txn_bucket_count_reducer::RecordTxnBucketCountArgs {
+                    bucket_start_ms: bucket_start_ms.clone(),
+                    count: count.clone(),
+                })
+            }
             Reducer::Reset {
                 warehouse_count,
                 warmup_duration_ms,

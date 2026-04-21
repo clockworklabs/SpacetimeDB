@@ -250,6 +250,10 @@ under `tpcc-results/<run-id>/<driver-id>/` unless `--output-dir` is provided.
 database connections per used database and the number of shared `tpcc-metrics`
 connections per driver.
 
+Dashboard throughput metrics are aggregated in-process by each driver and
+flushed to `tpcc-metrics` periodically, rather than sending one metrics reducer
+call for every successful `NewOrder`.
+
 ## Distributed workflow
 
 To run multiple databases across machines, first publish `tpcc-0`, `tpcc-1`,
