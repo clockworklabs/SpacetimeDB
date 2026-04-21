@@ -127,6 +127,62 @@ fn router() -> Router {
 }
 "#;
 
+const STRICT_ROOT_ROUTING_MODULE_CODE: &str = r#"
+use spacetimedb::http::{Body, Request, Response, Router};
+use spacetimedb::HandlerContext;
+
+#[spacetimedb::http::handler]
+fn empty_root(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("empty"))
+}
+
+#[spacetimedb::http::handler]
+fn slash_root(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("slash"))
+}
+
+#[spacetimedb::http::handler]
+fn foo(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("foo"))
+}
+
+#[spacetimedb::http::handler]
+fn foo_slash(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("foo-slash"))
+}
+
+#[spacetimedb::http::router]
+fn router() -> Router {
+    Router::new()
+        .get("", empty_root)
+        .get("/", slash_root)
+        .get("/foo", foo)
+        .get("/foo/", foo_slash)
+}
+"#;
+
+const STRICT_NON_ROOT_ROUTING_MODULE_CODE: &str = r#"
+use spacetimedb::http::{Body, Request, Response, Router};
+use spacetimedb::HandlerContext;
+
+#[spacetimedb::http::handler]
+fn foo(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("foo"))
+}
+
+#[spacetimedb::http::handler]
+fn foo_slash(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("foo-slash"))
+}
+
+#[spacetimedb::http::router]
+fn router() -> Router {
+    Router::new()
+        .get("/foo", foo)
+        .get("/foo/", foo_slash)
+}
+"#;
+
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
 #[test]
@@ -244,4 +300,53 @@ fn http_routes_pr_example_round_trip() {
         .send()
         .expect("retrieve invalid failed");
     assert!(resp.status().is_server_error());
+}
+
+#[test]
+fn http_routes_are_strict_for_non_root_paths() {
+    let test = Smoketest::builder()
+        .module_code(STRICT_NON_ROOT_ROUTING_MODULE_CODE)
+        .build();
+    let identity = test.database_identity.as_ref().expect("database identity missing");
+
+    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(format!("{base}/foo")).send().expect("foo failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("foo body"), "foo");
+
+    let resp = client.get(format!("{base}/foo/")).send().expect("foo slash failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("foo slash body"), "foo-slash");
+
+    let resp = client.get(format!("{base}//")).send().expect("double slash failed");
+    assert_eq!(resp.status().as_u16(), 404);
+    assert_eq!(resp.text().expect("double slash body"), NO_SUCH_ROUTE_BODY);
+
+    let resp = client
+        .get(format!("{base}//foo"))
+        .send()
+        .expect("double slash foo failed");
+    assert_eq!(resp.status().as_u16(), 404);
+    assert_eq!(resp.text().expect("double slash foo body"), NO_SUCH_ROUTE_BODY);
+}
+
+#[test]
+fn http_routes_are_strict_for_root_paths() {
+    let test = Smoketest::builder()
+        .module_code(STRICT_ROOT_ROUTING_MODULE_CODE)
+        .build();
+    let identity = test.database_identity.as_ref().expect("database identity missing");
+
+    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(base.clone()).send().expect("empty root failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("empty root body"), "empty");
+
+    let resp = client.get(format!("{base}/")).send().expect("slash root failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("slash root body"), "slash");
 }

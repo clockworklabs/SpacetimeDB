@@ -227,7 +227,7 @@ fn join_paths(prefix: &str, suffix: &str) -> String {
 }
 
 fn assert_valid_path(path: &str) {
-    if !path.starts_with('/') {
+    if !path.is_empty() && !path.starts_with('/') {
         panic!("Route paths must start with `/`: {path}");
     }
     if !path.chars().all(character_is_acceptable_for_route_path) {

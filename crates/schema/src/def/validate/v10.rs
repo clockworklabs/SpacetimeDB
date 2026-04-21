@@ -359,7 +359,9 @@ fn change_scheduled_functions_and_lifetimes_visibility(
 
 fn validate_http_route_path(path: &RawIdentifier) -> Result<()> {
     let path_str = path.as_ref();
-    if !path_str.starts_with('/') || !path_str.chars().all(character_is_acceptable_for_route_path) {
+    if (!path_str.is_empty() && !path_str.starts_with('/'))
+        || !path_str.chars().all(character_is_acceptable_for_route_path)
+    {
         return Err(ValidationError::InvalidHttpRoutePath { path: path.clone() }.into());
     }
     Ok(())

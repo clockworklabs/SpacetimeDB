@@ -238,6 +238,14 @@ pub async fn handle_http_route_root<S: ControlStateDelegate + NodeDelegate>(
     handle_http_route_impl(worker_ctx, name_or_identity, None, request).await
 }
 
+pub async fn handle_http_route_root_slash<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Path(HttpRouteRootParams { name_or_identity }): Path<HttpRouteRootParams>,
+    request: Request,
+) -> axum::response::Result<impl IntoResponse> {
+    handle_http_route_impl(worker_ctx, name_or_identity, Some(String::new()), request).await
+}
+
 pub async fn handle_http_route<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Path(HttpRouteParams { name_or_identity, path }): Path<HttpRouteParams>,
@@ -256,7 +264,8 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
     let handler_path = match path.as_deref() {
-        Some("") | None => "/".to_string(),
+        None => "".to_string(),
+        Some("") => "/".to_string(),
         Some(path) => format!("/{path}"),
     };
 
@@ -1445,6 +1454,7 @@ where
         // Keep these routes merged separately from the authenticated database router.
         let http_route_router = axum::Router::<S>::new()
             .route("/{name_or_identity}/route", any(handle_http_route_root::<S>))
+            .route("/{name_or_identity}/route/", any(handle_http_route_root_slash::<S>))
             .route("/{name_or_identity}/route/{*path}", any(handle_http_route::<S>));
 
         axum::Router::new()
