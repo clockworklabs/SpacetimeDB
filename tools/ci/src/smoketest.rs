@@ -26,7 +26,6 @@ pub struct SmoketestsArgs {
     #[arg(long)]
     server: Option<String>,
 
-    /// Whether to run smoketests that require the .NET toolchain.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
 
