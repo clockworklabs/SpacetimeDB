@@ -535,6 +535,7 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Smoketests(args)) => {
+            ensure_repo_root()?;
             smoketest::run(args)?;
         }
 
