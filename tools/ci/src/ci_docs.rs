@@ -51,8 +51,8 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize) -> String {
             .or_else(|| arg.get_help())
             .map(|help| help.to_string())
             .unwrap_or_else(|| {
-                eprintln!("Warning: argument `{}` is missing help text", arg.get_id()));
-                ""
+                eprintln!("Warning: argument `{}` is missing help text", arg.get_id());
+                "".to_string()
             });
         options.push_str(&format!(
             "- `{}`: {}\n{}",
