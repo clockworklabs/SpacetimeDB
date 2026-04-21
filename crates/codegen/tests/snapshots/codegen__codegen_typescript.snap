@@ -306,6 +306,9 @@ export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQuer
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);
 
+/** The procedures available in this remote SpacetimeDB module. */
+export const procedures = __convertToAccessorMap(proceduresSchema.procedures);
+
 /** The context type returned in callbacks for all possible events. */
 export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
 /** The context type returned in callbacks for reducer events. */

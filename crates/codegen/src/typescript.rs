@@ -296,7 +296,10 @@ impl Lang for TypeScript {
             "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
         );
         writeln!(out);
-        writeln!(out, "/** The procedures available in this remote SpacetimeDB module. */");
+        writeln!(
+            out,
+            "/** The procedures available in this remote SpacetimeDB module. */"
+        );
         writeln!(
             out,
             "export const procedures = __convertToAccessorMap(proceduresSchema.procedures);"
