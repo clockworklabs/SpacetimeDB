@@ -30,6 +30,10 @@ fn test_build_csharp_module_aot() {
     let workspace = workspace_root();
     let _cli_path = ensure_binaries_built();
 
+    // Create isolated NuGet packages folder to avoid file lock conflicts
+    // NativeAOT-LLVM packages contain DLLs that stay locked and interfere with other tests
+    let nuget_packages_dir = tempfile::tempdir().expect("Failed to create temp directory for NuGet packages");
+
     // Set EXPERIMENTAL_WASM_AOT=1 for this specific build
     // Build sdk-test-cs with NativeAOT-LLVM
     let mut cmd = Command::new("dotnet");
@@ -37,15 +41,21 @@ fn test_build_csharp_module_aot() {
         .arg("-c")
         .arg("Release")
         .current_dir(workspace.join("modules/sdk-test-cs"))
-        .env("EXPERIMENTAL_WASM_AOT", "1");
+        .env("EXPERIMENTAL_WASM_AOT", "1")
+        .env("NUGET_PACKAGES", nuget_packages_dir.path());
 
     let output = cmd.output().expect("Failed to run dotnet publish");
+
     assert!(
         output.status.success(),
         "NativeAOT-LLVM publish failed:\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+
+    // Clean up temp dir explicitly to verify no file locks remain
+    // This ensures subsequent tests can clear NuGet locals without conflicts
+    drop(nuget_packages_dir);
 
     // Verify StdbModule.wasm was produced
     let wasm_path = workspace.join("modules/sdk-test-cs/bin/Release/net8.0/wasi-wasm/publish/StdbModule.wasm");
