@@ -9,6 +9,7 @@ use crate::auth::{
     SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
+use crate::util::serde::humantime_duration;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
     log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
@@ -701,17 +702,30 @@ pub struct PublishDatabaseQueryParams {
     organization: Option<NameOrIdentity>,
     /// Duration to wait for a database update to become confirmed (i.e. durable).
     ///
+    /// The value is parsed via the `humantime` crate, e.g. "1m", "23s", "5min".
+    ///
     /// If not given, defaults to [default_update_confirmation_timeout].
+    /// The maximum timeout is capped by [MAX_UPDATE_CONFIRMATION_TIMEOUT].
+    ///
     /// The parameter has no effect when creating a new database.
-    update_confirmation_timeout: Option<Duration>,
+    #[serde(with = "humantime_duration", default = "default_update_confirmation_timeout")]
+    update_confirmation_timeout: Duration,
 }
 
 /// Default timeout for a database update to become confirmed / durable.
 ///
 /// Currently, the value is 5s.
-fn default_update_confirmation_timeout() -> Duration {
+const fn default_update_confirmation_timeout() -> Duration {
     Duration::from_secs(5)
 }
+
+/// Maximum timeout for a database update to become confirmed / durable.
+///
+/// If a replication group doesn't converge within this time span, it is
+/// probably not making progress at all.
+///
+/// Currently, the value is 5min.
+const MAX_UPDATE_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
@@ -865,17 +879,14 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 durable_offset,
             },
         ) => {
-            timeout(
-                confirmation_timeout.unwrap_or_else(default_update_confirmation_timeout),
-                async {
-                    let tx_offset = tx_offset.await?;
-                    if let Some(mut durable_offset) = durable_offset {
-                        durable_offset.wait_for(tx_offset).await?;
-                    }
+            timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
+                let tx_offset = tx_offset.await?;
+                if let Some(mut durable_offset) = durable_offset {
+                    durable_offset.wait_for(tx_offset).await?;
+                }
 
-                    Ok::<_, UpdateConfirmationError>(())
-                },
-            )
+                Ok::<_, UpdateConfirmationError>(())
+            })
             .await
             .map_err(Into::into)
             .flatten()?;
