@@ -1,17 +1,21 @@
 use super::committed_state::CommittedState;
-use super::datastore::Result;
+use super::datastore::{Locking, Result};
 use crate::db_metrics::DB_METRICS;
 use crate::error::{IndexError, TableError};
 use crate::locking_tx_datastore::datastore::ReplayError;
-use crate::locking_tx_datastore::state_view::iter_st_column_for_table;
-use crate::locking_tx_datastore::state_view::StateView;
-use crate::system_tables::{is_built_in_meta_row, StFields as _};
-use crate::system_tables::{StColumnRow, StTableFields, StTableRow, ST_COLUMN_ID, ST_TABLE_ID};
+use crate::locking_tx_datastore::state_view::{iter_st_column_for_table, StateView};
+use crate::system_tables::{
+    is_built_in_meta_row, StColumnRow, StFields as _, StTableFields, StTableRow, ST_COLUMN_ID, ST_TABLE_ID,
+};
 use anyhow::{anyhow, Context};
 use core::ops::{Deref, DerefMut, RangeBounds};
 use parking_lot::{RwLock, RwLockReadGuard};
+use prometheus::core::{AtomicF64, GenericGauge};
+use prometheus::IntGauge;
 use spacetimedb_commitlog::payload::txdata;
 use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
+use spacetimedb_durability::History;
+use spacetimedb_durability::Txdata;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, ColList, TableId};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
@@ -23,6 +27,68 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::{InsertError, RowRef};
 use std::cell::RefCell;
 use std::sync::Arc;
+
+pub fn apply_history(
+    datastore: &Locking,
+    database_identity: Identity,
+    history: impl History<TxData = Txdata<ProductValue>>,
+    counters: ApplyHistoryCounters,
+) -> Result<()> {
+    log::info!("[{database_identity}] DATABASE: applying transaction history...");
+
+    // TODO: Revisit once we actually replay history suffixes, ie. starting
+    // from an offset larger than the history's min offset.
+    // TODO: We may want to require that a `tokio::runtime::Handle` is
+    // always supplied when constructing a `RelationalDB`. This would allow
+    // to spawn a timer task here which just prints the progress periodically
+    // in case the history is finite but very long.
+    let (_, max_tx_offset) = history.tx_range_hint();
+    let mut last_logged_percentage = 0;
+    let progress = |tx_offset: u64| {
+        if let Some(max_tx_offset) = max_tx_offset {
+            let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
+            if percentage > last_logged_percentage && percentage % 10 == 0 {
+                log::info!("[{database_identity}] Loaded {percentage}% ({tx_offset}/{max_tx_offset})");
+                last_logged_percentage = percentage;
+            }
+        // Print _something_ even if we don't know what's still ahead.
+        } else if tx_offset.is_multiple_of(10_000) {
+            log::info!("[{database_identity}] Loading transaction {tx_offset}");
+        }
+    };
+
+    let time_before = std::time::Instant::now();
+
+    let mut replay = datastore.replay(
+        progress,
+        // We don't want to instantiate an incorrect state;
+        // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
+        ErrorBehavior::FailFast,
+    );
+    let start_tx_offset = replay.next_tx_offset();
+    history
+        .fold_transactions_from(start_tx_offset, &mut replay)
+        .map_err(anyhow::Error::from)?;
+
+    let time_elapsed = time_before.elapsed();
+    counters.replay_commitlog_time_seconds.set(time_elapsed.as_secs_f64());
+
+    let end_tx_offset = replay.next_tx_offset();
+    counters
+        .replay_commitlog_num_commits
+        .set((end_tx_offset - start_tx_offset) as _);
+
+    log::info!("[{database_identity}] DATABASE: applied transaction history");
+    datastore.rebuild_state_after_replay()?;
+    log::info!("[{database_identity}] DATABASE: rebuilt state after replay");
+
+    Ok(())
+}
+
+pub struct ApplyHistoryCounters {
+    pub replay_commitlog_time_seconds: GenericGauge<AtomicF64>,
+    pub replay_commitlog_num_commits: IntGauge,
+}
 
 /// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
 /// history into the database state.
