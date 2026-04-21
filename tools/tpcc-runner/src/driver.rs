@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use spacetimedb_sdk::DbContext;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
@@ -23,6 +24,7 @@ use crate::topology::DatabaseTopology;
 use crate::tpcc::*;
 
 const STARTUP_STAGGER_WINDOW_MS: u64 = 18_000;
+type MetricsClientPool = Vec<Arc<MetricsDbConnection>>;
 type DatabaseClientPool = Vec<Arc<ModuleClient>>;
 type SharedDatabaseClients = BTreeMap<u32, DatabaseClientPool>;
 
@@ -86,9 +88,17 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     let start_logged = Arc::new(AtomicBool::new(false));
     let request_ids = Arc::new(AtomicU64::new(1));
     let mut tasks = JoinSet::new();
-    log::info!("driver {} connecting to metrics database", config.driver_id);
-    let metrics_client = Arc::new(connect_metrics_module_async(&config.connection).await?);
-    log::info!("driver {} metrics database connected", config.driver_id);
+    log::info!(
+        "driver {} connecting {} metrics database client(s)",
+        config.driver_id,
+        config.connections_per_database
+    );
+    let metrics_clients = connect_metrics_clients(&config).await?;
+    log::info!(
+        "driver {} connected {} metrics database client(s)",
+        config.driver_id,
+        metrics_clients.len()
+    );
     log::info!(
         "driver {} connecting {} shared database client(s) across {} database(s) with pool size {}",
         config.driver_id,
@@ -116,7 +126,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
         schedule.measure_end_ms
     );
     log::info!(
-        "driver {} shared metrics connection ready; launching {} terminal task(s) across {} database(s) with {} shared database connection(s)",
+        "driver {} shared metrics connections ready; launching {} terminal task(s) across {} database(s) with {} shared database connection(s)",
         config.driver_id,
         config.terminals(),
         shared_database_clients.len(),
@@ -141,6 +151,9 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                             topology.database_name(database_number)
                         )
                     })?;
+            let metrics_client = select_pooled_metrics_client(&metrics_clients, assignment.terminal_id)
+                .cloned()
+                .ok_or_else(|| anyhow!("missing pooled metrics client"))?;
             let terminal_seed = schedule.measure_start_ms ^ ((assignment.terminal_id as u64) << 32) ^ 0xabcdu64;
             let terminal_config = config.clone();
             let terminal_metrics = metrics.clone();
@@ -153,7 +166,7 @@ pub async fn run(config: DriverConfig) -> Result<()> {
                 config: terminal_config,
                 client: client.clone(),
                 metrics: terminal_metrics,
-                metrics_client: metrics_client.clone(),
+                metrics_client,
                 abort: terminal_abort,
                 start_logged: terminal_start_logged,
                 request_ids: terminal_request_ids,
@@ -200,11 +213,13 @@ pub async fn run(config: DriverConfig) -> Result<()> {
     }
     if let Some(err) = first_error {
         shutdown_shared_database_clients(shared_database_clients).await;
+        shutdown_metrics_clients(metrics_clients).await;
         return Err(err);
     }
 
     harvest_delivery_completions(&config, &schedule, &metrics, &shared_database_clients).await?;
     shutdown_shared_database_clients(shared_database_clients).await;
+    shutdown_metrics_clients(metrics_clients).await;
 
     let summary = metrics.finalize(DriverSummaryMeta {
         run_id: run_id.clone(),
@@ -990,6 +1005,72 @@ async fn connect_shared_database_clients(
         .collect())
 }
 
+async fn connect_metrics_clients(config: &DriverConfig) -> Result<MetricsClientPool> {
+    let pool_size = config.connections_per_database;
+    let mut connect_tasks = JoinSet::new();
+    for connection_index in 0..pool_size {
+        log::info!(
+            "driver {} starting metrics client connection {}/{}",
+            config.driver_id,
+            connection_index + 1,
+            pool_size
+        );
+        let connection = config.connection.clone();
+        connect_tasks.spawn(async move {
+            let client = connect_metrics_module_async(&connection).await.with_context(|| {
+                format!(
+                    "failed to connect metrics client {}/{}",
+                    connection_index + 1,
+                    pool_size
+                )
+            })?;
+            Ok::<_, anyhow::Error>((connection_index, Arc::new(client)))
+        });
+    }
+
+    let mut metrics_clients = Vec::with_capacity(pool_size);
+    while let Some(result) = connect_tasks.join_next().await {
+        match result {
+            Ok(Ok((connection_index, client))) => {
+                log::info!(
+                    "driver {} metrics client connection {}/{} connected",
+                    config.driver_id,
+                    connection_index + 1,
+                    pool_size
+                );
+                metrics_clients.push((connection_index, client));
+            }
+            Ok(Err(err)) => {
+                log::error!(
+                    "driver {} failed to connect a metrics client: {err:#}",
+                    config.driver_id
+                );
+                connect_tasks.abort_all();
+                return Err(err);
+            }
+            Err(err) => {
+                log::error!(
+                    "driver {} failed to connect a metrics client: {err:#}",
+                    config.driver_id
+                );
+                connect_tasks.abort_all();
+                return Err(anyhow!("metrics connection task failed: {}", err));
+            }
+        }
+    }
+
+    metrics_clients.sort_by_key(|(connection_index, _)| *connection_index);
+    Ok(metrics_clients.into_iter().map(|(_, client)| client).collect())
+}
+
+async fn shutdown_metrics_clients(metrics_clients: MetricsClientPool) {
+    for client in metrics_clients {
+        if let Some(client) = Arc::into_inner(client) {
+            let _ = client.disconnect();
+        }
+    }
+}
+
 async fn shutdown_shared_database_clients(shared_database_clients: SharedDatabaseClients) {
     for (_, clients) in shared_database_clients {
         for client in clients {
@@ -1006,11 +1087,14 @@ fn select_pooled_database_client(
     terminal_id: u32,
 ) -> Option<&Arc<ModuleClient>> {
     let clients = shared_database_clients.get(&database_number)?;
-    if clients.is_empty() {
-        return None;
-    }
-    let index = pooled_client_index(clients.len(), terminal_id)?;
-    clients.get(index)
+    select_pooled_client(clients, terminal_id)
+}
+
+fn select_pooled_metrics_client(
+    metrics_clients: &MetricsClientPool,
+    terminal_id: u32,
+) -> Option<&Arc<MetricsDbConnection>> {
+    select_pooled_client(metrics_clients, terminal_id)
 }
 
 fn representative_database_client(clients: &DatabaseClientPool) -> Option<&Arc<ModuleClient>> {
@@ -1026,6 +1110,11 @@ fn pooled_client_index(pool_size: usize, terminal_id: u32) -> Option<usize> {
         return None;
     }
     Some(usize::try_from(terminal_id).unwrap_or(usize::MAX) % pool_size)
+}
+
+fn select_pooled_client<T>(clients: &[Arc<T>], terminal_id: u32) -> Option<&Arc<T>> {
+    let index = pooled_client_index(clients.len(), terminal_id)?;
+    clients.get(index)
 }
 
 #[cfg(test)]
@@ -1047,5 +1136,12 @@ mod tests {
     fn total_shared_database_clients_counts_all_pooled_connections() {
         let clients: BTreeMap<u32, Vec<usize>> = [(1, vec![0]), (2, vec![0, 1])].into_iter().collect();
         assert_eq!(total_shared_database_clients(&clients), 3);
+    }
+
+    #[test]
+    fn select_pooled_client_uses_deterministic_modulo() {
+        let metrics_clients = vec![Arc::new(()), Arc::new(()), Arc::new(())];
+        let selected = select_pooled_client(&metrics_clients, 10).expect("client");
+        assert!(Arc::ptr_eq(selected, &metrics_clients[1]));
     }
 }

@@ -215,7 +215,7 @@ cargo run --release -p tpcc-runner -- driver \
   --database-prefix tpcc \
   --warehouses 1 \
   --warehouses-per-database 1 \
-  --connections-per-database 2 \
+  --connections-per-database 4 \
   --warmup-secs 5 \
   --measure-secs 30
 ```
@@ -231,7 +231,7 @@ cargo run --release -p tpcc-runner -- driver \
   --database-prefix tpcc \
   --warehouses 2 \
   --warehouses-per-database 1 \
-  --connections-per-database 2 \
+  --connections-per-database 4 \
   --warmup-secs 5 \
   --measure-secs 30
 ```
@@ -245,6 +245,10 @@ The driver writes:
 - `txn_events.ndjson`
 
 under `tpcc-results/<run-id>/<driver-id>/` unless `--output-dir` is provided.
+
+`--connections-per-database` controls both the number of shared `tpcc-*`
+database connections per used database and the number of shared `tpcc-metrics`
+connections per driver.
 
 ## Distributed workflow
 
@@ -272,13 +276,13 @@ example assumes two databases with one warehouse each:
 cargo run --release -p tpcc-runner -- driver \
   --uri http://public-server-host:3000 \
   --database-prefix tpcc \
-  --connections-per-database 2 \
+  --connections-per-database 4 \
   --coordinator-url http://coordinator-host:7878
 
 cargo run --release -p tpcc-runner -- driver \
   --uri http://public-server-host:3000 \
   --database-prefix tpcc \
-  --connections-per-database 2 \
+  --connections-per-database 4 \
   --coordinator-url http://coordinator-host:7878
 ```
 
@@ -313,7 +317,7 @@ warehouse_count = 1
 warmup_secs = 5
 measure_secs = 30
 delivery_wait_secs = 60
-connections_per_database = 2
+connections_per_database = 4
 keying_time_scale = 1.0
 think_time_scale = 1.0
 

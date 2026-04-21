@@ -445,7 +445,7 @@ impl DriverArgs {
         let connections_per_database = self
             .connections_per_database
             .or(file.driver.connections_per_database)
-            .unwrap_or(2);
+            .unwrap_or(4);
         if connections_per_database == 0 {
             bail!("connections_per_database must be positive");
         }
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn driver_args_default_connections_per_database_is_two() {
+    fn driver_args_default_connections_per_database_is_four() {
         let args = DriverArgs {
             connection: ConnectionArgs::default(),
             run_id: None,
@@ -633,7 +633,7 @@ mod tests {
         };
 
         let config = args.resolve(&FileConfig::default()).unwrap();
-        assert_eq!(config.connections_per_database, 2);
+        assert_eq!(config.connections_per_database, 4);
     }
 
     #[test]
