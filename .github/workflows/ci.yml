@@ -299,6 +299,10 @@ jobs:
         with:
           global-json-file: global.json
 
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
       - name: Run ci lint
         run: cargo ci lint
 
