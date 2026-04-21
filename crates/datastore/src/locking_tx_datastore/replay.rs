@@ -1,8 +1,7 @@
 use super::committed_state::CommittedState;
 use super::datastore::{Locking, Result};
 use crate::db_metrics::DB_METRICS;
-use crate::error::{IndexError, TableError};
-use crate::locking_tx_datastore::datastore::ReplayError;
+use crate::error::{DatastoreError, IndexError, TableError};
 use crate::locking_tx_datastore::state_view::{iter_st_column_for_table, StateView};
 use crate::system_tables::{
     is_built_in_meta_row, StColumnRow, StFields as _, StTableFields, StTableRow, ST_COLUMN_ID, ST_TABLE_ID,
@@ -20,13 +19,14 @@ use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColId, ColList, TableId};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::buffer::BufReader;
-use spacetimedb_sats::{AlgebraicValue, Deserialize, ProductValue};
+use spacetimedb_sats::{bsatn, AlgebraicValue, Deserialize, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::{InsertError, RowRef};
 use std::cell::RefCell;
 use std::sync::Arc;
+use thiserror::Error;
 
 pub fn apply_history(
     datastore: &Locking,
@@ -88,6 +88,18 @@ pub fn apply_history(
 pub struct ApplyHistoryCounters {
     pub replay_commitlog_time_seconds: GenericGauge<AtomicF64>,
     pub replay_commitlog_num_commits: IntGauge,
+}
+
+#[derive(Debug, Error)]
+pub enum ReplayError {
+    #[error("Expected tx offset {expected}, encountered {encountered}")]
+    InvalidOffset { expected: u64, encountered: u64 },
+    #[error(transparent)]
+    Decode(#[from] bsatn::DecodeError),
+    #[error(transparent)]
+    Db(#[from] DatastoreError),
+    #[error(transparent)]
+    Any(#[from] anyhow::Error),
 }
 
 /// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
