@@ -368,6 +368,7 @@ fn main() -> Result<()> {
                 "--test-threads=1",
             )
             .run()?;
+            cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
             cmd!("bash", "tools/check-diff.sh").run()?;
             cmd!(
                 "cargo",

@@ -262,10 +262,6 @@ jobs:
 
           wasm-bindgen --version
 
-      - name: Build typescript module sdk
-        working-directory: crates/bindings-typescript
-        run: pnpm build
-
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
