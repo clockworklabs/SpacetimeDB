@@ -573,45 +573,6 @@ fn run_dlls() -> Result<()> {
 }
 
 fn run_update_flow(target: Option<String>, github_token_auth: bool) -> Result<()> {
-    let mut common_args = vec![];
-    if let Some(target) = target.as_ref() {
-        common_args.push("--target");
-        common_args.push(target.as_str());
-        log::info!("checking update flow for target: {target}");
-    } else {
-        log::info!("checking update flow");
-    }
-    if github_token_auth {
-        common_args.push("--features");
-        common_args.push("github-token-auth");
-    }
-
-    cmd(
-        "cargo",
-        ["build", "-p", "spacetimedb-update"]
-            .into_iter()
-            .chain(common_args.iter().copied()),
-    )
-    .run()?;
-
-    let root_dir = tempfile::tempdir()?;
-    let root_arg = format!("--root-dir={}", root_dir.path().display());
-    cmd(
-        "cargo",
-        ["run", "-p", "spacetimedb-update"]
-            .into_iter()
-            .chain(common_args.iter().copied())
-            .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
-    )
-    .run()?;
-
-    let mut spacetime_path = root_dir.path().join("spacetime");
-    if !std::env::consts::EXE_EXTENSION.is_empty() {
-        spacetime_path.set_extension(std::env::consts::EXE_EXTENSION);
-    }
-    cmd(spacetime_path, [&root_arg, "help"]).run()?;
-
-    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -785,7 +746,45 @@ fn main() -> Result<()> {
             target,
             github_token_auth,
         }) => {
-            run_update_flow(target, github_token_auth)?;
+            let mut common_args = vec![];
+            if let Some(target) = target.as_ref() {
+                common_args.push("--target");
+                common_args.push(target.as_str());
+                log::info!("checking update flow for target: {target}");
+            } else {
+                log::info!("checking update flow");
+            }
+            if github_token_auth {
+                common_args.push("--features");
+                common_args.push("github-token-auth");
+            }
+
+            cmd(
+                "cargo",
+                ["build", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.iter().copied()),
+            )
+            .run()?;
+
+            let root_dir = tempfile::tempdir()?;
+            let root_arg = format!("--root-dir={}", root_dir.path().display());
+            cmd(
+                "cargo",
+                ["run", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.iter().copied())
+                    .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
+            )
+            .run()?;
+
+            let mut spacetime_path = root_dir.path().join("spacetime");
+            if !std::env::consts::EXE_EXTENSION.is_empty() {
+                spacetime_path.set_extension(std::env::consts::EXE_EXTENSION);
+            }
+            cmd(spacetime_path, [&root_arg, "help"]).run()?;
+
+            Ok(())
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
