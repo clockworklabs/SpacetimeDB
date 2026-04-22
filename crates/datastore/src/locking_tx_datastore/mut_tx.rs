@@ -20,7 +20,7 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StIndexAccessorFields,
+        StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _, StIndexAccessorFields,
         StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
         StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
         StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
@@ -1080,6 +1080,44 @@ impl MutTxId {
         self.push_schema_change(PendingSchemaChange::TableAlterAccess(table_id, old_access));
 
         Ok(())
+    }
+
+    /// Change the `is_event` flag of the table identified by `table_id`.
+    ///
+    /// Updates both the in-memory schema and the `st_event_table` system table.
+    /// This is a breaking change for subscribed clients (the committed state
+    /// semantics of the table flip), so callers must arrange a `DisconnectAllUsers`.
+    pub(crate) fn alter_table_event_flag(&mut self, table_id: TableId, is_event: bool) -> Result<()> {
+        // Write to the table in the tx state (and clone into commit state).
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        let old_is_event = tx_table.get_schema().is_event;
+        if old_is_event == is_event {
+            // Idempotent no-op; do not record a pending change or it would confuse rollback.
+            return Ok(());
+        }
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.is_event = is_event);
+
+        // Update `st_event_table`.
+        if is_event {
+            let row = StEventTableRow { table_id };
+            self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
+        } else {
+            self.delete_st_event_table_row(table_id)?;
+        }
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterEventFlag(table_id, old_is_event));
+
+        Ok(())
+    }
+
+    /// Drops the row in `st_event_table` for this `table_id`.
+    fn delete_st_event_table_row(&mut self, table_id: TableId) -> Result<()> {
+        self.delete_col_eq(
+            ST_EVENT_TABLE_ID,
+            StEventTableFields::TableId.col_id(),
+            &table_id.into(),
+        )
     }
 
     /// Change the primary key of the table identified by `table_id`.

@@ -989,6 +989,10 @@ impl RelationalDB {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
     }
 
+    pub(crate) fn alter_table_event_flag(&self, tx: &mut MutTx, name: &str, is_event: bool) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_event_flag_mut_tx(tx, name, is_event)?)
+    }
+
     pub(crate) fn alter_table_primary_key(
         &self,
         tx: &mut MutTx,

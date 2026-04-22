@@ -75,6 +75,10 @@ fn format_step<F: MigrationFormatter>(
             let access_info = extract_access_change_info(*table, plan)?;
             f.format_change_access(&access_info)
         }
+        AutoMigrateStep::ChangeEventFlag(table) => {
+            let event_info = extract_event_flag_change_info(*table, plan)?;
+            f.format_change_event_flag(&event_info)
+        }
         AutoMigrateStep::ChangePrimaryKey(table) => {
             let old_table = plan.old.lookup_expect::<TableDef>(*table);
             let new_table = plan.new.lookup_expect::<TableDef>(*table);
@@ -156,6 +160,7 @@ pub trait MigrationFormatter {
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_change_event_flag(&mut self, event_info: &EventFlagChangeInfo) -> io::Result<()>;
     fn format_change_primary_key(
         &mut self,
         table_name: &str,
@@ -233,6 +238,12 @@ pub struct SequenceInfo {
 pub struct AccessChangeInfo {
     pub table_name: Identifier,
     pub new_access: TableAccess,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventFlagChangeInfo {
+    pub table_name: Identifier,
+    pub new_is_event: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -510,6 +521,20 @@ fn extract_access_change_info(
     Ok(AccessChangeInfo {
         table_name: table_def.name.clone(),
         new_access: table_def.table_access,
+    })
+}
+
+fn extract_event_flag_change_info(
+    table: <TableDef as ModuleDefLookup>::Key<'_>,
+    plan: &super::AutoMigratePlan,
+) -> Result<EventFlagChangeInfo, FormattingErrors> {
+    let table_def = plan.new.table(table).ok_or_else(|| FormattingErrors::TableNotFound {
+        table: table.to_string().into(),
+    })?;
+
+    Ok(EventFlagChangeInfo {
+        table_name: table_def.name.clone(),
+        new_is_event: table_def.is_event,
     })
 }
 

@@ -282,6 +282,27 @@ fn auto_migrate_database(
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeEventFlag(table_name) => {
+                let table_def: &TableDef = plan.new.expect_lookup(table_name);
+                let table_id = stdb
+                    .table_id_from_name_mut(tx, table_name)?
+                    .expect("ChangeEventFlag references a table that should exist");
+
+                // Pre-validate: flipping is only safe when the table has no committed rows.
+                if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
+                    anyhow::bail!(
+                        "Cannot change `event` flag on table `{table_name}`: table contains data. \
+                         Clear the table's rows (e.g. via a reducer) before toggling the `event` annotation."
+                    );
+                }
+
+                log!(
+                    logger,
+                    "Changing `event` flag on table `{table_name}` to `{}`",
+                    table_def.is_event
+                );
+                stdb.alter_table_event_flag(tx, table_name, table_def.is_event)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name) => {
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 log!(logger, "Changing primary key for table `{table_name}`");
@@ -339,6 +360,7 @@ mod test {
         db::relational_db::tests_utils::{begin_mut_tx, insert, TestDB},
         host::module_host::create_table_from_def,
     };
+    use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
@@ -572,6 +594,114 @@ mod test {
         assert!(
             err.to_string().contains("table contains data"),
             "error should mention that the table contains data, got: {err}"
+        );
+        assert!(
+            tx.pending_schema_changes().is_empty(),
+            "failed migration should leave no pending schema changes: {:?}",
+            tx.pending_schema_changes()
+        );
+        Ok(())
+    }
+
+    /// Build a minimal v10 module with a single user table `events` whose
+    /// `is_event` flag matches `is_event`.
+    fn single_event_table_module_v10(is_event: bool) -> ModuleDef {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+
+        let mut builder = RawModuleDefV10Builder::new();
+        let t = builder.build_table_with_new_type("events", [("id", U64)], true);
+        let t = if is_event { t.with_event(true) } else { t };
+        t.finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid v10 module definition")
+    }
+
+    #[test]
+    fn change_event_flag_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_event_table_module_v10(false);
+        let new = single_event_table_module_v10(true);
+
+        // Create the non-event table.
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "events")?
+            .expect("table should exist");
+        assert!(
+            !tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            "fresh non-event table should have `is_event=false`"
+        );
+        stdb.commit_tx(tx)?;
+
+        // Apply the auto-migration flipping `is_event=true` on an empty table.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "flipping the `event` flag should disconnect clients"
+        );
+        assert!(
+            tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            "live schema should reflect the new `is_event=true`"
+        );
+        assert!(
+            tx.pending_schema_changes()
+                .iter()
+                .any(|c| matches!(c, PendingSchemaChange::TableAlterEventFlag(_, false))),
+            "flipping `is_event` should record a TableAlterEventFlag pending change: {:?}",
+            tx.pending_schema_changes()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn change_event_flag_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = single_event_table_module_v10(false);
+        let new = single_event_table_module_v10(true);
+
+        // Create the table, insert a row, then attempt to flip `is_event`.
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "events")?
+            .expect("table should exist");
+        insert(&stdb, &mut tx, table_id, &product![42u64])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
+        let err = result
+            .err()
+            .expect("flipping `is_event` on a non-empty table should fail");
+        assert!(
+            err.to_string().contains("contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
+        // The schema should be untouched and there should be no pending changes to roll back.
+        assert!(
+            !tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            "failed migration must leave the `is_event` flag unchanged"
         );
         assert!(
             tx.pending_schema_changes().is_empty(),

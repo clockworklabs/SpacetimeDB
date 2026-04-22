@@ -280,6 +280,14 @@ impl Locking {
         tx.alter_table_access(table_id, access)
     }
 
+    pub fn alter_table_event_flag_mut_tx(&self, tx: &mut MutTxId, name: &str, is_event: bool) -> Result<()> {
+        let table_id = self
+            .table_id_from_name_mut_tx(tx, name)?
+            .ok_or_else(|| TableError::NotFound(name.into()))?;
+
+        tx.alter_table_event_flag(table_id, is_event)
+    }
+
     pub fn alter_table_primary_key_mut_tx(
         &self,
         tx: &mut MutTxId,
@@ -971,7 +979,7 @@ pub(crate) mod tests {
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
         system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
-        StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
+        StConstraintRow, StEventTableFields, StFields as _, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
         StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields,
         ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
         ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
@@ -3138,6 +3146,166 @@ pub(crate) mod tests {
         let tx = begin_mut_tx(&datastore);
         assert_access(&tx, StAccess::Private);
 
+        Ok(())
+    }
+
+    /// Returns whether `st_event_table` contains a row referencing `table_id`.
+    fn st_event_table_has_row(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> bool {
+        datastore
+            .iter_by_col_eq_mut_tx(
+                tx,
+                ST_EVENT_TABLE_ID,
+                ColList::from(StEventTableFields::TableId.col_id()),
+                &table_id.into(),
+            )
+            .expect("st_event_table lookup should succeed")
+            .next()
+            .is_some()
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_non_event_to_event() -> ResultTest<()> {
+        // Create a non-event table.
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        // Flip `is_event` from `false` to `true`.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            false
+        );
+        assert!(
+            !st_event_table_has_row(&datastore, &tx, table_id),
+            "fresh non-event table must not have a row in `st_event_table`"
+        );
+
+        tx.alter_table_event_flag(table_id, true)?;
+        assert_matches!(
+            tx.pending_schema_changes(),
+            &[PendingSchemaChange::TableAlterEventFlag(t, false)] if t == table_id
+        );
+        commit(&datastore, tx)?;
+
+        // After commit, the schema should reflect the flipped flag
+        // and `st_event_table` should contain the row.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            true
+        );
+        assert!(
+            st_event_table_has_row(&datastore, &tx, table_id),
+            "after flipping to event, `st_event_table` should have the row"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_event_to_non_event() -> ResultTest<()> {
+        // Create an event table.
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        // Sanity check: `st_event_table` should have the row.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            true
+        );
+        assert!(
+            st_event_table_has_row(&datastore, &tx, table_id),
+            "event table should have a row in `st_event_table`"
+        );
+
+        // Flip `is_event` from `true` to `false`.
+        tx.alter_table_event_flag(table_id, false)?;
+        assert_matches!(
+            tx.pending_schema_changes(),
+            &[PendingSchemaChange::TableAlterEventFlag(t, true)] if t == table_id
+        );
+        commit(&datastore, tx)?;
+
+        // After commit, the schema should reflect the flipped flag
+        // and `st_event_table` should NOT contain the row.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            false
+        );
+        assert!(
+            !st_event_table_has_row(&datastore, &tx, table_id),
+            "after flipping to non-event, `st_event_table` should not have the row"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_rollback_reverts_live_state_and_st_event_table() -> ResultTest<()> {
+        // Create a non-event table.
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        // Start a new tx, flip, check pending change, then rollback.
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(!st_event_table_has_row(&datastore, &tx, table_id));
+
+        tx.alter_table_event_flag(table_id, true)?;
+        assert_matches!(
+            tx.pending_schema_changes(),
+            &[PendingSchemaChange::TableAlterEventFlag(t, false)] if t == table_id
+        );
+        // The in-tx view must reflect the flip.
+        assert_eq!(
+            tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            true
+        );
+        assert!(
+            st_event_table_has_row(&datastore, &tx, table_id),
+            "after flipping within the tx, `st_event_table` should have the row"
+        );
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // After rollback, the schema and `st_event_table` should be back to pre-state.
+        let tx = begin_mut_tx(&datastore);
+        assert!(
+            tx.pending_schema_changes().is_empty(),
+            "rollback should clear pending schema changes"
+        );
+        assert_eq!(
+            tx.get_schema(table_id)
+                .map(|s| s.is_event)
+                .expect("schema should exist"),
+            false,
+            "rollback should revert `is_event` to its pre-tx value"
+        );
+        assert!(
+            !st_event_table_has_row(&datastore, &tx, table_id),
+            "rollback should revert the `st_event_table` row"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_idempotent_no_pending_change() -> ResultTest<()> {
+        // Create a non-event table.
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        // Flipping to the same value must be a no-op with no pending change.
+        let mut tx = begin_mut_tx(&datastore);
+        tx.alter_table_event_flag(table_id, false)?;
+        assert_matches!(tx.pending_schema_changes(), &[]);
         Ok(())
     }
 
