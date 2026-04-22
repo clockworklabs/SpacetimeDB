@@ -4,7 +4,6 @@ on:
   pull_request:
     types: [closed]
 
-
 jobs:
   discordNotification:
     runs-on: ubuntu-latest
