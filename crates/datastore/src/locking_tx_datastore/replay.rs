@@ -590,7 +590,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         let target_col_id = ColId::deserialize(ValueDeserializer::from_ref(&st_column_row.elements[1]))
             .expect("second field in `st_column` should decode to a `ColId`");
 
-        let outdated_st_column_rows = iter_st_column_for_table(self.state, &target_table_id.into())?
+        let outdated_st_column_rows = iter_st_column_for_table(self, &target_table_id.into())?
             .filter_map(|row_ref| {
                 StColumnRow::try_from(row_ref)
                     .map(|c| (c.col_pos == target_col_id && row_ref.pointer() != row_ptr).then(|| row_ref.pointer()))
@@ -620,7 +620,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         // and not the other one, as it is being replaced.
         // `Self::ignore_previous_version_of_column` has marked the old version as ignored,
         // so filter only the non-ignored columns.
-        let mut columns = iter_st_column_for_table(self.state, &table_id.into())?
+        let mut columns = iter_st_column_for_table(self, &table_id.into())?
             .filter(|row_ref| !self.replay_columns_to_ignore.contains(&row_ref.pointer()))
             .map(|row_ref| {
                 let row = StColumnRow::try_from(row_ref)?;
