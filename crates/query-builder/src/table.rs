@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::Operand;
 
-use super::{format_expr, BoolExpr, Query, RHS};
+use super::{format_expr, BoolExpr, Query, RawQuery, RHS};
 
 pub type TableNameStr = &'static str;
 
@@ -15,6 +15,11 @@ pub trait HasIxCols {
     type IxCols;
     fn ix_cols(name: TableNameStr) -> Self::IxCols;
 }
+
+/// Marker trait for tables that can appear as the right/inner/lookup
+/// table in a semi-join. Event tables do NOT implement this trait,
+/// preventing them from being used as the lookup side of a join.
+pub trait CanBeLookupTable: HasIxCols {}
 
 pub struct Table<T> {
     pub(super) table_name: TableNameStr,
@@ -123,17 +128,33 @@ pub struct FromWhere<T> {
     pub(super) expr: BoolExpr<T>,
 }
 
+impl<T: HasCols> Query<T> for Table<T> {
+    fn into_sql(self) -> String {
+        format!(r#"SELECT * FROM "{}""#, self.table_name)
+    }
+}
+
+impl<T: HasCols> Query<T> for FromWhere<T> {
+    fn into_sql(self) -> String {
+        format!(
+            r#"SELECT * FROM "{}" WHERE {}"#,
+            self.table_name,
+            format_expr(&self.expr)
+        )
+    }
+}
+
 impl<T: HasCols> Table<T> {
-    pub fn build(self) -> Query<T> {
-        let sql = format!(r#"SELECT * FROM "{}""#, self.table_name);
-        Query::new(sql)
+    pub fn build(self) -> RawQuery<T> {
+        RawQuery::new(format!(r#"SELECT * FROM "{}""#, self.table_name))
     }
 
-    pub fn r#where<F>(self, f: F) -> FromWhere<T>
+    pub fn r#where<F, E>(self, f: F) -> FromWhere<T>
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
-        let expr = f(&T::cols(self.table_name));
+        let expr = f(&T::cols(self.table_name)).into();
         FromWhere {
             table_name: self.table_name,
             expr,
@@ -141,20 +162,22 @@ impl<T: HasCols> Table<T> {
     }
 
     // Filter is an alias for where
-    pub fn filter<F>(self, f: F) -> FromWhere<T>
+    pub fn filter<F, E>(self, f: F) -> FromWhere<T>
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
         self.r#where(f)
     }
 }
 
 impl<T: HasCols> FromWhere<T> {
-    pub fn r#where<F>(self, f: F) -> Self
+    pub fn r#where<F, E>(self, f: F) -> Self
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
-        let extra = f(&T::cols(self.table_name));
+        let extra = f(&T::cols(self.table_name)).into();
         Self {
             table_name: self.table_name,
             expr: self.expr.and(extra),
@@ -162,19 +185,20 @@ impl<T: HasCols> FromWhere<T> {
     }
 
     // Filter is an alias for where
-    pub fn filter<F>(self, f: F) -> Self
+    pub fn filter<F, E>(self, f: F) -> Self
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
         self.r#where(f)
     }
 
-    pub fn build(self) -> Query<T> {
+    pub fn build(self) -> RawQuery<T> {
         let sql = format!(
             r#"SELECT * FROM "{}" WHERE {}"#,
             self.table_name,
             format_expr(&self.expr)
         );
-        Query::new(sql)
+        RawQuery::new(sql)
     }
 }

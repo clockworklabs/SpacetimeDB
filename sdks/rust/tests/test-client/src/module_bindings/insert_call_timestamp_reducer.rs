@@ -18,8 +18,6 @@ impl __sdk::InModule for InsertCallTimestampArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertCallTimestampCallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_call_timestamp`.
 ///
@@ -29,73 +27,36 @@ pub trait insert_call_timestamp {
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_call_timestamp`] callbacks.
-    fn insert_call_timestamp(&self) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_call_timestamp`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_call_timestamp:insert_call_timestamp_then`] to run a callback after the reducer completes.
+    fn insert_call_timestamp(&self) -> __sdk::Result<()> {
+        self.insert_call_timestamp_then(|_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_call_timestamp` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertCallTimestampCallbackId`] can be passed to [`Self::remove_on_insert_call_timestamp`]
-    /// to cancel the callback.
-    fn on_insert_call_timestamp(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_call_timestamp_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> InsertCallTimestampCallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_call_timestamp`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_call_timestamp(&self, callback: InsertCallTimestampCallbackId);
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_call_timestamp for super::RemoteReducers {
-    fn insert_call_timestamp(&self) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_call_timestamp", InsertCallTimestampArgs {})
-    }
-    fn on_insert_call_timestamp(
+    fn insert_call_timestamp_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
-    ) -> InsertCallTimestampCallbackId {
-        InsertCallTimestampCallbackId(self.imp.on_reducer(
-            "insert_call_timestamp",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertCallTimestamp {},
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx)
-            }),
-        ))
-    }
-    fn remove_on_insert_call_timestamp(&self, callback: InsertCallTimestampCallbackId) {
-        self.imp.remove_on_reducer("insert_call_timestamp", callback.0)
-    }
-}
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_call_timestamp`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_call_timestamp {
-    /// Set the call-reducer flags for the reducer `insert_call_timestamp` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_call_timestamp(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_call_timestamp for super::SetReducerFlags {
-    fn insert_call_timestamp(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_call_timestamp", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp
+            .invoke_reducer_with_callback(InsertCallTimestampArgs {}, callback)
     }
 }

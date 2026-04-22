@@ -12,7 +12,7 @@ public static partial class Module
     }
 
     // === Snippet 2: Accessing the database ===
-    [SpacetimeDB.Table(Name = "MyTable")]
+    [SpacetimeDB.Table(Accessor = "MyTable")]
     public partial struct MyTable
     {
         public uint A;
@@ -45,7 +45,7 @@ public static partial class Module
     }
 
     // === Snippet 4: Reading values out of the database ===
-    [SpacetimeDB.Table(Name = "Player")]
+    [SpacetimeDB.Table(Accessor = "Player")]
     public partial struct Player
     {
         public Identity Id;
@@ -154,7 +154,7 @@ public static partial class Module
     }
 
     // === Snippet 8: External AI API example ===
-    [SpacetimeDB.Table(Name = "AiMessage", Public = true)]
+    [SpacetimeDB.Table(Accessor = "AiMessage", Public = true)]
     public partial struct AiMessage
     {
         public Identity User;
@@ -227,7 +227,7 @@ public static partial class Module
     }
 
     // === Snippet 9: File Storage - S3 Upload ===
-    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Document", Public = true)]
     public partial struct Document
     {
         [SpacetimeDB.PrimaryKey]

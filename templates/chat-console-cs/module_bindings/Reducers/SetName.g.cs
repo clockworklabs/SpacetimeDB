@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void SetName(string name)
         {
-            conn.InternalCallReducer(new Reducer.SetName(name), this.SetCallReducerFlags.SetNameFlags);
+            conn.InternalCallReducer(new Reducer.SetName(name));
         }
 
         public bool InvokeSetName(ReducerEventContext ctx, Reducer.SetName args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "SetName";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SetNameFlags;
-        public void SetName(CallReducerFlags flags) => SetNameFlags = flags;
     }
 }

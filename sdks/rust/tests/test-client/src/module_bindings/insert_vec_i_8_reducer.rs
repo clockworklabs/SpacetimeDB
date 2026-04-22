@@ -20,83 +20,46 @@ impl __sdk::InModule for InsertVecI8Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecI8CallbackId(__sdk::CallbackId);
-
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `insert_vec_i8`.
+/// Extension trait for access to the reducer `insert_vec_i_8`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait insert_vec_i_8 {
-    /// Request that the remote module invoke the reducer `insert_vec_i8` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `insert_vec_i_8` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed by listening for [`Self::on_insert_vec_i_8`] callbacks.
-    fn insert_vec_i_8(&self, n: Vec<i8>) -> __sdk::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_i8`.
+    ///  and this method provides no way to listen for its completion status.
+    /// /// Use [`insert_vec_i_8:insert_vec_i_8_then`] to run a callback after the reducer completes.
+    fn insert_vec_i_8(&self, n: Vec<i8>) -> __sdk::Result<()> {
+        self.insert_vec_i_8_then(n, |_, _| {})
+    }
+
+    /// Request that the remote module invoke the reducer `insert_vec_i_8` to run as soon as possible,
+    /// registering `callback` to run when we are notified that the reducer completed.
     ///
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
-    /// to determine the reducer's status.
-    ///
-    /// The returned [`InsertVecI8CallbackId`] can be passed to [`Self::remove_on_insert_vec_i_8`]
-    /// to cancel the callback.
-    fn on_insert_vec_i_8(
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed with the `callback`.
+    fn insert_vec_i_8_then(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &Vec<i8>) + Send + 'static,
-    ) -> InsertVecI8CallbackId;
-    /// Cancel a callback previously registered by [`Self::on_insert_vec_i_8`],
-    /// causing it not to run in the future.
-    fn remove_on_insert_vec_i_8(&self, callback: InsertVecI8CallbackId);
+        n: Vec<i8>,
+
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()>;
 }
 
 impl insert_vec_i_8 for super::RemoteReducers {
-    fn insert_vec_i_8(&self, n: Vec<i8>) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_vec_i8", InsertVecI8Args { n })
-    }
-    fn on_insert_vec_i_8(
+    fn insert_vec_i_8_then(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<i8>) + Send + 'static,
-    ) -> InsertVecI8CallbackId {
-        InsertVecI8CallbackId(self.imp.on_reducer(
-            "insert_vec_i8",
-            Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
-                let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertVecI8 { n },
-                            ..
-                        },
-                    ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n)
-            }),
-        ))
-    }
-    fn remove_on_insert_vec_i_8(&self, callback: InsertVecI8CallbackId) {
-        self.imp.remove_on_reducer("insert_vec_i8", callback.0)
-    }
-}
+        n: Vec<i8>,
 
-#[allow(non_camel_case_types)]
-#[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `insert_vec_i8`.
-///
-/// Implemented for [`super::SetReducerFlags`].
-///
-/// This type is currently unstable and may be removed without a major version bump.
-pub trait set_flags_for_insert_vec_i_8 {
-    /// Set the call-reducer flags for the reducer `insert_vec_i8` to `flags`.
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    fn insert_vec_i_8(&self, flags: __ws::CallReducerFlags);
-}
-
-impl set_flags_for_insert_vec_i_8 for super::SetReducerFlags {
-    fn insert_vec_i_8(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_i8", flags);
+        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
+            + Send
+            + 'static,
+    ) -> __sdk::Result<()> {
+        self.imp.invoke_reducer_with_callback(InsertVecI8Args { n }, callback)
     }
 }

@@ -535,7 +535,11 @@ const view = reader.view;
 ${ty.elements
   .map(({ name, algebraicType: { tag } }) =>
     tag in primitiveJSName
-      ? `\
+      ? tag === 'Bool'
+        ? `\
+result.${name} = view.getUint8(reader.offset) !== 0;
+reader.offset += 1;`
+        : `\
 result.${name} = view.get${primitiveJSName[tag as JSPrimitives]}(reader.offset, ${primitiveSizes[tag] > 1 ? 'true' : ''});
 reader.offset += ${primitiveSizes[tag]};`
       : `result.${name} = reader.read${tag}();`

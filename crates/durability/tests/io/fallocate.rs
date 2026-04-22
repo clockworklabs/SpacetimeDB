@@ -36,14 +36,14 @@ use spacetimedb_commitlog::{
     segment,
     tests::helpers::enable_logging,
 };
-use spacetimedb_durability::{local::OpenError, Durability, Txdata};
+use spacetimedb_durability::{local::OpenError, Durability, Transaction, Txdata};
 use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::{sync::watch, time::sleep};
 
 const MB: u64 = 1024 * 1024;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Result<()> {
     enable_logging();
 
@@ -72,8 +72,8 @@ async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Res
 // NOTE: This test is set up to proceed more or less sequentially.
 // In reality, `append_tx` will fail at some point in the future.
 // I.e. transactions can be lost when the host runs out of disk space.
-#[tokio::test]
-#[should_panic = "durability actor crashed"]
+#[tokio::test(flavor = "multi_thread")]
+#[should_panic = "local durability: actor vanished"]
 async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
     enable_logging();
 
@@ -98,8 +98,8 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             // Mark initial segment as seen.
             new_segment_rx.borrow_and_update();
             // Write past available space.
-            for _ in 0..256 {
-                durability.append_tx(txdata.clone());
+            for offset in 0..256 {
+                durability.append_tx(Box::new(Transaction::from((offset, txdata.clone()))));
             }
             // Ensure new segment is created.
             new_segment_rx.changed().await?;
@@ -107,7 +107,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             sleep(Duration::from_millis(5)).await;
             // Durability actor should have crashed, so this should panic.
             info!("trying append on crashed durability");
-            durability.append_tx(txdata.clone());
+            durability.append_tx(Box::new(Transaction::from((256, txdata.clone()))));
         }
 
         Ok(())
@@ -120,7 +120,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
 /// without `fallocate`.
 ///
 /// Resuming a segment when there is insufficient space should fail.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_durability_crashes_on_resume_with_insuffient_space() -> anyhow::Result<()> {
     enable_logging();
 
@@ -168,7 +168,6 @@ async fn local_durability(
         spacetimedb_durability::local::Options {
             commitlog: spacetimedb_commitlog::Options {
                 max_segment_size,
-                max_records_in_commit: 1.try_into().unwrap(),
                 preallocate_segments: true,
                 ..<_>::default()
             },

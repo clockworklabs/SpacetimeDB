@@ -33,7 +33,7 @@ struct Fragments {
 
 impl Fragments {
     /// Returns the index ids from which this fragment reads.
-    fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+    fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         let mut index_ids = HashSet::new();
         for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
             plan.visit(&mut |plan| match plan {
@@ -340,6 +340,11 @@ impl SubscriptionPlan {
         self.plan_opt.returns_view_table()
     }
 
+    /// Does this plan return rows from an event table?
+    pub fn returns_event_table(&self) -> bool {
+        self.plan_opt.return_table().is_some_and(|schema| schema.is_event)
+    }
+
     /// The number of columns returned.
     /// Only relevant if [`Self::is_view`] is true.
     pub fn num_cols(&self) -> usize {
@@ -379,7 +384,7 @@ impl SubscriptionPlan {
     }
 
     /// From which indexes does this plan read?
-    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         self.fragments.index_ids()
     }
 
@@ -512,6 +517,10 @@ impl SubscriptionPlan {
 
             if has_non_index_join(&plan_opt) {
                 bail!("Subscriptions require indexes on join columns")
+            }
+
+            if plan_opt.reads_from_event_table() {
+                bail!("Event tables cannot be used as the lookup table in subscription joins")
             }
 
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);

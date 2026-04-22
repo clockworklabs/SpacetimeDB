@@ -14,7 +14,7 @@ use std::path::PathBuf;
 fn process_license_file(path: &str, version: &str) {
     let file = fs::read_to_string(path).unwrap();
 
-    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)\r?$").unwrap();
+    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([^\s\r\n]+)\r?$").unwrap();
     let file = version_re.replace_all(&file, |caps: &regex::Captures| format!("{}{}", &caps[1], version));
 
     let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}\r?$").unwrap();
@@ -96,7 +96,7 @@ fn rewrite_cmake_version_inplace(path: impl AsRef<Path>, new_version: &str) -> a
 
     // (?s) enables dotall mode so . matches newlines
     // Matches: project(...VERSION <version>...) across multiple lines
-    let re_project = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([\d\.]+)").unwrap();
+    let re_project = Regex::new(r"(?s)(project\s*\([^)]*?VERSION\s+)([^\s\)]+)").unwrap();
     let replaced_project = re_project.replacen(&updated, 1, |caps: &regex::Captures| {
         replaced_any = true;
         format!("{}{}", &caps[1], new_version)
@@ -181,7 +181,8 @@ fn main() -> anyhow::Result<()> {
 
     let unparsed_version_arg = matches.get_one::<String>("upgrade_version").unwrap();
     let semver = Version::parse(unparsed_version_arg).expect("Invalid semver provided to upgrade-version");
-    let full_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
+    let numeric_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
+    let full_version = semver.to_string();
     let wildcard_patch = format!("{}.{}.*", semver.major, semver.minor);
 
     if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
@@ -218,6 +219,13 @@ fn main() -> anyhow::Result<()> {
         // Rebuild `Cargo.lock`
         println!("$> cargo check");
         cmd!("cargo", "check").run().expect("Cargo check failed!");
+
+        // Update the lockfile in crates/smoketests/modules..
+        println!("$> cd crates/smoketests/modules && cargo check");
+        cmd!("cargo", "check")
+            .dir("crates/smoketests/modules")
+            .run()
+            .expect("cargo check in crates/smoketests/modules failed!");
 
         println!("$> pnpm install");
         cmd!("pnpm", "install").run().expect("pnpm run build failed!");
@@ -320,7 +328,8 @@ fn main() -> anyhow::Result<()> {
         // 1) Client SDK csproj
         let client_sdk = "sdks/csharp/SpacetimeDB.ClientSDK.csproj";
         rewrite_xml_tag_value(client_sdk, "Version", &full_version)?;
-        rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &full_version)?;
+        // <AssemblyVersion> doesn't support prerelease or metadata version suffixes like <Version> does.
+        rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &numeric_version)?;
         // Update SpacetimeDB.BSATN.Runtime dependency to major.minor.*
         rewrite_csproj_package_ref_version(client_sdk, "SpacetimeDB.BSATN.Runtime", &wildcard_patch)?;
 
@@ -367,8 +376,11 @@ fn main() -> anyhow::Result<()> {
         )?;
     }
     if matches.get_flag("cpp") || matches.get_flag("all") {
-        rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
-        rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &full_version)?;
+        #[allow(unreachable_code)]
+        {
+            rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
+            rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &full_version)?;
+        }
     }
     Ok(())
 }

@@ -20,7 +20,7 @@ class TESTCLIENT_API UOneF64Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for one_f64 table*/
+    /** Update function for one_f_64 table*/
     FTableAppliedDiff<FOneF64Type> Update(TArray<FWithBsatn<FOneF64Type>> InsertsRef, TArray<FWithBsatn<FOneF64Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnOneF64Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("one_f64");
+    const FString TableName = TEXT("one_f_64");
 
     TSharedPtr<UClientCache<FOneF64Type>> Data;
 };

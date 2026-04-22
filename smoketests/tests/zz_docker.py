@@ -11,7 +11,7 @@ class DockerRestartModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -57,7 +57,7 @@ class DockerRestartSql(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(accessor = person, index(accessor = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -103,7 +103,7 @@ class DockerRestartAutoDisconnect(Smoketest):
 use log::info;
 use spacetimedb::{ConnectionId, Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = connected_client)]
+#[spacetimedb::table(accessor = connected_client)]
 pub struct ConnectedClient {
     identity: Identity,
     connection_id: ConnectionId,

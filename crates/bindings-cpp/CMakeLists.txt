@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 project(SpacetimeDBCppModuleLibrary 
-    VERSION 1.12.0
+    VERSION 2.1.0
     LANGUAGES CXX)
 
 # Generate version header from template
@@ -19,7 +19,8 @@ set(LIBRARY_SOURCES
     src/internal/Module.cpp
     src/internal/AlgebraicType.cpp  # Required for V9 autogen types
     src/internal/v9_builder.cpp  # V9 incremental module builder
-    src/internal/v9_type_registration.cpp  # Unified type registration system
+    src/internal/v10_builder.cpp  # V10 facade over module definition assembly
+    src/internal/module_type_registration.cpp  # Unified type registration system
 )
 
 add_library(spacetimedb_cpp_library STATIC)

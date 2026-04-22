@@ -1,7 +1,7 @@
 use log::info;
 use spacetimedb::{ConnectionId, Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = connected_client)]
+#[spacetimedb::table(accessor = connected_client)]
 pub struct ConnectedClient {
     identity: Identity,
     connection_id: ConnectionId,

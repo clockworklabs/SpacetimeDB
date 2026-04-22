@@ -19,3 +19,4 @@ CMakeFiles/
 # Compiled WASM files
 *.wasm
 *.opt.wasm
+spacetime.local.json

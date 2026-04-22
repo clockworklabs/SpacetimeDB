@@ -50,3 +50,5 @@ impl __sdk::__query_builder::HasIxCols for PlayerLevel {
         }
     }
 }
+
+impl __sdk::__query_builder::CanBeLookupTable for PlayerLevel {}

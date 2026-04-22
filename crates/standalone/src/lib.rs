@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use http::StatusCode;
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::config::{CertificateAuthority, MetadataFile, V8HeapPolicyConfig};
 use spacetimedb::db;
 use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
@@ -23,7 +23,9 @@ use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
 use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_client_api_messages::name::{
+    DatabaseName, DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
+};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
@@ -40,6 +42,7 @@ pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL}
 pub struct StandaloneOptions {
     pub db_config: db::Config,
     pub websocket: WebSocketOptions,
+    pub v8_heap_policy: V8HeapPolicyConfig,
 }
 
 pub struct StandaloneEnv {
@@ -64,7 +67,7 @@ impl StandaloneEnv {
         let meta_path = data_dir.metadata_toml();
         let mut meta = MetadataFile::new("standalone");
         if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
-            meta = existing_meta.check_compatibility_and_update(meta)?;
+            meta = existing_meta.check_compatibility_and_update(meta, meta_path.as_ref())?;
         }
         meta.write(&meta_path).context("failed writing metadata.toml")?;
 
@@ -76,6 +79,7 @@ impl StandaloneEnv {
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
+            config.v8_heap_policy,
             program_store.clone(),
             energy_monitor,
             persistence_provider,
@@ -122,9 +126,9 @@ pub enum GetLeaderHostError {
     NoSuchDatabase,
     #[error("replica does not exist")]
     NoSuchReplica,
-    #[error("error starting database")]
+    #[error("error starting database: {source:#}")]
     LaunchError { source: anyhow::Error },
-    #[error("error accessing controldb")]
+    #[error("error accessing controldb: {0:#}")]
     Control(#[from] control_db::Error),
 }
 
@@ -240,12 +244,21 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // DNS
-    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+    async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
         Ok(self.control_db.spacetime_dns(domain)?)
     }
 
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
+    }
+
+    async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
+        let name: DatabaseName = name.parse()?;
+        Ok(self.control_db.spacetime_lookup_tld(Tld::from(name))?)
+    }
+
+    async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool> {
+        Ok(self.control_db.is_database_locked(database_identity)?)
     }
 }
 
@@ -265,7 +278,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let program = Program::from_bytes(&spec.program_bytes[..]);
+                let program = Program::from_bytes(spec.host_type.into(), &spec.program_bytes[..]);
 
                 let database = Database {
                     id: 0,
@@ -399,14 +412,14 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         let database_id = database.id;
 
         if let Some(program) = spec.program_bytes {
-            let program_bytes = &program[..];
-            let program = Program::from_bytes(program_bytes);
-            let _hash_for_assert = program.hash;
-
-            database.initial_program = program.hash;
             if let Some(host_type) = spec.host_type {
                 database.host_type = host_type;
             }
+            let program_bytes = &program[..];
+            let program = Program::from_bytes(database.host_type.into(), program_bytes);
+            let _hash_for_assert = program.hash;
+
+            database.initial_program = program.hash;
 
             self.host_controller
                 .check_module_validity(database.clone(), program)
@@ -467,6 +480,19 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         Ok(self
             .control_db
             .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
+    }
+
+    async fn set_database_lock(
+        &self,
+        _caller_identity: &Identity,
+        database_identity: &Identity,
+        locked: bool,
+    ) -> anyhow::Result<()> {
+        let Some(_database) = self.control_db.get_database_by_identity(database_identity)? else {
+            anyhow::bail!("Database not found: {}", database_identity.to_abbreviated_hex());
+        };
+        self.control_db.set_database_lock(database_identity, locked)?;
+        Ok(())
     }
 }
 
@@ -641,6 +667,7 @@ mod tests {
                 page_pool_max_size: None,
             },
             websocket: WebSocketOptions::default(),
+            v8_heap_policy: V8HeapPolicyConfig::default(),
         };
 
         let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;

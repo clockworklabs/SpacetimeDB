@@ -44,7 +44,7 @@ Usage: test
 
 Lints the codebase
 
-Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no warnings.
 
 **Usage:**
 ```bash
@@ -103,7 +103,7 @@ Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
 
 - `--dotnet`: 
-- `args`: 
+- `args`: Additional arguments to pass to the test runner
 - `--help`: Print help (see a summary with '-h')
 
 #### `prepare`
@@ -121,6 +121,17 @@ Usage: prepare
 
 - `--help`: Print help (see a summary with '-h')
 
+#### `check-mod-list`
+
+**Usage:**
+```bash
+Usage: check-mod-list
+```
+
+**Options:**
+
+- `--help`: Print help
+
 #### `help`
 
 **Usage:**
@@ -130,7 +141,7 @@ Usage: help [COMMAND]...
 
 **Options:**
 
-- `subcommand`: 
+- `subcommand`: Print help for the subcommand(s)
 
 ### `update-flow`
 
@@ -182,7 +193,7 @@ Usage: global-json-policy
 
 **Options:**
 
-- `--help`: 
+- `--help`: Print help
 
 ### `help`
 
@@ -193,7 +204,7 @@ Usage: help [COMMAND]...
 
 **Options:**
 
-- `subcommand`: 
+- `subcommand`: Print help for the subcommand(s)
 
 
 ---

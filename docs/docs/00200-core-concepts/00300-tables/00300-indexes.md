@@ -5,6 +5,7 @@ slug: /tables/indexes
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Indexes accelerate queries by maintaining sorted data structures alongside your tables. Without an index, finding rows that match a condition requires scanning every row. With an index, the database locates matching rows directly.
@@ -29,6 +30,36 @@ SpacetimeDB supports two index types:
 |------|----------|-----------|--------------|
 | B-tree | General purpose | Any | Yes |
 | Direct | Dense integer sequences | `u8`, `u16`, `u32`, `u64` | No |
+
+### Supported Column Types
+
+Not all column types can be used as index keys. The following types are supported for B-tree indexes:
+
+| Category | Types |
+|----------|-------|
+| Integers | `u8`, `u16`, `u32`, `u64`, `u128`, `u256`, `i8`, `i16`, `i32`, `i64`, `i128`, `i256` |
+| Boolean | `bool` |
+| Strings | `String` |
+| Identifiers | `Identity`, `ConnectionId`, `Uuid`, `Hash` |
+| Enums | No-payload (C-style) enums annotated with `#[derive(SpacetimeType)]` |
+
+The following types are **not** supported as index keys:
+
+| Type | Reason |
+|------|--------|
+| `f32`, `f64` | Floating-point values do not have a total ordering (`NaN` is not comparable) |
+| `ScheduleAt`, `TimeDuration`, `Timestamp` | Not yet supported ([#2650](https://github.com/clockworklabs/SpacetimeDB/issues/2650)) |
+| `Vec<T>`, arrays | Variable-length collections are not indexable |
+| Enums with payloads | Only no-payload (C-style) enums are supported |
+| Nested structs | Product types cannot be used as index keys |
+
+If you attempt to use an unsupported type as an index key, you will get a compile error. For multi-column indexes, every column in the index must use a supported type.
+
+:::tip Workaround for floating-point data
+If you need to index floating-point coordinates (for example, `x` and `y` positions), consider storing them as scaled integers. For instance, multiply by 1000 and store as `i32` to get three decimal places of precision while remaining indexable.
+:::
+
+Direct indexes have additional restrictions: only `u8`, `u16`, `u32`, `u64`, and no-payload enums are supported.
 
 ### B-tree Indexes
 
@@ -73,7 +104,7 @@ const position = table(
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = position, public)]
+#[spacetimedb::table(accessor = position, public)]
 pub struct Position {
     #[primary_key]
     #[index(direct)]
@@ -116,8 +147,12 @@ const user = table(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+:::danger Use full namespace
+Never use bare `Index` — it conflicts with `System.Index`. Always write `SpacetimeDB.Index.BTree`. For table-level indexes, use `Columns = new[] { nameof(Col) }` or `new[] { "Col1", "Col2" }`, not collection expressions like `[nameof(X)]`.
+:::
+
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -135,7 +170,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public)]
+#[spacetimedb::table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -145,6 +180,26 @@ pub struct User {
     age: u8,
 }
 ```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+struct User {
+  uint32_t id;
+  std::string name;
+  uint8_t age;
+};
+SPACETIMEDB_STRUCT(User, id, name, age)
+SPACETIMEDB_TABLE(User, user, Public)
+FIELD_PrimaryKey(user, id)
+FIELD_Index(user, name)
+FIELD_Index(user, age)
+```
+
+Use `FIELD_Index(table, field)` to create a B-tree index on individual columns.
 
 </TabItem>
 </Tabs>
@@ -162,7 +217,7 @@ const user = table(
     name: 'user',
     public: true,
     indexes: [
-      { name: 'idx_age', algorithm: 'btree', columns: ['age'] },
+      { accessor: 'idx_age', algorithm: 'btree', columns: ['age'] },
     ],
   },
   {
@@ -177,8 +232,8 @@ const user = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "User", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "idx_age", Columns = new[] { "Age" })]
+[SpacetimeDB.Table(Accessor = "User", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "idx_age", Columns = new[] { "Age" })]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -194,7 +249,7 @@ public partial struct User
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = user, public, index(name = idx_age, btree(columns = [age])))]
+#[spacetimedb::table(accessor = user, public, index(accessor = idx_age, btree(columns = [age])))]
 pub struct User {
     #[primary_key]
     id: u32,
@@ -231,7 +286,7 @@ const score = table(
     name: 'score',
     public: true,
     indexes: [
-      { name: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
+      { accessor: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
     ],
   },
   {
@@ -246,8 +301,8 @@ const score = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Score", Public = true)]
-[SpacetimeDB.Index.BTree(Name = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Table(Accessor = "Score", Public = true)]
+[SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public uint PlayerId;
@@ -260,13 +315,29 @@ public partial struct Score
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = score, public, index(name = by_player_and_level, btree(columns = [player_id, level])))]
+#[spacetimedb::table(accessor = score, public, index(accessor = by_player_and_level, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u32,
     level: u32,
     points: i64,
 }
 ```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct Score {
+  uint32_t player_id;
+  uint32_t level;
+  int64_t points;
+};
+SPACETIMEDB_STRUCT(Score, player_id, level, points)
+SPACETIMEDB_TABLE(Score, score, Public)
+FIELD_NamedMultiColumnIndex(score, by_player_and_level, player_id, level)
+```
+
+Use `FIELD_NamedMultiColumnIndex(table, index_name, field1, field2, ...)` to create a named multi-column B-tree index.
 
 </TabItem>
 </Tabs>
@@ -311,6 +382,18 @@ for user in ctx.db.user().name().filter("Alice") {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Find users with a specific name
+for (auto user : ctx.db[user_name].filter("Alice")) {
+    LOG_INFO("Found user: " + user.name);
+}
+```
+
+Use the index accessor `ctx.db[index_name]` created by `FIELD_Index` to perform filtered queries.
+
+</TabItem>
 </Tabs>
 
 ### Range Queries
@@ -349,12 +432,26 @@ for (const user of ctx.db.user.age.filter(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-// Find users aged 18 or older
-foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>.Inclusive(18), null))
+// Find users aged 18 to 65 (inclusive)
+foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>(18, 65)))
+{
+    Log.Info($"{user.Name} is {user.Age}");
+}
+
+// Find users aged 18 or older (inclusive, unbounded above)
+foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>(18, byte.MaxValue)))
 {
     Log.Info($"{user.Name} is an adult");
 }
+
+// Find users younger than 18 (unbounded below, to 17 inclusive)
+foreach (var user in ctx.Db.User.Age.Filter(new Bound<byte>(byte.MinValue, 17)))
+{
+    Log.Info($"{user.Name} is a minor");
+}
 ```
+
+You can also use the implicit tuple conversion, like `ctx.Db.User.Age.Filter((18, byte.MaxValue))`, which is functionally identical.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -375,6 +472,28 @@ for user in ctx.db.user().age().filter(..18) {
     log::info!("{} is a minor", user.name);
 }
 ```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Find users aged 18 to 65 (inclusive)
+for (auto user : ctx.db[user_age].filter(range_inclusive(uint8_t(18), uint8_t(65)))) {
+    // Process user
+}
+
+// Find users aged 18 or older
+for (auto user : ctx.db[user_age].filter(range_from(uint8_t(18)))) {
+    // Process user
+}
+
+// Find users younger than 18
+for (auto user : ctx.db[user_age].filter(range_to(uint8_t(18)))) {
+    // Process user
+}
+```
+
+Use range query functions: `range_inclusive()`, `range_from()`, `range_to()`, and `range_to_inclusive()`. Include `<spacetimedb/range_queries.h>` for full range query support.
 
 </TabItem>
 </Tabs>
@@ -500,5 +619,5 @@ log::info!("Deleted {} minor(s)", deleted);
 
 ## Next Steps
 
-- Learn about [Constraints](/tables/constraints) for primary keys and unique indexes
-- See [Access Permissions](/tables/access-permissions) for querying tables from reducers
+- Learn about [Constraints](./00240-constraints.md) for primary keys and unique indexes
+- See [Access Permissions](./00400-access-permissions.md) for querying tables from reducers

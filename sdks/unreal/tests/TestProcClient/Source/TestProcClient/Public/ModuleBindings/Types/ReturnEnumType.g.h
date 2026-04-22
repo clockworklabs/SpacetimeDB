@@ -22,7 +22,7 @@ struct TESTPROCCLIENT_API FReturnEnumType
 public:
     FReturnEnumType() = default;
 
-    TVariant<uint32, FString> MessageData;
+    TVariant<FString, uint32> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EReturnEnumTag Tag = static_cast<EReturnEnumTag>(0);

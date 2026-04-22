@@ -1,14 +1,14 @@
 use spacetimedb::{reducer, table, Identity, ReducerContext, Table};
 
-#[table(public, name = counter)]
+#[table(public, accessor = counter)]
 struct Counter {
     #[primary_key]
     id: u32,
     count: u32,
 }
 
-#[table(public, name = user)]
-#[table(public, name = offline_user)]
+#[table(public, accessor = user)]
+#[table(public, accessor = offline_user)]
 struct User {
     #[primary_key]
     identity: Identity,

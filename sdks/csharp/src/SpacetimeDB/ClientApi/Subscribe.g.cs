@@ -13,22 +13,27 @@ namespace SpacetimeDB.ClientApi
     [DataContract]
     public sealed partial class Subscribe
     {
-        [DataMember(Name = "query_strings")]
-        public System.Collections.Generic.List<string> QueryStrings;
         [DataMember(Name = "request_id")]
         public uint RequestId;
+        [DataMember(Name = "query_set_id")]
+        public QuerySetId QuerySetId;
+        [DataMember(Name = "query_strings")]
+        public System.Collections.Generic.List<string> QueryStrings;
 
         public Subscribe(
-            System.Collections.Generic.List<string> QueryStrings,
-            uint RequestId
+            uint RequestId,
+            QuerySetId QuerySetId,
+            System.Collections.Generic.List<string> QueryStrings
         )
         {
-            this.QueryStrings = QueryStrings;
             this.RequestId = RequestId;
+            this.QuerySetId = QuerySetId;
+            this.QueryStrings = QueryStrings;
         }
 
         public Subscribe()
         {
+            this.QuerySetId = new();
             this.QueryStrings = new();
         }
     }

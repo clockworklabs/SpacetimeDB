@@ -4,6 +4,7 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 use std::{env, fs};
@@ -12,6 +13,9 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod smoketest;
+mod util;
+
+use util::ensure_repo_root;
 
 /// SpacetimeDB CI tasks
 ///
@@ -35,18 +39,11 @@ struct Cli {
     skip: Vec<String>,
 }
 
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
-}
-
 fn check_global_json_policy() -> Result<()> {
     ensure_repo_root()?;
 
     let root_json = Path::new("global.json");
-    let root_real = fs::canonicalize(root_json)?;
+    let root_contents = fs::read_to_string(root_json)?;
 
     fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut out = Vec::new();
@@ -67,25 +64,24 @@ fn check_global_json_policy() -> Result<()> {
 
     let mut ok = true;
     for p in globals {
-        let resolved = fs::canonicalize(&p)?;
-
-        // The root global.json itself is allowed.
-        if resolved == root_real {
-            println!("OK: {}", p.display());
-            continue;
-        }
-
         let meta = fs::symlink_metadata(&p)?;
-        if !meta.file_type().is_symlink() {
-            eprintln!("Error: {} is not a symlink to root global.json", p.display());
+        let is_symlink = meta.file_type().is_symlink();
+        let is_template_global_json = p.strip_prefix(".").unwrap_or(&p).starts_with(Path::new("templates"));
+        if is_template_global_json && is_symlink {
+            eprintln!(
+                "Error: {} is a symlink. Template files must not be symlinks; they are copied literally and this will break if the CLI is built under Windows where symlinks are not supported.",
+                p.display()
+            );
             ok = false;
-            continue;
         }
 
-        eprintln!("Error: {} does not resolve to root global.json", p.display());
-        eprintln!("  resolved: {}", resolved.display());
-        eprintln!("  expected: {}", root_real.display());
-        ok = false;
+        let contents = fs::read_to_string(&p)?;
+        if contents != root_contents {
+            eprintln!("Error: {} does not match the root global.json contents", p.display());
+            ok = false;
+        } else if !is_template_global_json || !is_symlink {
+            println!("OK: {}", p.display());
+        }
     }
 
     if !ok {
@@ -109,11 +105,11 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
 
     // Copy spacetimedb.<pkg>.meta
     let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
-    if pkg_root_meta.exists() {
-        if let Some(parent) = pkg_root.parent() {
-            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
-            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
-        }
+    if pkg_root_meta.exists()
+        && let Some(parent) = pkg_root.parent()
+    {
+        let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
+        fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
     }
 
     let versioned_dir = match find_only_subdir(&pkg_root) {
@@ -126,14 +122,14 @@ fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
 
     // If version.meta exists under the skeleton package, rename it to match the restored version dir.
     let version_meta_template = skeleton_root.join("version.meta");
-    if version_meta_template.exists() {
-        if let Some(parent) = versioned_dir.parent() {
-            let version_name = versioned_dir
-                .file_name()
-                .expect("versioned directory should have a file name");
-            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
-            fs::copy(&version_meta_template, &version_meta_dst)?;
-        }
+    if version_meta_template.exists()
+        && let Some(parent) = versioned_dir.parent()
+    {
+        let version_name = versioned_dir
+            .file_name()
+            .expect("versioned directory should have a file name");
+        let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
+        fs::copy(&version_meta_template, &version_meta_dst)?;
     }
 
     copy_overlay_dir(&skeleton_root, &versioned_dir)
@@ -222,7 +218,8 @@ enum CiCmd {
     Test,
     /// Lints the codebase
     ///
-    /// Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+    /// Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there
+    /// are no warnings.
     Lint,
     /// Tests Wasm bindings
     ///
@@ -294,6 +291,93 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
+    let output = cmd!("git", "ls-files", "--", path).read()?;
+    Ok(output
+        .lines()
+        .filter(|line| line.ends_with(".rs"))
+        .map(PathBuf::from)
+        .collect())
+}
+
+fn run_dlls() -> Result<()> {
+    ensure_repo_root()?;
+
+    cmd!(
+        "dotnet",
+        "pack",
+        "crates/bindings-csharp/BSATN.Runtime",
+        "-c",
+        "Release"
+    )
+    .run()?;
+    cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
+
+    let repo_root = env::current_dir()?;
+    let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+    let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
+
+    let nuget_config_dir = tempfile::tempdir()?;
+    let nuget_config_path = nuget_config_dir.path().join("nuget.config");
+    let nuget_config_contents = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <clear />
+                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
+                <add key="Local SpacetimeDB.Runtime" value="{}" />
+                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+              </packageSources>
+              <packageSourceMapping>
+                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
+                  <package pattern="SpacetimeDB.BSATN.Runtime" />
+                </packageSource>
+                <packageSource key="Local SpacetimeDB.Runtime">
+                  <package pattern="SpacetimeDB.Runtime" />
+                </packageSource>
+                <packageSource key="nuget.org">
+                  <package pattern="*" />
+                </packageSource>
+              </packageSourceMapping>
+            </configuration>
+            "#,
+        bsatn_source.display(),
+        runtime_source.display(),
+    );
+    fs::write(&nuget_config_path, nuget_config_contents)?;
+
+    let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
+
+    clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
+    clear_restored_package_dirs("spacetimedb.runtime")?;
+
+    cmd!(
+        "dotnet",
+        "restore",
+        "SpacetimeDB.ClientSDK.csproj",
+        "--configfile",
+        &nuget_config_path_str,
+    )
+    .dir("sdks/csharp")
+    .run()?;
+
+    overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
+    overlay_unity_meta_skeleton("spacetimedb.runtime")?;
+
+    cmd!(
+        "dotnet",
+        "pack",
+        "SpacetimeDB.ClientSDK.csproj",
+        "-c",
+        "Release",
+        "--no-restore"
+    )
+    .dir("sdks/csharp")
+    .run()?;
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -301,6 +385,8 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
+            cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
+
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
             // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
@@ -311,6 +397,36 @@ fn main() -> Result<()> {
                 "--all",
                 "--exclude",
                 "spacetimedb-smoketests",
+                "--exclude",
+                "spacetimedb-sdk",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // SDK procedure tests intentionally make localhost HTTP requests.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // Run the same SDK suite against wasm/browser test clients.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests,browser",
                 "--",
                 "--test-threads=2",
                 "--skip",
@@ -350,7 +466,19 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Lint) => {
-            cmd!("cargo", "fmt", "--all", "--", "--check").run()?;
+            ensure_repo_root()?;
+            // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
+            // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
+            // so this approach properly catches all the files, where `cargo fmt` does not.
+            let mut files = Vec::new();
+            files.extend(tracked_rs_files_under(".")?);
+            const RUSTFMT_BATCH_SIZE: usize = 200;
+            for batch in files.chunks(RUSTFMT_BATCH_SIZE) {
+                let mut args = Vec::<OsString>::with_capacity(batch.len() + 1);
+                args.push("--check".into());
+                args.extend(batch.iter().map(|path| path.as_os_str().to_os_string()));
+                cmd("rustfmt", args).run()?;
+            }
             cmd!(
                 "cargo",
                 "clippy",
@@ -362,10 +490,24 @@ fn main() -> Result<()> {
                 "warnings",
             )
             .run()?;
+            cmd!(
+                "cargo",
+                "clippy",
+                "--no-default-features",
+                "--features=browser",
+                "-pspacetimedb-sdk",
+                "--tests",
+                "--benches",
+                "--",
+                "-D",
+                "warnings",
+            )
+            .run()?;
             cmd!("dotnet", "tool", "restore").dir("crates/bindings-csharp").run()?;
             cmd!("dotnet", "csharpier", "--check", ".")
                 .dir("crates/bindings-csharp")
                 .run()?;
+            cmd!("pnpm", "lint").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
@@ -380,6 +522,8 @@ fn main() -> Result<()> {
 
         Some(CiCmd::WasmBindings) => {
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+            // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
+            cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
             // catch any compile errors arising from a different transitive closure
@@ -387,96 +531,21 @@ fn main() -> Result<()> {
             //
             // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
             cmd!("cargo", "update").run()?;
-            cmd!(
-                "cargo",
-                "run",
-                "-p",
-                "spacetimedb-cli",
-                "--",
-                "build",
-                "--project-path",
-                "modules/module-test",
-            )
-            .run()?;
+            let cli_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .join("target/debug/spacetimedb-cli")
+                .with_extension(std::env::consts::EXE_EXTENSION);
+            cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
         }
 
         Some(CiCmd::Dlls) => {
-            ensure_repo_root()?;
-
-            cmd!(
-                "dotnet",
-                "pack",
-                "crates/bindings-csharp/BSATN.Runtime",
-                "-c",
-                "Release"
-            )
-            .run()?;
-            cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
-
-            let repo_root = env::current_dir()?;
-            let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
-            let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
-
-            let nuget_config_dir = tempfile::tempdir()?;
-            let nuget_config_path = nuget_config_dir.path().join("nuget.config");
-            let nuget_config_contents = format!(
-                r#"<?xml version="1.0" encoding="utf-8"?>
-            <configuration>
-              <packageSources>
-                <clear />
-                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
-                <add key="Local SpacetimeDB.Runtime" value="{}" />
-                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-              </packageSources>
-              <packageSourceMapping>
-                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
-                  <package pattern="SpacetimeDB.BSATN.Runtime" />
-                </packageSource>
-                <packageSource key="Local SpacetimeDB.Runtime">
-                  <package pattern="SpacetimeDB.Runtime" />
-                </packageSource>
-                <packageSource key="nuget.org">
-                  <package pattern="*" />
-                </packageSource>
-              </packageSourceMapping>
-            </configuration>
-            "#,
-                bsatn_source.display(),
-                runtime_source.display(),
-            );
-            fs::write(&nuget_config_path, nuget_config_contents)?;
-
-            let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
-
-            clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
-            clear_restored_package_dirs("spacetimedb.runtime")?;
-
-            cmd!(
-                "dotnet",
-                "restore",
-                "SpacetimeDB.ClientSDK.csproj",
-                "--configfile",
-                &nuget_config_path_str,
-            )
-            .dir("sdks/csharp")
-            .run()?;
-
-            overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
-            overlay_unity_meta_skeleton("spacetimedb.runtime")?;
-
-            cmd!(
-                "dotnet",
-                "pack",
-                "SpacetimeDB.ClientSDK.csproj",
-                "-c",
-                "Release",
-                "--no-restore"
-            )
-            .dir("sdks/csharp")
-            .run()?;
+            run_dlls()?;
         }
 
         Some(CiCmd::Smoketests(args)) => {
+            ensure_repo_root()?;
             smoketest::run(args)?;
         }
 

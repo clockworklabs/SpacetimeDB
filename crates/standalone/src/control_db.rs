@@ -246,12 +246,12 @@ impl ControlDb {
                 // Remove all existing names.
                 if let Some(value) = rev_tx.get(database_identity_bytes)? {
                     for domain in decode_domain_names(&value)? {
-                        if let Some(ref owner) = domain_owner(tld_tx, &domain)? {
-                            if owner != owner_identity {
-                                transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                    domain: domain.clone(),
-                                }))?;
-                            }
+                        if let Some(ref owner) = domain_owner(tld_tx, &domain)?
+                            && owner != owner_identity
+                        {
+                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                                domain: domain.clone(),
+                            }))?;
                         }
                         dns_tx.remove(domain.to_lowercase().as_bytes())?;
                     }
@@ -260,12 +260,12 @@ impl ControlDb {
 
                 // Insert the new names.
                 for domain in domain_names {
-                    if let Some(ref owner) = domain_owner(tld_tx, domain)? {
-                        if owner != owner_identity {
-                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                domain: domain.clone(),
-                            }))?;
-                        }
+                    if let Some(ref owner) = domain_owner(tld_tx, domain)?
+                        && owner != owner_identity
+                    {
+                        transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                            domain: domain.clone(),
+                        }))?;
                     }
                     tld_tx.insert(domain.tld().to_lowercase().as_bytes(), &owner_identity.to_byte_array())?;
                     dns_tx.insert(domain.to_lowercase().as_bytes(), &database_identity_bytes)?;
@@ -391,6 +391,19 @@ impl ControlDb {
         let tree = self.db.open_tree("database")?;
         tree.insert(stored_database.id.to_be_bytes(), buf)?;
 
+        Ok(())
+    }
+
+    pub fn is_database_locked(&self, database_identity: &Identity) -> Result<bool> {
+        let tree = self.db.open_tree("database_locks")?;
+        let key = database_identity.to_be_byte_array();
+        Ok(tree.get(key)?.is_some_and(|v| v.as_ref() == [1u8]))
+    }
+
+    pub fn set_database_lock(&self, database_identity: &Identity, locked: bool) -> Result<()> {
+        let tree = self.db.open_tree("database_locks")?;
+        let key = database_identity.to_be_byte_array();
+        tree.insert(key, &[locked as u8])?;
         Ok(())
     }
 

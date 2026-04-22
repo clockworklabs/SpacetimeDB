@@ -14,6 +14,7 @@ use tracing_subscriber::{reload, EnvFilter};
 
 use crate::config::{ConfigFile, LogConfig};
 use crate::util::jobs::JobCores;
+use crate::util::thread_scheduling::apply_compute_thread_hint;
 
 pub use core_affinity::CoreId;
 
@@ -137,13 +138,13 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     let mut prev_time = conf_file.metadata().and_then(|m| m.modified()).ok();
     loop {
         std::thread::sleep(RELOAD_INTERVAL);
-        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified()) {
-            if prev_time.is_none_or(|prev| modified > prev) {
-                log::info!("reloading log config...");
-                prev_time = Some(modified);
-                if reload_handle.reload(parse_from_file(conf_file)).is_err() {
-                    break;
-                }
+        if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified())
+            && prev_time.is_none_or(|prev| modified > prev)
+        {
+            log::info!("reloading log config...");
+            prev_time = Some(modified);
+            if reload_handle.reload(parse_from_file(conf_file)).is_err() {
+                break;
             }
         }
     }
@@ -362,7 +363,7 @@ impl TokioCores {
             // so this ends up working fine
             builder.on_thread_start(move || {
                 if let Some(core) = cores_queue.pop() {
-                    core_affinity::set_for_current(core);
+                    apply_compute_thread_hint(Some(core));
                 } else {
                     #[cfg(target_os = "linux")]
                     if let Some(cpuset) = &self.blocking {
@@ -388,9 +389,8 @@ impl RayonCores {
             .spawn_handler(thread_spawn_handler(tokio_handle))
             .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
             .start_handler(move |i| {
-                if let Some(cores) = &self.0 {
-                    core_affinity::set_for_current(cores[i]);
-                }
+                let core = self.0.as_ref().and_then(|cores| cores.get(i).copied());
+                apply_compute_thread_hint(core);
             })
             .build_global()
             .unwrap()

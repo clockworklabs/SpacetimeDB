@@ -18,6 +18,7 @@ required-features = [] # Features required to build this target (N/A for lib)
 
 [features]
 unstable = ["spacetimedb-client-api/unstable"]
+allow_loopback_http_for_tests = ["spacetimedb-core/allow_loopback_http_for_tests"]
 # Perfmaps for profiling modules
 perfmap = ["spacetimedb-core/perfmap"]
 # Disables core pinning

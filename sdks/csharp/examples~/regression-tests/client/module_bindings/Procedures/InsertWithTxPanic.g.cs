@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class InsertWithTxPanicArgs : Procedure, IProcedureArgs
         {
-            string IProcedureArgs.ProcedureName => "InsertWithTxPanic";
+            string IProcedureArgs.ProcedureName => "insert_with_tx_panic";
         }
 
     }
