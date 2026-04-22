@@ -1,0 +1,98 @@
+html,
+body {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #111;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+code,
+input,
+button {
+  font: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.page-shell {
+  padding: 2rem;
+}
+
+.section-block {
+  margin-top: 2rem;
+}
+
+.connection-note {
+  margin-bottom: 1rem;
+}
+
+.live-app,
+.server-island-card,
+.server-island-fallback {
+  margin-top: 1rem;
+}
+
+.status-row {
+  margin-bottom: 1rem;
+}
+
+.status-live {
+  color: green;
+}
+
+.status-pending {
+  color: red;
+}
+
+.status-note {
+  margin-left: 0.5rem;
+}
+
+.person-form {
+  margin-bottom: 2rem;
+}
+
+.person-form input {
+  padding: 0.5rem;
+  margin-right: 0.5rem;
+}
+
+.person-form button {
+  padding: 0.5rem 1rem;
+}
+
+.empty-state {
+  margin: 0;
+}
+
+.person-list,
+.server-island-list {
+  padding-left: 1.25rem;
+}
+
+.person-list-item,
+.server-island-item {
+  margin-bottom: 0.25rem;
+}
+
+.server-island-stamp {
+  margin: 0.5rem 0;
+}

@@ -26,7 +26,7 @@ The Emscripten SDK is required for NativeAOT-LLVM compilation:
    - Example path: `D:\Tools\emsdk`
 
 2. **Set environment variable** (optional - the CLI will detect it automatically):
-   ```powershell
+   ```
    $env:EMSDK="D:\Tools\emsdk"
    ```
 
@@ -34,11 +34,16 @@ The Emscripten SDK is required for NativeAOT-LLVM compilation:
 
 Binaryen provides `wasm-opt` for WASM optimization (recommended for performance):
 
-1. Download Binaryen `https://github.com/WebAssembly/binaryen/releases/tag/version_116` for Windows
+1. Download Binaryen https://github.com/WebAssembly/binaryen/releases/tag/version_116 for Windows
 2. Extract to e.g. `D:\Tools\binaryen`
 3. Add `D:\Tools\binaryen\bin` to `PATH`
+   
+   To temporarily add to your current PowerShell session:
+   ```
+   $env:PATH += ";D:\Tools\binaryen\bin"
+   ```
 4. Verify:
-   ```powershell
+   ```
    wasm-opt --version
    ```
 
@@ -46,7 +51,7 @@ Binaryen provides `wasm-opt` for WASM optimization (recommended for performance)
 
 When creating a new C# project, use the `--native-aot` flag:
 
-```powershell
+```
 spacetime init --lang csharp --native-aot my-native-aot-project
 ```
 
@@ -115,14 +120,14 @@ This automatically:
 
 After completing either the **Creating a New NativeAOT Project** or **Converting an Existing Project** steps above, you can publish your module normally:
 
-```powershell
+```
 # From your project directory
 spacetime publish your-database-name
 ```
 
 If you have `"native-aot": true` in your `spacetime.json`, the CLI will automatically detect this and use NativeAOT compilation. Alternatively, you can use:
 
-```powershell
+```
 spacetime publish --native-aot your-database-name
 ```
 
@@ -154,7 +159,7 @@ If you have **package source mapping** enabled in `NuGet.Config`, add mappings f
 ### wasi-experimental workload install fails
 If the CLI cannot install the `wasi-experimental` workload automatically, install it manually:
 
-```powershell
+```
 dotnet workload install wasi-experimental
 ```
 

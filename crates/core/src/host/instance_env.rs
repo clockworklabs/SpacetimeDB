@@ -1,5 +1,5 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
+use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -17,7 +17,7 @@ use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
@@ -298,19 +298,6 @@ impl InstanceEnv {
 
     /// Logs a simple `message` at `level`.
     pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
-        /// A backtrace provider that provides nothing.
-        struct Noop;
-        impl BacktraceProvider for Noop {
-            fn capture(&self) -> Box<dyn ModuleBacktrace> {
-                Box::new(Noop)
-            }
-        }
-        impl ModuleBacktrace for Noop {
-            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
-                Vec::new()
-            }
-        }
-
         let record = Record {
             ts: Self::now_for_logging(),
             target: None,
@@ -319,7 +306,7 @@ impl InstanceEnv {
             function,
             message,
         };
-        self.console_log(level, &record, &Noop);
+        self.console_log(level, &record, &());
     }
 
     /// End a console timer by logging the span at INFO level.
@@ -489,9 +476,12 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
-        let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
-        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+        let rows_to_delete = match iter {
+            IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+            IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+        };
 
         Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
     }
@@ -545,6 +535,20 @@ impl InstanceEnv {
 
         // Delete them and return how many we deleted.
         Ok(stdb.delete_by_rel(tx, table_id, relation))
+    }
+
+    /// Deletes all rows in the table identified by `table_id`.
+    pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
+
+        let rows_deleted = stdb.clear_table(tx, table_id).map_err(NodesError::from)?;
+
+        // To clear a table, we must find all the row pointers,
+        // so we have scanned that many rows.
+        tx.metrics.rows_scanned += rows_deleted as usize;
+
+        Ok(rows_deleted)
     }
 
     /// Returns the `table_id` associated with the given `table_name`.
@@ -653,19 +657,22 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Open index iterator
-        let (table_id, lower, upper, iter) =
+        let (table_id, iter) =
             self.relational_db()
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
         // Scan the index and serialize rows to BSATN.
-        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+        let (point, (chunks, rows_scanned, bytes_scanned)) = match iter {
+            IndexScanPointOrRange::Point(point, iter) => (Some(point), ChunkedWriter::collect_iter(pool, iter)),
+            IndexScanPointOrRange::Range(iter) => (None, ChunkedWriter::collect_iter(pool, iter)),
+        };
 
         // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.index_seeks += 1;
         tx.metrics.bytes_scanned += bytes_scanned;
         tx.metrics.rows_scanned += rows_scanned;
 
-        tx.record_index_scan_range(&self.func_type, table_id, index_id, lower, upper);
+        tx.record_index_scan_range(&self.func_type, table_id, index_id, point);
 
         Ok(chunks)
     }

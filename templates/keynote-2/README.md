@@ -8,12 +8,12 @@ See SpacetimeDB's performance advantage with one command:
 
 ```bash
 pnpm install
-npm run demo
+pnpm run demo
 ```
 
 The demo compares SpacetimeDB and Convex by default, since both are easy for anyone to set up and run locally without additional infrastructure. Other systems (Postgres, CockroachDB, SQLite, etc.) are also supported but require more setup. The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results.
 
-**Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
+**Options:** `--systems a,b,c` | `--seconds N` | `--concurrency N` | `--alpha N` | `--skip-prep` | `--no-animation`
 
 **Note:** `demo` always runs the built-in `test-1` scenario. Use `bench` if you need to specify a test name directly.
 **Note:** `demo` selects targets with `--systems`; `bench` filters test connectors with `--connectors`.
@@ -84,19 +84,20 @@ This is a classic read-modify-write workload that tests transactional integrity 
 ### Test Command
 
 ```bash
-docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connectors YY
+docker compose run --rm bench -- --seconds 10 --concurrency 50 --alpha XX --connectors YY
 ```
 
 - `--seconds 10`: Duration of benchmark run
 - `--concurrency 50`: Number of concurrent client connections
 - `--alpha 0`: ~0% contention (uniform account distribution)
 - `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
+- `--stdb-compression none|gzip`: SpacetimeDB client compression mode (default: `none`)
 
 ### Hardware Configuration
 
 **Server Machine (Variant A - PhoenixNAP):**
 
-- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory OS: Ubuntu 24.04
+- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory, OS: Ubuntu 24.04
 
 **Server Machine (Variant B - Google Cloud):**
 
@@ -158,18 +159,11 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 
 PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
 
-### Rust client
-
-When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlnecked
-on our test TypeScript client. To get the absolute most out of the performance of SpacetimeDB we wrote a custom
-Rust client that allows us to send a much larger number of requests then we could otherwise. We didn't do this
-for the other backends/databases as they maxed out before the client.
-
 ## Systems Tested
 
 | System                            | Architecture                                            |
 | --------------------------------- | ------------------------------------------------------- |
-| SpacetimeDB                       | Integrated platform (Rust)                              |
+| SpacetimeDB                       | Integrated platform.                                    |
 | SQLite + Node HTTP + Drizzle      | Node.js HTTP server → Drizzle ORM → SQLite              |
 | Bun + Drizzle + Postgres          | Bun HTTP server → Drizzle ORM → PostgreSQL              |
 | Postgres + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → PostgreSQL          |
@@ -180,27 +174,8 @@ for the other backends/databases as they maxed out before the client.
 
 ## Running the Benchmarks
 
-See [DEVELOP.md](./DEVELOP.md) for detailed setup and execution instructions.
+See [DEVELOP.md](./DEVELOP.md) for prerequisites, configuration, and full CLI reference.
 The distributed TypeScript SpacetimeDB workflow is documented there as `Run the distributed TypeScript SpacetimeDB benchmark`.
-
-### Quick Start
-
-```bash
-# Install dependencies
-pnpm install
-
-# Copy environment config
-cp .env.example .env
-
-# Start services (PostgreSQL, CockroachDB, etc.)
-docker compose up -d pg crdb
-
-# Seed databases
-npm run prep
-
-# Run benchmark
-npm run bench -- test-1 --seconds 10 --concurrency 50 --alpha 1.5 --connectors spacetimedb,postgres_rpc,sqlite_rpc
-```
 
 ## Output
 

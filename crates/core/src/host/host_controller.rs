@@ -1200,7 +1200,7 @@ impl Host {
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
         match update_result {
-            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed { .. } => {
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
                 let old_module = self.module.send_replace(module);
@@ -1208,7 +1208,7 @@ impl Host {
             }
 
             // In this case, we need to disconnect all clients connected to the old module
-            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect => {
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. } => {
                 // Replace the module first, so that new clients get the new module.
                 let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
 
@@ -1423,12 +1423,25 @@ where
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
     let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_total_heap_size_bytes.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_total_physical_size_bytes.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_used_global_handles_size_bytes.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_used_heap_size_bytes.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_heap_size_limit_bytes.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_external_memory_bytes.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(db);
-    let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(db);
+    let worker_kind = crate::host::v8::V8_WORKER_KIND_INSTANCE_LANE;
+    let _ = WORKER_METRICS
+        .v8_total_heap_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_total_physical_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_used_global_handles_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_used_heap_size_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_heap_size_limit_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS
+        .v8_external_memory_bytes
+        .remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(db, worker_kind);
 }

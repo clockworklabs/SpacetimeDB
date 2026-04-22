@@ -77,19 +77,30 @@ pub fn get_filtered_publish_configs<'a>(
             .collect();
 
         if matched.is_empty() {
-            anyhow::bail!(
-                "No database target matches '{}'. Available databases: {}",
-                cli_database,
-                spacetime_config
-                    .collect_all_targets_with_inheritance()
-                    .iter()
-                    .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            // When there is exactly one target in the config and the CLI-provided
+            // database name doesn't match it, use that target's settings (e.g.
+            // native-aot, module-path, build-options) and let CommandConfig merge
+            // the CLI database name on top.  This handles the common case where
+            // `spacetime init` generated a random database suffix that differs
+            // from the name the user passes on the CLI, while still picking up
+            // module-specific config.
+            let all_targets = spacetime_config.collect_all_targets_with_inheritance();
+            if all_targets.len() == 1 {
+                all_targets
+            } else {
+                anyhow::bail!(
+                    "No database target matches '{}'. Available databases: {}",
+                    cli_database,
+                    all_targets
+                        .iter()
+                        .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+        } else {
+            matched
         }
-
-        matched
     } else {
         all_targets
     };

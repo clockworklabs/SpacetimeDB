@@ -15,7 +15,7 @@ Each run:
 Run a quick performance comparison:
 
 ```bash
-npm run demo
+pnpm run demo
 ```
 
 The script will:
@@ -31,6 +31,7 @@ The script will:
 - `--concurrency N` - Concurrent connections (default: 50)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
+- `--stdb-compression none|gzip` - SpacetimeDB client compression mode (default: none)
 - `--skip-prep` - Skip database seeding
 - `--no-animation` - Disable animated output
 
@@ -43,6 +44,7 @@ The script will:
 
 - **Node.js** ≥ 22.x
 - **pnpm** installed globally
+- **Rust** (required for SpacetimeDB benchmarks) -- [install](https://rust-lang.org/tools/install/)
 - **Docker** for local Postgres / Cockroach / Supabase
 - Local/Cloud Convex
 
@@ -90,6 +92,7 @@ Copy `.env.example` to `.env` and adjust.
 - `STDB_URL` – WebSocket URL for SpacetimeDB
 - `STDB_MODULE` – module name to load (e.g. `test-1`)
 - `STDB_MODULE_PATH` – filesystem path to the module source (for local dev)
+- `STDB_COMPRESSION` – SpacetimeDB benchmark client compression (`none` or `gzip`)
 - `STDB_CONFIRMED_READS` – `1` = force confirmed reads on, `0` = force them off
 
 **Supabase:**
@@ -158,39 +161,42 @@ cd ..
 1. Start SpacetimeDB (`cargo run -p spacetimedb-cli -- start` or `spacetime start`)
 2. Start Convex (inside convex-app run `npx convex dev`)
 3. Init Supabase (run `supabase init`) inside project root.
-4. `npm run prep` to seed the databases.
-5. `npm run bench` to run the test against all connectors.
+4. `pnpm run prep` to seed the databases.
+5. `pnpm run bench` to run the test against all connectors.
 
 ## Commands & Examples
 
 ### 1. Run a test
 
 ```bash
-npm run bench -- [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+pnpm run bench [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list] [--stdb-compression none|gzip]
 ```
 
 Examples:
 
 ```bash
 # Default test (test-1), default args
-npm run bench
+pnpm run bench
 
 # Explicit test name
-npm run bench -- test-1
+pnpm run bench test-1
 
 # Short run, 100 concurrent workers
-npm run bench -- test-1 --seconds 10 --concurrency 100
+pnpm run bench test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
-npm run bench -- test-1 --alpha 2.0
+pnpm run bench test-1 --alpha 2.0
+
+# Enable gzip for the SpacetimeDB benchmark client
+pnpm run bench test-1 --connectors spacetimedb --stdb-compression gzip
 
 # Only run selected connectors
-npm run bench -- test-1 --connectors spacetimedb,sqlite_rpc
+pnpm run bench test-1 --connectors spacetimedb,sqlite_rpc
 ```
 
 ### 2. Run the distributed TypeScript SpacetimeDB benchmark
 
-Use this mode when you want to spread explicit TypeScript client connections across multiple machines. The existing `npm run bench` flow is still the single-process benchmark; the distributed flow is a separate coordinator + generator setup.
+Use this mode when you want to spread explicit TypeScript client connections across multiple machines. The existing `pnpm run bench` flow is still the single-process benchmark; the distributed flow is a separate coordinator + generator setup.
 
 The commands below are written so they run unchanged on a single machine. For a true multi-machine run, replace `127.0.0.1` with the actual coordinator and server hostnames or IP addresses reachable from each generator machine.
 
@@ -251,20 +257,21 @@ cd templates/keynote-2
 pnpm run bench-dist-coordinator -- \
   --test test-1 \
   --connector spacetimedb \
-  --warmup-seconds 15 \
   --window-seconds 30 \
   --verify 1 \
   --stdb-url ws://127.0.0.1:3000 \
   --stdb-module test-1 \
+  --stdb-compression none \
   --bind 127.0.0.1 \
   --port 8080
 ```
 
 Notes:
 
-- `--warmup-seconds` is the unmeasured warmup period. Generators submit requests during warmup, but those transactions are excluded from TPS.
+- Before measurement begins, the coordinator waits for every participating generator to start its epoch and acknowledge that it is running.
 - `--window-seconds` is the measured interval.
 - `--verify 1` preserves the existing benchmark semantics by running one verification pass centrally after the epoch completes.
+- If a generator never acknowledges start, the coordinator fails the epoch after `--start-ack-timeout-seconds` seconds. The default is `60`.
 - The coordinator derives the HTTP metrics endpoint from `--stdb-url` by switching to `http://` or `https://` and appending `/v1/metrics`.
 - For a real multi-machine run, change `--bind 127.0.0.1` to `--bind 0.0.0.0` so remote generators can reach the coordinator.
 - For a real multi-machine run, set `--stdb-url` to the server machine's reachable address.
@@ -287,7 +294,8 @@ pnpm run bench-dist-generator -- \
   --open-parallelism 128 \
   --control-retries 3 \
   --stdb-url ws://127.0.0.1:3000 \
-  --stdb-module test-1
+  --stdb-module test-1 \
+  --stdb-compression none
 ```
 
 On **generator machine 2**:
@@ -306,7 +314,8 @@ pnpm run bench-dist-generator -- \
   --open-parallelism 128 \
   --control-retries 3 \
   --stdb-url ws://127.0.0.1:3000 \
-  --stdb-module test-1
+  --stdb-module test-1 \
+  --stdb-compression none
 ```
 
 Repeat that on as many generator machines as needed, adjusting `--id` and `--concurrency` for each process.
@@ -359,8 +368,8 @@ The result contains:
 #### Operational notes
 
 - Start the coordinator before the generators.
-- Generators begin submitting requests when the coordinator enters `warmup`, not when the measured window begins.
-- Throughput is measured only from the committed transaction counter delta recorded after warmup, so warmup transactions are excluded.
+- Generators begin submitting requests when the coordinator enters `starting`.
+- Throughput is measured only from the committed transaction counter delta recorded after all participating generators have acknowledged start, so startup traffic is excluded.
 - For this distributed TypeScript mode, each connection runs closed-loop with one request at a time. There is no pipelining in this flow.
 - Late generators are allowed to register and become ready while an epoch is already running, but they only participate in the next epoch.
 - The coordinator does not use heartbeats. It includes generators that most recently reported `ready`.
@@ -379,11 +388,11 @@ From `src/cli.ts`:
 
 - **`--seconds N`**
   - Duration of the benchmark in seconds
-  - Default: `1`
+  - Default: `10`
 
 - **`--concurrency N`**
   - Number of workers / in-flight operations
-  - Default: `10`
+  - Default: `50`
 
 - **`--alpha A`**
   - Zipf α parameter for account selection (hot vs cold distribution)
@@ -399,6 +408,7 @@ From `src/cli.ts`:
 
   - If omitted, all connectors for that test are run
   - The valid names come from `tc.system` in the test modules and the keys in `CONNECTORS`
+  - Valid names: `convex`, `spacetimedb`, `bun`, `postgres_rpc`, `cockroach_rpc`, `sqlite_rpc`, `supabase_rpc`, `planetscale_pg_rpc`
 
 - **`--contention-tests startAlpha endAlpha step concurrency`**
   - Runs a sweep over Zipf α values for a single connector
@@ -417,14 +427,10 @@ From `src/cli.ts`:
 You can also run the benchmark via Docker instead of Node directly:
 
 ```bash
-docker compose run --rm bench \
-  --seconds 5 \
-  --concurrency 50 \
-  --alpha 1 \
-  --connectors convex
+docker compose run --rm bench -- --seconds 5 --concurrency 50 --alpha 1 --connectors convex
 ```
 
-If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `npm run prep` before running bench.
+If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `pnpm run prep` before running bench.
 
 ## Output
 

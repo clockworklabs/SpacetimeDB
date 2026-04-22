@@ -4,6 +4,7 @@ import {
   defaultBenchTestName,
   defaultDemoSystems,
   getSharedRuntimeDefaults,
+  parseStdbCompression,
   parseConnectorList,
   type BenchOptions,
   type ConcurrencyTests,
@@ -151,6 +152,11 @@ function addSharedRuntimeOptions(parser: CLIParser): CLIParser {
     .option('--stdb-url <url>', 'SpacetimeDB url', str())
     .option('--stdb-module <name>', 'SpacetimeDB module name', str())
     .option('--stdb-module-path <dir>', 'SpacetimeDB module path', str())
+    .option(
+      '--stdb-compression <mode>',
+      'SpacetimeDB client compression mode (`none` or `gzip`)',
+      str(),
+    )
     .option('--no-stdb-confirmed-reads', 'Disable confirmed reads')
     .option('--use-docker', 'Use docker')
     .option('--no-use-spacetime-metrics-endpoint', '')
@@ -187,6 +193,10 @@ function resolveRuntimeOptions(
     stdbUrl: normalizeStdbUrl(options.stdbUrl ?? defaults.stdbUrl),
     stdbModule: options.stdbModule ?? defaults.stdbModule,
     stdbModulePath: options.stdbModulePath ?? defaults.stdbModulePath,
+    stdbCompression: parseStdbCompression(
+      options.stdbCompression ?? defaults.stdbCompression,
+      '--stdb-compression',
+    ),
     stdbConfirmedReads:
       options.stdbConfirmedReads ?? defaults.stdbConfirmedReads,
     useDocker: options.useDocker ?? defaults.useDocker,
@@ -296,7 +306,7 @@ export function parseDemoOptions(argv: string[] = process.argv): DemoOptions {
   return {
     ...runtimeOptions,
     seconds: options.seconds ?? 10,
-    concurrency: options.concurrency ?? 10,
+    concurrency: options.concurrency ?? 50,
     alpha: options.alpha ?? 1.5,
     systems:
       options.systems ?? options.connectors ?? [...defaultDemoSystems],
@@ -368,9 +378,9 @@ export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
   return {
     ...runtimeOptions,
     testName: args[0] ?? defaultBenchTestName,
-    seconds: options.seconds ?? 1,
+    seconds: options.seconds ?? 10,
     concurrency:
-      contentionTests?.concurrency ?? options.concurrency ?? 10,
+      contentionTests?.concurrency ?? options.concurrency ?? 50,
     alpha: concurrencyTests?.alpha ?? options.alpha ?? 1.5,
     connectors: options.connectors ?? options.systems ?? null,
     contentionTests,

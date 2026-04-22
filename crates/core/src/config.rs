@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 use std::{fmt, io};
 
+use anyhow::Context;
 use serde::Deserialize;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
@@ -12,7 +13,11 @@ use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
 /// **WARNING**: Comments and formatting in the file will be lost.
 pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<Option<T>> {
     match std::fs::read_to_string(path) {
-        Ok(contents) => Ok(Some(toml::from_str(&contents)?)),
+        Ok(contents) => {
+            let config =
+                toml::from_str(&contents).with_context(|| format!("invalid TOML syntax in {}", path.display()))?;
+            Ok(Some(config))
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
     }
@@ -56,11 +61,12 @@ impl MetadataFile {
         path.write(self.to_string())
     }
 
-    fn check_compatibility(previous: &Self, current: &Self) -> anyhow::Result<()> {
+    fn check_compatibility(previous: &Self, current: &Self, metafile: &Path) -> anyhow::Result<()> {
         anyhow::ensure!(
             previous.edition == current.edition,
-            "metadata.toml indicates that this database is from a different \
+            "metadata.toml at {} indicates that this database is from a different \
             edition of SpacetimeDB (running {:?}, but this database is {:?})",
+            metafile.display(),
             current.edition,
             previous.edition,
         );
@@ -110,8 +116,8 @@ impl MetadataFile {
     /// `self` is the metadata file read from a database, and current is
     /// the default metadata file that the active database version would
     /// right to a new database.
-    pub fn check_compatibility_and_update(mut self, current: Self) -> anyhow::Result<Self> {
-        Self::check_compatibility(&self, &current)?;
+    pub fn check_compatibility_and_update(mut self, current: Self, metafile: &Path) -> anyhow::Result<Self> {
+        Self::check_compatibility(&self, &current, metafile)?;
         // bump the version in the file only if it's being run in a newer database.
         self.version = std::cmp::max(self.version, current.version);
         Ok(self)
@@ -218,12 +224,12 @@ impl V8HeapPolicyConfig {
 
 /// Default number of requests between V8 heap checks.
 fn def_req_interval() -> Option<u64> {
-    Some(65_536)
+    Some(4_096)
 }
 
 /// Default wall-clock interval between V8 heap checks.
 fn def_time_interval() -> Option<Duration> {
-    Some(Duration::from_secs(30))
+    Some(Duration::from_secs(5))
 }
 
 /// Default heap fill fraction that triggers a GC.
@@ -309,6 +315,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn mkver(major: u64, minor: u64, patch: u64) -> semver::Version {
         semver::Version::new(major, minor, patch)
@@ -341,70 +348,85 @@ mod tests {
     }
 
     #[test]
+    fn parse_config_reports_the_invalid_file_path() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, "[module]\nname = \"my-project\n").unwrap();
+
+        let err = match parse_config::<ConfigFile>(&path) {
+            Ok(_) => panic!("expected invalid TOML to fail"),
+            Err(err) => format!("{err:#}"),
+        };
+        assert!(err.contains("invalid TOML syntax"));
+        assert!(err.contains("config.toml"));
+        assert!(err.contains("line 2"));
+    }
+
+    #[test]
     fn check_metadata_compatibility_checking() {
         assert_eq!(
             mkmeta(1, 0, 0)
-                .check_compatibility_and_update(mkmeta(1, 0, 1))
+                .check_compatibility_and_update(mkmeta(1, 0, 1), Path::new("metadata.toml"))
                 .unwrap()
                 .version,
             mkver(1, 0, 1)
         );
         assert_eq!(
             mkmeta(1, 0, 1)
-                .check_compatibility_and_update(mkmeta(1, 0, 0))
+                .check_compatibility_and_update(mkmeta(1, 0, 0), Path::new("metadata.toml"))
                 .unwrap()
                 .version,
             mkver(1, 0, 1)
         );
 
         mkmeta(1, 1, 0)
-            .check_compatibility_and_update(mkmeta(1, 0, 5))
+            .check_compatibility_and_update(mkmeta(1, 0, 5), Path::new("metadata.toml"))
             .unwrap_err();
         mkmeta(2, 0, 0)
-            .check_compatibility_and_update(mkmeta(1, 3, 5))
+            .check_compatibility_and_update(mkmeta(1, 3, 5), Path::new("metadata.toml"))
             .unwrap_err();
         assert_eq!(
             mkmeta(1, 12, 0)
-                .check_compatibility_and_update(mkmeta(2, 0, 0))
+                .check_compatibility_and_update(mkmeta(2, 0, 0), Path::new("metadata.toml"))
                 .unwrap()
                 .version,
             mkver(2, 0, 0)
         );
         mkmeta(2, 0, 0)
-            .check_compatibility_and_update(mkmeta(3, 0, 0))
+            .check_compatibility_and_update(mkmeta(3, 0, 0), Path::new("metadata.toml"))
             .unwrap_err();
     }
 
     #[test]
     fn check_metadata_compatibility_prerelease() {
         mkmeta(1, 9, 0)
-            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap();
 
         mkmeta_pre(2, 0, 0, "rc1")
-            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap();
 
         mkmeta_pre(2, 0, 0, "rc1")
-            .check_compatibility_and_update(mkmeta(2, 0, 1))
+            .check_compatibility_and_update(mkmeta(2, 0, 1), Path::new("metadata.toml"))
             .unwrap();
 
         mkmeta_pre(2, 0, 0, "rc1")
-            .check_compatibility_and_update(mkmeta(2, 0, 0))
+            .check_compatibility_and_update(mkmeta(2, 0, 0), Path::new("metadata.toml"))
             .unwrap();
 
         // Now check some failures..
 
         mkmeta_pre(2, 0, 0, "rc1")
-            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"))
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"), Path::new("metadata.toml"))
             .unwrap_err();
 
         mkmeta_pre(2, 0, 0, "rc2")
-            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"))
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap_err();
 
         mkmeta(2, 0, 0)
-            .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"))
+            .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap_err();
     }
 
@@ -412,10 +434,10 @@ mod tests {
     fn v8_heap_policy_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
 
-        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(65_536));
+        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(4_096));
         assert_eq!(
             config.v8_heap_policy.heap_check_time_interval,
-            Some(Duration::from_secs(30))
+            Some(Duration::from_secs(5))
         );
         assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.67);
         assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.75);

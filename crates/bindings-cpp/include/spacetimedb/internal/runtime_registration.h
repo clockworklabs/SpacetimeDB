@@ -1,9 +1,12 @@
 #ifndef SPACETIMEDB_RUNTIME_REGISTRATION_H
 #define SPACETIMEDB_RUNTIME_REGISTRATION_H
 
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 #include "../abi/opaque_types.h"
 #include "autogen/Lifecycle.g.h"
@@ -32,6 +35,18 @@ size_t GetProcedureHandlerCount();
 std::vector<uint8_t> ConsumeBytes(BytesSource source);
 void SetMultiplePrimaryKeyError(const std::string& table_name);
 void SetConstraintRegistrationError(const std::string& code, const std::string& details);
+
+template <typename F>
+__attribute__((noinline)) decltype(auto) __spacetimedb_begin_short_backtrace(F&& f) {
+    if constexpr (std::is_void_v<std::invoke_result_t<F>>) {
+        std::forward<F>(f)();
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+    } else {
+        decltype(auto) result = std::forward<F>(f)();
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        return result;
+    }
+}
 
 } // namespace Internal
 } // namespace SpacetimeDB
