@@ -752,7 +752,7 @@ fn main() -> Result<()> {
             let mut common_args = vec![];
             if let Some(target) = target.as_ref() {
                 common_args.push("--target");
-                common_args.push(target.as_str());
+                common_args.push(target);
                 log::info!("checking update flow for target: {target}");
             } else {
                 log::info!("checking update flow");
@@ -766,17 +766,20 @@ fn main() -> Result<()> {
                 "cargo",
                 ["build", "-p", "spacetimedb-update"]
                     .into_iter()
-                    .chain(common_args.iter().copied()),
+                    .chain(common_args.clone()),
             )
             .run()?;
-
+            // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
+            // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
+            // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
             let root_dir = tempfile::tempdir()?;
-            let root_arg = format!("--root-dir={}", root_dir.path().display());
+            let root_dir_string = root_dir.path().to_string_lossy().to_string();
+            let root_arg = format!("--root-dir={}", root_dir_string);
             cmd(
                 "cargo",
                 ["run", "-p", "spacetimedb-update"]
                     .into_iter()
-                    .chain(common_args.iter().copied())
+                    .chain(common_args.clone())
                     .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
             )
             .run()?;
