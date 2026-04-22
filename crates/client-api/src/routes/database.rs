@@ -15,7 +15,7 @@ use crate::{
     NodeDelegate, Unauthorized,
 };
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{OriginalUri, Path, Query, Request, State};
 use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
@@ -233,25 +233,28 @@ pub struct HttpRouteParams {
 pub async fn handle_http_route_root<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Path(HttpRouteRootParams { name_or_identity }): Path<HttpRouteRootParams>,
+    OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, None, request).await
+    handle_http_route_impl(worker_ctx, name_or_identity, None, original_uri, request).await
 }
 
 pub async fn handle_http_route_root_slash<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Path(HttpRouteRootParams { name_or_identity }): Path<HttpRouteRootParams>,
+    OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, Some(String::new()), request).await
+    handle_http_route_impl(worker_ctx, name_or_identity, Some(String::new()), original_uri, request).await
 }
 
 pub async fn handle_http_route<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Path(HttpRouteParams { name_or_identity, path }): Path<HttpRouteParams>,
+    OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, Some(path), request).await
+    handle_http_route_impl(worker_ctx, name_or_identity, Some(path), original_uri, request).await
 }
 
 /// Error response body for unknown user-defined HTTP route.
@@ -261,6 +264,7 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: S,
     name_or_identity: NameOrIdentity,
     path: Option<String>,
+    original_uri: http::Uri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
     let handler_path = match path.as_deref() {
@@ -280,12 +284,13 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
     };
 
     let body = body.collect().await.map_err(log_and_500)?.to_bytes();
+    let forwarded_uri = reconstruct_external_uri(&original_uri, &parts.headers);
     let request = st_http::RequestAndBody {
         request: st_http::Request {
             method: st_method.clone(),
             headers: headers_to_st(parts.headers),
             timeout: None,
-            uri: parts.uri.to_string(),
+            uri: forwarded_uri,
             version: http_version_to_st(parts.version),
         },
         body,
@@ -314,6 +319,51 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
 
     let response = response_from_st(response)?;
     Ok(response.into_response())
+}
+
+/// Return the URI that would have been in the original request, including scheme, domain and full path.
+///
+/// This is necessary because Axum strips the URI as it processes routing,
+/// causing the request seen by the handler function to contain only the suffix that participated in routing
+/// for the last service involved.
+///
+/// We want to show the entire URI to the user-defined handler, so we reconstruct it based on X-Forwarded headers.
+fn reconstruct_external_uri(original_uri: &http::Uri, headers: &http::HeaderMap) -> String {
+    if original_uri.scheme().is_some() && original_uri.authority().is_some() {
+        return original_uri.to_string();
+    }
+
+    let scheme = forwarded_header(headers, "x-forwarded-proto")
+        .or_else(|| original_uri.scheme_str().map(str::to_owned))
+        .unwrap_or_else(|| "http".to_string());
+    let authority = forwarded_header(headers, "x-forwarded-host")
+        .or_else(|| {
+            headers
+                .get(http::header::HOST)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned)
+        })
+        .or_else(|| original_uri.authority().map(|authority| authority.to_string()));
+    let path_and_query = original_uri
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or_else(|| original_uri.path());
+
+    if let Some(authority) = authority {
+        format!("{scheme}://{authority}{path_and_query}")
+    } else {
+        original_uri.to_string()
+    }
+}
+
+fn forwarded_header(headers: &http::HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 fn assert_content_type_json(content_type: headers::ContentType) -> axum::response::Result<()> {

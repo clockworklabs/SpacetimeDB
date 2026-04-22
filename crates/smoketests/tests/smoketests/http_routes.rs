@@ -183,6 +183,21 @@ fn router() -> Router {
 }
 "#;
 
+const FULL_URI_MODULE_CODE: &str = r#"
+use spacetimedb::http::{Body, Request, Response, Router};
+use spacetimedb::HandlerContext;
+
+#[spacetimedb::http::handler]
+fn echo_uri(_ctx: &mut HandlerContext, req: Request) -> Response {
+    Response::new(Body::from_bytes(req.uri().to_string()))
+}
+
+#[spacetimedb::http::router]
+fn router() -> Router {
+    Router::new().get("/echo-uri", echo_uri)
+}
+"#;
+
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
 #[test]
@@ -349,4 +364,18 @@ fn http_routes_are_strict_for_root_paths() {
     let resp = client.get(format!("{base}/")).send().expect("slash root failed");
     assert!(resp.status().is_success());
     assert_eq!(resp.text().expect("slash root body"), "slash");
+}
+
+#[test]
+fn http_handler_observes_full_external_uri() {
+    let test = Smoketest::builder().module_code(FULL_URI_MODULE_CODE).build();
+    let identity = test.database_identity.as_ref().expect("database identity missing");
+
+    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+    let url = format!("{base}/echo-uri?alpha=beta");
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(&url).send().expect("echo-uri failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("echo-uri body"), url);
 }
