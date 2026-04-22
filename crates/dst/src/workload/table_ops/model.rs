@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
@@ -7,7 +5,7 @@ use crate::{
     seed::{DstRng, DstSeed},
 };
 
-use super::{followup_properties_after_commit, property_interaction, TableProperty, TableWorkloadInteraction};
+use super::TableWorkloadInteraction;
 
 /// Generator-side model of committed rows plus per-connection pending writes.
 ///
@@ -21,7 +19,6 @@ pub(crate) struct GenerationModel {
     committed: Vec<Vec<SimRow>>,
     next_ids: Vec<u64>,
     active_writer: Option<usize>,
-    scenario_commit_properties: Vec<TableWorkloadInteraction>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -29,16 +26,10 @@ pub(crate) struct PendingConnection {
     pub(crate) in_tx: bool,
     staged_inserts: Vec<(usize, SimRow)>,
     staged_deletes: Vec<(usize, SimRow)>,
-    last_auto_committed_insert: Option<SimRow>,
 }
 
 impl GenerationModel {
-    pub(crate) fn new(
-        schema: &SchemaPlan,
-        num_connections: usize,
-        seed: DstSeed,
-        scenario_commit_properties: Vec<TableWorkloadInteraction>,
-    ) -> Self {
+    pub(crate) fn new(schema: &SchemaPlan, num_connections: usize, seed: DstSeed) -> Self {
         Self {
             schema: schema.clone(),
             connections: vec![PendingConnection::default(); num_connections],
@@ -47,7 +38,6 @@ impl GenerationModel {
                 .map(|idx| seed.fork(idx as u64 + 100).0)
                 .collect(),
             active_writer: None,
-            scenario_commit_properties,
         }
     }
 
@@ -78,10 +68,6 @@ impl GenerationModel {
         rows
     }
 
-    pub(crate) fn committed_rows(&self, table: usize) -> Vec<SimRow> {
-        self.committed[table].clone()
-    }
-
     pub(crate) fn active_writer(&self) -> Option<usize> {
         self.active_writer
     }
@@ -99,13 +85,8 @@ impl GenerationModel {
         if pending.in_tx {
             pending.staged_inserts.push((table, row));
         } else {
-            self.committed[table].push(row.clone());
-            pending.last_auto_committed_insert = Some(row);
+            self.committed[table].push(row);
         }
-    }
-
-    pub(crate) fn last_inserted_row(&self, conn: usize) -> Option<SimRow> {
-        self.connections[conn].last_auto_committed_insert.clone()
     }
 
     pub(crate) fn delete(&mut self, conn: usize, table: usize, row: SimRow) {
@@ -120,7 +101,7 @@ impl GenerationModel {
         }
     }
 
-    pub(crate) fn commit(&mut self, conn: usize) -> Vec<TableWorkloadInteraction> {
+    pub(crate) fn commit(&mut self, conn: usize) {
         let pending = &mut self.connections[conn];
         let inserts = std::mem::take(&mut pending.staged_inserts);
         let deletes = std::mem::take(&mut pending.staged_deletes);
@@ -133,33 +114,14 @@ impl GenerationModel {
         for (table, row) in &inserts {
             self.committed[*table].push(row.clone());
         }
-
-        followup_properties_after_commit(self.scenario_commit_properties.clone(), inserts, deletes)
     }
 
-    pub(crate) fn rollback(&mut self, conn: usize) -> Vec<TableWorkloadInteraction> {
+    pub(crate) fn rollback(&mut self, conn: usize) {
         let pending = &mut self.connections[conn];
-        let touched_tables = pending
-            .staged_inserts
-            .iter()
-            .chain(pending.staged_deletes.iter())
-            .map(|(table, _)| *table)
-            .collect::<BTreeSet<_>>();
         pending.staged_inserts.clear();
         pending.staged_deletes.clear();
         pending.in_tx = false;
         self.active_writer = None;
-        let mut followups = touched_tables
-            .into_iter()
-            .map(|table| {
-                property_interaction(TableProperty::RowCountFresh {
-                    table,
-                    expected: self.committed[table].len() as u64,
-                })
-            })
-            .collect::<Vec<_>>();
-        followups.extend(self.scenario_commit_properties.clone());
-        followups
     }
 }
 
@@ -244,7 +206,6 @@ impl ExpectedModel {
                     self.committed[*table].retain(|candidate| *candidate != *row);
                 }
             }
-            TableWorkloadInteraction::Check(_) => {}
         }
     }
 

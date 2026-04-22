@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{schema::SchemaPlan, seed::DstRng};
 
-use super::{
-    generation::ScenarioPlanner, TableProperty, TableScenario, TableWorkloadInteraction, TableWorkloadOutcome,
-};
+use super::{generation::ScenarioPlanner, TableScenario, TableWorkloadOutcome};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct RandomCrudScenario;
@@ -35,10 +33,6 @@ impl TableScenario for RandomCrudScenario {
         random_crud::validate_outcome(schema, outcome)
     }
 
-    fn commit_properties(&self) -> Vec<TableWorkloadInteraction> {
-        Vec::new()
-    }
-
     fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize) {
         random_crud::fill_pending(planner, conn);
     }
@@ -53,12 +47,6 @@ impl TableScenario for BankingScenario {
         banking::validate_outcome(schema, outcome)
     }
 
-    fn commit_properties(&self) -> Vec<TableWorkloadInteraction> {
-        vec![super::properties::property_interaction(
-            TableProperty::TablesMatchFresh { left: 0, right: 1 },
-        )]
-    }
-
     fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize) {
         banking::fill_pending(planner, conn);
     }
@@ -71,10 +59,6 @@ impl TableScenario for IndexedRangesScenario {
 
     fn validate_outcome(&self, schema: &SchemaPlan, outcome: &TableWorkloadOutcome) -> anyhow::Result<()> {
         random_crud::validate_outcome(schema, outcome)
-    }
-
-    fn commit_properties(&self) -> Vec<TableWorkloadInteraction> {
-        Vec::new()
     }
 
     fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize) {
@@ -96,14 +80,6 @@ impl TableScenario for TableScenarioId {
             Self::RandomCrud => RandomCrudScenario.validate_outcome(schema, outcome),
             Self::IndexedRanges => IndexedRangesScenario.validate_outcome(schema, outcome),
             Self::Banking => BankingScenario.validate_outcome(schema, outcome),
-        }
-    }
-
-    fn commit_properties(&self) -> Vec<TableWorkloadInteraction> {
-        match self {
-            Self::RandomCrud => RandomCrudScenario.commit_properties(),
-            Self::IndexedRanges => IndexedRangesScenario.commit_properties(),
-            Self::Banking => BankingScenario.commit_properties(),
         }
     }
 

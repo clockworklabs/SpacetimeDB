@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
-    schema::{SchemaPlan, SimRow, TablePlan},
+    schema::SchemaPlan,
     seed::{DstRng, DstSeed},
 };
 
@@ -14,17 +14,29 @@ use super::{model::GenerationModel, TableScenario, TableWorkloadInteraction};
 /// memory up front.
 #[derive(Clone, Debug)]
 pub struct InteractionStream<S> {
+    // Deterministic source for all planner choices.
     rng: DstRng,
+    // Scenario-specific workload policy layered on top of the shared model.
     scenario: S,
+    // Generator-side expected state used to decide what interactions are legal.
     model: GenerationModel,
     num_connections: usize,
+    // Soft budget for scenario-generated interactions. Finish mode may emit a
+    // few extra commit/follow-up interactions to close open transactions.
     target_interactions: usize,
     emitted: usize,
+    // When the budget is exhausted, we walk connections in order and commit any
+    // still-open transaction so the stream ends in a clean state.
     finalize_conn: usize,
+    // Scenario code can enqueue a burst of interactions at once: for example a
+    // mutation followed by one or more property checks.
     pending: VecDeque<TableWorkloadInteraction>,
     finished: bool,
 }
 
+/// Narrow helper passed to scenario code so scenario-specific planning can
+/// inspect the current model and enqueue interactions without owning the whole
+/// stream state machine.
 pub struct ScenarioPlanner<'a> {
     rng: &'a mut DstRng,
     model: &'a mut GenerationModel,
@@ -44,6 +56,10 @@ impl<'a> ScenarioPlanner<'a> {
         self.rng.index(100) < percent
     }
 
+    /// Tries to emit one transaction control interaction for `conn`.
+    ///
+    /// The shared generator owns transaction lifecycle so scenario code can
+    /// focus on domain operations like inserts, deletes, and range checks.
     pub fn maybe_control_tx(&mut self, conn: usize, begin_pct: usize, commit_pct: usize, rollback_pct: usize) -> bool {
         if !self.model.connections[conn].in_tx && self.model.active_writer().is_none() && self.roll_percent(begin_pct) {
             self.model.begin_tx(conn);
@@ -52,16 +68,14 @@ impl<'a> ScenarioPlanner<'a> {
         }
 
         if self.model.connections[conn].in_tx && self.roll_percent(commit_pct) {
-            let followups = self.model.commit(conn);
+            self.model.commit(conn);
             self.pending.push_back(TableWorkloadInteraction::CommitTx { conn });
-            self.pending.extend(followups);
             return true;
         }
 
         if self.model.connections[conn].in_tx && self.roll_percent(rollback_pct) {
-            let followups = self.model.rollback(conn);
+            self.model.rollback(conn);
             self.pending.push_back(TableWorkloadInteraction::RollbackTx { conn });
-            self.pending.extend(followups);
             return true;
         }
 
@@ -70,10 +84,6 @@ impl<'a> ScenarioPlanner<'a> {
 
     pub fn visible_rows(&self, conn: usize, table: usize) -> Vec<crate::schema::SimRow> {
         self.model.visible_rows(conn, table)
-    }
-
-    pub fn committed_rows(&self, table: usize) -> Vec<SimRow> {
-        self.model.committed_rows(table)
     }
 
     pub fn make_row(&mut self, table: usize) -> crate::schema::SimRow {
@@ -86,18 +96,6 @@ impl<'a> ScenarioPlanner<'a> {
 
     pub fn delete(&mut self, conn: usize, table: usize, row: crate::schema::SimRow) {
         self.model.delete(conn, table, row);
-    }
-
-    pub fn last_inserted_row(&self, conn: usize) -> Option<crate::schema::SimRow> {
-        self.model.last_inserted_row(conn)
-    }
-
-    pub fn in_tx(&self, conn: usize) -> bool {
-        self.model.connections[conn].in_tx
-    }
-
-    pub fn table_plan(&self, table: usize) -> &TablePlan {
-        &self.model.schema.tables[table]
     }
 
     pub fn push_interaction(&mut self, interaction: TableWorkloadInteraction) {
@@ -113,11 +111,10 @@ impl<S: TableScenario> InteractionStream<S> {
         num_connections: usize,
         target_interactions: usize,
     ) -> Self {
-        let scenario_commit_properties = scenario.commit_properties();
         Self {
             rng: seed.fork(17).rng(),
             scenario,
-            model: GenerationModel::new(&schema, num_connections, seed, scenario_commit_properties),
+            model: GenerationModel::new(&schema, num_connections, seed),
             num_connections,
             target_interactions,
             emitted: 0,
@@ -133,13 +130,14 @@ impl<S: TableScenario> InteractionStream<S> {
 
     fn fill_pending(&mut self) {
         if self.emitted >= self.target_interactions {
+            // Once the workload budget is spent, stop asking the scenario for
+            // more work and only flush any open transaction state.
             while self.finalize_conn < self.num_connections {
                 let conn = self.finalize_conn;
                 self.finalize_conn += 1;
                 if self.model.connections[conn].in_tx {
-                    let followups = self.model.commit(conn);
+                    self.model.commit(conn);
                     self.pending.push_back(TableWorkloadInteraction::CommitTx { conn });
-                    self.pending.extend(followups);
                     return;
                 }
             }
@@ -147,6 +145,9 @@ impl<S: TableScenario> InteractionStream<S> {
             return;
         }
 
+        // Locking targets allow only one writer at a time. If a writer is
+        // already open, keep driving that same connection until it commits or
+        // rolls back. Otherwise pick a fresh connection uniformly.
         let conn = self
             .model
             .active_writer()
@@ -165,6 +166,8 @@ impl<S: TableScenario> Iterator for InteractionStream<S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            // Scenario planning fills `pending` in bursts, but the iterator
+            // surface stays one interaction at a time.
             if let Some(interaction) = self.pending.pop_front() {
                 self.emitted += 1;
                 return Some(interaction);

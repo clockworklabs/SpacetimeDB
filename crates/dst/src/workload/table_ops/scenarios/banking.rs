@@ -2,11 +2,7 @@ use spacetimedb_sats::AlgebraicType;
 
 use crate::schema::{ColumnPlan, SchemaPlan, TablePlan};
 
-use super::super::{
-    generation::ScenarioPlanner,
-    properties::{property_interaction, TableProperty},
-    TableWorkloadInteraction, TableWorkloadOutcome,
-};
+use super::super::{generation::ScenarioPlanner, TableWorkloadInteraction, TableWorkloadOutcome};
 
 pub fn generate_schema() -> SchemaPlan {
     SchemaPlan {
@@ -87,35 +83,11 @@ pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: usize) {
             table: 0,
             row: row.clone(),
         });
-        planner.push_interaction(property_interaction(TableProperty::VisibleInConnection {
-            conn,
-            table: 0,
-            row: row.clone(),
-        }));
         planner.push_interaction(TableWorkloadInteraction::Insert {
             conn,
             table: 1,
             row: mirror.clone(),
         });
-        planner.push_interaction(property_interaction(TableProperty::VisibleInConnection {
-            conn,
-            table: 1,
-            row: mirror.clone(),
-        }));
-        if !planner.in_tx(conn) {
-            planner.push_interaction(property_interaction(TableProperty::VisibleFresh {
-                table: 0,
-                row: row.clone(),
-            }));
-            planner.push_interaction(property_interaction(TableProperty::VisibleFresh {
-                table: 1,
-                row: mirror,
-            }));
-            planner.push_interaction(property_interaction(TableProperty::TablesMatchFresh {
-                left: 0,
-                right: 1,
-            }));
-        }
         return;
     }
 
@@ -128,33 +100,9 @@ pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: usize) {
         table: 0,
         row: row.clone(),
     });
-    planner.push_interaction(property_interaction(TableProperty::MissingInConnection {
-        conn,
-        table: 0,
-        row: row.clone(),
-    }));
     planner.push_interaction(TableWorkloadInteraction::Delete {
         conn,
         table: 1,
         row: mirror.clone(),
     });
-    planner.push_interaction(property_interaction(TableProperty::MissingInConnection {
-        conn,
-        table: 1,
-        row: mirror.clone(),
-    }));
-    if !planner.in_tx(conn) {
-        planner.push_interaction(property_interaction(TableProperty::MissingFresh {
-            table: 0,
-            row: row.clone(),
-        }));
-        planner.push_interaction(property_interaction(TableProperty::MissingFresh {
-            table: 1,
-            row: mirror,
-        }));
-        planner.push_interaction(property_interaction(TableProperty::TablesMatchFresh {
-            left: 0,
-            right: 1,
-        }));
-    }
 }

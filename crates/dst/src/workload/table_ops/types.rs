@@ -5,7 +5,7 @@ use crate::{
     seed::DstRng,
 };
 
-use super::{generation::ScenarioPlanner, properties::TableProperty, scenarios::TableScenarioId};
+use super::{generation::ScenarioPlanner, scenarios::TableScenarioId};
 
 /// Scenario hook for shared table-oriented workloads.
 ///
@@ -14,7 +14,6 @@ use super::{generation::ScenarioPlanner, properties::TableProperty, scenarios::T
 pub(crate) trait TableScenario: Clone {
     fn generate_schema(&self, rng: &mut DstRng) -> SchemaPlan;
     fn validate_outcome(&self, schema: &SchemaPlan, outcome: &TableWorkloadOutcome) -> anyhow::Result<()>;
-    fn commit_properties(&self) -> Vec<TableWorkloadInteraction>;
     fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize);
 }
 
@@ -41,7 +40,6 @@ pub enum TableWorkloadInteraction {
     RollbackTx { conn: usize },
     Insert { conn: usize, table: usize, row: SimRow },
     Delete { conn: usize, table: usize, row: SimRow },
-    Check(TableProperty),
 }
 
 /// Final state gathered from a table-workload engine after execution ends.
@@ -61,7 +59,7 @@ pub struct TableWorkloadExecutionFailure {
     /// Target-provided error message.
     pub reason: String,
     /// Interaction that triggered the failure.
-    pub(crate) interaction: TableWorkloadInteraction,
+    pub(crate) interaction: Option<TableWorkloadInteraction>,
 }
 
 /// Minimal engine interface implemented by concrete table-oriented targets.

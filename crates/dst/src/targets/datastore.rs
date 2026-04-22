@@ -1,6 +1,6 @@
 //! Randomized datastore simulator target built on the shared table workload.
 
-use std::path::Path;
+use std::{ops::Bound, path::Path};
 
 use spacetimedb_datastore::{
     execution_context::Workload,
@@ -25,10 +25,13 @@ use crate::{
     config::RunConfig,
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
-    targets::harness::{self, TableTargetHarness},
+    targets::{
+        harness::{self, TableTargetHarness},
+        properties::{self, TargetPropertyAccess, TargetPropertyState},
+    },
     workload::table_ops::{
-        ConnectionWriteState, PropertyBound, TableProperty, TableScenarioId, TableWorkloadCase, TableWorkloadEngine,
-        TableWorkloadExecutionFailure, TableWorkloadInteraction, TableWorkloadOutcome,
+        ConnectionWriteState, TableScenarioId, TableWorkloadCase, TableWorkloadEngine, TableWorkloadExecutionFailure,
+        TableWorkloadInteraction, TableWorkloadOutcome,
     },
 };
 
@@ -86,9 +89,12 @@ pub fn shrink_failure(
 
 /// Concrete datastore execution harness for the shared table workload.
 struct DatastoreEngine {
+    schema: SchemaPlan,
     datastore: Locking,
     table_ids: Vec<TableId>,
     execution: ConnectionWriteState<MutTxId>,
+    properties: TargetPropertyState,
+    step: u64,
 }
 
 impl DatastoreEngine {
@@ -96,9 +102,12 @@ impl DatastoreEngine {
         let datastore = bootstrap_datastore()?;
         let table_ids = install_schema(&datastore, schema)?;
         Ok(Self {
+            schema: schema.clone(),
             datastore,
             table_ids,
             execution: ConnectionWriteState::new(num_connections),
+            properties: TargetPropertyState::default(),
+            step: 0,
         })
     }
 
@@ -163,13 +172,11 @@ impl DatastoreEngine {
         &self,
         table_id: TableId,
         cols: &[u16],
-        lower: &PropertyBound,
-        upper: &PropertyBound,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
     ) -> anyhow::Result<Vec<SimRow>> {
         let tx = self.datastore.begin_tx(Workload::ForTests);
         let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
-        let lower = lower.to_range_bound();
-        let upper = upper.to_range_bound();
         let rows = self
             .datastore
             .iter_by_col_range_tx(&tx, table_id, cols, (lower, upper))?
@@ -178,28 +185,101 @@ impl DatastoreEngine {
         Ok(rows)
     }
 
-    fn in_tx_range_scan(
+    fn table_id(&self, table: usize) -> Result<TableId, String> {
+        self.table_ids
+            .get(table)
+            .copied()
+            .ok_or_else(|| format!("table {table} out of range"))
+    }
+
+    fn lookup_in_connection(&self, conn: usize, table: usize, id: u64) -> Result<Option<SimRow>, String> {
+        let table_id = self.table_id(table)?;
+        if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn) {
+            Ok(self
+                .datastore
+                .iter_by_col_eq_mut_tx(tx, table_id, 0u16, &AlgebraicValue::U64(id))
+                .map_err(|err| format!("in-tx lookup failed: {err}"))?
+                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+                .next())
+        } else {
+            self.fresh_lookup(table_id, id)
+                .map_err(|err| format!("fresh lookup failed: {err}"))
+        }
+    }
+
+    fn count_rows_for_property(&self, table: usize) -> Result<usize, String> {
+        let table_id = self.table_id(table)?;
+        let tx = self.datastore.begin_tx(Workload::ForTests);
+        Ok(tx.row_count(table_id) as usize)
+    }
+
+    fn count_by_col_eq_for_property(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String> {
+        let table_id = self.table_id(table)?;
+        let tx = self.datastore.begin_tx(Workload::ForTests);
+        self.datastore
+            .iter_by_col_eq_tx(&tx, table_id, col, value)
+            .map(|rows| rows.count())
+            .map_err(|err| format!("predicate query failed: {err}"))
+    }
+
+    fn range_scan_for_property(
         &self,
-        tx: &MutTxId,
-        table_id: TableId,
+        table: usize,
         cols: &[u16],
-        lower: &PropertyBound,
-        upper: &PropertyBound,
-    ) -> anyhow::Result<Vec<SimRow>> {
-        let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
-        let lower = lower.to_range_bound();
-        let upper = upper.to_range_bound();
-        let rows = self
-            .datastore
-            .iter_by_col_range_mut_tx(tx, table_id, cols, (lower, upper))?
-            .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-            .collect();
-        Ok(rows)
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) -> Result<Vec<SimRow>, String> {
+        let table_id = self.table_id(table)?;
+        self.fresh_range_scan(table_id, cols, lower, upper)
+            .map_err(|err| format!("range scan failed: {err}"))
+    }
+
+    fn with_property_state<T>(
+        &mut self,
+        f: impl FnOnce(&TargetPropertyState, &Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let state = std::mem::take(&mut self.properties);
+        let result = f(&state, self);
+        self.properties = state;
+        result
+    }
+}
+
+impl TargetPropertyAccess for DatastoreEngine {
+    fn schema_plan(&self) -> &SchemaPlan {
+        &self.schema
+    }
+
+    fn lookup_in_connection(&self, conn: usize, table: usize, id: u64) -> Result<Option<SimRow>, String> {
+        Self::lookup_in_connection(self, conn, table, id)
+    }
+
+    fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String> {
+        Self::collect_rows_for_table(self, table).map_err(|err| format!("collect rows failed: {err}"))
+    }
+
+    fn count_rows(&self, table: usize) -> Result<usize, String> {
+        Self::count_rows_for_property(self, table)
+    }
+
+    fn count_by_col_eq(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String> {
+        Self::count_by_col_eq_for_property(self, table, col, value)
+    }
+
+    fn range_scan(
+        &self,
+        table: usize,
+        cols: &[u16],
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) -> Result<Vec<SimRow>, String> {
+        Self::range_scan_for_property(self, table, cols, lower, upper)
     }
 }
 
 impl TableWorkloadEngine for DatastoreEngine {
     fn execute(&mut self, interaction: &Interaction) -> Result<(), String> {
+        self.step = self.step.saturating_add(1);
         match interaction {
             Interaction::BeginTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
@@ -226,6 +306,7 @@ impl TableWorkloadEngine for DatastoreEngine {
                     .commit_mut_tx(tx)
                     .map_err(|err| format!("commit failed on connection {conn}: {err}"))?;
                 self.execution.active_writer = None;
+                self.with_property_state(|state, access| properties::on_commit_or_rollback(state, access))?;
             }
             Interaction::RollbackTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "rollback")?;
@@ -234,8 +315,10 @@ impl TableWorkloadEngine for DatastoreEngine {
                     .ok_or_else(|| format!("connection {conn} has no transaction to rollback"))?;
                 let _ = self.datastore.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
+                self.with_property_state(|state, access| properties::on_commit_or_rollback(state, access))?;
             }
             Interaction::Insert { conn, table, row } => {
+                let in_tx = self.execution.tx_by_connection[*conn].is_some();
                 self.with_mut_tx(*conn, *table, |datastore, table_id, tx| {
                     let bsatn = row.to_bsatn().map_err(|err: anyhow::Error| err.to_string())?;
                     datastore
@@ -243,8 +326,13 @@ impl TableWorkloadEngine for DatastoreEngine {
                         .map_err(|err| format!("insert failed: {err}"))?;
                     Ok(())
                 })?;
+                let step = self.step;
+                self.with_property_state(|state, access| {
+                    properties::on_insert(state, access, step, *conn, *table, row, in_tx)
+                })?;
             }
             Interaction::Delete { conn, table, row } => {
+                let in_tx = self.execution.tx_by_connection[*conn].is_some();
                 self.with_mut_tx(*conn, *table, |datastore, table_id, tx| {
                     let deleted = datastore.delete_by_rel_mut_tx(tx, table_id, [row.to_product_value()]);
                     if deleted != 1 {
@@ -252,149 +340,10 @@ impl TableWorkloadEngine for DatastoreEngine {
                     }
                     Ok(())
                 })?;
-            }
-            Interaction::Check(TableProperty::VisibleInConnection { conn, table, row }) => {
-                let table_id = *self
-                    .table_ids
-                    .get(*table)
-                    .ok_or_else(|| format!("table {table} out of range"))?;
-                let id = row.id().ok_or_else(|| "row missing id column".to_string())?;
-                let found = if let Some(Some(tx)) = self.execution.tx_by_connection.get(*conn) {
-                    self.datastore
-                        .iter_by_col_eq_mut_tx(tx, table_id, 0u16, &AlgebraicValue::U64(id))
-                        .map_err(|err| format!("in-tx lookup failed: {err}"))?
-                        .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-                        .any(|candidate| candidate == *row)
-                } else {
-                    self.fresh_lookup(table_id, id)
-                        .map_err(|err| format!("fresh lookup failed: {err}"))?
-                        == Some(row.clone())
-                };
-                if !found {
-                    return Err(format!("row not visible in connection after write: {row:?}"));
-                }
-            }
-            Interaction::Check(TableProperty::MissingInConnection { conn, table, row }) => {
-                let table_id = *self
-                    .table_ids
-                    .get(*table)
-                    .ok_or_else(|| format!("table {table} out of range"))?;
-                let id = row.id().ok_or_else(|| "row missing id column".to_string())?;
-                let found = if let Some(Some(tx)) = self.execution.tx_by_connection.get(*conn) {
-                    self.datastore
-                        .iter_by_col_eq_mut_tx(tx, table_id, 0u16, &AlgebraicValue::U64(id))
-                        .map_err(|err| format!("in-tx lookup failed: {err}"))?
-                        .next()
-                        .is_some()
-                } else {
-                    self.fresh_lookup(table_id, id)
-                        .map_err(|err| format!("fresh lookup failed: {err}"))?
-                        .is_some()
-                };
-                if found {
-                    return Err(format!("row still visible in connection after delete: {row:?}"));
-                }
-            }
-            Interaction::Check(TableProperty::VisibleFresh { table, row }) => {
-                let table_id = *self
-                    .table_ids
-                    .get(*table)
-                    .ok_or_else(|| format!("table {table} out of range"))?;
-                let id = row.id().ok_or_else(|| "row missing id column".to_string())?;
-                let found = self
-                    .fresh_lookup(table_id, id)
-                    .map_err(|err| format!("fresh lookup failed: {err}"))?;
-                if found != Some(row.clone()) {
-                    return Err(format!("fresh lookup mismatch: expected={row:?} actual={found:?}"));
-                }
-            }
-            Interaction::Check(TableProperty::MissingFresh { table, row }) => {
-                let table_id = *self
-                    .table_ids
-                    .get(*table)
-                    .ok_or_else(|| format!("table {table} out of range"))?;
-                let id = row.id().ok_or_else(|| "row missing id column".to_string())?;
-                if self
-                    .fresh_lookup(table_id, id)
-                    .map_err(|err| format!("fresh lookup failed: {err}"))?
-                    .is_some()
-                {
-                    return Err(format!("fresh lookup still found deleted row: {row:?}"));
-                }
-            }
-            Interaction::Check(TableProperty::RowCountFresh { table, expected }) => {
-                let table_id = *self
-                    .table_ids
-                    .get(*table)
-                    .ok_or_else(|| format!("table {table} out of range"))?;
-                let actual = self.datastore.begin_tx(Workload::ForTests).row_count(table_id);
-                if actual != *expected {
-                    return Err(format!("row count mismatch: expected={expected} actual={actual}"));
-                }
-            }
-            Interaction::Check(TableProperty::RangeScanInConnection {
-                conn,
-                table,
-                cols,
-                lower,
-                upper,
-                expected_rows,
-            }) => {
-                let table_id = *self
-                    .table_ids
-                    .get(*table)
-                    .ok_or_else(|| format!("table {table} out of range"))?;
-                let mut actual_rows = if let Some(Some(tx)) = self.execution.tx_by_connection.get(*conn) {
-                    self.in_tx_range_scan(tx, table_id, cols, lower, upper)
-                        .map_err(|err| format!("in-tx range scan failed: {err}"))?
-                } else {
-                    self.fresh_range_scan(table_id, cols, lower, upper)
-                        .map_err(|err| format!("fresh range scan failed: {err}"))?
-                };
-                actual_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
-                let mut expected_rows = expected_rows.clone();
-                expected_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
-                if actual_rows != expected_rows {
-                    return Err(format!(
-                        "connection range scan mismatch on table {table}, cols={cols:?}: expected={expected_rows:?} actual={actual_rows:?}"
-                    ));
-                }
-            }
-            Interaction::Check(TableProperty::RangeScanFresh {
-                table,
-                cols,
-                lower,
-                upper,
-                expected_rows,
-            }) => {
-                let table_id = *self
-                    .table_ids
-                    .get(*table)
-                    .ok_or_else(|| format!("table {table} out of range"))?;
-                let mut actual_rows = self
-                    .fresh_range_scan(table_id, cols, lower, upper)
-                    .map_err(|err| format!("fresh range scan failed: {err}"))?;
-                actual_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
-                let mut expected_rows = expected_rows.clone();
-                expected_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
-                if actual_rows != expected_rows {
-                    return Err(format!(
-                        "fresh range scan mismatch on table {table}, cols={cols:?}: expected={expected_rows:?} actual={actual_rows:?}"
-                    ));
-                }
-            }
-            Interaction::Check(TableProperty::TablesMatchFresh { left, right }) => {
-                let left_rows = self
-                    .collect_rows_for_table(*left)
-                    .map_err(|err| format!("left table collect failed: {err}"))?;
-                let right_rows = self
-                    .collect_rows_for_table(*right)
-                    .map_err(|err| format!("right table collect failed: {err}"))?;
-                if left_rows != right_rows {
-                    return Err(format!(
-                        "fresh table mismatch: left_table={left} right_table={right} left={left_rows:?} right={right_rows:?}"
-                    ));
-                }
+                let step = self.step;
+                self.with_property_state(|state, access| {
+                    properties::on_delete(state, access, step, *conn, *table, row, in_tx)
+                })?;
             }
         }
 
@@ -487,11 +436,4 @@ fn install_schema(datastore: &Locking, schema: &SchemaPlan) -> anyhow::Result<Ve
 
     datastore.commit_mut_tx(tx)?;
     Ok(table_ids)
-}
-
-fn compare_rows_by_cols(lhs: &SimRow, rhs: &SimRow, cols: &[u16]) -> std::cmp::Ordering {
-    lhs.project_key(cols)
-        .to_algebraic_value()
-        .cmp(&rhs.project_key(cols).to_algebraic_value())
-        .then_with(|| lhs.values.cmp(&rhs.values))
 }

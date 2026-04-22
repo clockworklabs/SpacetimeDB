@@ -3,8 +3,8 @@ use std::time::Instant;
 use crate::{config::RunConfig, schema::SchemaPlan, seed::DstSeed};
 
 use super::{
-    model::ExpectedModel, InteractionStream, TableProperty, TableScenario, TableWorkloadEngine,
-    TableWorkloadExecutionFailure, TableWorkloadInteraction, TableWorkloadOutcome,
+    model::ExpectedModel, InteractionStream, TableScenario, TableWorkloadEngine, TableWorkloadExecutionFailure,
+    TableWorkloadInteraction, TableWorkloadOutcome,
 };
 
 pub fn execute_interactions<S, E, I>(
@@ -29,7 +29,7 @@ where
             .map_err(|reason| TableWorkloadExecutionFailure {
                 step_index,
                 reason,
-                interaction: interaction.clone(),
+                interaction: Some(interaction.clone()),
             })?;
         expected.apply(&interaction);
     }
@@ -110,9 +110,6 @@ fn failure_without_step(reason: String) -> TableWorkloadExecutionFailure {
     TableWorkloadExecutionFailure {
         step_index: usize::MAX,
         reason,
-        interaction: TableWorkloadInteraction::Check(TableProperty::RowCountFresh {
-            table: usize::MAX,
-            expected: 0,
-        }),
+        interaction: None,
     }
 }
