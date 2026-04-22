@@ -299,6 +299,84 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+fn run_dlls() -> Result<()> {
+    ensure_repo_root()?;
+
+    cmd!(
+        "dotnet",
+        "pack",
+        "crates/bindings-csharp/BSATN.Runtime",
+        "-c",
+        "Release"
+    )
+    .run()?;
+    cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
+
+    let repo_root = env::current_dir()?;
+    let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+    let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
+
+    let nuget_config_dir = tempfile::tempdir()?;
+    let nuget_config_path = nuget_config_dir.path().join("nuget.config");
+    let nuget_config_contents = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <clear />
+                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
+                <add key="Local SpacetimeDB.Runtime" value="{}" />
+                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+              </packageSources>
+              <packageSourceMapping>
+                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
+                  <package pattern="SpacetimeDB.BSATN.Runtime" />
+                </packageSource>
+                <packageSource key="Local SpacetimeDB.Runtime">
+                  <package pattern="SpacetimeDB.Runtime" />
+                </packageSource>
+                <packageSource key="nuget.org">
+                  <package pattern="*" />
+                </packageSource>
+              </packageSourceMapping>
+            </configuration>
+            "#,
+        bsatn_source.display(),
+        runtime_source.display(),
+    );
+    fs::write(&nuget_config_path, nuget_config_contents)?;
+
+    let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
+
+    clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
+    clear_restored_package_dirs("spacetimedb.runtime")?;
+
+    cmd!(
+        "dotnet",
+        "restore",
+        "SpacetimeDB.ClientSDK.csproj",
+        "--configfile",
+        &nuget_config_path_str,
+    )
+    .dir("sdks/csharp")
+    .run()?;
+
+    overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
+    overlay_unity_meta_skeleton("spacetimedb.runtime")?;
+
+    cmd!(
+        "dotnet",
+        "pack",
+        "SpacetimeDB.ClientSDK.csproj",
+        "-c",
+        "Release",
+        "--no-restore"
+    )
+    .dir("sdks/csharp")
+    .run()?;
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -306,8 +384,6 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
-            cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
-
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
             // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
@@ -461,83 +537,10 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Dlls) => {
-            ensure_repo_root()?;
-
-            cmd!(
-                "dotnet",
-                "pack",
-                "crates/bindings-csharp/BSATN.Runtime",
-                "-c",
-                "Release"
-            )
-            .run()?;
-            cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
-
-            let repo_root = env::current_dir()?;
-            let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
-            let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
-
-            let nuget_config_dir = tempfile::tempdir()?;
-            let nuget_config_path = nuget_config_dir.path().join("nuget.config");
-            let nuget_config_contents = format!(
-                r#"<?xml version="1.0" encoding="utf-8"?>
-            <configuration>
-              <packageSources>
-                <clear />
-                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
-                <add key="Local SpacetimeDB.Runtime" value="{}" />
-                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-              </packageSources>
-              <packageSourceMapping>
-                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
-                  <package pattern="SpacetimeDB.BSATN.Runtime" />
-                </packageSource>
-                <packageSource key="Local SpacetimeDB.Runtime">
-                  <package pattern="SpacetimeDB.Runtime" />
-                </packageSource>
-                <packageSource key="nuget.org">
-                  <package pattern="*" />
-                </packageSource>
-              </packageSourceMapping>
-            </configuration>
-            "#,
-                bsatn_source.display(),
-                runtime_source.display(),
-            );
-            fs::write(&nuget_config_path, nuget_config_contents)?;
-
-            let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
-
-            clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
-            clear_restored_package_dirs("spacetimedb.runtime")?;
-
-            cmd!(
-                "dotnet",
-                "restore",
-                "SpacetimeDB.ClientSDK.csproj",
-                "--configfile",
-                &nuget_config_path_str,
-            )
-            .dir("sdks/csharp")
-            .run()?;
-
-            overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
-            overlay_unity_meta_skeleton("spacetimedb.runtime")?;
-
-            cmd!(
-                "dotnet",
-                "pack",
-                "SpacetimeDB.ClientSDK.csproj",
-                "-c",
-                "Release",
-                "--no-restore"
-            )
-            .dir("sdks/csharp")
-            .run()?;
+            run_dlls()?;
         }
 
         Some(CiCmd::Smoketests(args)) => {
-            ensure_repo_root()?;
             smoketest::run(args)?;
         }
 
@@ -548,7 +551,7 @@ fn main() -> Result<()> {
             let mut common_args = vec![];
             if let Some(target) = target.as_ref() {
                 common_args.push("--target");
-                common_args.push(target);
+                common_args.push(target.as_str());
                 log::info!("checking update flow for target: {target}");
             } else {
                 log::info!("checking update flow");
@@ -562,24 +565,26 @@ fn main() -> Result<()> {
                 "cargo",
                 ["build", "-p", "spacetimedb-update"]
                     .into_iter()
-                    .chain(common_args.clone()),
+                    .chain(common_args.iter().copied()),
             )
             .run()?;
-            // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
-            // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
-            // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
+
             let root_dir = tempfile::tempdir()?;
-            let root_dir_string = root_dir.path().to_string_lossy().to_string();
-            let root_arg = format!("--root-dir={}", root_dir_string);
+            let root_arg = format!("--root-dir={}", root_dir.path().display());
             cmd(
                 "cargo",
                 ["run", "-p", "spacetimedb-update"]
                     .into_iter()
-                    .chain(common_args.clone())
+                    .chain(common_args.iter().copied())
                     .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
             )
             .run()?;
-            cmd!(format!("{}/spacetime", root_dir_string), &root_arg, "help",).run()?;
+
+            let mut spacetime_path = root_dir.path().join("spacetime");
+            if !std::env::consts::EXE_EXTENSION.is_empty() {
+                spacetime_path.set_extension(std::env::consts::EXE_EXTENSION);
+            }
+            cmd(spacetime_path, [&root_arg, "help"]).run()?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
