@@ -78,8 +78,7 @@ pub enum WebSocketUpgradeRejection {
     KeyMissing,
 }
 
-#[async_trait::async_trait]
-impl<S> FromRequestParts<S> for WebSocketUpgrade {
+impl<S: Sync> FromRequestParts<S> for WebSocketUpgrade {
     type Rejection = WebSocketUpgradeRejection;
     async fn from_request_parts(parts: &mut http::request::Parts, _state: &S) -> Result<Self, Self::Rejection> {
         use WebSocketUpgradeRejection::*;

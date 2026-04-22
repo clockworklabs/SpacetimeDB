@@ -9,6 +9,7 @@ use crate::auth::{
     SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
+use crate::util::serde::humantime_duration;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
     log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
@@ -20,12 +21,14 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
+use derive_more::From;
 use futures::TryStreamExt;
 use http::StatusCode;
 use log::{info, warn};
 use serde::Deserialize;
+use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::ClientConnectedError;
+use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited};
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
@@ -43,6 +46,9 @@ use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
+use tokio::sync::oneshot;
+use tokio::time::error::Elapsed;
+use tokio::time::timeout;
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -518,22 +524,46 @@ pub async fn sql_direct<S>(
     SqlParams { name_or_identity }: SqlParams,
     SqlQueryParams { confirmed }: SqlQueryParams,
     caller_identity: Identity,
+    caller_auth: ConnectionAuthCtx,
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    // Anyone is authorized to execute SQL queries. The SQL engine will determine
-    // which queries this identity is allowed to execute against the database.
+    let connection_id = generate_random_connection_id();
 
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
-    let auth = worker_ctx
-        .authorize_sql(caller_identity, database.database_identity)
-        .await?;
-
-    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+    // Run the module's client_connected reducer, if any.
+    // If it rejects the connection, bail before executing SQL.
+    let module = host.module().await.map_err(log_and_500)?;
+    module
+        .call_identity_connected(caller_auth, connection_id)
         .await
+        .map_err(client_connected_error_to_response)?;
+
+    let result = async {
+        let sql_auth = worker_ctx
+            .authorize_sql(caller_identity, database.database_identity)
+            .await?;
+
+        host.exec_sql(
+            sql_auth,
+            database,
+            confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
+            sql,
+        )
+        .await
+    }
+    .await;
+
+    // Always disconnect, even if authorization or execution failed.
+    module
+        .call_identity_disconnected(caller_identity, connection_id)
+        .await
+        .map_err(client_disconnected_error_to_response)?;
+
+    result
 }
 
 pub async fn sql<S>(
@@ -546,7 +576,9 @@ pub async fn sql<S>(
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    let json = sql_direct(worker_ctx, name_or_identity, params, auth.claims.identity, body).await?;
+    let caller_identity = auth.claims.identity;
+    let caller_auth: ConnectionAuthCtx = auth.into();
+    let json = sql_direct(worker_ctx, name_or_identity, params, caller_identity, caller_auth, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
@@ -616,7 +648,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
     }): Query<ResetDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    program_bytes: Option<Bytes>,
+    program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let database_identity = name_or_identity.resolve(&ctx).await?;
     let database = worker_ctx_find_database(&ctx, &database_identity)
@@ -626,12 +658,20 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ResetDatabase)
         .await?;
 
+    if ctx.is_database_locked(&database_identity).await.map_err(log_and_500)? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Database is locked and cannot be reset with --delete-data. Run `spacetime unlock` first.",
+        )
+            .into());
+    }
+
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
     ctx.reset_database(
         &auth.claims.identity,
         DatabaseResetDef {
             database_identity,
-            program_bytes,
+            program_bytes: Some(program_bytes),
             num_replicas,
             host_type: Some(host_type),
         },
@@ -668,7 +708,32 @@ pub struct PublishDatabaseQueryParams {
     parent: Option<NameOrIdentity>,
     #[serde(alias = "org")]
     organization: Option<NameOrIdentity>,
+    /// Duration to wait for a database update to become confirmed (i.e. durable).
+    ///
+    /// The value is parsed via the `humantime` crate, e.g. "1m", "23s", "5min".
+    ///
+    /// If not given, defaults to [default_update_confirmation_timeout].
+    /// The maximum timeout is capped by [MAX_UPDATE_CONFIRMATION_TIMEOUT].
+    ///
+    /// The parameter has no effect when creating a new database.
+    #[serde(with = "humantime_duration", default = "default_update_confirmation_timeout")]
+    update_confirmation_timeout: Duration,
 }
+
+/// Default timeout for a database update to become confirmed / durable.
+///
+/// Currently, the value is 5s.
+const fn default_update_confirmation_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+/// Maximum timeout for a database update to become confirmed / durable.
+///
+/// If a replication group doesn't converge within this time span, it is
+/// probably not making progress at all.
+///
+/// Currently, the value is 5min.
+const MAX_UPDATE_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
@@ -681,6 +746,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
         parent,
         organization,
+        update_confirmation_timeout: confirmation_timeout,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -716,7 +782,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                         host_type,
                     }),
                     Extension(auth),
-                    Some(program_bytes),
+                    program_bytes,
                 )
                 .await;
             }
@@ -796,6 +862,13 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .await
         .map_err(log_and_500)?;
 
+    let success = || {
+        axum::Json(PublishResult::Success {
+            domain: db_name.cloned(),
+            database_identity,
+            op: publish_op,
+        })
+    };
     match maybe_updated {
         Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
             Err(bad_request(format!("Database update rejected: {errs}").into()))
@@ -803,16 +876,58 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(bad_request(
             format!("Failed to create or update the database: {err}").into(),
         )),
-        None
-        | Some(
-            UpdateDatabaseResult::NoUpdateNeeded
-            | UpdateDatabaseResult::UpdatePerformed
-            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect,
-        ) => Ok(axum::Json(PublishResult::Success {
-            domain: db_name.cloned(),
-            database_identity,
-            op: publish_op,
-        })),
+        None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
+        Some(
+            UpdateDatabaseResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            }
+            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                tx_offset,
+                durable_offset,
+            },
+        ) => {
+            timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
+                let tx_offset = tx_offset.await?;
+                if let Some(mut durable_offset) = durable_offset {
+                    durable_offset.wait_for(tx_offset).await?;
+                }
+
+                Ok::<_, UpdateConfirmationError>(())
+            })
+            .await
+            .map_err(Into::into)
+            .flatten()?;
+
+            Ok(success())
+        }
+    }
+}
+
+#[derive(From)]
+enum UpdateConfirmationError {
+    Cancelled(oneshot::error::RecvError),
+    Crashed(DurabilityExited),
+    Timeout(Elapsed),
+}
+
+impl From<UpdateConfirmationError> for ErrorResponse {
+    fn from(e: UpdateConfirmationError) -> Self {
+        match e {
+            UpdateConfirmationError::Cancelled(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database update failed: transaction was cancelled",
+            ),
+            UpdateConfirmationError::Crashed(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database update failed: database crashed while waiting for transaction confirmation",
+            ),
+            UpdateConfirmationError::Timeout(_) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "Database update failed: timeout waiting for transaction confirmation",
+            ),
+        }
+        .into()
     }
 }
 
@@ -1026,7 +1141,56 @@ pub async fn delete_database<S: ControlStateDelegate + Authorization>(
 
     ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
         .await?;
+
+    if ctx.is_database_locked(&database_identity).await.map_err(log_and_500)? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Database is locked and cannot be deleted. Run `spacetime unlock` first.",
+        )
+            .into());
+    }
+
     ctx.delete_database(&auth.claims.identity, &database_identity)
+        .await
+        .map_err(log_and_500)?;
+
+    Ok(())
+}
+
+pub async fn lock_database<S: ControlStateDelegate + Authorization>(
+    State(ctx): State<S>,
+    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<impl IntoResponse> {
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
+        return Err(StatusCode::NOT_FOUND.into());
+    };
+
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
+        .await?;
+
+    ctx.set_database_lock(&auth.claims.identity, &database_identity, true)
+        .await
+        .map_err(log_and_500)?;
+
+    Ok(())
+}
+
+pub async fn unlock_database<S: ControlStateDelegate + Authorization>(
+    State(ctx): State<S>,
+    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<impl IntoResponse> {
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
+        return Err(StatusCode::NOT_FOUND.into());
+    };
+
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
+        .await?;
+
+    ctx.set_database_lock(&auth.claims.identity, &database_identity, false)
         .await
         .map_err(log_and_500)?;
 
@@ -1201,6 +1365,10 @@ pub struct DatabaseRoutes<S> {
     pub db_reset: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/lock
+    pub lock_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/unlock
+    pub unlock_post: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1226,6 +1394,8 @@ where
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
+            lock_post: post(lock_database::<S>),
+            unlock_post: post(unlock_database::<S>),
         }
     }
 }
@@ -1244,17 +1414,19 @@ where
             .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
-            .route("/call/:reducer", self.call_reducer_procedure_post)
+            .route("/call/{reducer}", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
-            .route("/reset", self.db_reset);
+            .route("/reset", self.db_reset)
+            .route("/lock", self.lock_post)
+            .route("/unlock", self.unlock_post);
 
         axum::Router::new()
             .route("/", self.root_post)
-            .nest("/:name_or_identity", db_router)
+            .nest("/{name_or_identity}", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }
 }
