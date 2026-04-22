@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::TryRecvError};
 use tokio::time::sleep;
 
 /// Receives from a Tokio unbounded channel with an adaptive linger policy.
@@ -71,11 +71,13 @@ impl<T> AdaptiveUnboundedReceiver<T> {
 
             match self.rx.try_recv() {
                 Ok(message) => return Some(message),
-                Err(mpsc::error::TryRecvError::Disconnected) => return None,
-                Err(mpsc::error::TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => return None,
+                Err(TryRecvError::Empty) => {}
             }
 
             let linger = self.linger.current();
+            // In case the baseline is zero,
+            // this will cause the loop to do `self.rx.recv(..)`.
             if linger.is_zero() {
                 self.cool_down();
                 continue;
@@ -88,8 +90,8 @@ impl<T> AdaptiveUnboundedReceiver<T> {
                     self.linger.on_hit();
                     return Some(message);
                 }
-                Err(mpsc::error::TryRecvError::Disconnected) => return None,
-                Err(mpsc::error::TryRecvError::Empty) => {
+                Err(TryRecvError::Disconnected) => return None,
+                Err(TryRecvError::Empty) => {
                     self.cool_down();
                 }
             }

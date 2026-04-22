@@ -1762,7 +1762,7 @@ impl SendWorker {
     // pay a park/unpark cost on every enqueue, while still parking quickly
     // once traffic goes quiet.
     const BASELINE_LINGER: Duration = Duration::from_micros(25);
-    const MAX_LINGER: Duration = Duration::from_micros(500);
+    const MAX_LINGER: Duration = Duration::from_micros(200);
 
     fn is_client_dropped_or_cancelled(&self, client_id: &ClientId) -> bool {
         self.clients
