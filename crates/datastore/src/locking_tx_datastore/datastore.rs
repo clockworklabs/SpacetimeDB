@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use anyhow::anyhow;
-use core::{cell::RefCell, ops::RangeBounds};
+use core::ops::RangeBounds;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
@@ -170,13 +170,9 @@ impl Locking {
     /// The provided closure will be called for each transaction found in the
     /// history, the parameter is the transaction's offset. The closure is called
     /// _before_ the transaction is applied to the database state.
-    pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<F> {
-        Replay {
-            database_identity: self.database_identity,
-            committed_state: self.committed_state.clone(),
-            progress: RefCell::new(progress),
-            error_behavior,
-        }
+    pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<'_, F> {
+        let committed_state = self.committed_state.write();
+        Replay::new(self.database_identity, committed_state, progress, error_behavior)
     }
 
     /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
