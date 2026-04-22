@@ -117,6 +117,21 @@ impl UnexpectedType {
 }
 
 #[derive(Debug, Error)]
+#[error("Unexpected array type: expected {expected}")]
+pub struct UnexpectedArrayType {
+    expected: String,
+    // TODO: inferred
+}
+
+impl UnexpectedArrayType {
+    pub fn new(expected: &AlgebraicType) -> Self {
+        Self {
+            expected: fmt_algebraic_type(expected).to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
 #[error("Duplicate name `{0}`")]
 pub struct DuplicateName(pub RawIdentifier);
 
@@ -153,6 +168,8 @@ pub enum TypingError {
     Literal(#[from] InvalidLiteral),
     #[error(transparent)]
     Unexpected(#[from] UnexpectedType),
+    #[error(transparent)]
+    UnexpectedArray(#[from] UnexpectedArrayType),
     #[error(transparent)]
     Wildcard(#[from] InvalidWildcard),
     #[error(transparent)]
