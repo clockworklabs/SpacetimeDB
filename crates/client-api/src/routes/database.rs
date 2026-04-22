@@ -236,7 +236,7 @@ pub async fn handle_http_route_root<S: ControlStateDelegate + NodeDelegate>(
     OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, None, original_uri, request).await
+    handle_http_route_impl(worker_ctx, name_or_identity, "".to_string(), original_uri, request).await
 }
 
 pub async fn handle_http_route_root_slash<S: ControlStateDelegate + NodeDelegate>(
@@ -245,7 +245,7 @@ pub async fn handle_http_route_root_slash<S: ControlStateDelegate + NodeDelegate
     OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, Some(String::new()), original_uri, request).await
+    handle_http_route_impl(worker_ctx, name_or_identity, "/".to_string(), original_uri, request).await
 }
 
 pub async fn handle_http_route<S: ControlStateDelegate + NodeDelegate>(
@@ -254,7 +254,7 @@ pub async fn handle_http_route<S: ControlStateDelegate + NodeDelegate>(
     OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, Some(path), original_uri, request).await
+    handle_http_route_impl(worker_ctx, name_or_identity, format!("/{path}"), original_uri, request).await
 }
 
 /// Error response body for unknown user-defined HTTP route.
@@ -263,16 +263,10 @@ const NO_SUCH_ROUTE: &str = "Database has not registered a handler for this rout
 async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: S,
     name_or_identity: NameOrIdentity,
-    path: Option<String>,
+    handler_path: String,
     original_uri: http::Uri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    let handler_path = match path.as_deref() {
-        None => "".to_string(),
-        Some("") => "/".to_string(),
-        Some(path) => format!("/{path}"),
-    };
-
     let (parts, body) = request.into_parts();
     let st_method = http_method_to_st(&parts.method);
 
