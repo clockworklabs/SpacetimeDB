@@ -25,38 +25,25 @@ use spacetimedb_schema::{
 use spacetimedb_table::page_pool::PagePool;
 
 use crate::{
-    bugbase::{load_json, save_json, BugArtifact},
     config::RunConfig,
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
-    subsystem::{DstSubsystem, RunRecord},
     targets::harness::{self, TableTargetHarness},
     workload::table_ops::{
-        ConnectionWriteState, TableProperty, TableScenarioId, TableWorkloadCase, TableWorkloadEngine,
-        TableWorkloadEvent, TableWorkloadExecutionFailure, TableWorkloadInteraction, TableWorkloadOutcome,
+        ConnectionWriteState, PropertyBound, TableProperty, TableScenarioId, TableWorkloadCase, TableWorkloadEngine,
+        TableWorkloadExecutionFailure, TableWorkloadInteraction, TableWorkloadOutcome,
     },
 };
 
-pub type RelationalDbScenario = TableScenarioId;
 pub type RelationalDbSimulatorCase = TableWorkloadCase;
-pub type RelationalDbInteraction = TableWorkloadInteraction;
-pub type RelationalDbSimulatorEvent = TableWorkloadEvent;
 pub type RelationalDbSimulatorOutcome = TableWorkloadOutcome;
 pub type RelationalDbExecutionFailure = TableWorkloadExecutionFailure;
-pub type RelationalDbBugArtifact = BugArtifact<RelationalDbSimulatorCase, RelationalDbExecutionFailure>;
-pub type RelationalDbRunConfig = RunConfig;
-
-/// DST subsystem wrapper around the relational-db simulator target.
-pub struct RelationalDbSimulatorSubsystem;
+type RelationalDbInteraction = TableWorkloadInteraction;
 
 struct RelationalDbTarget;
 
 impl TableTargetHarness for RelationalDbTarget {
     type Engine = RelationalDbEngine;
-
-    fn target_name() -> &'static str {
-        RelationalDbSimulatorSubsystem::name()
-    }
 
     fn connection_seed_discriminator() -> u64 {
         31
@@ -67,41 +54,9 @@ impl TableTargetHarness for RelationalDbTarget {
     }
 }
 
-impl DstSubsystem for RelationalDbSimulatorSubsystem {
-    type Case = RelationalDbSimulatorCase;
-    type Event = RelationalDbSimulatorEvent;
-    type Outcome = RelationalDbSimulatorOutcome;
-
-    fn name() -> &'static str {
-        "relational-db-simulator"
-    }
-
-    fn generate_case(seed: DstSeed) -> Self::Case {
-        harness::generate_case::<RelationalDbTarget>(seed, RelationalDbScenario::RandomCrud)
-    }
-
-    fn run_case(case: &Self::Case) -> anyhow::Result<RunRecord<Self::Case, Self::Event, Self::Outcome>> {
-        harness::run_case_detailed::<RelationalDbTarget>(case).map_err(|failure| {
-            anyhow::anyhow!(
-                "relational db simulator failed at step {}: {}",
-                failure.step_index,
-                failure.reason
-            )
-        })
-    }
-}
-
-pub fn generate_case(seed: DstSeed) -> RelationalDbSimulatorCase {
-    generate_case_for_scenario(seed, RelationalDbScenario::RandomCrud)
-}
-
-pub fn generate_case_for_scenario(seed: DstSeed, scenario: RelationalDbScenario) -> RelationalDbSimulatorCase {
-    harness::generate_case::<RelationalDbTarget>(seed, scenario)
-}
-
 pub fn materialize_case(
     seed: DstSeed,
-    scenario: RelationalDbScenario,
+    scenario: TableScenarioId,
     max_interactions: usize,
 ) -> RelationalDbSimulatorCase {
     harness::materialize_case::<RelationalDbTarget>(seed, scenario, max_interactions)
@@ -109,28 +64,14 @@ pub fn materialize_case(
 
 pub fn run_case_detailed(
     case: &RelationalDbSimulatorCase,
-) -> Result<
-    RunRecord<RelationalDbSimulatorCase, RelationalDbSimulatorEvent, RelationalDbSimulatorOutcome>,
-    RelationalDbExecutionFailure,
-> {
+) -> Result<RelationalDbSimulatorOutcome, RelationalDbExecutionFailure> {
     harness::run_case_detailed::<RelationalDbTarget>(case)
-}
-
-pub fn run_generated_stream(seed: DstSeed, max_interactions: usize) -> anyhow::Result<RelationalDbSimulatorOutcome> {
-    run_generated_with_config(seed, RelationalDbRunConfig::with_max_interactions(max_interactions))
-}
-
-pub fn run_generated_with_config(
-    seed: DstSeed,
-    config: RelationalDbRunConfig,
-) -> anyhow::Result<RelationalDbSimulatorOutcome> {
-    run_generated_with_config_and_scenario(seed, RelationalDbScenario::RandomCrud, config)
 }
 
 pub fn run_generated_with_config_and_scenario(
     seed: DstSeed,
-    scenario: RelationalDbScenario,
-    config: RelationalDbRunConfig,
+    scenario: TableScenarioId,
+    config: RunConfig,
 ) -> anyhow::Result<RelationalDbSimulatorOutcome> {
     harness::run_generated_with_config_and_scenario::<RelationalDbTarget>(seed, scenario, config)
 }
@@ -141,14 +82,6 @@ pub fn save_case(path: impl AsRef<Path>, case: &RelationalDbSimulatorCase) -> an
 
 pub fn load_case(path: impl AsRef<Path>) -> anyhow::Result<RelationalDbSimulatorCase> {
     harness::load_case(path)
-}
-
-pub fn save_bug_artifact(path: impl AsRef<Path>, artifact: &RelationalDbBugArtifact) -> anyhow::Result<()> {
-    save_json(path, artifact)
-}
-
-pub fn load_bug_artifact(path: impl AsRef<Path>) -> anyhow::Result<RelationalDbBugArtifact> {
-    load_json(path)
 }
 
 pub fn shrink_failure(
@@ -235,6 +168,45 @@ impl RelationalDbEngine {
         rows.sort_by_key(|row| row.id().unwrap_or_default());
         Ok(rows)
     }
+
+    fn fresh_range_scan(
+        &self,
+        table_id: TableId,
+        cols: &[u16],
+        lower: &PropertyBound,
+        upper: &PropertyBound,
+    ) -> anyhow::Result<Vec<SimRow>> {
+        let tx = self.db.begin_tx(Workload::ForTests);
+        let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
+        let lower = lower.to_range_bound();
+        let upper = upper.to_range_bound();
+        let rows = self
+            .db
+            .iter_by_col_range(&tx, table_id, cols, (lower, upper))?
+            .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+            .collect();
+        let _ = self.db.release_tx(tx);
+        Ok(rows)
+    }
+
+    fn in_tx_range_scan(
+        &self,
+        tx: &RelMutTx,
+        table_id: TableId,
+        cols: &[u16],
+        lower: &PropertyBound,
+        upper: &PropertyBound,
+    ) -> anyhow::Result<Vec<SimRow>> {
+        let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
+        let lower = lower.to_range_bound();
+        let upper = upper.to_range_bound();
+        let rows = self
+            .db
+            .iter_by_col_range_mut(tx, table_id, cols, (lower, upper))?
+            .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+            .collect();
+        Ok(rows)
+    }
 }
 
 impl TableWorkloadEngine for RelationalDbEngine {
@@ -274,7 +246,7 @@ impl TableWorkloadEngine for RelationalDbEngine {
             }
             RelationalDbInteraction::Insert { conn, table, row } => {
                 self.with_mut_tx(*conn, *table, |db, table_id, tx| {
-                    let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
+                    let bsatn = row.to_bsatn().map_err(|err: anyhow::Error| err.to_string())?;
                     db.insert(tx, table_id, &bsatn)
                         .map_err(|err| format!("insert failed: {err}"))?;
                     Ok(())
@@ -374,6 +346,57 @@ impl TableWorkloadEngine for RelationalDbEngine {
                     return Err(format!("row count mismatch: expected={expected} actual={actual}"));
                 }
             }
+            RelationalDbInteraction::Check(TableProperty::RangeScanInConnection {
+                conn,
+                table,
+                cols,
+                lower,
+                upper,
+                expected_rows,
+            }) => {
+                let table_id = *self
+                    .table_ids
+                    .get(*table)
+                    .ok_or_else(|| format!("table {table} out of range"))?;
+                let mut actual_rows = if let Some(Some(tx)) = self.execution.tx_by_connection.get(*conn) {
+                    self.in_tx_range_scan(tx, table_id, cols, lower, upper)
+                        .map_err(|err| format!("in-tx range scan failed: {err}"))?
+                } else {
+                    self.fresh_range_scan(table_id, cols, lower, upper)
+                        .map_err(|err| format!("fresh range scan failed: {err}"))?
+                };
+                actual_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
+                let mut expected_rows = expected_rows.clone();
+                expected_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
+                if actual_rows != expected_rows {
+                    return Err(format!(
+                        "connection range scan mismatch on table {table}, cols={cols:?}: expected={expected_rows:?} actual={actual_rows:?}"
+                    ));
+                }
+            }
+            RelationalDbInteraction::Check(TableProperty::RangeScanFresh {
+                table,
+                cols,
+                lower,
+                upper,
+                expected_rows,
+            }) => {
+                let table_id = *self
+                    .table_ids
+                    .get(*table)
+                    .ok_or_else(|| format!("table {table} out of range"))?;
+                let mut actual_rows = self
+                    .fresh_range_scan(table_id, cols, lower, upper)
+                    .map_err(|err| format!("fresh range scan failed: {err}"))?;
+                actual_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
+                let mut expected_rows = expected_rows.clone();
+                expected_rows.sort_by(|lhs, rhs| compare_rows_by_cols(lhs, rhs, cols));
+                if actual_rows != expected_rows {
+                    return Err(format!(
+                        "fresh range scan mismatch on table {table}, cols={cols:?}: expected={expected_rows:?} actual={actual_rows:?}"
+                    ));
+                }
+            }
             RelationalDbInteraction::Check(TableProperty::TablesMatchFresh { left, right }) => {
                 let left_rows = self
                     .collect_rows_for_table(*left)
@@ -457,10 +480,11 @@ fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<Vec<
             format!("{}_id_idx", table.name),
             BTreeAlgorithm::from(0),
         )];
-        if let Some(col) = table.secondary_index_col {
+        for cols in &table.extra_indexes {
+            let cols_name = cols.iter().map(|col| format!("c{col}")).collect::<Vec<_>>().join("_");
             indexes.push(IndexSchema::for_test(
-                format!("{}_c{col}_idx", table.name),
-                BTreeAlgorithm::from(col),
+                format!("{}_{}_idx", table.name, cols_name),
+                BTreeAlgorithm::from(cols.iter().copied().collect::<spacetimedb_primitives::ColList>()),
             ));
         }
         let constraints = vec![ConstraintSchema::unique_for_test(
@@ -493,40 +517,9 @@ fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<Vec<
     Ok(table_ids)
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::{Mutex, OnceLock};
-
-    use pretty_assertions::assert_eq;
-
-    use crate::{
-        runner::{rerun_case, run_generated},
-        seed::DstSeed,
-    };
-
-    use super::{generate_case_for_scenario, RelationalDbScenario, RelationalDbSimulatorSubsystem};
-
-    fn test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
-    #[test]
-    fn generated_case_replays_identically() {
-        let _guard = test_lock().lock().unwrap_or_else(|err| err.into_inner());
-        let artifact = run_generated::<RelationalDbSimulatorSubsystem>(DstSeed(13)).expect("run relational db case");
-        let replayed = rerun_case::<RelationalDbSimulatorSubsystem>(&artifact).expect("rerun relational db case");
-        assert_eq!(artifact.case, replayed.case);
-        assert_eq!(artifact.trace, replayed.trace);
-        assert_eq!(artifact.outcome, replayed.outcome);
-    }
-
-    #[test]
-    fn banking_generation_uses_fixed_schema() {
-        let case = generate_case_for_scenario(DstSeed(4242), RelationalDbScenario::Banking);
-        assert_eq!(case.scenario, RelationalDbScenario::Banking);
-        assert_eq!(case.schema.tables.len(), 2);
-        assert_eq!(case.schema.tables[0].name, "debit_accounts");
-        assert_eq!(case.schema.tables[1].name, "credit_accounts");
-    }
+fn compare_rows_by_cols(lhs: &SimRow, rhs: &SimRow, cols: &[u16]) -> std::cmp::Ordering {
+    lhs.project_key(cols)
+        .to_algebraic_value()
+        .cmp(&rhs.project_key(cols).to_algebraic_value())
+        .then_with(|| lhs.values.cmp(&rhs.values))
 }

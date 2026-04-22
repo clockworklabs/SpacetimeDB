@@ -23,7 +23,7 @@ pub fn generate_schema() -> SchemaPlan {
                         ty: AlgebraicType::U64,
                     },
                 ],
-                secondary_index_col: Some(1),
+                extra_indexes: vec![vec![1]],
             },
             TablePlan {
                 name: "credit_accounts".into(),
@@ -37,7 +37,7 @@ pub fn generate_schema() -> SchemaPlan {
                         ty: AlgebraicType::U64,
                     },
                 ],
-                secondary_index_col: Some(1),
+                extra_indexes: vec![vec![1]],
             },
         ],
     }

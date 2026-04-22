@@ -19,8 +19,11 @@ pub struct TablePlan {
     pub name: String,
     /// Ordered column definitions. Column 0 is treated as the primary id column.
     pub columns: Vec<ColumnPlan>,
-    /// Optional secondary indexed column used to exercise index installation paths.
-    pub secondary_index_col: Option<u16>,
+    /// Additional indexed column sets beyond the implicit primary id index.
+    ///
+    /// A value like `[1]` means a single-column secondary index on column 1.
+    /// A value like `[0, 1]` means a composite btree index over columns 0 and 1.
+    pub extra_indexes: Vec<Vec<u16>>,
 }
 
 /// Column definition used by simulators.
@@ -119,6 +122,21 @@ impl SimRow {
     pub fn from_product_value(value: ProductValue) -> Self {
         SimRow {
             values: value.elements.to_vec(),
+        }
+    }
+
+    pub fn project_key(&self, cols: &[u16]) -> Self {
+        let values = cols
+            .iter()
+            .map(|&col| self.values[col as usize].clone())
+            .collect::<Vec<_>>();
+        SimRow { values }
+    }
+
+    pub fn to_algebraic_value(&self) -> AlgebraicValue {
+        match self.values.as_slice() {
+            [value] => value.clone(),
+            _ => ProductValue::from_iter(self.values.iter().cloned()).into(),
         }
     }
 

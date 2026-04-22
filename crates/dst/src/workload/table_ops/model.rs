@@ -78,6 +78,10 @@ impl GenerationModel {
         rows
     }
 
+    pub(crate) fn committed_rows(&self, table: usize) -> Vec<SimRow> {
+        self.committed[table].clone()
+    }
+
     pub(crate) fn active_writer(&self) -> Option<usize> {
         self.active_writer
     }

@@ -1,7 +1,7 @@
 //! Generic shrinking helpers for deterministic targets.
 
 /// Generic remove-and-replay shrink loop.
-pub fn shrink_by_removing<C, F>(
+pub(crate) fn shrink_by_removing<C, F>(
     case: &C,
     target_failure: &F,
     truncate: impl Fn(&C) -> C,

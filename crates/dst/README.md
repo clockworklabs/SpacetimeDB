@@ -7,53 +7,44 @@ Deterministic simulation testing utilities for SpacetimeDB.
 This crate contains reusable pieces for building deterministic simulations,
 shared workload generators, and concrete DST targets.
 
-- root harness:
-  `seed.rs`, `trace.rs`, `subsystem.rs`, `runner.rs`
-- root generic helpers:
+- root helpers:
+  `seed.rs`, `config.rs`
+- root internal helpers:
   `bugbase.rs`, `shrink.rs`
-- root shared target helpers:
-  `config.rs`, `schema.rs`
+- root shared target internals:
+  `schema.rs`
 - `workload/`:
   shared table-style workload split into scenarios, generation, model, and
   properties
-- `sim/`:
-  reusable simulator primitives like `scheduler.rs` and `sync.rs`
 - `targets/`:
   `datastore.rs`, `relational_db.rs`
 - binary:
-  `src/bin/dst.rs`
+  `src/main.rs`
 
 ## Reading Order
 
 If you are new to the crate, this order keeps the mental model small:
 
-1. `subsystem.rs`
-2. `runner.rs`
+1. `src/main.rs`
+2. `config.rs`
 3. `seed.rs`
-4. `trace.rs`
-5. `sim/scheduler.rs`
-6. `config.rs`
-7. `schema.rs`
-8. `workload/table_ops/`
-9. `bugbase.rs`
-10. `shrink.rs`
-11. `targets/datastore.rs`
-12. `targets/relational_db.rs`
+4. `workload/table_ops/`
+5. `targets/datastore.rs`
+6. `targets/relational_db.rs`
 
 ## Core Model
 
 Most code in the crate revolves around the same shape:
 
 - `Case`: generated input for one deterministic run.
-- `Trace<Event>`: ordered execution record.
 - `Outcome`: final observable result.
-- Invariants: assertions over the run record.
+- Properties/checks: assertions performed during execution or against the final outcome.
 
 That separation is intentional:
 
 - generation decides what to try,
 - execution decides what happened,
-- invariants decide whether the run is acceptable,
+- properties decide whether the run is acceptable,
 - shrinking tries to keep the failure while deleting unnecessary steps.
 
 ## Shared Table Workload Map
@@ -82,8 +73,7 @@ reuse that workload and swap in target-specific engines.
 For a failing target case:
 
 1. `run_case_detailed` returns `DatastoreExecutionFailure`
-2. root `bugbase.rs` can serialize failure plus original case
-3. root `shrink.rs` truncates after failure and tries removing interactions
+2. internal `shrink.rs` truncates after failure and tries removing interactions
    while preserving the same failure reason
 
 ## CLI
@@ -94,16 +84,18 @@ Core commands:
 
 ```bash
 cargo run -p spacetimedb-dst -- run --target datastore --scenario banking --duration 5m
+cargo run -p spacetimedb-dst -- run --target datastore --scenario indexed-ranges --duration 5m
 cargo run -p spacetimedb-dst -- run --target relational-db --seed 42 --max-interactions 2000
 cargo run -p spacetimedb-dst -- replay --target datastore bug.json
 cargo run -p spacetimedb-dst -- shrink --target datastore bug.json
 ```
 
-Library unit tests remain for deterministic helpers, shrinking, and small
-target correctness checks. Scenario soak runs should go through CLI.
+DST workloads are run from CLI only. Use `random-crud` for broad coverage and
+`indexed-ranges` when you want to bias toward secondary/composite index range
+behavior without hardcoding a single historical bug.
 
 ## Current Scope
 
-This crate provides deterministic replay primitives, shared table workload
-generation, two concrete targets (`datastore` and `relational_db`), and a
-small CLI for seeded or duration-bounded runs.
+This crate provides shared table workload generation, two concrete targets
+(`datastore` and `relational_db`), and a small CLI for seeded or
+duration-bounded runs.

@@ -8125,18 +8125,18 @@ name = "spacetimedb-dst"
 version = "2.1.0"
 dependencies = [
  "anyhow",
- "pretty_assertions",
- "proptest",
+ "clap 4.5.50",
  "serde",
  "serde_json",
+ "spacetimedb-core",
  "spacetimedb-datastore",
+ "spacetimedb-durability",
  "spacetimedb-execution",
  "spacetimedb-lib 2.1.0",
  "spacetimedb-primitives 2.1.0",
  "spacetimedb-sats 2.1.0",
  "spacetimedb-schema",
  "spacetimedb-table",
- "tempfile",
 ]
 
 [[package]]

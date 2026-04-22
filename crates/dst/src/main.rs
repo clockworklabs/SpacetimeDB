@@ -73,6 +73,7 @@ enum TargetKind {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum ScenarioKind {
     RandomCrud,
+    IndexedRanges,
     Banking,
 }
 
@@ -80,6 +81,7 @@ impl From<ScenarioKind> for TableScenarioId {
     fn from(value: ScenarioKind) -> Self {
         match value {
             ScenarioKind::RandomCrud => TableScenarioId::RandomCrud,
+            ScenarioKind::IndexedRanges => TableScenarioId::IndexedRanges,
             ScenarioKind::Banking => TableScenarioId::Banking,
         }
     }
@@ -210,11 +212,11 @@ fn replay_relational(path: &Path) -> anyhow::Result<()> {
 
 fn replay_datastore_case(case: &datastore::DatastoreSimulatorCase) -> anyhow::Result<()> {
     match datastore::run_case_detailed(case) {
-        Ok(record) => {
+        Ok(_) => {
             println!(
                 "ok target=datastore seed={} steps={}",
-                record.seed.0,
-                record.case.interactions.len()
+                case.seed.0,
+                case.interactions.len()
             );
             Ok(())
         }
@@ -230,11 +232,11 @@ fn replay_datastore_case(case: &datastore::DatastoreSimulatorCase) -> anyhow::Re
 
 fn replay_relational_case(case: &relational_db::RelationalDbSimulatorCase) -> anyhow::Result<()> {
     match relational_db::run_case_detailed(case) {
-        Ok(record) => {
+        Ok(_) => {
             println!(
                 "ok target=relational_db seed={} steps={}",
-                record.seed.0,
-                record.case.interactions.len()
+                case.seed.0,
+                case.interactions.len()
             );
             Ok(())
         }

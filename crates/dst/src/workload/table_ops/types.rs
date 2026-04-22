@@ -11,8 +11,7 @@ use super::{generation::ScenarioPlanner, properties::TableProperty, scenarios::T
 ///
 /// A scenario supplies the initial schema, scenario-specific commit-time
 /// properties, and any final invariant over the collected outcome.
-pub trait TableScenario: Clone {
-    fn name(&self) -> &'static str;
+pub(crate) trait TableScenario: Clone {
     fn generate_schema(&self, rng: &mut DstRng) -> SchemaPlan;
     fn validate_outcome(&self, schema: &SchemaPlan, outcome: &TableWorkloadOutcome) -> anyhow::Result<()>;
     fn commit_properties(&self) -> Vec<TableWorkloadInteraction>;
@@ -25,11 +24,11 @@ pub struct TableWorkloadCase {
     /// Seed used to derive schema and workload decisions.
     pub seed: crate::seed::DstSeed,
     /// Shared workload scenario identifier.
-    pub scenario: TableScenarioId,
+    pub(crate) scenario: TableScenarioId,
     /// Number of simulated client connections in the run.
-    pub num_connections: usize,
+    pub(crate) num_connections: usize,
     /// Initial schema installed into target before replaying interactions.
-    pub schema: SchemaPlan,
+    pub(crate) schema: SchemaPlan,
     /// Materialized interaction trace for replay and shrinking.
     pub interactions: Vec<TableWorkloadInteraction>,
 }
@@ -43,12 +42,6 @@ pub enum TableWorkloadInteraction {
     Insert { conn: usize, table: usize, row: SimRow },
     Delete { conn: usize, table: usize, row: SimRow },
     Check(TableProperty),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum TableWorkloadEvent {
-    /// One interaction executed successfully.
-    Executed(TableWorkloadInteraction),
 }
 
 /// Final state gathered from a table-workload engine after execution ends.
@@ -68,18 +61,18 @@ pub struct TableWorkloadExecutionFailure {
     /// Target-provided error message.
     pub reason: String,
     /// Interaction that triggered the failure.
-    pub interaction: TableWorkloadInteraction,
+    pub(crate) interaction: TableWorkloadInteraction,
 }
 
 /// Minimal engine interface implemented by concrete table-oriented targets.
-pub trait TableWorkloadEngine {
+pub(crate) trait TableWorkloadEngine {
     fn execute(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), String>;
     fn collect_outcome(&mut self) -> anyhow::Result<TableWorkloadOutcome>;
     fn finish(&mut self);
 }
 
 /// Per-connection write transaction bookkeeping shared by locking targets.
-pub struct ConnectionWriteState<Tx> {
+pub(crate) struct ConnectionWriteState<Tx> {
     /// Open mutable transaction handle for each simulated connection.
     pub tx_by_connection: Vec<Option<Tx>>,
     /// Connection that currently owns the single-writer lock, if any.

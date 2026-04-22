@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
-    schema::SchemaPlan,
+    schema::{SchemaPlan, SimRow, TablePlan},
     seed::{DstRng, DstSeed},
 };
 
@@ -72,6 +72,10 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.visible_rows(conn, table)
     }
 
+    pub fn committed_rows(&self, table: usize) -> Vec<SimRow> {
+        self.model.committed_rows(table)
+    }
+
     pub fn make_row(&mut self, table: usize) -> crate::schema::SimRow {
         self.model.make_row(self.rng, table)
     }
@@ -90,6 +94,10 @@ impl<'a> ScenarioPlanner<'a> {
 
     pub fn in_tx(&self, conn: usize) -> bool {
         self.model.connections[conn].in_tx
+    }
+
+    pub fn table_plan(&self, table: usize) -> &TablePlan {
+        &self.model.schema.tables[table]
     }
 
     pub fn push_interaction(&mut self, interaction: TableWorkloadInteraction) {

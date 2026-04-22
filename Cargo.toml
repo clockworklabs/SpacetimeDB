@@ -387,7 +387,7 @@ features = [
 ]
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)', 'cfg(madsim)'] }
 
 [workspace.lints.clippy]
 # FIXME: we should work on this lint incrementally

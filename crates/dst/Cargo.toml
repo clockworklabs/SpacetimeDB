@@ -6,6 +6,9 @@ license-file = "LICENSE"
 description = "Deterministic simulation testing utilities for SpacetimeDB crates"
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "spacetimedb-dst"
 path = "src/main.rs"
@@ -25,8 +28,3 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-schema = { workspace = true, features = ["test"] }
 spacetimedb-table.workspace = true
-
-[dev-dependencies]
-pretty_assertions.workspace = true
-proptest.workspace = true
-tempfile.workspace = true
