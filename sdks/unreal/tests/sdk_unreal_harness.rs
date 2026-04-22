@@ -102,12 +102,12 @@ pub fn make_test_with_suite(suite: &TestSuite, test_name: &str) -> Test {
     // Headless compile (no cook)
     let compile_command = if cfg!(target_os = "windows") {
         format!(
-            "\"{}\" {}Editor Win64 Development \"{}\" -waitmutex -skipbuildengine",
+            "\"{}\" {}Editor Win64 Development -Project=\"{}\" -waitmutex -skipbuildengine",
             build_script, suite.unreal_module, uproject_path
         )
     } else {
         format!(
-            "\"{}\" {}Editor {} Development \"{}\" -skipbuildengine",
+            "\"{}\" {}Editor {} Development -Project=\"{}\" -skipbuildengine",
             build_script,
             suite.unreal_module,
             host_unreal_platform(),
