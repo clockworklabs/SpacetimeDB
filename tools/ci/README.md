@@ -44,7 +44,7 @@ Usage: test
 
 Lints the codebase
 
-Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no warnings.
 
 **Usage:**
 ```bash

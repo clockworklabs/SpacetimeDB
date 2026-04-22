@@ -219,7 +219,8 @@ enum CiCmd {
     Test,
     /// Lints the codebase
     ///
-    /// Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+    /// Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there
+    /// are no warnings.
     Lint,
     /// Tests Wasm bindings
     ///
@@ -702,6 +703,7 @@ fn main() -> Result<()> {
             cmd!("dotnet", "csharpier", "--check", ".")
                 .dir("crates/bindings-csharp")
                 .run()?;
+            cmd!("pnpm", "lint").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
