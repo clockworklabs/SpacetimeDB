@@ -27,7 +27,7 @@ jobs:
           - name: Linux
             runner: spacetimedb-new-runner-2
           - name: Windows
-            runner: windows-latest
+            runner: spacetimedb-windows-runner
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -98,6 +98,10 @@ jobs:
           cd $env:USERPROFILE\emsdk
           .\emsdk install 4.0.21
           .\emsdk activate 4.0.21
+          # Add emscripten to PATH for subsequent steps and subprocesses
+          $emsdkPath = "$env:USERPROFILE\emsdk\upstream\emscripten"
+          Add-Content -Path $env:GITHUB_PATH -Value $emsdkPath
+          Write-Host "Added $emsdkPath to PATH"
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
@@ -170,13 +174,6 @@ jobs:
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
           cargo ci smoketests -- --test-threads=1          
-
-      - name: Check for changes
-        run: |
-          tools/check-diff.sh crates/smoketests || {
-              echo 'Error: There is a diff in the smoketests directory.'
-              exit 1
-          }
 
   test:
     needs: [lints]
@@ -261,10 +258,6 @@ jobs:
           fi
 
           wasm-bindgen --version
-
-      - name: Build typescript module sdk
-        working-directory: crates/bindings-typescript
-        run: pnpm build
 
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests

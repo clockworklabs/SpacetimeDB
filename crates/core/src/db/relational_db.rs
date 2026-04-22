@@ -1,4 +1,4 @@
-use crate::db::durability::DurabilityWorker;
+use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::subscription::ExecutionCounters;
@@ -12,12 +12,12 @@ use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
-use spacetimedb_datastore::locking_tx_datastore::{IndexScanPointOrRange, MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::{ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
     system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
 };
@@ -58,7 +58,6 @@ use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
-use std::num::NonZeroUsize;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -99,7 +98,8 @@ pub struct RelationalDB {
     owner_identity: Identity,
 
     inner: Locking,
-    durability: Option<DurabilityWorker>,
+    durability: Option<Arc<Durability>>,
+    durability_runtime: Option<tokio::runtime::Handle>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -134,8 +134,8 @@ impl std::fmt::Debug for RelationalDB {
 impl Drop for RelationalDB {
     fn drop(&mut self) {
         // Attempt to flush the outstanding transactions.
-        if let Some(worker) = self.durability.take() {
-            worker.spawn_close(self.database_identity);
+        if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
+            spawn_durability_close(durability, &runtime, self.database_identity);
         }
     }
 }
@@ -151,21 +151,12 @@ impl RelationalDB {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
-        let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
-        let durability = durability.zip(rt).map(|(durability, rt)| {
-            let next_tx_offset = {
-                let tx = inner.begin_tx(Workload::Internal);
-                let next_tx_offset = tx.tx_offset();
-                let _ = inner.release_tx(tx);
-                next_tx_offset.into_inner()
-            };
-            let reorder_window_size = NonZeroUsize::new(8).unwrap();
-            DurabilityWorker::new(database_identity, durability, rt, next_tx_offset, reorder_window_size)
-        });
+        let (durability, disk_size_fn, snapshot_worker, durability_runtime) = Persistence::unzip(persistence);
 
         Self {
             inner,
             durability,
+            durability_runtime,
             snapshot_worker,
 
             database_identity,
@@ -814,16 +805,14 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+            self.request_durability(reducer_context, tx_data);
+        })?
+        else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, &tx_data);
-        }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -832,14 +821,12 @@ impl RelationalDB {
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
         log::trace!("COMMIT MUT TX");
 
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload);
+        let reducer_context = tx.ctx.reducer_context().cloned();
+        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+            self.request_durability(reducer_context, tx_data);
+        });
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
-        }
 
         (tx_data, tx_metrics, tx)
     }
@@ -850,6 +837,12 @@ impl RelationalDB {
         self.durability
             .as_ref()
             .map(|durability| durability.durable_tx_offset())
+    }
+
+    fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
+        if let Some(durability) = &self.durability {
+            request_durability(durability.as_ref(), reducer_context, tx_data);
+        }
     }
 
     /// Decide based on the `committed_state.next_tx_offset`
@@ -994,6 +987,15 @@ impl RelationalDB {
 
     pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: &str, access: StAccess) -> Result<(), DBError> {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
+    }
+
+    pub(crate) fn alter_table_primary_key(
+        &self,
+        tx: &mut MutTx,
+        name: &str,
+        primary_key: Option<ColId>,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
     }
 
     pub(crate) fn alter_table_row_type(
@@ -1615,62 +1617,20 @@ impl RelationalDB {
     }
 }
 
-fn apply_history<H>(datastore: &Locking, database_identity: Identity, history: H) -> Result<(), DBError>
-where
-    H: durability::History<TxData = Txdata>,
-{
-    log::info!("[{database_identity}] DATABASE: applying transaction history...");
-
-    // TODO: Revisit once we actually replay history suffixes, ie. starting
-    // from an offset larger than the history's min offset.
-    // TODO: We may want to require that a `tokio::runtime::Handle` is
-    // always supplied when constructing a `RelationalDB`. This would allow
-    // to spawn a timer task here which just prints the progress periodically
-    // in case the history is finite but very long.
-    let (_, max_tx_offset) = history.tx_range_hint();
-    let mut last_logged_percentage = 0;
-    let progress = |tx_offset: u64| {
-        if let Some(max_tx_offset) = max_tx_offset {
-            let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
-            if percentage > last_logged_percentage && percentage % 10 == 0 {
-                log::info!("[{database_identity}] Loaded {percentage}% ({tx_offset}/{max_tx_offset})");
-                last_logged_percentage = percentage;
-            }
-        // Print _something_ even if we don't know what's still ahead.
-        } else if tx_offset.is_multiple_of(10_000) {
-            log::info!("[{database_identity}] Loading transaction {tx_offset}");
-        }
+fn apply_history(
+    datastore: &Locking,
+    database_identity: Identity,
+    history: impl durability::History<TxData = Txdata>,
+) -> Result<(), DBError> {
+    let counters = ApplyHistoryCounters {
+        replay_commitlog_time_seconds: WORKER_METRICS
+            .replay_commitlog_time_seconds
+            .with_label_values(&database_identity),
+        replay_commitlog_num_commits: WORKER_METRICS
+            .replay_commitlog_num_commits
+            .with_label_values(&database_identity),
     };
-
-    let time_before = std::time::Instant::now();
-
-    let mut replay = datastore.replay(
-        progress,
-        // We don't want to instantiate an incorrect state;
-        // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
-        spacetimedb_datastore::locking_tx_datastore::datastore::ErrorBehavior::FailFast,
-    );
-    let start_tx_offset = replay.next_tx_offset();
-    history
-        .fold_transactions_from(start_tx_offset, &mut replay)
-        .map_err(anyhow::Error::from)?;
-
-    let time_elapsed = time_before.elapsed();
-    WORKER_METRICS
-        .replay_commitlog_time_seconds
-        .with_label_values(&database_identity)
-        .set(time_elapsed.as_secs_f64());
-
-    let end_tx_offset = replay.next_tx_offset();
-    WORKER_METRICS
-        .replay_commitlog_num_commits
-        .with_label_values(&database_identity)
-        .set((end_tx_offset - start_tx_offset) as _);
-
-    log::info!("[{database_identity}] DATABASE: applied transaction history");
-    datastore.rebuild_state_after_replay()?;
-    log::info!("[{database_identity}] DATABASE: rebuilt state after replay");
-
+    spacetimedb_datastore::locking_tx_datastore::apply_history(datastore, database_identity, history, counters)?;
     Ok(())
 }
 

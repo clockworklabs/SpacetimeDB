@@ -306,6 +306,8 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
+            cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
+
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
             // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
@@ -535,6 +537,7 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Smoketests(args)) => {
+            ensure_repo_root()?;
             smoketest::run(args)?;
         }
 

@@ -496,11 +496,6 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         #[buckets(0.001, 0.01, 0.1, 1.0, 10.0)]
         pub durability_blocking_send_duration: HistogramVec,
-
-        #[name = spacetime_durability_worker_reorder_window_length]
-        #[help = "The number of transactions currently being held in the reorder window"]
-        #[labels(db: Identity)]
-        pub durability_worker_reorder_window_length: IntGaugeVec,
     }
 );
 
