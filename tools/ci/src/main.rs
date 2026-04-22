@@ -8,7 +8,6 @@ use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -311,14 +310,6 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-fn run_check_diff(path: &str, message: &str) -> Result<()> {
-    let status = Command::new("bash").args(["tools/check-diff.sh", path]).status()?;
-    if !status.success() {
-        bail!("{message}");
-    }
-    Ok(())
-}
-
 fn prepare_csharp_sdk_solution() -> Result<()> {
     cmd!(
         "dotnet",
@@ -378,10 +369,15 @@ fn run_typescript_tests() -> Result<()> {
     cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
     cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
     cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
-    run_check_diff(
-        "templates/chat-react-ts/src/module_bindings",
-        "Bindings are dirty. Please generate bindings again and commit them to this branch.",
-    )?;
+    let diff_status = cmd!(
+        "bash",
+        "tools/check-diff.sh",
+        "templates/chat-react-ts/src/module_bindings"
+    )
+    .run()?;
+    if !diff_status.status.success() {
+        bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
+    }
     cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
     cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
         .dir("templates")
@@ -429,19 +425,19 @@ fn run_csharp_tests() -> Result<()> {
     .run()?;
 
     cmd!("bash", "tools~/gen-quickstart.sh").dir("sdks/csharp").run()?;
-    run_check_diff(
-        "sdks/csharp/examples~/quickstart-chat",
-        "quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.",
-    )?;
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "sdks/csharp/examples~/quickstart-chat").run()?;
+    if !diff_status.status.success() {
+        bail!("quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.");
+    }
 
     run_local_spacetime_script(
         "spacetimedb-csharp-tests",
         r#"bash sdks/csharp/tools~/run-regression-tests.sh"#,
     )?;
-    run_check_diff(
-        "sdks/csharp/examples~/regression-tests",
-        "Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.",
-    )?;
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "sdks/csharp/examples~/regression-tests").run()?;
+    if !diff_status.status.success() {
+        bail!("Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.");
+    }
 
     Ok(())
 }
@@ -468,10 +464,15 @@ fn run_unity_tests() -> Result<()> {
     cmd!("bash", "./generate.sh", "-y")
         .dir("demo/Blackholio/server-rust")
         .run()?;
-    run_check_diff(
+    let diff_status = cmd!(
+        "bash",
+        "tools/check-diff.sh",
         "demo/Blackholio/client-unity/Assets/Scripts/autogen",
-        "Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.",
-    )?;
+    )
+    .run()?;
+    if !diff_status.status.success() {
+        bail!("Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.");
+    }
 
     run_dlls()?;
 
