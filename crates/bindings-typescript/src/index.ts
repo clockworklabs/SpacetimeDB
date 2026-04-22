@@ -1,4 +1,5 @@
 export * from './lib/connection_id';
+export * from './lib/errors';
 export * from './lib/algebraic_type';
 export * from './lib/algebraic_value';
 export { default as BinaryReader } from './lib/binary_reader';

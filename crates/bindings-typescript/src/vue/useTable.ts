@@ -14,23 +14,13 @@ import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDef } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
-  type Value,
-  type Expr,
-  type ColumnsFromRow,
-  eq,
-  and,
-  or,
-  isEq,
-  isAnd,
-  isOr,
-  evaluate,
-  toString,
-  where,
-  classifyMembership,
-} from '../lib/filter';
-
-export { eq, and, or, isEq, isAnd, isOr, where };
-export type { Value, Expr };
+  type Query,
+  type BooleanExpr,
+  toSql,
+  evaluateBooleanExpr,
+  getQueryAccessorName,
+  getQueryWhereClause,
+} from '../lib/query';
 
 export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -38,47 +28,44 @@ export interface UseTableCallbacks<RowType> {
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
 }
 
-export function useTable<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  where: Expr<ColumnsFromRow<RowType<TableDef>>>,
-  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [
-  DeepReadonly<Ref<readonly Prettify<RowType<TableDef>>[]>>,
-  DeepReadonly<Ref<boolean>>,
-];
+type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
 
-export function useTable<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [
-  DeepReadonly<Ref<readonly Prettify<RowType<TableDef>>[]>>,
-  DeepReadonly<Ref<boolean>>,
-];
+function classifyMembership(
+  whereExpr: BooleanExpr<any> | undefined,
+  oldRow: Record<string, any>,
+  newRow: Record<string, any>
+): MembershipChange {
+  if (!whereExpr) return 'stayIn';
+  const oldIn = evaluateBooleanExpr(whereExpr, oldRow);
+  const newIn = evaluateBooleanExpr(whereExpr, newRow);
+  if (oldIn && !newIn) return 'leave';
+  if (!oldIn && newIn) return 'enter';
+  if (oldIn && newIn) return 'stayIn';
+  return 'stayOut';
+}
 
+/**
+ * Vue composable to subscribe to a table in SpacetimeDB and receive live updates.
+ *
+ * Accepts a query builder expression as the first argument:
+ * - `tables.user` — subscribe to all rows
+ * - `tables.user.where(r => r.online.eq(true))` — subscribe with a filter
+ *
+ * @param query - A query builder expression (table reference or filtered query).
+ * @param callbacks - Optional callbacks for row insert, delete, and update events.
+ * @returns A tuple of [rows, isReady].
+ */
 export function useTable<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  whereClauseOrCallbacks?:
-    | Expr<ColumnsFromRow<RowType<TableDef>>>
-    | UseTableCallbacks<RowType<TableDef>>,
-  callbacks?: UseTableCallbacks<RowType<TableDef>>
+  query: Query<TableDef>,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
 ): [
   DeepReadonly<Ref<readonly Prettify<RowType<TableDef>>[]>>,
   DeepReadonly<Ref<boolean>>,
 ] {
   type Row = RowType<TableDef>;
-  const tableName = tableDef.name;
-  const accessorName = tableDef.accessorName;
-
-  let whereClause: Expr<ColumnsFromRow<Row>> | undefined;
-  if (
-    whereClauseOrCallbacks &&
-    typeof whereClauseOrCallbacks === 'object' &&
-    'type' in whereClauseOrCallbacks
-  ) {
-    whereClause = whereClauseOrCallbacks as Expr<ColumnsFromRow<Row>>;
-  } else {
-    callbacks = whereClauseOrCallbacks as UseTableCallbacks<Row> | undefined;
-  }
+  const accessorName = getQueryAccessorName(query);
+  const whereExpr = getQueryWhereClause(query);
+  const querySql = toSql(query);
 
   let conn;
   try {
@@ -94,10 +81,6 @@ export function useTable<TableDef extends UntypedTableDef>(
   const rows = shallowRef<readonly Prettify<Row>[]>([]);
   const isReady = ref(false);
 
-  const query =
-    `SELECT * FROM ${tableName}` +
-    (whereClause ? ` WHERE ${toString(tableDef, whereClause)}` : '');
-
   let latestTransactionEvent: any = null;
   let unsubscribeFromTable: (() => void) | null = null;
   let subscriptionHandle: { unsubscribe: () => void } | null = null;
@@ -110,9 +93,9 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!table) return [];
 
     const allRows = Array.from(table.iter()) as Row[];
-    if (whereClause) {
+    if (whereExpr) {
       return allRows.filter(row =>
-        evaluate(whereClause, row as Record<string, any>)
+        evaluateBooleanExpr(whereExpr, row as Record<string, any>)
       ) as Prettify<Row>[];
     }
     return allRows as Prettify<Row>[];
@@ -129,7 +112,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       eventCtx: EventContextInterface<UntypedRemoteModule>,
       row: any
     ) => {
-      if (whereClause && !evaluate(whereClause, row)) return;
+      if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
       callbacks?.onInsert?.(row);
 
       if (
@@ -145,7 +128,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       eventCtx: EventContextInterface<UntypedRemoteModule>,
       row: any
     ) => {
-      if (whereClause && !evaluate(whereClause, row)) return;
+      if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
       callbacks?.onDelete?.(row);
 
       if (
@@ -162,7 +145,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       oldRow: any,
       newRow: any
     ) => {
-      const change = classifyMembership(whereClause, oldRow, newRow);
+      const change = classifyMembership(whereExpr, oldRow, newRow);
 
       switch (change) {
         case 'leave':
@@ -208,7 +191,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         isReady.value = true;
         rows.value = computeFilteredRows();
       })
-      .subscribe(query);
+      .subscribe(querySql);
   };
 
   watch(

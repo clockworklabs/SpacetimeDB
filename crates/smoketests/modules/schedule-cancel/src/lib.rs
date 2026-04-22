@@ -7,17 +7,20 @@ fn init(ctx: &ReducerContext) {
         scheduled_id: 0,
         scheduled_at: duration!(100ms).into(),
     });
-    ctx.db.scheduled_reducer_args().scheduled_id().delete(&schedule.scheduled_id);
+    ctx.db
+        .scheduled_reducer_args()
+        .scheduled_id()
+        .delete(&schedule.scheduled_id);
 
     let schedule = ctx.db.scheduled_reducer_args().insert(ScheduledReducerArgs {
-         num: 2,
-         scheduled_id: 0,
-         scheduled_at: duration!(1000ms).into(),
-     });
-     do_cancel(ctx, schedule.scheduled_id);
+        num: 2,
+        scheduled_id: 0,
+        scheduled_at: duration!(1000ms).into(),
+    });
+    do_cancel(ctx, schedule.scheduled_id);
 }
 
-#[spacetimedb::table(name = scheduled_reducer_args, public, scheduled(reducer))]
+#[spacetimedb::table(accessor = scheduled_reducer_args, public, scheduled(reducer))]
 pub struct ScheduledReducerArgs {
     #[primary_key]
     #[auto_inc]

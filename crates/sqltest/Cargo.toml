@@ -9,9 +9,7 @@ publish = false
 [dependencies]
 spacetimedb-lib.workspace = true
 spacetimedb-core = { workspace = true,  features = ["test"] }
-spacetimedb-datastore = { workspace = true, features = ["test"] }
 spacetimedb-sats.workspace = true
-spacetimedb-vm.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true

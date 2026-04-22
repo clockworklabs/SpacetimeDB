@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ScoresPlayer123Level5Handle : RemoteTableHandle<EventContext, Score>
         {
-            protected override string RemoteTableName => "scores_player_123_level5";
+            protected override string RemoteTableName => "scores_player_123_level_5";
 
             internal ScoresPlayer123Level5Handle(DbConnection conn) : base(conn)
             {
@@ -33,9 +33,9 @@ namespace SpacetimeDB.Types
 
         public ScoresPlayer123Level5Cols(string tableName)
         {
-            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "PlayerId");
-            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "Level");
-            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "Points");
+            PlayerId = new global::SpacetimeDB.Col<Score, uint>(tableName, "player_id");
+            Level = new global::SpacetimeDB.Col<Score, uint>(tableName, "level");
+            Points = new global::SpacetimeDB.Col<Score, long>(tableName, "points");
         }
     }
 

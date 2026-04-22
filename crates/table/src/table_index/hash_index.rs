@@ -1,11 +1,12 @@
 use super::{
     key_size::KeyBytesStorage,
-    same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter},
+    same_key_entry::{same_key_iter, ManySameKeyEntryIter, SameKeyEntry, SameKeyEntryIter},
     Index, KeySize,
 };
 use crate::indexes::RowPointer;
+use core::borrow::Borrow;
 use core::hash::Hash;
-use spacetimedb_data_structures::map::hash_map::EntryRef;
+use spacetimedb_data_structures::map::hash_map::{EntryRef, Values};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 
 // Faster than ahash, so we use this explicitly.
@@ -63,7 +64,7 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     /// and multimaps do not bind one `key` to the same `ptr`.
     fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
         self.num_rows += 1;
-        self.num_key_bytes.add_to_key_bytes::<Self>(&key);
+        self.num_key_bytes.add_to_key_bytes(&key);
         self.map.entry(key).or_default().push(ptr);
         Ok(())
     }
@@ -72,22 +73,7 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     ///
     /// Returns whether `key -> ptr` was present.
     fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
-        let EntryRef::Occupied(mut entry) = self.map.entry_ref(key) else {
-            return false;
-        };
-
-        let (deleted, is_empty) = entry.get_mut().delete(ptr);
-
-        if deleted {
-            self.num_rows -= 1;
-            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
-        }
-
-        if is_empty {
-            entry.remove();
-        }
-
-        deleted
+        self.delete(key, ptr)
     }
 
     type PointIter<'a>
@@ -95,8 +81,17 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     where
         Self: 'a;
 
-    fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
-        same_key_iter(self.map.get(key))
+    fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
+        self.seek_point(point)
+    }
+
+    type Iter<'a>
+        = HashIndexIter<'a, K>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        HashIndexIter::new(self.map.values())
     }
 
     fn num_keys(&self) -> usize {
@@ -120,3 +115,56 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
         Ok(())
     }
 }
+
+impl<K: KeySize + Eq + Hash> HashIndex<K> {
+    /// See [`Index::delete`].
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`HashMap::remove`].
+    pub fn delete<Q>(&mut self, key: &Q, ptr: RowPointer) -> bool
+    where
+        Q: ?Sized + KeySize + Hash + Eq,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        let EntryRef::Occupied(mut entry) = self.map.entry_ref(key) else {
+            return false;
+        };
+
+        let (deleted, is_empty) = entry.get_mut().delete(ptr);
+
+        if deleted {
+            self.num_rows -= 1;
+            self.num_key_bytes.sub_from_key_bytes(entry.key());
+        }
+
+        if is_empty {
+            entry.remove();
+        }
+
+        deleted
+    }
+
+    /// See [`Index::seek_point`].
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`HashMap::get`].
+    pub fn seek_point<Q: ?Sized + Eq + Hash>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
+    where
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        same_key_iter(self.map.get(point))
+    }
+}
+
+/// An iterator over all the values in a [`BTreeIndex`].
+pub type HashIndexIter<'a, K> = ManySameKeyEntryIter<'a, Values<'a, K, SameKeyEntry>>;

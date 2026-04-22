@@ -11,7 +11,7 @@ public static partial class Module
     [Type]
     public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {}
 
-    [Table(Name = "Result")]
+    [Table(Accessor = "Result")]
     public partial struct Result
     {
         [PrimaryKey] public int Id;

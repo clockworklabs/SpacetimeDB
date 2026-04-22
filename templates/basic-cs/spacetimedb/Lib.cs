@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "Person", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Person", Public = true)]
     public partial struct Person
     {
         public string Name;

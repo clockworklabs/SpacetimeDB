@@ -1,12 +1,15 @@
 [package]
 name = "basic-rs-template-module"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 crate-type = ["cdylib"]
+
+[profile.release]
+debug = 1 # include some location information for backtraces
 
 [dependencies]
 spacetimedb = { path = "../../../crates/bindings" }

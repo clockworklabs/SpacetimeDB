@@ -168,8 +168,7 @@ namespace spacetimedb {
          * @return Serialized module definition
          */
         inline std::vector<uint8_t> serialize_module_def() {
-            auto& module_def = SpacetimeDB::Internal::Module::GetModuleDef();
-            return module_def.serialize();
+            return SpacetimeDB::Internal::Module::SerializeModuleDef();
         }
     }
 

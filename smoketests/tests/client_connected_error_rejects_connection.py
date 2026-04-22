@@ -3,7 +3,7 @@ from .. import Smoketest
 MODULE_HEADER = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = all_u8s, public)]
+#[spacetimedb::table(accessor = all_u8s, public)]
 pub struct AllU8s {
     number: u8,
 }
@@ -60,6 +60,11 @@ pub fn identity_disconnected(_ctx: &ReducerContext) {
 
         sql_out = self.spacetime("sql", self.database_identity, "select * from st_client")
 
-        self.assertMultiLineEqual(sql_out, """ identity | connection_id 
-----------+---------------
-""")
+        # The SQL query itself now creates a temporary connection, so we may
+        # see exactly one row (the SQL connection's own). The websocket's row
+        # should be gone. Count non-header, non-separator lines with content.
+        lines = sql_out.strip().split('\n')
+        # Data rows are those that are not the header and not the separator line
+        data_rows = [l for l in lines if '|' in l and '-+-' not in l and 'identity' not in l.lower()]
+        self.assertLessEqual(len(data_rows), 1,
+            f"Expected at most 1 st_client row (the SQL connection itself), got: {sql_out}")

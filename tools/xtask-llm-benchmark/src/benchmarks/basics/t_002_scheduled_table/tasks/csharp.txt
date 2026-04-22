@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines a scheduled table and a scheduled reducer.
+Write a SpacetimeDB backend module in C# that defines a scheduled table and a scheduled reducer.
 
 TABLE
 - TickTimer

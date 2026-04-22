@@ -19,6 +19,7 @@ serde_json.workspace = true
 blake3.workspace = true
 clap.workspace = true
 chrono = { version = "0.4", features = ["clock", "serde"] }
+dotenvy = "0.15"
 async-trait = "0.1.89"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 urlencoding = "2.1.3"

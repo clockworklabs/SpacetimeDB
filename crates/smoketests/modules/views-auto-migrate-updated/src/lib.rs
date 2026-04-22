@@ -1,7 +1,7 @@
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
-#[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(accessor = player_state)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
@@ -9,7 +9,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(name = player, public)]
+#[spacetimedb::view(accessor = player, public)]
 pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
     ctx.db.player_state().id().find(2u64)
 }

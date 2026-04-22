@@ -3,7 +3,7 @@ use crate::{impl_deserialize, impl_serialize, impl_st};
 use core::borrow::Borrow;
 use core::fmt;
 use core::ops::Deref;
-use lean_string::LeanString;
+use lean_string::{LeanString, ToLeanString};
 
 /// A not-yet-validated identifier.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -58,5 +58,11 @@ impl fmt::Display for RawIdentifier {
 impl From<&'static str> for RawIdentifier {
     fn from(s: &'static str) -> Self {
         RawIdentifier(LeanString::from_static_str(s))
+    }
+}
+
+impl From<String> for RawIdentifier {
+    fn from(s: String) -> Self {
+        RawIdentifier(s.to_lean_string())
     }
 }

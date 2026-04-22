@@ -17,7 +17,7 @@ namespace SpacetimeDB.Types
 
         public void UpdatePlayerInput(SpacetimeDB.Types.DbVector2 direction)
         {
-            conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction), this.SetCallReducerFlags.UpdatePlayerInputFlags);
+            conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction));
         }
 
         public bool InvokeUpdatePlayerInput(ReducerEventContext ctx, Reducer.UpdatePlayerInput args)
@@ -63,11 +63,5 @@ namespace SpacetimeDB.Types
 
             string IReducerArgs.ReducerName => "update_player_input";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags UpdatePlayerInputFlags;
-        public void UpdatePlayerInput(CallReducerFlags flags) => UpdatePlayerInputFlags = flags;
     }
 }

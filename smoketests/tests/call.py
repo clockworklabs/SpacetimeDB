@@ -6,7 +6,7 @@ class CallReducerProcedure(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ProcedureContext, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
 }
@@ -79,7 +79,7 @@ class CallEmptyReducerProcedure(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(accessor = person)]
 pub struct Person {
     name: String,
 }

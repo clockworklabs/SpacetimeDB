@@ -78,11 +78,6 @@ impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     }
 }
 
-#[doc(hidden)]
-pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkBool>("pk_bool");
-    _table.add_unique_constraint::<bool>("b", |row| &row.b);
-}
 pub struct PkBoolUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
@@ -98,17 +93,6 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
     fn remove_on_update(&self, callback: PkBoolUpdateCallbackId) {
         self.imp.remove_on_update(callback.0)
     }
-}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<PkBool>> {
-    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkBool>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
 }
 
 /// Access to the `b` unique index on the table `pk_bool`,
@@ -139,6 +123,21 @@ impl<'ctx> PkBoolBUnique<'ctx> {
     pub fn find(&self, col_val: &bool) -> Option<PkBool> {
         self.imp.find(col_val)
     }
+}
+
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkBool>("pk_bool");
+    _table.add_unique_constraint::<bool>("b", |row| &row.b);
+}
+
+#[doc(hidden)]
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkBool>> {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkBool>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 #[allow(non_camel_case_types)]

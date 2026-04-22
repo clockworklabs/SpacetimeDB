@@ -5,12 +5,13 @@ import {
   and,
   or,
   not,
-  from,
   toSql,
+  toComparableValue,
 } from '../src/server/query';
-import type { UntypedSchemaDef } from '../src/lib/schema';
+import { ModuleContext, tablesToSchema } from '../src/lib/schema';
 import { table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
+import { Timestamp } from '../src';
 
 const personTable = table(
   {
@@ -18,6 +19,7 @@ const personTable = table(
 
     indexes: [
       {
+        accessor: 'id_name_idx',
         name: 'id_name_idx',
         algorithm: 'btree',
         columns: ['id', 'name'] as const,
@@ -28,6 +30,7 @@ const personTable = table(
     id: t.identity(),
     name: t.string(),
     age: t.u32(),
+    active: t.bool(),
   }
 );
 
@@ -36,6 +39,7 @@ const ordersTable = table(
     name: 'orders',
     indexes: [
       {
+        accessor: 'orders_person_id_idx',
         name: 'orders_person_id_idx',
         algorithm: 'btree',
         columns: ['person_id'],
@@ -50,42 +54,45 @@ const ordersTable = table(
   }
 );
 
-const schemaDef = {
-  tables: [
-    {
-      name: personTable.tableName,
-      accessorName: personTable.tableName,
-      columns: personTable.rowType.row,
-      rowType: personTable.rowSpacetimeType,
-      indexes: personTable.idxs,
-      constraints: personTable.constraints,
-    },
-    {
-      name: ordersTable.tableName,
-      accessorName: ordersTable.tableName,
-      columns: ordersTable.rowType.row,
-      rowType: ordersTable.rowSpacetimeType,
-      indexes: ordersTable.idxs,
-      constraints: ordersTable.constraints,
-    },
-  ],
-} as const satisfies UntypedSchemaDef;
+const renamedColumnsTable = table(
+  {
+    name: 'renamed_columns',
+  },
+  {
+    displayName: t.string().name('display_name'),
+    ageYears: t.u32().name('age_years'),
+  }
+);
+
+const schemaDef = tablesToSchema(new ModuleContext(), {
+  person: personTable,
+  orders: ordersTable,
+  renamedColumns: renamedColumnsTable,
+});
+
+describe('Timestamp thing', () => {
+  it('Compares them', () => {
+    const d1 = new Date('2024-01-01T00:00:00Z');
+    const d2 = new Date('2024-01-02T00:00:00Z');
+    const t1 = Timestamp.fromDate(d1);
+    const t2 = Timestamp.fromDate(d2);
+
+    expect(toComparableValue(t1) <= toComparableValue(t2)).toBe(true);
+    expect(toComparableValue(t1) >= toComparableValue(t2)).toBe(false);
+  });
+});
 
 describe('TableScan.toSql', () => {
   it('renders a full-table scan when no filters are applied', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(from(qb.person).build());
+    const sql = toSql(qb.person.build());
 
     expect(sql).toBe('SELECT * FROM "person"');
   });
 
   it('renders a WHERE clause for simple equality filters', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(
-      from(qb.person)
-        .where(row => row.name.eq("O'Brian"))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => row.name.eq("O'Brian")).build());
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."name" = 'O''Brian'`
@@ -94,11 +101,7 @@ describe('TableScan.toSql', () => {
 
   it('renders numeric literals and column references', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(
-      from(qb.person)
-        .where(row => row.age.eq(42))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => row.age.eq(42)).build());
 
     expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."age" = 42`);
   });
@@ -106,9 +109,7 @@ describe('TableScan.toSql', () => {
   it('renders AND clauses across multiple predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      from(qb.person)
-        .where(row => and(row.name.eq('Alice'), row.age.eq(30)))
-        .build()
+      qb.person.where(row => and(row.name.eq('Alice'), row.age.eq(30))).build()
     );
 
     expect(sql).toBe(
@@ -118,11 +119,7 @@ describe('TableScan.toSql', () => {
 
   it('renders NOT clauses around subpredicates', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = toSql(
-      from(qb.person)
-        .where(row => not(row.name.eq('Bob')))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => not(row.name.eq('Bob'))).build());
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE NOT ("person"."name" = 'Bob')`
@@ -132,7 +129,7 @@ describe('TableScan.toSql', () => {
   it('accumulates multiple filters with AND logic', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      from(qb.person)
+      qb.person
         .where(row => row.name.eq('Eve'))
         .where(row => row.age.eq(25))
         .build()
@@ -146,7 +143,7 @@ describe('TableScan.toSql', () => {
   it('renders OR clauses across multiple predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      from(qb.person)
+      qb.person
         .where(row => or(row.name.eq('Carol'), row.name.eq('Dave')))
         .build()
     );
@@ -156,16 +153,19 @@ describe('TableScan.toSql', () => {
     );
   });
 
+  it('accepts boolean columns directly as where predicates', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person.where(row => row.active).build());
+
+    expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."active" = TRUE`);
+  });
+
   it('renders Identity literals using their hex form', () => {
     const qb = makeQueryBuilder(schemaDef);
     const identity = new Identity(
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     );
-    const sql = toSql(
-      from(qb.person)
-        .where(row => row.id.eq(identity))
-        .build()
-    );
+    const sql = toSql(qb.person.where(row => row.id.eq(identity)).build());
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."id" = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
@@ -175,7 +175,7 @@ describe('TableScan.toSql', () => {
   it('renders semijoin queries without additional filters', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      from(qb.person)
+      qb.person
         .rightSemijoin(qb.orders, (person, order) =>
           order.person_id.eq(person.id)
         )
@@ -190,7 +190,7 @@ describe('TableScan.toSql', () => {
   it('renders semijoin queries alongside existing predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      from(qb.person)
+      qb.person
         .where(row => row.age.eq(42))
         .rightSemijoin(qb.orders, (person, order) =>
           order.person_id.eq(person.id)
@@ -206,7 +206,7 @@ describe('TableScan.toSql', () => {
   it('escapes literals when rendering semijoin filters', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      from(qb.person)
+      qb.person
         .where(row => row.name.eq("O'Brian"))
         .rightSemijoin(qb.orders, (person, order) =>
           order.person_id.eq(person.id)
@@ -222,7 +222,7 @@ describe('TableScan.toSql', () => {
   it('renders compound AND filters for semijoin queries', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
-      from(qb.person)
+      qb.person
         .where(row => and(row.name.eq('Alice'), row.age.eq(30)))
         .rightSemijoin(qb.orders, (person, order) =>
           order.person_id.eq(person.id)
@@ -240,6 +240,14 @@ describe('TableScan.toSql', () => {
     const sql = toSql(qb.orders.where(o => o.item_name.eq('Gadget')).build());
     expect(sql).toBe(
       `SELECT * FROM "orders" WHERE "orders"."item_name" = 'Gadget'`
+    );
+  });
+
+  it('basic where ne', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.orders.where(o => o.item_name.ne('Gadget')).build());
+    expect(sql).toBe(
+      `SELECT * FROM "orders" WHERE "orders"."item_name" <> 'Gadget'`
     );
   });
 
@@ -295,6 +303,36 @@ describe('TableScan.toSql', () => {
     );
   });
 
+  it('method-style chaining with .and()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      qb.person.where(row => row.age.gt(20).and(row.age.lt(30))).build()
+    );
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE ("person"."age" > 20) AND ("person"."age" < 30)`
+    );
+  });
+
+  it('method-style chaining with .or()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      qb.person
+        .where(row => row.name.eq('Carol').or(row.name.eq('Dave')))
+        .build()
+    );
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE ("person"."name" = 'Carol') OR ("person"."name" = 'Dave')`
+    );
+  });
+
+  it('method-style chaining with .not()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person.where(row => row.name.eq('Bob').not()).build());
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE NOT ("person"."name" = 'Bob')`
+    );
+  });
+
   it('semijoin with filters on both sides', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
@@ -306,6 +344,31 @@ describe('TableScan.toSql', () => {
     );
     expect(sql).toBe(
       `SELECT "orders".* FROM "person" JOIN "orders" ON "person"."id" = "orders"."person_id" WHERE ("person"."age" = 42) AND ("orders"."item_name" = 'Gadget')`
+    );
+  });
+
+  it('passes builder directly to toSql() without .build()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person.where(row => row.age.eq(42)));
+    expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."age" = 42`);
+  });
+
+  it('passes table ref directly to toSql() without .build()', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person);
+    expect(sql).toBe('SELECT * FROM "person"');
+  });
+
+  it('uses DB column names for accessors with explicit DB names', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      qb.renamedColumns
+        .where(row => row.displayName.eq('Alice').and(row.ageYears.gt(30)))
+        .build()
+    );
+
+    expect(sql).toBe(
+      `SELECT * FROM "renamed_columns" WHERE ("renamed_columns"."display_name" = 'Alice') AND ("renamed_columns"."age_years" > 30)`
     );
   });
 });

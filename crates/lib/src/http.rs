@@ -1,4 +1,4 @@
-//! `SpacetimeType`-ified HTTP request, response and error types,
+//! `SpacetimeType`-ified HTTP request and response types,
 //! for use in the procedure HTTP API.
 //!
 //! The types here are all mirrors of various types within the `http` crate.
@@ -128,7 +128,7 @@ impl Headers {
     /// The sum of the lengths of all the header names and header values.
     ///
     /// For headers with multiple values for the same header name,
-    /// the length of the header name is counted once for each occurence.
+    /// the length of the header name is counted once for each occurrence.
     fn size_in_bytes(&self) -> usize {
         self.entries
             .iter()

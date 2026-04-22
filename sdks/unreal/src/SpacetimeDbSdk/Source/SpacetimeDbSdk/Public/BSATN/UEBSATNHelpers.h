@@ -2,8 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ModuleBindings/Types/TableUpdateType.g.h"
-#include "ModuleBindings/Types/QueryUpdateType.g.h"
-#include "ModuleBindings/Types/CompressableQueryUpdateType.g.h"
+#include "ModuleBindings/Types/TableUpdateRowsType.g.h"
 #include "DBCache/WithBsatn.h"
 
 /** Helper utilities for working with BSATN encoded row data in Unreal. */
@@ -69,18 +68,6 @@ namespace UE::SpacetimeDB
 		}
 	}
 
-	/** Parse a query update into row arrays */
-	template<typename RowType>
-	static void ParseQueryUpdateWithBsatn(
-		const FQueryUpdateType& Query,
-		TArray<FWithBsatn<RowType>>& OutInserts,
-		TArray<FWithBsatn<RowType>>& OutDeletes)
-	{
-		// Parse inserts and deletes from the query update, retaining BSATN bytes
-		ParseRowListWithBsatn(Query.Inserts, OutInserts);
-		ParseRowListWithBsatn(Query.Deletes, OutDeletes);
-	}
-
 	/** Apply a table update keeping BSATN bytes */
 	template<typename RowType>
 	void ProcessTableUpdateWithBsatn(
@@ -88,20 +75,24 @@ namespace UE::SpacetimeDB
 		TArray<FWithBsatn<RowType>>& Inserts,
 		TArray<FWithBsatn<RowType>>& Deletes)
 	{
-		for (FCompressableQueryUpdateType CQU : TableUpdate.Updates)
+		for (const FTableUpdateRowsType& RowSet : TableUpdate.Rows)
 		{
-			FQueryUpdateType QueryUpdate;
-			//Should be uncompressed at this point
-			if (CQU.IsUncompressed())
+			if (RowSet.IsPersistentTable())
 			{
-				QueryUpdate = CQU.GetAsUncompressed();
+				const FPersistentTableRowsType Persistent = RowSet.GetAsPersistentTable();
+				ParseRowListWithBsatn(Persistent.Inserts, Inserts);
+				ParseRowListWithBsatn(Persistent.Deletes, Deletes);
+			}
+			// Event-table rows are callback-only inserts and should not create delete paths.
+			else if (RowSet.IsEventTable())
+			{
+				const FEventTableRowsType EventRows = RowSet.GetAsEventTable();
+				ParseRowListWithBsatn(EventRows.Events, Inserts);
 			}
 			else
 			{
-				UE_LOG(LogTemp, Error, TEXT("Compresstion state for row in table %s not uncompressed at parsing step"), *TableUpdate.TableName);
-				continue;
+				UE_LOG(LogTemp, Warning, TEXT("Unknown row-set tag for table %s"), *TableUpdate.TableName);
 			}
-			ParseQueryUpdateWithBsatn(QueryUpdate, Inserts, Deletes);
 		}
 	}
 
@@ -126,7 +117,7 @@ namespace UE::SpacetimeDB
 	public:
 		virtual ~ITableRowDeserializer() {}
 		/** Preprocess the table update and return a shared pointer to preprocessed data. */
-		virtual TSharedPtr<FPreprocessedTableDataBase> PreProcess(const TArray<FCompressableQueryUpdateType>& Updates, const FString TableName) const = 0;
+		virtual TSharedPtr<FPreprocessedTableDataBase> PreProcess(const TArray<FTableUpdateRowsType>& RowSets, const FString TableName) const = 0;
 	};
 
 	/** Specialization of ITableRowDeserializer for a specific row type not defined in SDK. Used to deserialize rows of a specific type from a database update. */
@@ -134,22 +125,29 @@ namespace UE::SpacetimeDB
 	class TTableRowDeserializer : public ITableRowDeserializer
 	{
 	public:
-		virtual TSharedPtr<FPreprocessedTableDataBase> PreProcess(const TArray<FCompressableQueryUpdateType>& Updates, const FString TableName) const override
+		virtual TSharedPtr<FPreprocessedTableDataBase> PreProcess(const TArray<FTableUpdateRowsType>& RowSets, const FString TableName) const override
 		{
 			// Create a new preprocessed table data object for the specific row type
 			TSharedPtr<TPreprocessedTableData<RowType>> Result = MakeShared<TPreprocessedTableData<RowType>>();
-			// Process each compressable query update in the table update
-			for (const FCompressableQueryUpdateType& CQU : Updates)
+			// Process each row-set update in the table update
+			for (const FTableUpdateRowsType& RowSet : RowSets)
 			{
-				if (!CQU.IsUncompressed()) 
-				{ 
-					UE_LOG(LogTemp, Error, TEXT("Compresstion state for row in table %s not uncompressed at parsing step"), *TableName);
-					continue; 
+				if (RowSet.IsPersistentTable())
+				{
+					const FPersistentTableRowsType Persistent = RowSet.GetAsPersistentTable();
+					ParseRowListWithBsatn<RowType>(Persistent.Inserts, Result->Inserts);
+					ParseRowListWithBsatn<RowType>(Persistent.Deletes, Result->Deletes);
 				}
-				// Get the uncompressed query update from the compressable query update
-				FQueryUpdateType Query = CQU.GetAsUncompressed();
-				// Parse the query update into inserts and deletes, retaining BSATN bytes
-				ParseQueryUpdateWithBsatn<RowType>(Query, Result->Inserts, Result->Deletes);
+				else if (RowSet.IsEventTable())
+				{
+					// Event rows are insert-style callback payloads only.
+					const FEventTableRowsType Events = RowSet.GetAsEventTable();
+					ParseRowListWithBsatn<RowType>(Events.Events, Result->Inserts);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("Unknown row-set tag for table %s"), *TableName);
+				}
 			}
 			return Result;
 		}

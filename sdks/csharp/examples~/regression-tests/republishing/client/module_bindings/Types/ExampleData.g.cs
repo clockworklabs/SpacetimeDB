@@ -13,41 +13,41 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class ExampleData
     {
-        [DataMember(Name = "Primary")]
+        [DataMember(Name = "primary")]
         public uint Primary;
-        [DataMember(Name = "TestPass")]
+        [DataMember(Name = "test_pass")]
         public uint TestPass;
-        [DataMember(Name = "DefaultString")]
+        [DataMember(Name = "default_string")]
         public string DefaultString;
-        [DataMember(Name = "DefaultBool")]
+        [DataMember(Name = "default_bool")]
         public bool DefaultBool;
-        [DataMember(Name = "DefaultI8")]
+        [DataMember(Name = "default_i_8")]
         public sbyte DefaultI8;
-        [DataMember(Name = "DefaultU8")]
+        [DataMember(Name = "default_u_8")]
         public byte DefaultU8;
-        [DataMember(Name = "DefaultI16")]
+        [DataMember(Name = "default_i_16")]
         public short DefaultI16;
-        [DataMember(Name = "DefaultU16")]
+        [DataMember(Name = "default_u_16")]
         public ushort DefaultU16;
-        [DataMember(Name = "DefaultI32")]
+        [DataMember(Name = "default_i_32")]
         public int DefaultI32;
-        [DataMember(Name = "DefaultU32")]
+        [DataMember(Name = "default_u_32")]
         public uint DefaultU32;
-        [DataMember(Name = "DefaultI64")]
+        [DataMember(Name = "default_i_64")]
         public long DefaultI64;
-        [DataMember(Name = "DefaultU64")]
+        [DataMember(Name = "default_u_64")]
         public ulong DefaultU64;
-        [DataMember(Name = "DefaultHex")]
+        [DataMember(Name = "default_hex")]
         public int DefaultHex;
-        [DataMember(Name = "DefaultBin")]
+        [DataMember(Name = "default_bin")]
         public int DefaultBin;
-        [DataMember(Name = "DefaultF32")]
+        [DataMember(Name = "default_f_32")]
         public float DefaultF32;
-        [DataMember(Name = "DefaultF64")]
+        [DataMember(Name = "default_f_64")]
         public double DefaultF64;
-        [DataMember(Name = "DefaultEnum")]
+        [DataMember(Name = "default_enum")]
         public MyEnum DefaultEnum;
-        [DataMember(Name = "DefaultNull")]
+        [DataMember(Name = "default_null")]
         public MyStruct? DefaultNull;
 
         public ExampleData(

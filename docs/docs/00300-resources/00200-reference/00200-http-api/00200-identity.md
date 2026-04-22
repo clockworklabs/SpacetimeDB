@@ -39,7 +39,7 @@ Generate a short-lived access token which can be used in untrusted contexts, e.g
 
 | Name            | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/http/authorization). |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](./00100-authorization.md). |
 
 #### Returns
 
@@ -60,28 +60,6 @@ Fetches the public key used by the database to verify tokens.
 #### Returns
 
 Returns a response of content-type `application/pem-certificate-chain`.
-
-## `POST /v1/identity/:identity/set-email`
-
-Associate an email with a Spacetime identity.
-
-#### Parameters
-
-| Name        | Value                                     |
-| ----------- | ----------------------------------------- |
-| `:identity` | The identity to associate with the email. |
-
-#### Query Parameters
-
-| Name    | Value             |
-| ------- | ----------------- |
-| `email` | An email address. |
-
-#### Required Headers
-
-| Name            | Value                                                                         |
-| --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/http/authorization). |
 
 ## `GET /v1/identity/:identity/databases`
 
@@ -119,7 +97,7 @@ Verify the validity of an identity/token pair.
 
 | Name            | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/http/authorization). |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](./00100-authorization.md). |
 
 #### Returns
 

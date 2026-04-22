@@ -1,9 +1,8 @@
-use crate::db::durability::DurabilityWorker;
+use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
-use crate::util::{asyncify, spawn_rayon};
+use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
@@ -13,12 +12,12 @@ use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::{ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
     system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
 };
@@ -43,7 +42,6 @@ use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
-use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -57,11 +55,10 @@ use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotReposit
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
-use spacetimedb_vm::errors::{ErrorType, ErrorVm};
-use spacetimedb_vm::ops::parse;
+use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
-use std::ops::{Bound, RangeBounds};
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -101,7 +98,8 @@ pub struct RelationalDB {
     owner_identity: Identity,
 
     inner: Locking,
-    durability: Option<DurabilityWorker>,
+    durability: Option<Arc<Durability>>,
+    durability_runtime: Option<tokio::runtime::Handle>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -136,8 +134,8 @@ impl std::fmt::Debug for RelationalDB {
 impl Drop for RelationalDB {
     fn drop(&mut self) {
         // Attempt to flush the outstanding transactions.
-        if let Some(worker) = self.durability.take() {
-            worker.spawn_close(self.database_identity);
+        if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
+            spawn_durability_close(durability, &runtime, self.database_identity);
         }
     }
 }
@@ -153,14 +151,12 @@ impl RelationalDB {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
-        let (durability, disk_size_fn, snapshot_worker, rt) = Persistence::unzip(persistence);
-        let durability = durability
-            .zip(rt)
-            .map(|(durability, rt)| DurabilityWorker::new(database_identity, durability, rt));
+        let (durability, disk_size_fn, snapshot_worker, durability_runtime) = Persistence::unzip(persistence);
 
         Self {
             inner,
             durability,
+            durability_runtime,
             snapshot_worker,
 
             database_identity,
@@ -362,6 +358,16 @@ impl RelationalDB {
         None
     }
 
+    /// Create any system tables that are missing from the datastore.
+    ///
+    /// This runs during database startup, *after* `restore_from_snapshot` and `apply_history`
+    /// have reconstructed the committed state from persisted data. Older snapshots may predate
+    /// the introduction of newer system tables (e.g. `st_event_table`, `st_view`), so those
+    /// tables won't exist in the restored state. This method fills them in.
+    ///
+    /// Because of this ordering, code that runs during snapshot restoration
+    /// (such as `schema_for_table_raw`) must tolerate missing system tables gracefully
+    /// — they will be created here shortly after.
     fn migrate_system_tables(&self) -> Result<(), DBError> {
         let mut tx = self.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         for schema in system_tables() {
@@ -393,7 +399,7 @@ impl RelationalDB {
     /// It is an error to call this method on an already-initialized database.
     ///
     /// See [`Self::open`] for further information.
-    pub fn set_initialized(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
+    pub fn set_initialized(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
         log::trace!(
             "[{}] DATABASE: set initialized owner={} program_hash={}",
             self.database_identity,
@@ -416,7 +422,7 @@ impl RelationalDB {
             database_identity: self.database_identity.into(),
             owner_identity: self.owner_identity.into(),
 
-            program_kind: host_type.into(),
+            program_kind: program.kind,
             program_hash: program.hash,
             program_bytes: program.bytes,
             module_version: ONLY_MODULE_VERSION.into(),
@@ -454,13 +460,13 @@ impl RelationalDB {
     /// The caller must ensure that:
     ///
     /// - `program.hash` is the [`Hash`] over `program.bytes`.
-    /// - `program.bytes` is a valid module acc. to `host_type`.
+    /// - `program.bytes` is a valid module acc. to `program.host_type`.
     /// - the schema updates contained in the module have been applied within
     ///   the transactional context `tx`.
     /// - the `__init__` reducer contained in the module has been executed
     ///   within the transactional context `tx`.
-    pub fn update_program(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
-        Ok(self.inner.update_program(tx, host_type.into(), program)?)
+    pub fn update_program(&self, tx: &mut MutTx, program: Program) -> Result<(), DBError> {
+        Ok(self.inner.update_program(tx, program)?)
     }
 
     fn restore_from_snapshot_or_bootstrap(
@@ -799,16 +805,14 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+            self.request_durability(reducer_context, tx_data);
+        })?
+        else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(reducer_context, &tx_data);
-        }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -817,14 +821,12 @@ impl RelationalDB {
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
         log::trace!("COMMIT MUT TX");
 
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload);
+        let reducer_context = tx.ctx.reducer_context().cloned();
+        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+            self.request_durability(reducer_context, tx_data);
+        });
 
         self.maybe_do_snapshot(&tx_data);
-
-        let tx_data = Arc::new(tx_data);
-        if let Some(durability) = &self.durability {
-            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
-        }
 
         (tx_data, tx_metrics, tx)
     }
@@ -835,6 +837,12 @@ impl RelationalDB {
         self.durability
             .as_ref()
             .map(|durability| durability.durable_tx_offset())
+    }
+
+    fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
+        if let Some(durability) = &self.durability {
+            request_durability(durability.as_ref(), reducer_context, tx_data);
+        }
     }
 
     /// Decide based on the `committed_state.next_tx_offset`
@@ -854,12 +862,11 @@ impl RelationalDB {
     /// This requires a small amount of additional logic when restoring from a snapshot
     /// to ensure we don't restore a snapshot more recent than the durable TX offset.
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
-        if let Some(snapshot_worker) = &self.snapshot_worker {
-            if let Some(tx_offset) = tx_data.tx_offset() {
-                if tx_offset % SNAPSHOT_FREQUENCY == 0 {
-                    snapshot_worker.request_snapshot();
-                }
-            }
+        if let Some(snapshot_worker) = &self.snapshot_worker
+            && let Some(tx_offset) = tx_data.tx_offset()
+            && tx_offset % SNAPSHOT_FREQUENCY == 0
+        {
+            snapshot_worker.request_snapshot();
         }
     }
 
@@ -980,6 +987,15 @@ impl RelationalDB {
 
     pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: &str, access: StAccess) -> Result<(), DBError> {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
+    }
+
+    pub(crate) fn alter_table_primary_key(
+        &self,
+        tx: &mut MutTx,
+        name: &str,
+        primary_key: Option<ColId>,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
     }
 
     pub(crate) fn alter_table_row_type(
@@ -1381,32 +1397,24 @@ impl RelationalDB {
         Ok(self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)?)
     }
 
-    pub fn index_scan_range<'a>(
+    pub fn index_scan_range<'de, 'a>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
-        prefix: &[u8],
+        prefix: &'de [u8],
         prefix_elems: ColId,
-        rstart: &[u8],
-        rend: &[u8],
-    ) -> Result<
-        (
-            TableId,
-            Bound<AlgebraicValue>,
-            Bound<AlgebraicValue>,
-            impl Iterator<Item = RowRef<'a>>,
-        ),
-        DBError,
-    > {
+        rstart: &'de [u8],
+        rend: &'de [u8],
+    ) -> Result<(TableId, IndexScanPointOrRange<'de, 'a>), DBError> {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 
-    pub fn index_scan_point<'a>(
+    pub fn index_scan_point<'a, 'p>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
-        point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>>), DBError> {
+        point: &'p [u8],
+    ) -> Result<(TableId, IndexKey<'p>, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
         Ok(tx.index_scan_point(index_id, point)?)
     }
 
@@ -1443,7 +1451,7 @@ impl RelationalDB {
     }
 
     /// Clears all rows from a table without dropping it.
-    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
+    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<u64, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
     }
@@ -1503,32 +1511,6 @@ impl RelationalDB {
         Ok(None)
     }
 
-    /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
-    pub(crate) fn query_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowQryThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
-    #[allow(dead_code)]
-    pub(crate) fn sub_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowSubThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
-    #[allow(dead_code)]
-    pub(crate) fn incr_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowIncThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
     /// Read the value of a system variable from `st_var`
     pub(crate) fn read_var(&self, tx: &Tx, name: StVarName) -> Result<Option<StVarValue>, DBError> {
         if let Some(row_ref) = self
@@ -1538,31 +1520,6 @@ impl RelationalDB {
             return Ok(Some(StVarRow::try_from(row_ref)?.value));
         }
         Ok(None)
-    }
-
-    /// Update the value of a system variable in `st_var`
-    pub(crate) fn write_var(&self, tx: &mut MutTx, name: StVarName, literal: &str) -> Result<(), DBError> {
-        let value = Self::parse_var(name, literal)?;
-        if let Some(row_ref) = self
-            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
-            .next()
-        {
-            self.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
-        }
-        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
-        Ok(())
-    }
-
-    /// Parse the literal representation of a system variable
-    fn parse_var(name: StVarName, literal: &str) -> Result<StVarValue, DBError> {
-        StVarValue::try_from_primitive(parse::parse(literal, &name.type_of())?).map_err(|v| {
-            ErrorVm::Type(ErrorType::Parse {
-                value: literal.to_string(),
-                ty: fmt_algebraic_type(&name.type_of()).to_string(),
-                err: format!("error parsing value: {v:?}"),
-            })
-            .into()
-        })
     }
 
     /// Write `rows` into a (sender) view's backing table.
@@ -1660,62 +1617,20 @@ impl RelationalDB {
     }
 }
 
-fn apply_history<H>(datastore: &Locking, database_identity: Identity, history: H) -> Result<(), DBError>
-where
-    H: durability::History<TxData = Txdata>,
-{
-    log::info!("[{database_identity}] DATABASE: applying transaction history...");
-
-    // TODO: Revisit once we actually replay history suffixes, ie. starting
-    // from an offset larger than the history's min offset.
-    // TODO: We may want to require that a `tokio::runtime::Handle` is
-    // always supplied when constructing a `RelationalDB`. This would allow
-    // to spawn a timer task here which just prints the progress periodically
-    // in case the history is finite but very long.
-    let (_, max_tx_offset) = history.tx_range_hint();
-    let mut last_logged_percentage = 0;
-    let progress = |tx_offset: u64| {
-        if let Some(max_tx_offset) = max_tx_offset {
-            let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
-            if percentage > last_logged_percentage && percentage % 10 == 0 {
-                log::info!("[{database_identity}] Loaded {percentage}% ({tx_offset}/{max_tx_offset})");
-                last_logged_percentage = percentage;
-            }
-        // Print _something_ even if we don't know what's still ahead.
-        } else if tx_offset.is_multiple_of(10_000) {
-            log::info!("[{database_identity}] Loading transaction {tx_offset}");
-        }
+fn apply_history(
+    datastore: &Locking,
+    database_identity: Identity,
+    history: impl durability::History<TxData = Txdata>,
+) -> Result<(), DBError> {
+    let counters = ApplyHistoryCounters {
+        replay_commitlog_time_seconds: WORKER_METRICS
+            .replay_commitlog_time_seconds
+            .with_label_values(&database_identity),
+        replay_commitlog_num_commits: WORKER_METRICS
+            .replay_commitlog_num_commits
+            .with_label_values(&database_identity),
     };
-
-    let time_before = std::time::Instant::now();
-
-    let mut replay = datastore.replay(
-        progress,
-        // We don't want to instantiate an incorrect state;
-        // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
-        spacetimedb_datastore::locking_tx_datastore::datastore::ErrorBehavior::FailFast,
-    );
-    let start_tx_offset = replay.next_tx_offset();
-    history
-        .fold_transactions_from(start_tx_offset, &mut replay)
-        .map_err(anyhow::Error::from)?;
-
-    let time_elapsed = time_before.elapsed();
-    WORKER_METRICS
-        .replay_commitlog_time_seconds
-        .with_label_values(&database_identity)
-        .set(time_elapsed.as_secs_f64());
-
-    let end_tx_offset = replay.next_tx_offset();
-    WORKER_METRICS
-        .replay_commitlog_num_commits
-        .with_label_values(&database_identity)
-        .set((end_tx_offset - start_tx_offset) as _);
-
-    log::info!("[{database_identity}] DATABASE: applied transaction history");
-    datastore.rebuild_state_after_replay()?;
-    log::info!("[{database_identity}] DATABASE: rebuilt state after replay");
-
+    spacetimedb_datastore::locking_tx_datastore::apply_history(datastore, database_identity, history, counters)?;
     Ok(())
 }
 
@@ -1731,7 +1646,6 @@ pub async fn local_durability(
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let rt = tokio::runtime::Handle::current();
-    // TODO: Should this better be spawn_blocking?
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1740,17 +1654,11 @@ pub async fn local_durability(
             snapshot_worker.request_snapshot_ignore_closed();
         }) as Arc<OnNewSegmentFn>
     });
-    let local = spawn_rayon(move || {
+    let local = asyncify(move || {
         durability::Local::open(
             replica_dir.clone(),
             rt,
-            durability::local::Options {
-                commitlog: commitlog::Options {
-                    max_records_in_commit: 1.try_into().unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            <_>::default(),
             // Give the durability a handle to request a new snapshot run,
             // which it will send down whenever we rotate commitlog segments.
             on_new_segment,
@@ -1769,7 +1677,7 @@ pub async fn local_durability(
 /// Open a [History] for replay from the local durable state.
 ///
 /// Currently, this is simply a read-only copy of the commitlog.
-pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata>> {
+pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
     asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
@@ -1789,10 +1697,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         let snapshot_offset = *snapshot_rx.borrow_and_update();
         let durability = durability.clone();
 
-        if let Some(snap_tx) = &mut snap_tx {
-            if let Err(err) = snap_tx.try_send(snapshot_offset) {
-                tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
-            }
+        if let Some(snap_tx) = &mut snap_tx
+            && let Err(err) = snap_tx.try_send(snapshot_offset)
+        {
+            tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
         let res: io::Result<_> = asyncify(move || {
@@ -1825,10 +1733,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         };
         prev_snapshot_offset = snapshot_offset;
 
-        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment) {
-            if let Err(err) = clog_tx.try_send(last_compressed_segment) {
-                tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
-            }
+        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
+            && let Err(err) = clog_tx.try_send(last_compressed_segment)
+        {
+            tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
         }
     }
 }
@@ -1859,6 +1767,7 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 pub mod tests_utils {
     use crate::db::snapshot;
     use crate::db::snapshot::SnapshotWorker;
+    use crate::messages::control_db::HostType;
 
     use super::*;
     use core::ops::Deref;
@@ -2172,7 +2081,7 @@ pub mod tests_utils {
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(Workload::Internal, |tx| {
-                db.set_initialized(tx, HostType::Wasm, Program::empty())
+                db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
             })?;
             Ok(db)
         }
@@ -2347,13 +2256,11 @@ mod tests {
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
-    use crate::db::relational_db::tests_utils::{
-        begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
-    };
+    use crate::db::relational_db::tests_utils::{begin_tx, create_view_for_test, insert, make_snapshot, TestDB};
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
@@ -2464,18 +2371,6 @@ mod tests {
     }
 
     #[test]
-    fn test_system_variables() {
-        let db = TestDB::durable().expect("failed to create db");
-        let _ = with_auto_commit(&db, |tx| db.write_var(tx, StVarName::RowLimit, "5"));
-        assert_eq!(
-            5,
-            with_read_only(&db, |tx| db.row_limit(tx))
-                .expect("failed to read from st_var")
-                .expect("row_limit does not exist")
-        );
-    }
-
-    #[test]
     fn test_open_twice() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
@@ -2516,6 +2411,15 @@ mod tests {
         Ok((view_id, table_id, module_def.clone(), view_def.clone()))
     }
 
+    fn setup_anonymous_view(stdb: &TestDB) -> ResultTest<(ViewId, TableId)> {
+        Ok(create_view_for_test(
+            stdb,
+            "my_anonymous_view",
+            &[("b", AlgebraicType::U8)],
+            true,
+        )?)
+    }
+
     fn insert_view_row(stdb: &TestDB, view_id: ViewId, table_id: TableId, sender: Identity, v: u8) -> ResultTest<()> {
         let row_pv = |v: u8| product![v];
 
@@ -2539,6 +2443,22 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    fn project_anonymous_views(stdb: &TestDB, table_id: TableId) -> Vec<ProductValue> {
+        let tx = begin_tx(stdb);
+
+        stdb.iter(&tx, table_id)
+            .unwrap()
+            .map(|row| row.to_product_value())
+            .collect()
+    }
+
+    fn update_last_called(stdb: &TestDB, view_id: ViewId, sender: Identity, last_called: Timestamp) -> ResultTest<()> {
+        let mut tx = begin_mut_tx(stdb);
+        tx.update_view_timestamp_at(view_id, ArgId::SENTINEL, sender, last_called)?;
+        stdb.commit_tx(tx)?;
+        Ok(())
     }
 
     #[test]
@@ -2718,6 +2638,99 @@ mod tests {
         let st_after = tx.lookup_st_view_subs(view_id)?;
         assert_eq!(st_after.len(), 1);
         assert_eq!(st_after[0].identity.0, sender2);
+
+        Ok(())
+    }
+
+    /// Regression test for anonymous-view cleanup.
+    ///
+    /// If one subscriber row has expired but another subscriber for the same anonymous
+    /// view is still live, cleanup must delete only the stale bookkeeping row and keep
+    /// the shared materialized backing table intact.
+    #[test]
+    fn test_anonymous_view_cleanup_keeps_rows_for_live_subscribers() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let (view_id, table_id) = setup_anonymous_view(&stdb)?;
+
+        let stale_sender = Identity::ONE;
+        let live_sender = Identity::ZERO;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        tx.subscribe_view(view_id, ArgId::SENTINEL, live_sender)?;
+        stdb.materialize_anonymous_view(&mut tx, table_id, vec![product![42u8]])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.unsubscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        stdb.commit_tx(tx)?;
+
+        // Make one row definitely expired without relying on wall-clock sleeps.
+        update_last_called(&stdb, view_id, stale_sender, Timestamp::UNIX_EPOCH)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.update_view_timestamp(view_id, ArgId::SENTINEL, live_sender)?;
+        stdb.commit_tx(tx)?;
+
+        // Cleanup should remove only the stale subscriber row and keep the shared
+        // anonymous materialization because another subscriber is still live.
+        let mut tx = begin_mut_tx(&stdb);
+        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        stdb.commit_tx(tx)?;
+
+        assert_eq!(
+            project_anonymous_views(&stdb, table_id),
+            vec![product![42u8]],
+            "anonymous view rows should survive cleanup while another identity is still subscribed"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert_eq!(st_after.len(), 1);
+        assert_eq!(st_after[0].identity.0, live_sender);
+        assert!(st_after[0].has_subscribers);
+        assert_eq!(st_after[0].num_subscribers, 1);
+
+        Ok(())
+    }
+
+    /// Regression test for anonymous-view cleanup.
+    ///
+    /// Once the final subscriber row for an anonymous view has expired, cleanup must
+    /// remove both the stale bookkeeping row and the shared materialized backing table.
+    #[test]
+    fn test_anonymous_view_cleanup_clears_rows_when_unused() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let (view_id, table_id) = setup_anonymous_view(&stdb)?;
+
+        let sender = Identity::ONE;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.materialize_anonymous_view(&mut tx, table_id, vec![product![42u8]])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.commit_tx(tx)?;
+
+        // Mark the unsubscribed row as expired so cleanup can process it immediately.
+        update_last_called(&stdb, view_id, sender, Timestamp::UNIX_EPOCH)?;
+
+        // With no remaining subscriber rows, cleanup should drop the shared
+        // anonymous materialization and remove the bookkeeping row.
+        let mut tx = begin_mut_tx(&stdb);
+        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        stdb.commit_tx(tx)?;
+
+        assert!(
+            project_anonymous_views(&stdb, table_id).is_empty(),
+            "anonymous view rows should be cleared once no entries remain"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert!(st_after.is_empty());
 
         Ok(())
     }

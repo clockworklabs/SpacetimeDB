@@ -5,7 +5,7 @@ macro_rules! autoinc_basic {
     ($($ty:ident),*) => {
         $(
             paste::paste! {
-                #[spacetimedb::table(name = [<person_ $ty>])]
+                #[spacetimedb::table(accessor = [<person_ $ty>])]
                 pub struct [<Person_ $ty>] {
                     #[auto_inc]
                     key_col: $ty,

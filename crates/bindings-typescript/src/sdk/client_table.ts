@@ -42,7 +42,7 @@ export type ClientTablePrimaryKeyMethods<
   ): void;
 };
 
-export type ClientTableMethods<
+export type ClientTableInsertMethods<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
 > = {
@@ -66,7 +66,12 @@ export type ClientTableMethods<
       row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void;
+};
 
+export type ClientTableDeleteMethods<
+  RemoteModule extends UntypedRemoteModule,
+  TableName extends TableNamesOf<RemoteModule>,
+> = {
   /**
    * Registers a callback to be invoked when a row is deleted from the table.
    */
@@ -89,6 +94,12 @@ export type ClientTableMethods<
   ): void;
 };
 
+export type ClientTableMethods<
+  RemoteModule extends UntypedRemoteModule,
+  TableName extends TableNamesOf<RemoteModule>,
+> = ClientTableInsertMethods<RemoteModule, TableName> &
+  ClientTableDeleteMethods<RemoteModule, TableName>;
+
 /**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
  *
@@ -106,6 +117,12 @@ export type ClientTable<
       TableIndexes<TableDefForTableName<RemoteModule, TableName>>
     >
 >;
+
+type IsEventTable<TableDef extends UntypedTableDef> = TableDef extends {
+  isEvent: true;
+}
+  ? true
+  : false;
 
 type HasPrimaryKey<TableDef extends UntypedTableDef> = ColumnsHavePrimaryKey<
   TableDef['columns']
@@ -142,13 +159,21 @@ export type ClientTableCoreImplementable<
 
 /**
  * Core methods of ClientTable, without the indexes mixed in.
- * Includes only staticly known methods.
+ * Includes only statically known methods.
+ *
+ * Event tables only expose insert callbacks (no delete or update),
+ * matching the Rust SDK's `EventTable` trait.
  */
 export type ClientTableCore<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
 > = ReadonlyTableMethods<TableDefForTableName<RemoteModule, TableName>> &
-  ClientTableMethods<RemoteModule, TableName> &
-  (HasPrimaryKey<TableDefForTableName<RemoteModule, TableName>> extends true
-    ? ClientTablePrimaryKeyMethods<RemoteModule, TableName>
-    : {});
+  ClientTableInsertMethods<RemoteModule, TableName> &
+  (IsEventTable<TableDefForTableName<RemoteModule, TableName>> extends true
+    ? {}
+    : ClientTableDeleteMethods<RemoteModule, TableName> &
+        (HasPrimaryKey<
+          TableDefForTableName<RemoteModule, TableName>
+        > extends true
+          ? ClientTablePrimaryKeyMethods<RemoteModule, TableName>
+          : {}));

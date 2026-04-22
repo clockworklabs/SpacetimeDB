@@ -10,7 +10,6 @@ namespace SpacetimeDB.ClientApi
     [SpacetimeDB.Type]
     public partial record ProcedureStatus : SpacetimeDB.TaggedEnum<(
         System.Collections.Generic.List<byte> Returned,
-        SpacetimeDB.Unit OutOfEnergy,
         string InternalError
     )>;
 }

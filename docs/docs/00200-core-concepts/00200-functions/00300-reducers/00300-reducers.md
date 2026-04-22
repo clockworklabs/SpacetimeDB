@@ -5,6 +5,7 @@ slug: /functions/reducers
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
 Reducers are functions that modify database state in response to client requests or system events. They are the **only** way to mutate tables in SpacetimeDB - all database changes must go through reducers.
@@ -21,7 +22,7 @@ Use the `spacetimedb.reducer` function:
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-spacetimedb.reducer('create_user', { name: t.string(), email: t.string() }, (ctx, { name, email }) => {
+export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
     throw new Error('Name cannot be empty');
@@ -109,6 +110,33 @@ If you see errors like "no method named `try_insert` found", add this import.
 :::
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+Use the `SPACETIMEDB_REDUCER` macro on a function:
+
+```cpp
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name, std::string email) {
+    // Validate input
+    if (name.empty()) {
+        return Err("Name cannot be empty");
+    }
+    
+    // Modify tables
+    User user{0, name, email};  // 0 for id - auto-increment will assign
+    ctx.db[user].insert(user);
+    
+    return Ok();
+}
+```
+
+Reducers must take `ReducerContext ctx` as their first parameter. Additional parameters can be any registered types. Reducers return `ReducerResult` (which is `Outcome<void>`): use `Ok()` on success or `Err(message)` on error for convenience.
+
+</TabItem>
 </Tabs>
 
 ## Transactional Execution
@@ -162,6 +190,17 @@ ctx.db.user().insert(User {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+ctx.db[user].insert(User{
+    0,  // auto-increment will assign
+    "Alice",
+    "alice@example.com"
+});
+```
+
+</TabItem>
 </Tabs>
 
 ### Finding Rows by Unique Column
@@ -205,6 +244,17 @@ let by_email = ctx.db.user().email().find("alice@example.com");
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+if (auto user = ctx.db[user_id].find(123)) {
+    LOG_INFO("Found: " + user->name);
+}
+
+auto by_email = ctx.db[user_email].find("alice@example.com");
+```
+
+</TabItem>
 </Tabs>
 
 ### Filtering Rows by Indexed Column
@@ -236,6 +286,15 @@ foreach (var user in ctx.Db.User.Name.Filter("Alice"))
 ```rust
 for user in ctx.db.user().name().filter("Alice") {
     log::info!("User {}: {}", user.id, user.email);
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+for (const auto& user : ctx.db[user_name].filter("Alice")) {
+    LOG_INFO("User " + std::to_string(user.id) + ": " + user.email);
 }
 ```
 
@@ -276,6 +335,16 @@ if (user is not null)
 if let Some(mut user) = ctx.db.user().id().find(123) {
     user.name = "Bob".to_string();
     ctx.db.user().id().update(user);
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+if (auto user = ctx.db[user_id].find(123)) {
+    user->name = "Bob";
+    ctx.db[user_id].update(*user);
 }
 ```
 
@@ -323,6 +392,22 @@ log::info!("Deleted {} row(s)", deleted);
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Delete by primary key
+ctx.db[user_id].delete_by_key(123);
+
+// Delete all matching an indexed column
+uint32_t deleted = 0;
+for (const auto& user : ctx.db[user_name].filter("Alice")) {
+    ctx.db[user_id].delete_by_key(user.id);
+    deleted++;
+}
+LOG_INFO("Deleted " + std::to_string(deleted) + " row(s)");
+```
+
+</TabItem>
 </Tabs>
 
 ### Iterating All Rows
@@ -358,6 +443,15 @@ for user in ctx.db.user().iter() {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+for (const auto& user : ctx.db[user]) {
+    LOG_INFO(std::to_string(user.id) + ": " + user.name);
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### Counting Rows
@@ -389,9 +483,17 @@ log::info!("Total users: {}", total);
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+auto total = ctx.db[user].count();
+LOG_INFO("Total users: " + std::to_string(total));
+```
+
+</TabItem>
 </Tabs>
 
-For more details on querying with indexes, including range queries and multi-column indexes, see [Indexes](/tables/indexes).
+For more details on querying with indexes, including range queries and multi-column indexes, see [Indexes](../../00300-tables/00300-indexes.md).
 
 ## Reducer Isolation
 
@@ -402,7 +504,7 @@ Reducers run in an isolated environment and **cannot** interact with the outside
 - ❌ No system calls
 - ✅ Only database operations
 
-If you need to interact with external systems, use [Procedures](/functions/procedures) instead. Procedures can make network calls and perform other side effects, but they have different execution semantics and limitations.
+If you need to interact with external systems, use [Procedures](../00400-procedures.md) instead. Procedures can make network calls and perform other side effects, but they have different execution semantics and limitations.
 
 :::warning Global and Static Variables Are Undefined Behavior
 Relying on global variables, static variables, or module-level state to persist across reducer calls is **undefined behavior**. SpacetimeDB does not guarantee that values stored in these locations will be available in subsequent reducer invocations.
@@ -423,7 +525,7 @@ Reducers are designed to be free of side effects. They should only modify tables
 static mut COUNTER: u64 = 0;
 
 // ✅ Store state in a table instead
-#[spacetimedb::table(name = counter)]
+#[spacetimedb::table(accessor = counter)]
 pub struct Counter {
     #[primary_key]
     id: u32,
@@ -434,17 +536,18 @@ pub struct Counter {
 
 ## Scheduling Procedures
 
-Reducers cannot call procedures directly (procedures may have side effects incompatible with transactional execution). Instead, schedule a procedure to run by inserting into a [schedule table](/tables/schedule-tables):
+Reducers cannot call procedures directly (procedures may have side effects incompatible with transactional execution). Instead, schedule a procedure to run by inserting into a [schedule table](../../00300-tables/00500-schedule-tables.md):
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { schema, t, table, SenderError } from 'spacetimedb/server';
+import { ScheduleAt } from 'spacetimedb';
+import { schema, t, table } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
 const fetchSchedule = table(
-  { name: 'fetch_schedule', scheduled: 'fetch_external_data' },
+  { name: 'fetch_schedule', scheduled: (): any => fetch_external_data },
   {
     scheduled_id: t.u64().primaryKey().autoInc(),
     scheduled_at: t.scheduleAt(),
@@ -452,11 +555,11 @@ const fetchSchedule = table(
   }
 );
 
-const spacetimedb = schema(fetchSchedule);
+const spacetimedb = schema({ fetchSchedule });
+export default spacetimedb;
 
 // The procedure to be scheduled
-const fetchExternalData = spacetimedb.procedure(
-  'fetch_external_data',
+export const fetch_external_data = spacetimedb.procedure(
   { arg: fetchSchedule.rowType },
   t.unit(),
   (ctx, { arg }) => {
@@ -467,7 +570,7 @@ const fetchExternalData = spacetimedb.procedure(
 );
 
 // From a reducer, schedule the procedure by inserting into the schedule table
-const queueFetch = spacetimedb.reducer('queue_fetch', { url: t.string() }, (ctx, { url }) => {
+export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
   ctx.db.fetchSchedule.insert({
     scheduled_id: 0n,
     scheduled_at: ScheduleAt.interval(0n), // Run immediately
@@ -485,7 +588,7 @@ using SpacetimeDB;
 
 public partial class Module
 {
-    [SpacetimeDB.Table(Name = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
+    [SpacetimeDB.Table(Accessor = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
     public partial struct FetchSchedule
     {
         [SpacetimeDB.PrimaryKey]
@@ -526,7 +629,7 @@ public partial class Module
 use spacetimedb::{ScheduleAt, ReducerContext, ProcedureContext, Table};
 use std::time::Duration;
 
-#[spacetimedb::table(name = fetch_schedule, scheduled(fetch_external_data))]
+#[spacetimedb::table(accessor = fetch_schedule, scheduled(fetch_external_data))]
 pub struct FetchSchedule {
     #[primary_key]
     #[auto_inc]
@@ -554,12 +657,54 @@ fn queue_fetch(ctx: &ReducerContext, url: String) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+#define SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+// Define a table to store scheduled tasks
+struct FetchSchedule {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+    std::string url;
+};
+SPACETIMEDB_STRUCT(FetchSchedule, scheduled_id, scheduled_at, url);
+SPACETIMEDB_TABLE(FetchSchedule, fetch_schedule, Private);
+FIELD_PrimaryKeyAutoInc(fetch_schedule, scheduled_id);
+
+// Register the table for scheduling (column 1 = scheduled_at field, 0-based index)
+SPACETIMEDB_SCHEDULE(fetch_schedule, 1, fetch_external_data);
+
+// The procedure to be scheduled - called automatically when the time arrives
+SPACETIMEDB_PROCEDURE(uint32_t, fetch_external_data, ProcedureContext ctx, FetchSchedule schedule) {
+    LOG_INFO("Fetching data from: " + schedule.url);
+    // Process response...
+    return 0;  // Success
+}
+
+// From a reducer, schedule the procedure by inserting into the schedule table
+SPACETIMEDB_REDUCER(queue_fetch, ReducerContext ctx, std::string url) {
+    auto scheduled_at = ScheduleAt(TimeDuration::from_seconds(0));  // Run immediately
+    FetchSchedule fetch_task{
+        0,                // scheduled_id - auto-increment will assign
+        scheduled_at,     // When to execute
+        url
+    };
+    ctx.db[fetch_schedule].insert(fetch_task);
+    LOG_INFO("Fetch scheduled for URL: " + url);
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
-See [Schedule Tables](/tables/schedule-tables) for more scheduling options.
+See [Schedule Tables](../../00300-tables/00500-schedule-tables.md) for more scheduling options.
 
 ## Next Steps
 
-- Learn about [Tables](/tables) to understand data storage
-- Explore [Procedures](/functions/procedures) for side effects beyond the database
-- Review [Subscriptions](/subscriptions) for real-time client updates
+- Learn about [Tables](../../00300-tables.md) to understand data storage
+- Explore [Procedures](../00400-procedures.md) for side effects beyond the database
+- Review [Subscriptions](../../00400-subscriptions.md) for real-time client updates

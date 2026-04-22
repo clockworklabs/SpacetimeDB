@@ -1,21 +1,21 @@
+import type { ProcedureExport, ReducerExport } from '../server';
 import type { ProductType } from './algebraic_type';
-import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
-import type { ColumnBuilder, Infer, RowBuilder } from './type_builders';
+import type { ColumnBuilder, RowBuilder } from './type_builders';
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
  */
 export type TableSchema<
-  TableName extends string,
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
 > = {
   /**
    * The name of the table.
    */
-  readonly tableName: TableName;
+  readonly tableName?: string;
 
   /**
    * The TypeBuilder representation of the type of the rows in the table.
@@ -28,9 +28,12 @@ export type TableSchema<
   readonly rowSpacetimeType: RowBuilder<Row>['algebraicType']['value'];
 
   /**
-   * The {@link RawTableDefV9} of the configured table
+   * The {@link RawTableDefV10} of the configured table
    */
-  tableDef(ctx: ModuleContext): Infer<typeof RawTableDefV9>;
+  tableDef(
+    ctx: ModuleContext,
+    accName: string
+  ): RawTableDefV10 & { schedule?: RawScheduleDefV10 };
 
   /**
    * The indexes defined on the table.
@@ -45,10 +48,17 @@ export type TableSchema<
     constraint: 'unique';
     columns: [any];
   }[];
+
+  /**
+   * The schedule defined on the table, if any.
+   */
+  readonly schedule?: {
+    scheduleAtCol: number;
+    reducer: () => ReducerExport<any, any> | ProcedureExport<any, any, any>;
+  };
 };
 
 export type UntypedTableSchema = TableSchema<
-  string,
   Record<string, ColumnBuilder<any, any, any>>,
   readonly IndexOpts<string>[]
 >;

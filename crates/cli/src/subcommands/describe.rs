@@ -1,8 +1,9 @@
 use crate::api::ClientApi;
 use crate::common_args;
 use crate::config::Config;
-use crate::sql::parse_req;
+use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_database_with_optional_parts};
 use crate::util::UNSTABLE_WARNING;
+use crate::util::{database_identity, get_auth_header};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use spacetimedb_lib::sats;
@@ -13,20 +14,9 @@ pub fn cli() -> clap::Command {
             "Describe the structure of a database or entities within it. {UNSTABLE_WARNING}"
         ))
         .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The name or identity of the database to describe"),
-        )
-        .arg(
-            Arg::new("entity_type")
-                .value_parser(clap::value_parser!(EntityType))
-                .requires("entity_name")
-                .help("Whether to describe a reducer or table"),
-        )
-        .arg(
-            Arg::new("entity_name")
-                .requires("entity_type")
-                .help("The name of the entity to describe"),
+            Arg::new("describe_parts")
+                .num_args(0..)
+                .help("Describe arguments: [DATABASE] [ENTITY_TYPE ENTITY_NAME]"),
         )
         .arg(
             Arg::new("json")
@@ -42,6 +32,12 @@ pub fn cli() -> clap::Command {
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
@@ -54,12 +50,51 @@ enum EntityType {
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
 
-    let entity_name = args.get_one::<String>("entity_name");
-    let entity_type = args.get_one::<EntityType>("entity_type");
-    let entity = entity_type.zip(entity_name);
     let json = args.get_flag("json");
+    let no_config = args.get_flag("no_config");
+    let raw_parts: Vec<String> = args
+        .get_many::<String>("describe_parts")
+        .map(|vals| vals.cloned().collect())
+        .unwrap_or_default();
+    let config_targets = load_config_db_targets(no_config)?;
+    let resolved = resolve_database_with_optional_parts(
+        &raw_parts,
+        config_targets.as_deref(),
+        "spacetime describe [database] [entity_type entity_name] --json [--no-config]",
+    )?;
+    let entity = match resolved.remaining_args.as_slice() {
+        [] => None,
+        [entity_type, entity_name] => {
+            let entity_type = match entity_type.as_str() {
+                "reducer" => EntityType::Reducer,
+                "table" => EntityType::Table,
+                _ => {
+                    anyhow::bail!(
+                        "Invalid entity_type '{}'. Expected one of: reducer, table.",
+                        entity_type
+                    )
+                }
+            };
+            Some((entity_type, entity_name.as_str()))
+        }
+        _ => {
+            anyhow::bail!(
+                "Invalid describe arguments.\nUsage: spacetime describe [database] [entity_type entity_name] --json [--no-config]"
+            );
+        }
+    };
 
-    let conn = parse_req(config, args).await?;
+    let mut config = config;
+    let server_from_cli = args.get_one::<String>("server").map(|s| s.as_ref());
+    let server = server_from_cli.or(resolved.server.as_deref());
+    let force = args.get_flag("force");
+    let anon_identity = args.get_flag("anon_identity");
+    let conn = crate::api::Connection {
+        host: config.get_host_url(server)?,
+        auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
+        database_identity: database_identity(&config, &resolved.database, server).await?,
+        database: resolved.database,
+    };
     let api = ClientApi::new(conn);
 
     let module_def = api.module_def().await?;
@@ -73,7 +108,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                 let reducer = module_def
                     .reducers
                     .iter()
-                    .find(|r| *r.name == **reducer_name)
+                    .find(|r| *r.name == *reducer_name)
                     .context("no such reducer")?;
                 sats_to_json(reducer)?
             }
@@ -81,7 +116,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                 let table = module_def
                     .tables
                     .iter()
-                    .find(|t| *t.name == **table_name)
+                    .find(|t| *t.name == *table_name)
                     .context("no such table")?;
                 sats_to_json(table)?
             }

@@ -1,21 +1,25 @@
+use crate::detect::{find_executable, has_package_manager};
 use crate::Config;
-use crate::{detect::find_executable, util::UNSTABLE_WARNING};
 use anyhow::anyhow;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use convert_case::{Case, Casing};
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use spacetimedb_client_api_messages::name::parse_database_name;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::{fmt, fs};
+use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
-use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
+use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
 mod embedded {
     use spacetimedb_data_structures::map::HashCollectionExt as _;
@@ -32,17 +36,12 @@ pub struct TemplateDefinition {
     pub server_lang: Option<String>,
     #[serde(default)]
     pub client_lang: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct HighlightDefinition {
-    pub name: String,
-    pub template_id: String,
+    #[serde(default)]
+    pub client_framework: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TemplatesList {
-    highlights: Vec<HighlightDefinition>,
     templates: Vec<TemplateDefinition>,
 }
 
@@ -117,11 +116,47 @@ pub struct TemplateConfig {
     pub github_repo: Option<String>,
     pub template_def: Option<TemplateDefinition>,
     pub use_local: bool,
+    pub native_aot: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct InitOptions {
+    pub project_path: Option<PathBuf>,
+    pub project_name: Option<String>,
+    pub project_name_default: Option<String>,
+    pub database_name_default: Option<String>,
+    pub server_only: bool,
+    pub lang: Option<String>,
+    pub template: Option<String>,
+    pub local: bool,
+    pub non_interactive: bool,
+    /// When true, suppress the "Next steps" message after init (e.g. when called from `spacetime dev`).
+    pub skip_next_steps: bool,
+    /// When true, configure C# projects for NativeAOT-LLVM compilation.
+    pub native_aot: bool,
+}
+
+impl InitOptions {
+    pub fn from_args(args: &ArgMatches) -> Self {
+        Self {
+            project_path: args.get_one::<PathBuf>("project-path").cloned(),
+            project_name: args.get_one::<String>("project-name").cloned(),
+            project_name_default: None,
+            database_name_default: None,
+            server_only: args.get_flag("server-only"),
+            lang: args.get_one::<String>("lang").cloned(),
+            template: args.get_one::<String>("template").cloned(),
+            local: args.get_flag("local"),
+            non_interactive: args.get_flag("non-interactive"),
+            skip_next_steps: false,
+            native_aot: args.get_flag("native-aot"),
+        }
+    }
 }
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
-        .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
+        .about("Initializes a new spacetime project.")
         .arg(
             Arg::new("project-path")
                 .long("project-path")
@@ -158,13 +193,19 @@ pub fn cli() -> clap::Command {
                 .action(clap::ArgAction::SetTrue)
                 .help("Run in non-interactive mode"),
         )
+        .arg(
+            Arg::new("native-aot")
+                .long("native-aot")
+                .action(clap::ArgAction::SetTrue)
+                .help("Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)"),
+        )
 }
 
-pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>, Vec<TemplateDefinition>)> {
+pub async fn fetch_templates_list() -> anyhow::Result<Vec<TemplateDefinition>> {
     let content = embedded::get_templates_json();
     let templates_list: TemplatesList = serde_json::from_str(content).context("Failed to parse templates list JSON")?;
 
-    Ok((templates_list.highlights, templates_list.templates))
+    Ok(templates_list.templates)
 }
 
 pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool> {
@@ -183,7 +224,7 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
 
     if should_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false, true).await?;
+        spacetimedb_login_and_save(config, &host, false, true).await?;
         println!("{}", "Successfully logged in!".green());
         Ok(true)
     } else {
@@ -196,8 +237,8 @@ fn slugify(name: &str) -> String {
     name.to_case(Case::Kebab)
 }
 
-async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Result<String> {
-    if let Some(name) = args.get_one::<String>("project-name") {
+async fn get_project_name(options: &InitOptions, is_interactive: bool) -> anyhow::Result<String> {
+    if let Some(name) = &options.project_name {
         if is_interactive {
             println!("{} {}", "Project name:".bold(), name);
         }
@@ -208,10 +249,15 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
         anyhow::bail!("PROJECT_NAME is required in non-interactive mode");
     }
 
+    let default_project_name = options
+        .project_name_default
+        .clone()
+        .unwrap_or_else(|| "my-spacetime-app".to_string());
+
     let theme = ColorfulTheme::default();
     let name = Input::with_theme(&theme)
         .with_prompt("Project name")
-        .default("my-spacetime-app".to_string())
+        .default(default_project_name)
         .validate_with(|input: &String| -> Result<(), String> {
             if input.trim().is_empty() {
                 return Err("Project name cannot be empty".to_string());
@@ -226,12 +272,12 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
 }
 
 async fn get_project_path(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: &str,
     is_interactive: bool,
     is_server_only: bool,
 ) -> anyhow::Result<PathBuf> {
-    if let Some(path) = args.get_one::<PathBuf>("project-path") {
+    if let Some(path) = &options.project_path {
         if is_interactive {
             println!("{} {}", "Project path:".bold(), path.display());
         }
@@ -310,6 +356,7 @@ fn create_template_config_from_template_str(
             github_repo: None,
             template_def: Some(template.clone()),
             use_local: true,
+            native_aot: false,
         })
     } else {
         // GitHub template
@@ -322,6 +369,7 @@ fn create_template_config_from_template_str(
             github_repo: Some(template_str.to_string()),
             template_def: None,
             use_local: true,
+            native_aot: false,
         })
     }
 }
@@ -345,48 +393,44 @@ fn run_pm(pm: PackageManager, args: &[&str], cwd: &Path) -> std::io::Result<std:
         .status()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PackageManager {
-    Npm,
-    Pnpm,
-    Yarn,
-    Bun,
-}
-
-impl fmt::Display for PackageManager {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            PackageManager::Npm => "npm",
-            PackageManager::Pnpm => "pnpm",
-            PackageManager::Yarn => "yarn",
-            PackageManager::Bun => "bun",
-        };
-        write!(f, "{s}")
-    }
-}
-
 pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageManager>> {
     println!(
         "\n{}",
         "TypeScript server requires dependencies to be installed before publishing.".yellow()
     );
 
-    // Prompt for package manager
     let theme = ColorfulTheme::default();
     let choices = vec!["npm", "pnpm", "yarn", "bun", "none"];
-    let selection = Select::with_theme(&theme)
-        .with_prompt("Which package manager would you like to use?")
-        .items(&choices)
-        .default(0)
-        .interact()?;
 
-    Ok(match selection {
-        0 => Some(PackageManager::Npm),
-        1 => Some(PackageManager::Pnpm),
-        2 => Some(PackageManager::Yarn),
-        3 => Some(PackageManager::Bun),
-        _ => None,
-    })
+    loop {
+        let selection = Select::with_theme(&theme)
+            .with_prompt("Which package manager would you like to use?")
+            .items(&choices)
+            .default(0)
+            .interact()?;
+
+        let pm = match selection {
+            0 => Some(PackageManager::Npm),
+            1 => Some(PackageManager::Pnpm),
+            2 => Some(PackageManager::Yarn),
+            3 => Some(PackageManager::Bun),
+            _ => None,
+        };
+
+        match pm {
+            Some(pm) if !has_package_manager(pm) => {
+                println!(
+                    "{}",
+                    format!(
+                        "'{}' was not found on PATH. Please install it or choose a different package manager.",
+                        pm
+                    )
+                    .yellow()
+                );
+            }
+            _ => return Ok(pm),
+        }
+    }
 }
 
 pub fn install_typescript_dependencies(
@@ -460,8 +504,10 @@ pub fn install_typescript_dependencies(
     Ok(())
 }
 
-pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<PathBuf> {
-    let use_local = if args.get_flag("local") {
+pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> anyhow::Result<PathBuf> {
+    let is_interactive = !options.non_interactive;
+
+    let use_local = if options.local {
         true
     } else if is_interactive {
         !check_and_prompt_login(config).await?
@@ -470,15 +516,16 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         config.spacetimedb_token().is_none()
     };
 
-    let is_server_only = args.get_flag("server-only");
+    let is_server_only = options.server_only;
 
-    let project_name = get_project_name(args, is_interactive).await?;
-    let project_path = get_project_path(args, &project_name, is_interactive, is_server_only).await?;
+    let project_name = get_project_name(options, is_interactive).await?;
+    let project_path = get_project_path(options, &project_name, is_interactive, is_server_only).await?;
+    let local_database_name = get_local_database_name(options, &project_name, is_interactive)?;
 
     let mut template_config = if is_interactive {
-        get_template_config_interactive(args, project_name, project_path.clone()).await?
+        get_template_config_interactive(options, project_name, project_path.clone()).await?
     } else {
-        get_template_config_non_interactive(args, project_name, project_path.clone()).await?
+        get_template_config_non_interactive(options, project_name, project_path.clone()).await?
     };
 
     template_config.use_local = use_local;
@@ -490,6 +537,26 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
+    // Add NativeAOT-LLVM package references to C# projects if --native-aot was specified
+    if options.native_aot && template_config.server_lang == Some(ServerLanguage::Csharp) {
+        let server_dir = template_config.project_path.join("spacetimedb");
+        add_native_aot_packages_to_csproj(&server_dir)?;
+    }
+
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, options.native_aot)? {
+        println!("{} Created {}", "✓".green(), path.display());
+    }
+
+    // Determine package manager for TypeScript projects
+    let uses_typescript = template_config.server_lang == Some(ServerLanguage::TypeScript)
+        || template_config.client_lang == Some(ClientLanguage::TypeScript);
+
+    let package_manager = if uses_typescript && is_interactive {
+        prompt_for_typescript_package_manager()?
+    } else {
+        None
+    };
+
     if template_config.server_lang == Some(ServerLanguage::TypeScript)
         && template_config.client_lang == Some(ClientLanguage::TypeScript)
     {
@@ -497,53 +564,149 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
         // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
-        let client_dir = template_config.project_path;
+        let client_dir = &template_config.project_path;
         let server_dir = client_dir.join("spacetimedb");
-        install_typescript_dependencies(&server_dir, pm)?;
-        install_typescript_dependencies(&client_dir, pm)?;
+        install_typescript_dependencies(&server_dir, package_manager)?;
+        install_typescript_dependencies(client_dir, package_manager)?;
     } else if template_config.client_lang == Some(ClientLanguage::TypeScript) {
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
-        let client_dir = template_config.project_path;
-        install_typescript_dependencies(&client_dir, pm)?;
+        let client_dir = &template_config.project_path;
+        install_typescript_dependencies(client_dir, package_manager)?;
     } else if template_config.server_lang == Some(ServerLanguage::TypeScript) {
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
         // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         let server_dir = template_config.project_path.join("spacetimedb");
-        install_typescript_dependencies(&server_dir, pm)?;
+        install_typescript_dependencies(&server_dir, package_manager)?;
+    }
+
+    // Configure client dev command if a client is present
+    if !is_server_only {
+        let client_lang_str = template_config.client_lang.as_ref().map(|l| l.as_str());
+        if let Some(path) = crate::spacetime_config::setup_for_project(&project_path, client_lang_str, package_manager)?
+        {
+            println!("{} Created {}", "✓".green(), path.display());
+        }
+    }
+
+    if let Some(path) = create_local_spacetime_config_if_missing(&project_path, &local_database_name)? {
+        println!("{} Created {}", "✓".green(), path.display());
+    }
+
+    if !options.skip_next_steps {
+        print_next_steps(&template_config, &project_path)?;
     }
 
     Ok(project_path)
 }
 
+fn get_local_database_name(options: &InitOptions, project_name: &str, is_interactive: bool) -> anyhow::Result<String> {
+    let default_database = options
+        .database_name_default
+        .clone()
+        .unwrap_or_else(|| format!("{project_name}-{}", random_suffix(5)));
+    if !is_interactive {
+        return Ok(default_database);
+    }
+
+    let theme = ColorfulTheme::default();
+    let database_name = Input::with_theme(&theme)
+        .with_prompt("Database name")
+        .default(default_database)
+        .validate_with(|input: &String| -> Result<(), String> {
+            parse_database_name(input.trim()).map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .interact_text()?
+        .trim()
+        .to_string();
+
+    Ok(database_name)
+}
+
+fn create_default_spacetime_config_if_missing(
+    project_path: &Path,
+    native_aot: bool,
+) -> anyhow::Result<Option<PathBuf>> {
+    let config_path = project_path.join(CONFIG_FILENAME);
+    if config_path.exists() {
+        return Ok(None);
+    }
+
+    let mut config = SpacetimeConfig::default();
+    config
+        .additional_fields
+        .insert("server".to_string(), json!("maincloud"));
+
+    if project_path.join("spacetimedb").is_dir() {
+        config
+            .additional_fields
+            .insert("module-path".to_string(), json!("./spacetimedb"));
+    }
+
+    if native_aot {
+        config.additional_fields.insert("native-aot".to_string(), json!(true));
+    }
+
+    Ok(Some(config.save_to_dir(project_path)?))
+}
+
+fn create_local_spacetime_config_if_missing(
+    project_path: &Path,
+    database_name: &str,
+) -> anyhow::Result<Option<PathBuf>> {
+    let main_config_path = project_path.join(CONFIG_FILENAME);
+    if !main_config_path.exists() {
+        return Ok(None);
+    }
+
+    let local_config_path = project_path.join("spacetime.local.json");
+    if local_config_path.exists() {
+        return Ok(None);
+    }
+
+    let mut local_config = SpacetimeConfig::default();
+    local_config
+        .additional_fields
+        .insert("database".to_string(), json!(database_name));
+    local_config.save(&local_config_path)?;
+
+    Ok(Some(local_config_path))
+}
+
+fn random_suffix(len: usize) -> String {
+    const ALNUM: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let pid = std::process::id() as u64;
+    let mut state = now ^ (pid << 16);
+    let mut out = String::with_capacity(len);
+    for _ in 0..len {
+        // Simple xorshift to derive pseudo-random chars without extra deps.
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let idx = (state % ALNUM.len() as u64) as usize;
+        out.push(ALNUM[idx] as char);
+    }
+    out
+}
+
 async fn get_template_config_non_interactive(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: String,
     project_path: PathBuf,
 ) -> anyhow::Result<TemplateConfig> {
     // Check if template is provided
-    if let Some(template_str) = args.get_one::<String>("template") {
+    if let Some(template_str) = options.template.as_ref() {
         // Check if it's a builtin template
-        let (_, templates) = fetch_templates_list().await?;
+        let templates = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
     // No template - require at least one language option
-    let server_lang_str = args.get_one::<String>("lang").cloned();
+    let server_lang_str = options.lang.clone();
 
     if server_lang_str.is_none() {
         anyhow::bail!("Either --template or --lang must be provided in non-interactive mode");
@@ -558,6 +721,7 @@ async fn get_template_config_non_interactive(
         github_repo: None,
         template_def: None,
         use_local: true,
+        native_aot: false,
     })
 }
 
@@ -593,21 +757,21 @@ pub fn ensure_empty_directory(_project_name: &str, project_path: &Path, is_serve
 }
 
 async fn get_template_config_interactive(
-    args: &ArgMatches,
+    options: &InitOptions,
     project_name: String,
     project_path: PathBuf,
 ) -> anyhow::Result<TemplateConfig> {
     let theme = ColorfulTheme::default();
 
     // Check if template is provided
-    if let Some(template_str) = args.get_one::<String>("template") {
+    if let Some(template_str) = options.template.as_ref() {
         println!("{} {}", "Template:".bold(), template_str);
 
-        let (_, templates) = fetch_templates_list().await?;
+        let templates = fetch_templates_list().await?;
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
-    let server_lang_arg = args.get_one::<String>("lang");
+    let server_lang_arg = options.lang.as_ref();
     if server_lang_arg.is_some() {
         let server_lang = parse_server_lang(&server_lang_arg.cloned())?;
         if let Some(lang_str) = server_lang_arg {
@@ -623,118 +787,152 @@ async fn get_template_config_interactive(
             github_repo: None,
             template_def: None,
             use_local: true,
+            native_aot: false,
         });
     }
 
     // Fully interactive mode - prompt for template/language selection
-    let (highlights, templates) = fetch_templates_list().await?;
+    let templates = fetch_templates_list().await?;
 
-    let mut client_choices: Vec<String> = highlights
+    // First menu: all language combinations from templates + GitHub + None.
+    let mut templates_by_lang: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (idx, template) in templates.iter().enumerate() {
+        let server_lang = template.server_lang.as_deref();
+        let client_lang = template.client_framework.as_deref().or(template.client_lang.as_deref());
+        let lang = if server_lang == client_lang {
+            format_language_label(server_lang)
+        } else {
+            format!(
+                "{}/{}",
+                format_language_label(server_lang),
+                format_language_label(client_lang),
+            )
+        };
+        templates_by_lang.entry(lang).or_default().push(idx);
+    }
+
+    let lang_keys: Vec<String> = templates_by_lang.keys().cloned().collect();
+    let mut lang_items: Vec<String> = templates_by_lang
         .iter()
-        .map(|h| {
-            let template = templates.iter().find(|t| t.id == h.template_id);
-            match template {
-                Some(t) => format!("{} - {}", h.name, t.description),
-                None => h.name.clone(),
-            }
+        .map(|(lang, template_indices)| {
+            let count = template_indices.len();
+            let template_word = if count == 1 { "template" } else { "templates" };
+            format!("{lang} ({count} {template_word})")
         })
         .collect();
-    client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
-    client_choices.push("None".to_string());
+    lang_items.push("Clone from GitHub (owner/repo or git URL)".to_string());
+    lang_items.push("None".to_string());
 
-    let client_selection = Select::with_theme(&theme)
-        .with_prompt("Select a client type for your project (you can add other clients later)")
-        .items(&client_choices)
-        .default(0)
-        .interact()?;
-
-    let other_index = highlights.len();
-    let none_index = highlights.len() + 1;
-
-    if client_selection < highlights.len() {
-        let highlight = &highlights[client_selection];
-        let template = templates
-            .iter()
-            .find(|t| t.id == highlight.template_id)
-            .ok_or_else(|| anyhow::anyhow!("Template {} not found", highlight.template_id))?;
-
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Builtin,
-            server_lang: parse_server_lang(&template.server_lang)?,
-            client_lang: parse_client_lang(&template.client_lang)?,
-            github_repo: None,
-            template_def: Some(template.clone()),
-            use_local: true,
-        })
-    } else if client_selection == other_index {
-        println!("\n{}", "Available built-in templates:".bold());
-        for template in &templates {
-            println!("  {} - {}", template.id, template.description);
-        }
-        println!();
-
-        loop {
-            let template_id = Input::<String>::with_theme(&theme)
-                .with_prompt("Template ID or GitHub repository (owner/repo) or git URL")
-                .interact_text()?
-                .trim()
-                .to_string();
-            let template_config = create_template_config_from_template_str(
-                project_name.clone(),
-                project_path.clone(),
-                &template_id,
-                &templates,
-            );
-            // If template_id looks like a builtin template ID (e.g. kebab-case, all lowercase, no slashes, alphanumeric and dashes only)
-            // then ensure that it is a valid builtin template ID, if not reprompt
-            let is_builtin_like = |s: &str| {
-                !s.is_empty()
-                    && !s.contains('/')
-                    && s.chars()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-            };
-            if !is_builtin_like(&template_id) {
-                break template_config;
-            }
-            if templates.iter().any(|t| t.id == template_id) {
-                break template_config;
-            }
-            eprintln!(
-                "{}",
-                "Unrecognized format. Enter a built-in ID (e.g. \"rust-chat\"), a GitHub repo (\"owner/repo\"), or a git URL."
-                    .bold()
-            );
-        }
-    } else if client_selection == none_index {
-        // Ask for server language only
-        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
-        let server_selection = Select::with_theme(&theme)
-            .with_prompt("Select server language")
-            .items(&server_lang_choices)
+    let github_clone_index = lang_keys.len();
+    let none_index = lang_keys.len() + 1;
+    loop {
+        let client_selection = FuzzySelect::with_theme(&theme)
+            .with_prompt("Select a language (type to filter)")
+            .items(&lang_items)
             .default(0)
             .interact()?;
 
-        let server_lang = match server_selection {
-            0 => Some(ServerLanguage::Rust),
-            1 => Some(ServerLanguage::Csharp),
-            2 => Some(ServerLanguage::TypeScript),
-            _ => unreachable!("Invalid server language selection"),
-        };
+        if client_selection < lang_keys.len() {
+            let selected_lang = &lang_keys[client_selection];
+            let template_indices = templates_by_lang
+                .get(selected_lang)
+                .ok_or_else(|| anyhow::anyhow!("No templates found for selected language"))?;
 
-        Ok(TemplateConfig {
-            project_name,
-            project_path,
-            template_type: TemplateType::Empty,
-            server_lang,
-            client_lang: None,
-            github_repo: None,
-            template_def: None,
-            use_local: true,
-        })
-    } else {
-        unreachable!("Invalid selection index")
+            let template = if template_indices.len() > 1 {
+                let template_items: Vec<String> = template_indices
+                    .iter()
+                    .map(|&idx| {
+                        let template = &templates[idx];
+                        format!("{} - {}", template.id, template.description)
+                    })
+                    .collect();
+
+                let pair_prompt = format!("Templates available for {selected_lang} (type to filter, Esc to go back)");
+                let template_selection = FuzzySelect::with_theme(&theme)
+                    .with_prompt(&pair_prompt)
+                    .items(&template_items)
+                    .default(0)
+                    .interact_opt()?;
+
+                let Some(template_selection) = template_selection else {
+                    continue;
+                };
+
+                &templates[template_indices[template_selection]]
+            } else {
+                &templates[template_indices[0]]
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Builtin,
+                server_lang: parse_server_lang(&template.server_lang)?,
+                client_lang: parse_client_lang(&template.client_lang)?,
+                github_repo: None,
+                template_def: Some(template.clone()),
+                use_local: true,
+                native_aot: false,
+            });
+        } else if client_selection == github_clone_index {
+            return loop {
+                let repo_input = Input::<String>::with_theme(&theme)
+                    .with_prompt("GitHub repository (owner/repo) or git URL")
+                    .interact_text()?
+                    .trim()
+                    .to_string();
+                if repo_input.is_empty() {
+                    eprintln!("{}", "Please enter a GitHub repository.".bold());
+                    continue;
+                }
+                break create_template_config_from_template_str(
+                    project_name.clone(),
+                    project_path.clone(),
+                    &repo_input,
+                    &templates,
+                );
+            };
+        } else if client_selection == none_index {
+            // Ask for server language only
+            let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
+            let server_selection = Select::with_theme(&theme)
+                .with_prompt("Select server language")
+                .items(&server_lang_choices)
+                .default(0)
+                .interact()?;
+
+            let server_lang = match server_selection {
+                0 => Some(ServerLanguage::Rust),
+                1 => Some(ServerLanguage::Csharp),
+                2 => Some(ServerLanguage::TypeScript),
+                _ => unreachable!("Invalid server language selection"),
+            };
+
+            return Ok(TemplateConfig {
+                project_name,
+                project_path,
+                template_type: TemplateType::Empty,
+                server_lang,
+                client_lang: None,
+                github_repo: None,
+                template_def: None,
+                use_local: true,
+                native_aot: false,
+            });
+        } else {
+            unreachable!("Invalid selection index");
+        }
+    }
+}
+
+fn format_language_label(lang: Option<&str>) -> String {
+    match lang {
+        Some(value) if value.eq_ignore_ascii_case("rust") => "Rust".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("csharp") || value.eq_ignore_ascii_case("c#") => "C#".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("typescript") => "TypeScript".to_string(),
+        Some(value) if value.eq_ignore_ascii_case("cpp") || value.eq_ignore_ascii_case("c++") => "C++".to_string(),
+        Some(value) if !value.trim().is_empty() => value.to_string(),
+        _ => "None".to_string(),
     }
 }
 
@@ -761,10 +959,10 @@ fn clone_github_template(repo_input: &str, target: &Path, is_server_only: bool) 
     let mut callbacks = git2::RemoteCallbacks::new();
 
     callbacks.credentials(|_url, username_from_url, allowed_types| {
-        if allowed_types.contains(git2::CredentialType::SSH_KEY) {
-            if let Some(username) = username_from_url {
-                return git2::Cred::ssh_key_from_agent(username);
-            }
+        if allowed_types.contains(git2::CredentialType::SSH_KEY)
+            && let Some(username) = username_from_url
+        {
+            return git2::Cred::ssh_key_from_agent(username);
         }
         if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
             return git2::Cred::userpass_plaintext("", "");
@@ -830,10 +1028,10 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     package["name"] = json!(package_name);
 
     // Update spacetimedb version if it exists in dependencies
-    if let Some(deps) = package.get_mut("dependencies") {
-        if deps.get("spacetimedb").is_some() {
-            deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
-        }
+    if let Some(deps) = package.get_mut("dependencies")
+        && deps.get("spacetimedb").is_some()
+    {
+        deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
     }
 
     let updated_content = serde_json::to_string_pretty(&package)?;
@@ -866,40 +1064,40 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
         .collect::<String>();
 
-    if let Some(package_item) = doc.get_mut("package") {
-        if let Some(package_table) = package_item.as_table_mut() {
-            package_table["name"] = value(safe_name);
-            if let Some(edition_item) = package_table.get_mut("edition") {
-                if edition_uses_workspace(edition_item) {
-                    *edition_item = value(embedded::get_workspace_edition());
-                }
-            }
+    if let Some(package_item) = doc.get_mut("package")
+        && let Some(package_table) = package_item.as_table_mut()
+    {
+        package_table["name"] = value(safe_name);
+        if let Some(edition_item) = package_table.get_mut("edition")
+            && edition_uses_workspace(edition_item)
+        {
+            *edition_item = value(embedded::get_workspace_edition());
         }
     }
 
-    if let Some(deps_item) = doc.get_mut("dependencies") {
-        if let Some(deps_table) = deps_item.as_table_mut() {
-            let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
-            for key in keys {
-                if let Some(dep_item) = deps_table.get_mut(&key) {
-                    if dependency_uses_workspace(dep_item) {
-                        if has_path(dep_item) {
-                            if key == "spacetimedb" {
-                                if let Some(version) = embedded::get_workspace_dependency_version(&key) {
-                                    set_dependency_version(dep_item, version, true);
-                                }
-                            } else if key == "spacetimedb-sdk" {
-                                set_dependency_version(dep_item, patch_wildcard.as_str(), true);
-                            }
-                            continue;
+    if let Some(deps_item) = doc.get_mut("dependencies")
+        && let Some(deps_table) = deps_item.as_table_mut()
+    {
+        let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
+        for key in keys {
+            if let Some(dep_item) = deps_table.get_mut(&key)
+                && dependency_uses_workspace(dep_item)
+            {
+                if has_path(dep_item) {
+                    if key == "spacetimedb" {
+                        if let Some(version) = embedded::get_workspace_dependency_version(&key) {
+                            set_dependency_version(dep_item, version, true);
                         }
-
-                        if uses_workspace(dep_item) {
-                            if let Some(version) = embedded::get_workspace_dependency_version(&key) {
-                                set_dependency_version(dep_item, version, key == "spacetimedb");
-                            }
-                        }
+                    } else if key == "spacetimedb-sdk" {
+                        set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                     }
+                    continue;
+                }
+
+                if uses_workspace(dep_item)
+                    && let Some(version) = embedded::get_workspace_dependency_version(&key)
+                {
+                    set_dependency_version(dep_item, version, key == "spacetimedb");
                 }
             }
         }
@@ -979,20 +1177,20 @@ fn find_first_csproj(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
 /// Remove every <ProjectReference/> under any <ItemGroup>
 fn remove_all_project_references(project: &mut Element) {
     for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node {
-            if item_group.name == "ItemGroup" {
-                item_group
-                    .children
-                    .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
-            }
+        if let XMLNode::Element(item_group) = node
+            && item_group.name == "ItemGroup"
+        {
+            item_group
+                .children
+                .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
         }
     }
     // Optional: prune empty ItemGroups
     project.children.retain(|n| {
-        if let XMLNode::Element(el) = n {
-            if el.name == "ItemGroup" {
-                return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
-            }
+        if let XMLNode::Element(el) = n
+            && el.name == "ItemGroup"
+        {
+            return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
         }
         true
     });
@@ -1002,19 +1200,18 @@ fn remove_all_project_references(project: &mut Element) {
 fn upsert_packageref(project: &mut Element, include: &str, version: &str) {
     // Try to find an existing PackageReference
     for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node {
-            if item_group.name == "ItemGroup" {
-                if let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
-                    matches!(n,
-                        XMLNode::Element(e)
-                        if e.name == "PackageReference"
-                           && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
-                    )
-                }) {
-                    existing.attributes.insert("Version".to_string(), version.to_string());
-                    return;
-                }
-            }
+        if let XMLNode::Element(item_group) = node
+            && item_group.name == "ItemGroup"
+            && let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
+                matches!(n,
+                    XMLNode::Element(e)
+                    if e.name == "PackageReference"
+                       && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
+                )
+            })
+        {
+            existing.attributes.insert("Version".to_string(), version.to_string());
+            return;
         }
     }
     // Otherwise create one in (or create) an ItemGroup
@@ -1072,13 +1269,13 @@ fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
     Ok(String::from_utf8(result)?)
 }
 
-/// Just do 1.* for now
+/// Just do 2.* for now
 fn get_spacetimedb_csharp_runtime_version() -> String {
-    "1.*".to_string()
+    "2.*".to_string()
 }
 
 fn get_spacetimedb_csharp_clientsdk_version() -> String {
-    "1.*".to_string()
+    "2.*".to_string()
 }
 
 /// Writes a `.env.local` file that includes all common
@@ -1145,7 +1342,6 @@ pub async fn init_from_template(
     install_ai_rules(config, project_path)?;
 
     println!("{}", "Project initialized successfully!".green());
-    print_next_steps(config, project_path)?;
 
     Ok(())
 }
@@ -1320,41 +1516,41 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
     match (config.template_type, config.server_lang, config.client_lang) {
         (TemplateType::Builtin, Some(ServerLanguage::Rust), Some(ClientLanguage::Rust)) => {
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             println!("  cargo run");
         }
         (TemplateType::Builtin, Some(ServerLanguage::TypeScript), Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb");
             println!("  npm run dev");
         }
         (TemplateType::Builtin, Some(ServerLanguage::Csharp), Some(ClientLanguage::Csharp)) => {
             println!(
-                "  spacetime publish --project-path spacetimedb {}{}",
+                "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang csharp --out-dir module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb");
         }
         (TemplateType::Empty, _, Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");
             if config.server_lang.is_some() {
                 println!(
-                    "  spacetime publish --project-path spacetimedb {}{}",
+                    "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
                 println!(
-                    "  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+                    "  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
                 );
             }
             println!("  npm run dev");
@@ -1362,11 +1558,11 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
         (TemplateType::Empty, _, Some(ClientLanguage::Rust)) => {
             if config.server_lang.is_some() {
                 println!(
-                    "  spacetime publish --project-path spacetimedb {}{}",
+                    "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
-                println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+                println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             }
             println!("  cargo run");
         }
@@ -1470,16 +1666,30 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
-    println!("{UNSTABLE_WARNING}\n");
-
-    let is_interactive = !args.get_flag("non-interactive");
-    let template = args.get_one::<String>("template");
-    let server_lang = args.get_one::<String>("lang");
-    let project_name_arg = args.get_one::<String>("project-name");
+    let options = InitOptions::from_args(args);
+    let is_interactive = !options.non_interactive;
+    let template = options.template.as_ref();
+    let server_lang = options.lang.as_ref();
+    let project_name_arg = options.project_name.as_ref();
 
     // Validate that template and lang options are not used together
     if template.is_some() && server_lang.is_some() {
         anyhow::bail!("Cannot specify both --template and --lang. Language is determined by the template.");
+    }
+
+    // Validate that --native-aot is only used with C# projects
+    if options.native_aot {
+        if let Some(lang) = server_lang
+            && lang.to_lowercase() != "csharp"
+            && lang.to_lowercase() != "c#"
+        {
+            anyhow::bail!("--native-aot is only supported for C# projects (--lang csharp)");
+        }
+        // Print warning about Windows-only support
+        println!(
+            "{}",
+            "Note: NativeAOT-LLVM is experimental and building for this platform is currently only supported on Windows.".yellow()
+        );
     }
 
     if !is_interactive {
@@ -1492,7 +1702,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
         }
     }
 
-    exec_init(&mut config, args, is_interactive).await
+    exec_with_options(&mut config, &options).await
 }
 
 pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
@@ -1543,6 +1753,62 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
+
+    Ok(())
+}
+
+/// Adds NativeAOT-LLVM package references to an existing C# .csproj file and creates NuGet.Config.
+/// This is called when `--native-aot` is specified during `spacetime init`.
+fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> {
+    let csproj_path = project_path.join("StdbModule.csproj");
+    if !csproj_path.exists() {
+        anyhow::bail!("Could not find StdbModule.csproj at {}", csproj_path.display());
+    }
+
+    let content = std::fs::read_to_string(&csproj_path)?;
+
+    // The NativeAOT-LLVM ItemGroup to add
+    let native_aot_item_group = r#"
+  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+  </ItemGroup>
+"#;
+
+    // Insert the ItemGroup before the closing </Project> tag
+    let new_content = if let Some(pos) = content.rfind("</Project>") {
+        let (before, after) = content.split_at(pos);
+        format!("{}{}{}", before.trim_end(), native_aot_item_group, after)
+    } else {
+        anyhow::bail!("Invalid .csproj file: missing </Project> tag");
+    };
+
+    std::fs::write(&csproj_path, new_content)?;
+    println!(
+        "{} Added NativeAOT-LLVM package references to {}",
+        "✓".green(),
+        csproj_path.display()
+    );
+
+    // Create NuGet.Config with the dotnet-experimental feed required for NativeAOT-LLVM packages
+    let nuget_config_path = project_path.join("NuGet.Config");
+    let nuget_config_content = r#"<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+"#;
+
+    std::fs::write(&nuget_config_path, nuget_config_content)?;
+    println!(
+        "{} Created {} with dotnet-experimental feed",
+        "✓".green(),
+        nuget_config_path.display()
+    );
 
     Ok(())
 }
@@ -1682,15 +1948,15 @@ fn has_path(item: &Item) -> bool {
 }
 
 fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
-    if let Item::Value(val) = item {
-        if let Some(inline) = val.as_inline_table_mut() {
-            inline.remove("workspace");
-            if remove_path {
-                inline.remove("path");
-            }
-            inline.insert("version", toml_edit::Value::from(version.to_string()));
-            return;
+    if let Item::Value(val) = item
+        && let Some(inline) = val.as_inline_table_mut()
+    {
+        inline.remove("workspace");
+        if remove_path {
+            inline.remove("path");
         }
+        inline.insert("version", toml_edit::Value::from(version.to_string()));
+        return;
     }
 
     if let Item::Table(table) = item {
@@ -1781,13 +2047,13 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
 /// Strip YAML frontmatter from .mdc files (the --- delimited section at the start)
 fn strip_mdc_frontmatter(content: &str) -> &str {
     // Look for frontmatter: starts with --- and ends with ---
-    if let Some(after_opening) = content.strip_prefix("---") {
-        if let Some(end_idx) = after_opening.find("\n---") {
-            // Skip past the closing --- and the newline after it
-            let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
-                                                           // Skip any leading newlines after frontmatter
-            return remaining.trim_start_matches('\n');
-        }
+    if let Some(after_opening) = content.strip_prefix("---")
+        && let Some(end_idx) = after_opening.find("\n---")
+    {
+        // Skip past the closing --- and the newline after it
+        let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
+                                                       // Skip any leading newlines after frontmatter
+        return remaining.trim_start_matches('\n');
     }
     content
 }
@@ -1837,4 +2103,83 @@ fn check_for_emscripten_and_cmake() -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_default_spacetime_config_if_missing_creates_expected_config() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
+
+        let created = create_default_spacetime_config_if_missing(project_path, false)
+            .unwrap()
+            .expect("expected config to be created");
+        assert_eq!(created, project_path.join("spacetime.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed.get("database").is_none());
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("maincloud"));
+        assert_eq!(
+            parsed.get("module-path").and_then(|v| v.as_str()),
+            Some("./spacetimedb")
+        );
+        assert!(parsed.get("native-aot").is_none());
+    }
+
+    #[test]
+    fn test_create_default_spacetime_config_with_native_aot() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
+
+        let created = create_default_spacetime_config_if_missing(project_path, true)
+            .unwrap()
+            .expect("expected config to be created");
+        assert_eq!(created, project_path.join("spacetime.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.get("native-aot").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn test_create_local_spacetime_config_if_missing_creates_database_override() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
+
+        let created = create_local_spacetime_config_if_missing(project_path, "my-app-abc12")
+            .unwrap()
+            .expect("expected local config to be created");
+        assert_eq!(created, project_path.join("spacetime.local.json"));
+
+        let content = std::fs::read_to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let db = parsed
+            .get("database")
+            .and_then(|v| v.as_str())
+            .expect("database should be present");
+
+        assert_eq!(db, "my-app-abc12");
+
+        let obj = parsed.as_object().expect("local config should be a JSON object");
+        assert_eq!(obj.len(), 1, "local config should only contain database");
+    }
+
+    #[test]
+    fn test_get_local_database_name_uses_explicit_default_without_suffix() {
+        let options = InitOptions {
+            database_name_default: Some("my-explicit-db".to_string()),
+            ..Default::default()
+        };
+
+        let db = get_local_database_name(&options, "my-project", false).unwrap();
+        assert_eq!(db, "my-explicit-db");
+    }
 }

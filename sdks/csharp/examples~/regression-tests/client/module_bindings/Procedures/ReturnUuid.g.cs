@@ -69,7 +69,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            string IProcedureArgs.ProcedureName => "ReturnUuid";
+            string IProcedureArgs.ProcedureName => "return_uuid";
         }
 
     }

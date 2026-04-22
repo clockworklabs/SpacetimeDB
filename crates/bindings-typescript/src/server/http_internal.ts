@@ -10,7 +10,6 @@ import {
 } from '../lib/http_types';
 import type { TimeDuration } from '../lib/time_duration';
 import { bsatnBaseSize } from '../lib/util';
-import type { Infer } from '../sdk';
 import { sys } from './runtime';
 
 export { Headers };
@@ -27,6 +26,15 @@ export interface ResponseInit {
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8' /* { fatal: true } */);
+
+function deserializeHeaders(headers: HttpHeaders): Headers {
+  return new Headers(
+    headers.entries.map(({ name, value }): [string, string] => [
+      name,
+      textDecoder.decode(value),
+    ])
+  );
+}
 
 const makeResponse = Symbol('makeResponse');
 
@@ -139,7 +147,7 @@ export interface HttpClient {
 
 const requestBaseSize = bsatnBaseSize({ types: [] }, HttpRequest.algebraicType);
 
-const methods = new Map<string, Infer<typeof HttpMethod>>([
+const methods = new Map<string, HttpMethod>([
   ['GET', { tag: 'Get' }],
   ['HEAD', { tag: 'Head' }],
   ['POST', { tag: 'Post' }],
@@ -156,14 +164,14 @@ function fetch(url: URL | string, init: RequestOptions = {}) {
     tag: 'Extension',
     value: init.method!,
   };
-  const headers: Infer<typeof HttpHeaders> = {
+  const headers: HttpHeaders = {
     // anys because the typings are wonky - see comment in SyncResponse.constructor
     entries: headersToList(new Headers(init.headers as any) as any)
       .flatMap(([k, v]) => (Array.isArray(v) ? v.map(v => [k, v]) : [[k, v]]))
       .map(([name, value]) => ({ name, value: textEncoder.encode(value) })),
   };
   const uri = '' + url;
-  const request: Infer<typeof HttpRequest> = freeze({
+  const request: HttpRequest = freeze({
     method,
     headers,
     timeout: init.timeout,
@@ -188,7 +196,7 @@ function fetch(url: URL | string, init: RequestOptions = {}) {
     url: uri,
     status: response.code,
     statusText: status(response.code),
-    headers: new Headers(),
+    headers: deserializeHeaders(response.headers),
     aborted: false,
   });
 }

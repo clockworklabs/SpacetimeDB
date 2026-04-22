@@ -23,10 +23,10 @@ use spacetimedb_sats::Typespace;
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
 use crate::db::raw_def::v10::RawConstraintDefV10;
-use crate::db::raw_def::v10::RawIndexDefV10;
 use crate::db::raw_def::v10::RawScopedTypeNameV10;
 use crate::db::raw_def::v10::RawSequenceDefV10;
 use crate::db::raw_def::v10::RawTypeDefV10;
+use crate::db::view::extract_view_return_product_type_ref;
 
 /// A not-yet-validated `sql`.
 pub type RawSql = Box<str>;
@@ -125,16 +125,7 @@ impl RawModuleDefV9 {
     fn type_ref_for_view(&self, view_name: &str) -> Option<AlgebraicTypeRef> {
         self.find_view_def(view_name)
             .map(|view_def| &view_def.return_type)
-            .and_then(|return_type| {
-                return_type
-                    .as_option()
-                    .and_then(|inner| inner.clone().into_ref().ok())
-                    .or_else(|| {
-                        return_type
-                            .as_array()
-                            .and_then(|inner| inner.elem_ty.clone().into_ref().ok())
-                    })
-            })
+            .and_then(|return_type| extract_view_return_product_type_ref(return_type).map(|(ref_, _)| ref_))
     }
 
     /// Find and return the product type ref for a table or view in this module def
@@ -1067,16 +1058,6 @@ impl From<RawScopedTypeNameV10> for RawScopedTypeNameV9 {
         RawScopedTypeNameV9 {
             scope: raw.scope,
             name: raw.source_name,
-        }
-    }
-}
-
-impl From<RawIndexDefV10> for RawIndexDefV9 {
-    fn from(raw: RawIndexDefV10) -> Self {
-        RawIndexDefV9 {
-            name: raw.source_name,
-            accessor_name: raw.accessor_name,
-            algorithm: raw.algorithm,
         }
     }
 }

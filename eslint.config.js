@@ -16,7 +16,12 @@ export default tseslint.config(
     },
   }),
   {
-    ignores: ['**/dist/**', '**/build/**', '**/coverage/**'],
+    ignores: [
+      '**/dist/**',
+      '**/build/**',
+      '**/coverage/**',
+      '**/templates/angular-ts/.angular/**',
+    ],
   },
   js.configs.recommended,
   {
@@ -47,6 +52,7 @@ export default tseslint.config(
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
           './templates/basic-ts/tsconfig.json',
+          './templates/angular-ts/tsconfig.app.json',
           './docs/tsconfig.json',
         ],
         projectService: true,
@@ -95,6 +101,25 @@ export default tseslint.config(
         'error',
         { allowObjectTypes: 'always' },
       ],
+    },
+  },
+  {
+    files: ['templates/angular-ts/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TSEnumDeclaration',
+          message: 'Do not use enums; stick to JS-compatible types.',
+        },
+        {
+          selector: 'TSEnumDeclaration[const=true]',
+          message: 'Do not use const enum; use unions or objects.',
+        },
+      ],
+      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+      'react-refresh/only-export-components': 'off',
     },
   }
 );

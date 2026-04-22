@@ -57,7 +57,7 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             _ => Type::ANYARRAY,
         },
         AlgebraicType::Product(_) => match format {
-            PsqlPrintFmt::Hex => Type::BYTEA_ARRAY,
+            PsqlPrintFmt::Hex => Type::BYTEA,
             PsqlPrintFmt::Timestamp => Type::TIMESTAMP,
             PsqlPrintFmt::Duration => Type::INTERVAL,
             PsqlPrintFmt::Uuid => Type::UUID,
@@ -147,13 +147,12 @@ impl TypedWriter for PsqlFormatter<'_> {
         value: ValueWithType<AlgebraicValue>,
     ) -> Result<(), Self::Error> {
         // Is a simple enum?
-        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type {
-            if sum.is_simple_enum() {
-                if let Some(variant_name) = name {
-                    self.encoder.encode_field(&variant_name)?;
-                    return Ok(());
-                }
-            }
+        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type
+            && sum.is_simple_enum()
+            && let Some(variant_name) = name
+        {
+            self.encoder.encode_field(&variant_name)?;
+            return Ok(());
         }
 
         let PsqlChars { start, sep, end, quote } = ty.client.format_chars();
