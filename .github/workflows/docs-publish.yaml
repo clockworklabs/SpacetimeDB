@@ -38,12 +38,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - name: Install dependencies
+        working-directory: docs
+        run: pnpm install
 
       - name: Docusaurus build
-        run: cargo ci docs
+        working-directory: docs
+        run: pnpm build
 
       - name: Publish docs to S3
         uses: shallwefootball/s3-upload-action@master
