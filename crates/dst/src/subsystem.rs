@@ -25,10 +25,15 @@ pub trait DstSubsystem {
 /// Result of one fully executed deterministic run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunRecord<C, E, O> {
+    /// Human-readable subsystem name used in logs and replay diagnostics.
     pub subsystem: &'static str,
+    /// Top-level seed that produced this run.
     pub seed: DstSeed,
+    /// Full generated or loaded input case.
     pub case: C,
+    /// Optional execution trace collected while the case ran.
     pub trace: Option<Trace<E>>,
+    /// Final target-specific outcome after execution completes.
     pub outcome: O,
 }
 

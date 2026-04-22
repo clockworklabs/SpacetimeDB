@@ -6,11 +6,19 @@ license-file = "LICENSE"
 description = "Deterministic simulation testing utilities for SpacetimeDB crates"
 rust-version.workspace = true
 
+[[bin]]
+name = "spacetimedb-dst"
+path = "src/main.rs"
+bench = false
+
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 spacetimedb-datastore = { workspace = true, features = ["test"] }
+spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.1.0" }
+spacetimedb_durability = { package = "spacetimedb-durability", path = "../durability", version = "=2.1.0" }
 spacetimedb-execution.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true

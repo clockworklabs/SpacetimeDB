@@ -7,10 +7,15 @@
 /// One event plus optional metadata captured during execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StampedEvent<E> {
+    /// Monotonic step number within the trace.
     pub step_id: u64,
+    /// Optional logical time supplied by a scheduler-style simulation.
     pub logical_time: Option<u64>,
+    /// Optional actor identity for actor-driven simulations.
     pub actor_id: Option<u64>,
+    /// Optional resource identity such as a lock, table, or replica id.
     pub resource_id: Option<u64>,
+    /// Target-specific event payload.
     pub event: E,
 }
 
