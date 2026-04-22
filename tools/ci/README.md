@@ -204,7 +204,7 @@ Usage: publish-checks
 
 **Options:**
 
-- `--help`: 
+- `--help`: Print help
 
 ### `typescript-test`
 
@@ -215,7 +215,7 @@ Usage: typescript-test
 
 **Options:**
 
-- `--help`: 
+- `--help`: Print help
 
 ### `docs`
 
@@ -226,7 +226,7 @@ Usage: docs
 
 **Options:**
 
-- `--help`: 
+- `--help`: Print help
 
 ### `csharp-tests`
 
@@ -237,7 +237,7 @@ Usage: csharp-tests
 
 **Options:**
 
-- `--help`: 
+- `--help`: Print help
 
 ### `unity-tests`
 
@@ -248,7 +248,7 @@ Usage: unity-tests
 
 **Options:**
 
-- `--help`: 
+- `--help`: Print help
 
 ### `help`
 
