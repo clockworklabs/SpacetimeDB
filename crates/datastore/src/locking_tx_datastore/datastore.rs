@@ -2,8 +2,6 @@ use super::{
     committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -23,17 +21,24 @@ use crate::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
     },
 };
-use anyhow::anyhow;
+use crate::{
+    execution_context::{Workload, WorkloadType},
+    system_tables::StTableRow,
+};
+use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
-use parking_lot::{Mutex, RwLock};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
+use spacetimedb_commitlog::payload::txdata;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{bsatn, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{
+    algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
+};
+use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
@@ -1011,6 +1016,292 @@ pub enum ReplayError {
     Any(#[from] anyhow::Error),
 }
 
+/// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
+/// history into the database state.
+pub struct Replay<F> {
+    database_identity: Identity,
+    committed_state: Arc<RwLock<CommittedState>>,
+    progress: RefCell<F>,
+    error_behavior: ErrorBehavior,
+}
+
+impl<F> Replay<F> {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
+        let mut committed_state = self.committed_state.write();
+        let mut visitor = ReplayVisitor {
+            database_identity: &self.database_identity,
+            committed_state: &mut committed_state,
+            progress: &mut *self.progress.borrow_mut(),
+            dropped_table_names: IntMap::default(),
+            error_behavior: self.error_behavior,
+        };
+        f(&mut visitor)
+    }
+
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state.read_arc().next_tx_offset
+    }
+
+    pub fn committed_state(&self) -> RwLockReadGuard<'_, CommittedState> {
+        self.committed_state.read()
+    }
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
+    type Record = txdata::Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
+
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        self.using_visitor(|visitor| txdata::decode_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        _tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::skip_record_fn(visitor, version, reader))
+    }
+}
+
+// n.b. (Tyler) We actually **do not** want to check constraints at replay
+// time because not only is it a pain, but actually **subtly wrong** the
+// way we have it implemented. It's wrong because the actual constraints of
+// the database may change as different transactions are added to the
+// schema and you would actually have to change your indexes and
+// constraints as you replayed the log. This we are not currently doing
+// (we're building all the non-bootstrapped indexes at the end after
+// replaying), and thus aren't implementing constraint checking correctly
+// as it stands.
+//
+// However, the above is all rendered moot anyway because we don't need to
+// check constraints while replaying if we just assume that they were all
+// checked prior to the transaction committing in the first place.
+//
+// Note also that operation/mutation ordering **does not** matter for
+// operations inside a transaction of the message log assuming we only ever
+// insert **OR** delete a unique row in one transaction. If we ever insert
+// **AND** delete then order **does** matter. The issue caused by checking
+// constraints for each operation while replaying does not imply that order
+// matters. Ordering of operations would **only** matter if you wanted to
+// view the state of the database as of a partially applied transaction. We
+// never actually want to do this, because after a transaction has been
+// committed, it is assumed that all operations happen instantaneously and
+// atomically at the timestamp of the transaction. The only time that we
+// actually want to view the state of a database while a transaction is
+// partially applied is while the transaction is running **before** it
+// commits. Thus, we only care about operation ordering while the
+// transaction is running, but we do not care about it at all in the
+// context of the commit log.
+//
+// Not caring about the order in the log, however, requires that we **do
+// not** check index constraints during replay of transaction operations.
+// We **could** check them in between transactions if we wanted to update
+// the indexes and constraints as they changed during replay, but that is
+// unnecessary.
+
+/// What to do when encountering an error during commitlog replay due to an invalid TX.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ErrorBehavior {
+    /// Return an error and refuse to continue.
+    ///
+    /// This is the behavior in production, as we don't want to reconstruct an incorrect state.
+    FailFast,
+    /// Log a warning and continue replay.
+    ///
+    /// This behavior is used when inspecting broken commitlogs during debugging.
+    Warn,
+}
+
+struct ReplayVisitor<'a, F> {
+    database_identity: &'a Identity,
+    committed_state: &'a mut CommittedState,
+    progress: &'a mut F,
+    // Since deletes are handled before truncation / drop, sometimes the schema
+    // info is gone. We save the name on the first delete of that table so metrics
+    // can still show a name.
+    dropped_table_names: IntMap<TableId, TableName>,
+    error_behavior: ErrorBehavior,
+}
+
+impl<F> ReplayVisitor<'_, F> {
+    /// Process `err` according to `self.error_behavior`,
+    /// either warning about it or returning it.
+    ///
+    /// If this method returns an `Err`, the caller should bubble up that error with `?`.
+    fn process_error(&self, err: ReplayError) -> std::result::Result<(), ReplayError> {
+        match self.error_behavior {
+            ErrorBehavior::FailFast => Err(err),
+            ErrorBehavior::Warn => {
+                log::warn!("{err:?}");
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
+    type Error = ReplayError;
+    // NOTE: Technically, this could be `()` if and when we can extract the
+    // row data without going through `ProductValue` (PV).
+    // To accommodate auxiliary traversals (e.g. for analytics), we may want to
+    // provide a separate visitor yielding PVs.
+    type Row = ProductValue;
+
+    fn skip_row<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        let schema = self.committed_state.schema_for_table(table_id)?;
+        ProductValue::decode(schema.get_row_type(), reader)?;
+        Ok(())
+    }
+
+    fn visit_insert<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self.committed_state.schema_for_table(table_id)?;
+        let row = ProductValue::decode(schema.get_row_type(), reader)?;
+
+        if let Err(e) = self
+            .committed_state
+            .replay_insert(table_id, &schema, &row)
+            .with_context(|| {
+                format!(
+                    "Error inserting row {:?} during transaction {:?} playback",
+                    row, self.committed_state.next_tx_offset
+                )
+            })
+        {
+            self.process_error(e.into())?;
+        }
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_identity, &table_id.into(), &schema.table_name)
+            .inc();
+
+        Ok(row)
+    }
+
+    fn visit_delete<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self.committed_state.schema_for_table(table_id)?;
+        // TODO: avoid clone
+        let table_name = schema.table_name.clone();
+        let row = ProductValue::decode(schema.get_row_type(), reader)?;
+
+        // If this is a delete from the `st_table` system table, save the name
+        if table_id == ST_TABLE_ID {
+            let ab = AlgebraicValue::Product(row.clone());
+            let st_table_row = StTableRow::deserialize(ValueDeserializer::from_ref(&ab)).unwrap();
+            self.dropped_table_names
+                .insert(st_table_row.table_id, st_table_row.table_name);
+        }
+
+        if let Err(e) = self
+            .committed_state
+            .replay_delete_by_rel(table_id, &row)
+            .with_context(|| {
+                format!(
+                    "Error deleting row {:?} from table {:?} during transaction {:?} playback",
+                    row, table_name, self.committed_state.next_tx_offset
+                )
+            })
+        {
+            self.process_error(e.into())?;
+        }
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_identity, &table_id.into(), &table_name)
+            .dec();
+
+        Ok(row)
+    }
+
+    fn visit_truncate(&mut self, table_id: TableId) -> std::result::Result<(), Self::Error> {
+        let table_name = match self.committed_state.schema_for_table(table_id) {
+            // TODO: avoid clone
+            Ok(schema) => schema.table_name.clone(),
+
+            Err(_) => match self.dropped_table_names.remove(&table_id) {
+                Some(name) => name,
+                _ => {
+                    return self
+                        .process_error(anyhow!("Error looking up name for truncated table {table_id:?}").into());
+                }
+            },
+        };
+
+        if let Err(e) = self.committed_state.replay_truncate(table_id).with_context(|| {
+            format!(
+                "Error truncating table {:?} during transaction {:?} playback",
+                table_id, self.committed_state.next_tx_offset
+            )
+        }) {
+            self.process_error(e.into())?;
+        }
+
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_identity, &table_id.into(), &table_name)
+            .set(0);
+
+        Ok(())
+    }
+
+    fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
+        // The first transaction in a history must have the same offset as the
+        // committed state.
+        //
+        // (Technically, the history should guarantee that all subsequent
+        // transaction offsets are contiguous, but we don't currently have a
+        // good way to only check the first transaction.)
+        //
+        // Note that this is not a panic, because the starting offset can be
+        // chosen at runtime.
+        if offset != self.committed_state.next_tx_offset {
+            return Err(ReplayError::InvalidOffset {
+                expected: self.committed_state.next_tx_offset,
+                encountered: offset,
+            });
+        }
+        (self.progress)(offset);
+
+        Ok(())
+    }
+
+    fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
+        self.committed_state.replay_end_tx().map_err(Into::into)
+    }
+}
+
 /// Construct a [`Metadata`] from the given [`RowRef`],
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
@@ -1022,7 +1313,7 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
@@ -1152,7 +1443,7 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
+    fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
         product![a, b, c]
     }
 
@@ -1310,11 +1601,11 @@ pub(crate) mod tests {
         datastore.begin_tx(Workload::ForTests)
     }
 
-    pub(crate) fn begin_mut_tx(datastore: &Locking) -> MutTxId {
+    fn begin_mut_tx(datastore: &Locking) -> MutTxId {
         datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
     }
 
-    pub(crate) fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
+    fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
         let (_, tx_data, _, _) = datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`");
         Ok(tx_data)
     }
@@ -1439,7 +1730,7 @@ pub(crate) mod tests {
         u32_str_u32(42, "foo", 24)
     }
 
-    pub(crate) fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
+    fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
         datastore
             .iter_mut_tx(tx, table_id)
             .unwrap()
@@ -3501,7 +3792,7 @@ pub(crate) mod tests {
     }
 
     /// Create an event table with the basic schema (id: u32, name: String, age: u32).
-    pub(crate) fn setup_event_table() -> ResultTest<(Locking, MutTxId, TableId)> {
+    fn setup_event_table() -> ResultTest<(Locking, MutTxId, TableId)> {
         let datastore = get_datastore()?;
         let mut tx = begin_mut_tx(&datastore);
         let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
@@ -3589,6 +3880,34 @@ pub(crate) mod tests {
         // But committed state should be empty.
         let tx = begin_mut_tx(&datastore);
         assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_event_table_replay_ignores_inserts() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        // Commit the table-creation tx so the schema exists.
+        commit(&datastore, tx)?;
+
+        // Get the schema for this event table.
+        let tx = begin_mut_tx(&datastore);
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Directly call replay_insert on committed state.
+        let row = u32_str_u32(1, "Carol", 40);
+        {
+            let mut committed_state = datastore.committed_state.write();
+            committed_state.replay_insert(table_id, &schema, &row)?;
+        }
+
+        // After replay, the event table should still have no committed rows.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            all_rows(&datastore, &tx, table_id).len(),
+            0,
+            "replay_insert should be a no-op for event tables"
+        );
         Ok(())
     }
 
