@@ -30,7 +30,7 @@ use crate::{
     seed::DstSeed,
     targets::{
         harness::{self, TableTargetHarness},
-        properties::{self, TargetPropertyAccess, TargetPropertyState},
+        properties::{PropertyRuntime, TargetPropertyAccess},
     },
     workload::table_ops::{
         ConnectionWriteState, TableScenarioId, TableWorkloadEngine, TableWorkloadInteraction, TableWorkloadOutcome,
@@ -64,7 +64,7 @@ struct RelationalDbEngine {
     db: RelationalDB,
     table_ids: Vec<TableId>,
     execution: ConnectionWriteState<RelMutTx>,
-    properties: TargetPropertyState,
+    properties: PropertyRuntime,
     step: u64,
 }
 
@@ -77,7 +77,7 @@ impl RelationalDbEngine {
             db,
             table_ids,
             execution: ConnectionWriteState::new(num_connections),
-            properties: TargetPropertyState::default(),
+            properties: PropertyRuntime::default(),
             step: 0,
         })
     }
@@ -218,13 +218,13 @@ impl RelationalDbEngine {
             .map_err(|err| format!("range scan failed: {err}"))
     }
 
-    fn with_property_state<T>(
+    fn with_property_runtime<T>(
         &mut self,
-        f: impl FnOnce(&TargetPropertyState, &Self) -> Result<T, String>,
+        f: impl FnOnce(&mut PropertyRuntime, &Self) -> Result<T, String>,
     ) -> Result<T, String> {
-        let state = std::mem::take(&mut self.properties);
-        let result = f(&state, self);
-        self.properties = state;
+        let mut runtime = std::mem::take(&mut self.properties);
+        let result = f(&mut runtime, self);
+        self.properties = runtime;
         result
     }
 }
@@ -288,7 +288,9 @@ impl TableWorkloadEngine for RelationalDbEngine {
                     .commit_tx(tx)
                     .map_err(|err| format!("commit failed on connection {conn}: {err}"))?;
                 self.execution.active_writer = None;
-                self.with_property_state(|state, access| properties::on_commit_or_rollback(state, access))?;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_commit_or_rollback(access)
+                })?;
             }
             RelationalDbInteraction::RollbackTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "rollback")?;
@@ -297,7 +299,9 @@ impl TableWorkloadEngine for RelationalDbEngine {
                     .ok_or_else(|| format!("connection {conn} has no transaction to rollback"))?;
                 let _ = self.db.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
-                self.with_property_state(|state, access| properties::on_commit_or_rollback(state, access))?;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_commit_or_rollback(access)
+                })?;
             }
             RelationalDbInteraction::Insert { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -308,8 +312,8 @@ impl TableWorkloadEngine for RelationalDbEngine {
                     Ok(())
                 })?;
                 let step = self.step;
-                self.with_property_state(|state, access| {
-                    properties::on_insert(state, access, step, *conn, *table, row, in_tx)
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_insert(access, step, *conn, *table, row, in_tx)
                 })?;
             }
             RelationalDbInteraction::Delete { conn, table, row } => {
@@ -322,8 +326,8 @@ impl TableWorkloadEngine for RelationalDbEngine {
                     Ok(())
                 })?;
                 let step = self.step;
-                self.with_property_state(|state, access| {
-                    properties::on_delete(state, access, step, *conn, *table, row, in_tx)
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_delete(access, step, *conn, *table, row, in_tx)
                 })?;
             }
         }

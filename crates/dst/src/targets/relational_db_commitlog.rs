@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    ops::Bound,
     time::Instant,
 };
 
@@ -34,6 +35,7 @@ use crate::{
     core::NextInteractionSource,
     schema::{SchemaPlan, SimRow},
     seed::{DstRng, DstSeed},
+    targets::properties::{PropertyRuntime, TargetPropertyAccess},
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
         table_ops::{ConnectionWriteState, TableScenario, TableScenarioId, TableWorkloadInteraction},
@@ -104,6 +106,7 @@ struct RelationalDbCommitlogEngine {
     commitlog: MockCommitlogFs,
     last_durable_snapshot: DurableSnapshot,
     pending_snapshot_capture: bool,
+    properties: PropertyRuntime,
 }
 
 type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
@@ -121,6 +124,7 @@ impl RelationalDbCommitlogEngine {
             commitlog: MockCommitlogFs::new(seed.fork(700)),
             last_durable_snapshot: BTreeMap::new(),
             pending_snapshot_capture: false,
+            properties: PropertyRuntime::default(),
         };
         this.initialize_program().map_err(anyhow::Error::msg)?;
         this.install_base_schema().map_err(anyhow::Error::msg)?;
@@ -222,6 +226,9 @@ impl RelationalDbCommitlogEngine {
                 self.commit_tx_capture(tx, "commit interaction")?;
                 self.execution.active_writer = None;
                 self.capture_pending_snapshot_if_idle()?;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_commit_or_rollback(access)
+                })?;
                 Ok(())
             }
             TableWorkloadInteraction::RollbackTx { conn } => {
@@ -232,6 +239,9 @@ impl RelationalDbCommitlogEngine {
                 let _ = self.db.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
                 self.capture_pending_snapshot_if_idle()?;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_commit_or_rollback(access)
+                })?;
                 Ok(())
             }
             TableWorkloadInteraction::Insert { conn, table, row } => {
@@ -251,7 +261,10 @@ impl RelationalDbCommitlogEngine {
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
-                self.check_insert_select(*conn, *table, row)
+                let step = self.step as u64;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_insert(access, step, *conn, *table, row, in_tx)
+                })
             }
             TableWorkloadInteraction::Delete { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -269,7 +282,10 @@ impl RelationalDbCommitlogEngine {
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
-                self.check_delete_select(*conn, *table, row)
+                let step = self.step as u64;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_delete(access, step, *conn, *table, row, in_tx)
+                })
             }
         }
     }
@@ -479,25 +495,58 @@ impl RelationalDbCommitlogEngine {
         }
     }
 
-    fn check_insert_select(&self, conn: usize, table: usize, row: &SimRow) -> Result<(), String> {
-        let id = row.id().ok_or_else(|| "row missing id column".to_string())?;
-        let found = self.lookup_base_row(conn, table, id)?;
-        if found != Some(row.clone()) {
-            return Err(format!(
-                "[PQS::InsertSelect] row not visible after insert on conn={conn}, table={table}, expected={row:?}, actual={found:?}"
-            ));
-        }
-        Ok(())
+    fn count_rows_for_property(&self, table: usize) -> Result<usize, String> {
+        let table_id = self.table_id_for_index(table)?;
+        let tx = self.db.begin_tx(Workload::ForTests);
+        let total = self
+            .db
+            .iter(&tx, table_id)
+            .map_err(|err| format!("scan failed: {err}"))?
+            .count();
+        let _ = self.db.release_tx(tx);
+        Ok(total)
     }
 
-    fn check_delete_select(&self, conn: usize, table: usize, row: &SimRow) -> Result<(), String> {
-        let id = row.id().ok_or_else(|| "row missing id column".to_string())?;
-        if self.lookup_base_row(conn, table, id)?.is_some() {
-            return Err(format!(
-                "[DeleteSelect] row still visible after delete on conn={conn}, table={table}, row={row:?}"
-            ));
-        }
-        Ok(())
+    fn count_by_col_eq_for_property(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String> {
+        let table_id = self.table_id_for_index(table)?;
+        let tx = self.db.begin_tx(Workload::ForTests);
+        let total = self
+            .db
+            .iter_by_col_eq(&tx, table_id, col, value)
+            .map_err(|err| format!("predicate query failed: {err}"))?
+            .count();
+        let _ = self.db.release_tx(tx);
+        Ok(total)
+    }
+
+    fn range_scan_for_property(
+        &self,
+        table: usize,
+        cols: &[u16],
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) -> Result<Vec<SimRow>, String> {
+        let table_id = self.table_id_for_index(table)?;
+        let tx = self.db.begin_tx(Workload::ForTests);
+        let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
+        let rows = self
+            .db
+            .iter_by_col_range(&tx, table_id, cols, (lower, upper))
+            .map_err(|err| format!("range scan failed: {err}"))?
+            .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+            .collect::<Vec<_>>();
+        let _ = self.db.release_tx(tx);
+        Ok(rows)
+    }
+
+    fn with_property_runtime<T>(
+        &mut self,
+        f: impl FnOnce(&mut PropertyRuntime, &Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut runtime = std::mem::take(&mut self.properties);
+        let result = f(&mut runtime, self);
+        self.properties = runtime;
+        result
     }
 
     fn collect_rows_by_id(&self, table_id: TableId) -> Result<Vec<SimRow>, String> {
@@ -555,6 +604,39 @@ impl RelationalDbCommitlogEngine {
             }
         }
         self.execution.active_writer = None;
+    }
+}
+
+impl TargetPropertyAccess for RelationalDbCommitlogEngine {
+    fn schema_plan(&self) -> &SchemaPlan {
+        &self.base_schema
+    }
+
+    fn lookup_in_connection(&self, conn: usize, table: usize, id: u64) -> Result<Option<SimRow>, String> {
+        Self::lookup_base_row(self, conn, table, id)
+    }
+
+    fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String> {
+        let table_id = self.table_id_for_index(table)?;
+        Self::collect_rows_by_id(self, table_id)
+    }
+
+    fn count_rows(&self, table: usize) -> Result<usize, String> {
+        Self::count_rows_for_property(self, table)
+    }
+
+    fn count_by_col_eq(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String> {
+        Self::count_by_col_eq_for_property(self, table, col, value)
+    }
+
+    fn range_scan(
+        &self,
+        table: usize,
+        cols: &[u16],
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) -> Result<Vec<SimRow>, String> {
+        Self::range_scan_for_property(self, table, cols, lower, upper)
     }
 }
 

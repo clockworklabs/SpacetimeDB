@@ -27,7 +27,7 @@ use crate::{
     seed::DstSeed,
     targets::{
         harness::{self, TableTargetHarness},
-        properties::{self, TargetPropertyAccess, TargetPropertyState},
+        properties::{PropertyRuntime, TargetPropertyAccess},
     },
     workload::table_ops::{
         ConnectionWriteState, TableScenarioId, TableWorkloadEngine, TableWorkloadInteraction, TableWorkloadOutcome,
@@ -61,7 +61,7 @@ struct DatastoreEngine {
     datastore: Locking,
     table_ids: Vec<TableId>,
     execution: ConnectionWriteState<MutTxId>,
-    properties: TargetPropertyState,
+    properties: PropertyRuntime,
     step: u64,
 }
 
@@ -74,7 +74,7 @@ impl DatastoreEngine {
             datastore,
             table_ids,
             execution: ConnectionWriteState::new(num_connections),
-            properties: TargetPropertyState::default(),
+            properties: PropertyRuntime::default(),
             step: 0,
         })
     }
@@ -202,13 +202,13 @@ impl DatastoreEngine {
             .map_err(|err| format!("range scan failed: {err}"))
     }
 
-    fn with_property_state<T>(
+    fn with_property_runtime<T>(
         &mut self,
-        f: impl FnOnce(&TargetPropertyState, &Self) -> Result<T, String>,
+        f: impl FnOnce(&mut PropertyRuntime, &Self) -> Result<T, String>,
     ) -> Result<T, String> {
-        let state = std::mem::take(&mut self.properties);
-        let result = f(&state, self);
-        self.properties = state;
+        let mut runtime = std::mem::take(&mut self.properties);
+        let result = f(&mut runtime, self);
+        self.properties = runtime;
         result
     }
 }
@@ -274,7 +274,9 @@ impl TableWorkloadEngine for DatastoreEngine {
                     .commit_mut_tx(tx)
                     .map_err(|err| format!("commit failed on connection {conn}: {err}"))?;
                 self.execution.active_writer = None;
-                self.with_property_state(|state, access| properties::on_commit_or_rollback(state, access))?;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_commit_or_rollback(access)
+                })?;
             }
             Interaction::RollbackTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "rollback")?;
@@ -283,7 +285,9 @@ impl TableWorkloadEngine for DatastoreEngine {
                     .ok_or_else(|| format!("connection {conn} has no transaction to rollback"))?;
                 let _ = self.datastore.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
-                self.with_property_state(|state, access| properties::on_commit_or_rollback(state, access))?;
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_commit_or_rollback(access)
+                })?;
             }
             Interaction::Insert { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -295,8 +299,8 @@ impl TableWorkloadEngine for DatastoreEngine {
                     Ok(())
                 })?;
                 let step = self.step;
-                self.with_property_state(|state, access| {
-                    properties::on_insert(state, access, step, *conn, *table, row, in_tx)
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_insert(access, step, *conn, *table, row, in_tx)
                 })?;
             }
             Interaction::Delete { conn, table, row } => {
@@ -309,8 +313,8 @@ impl TableWorkloadEngine for DatastoreEngine {
                     Ok(())
                 })?;
                 let step = self.step;
-                self.with_property_state(|state, access| {
-                    properties::on_delete(state, access, step, *conn, *table, row, in_tx)
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_delete(access, step, *conn, *table, row, in_tx)
                 })?;
             }
         }
