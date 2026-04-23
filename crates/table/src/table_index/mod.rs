@@ -1871,7 +1871,7 @@ impl TypedIndex {
             BTreeI256 <=> UniqueBTreeI256 : |k: &i256, _: &AlgebraicType| AlgebraicValue::I256(Box::new(*k)),
             BTreeF32 <=> UniqueBTreeF32 : |k: &F32, _: &AlgebraicType| AlgebraicValue::F32(*k),
             BTreeF64 <=> UniqueBTreeF64 : |k: &F64, _: &AlgebraicType| AlgebraicValue::F64(*k),
-            BTreeString <=> UniqueBTreeString : |k: &Box<str>, _: &AlgebraicType| AlgebraicValue::String(k.clone()),
+            BTreeString <=> UniqueBTreeString : |k: &str, _: &AlgebraicType| AlgebraicValue::String(k.into()),
             BTreeAV <=> UniqueBTreeAV : |k: &AlgebraicValue, _: &AlgebraicType| k.clone(),
             BTreeBytesKey8 <=> UniqueBTreeBytesKey8
                 : |k: &RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>, ty: &AlgebraicType|
@@ -1906,7 +1906,7 @@ impl TypedIndex {
             HashI256 <=> UniqueHashI256 : |k: &i256, _: &AlgebraicType| AlgebraicValue::I256(Box::new(*k)),
             HashF32 <=> UniqueHashF32 : |k: &F32, _: &AlgebraicType| AlgebraicValue::F32(*k),
             HashF64 <=> UniqueHashF64 : |k: &F64, _: &AlgebraicType| AlgebraicValue::F64(*k),
-            HashString <=> UniqueHashString : |k: &Box<str>, _: &AlgebraicType| AlgebraicValue::String(k.clone()),
+            HashString <=> UniqueHashString : |k: &str, _: &AlgebraicType| AlgebraicValue::String(k.into()),
             HashAV <=> UniqueHashAV : |k: &AlgebraicValue, _: &AlgebraicType| k.clone(),
             HashBytesKey8 <=> UniqueHashBytesKey8
                 : |k: &BytesKey<BYTES_KEY_SIZE_8_H>, ty: &AlgebraicType|
