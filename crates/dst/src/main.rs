@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use spacetimedb_dst::{
     config::RunConfig,
     seed::DstSeed,
-    targets::{datastore, relational_db},
+    targets::{datastore, relational_db, relational_db_commitlog},
     workload::table_ops::TableScenarioId,
 };
 
@@ -68,6 +68,7 @@ struct ShrinkArgs {
 enum TargetKind {
     Datastore,
     RelationalDb,
+    RelationalDbCommitlog,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -88,11 +89,25 @@ impl From<ScenarioKind> for TableScenarioId {
 }
 
 fn main() -> anyhow::Result<()> {
+    init_tracing();
     match Cli::parse().command {
         Command::Run(args) => run_command(args),
         Command::Replay(args) => replay_command(args),
         Command::Shrink(args) => shrink_command(args),
     }
+}
+
+fn init_tracing() {
+    use tracing_subscriber::{fmt, EnvFilter};
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .compact()
+        .try_init();
 }
 
 fn run_command(args: RunArgs) -> anyhow::Result<()> {
@@ -103,6 +118,7 @@ fn run_command(args: RunArgs) -> anyhow::Result<()> {
     match args.target.target {
         TargetKind::Datastore => run_datastore(seed, scenario, config, args.save_case),
         TargetKind::RelationalDb => run_relational(seed, scenario, config, args.save_case),
+        TargetKind::RelationalDbCommitlog => run_relational_commitlog(seed, scenario, config, args.save_case),
     }
 }
 
@@ -110,6 +126,7 @@ fn replay_command(args: ReplayArgs) -> anyhow::Result<()> {
     match args.target.target {
         TargetKind::Datastore => replay_datastore(&args.path),
         TargetKind::RelationalDb => replay_relational(&args.path),
+        TargetKind::RelationalDbCommitlog => replay_relational_commitlog(&args.path),
     }
 }
 
@@ -117,6 +134,7 @@ fn shrink_command(args: ShrinkArgs) -> anyhow::Result<()> {
     match args.target.target {
         TargetKind::Datastore => shrink_datastore(&args.path, args.save_shrunk.as_ref()),
         TargetKind::RelationalDb => shrink_relational(&args.path, args.save_shrunk.as_ref()),
+        TargetKind::RelationalDbCommitlog => shrink_relational_commitlog(&args.path, args.save_shrunk.as_ref()),
     }
 }
 
@@ -148,27 +166,17 @@ fn run_datastore(
     config: RunConfig,
     save_case: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    if config.max_duration_ms.is_some() {
-        if save_case.is_some() {
-            anyhow::bail!("duration-based streamed runs do not support save-case");
-        }
-        let outcome = datastore::run_generated_with_config_and_scenario(seed, scenario, config)?;
-        println!(
-            "ok target=datastore seed={} tables={} row_counts={:?}",
-            seed.0,
-            outcome.final_rows.len(),
-            outcome.final_row_counts
-        );
-        return Ok(());
+    if save_case.is_some() {
+        anyhow::bail!("save-case is not supported in streaming run mode");
     }
-
-    let max_interactions = config.max_interactions.unwrap_or(1_000);
-    let case = datastore::materialize_case(seed, scenario, max_interactions);
-    if let Some(path) = &save_case {
-        datastore::save_case(path, &case)?;
-        println!("saved_case={}", path.display());
-    }
-    replay_datastore_case(&case)
+    let outcome = datastore::run_generated_with_config_and_scenario(seed, scenario, config)?;
+    println!(
+        "ok target=datastore seed={} tables={} row_counts={:?}",
+        seed.0,
+        outcome.final_rows.len(),
+        outcome.final_row_counts
+    );
+    Ok(())
 }
 
 fn run_relational(
@@ -177,27 +185,34 @@ fn run_relational(
     config: RunConfig,
     save_case: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    if config.max_duration_ms.is_some() {
-        if save_case.is_some() {
-            anyhow::bail!("duration-based streamed runs do not support save-case");
-        }
-        let outcome = relational_db::run_generated_with_config_and_scenario(seed, scenario, config)?;
-        println!(
-            "ok target=relational_db seed={} tables={} row_counts={:?}",
-            seed.0,
-            outcome.final_rows.len(),
-            outcome.final_row_counts
-        );
-        return Ok(());
+    if save_case.is_some() {
+        anyhow::bail!("save-case is not supported in streaming run mode");
     }
+    let outcome = relational_db::run_generated_with_config_and_scenario(seed, scenario, config)?;
+    println!(
+        "ok target=relational_db seed={} tables={} row_counts={:?}",
+        seed.0,
+        outcome.final_rows.len(),
+        outcome.final_row_counts
+    );
+    Ok(())
+}
 
-    let max_interactions = config.max_interactions.unwrap_or(1_000);
-    let case = relational_db::materialize_case(seed, scenario, max_interactions);
-    if let Some(path) = &save_case {
-        relational_db::save_case(path, &case)?;
-        println!("saved_case={}", path.display());
+fn run_relational_commitlog(
+    seed: DstSeed,
+    scenario: TableScenarioId,
+    config: RunConfig,
+    save_case: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    if save_case.is_some() {
+        anyhow::bail!("save-case is not supported in streaming run mode");
     }
-    replay_relational_case(&case)
+    let outcome = relational_db_commitlog::run_generated_with_config_and_scenario(seed, scenario, config)?;
+    println!(
+        "ok target=relational_db_commitlog seed={} steps={} durable_commits={} replay_tables={}",
+        seed.0, outcome.applied_steps, outcome.durable_commit_count, outcome.replay_table_count
+    );
+    Ok(())
 }
 
 fn replay_datastore(path: &Path) -> anyhow::Result<()> {
@@ -208,6 +223,11 @@ fn replay_datastore(path: &Path) -> anyhow::Result<()> {
 fn replay_relational(path: &Path) -> anyhow::Result<()> {
     let case = relational_db::load_case(path)?;
     replay_relational_case(&case)
+}
+
+fn replay_relational_commitlog(path: &Path) -> anyhow::Result<()> {
+    let case = relational_db_commitlog::load_case(path)?;
+    replay_relational_commitlog_case(&case)
 }
 
 fn replay_datastore_case(case: &datastore::DatastoreSimulatorCase) -> anyhow::Result<()> {
@@ -250,6 +270,25 @@ fn replay_relational_case(case: &relational_db::RelationalDbSimulatorCase) -> an
     }
 }
 
+fn replay_relational_commitlog_case(case: &relational_db_commitlog::RelationalDbCommitlogCase) -> anyhow::Result<()> {
+    match relational_db_commitlog::run_case_detailed(case) {
+        Ok(outcome) => {
+            println!(
+                "ok target=relational_db_commitlog seed={} steps={} durable_commits={} replay_tables={}",
+                case.seed.0, outcome.applied_steps, outcome.durable_commit_count, outcome.replay_table_count
+            );
+            Ok(())
+        }
+        Err(failure) => {
+            println!(
+                "fail target=relational_db_commitlog seed={} step={} reason={}",
+                case.seed.0, failure.step_index, failure.reason
+            );
+            anyhow::bail!("relational_db_commitlog case failed")
+        }
+    }
+}
+
 fn shrink_datastore(path: &Path, save_shrunk: Option<&PathBuf>) -> anyhow::Result<()> {
     let case = datastore::load_case(path)?;
     let failure = datastore::run_case_detailed(&case).expect_err("shrink needs failing datastore case");
@@ -266,6 +305,17 @@ fn shrink_relational(path: &Path, save_shrunk: Option<&PathBuf>) -> anyhow::Resu
     let shrunk = relational_db::shrink_failure(&case, &failure)?;
     let out = shrunk_path(path, save_shrunk);
     relational_db::save_case(&out, &shrunk)?;
+    println!("shrunk_case={}", out.display());
+    Ok(())
+}
+
+fn shrink_relational_commitlog(path: &Path, save_shrunk: Option<&PathBuf>) -> anyhow::Result<()> {
+    let case = relational_db_commitlog::load_case(path)?;
+    let failure = relational_db_commitlog::run_case_detailed(&case)
+        .expect_err("shrink needs failing relational_db_commitlog case");
+    let shrunk = relational_db_commitlog::shrink_failure(&case, &failure)?;
+    let out = shrunk_path(path, save_shrunk);
+    relational_db_commitlog::save_case(&out, &shrunk)?;
     println!("shrunk_case={}", out.display());
     Ok(())
 }
