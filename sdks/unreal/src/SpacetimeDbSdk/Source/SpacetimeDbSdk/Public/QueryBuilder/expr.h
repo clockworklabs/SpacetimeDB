@@ -322,7 +322,7 @@ public:
     template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> ne(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Ne, rhs); }
     template<typename TRhs>
-    [[nodiscard]] BoolExpr<TRow> Neq(const TRhs& rhs) const { return ne(rhs); }
+    [[nodiscard]] BoolExpr<TRow> Ne(const TRhs& rhs) const { return ne(rhs); }
     template<typename TRhs>
     [[nodiscard]] BoolExpr<TRow> gt(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Gt, rhs); }
     template<typename TRhs>

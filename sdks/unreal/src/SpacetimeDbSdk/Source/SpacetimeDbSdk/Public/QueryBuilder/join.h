@@ -11,6 +11,14 @@ namespace SpacetimeDB::query_builder {
 template<typename TLeftRow, typename TRightRow, typename TValue>
 struct IxJoinEq;
 
+template<typename TRow, auto MemberPtr>
+struct member_tag {};
+
+inline std::false_type indexed_member_lookup(...);
+
+template<typename TRow, auto MemberPtr>
+inline constexpr bool is_indexed_member_v = decltype(indexed_member_lookup(member_tag<TRow, MemberPtr>{}))::value;
+
 template<typename TRow, typename TValue>
 class IxCol {
 public:
@@ -48,6 +56,13 @@ private:
     template<typename, typename>
     friend class IxCol;
 };
+
+namespace detail {
+
+template<typename, typename TRow, auto MemberPtr>
+inline constexpr bool delayed_is_indexed_member_v = is_indexed_member_v<TRow, MemberPtr>;
+
+} // namespace detail
 
 template<typename TLeftRow, typename TRightRow, typename TValue>
 struct IxJoinEq {
