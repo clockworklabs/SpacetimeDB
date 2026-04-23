@@ -3,7 +3,7 @@ use super::{
     tx_state::TxState,
 };
 use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
+use crate::locking_tx_datastore::replay::{build_sequence_state, ErrorBehavior, Replay};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -68,7 +68,7 @@ pub struct Locking {
     // made private again.
     pub committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
-    sequence_state: Arc<Mutex<SequencesState>>,
+    pub(super) sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
 }
@@ -117,11 +117,7 @@ impl Locking {
         commit_state.bootstrap_system_tables(database_identity)?;
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
-        {
-            let sequence_state = commit_state.build_sequence_state()?;
-            // Reset our sequence state so that they start in the right places.
-            *datastore.sequence_state.lock() = sequence_state;
-        }
+        build_sequence_state(&datastore, &mut commit_state)?;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -130,38 +126,6 @@ impl Locking {
 
         log::trace!("DATABASE:BOOTSTRAPPING SYSTEM TABLES DONE");
         Ok(datastore)
-    }
-
-    /// The purpose of this is to rebuild the state of the datastore
-    /// after having inserted all of rows from the message log.
-    /// This is necessary because, for example, inserting a row into `st_table`
-    /// is not equivalent to calling `create_table`.
-    /// There may eventually be better way to do this, but this will have to do for now.
-    pub fn rebuild_state_after_replay(&self) -> Result<()> {
-        let mut committed_state = self.committed_state.write_arc();
-
-        // Prior versions of `RelationalDb::migrate_system_tables` (defined in the `core` crate)
-        // initialized newly-created system sequences to `allocation: 4097`,
-        // while `committed_state::bootstrap_system_tables` sets `allocation: 4096`.
-        // This affected the system table migration which added
-        // `st_view_view_id_seq` and `st_view_arg_id_seq`.
-        // As a result, when replaying these databases' commitlogs without a snapshot,
-        // we will end up with two rows in `st_sequence` for each of these sequences,
-        // resulting in a unique constraint violation in `CommittedState::build_indexes`.
-        // We fix this by, for each system sequence, deleting all but the row with the highest allocation.
-        committed_state.fixup_delete_duplicate_system_sequence_rows();
-
-        // `build_missing_tables` must be called before indexes.
-        // Honestly this should maybe just be one big procedure.
-        // See John Carmack's philosophy on this.
-        committed_state.reschema_tables()?;
-        committed_state.build_missing_tables()?;
-        committed_state.build_indexes()?;
-        // Figure out where to pick up for each sequence.
-        *self.sequence_state.lock() = committed_state.build_sequence_state()?;
-
-        committed_state.collect_ephemeral_tables()?;
-        Ok(())
     }
 
     /// Obtain a [`spacetimedb_commitlog::Decoder`] suitable for replaying a
@@ -242,11 +206,7 @@ impl Locking {
         // Set the sequence state. In practice we will end up doing this again after replaying
         // the commit log, but we do it here too just to avoid having an incorrectly restored
         // snapshot.
-        {
-            let sequence_state = committed_state.build_sequence_state()?;
-            // Reset our sequence state so that they start in the right places.
-            *datastore.sequence_state.lock() = sequence_state;
-        }
+        build_sequence_state(&datastore, &mut committed_state)?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
