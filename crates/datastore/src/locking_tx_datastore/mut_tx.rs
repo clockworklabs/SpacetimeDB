@@ -691,8 +691,7 @@ impl MutTxId {
 
         // Insert into st_event_table if this is an event table.
         if is_event {
-            let row = StEventTableRow { table_id };
-            self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
+            self.insert_st_event_table_row(table_id)?;
         }
 
         // Create the indexes for the table.
@@ -1099,8 +1098,7 @@ impl MutTxId {
 
         // Update `st_event_table`.
         if is_event {
-            let row = StEventTableRow { table_id };
-            self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
+            self.insert_st_event_table_row(table_id)?;
         } else {
             self.delete_st_event_table_row(table_id)?;
         }
@@ -1108,6 +1106,13 @@ impl MutTxId {
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterEventFlag(table_id, old_is_event));
 
+        Ok(())
+    }
+
+    /// Inserts a row into `st_event_table` marking `table_id` as an event table.
+    fn insert_st_event_table_row(&mut self, table_id: TableId) -> Result<()> {
+        let row = StEventTableRow { table_id };
+        self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
         Ok(())
     }
 

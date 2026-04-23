@@ -2393,82 +2393,53 @@ mod tests {
     }
 
     #[test]
-    fn test_change_event_flag_produces_step_non_to_event() {
-        // non-event → event
-        let old = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .finish();
-        });
-        let new = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .with_event(true)
-                .finish();
-        });
-
-        let events_key = expect_identifier("events");
-        let plan = ponder_auto_migrate(&old, &new).expect("toggling `is_event` on an empty table should succeed");
-        assert_eq!(
-            plan.steps,
-            &[
-                AutoMigrateStep::ChangeEventFlag(&events_key),
-                AutoMigrateStep::DisconnectAllUsers,
-            ],
-        );
-        assert!(plan.disconnects_all_users(), "{plan:#?}");
-    }
-
-    #[test]
-    fn test_change_event_flag_produces_step_event_to_non() {
-        // event → non-event
-        let old = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .with_event(true)
-                .finish();
-        });
-        let new = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .finish();
-        });
-
-        let events_key = expect_identifier("events");
-        let plan = ponder_auto_migrate(&old, &new).expect("toggling `is_event` on an empty table should succeed");
-        assert_eq!(
-            plan.steps,
-            &[
-                AutoMigrateStep::ChangeEventFlag(&events_key),
-                AutoMigrateStep::DisconnectAllUsers,
-            ],
-        );
-        assert!(plan.disconnects_all_users(), "{plan:#?}");
+    fn test_change_event_flag_produces_step() {
+        let build = |is_event: bool| {
+            create_v10_module_def(|builder| {
+                builder
+                    .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_event(is_event)
+                    .finish();
+            })
+        };
+        let assert_flip = |old_is_event: bool, new_is_event: bool| {
+            let old = build(old_is_event);
+            let new = build(new_is_event);
+            let events_key = expect_identifier("events");
+            let plan = ponder_auto_migrate(&old, &new)
+                .expect("toggling `is_event` on an empty table should succeed");
+            assert_eq!(
+                plan.steps,
+                &[
+                    AutoMigrateStep::ChangeEventFlag(&events_key),
+                    AutoMigrateStep::DisconnectAllUsers,
+                ],
+            );
+            assert!(plan.disconnects_all_users(), "{plan:#?}");
+        };
+        assert_flip(false, true);
+        assert_flip(true, false);
     }
 
     #[test]
     fn test_change_event_flag_does_not_produce_orphan_sub_object_steps() {
         // Flipping `is_event` must not trigger spurious index/constraint/sequence diff steps
         // for a table whose only change is the `is_event` annotation.
-        let old = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .with_unique_constraint(0)
-                .with_index(btree(0), "events_id_idx", "events_id_idx")
-                .with_primary_key(0)
-                .finish();
-        });
-        let new = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .with_unique_constraint(0)
-                .with_index(btree(0), "events_id_idx", "events_id_idx")
-                .with_primary_key(0)
-                .with_event(true)
-                .finish();
-        });
+        let build = |is_event: bool| {
+            create_v10_module_def(|builder| {
+                builder
+                    .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_unique_constraint(0)
+                    .with_index(btree(0), "events_id_idx", "events_id_idx")
+                    .with_primary_key(0)
+                    .with_event(is_event)
+                    .finish();
+            })
+        };
 
         let events_key = expect_identifier("events");
+        let old = build(false);
+        let new = build(true);
         let plan = ponder_auto_migrate(&old, &new).expect("toggling `is_event` on an empty table should succeed");
         assert_eq!(
             plan.steps,

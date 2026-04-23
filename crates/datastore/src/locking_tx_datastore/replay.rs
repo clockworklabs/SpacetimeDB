@@ -822,6 +822,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         // If we haven't yet, then `self.get_table_and_blob_store_or_create` will see the correct schema
         // (via `schema_for_table_raw`'s live `st_event_table` lookup) when it eventually runs.
         if let Ok((table, ..)) = self.get_table_and_blob_store_mut(table_id) {
+            assert_eq!(table.num_rows(), 0);
             table.with_mut_schema(|schema| {
                 schema.is_event = is_event;
             });
