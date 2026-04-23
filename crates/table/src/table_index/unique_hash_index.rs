@@ -101,6 +101,8 @@ impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
     fn iter(&self) -> Self::Iter<'_> {
         self.map.values().copied()
     }
+
+    const IS_RANGED: bool = false;
 }
 
 impl<K: KeySize + Eq + Hash> UniqueHashIndex<K> {

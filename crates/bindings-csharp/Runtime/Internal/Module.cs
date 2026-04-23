@@ -206,36 +206,6 @@ partial class RawModuleDefV10
 
 public static class Module
 {
-    // Workaround for NativeAOT-LLVM IL scanner bug:
-    // The scanner fails to compute vtables for TaggedEnum<T> base types when
-    // concrete subtypes are only encountered indirectly (e.g., through Equals
-    // calls on types containing TaggedEnum fields). This occurs when no user
-    // table has indexes/primary keys, so RawIndexAlgorithm is never directly
-    // constructed in user code.
-    // By referencing concrete TaggedEnum subtypes here, we ensure the IL scanner
-    // always processes their vtables. One variant per TaggedEnum is sufficient.
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static void EnsureNativeAotTypeRoots()
-    {
-        // These constructions are never executed at runtime — they exist solely
-        // to make the IL scanner compute vtables for TaggedEnum subtypes.
-        // The condition is always false but the scanner must assume it could be true.
-        if (Environment.TickCount < 0 && Environment.TickCount > 0)
-        {
-            _ = new RawIndexAlgorithm.BTree(null!);
-            _ = new RawConstraintDataV9.Unique(null!);
-            _ = new RawModuleDef.V10(null!);
-            _ = new RawModuleDefV10Section.Typespace(null!);
-            _ = new ExplicitNameEntry.Table(null!);
-            _ = new MiscModuleExport.TypeAlias(null!);
-            _ = new RawMiscModuleExportV9.ColumnDefaultValue(null!);
-            _ = new SpacetimeDB.Filter.Sql(null!);
-            _ = new ViewResultHeader.RowData(default);
-        }
-    }
-
     private static readonly RawModuleDefV10 moduleDef = new();
 
     private static readonly List<IReducer> reducers = [];
@@ -449,7 +419,6 @@ public static class Module
 
     public static void __describe_module__(BytesSink description)
     {
-        EnsureNativeAotTypeRoots();
         try
         {
             var module = moduleDef.BuildModuleDefinition();

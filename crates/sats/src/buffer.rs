@@ -329,6 +329,14 @@ pub struct CountWriter {
 }
 
 impl CountWriter {
+    /// Run `work` on `writer`, but also count the number of bytes written.
+    pub fn run<W: BufWriter, R>(writer: W, work: impl FnOnce(&mut TeeWriter<W, CountWriter>) -> R) -> (R, usize) {
+        let counter = Self::default();
+        let mut writer = TeeWriter::new(writer, counter);
+        let ret = work(&mut writer);
+        (ret, writer.w2.finish())
+    }
+
     /// Consumes the counter and returns the final count.
     pub fn finish(self) -> usize {
         self.num_bytes

@@ -31,7 +31,7 @@ pub struct DurabilityExited;
 /// The handle is valid for as long as the [`Durability`] instance it was
 /// obtained from is live, i.e. able to persist transactions. When the instance
 /// shuts down or crashes, methods will return errors of type [`DurabilityExited`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DurableOffset {
     // TODO: `watch::Receiver::wait_for` will hold a shared lock until all
     // subscribers have seen the current value. Although it may skip entries,
