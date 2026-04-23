@@ -254,22 +254,40 @@ impl<'a> Record<'a> {
 }
 
 pub trait BacktraceProvider {
-    fn capture(&self) -> Box<dyn ModuleBacktrace>;
+    fn capture(&self) -> Box<dyn ModuleBacktrace + '_>;
 }
 
 impl BacktraceProvider for () {
-    fn capture(&self) -> Box<dyn ModuleBacktrace> {
-        Box::new(())
+    fn capture(&self) -> Box<dyn ModuleBacktrace + '_> {
+        struct Empty;
+        impl ModuleBacktrace for Empty {
+            fn frames(&self) -> Box<dyn Iterator<Item = BacktraceFrame<'_>> + '_> {
+                Box::new(std::iter::empty())
+            }
+        }
+        Box::new(Empty)
+    }
+}
+
+impl<T: ModuleBacktrace> BacktraceProvider for T {
+    fn capture(&self) -> Box<dyn ModuleBacktrace + '_> {
+        Box::new(self)
     }
 }
 
 pub trait ModuleBacktrace {
-    fn frames(&self) -> Vec<BacktraceFrame<'_>>;
+    fn frames(&self) -> Box<dyn Iterator<Item = BacktraceFrame<'_>> + '_>;
 }
 
-impl ModuleBacktrace for () {
-    fn frames(&self) -> Vec<BacktraceFrame<'_>> {
-        vec![]
+impl<T: ModuleBacktrace> ModuleBacktrace for &T {
+    fn frames(&self) -> Box<dyn Iterator<Item = BacktraceFrame<'_>> + '_> {
+        (**self).frames()
+    }
+}
+
+impl serde::Serialize for dyn ModuleBacktrace + '_ {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.frames())
     }
 }
 
@@ -278,9 +296,37 @@ impl ModuleBacktrace for () {
 #[derive(serde::Serialize)]
 pub struct BacktraceFrame<'a> {
     #[serde_as(as = "Option<DemangleSymbol>")]
-    pub module_name: Option<&'a str>,
-    #[serde_as(as = "Option<DemangleSymbol>")]
     pub func_name: Option<&'a str>,
+    pub file: Option<&'a str>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    #[serde(flatten)]
+    pub kind: BacktraceFrameKind<'a>,
+}
+
+#[serde_with::skip_serializing_none]
+#[serde_with::serde_as]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "lowercase", tag = "kind")]
+pub enum BacktraceFrameKind<'a> {
+    Wasm {
+        #[serde_as(as = "Option<DemangleSymbol>")]
+        module_name: Option<&'a str>,
+        #[serde(skip_serializing_if = "<[_]>::is_empty")]
+        symbols: Box<[BacktraceFrameSymbol<'a>]>,
+    },
+    Js,
+}
+
+#[serde_with::skip_serializing_none]
+#[serde_with::serde_as]
+#[derive(serde::Serialize, Copy, Clone)]
+pub struct BacktraceFrameSymbol<'a> {
+    #[serde_as(as = "Option<DemangleSymbol>")]
+    pub name: Option<&'a str>,
+    pub file: Option<&'a str>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
 }
 
 struct DemangleSymbol;
@@ -290,7 +336,7 @@ impl serde_with::SerializeAs<&str> for DemangleSymbol {
         S: serde::Serializer,
     {
         if let Ok(sym) = rustc_demangle::try_demangle(source) {
-            serializer.serialize_str(&sym.to_string())
+            serializer.collect_str(&sym)
         } else {
             serializer.serialize_str(source)
         }
@@ -309,7 +355,7 @@ enum LogEvent<'a> {
     Panic {
         #[serde(flatten)]
         record: Record<'a>,
-        trace: &'a [BacktraceFrame<'a>],
+        trace: &'a dyn ModuleBacktrace,
     },
 }
 
@@ -355,7 +401,7 @@ impl DatabaseLogger {
     }
 
     pub fn write(&self, level: LogLevel, &record: &Record<'_>, bt: &dyn BacktraceProvider) {
-        let (trace, frames);
+        let trace;
         let event = match level {
             LogLevel::Error => LogEvent::Error(record),
             LogLevel::Warn => LogEvent::Warn(record),
@@ -364,8 +410,7 @@ impl DatabaseLogger {
             LogLevel::Trace => LogEvent::Trace(record),
             LogLevel::Panic => {
                 trace = bt.capture();
-                frames = trace.frames();
-                LogEvent::Panic { record, trace: &frames }
+                LogEvent::Panic { record, trace: &*trace }
             }
         };
         // TODO(perf): Reuse serialization buffer.
