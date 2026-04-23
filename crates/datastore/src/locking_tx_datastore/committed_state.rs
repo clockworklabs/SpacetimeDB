@@ -87,6 +87,24 @@ pub struct CommittedState {
     ///     - system tables: `st_view_sub`, `st_view_arg`
     ///     - Tables which back views.
     pub(super) ephemeral_tables: EphemeralTables,
+
+    /// Set of tables whose `st_table` entries have been updated during the currently-replaying transaction,
+    /// mapped to the current most-recent `st_table` row.
+    ///
+    /// When processing an insert to `st_table`, if the table already exists, we'll record it here.
+    /// Then, when we see a corresponding delete, we know that the table has not been dropped,
+    /// and so we won't delete the in-memory structure or insert its ID into [`Self::replay_table_dropped`].
+    ///
+    /// When looking up the `st_table` row for a table, if it has an entry here,
+    /// that means there are two rows resident in `st_table` at this point in replay.
+    /// We return the row recorded here rather than inspecting `st_table`.
+    ///
+    /// We remove from this set when we reach the matching delete,
+    /// and assert this set is empty at the end of each transaction.
+    ///
+    /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
+    /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
+    pub(super) replay_table_updated: IntMap<TableId, RowPointer>,
 }
 
 impl CommittedState {
@@ -120,6 +138,7 @@ impl MemoryUsage for CommittedState {
             page_pool: _,
             read_sets,
             ephemeral_tables,
+            replay_table_updated,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -128,6 +147,7 @@ impl MemoryUsage for CommittedState {
             + index_id_map.heap_usage()
             + read_sets.heap_usage()
             + ephemeral_tables.heap_usage()
+            + replay_table_updated.heap_usage()
     }
 }
 
@@ -185,6 +205,24 @@ impl StateView for CommittedState {
             None => Ok(ScanOrIndex::scan_eq(cols, val, self.iter(table_id)?)),
         }
     }
+
+    /// Find the `st_table` row for `table_id`, first inspecting [`Self::replay_table_updated`],
+    /// then falling back to [`Self::iter_by_col_eq`] of `st_table`.
+    fn find_st_table_row(&self, table_id: TableId) -> Result<StTableRow> {
+        let row_ref = if let Some(row_ptr) = self.replay_table_updated.get(&table_id) {
+            let (table, blob_store, _) = self.get_table_and_blob_store(table_id)?;
+            // Safety: `row_ptr` is stored in `self.replay_table_updated`,
+            // meaning it was inserted into `st_table` by `replay_insert`
+            // and has not yet been deleted by `replay_delete_by_rel`.
+            unsafe { table.get_row_ref_unchecked(blob_store, *row_ptr) }
+        } else {
+            self.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &table_id.into())?
+                .next()
+                .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?
+        };
+
+        StTableRow::try_from(row_ref)
+    }
 }
 
 impl CommittedState {
@@ -197,6 +235,7 @@ impl CommittedState {
             read_sets: <_>::default(),
             page_pool,
             ephemeral_tables: <_>::default(),
+            replay_table_updated: <_>::default(),
         }
     }
 
