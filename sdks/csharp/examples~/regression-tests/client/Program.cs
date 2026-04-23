@@ -82,6 +82,12 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.IenumerablePlayersFromIter())
         .AddQuery(qb => qb.From.IenumerableAdminsFromFilter())
         .AddQuery(qb => qb.From.IenumerablePlayersWithLevels())
+        .AddQuery(qb => qb.From.EqualityPerson())
+        .AddQuery(qb => qb.From.EqualityProduct())
+        .AddQuery(qb => qb.From.EqualityOrder())
+        .AddQuery(qb => qb.From.PlayerAction())
+        .AddQuery(qb => qb.From.ActionBatch())
+        .AddQuery(qb => qb.From.LogEntry())
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -295,6 +301,96 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         Log.Info("Got InsertViewPkMembershipSecondary callback");
         waiting--;
         ValidateCommittedReducer("InsertViewPkMembershipSecondary", ctx);
+    };
+
+    // Equality test reducer callbacks
+    conn.Reducers.OnRunAllEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunAllEqualityTests callback");
+        // Note: waiting-- happens after validation in this callback
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"RunAllEqualityTests should commit, got {ctx.Event.Status}"
+        );
+
+        // Validate results while subscription is still active
+        // Must happen here before UnsubscribeThen removes the data
+        if (ctx.Event.Status is Status.Committed)
+        {
+            Log.Info("Validating equality test results...");
+            ValidateEqualityResults(ctx);
+            Log.Info("Equality tests completed and validated");
+        }
+        // Decrement waiting here after validation is complete
+        waiting--;
+    };
+
+    conn.Reducers.OnAddEqualityPerson += (ReducerEventContext ctx, uint id, string name) =>
+    {
+        Log.Info($"Got AddEqualityPerson callback: id={id}, name={name}");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnAddEqualityProduct += (ReducerEventContext ctx, uint id, string name, int price, int quantity) =>
+    {
+        Log.Info($"Got AddEqualityProduct callback: id={id}, name={name}");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnRunEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunEqualityTests callback");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnRunComplexEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunComplexEqualityTests callback");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnRunEnumEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunEnumEqualityTests callback");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    // Equality test table insert callbacks
+    conn.Db.EqualityPerson.OnInsert += (EventContext ctx, EqualityPerson row) =>
+    {
+        Log.Info($"EqualityPerson.OnInsert: Id={row.Id}, Name={row.Name}");
+    };
+
+    conn.Db.EqualityProduct.OnInsert += (EventContext ctx, EqualityProduct row) =>
+    {
+        Log.Info($"EqualityProduct.OnInsert: Id={row.Id}, Name={row.Name}, Price={row.Price}");
+    };
+
+    conn.Db.EqualityOrder.OnInsert += (EventContext ctx, EqualityOrder row) =>
+    {
+        Log.Info($"EqualityOrder.OnInsert: Id={row.Id}, Customer={row.CustomerName}");
+    };
+
+    conn.Db.PlayerAction.OnInsert += (EventContext ctx, PlayerAction row) =>
+    {
+        var actionDesc = row.Action switch
+        {
+            GameAction.Move(var m) => $"Move({m})",
+            GameAction.Attack(var a) => $"Attack({a})",
+            GameAction.Defend(var d) => $"Defend({d})",
+            _ => "Unknown"
+        };
+        Log.Info($"PlayerAction.OnInsert: Id={row.Id}, Action={actionDesc}");
+    };
+
+    conn.Db.ActionBatch.OnInsert += (EventContext ctx, ActionBatch row) =>
+    {
+        Log.Info($"ActionBatch.OnInsert: Id={row.Id}, Actions.Count={row.Actions?.Count ?? 0}");
+    };
+
+    conn.Db.LogEntry.OnInsert += (EventContext ctx, LogEntry row) =>
+    {
+        Log.Info($"LogEntry.OnInsert: {row.Message} at {row.Timestamp}");
     };
 }
 
@@ -568,6 +664,78 @@ void ValidateIEnumerableViews(IRemoteDbContext conn)
     }
 
     Log.Debug("IEnumerable views validation completed successfully");
+}
+
+void ValidateEqualitySubscriptions(IRemoteDbContext conn)
+{
+    Log.Debug("Checking equality test subscriptions...");
+
+    // Verify all equality test tables are accessible
+    Debug.Assert(conn.Db.EqualityPerson != null, "EqualityPerson subscription should not be null");
+    Debug.Assert(conn.Db.EqualityProduct != null, "EqualityProduct subscription should not be null");
+    Debug.Assert(conn.Db.EqualityOrder != null, "EqualityOrder subscription should not be null");
+    Debug.Assert(conn.Db.PlayerAction != null, "PlayerAction subscription should not be null");
+    Debug.Assert(conn.Db.ActionBatch != null, "ActionBatch subscription should not be null");
+    Debug.Assert(conn.Db.LogEntry != null, "LogEntry subscription should not be null");
+
+    Log.Debug("Equality test subscriptions validated successfully");
+}
+
+void RunEqualityTests(SubscriptionEventContext ctx)
+{
+    Log.Debug("Running equality tests...");
+
+    // Single waiting increment for the entire equality test phase
+    // This ensures we wait for all callbacks AND validation before proceeding
+    waiting++;
+
+    // Test 1: Add a person
+    Log.Debug("Equality Test: Adding EqualityPerson...");
+    ctx.Reducers.AddEqualityPerson(1, "Alice");
+
+    // Test 2: Add a product
+    Log.Debug("Equality Test: Adding EqualityProduct...");
+    ctx.Reducers.AddEqualityProduct(1, "Widget", 999, 100);
+
+    // Test 3: Run the comprehensive equality test suite
+    Log.Debug("Equality Test: Running RunAllEqualityTests...");
+    ctx.Reducers.RunAllEqualityTests();
+
+    Log.Debug("Equality tests initiated - waiting for completion");
+}
+
+void ValidateEqualityResults(IRemoteDbContext conn)
+{
+    Log.Debug("Validating equality test results...");
+
+    // Validate EqualityPerson data
+    var alice = conn.Db.EqualityPerson.Id.Find(1);
+    Debug.Assert(alice != null, "Alice should be in EqualityPerson table");
+    Debug.Assert(alice.Name == "Alice", $"Expected Alice, got {alice.Name}");
+
+    // Validate EqualityProduct data
+    var product = conn.Db.EqualityProduct.Id.Find(1);
+    Debug.Assert(product != null, "Widget should be in EqualityProduct table");
+    Debug.Assert(product.Name == "Widget", $"Expected Widget, got {product.Name}");
+    Debug.Assert(product.Price == 999, $"Expected Price=999, got {product.Price}");
+
+    // Validate PlayerAction data (inserted by TestSumTypeEquality)
+    var actions = conn.Db.PlayerAction.Iter().ToList();
+    Debug.Assert(actions.Count >= 2, $"Expected at least 2 PlayerActions, got {actions.Count}");
+
+    // Validate ActionBatch data (inserted by TestListOfNullableSumTypes)
+    var batches = conn.Db.ActionBatch.Iter().ToList();
+    Debug.Assert(batches.Count >= 1, $"Expected at least 1 ActionBatch, got {batches.Count}");
+    var batch = batches.FirstOrDefault(b => b.Id == 1);
+    Debug.Assert(batch != null, "Expected ActionBatch with Id=1");
+    Debug.Assert(batch.Actions != null, "ActionBatch should have non-null Actions list");
+    Debug.Assert(batch.Actions.Count == 4, $"Expected 4 actions (2 null), got {batch.Actions.Count}");
+
+    // Validate LogEntry data (inserted by TestTableWithoutPrimaryKey)
+    var logEntries = conn.Db.LogEntry.Iter().ToList();
+    Debug.Assert(logEntries.Count >= 2, $"Expected at least 2 LogEntries, got {logEntries.Count}");
+
+    Log.Debug("Equality test results validated successfully");
 }
 
 void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
@@ -881,6 +1049,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     ValidateWhereTestViews(context);
     ValidateIEnumerableViews(context);
     ValidateSemijoinSubscriptions(context, context.Identity!.Value);
+
+    // Run equality tests
+    ValidateEqualitySubscriptions(context);
+    RunEqualityTests(context);
 
     // Do some operations that alter row state;
     // we will check that everything is in sync in the callbacks for these reducer calls.
