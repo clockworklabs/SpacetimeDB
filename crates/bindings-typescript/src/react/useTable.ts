@@ -45,24 +45,59 @@ function classifyMembership(
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates.
  *
- * Accepts a query builder expression as the first argument:
- * - `tables.user` — subscribe to all rows
- * - `tables.user.where(r => r.online.eq(true))` — subscribe with a filter
+ * - `useTable(query, callbacks?)` — reads from the nearest `<SpacetimeDBProvider>`.
+ * - `useTable(key, query, callbacks?)` — reads the connection labelled `key`
+ *   from the nearest `<SpacetimeDBMultiProvider>`.
  *
- * @param query - A query builder expression (table reference or filtered query).
- * @param callbacks - Optional callbacks for row insert, delete, and update events.
+ * The query argument accepts either a table reference (`tables.user`) or a
+ * filtered query (`tables.user.where(r => r.online.eq(true))`).
+ *
  * @returns A tuple of [rows, isReady].
  *
  * @example
  * ```tsx
+ * // Single-module app
  * const [rows, isReady] = useTable(tables.user);
- * const [onlineUsers, isReady] = useTable(
- *   tables.user.where(r => r.online.eq(true)),
- *   { onInsert: (row) => console.log('New user:', row) }
- * );
+ *
+ * // Multi-module app
+ * const [apps] = useTable('launcher', tables.app);
+ * const [users] = useTable('admin', tables.user);
  * ```
  */
 export function useTable<TableDef extends UntypedTableDef>(
+  query: Query<TableDef>,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
+): [readonly Prettify<RowType<TableDef>>[], boolean];
+export function useTable<TableDef extends UntypedTableDef>(
+  key: string,
+  query: Query<TableDef>,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
+): [readonly Prettify<RowType<TableDef>>[], boolean];
+export function useTable<TableDef extends UntypedTableDef>(
+  queryOrKey: Query<TableDef> | string,
+  queryOrCallbacks?:
+    | Query<TableDef>
+    | UseTableCallbacks<Prettify<RowType<TableDef>>>,
+  maybeCallbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
+): [readonly Prettify<RowType<TableDef>>[], boolean] {
+  const keyed = typeof queryOrKey === 'string';
+  const key: string | undefined = keyed ? (queryOrKey as string) : undefined;
+  const query: Query<TableDef> = keyed
+    ? (queryOrCallbacks as Query<TableDef>)
+    : (queryOrKey as Query<TableDef>);
+  const callbacks: UseTableCallbacks<Prettify<RowType<TableDef>>> | undefined =
+    keyed
+      ? maybeCallbacks
+      : (queryOrCallbacks as
+          | UseTableCallbacks<Prettify<RowType<TableDef>>>
+          | undefined);
+
+  const connectionState: ConnectionState = useSpacetimeDB(key);
+  return useTableInternal<TableDef>(connectionState, query, callbacks);
+}
+
+function useTableInternal<TableDef extends UntypedTableDef>(
+  connectionState: ConnectionState,
   query: Query<TableDef>,
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
@@ -71,16 +106,6 @@ export function useTable<TableDef extends UntypedTableDef>(
   const whereExpr = getQueryWhereClause(query);
 
   const [subscribeApplied, setSubscribeApplied] = useState(false);
-  let connectionState: ConnectionState | undefined;
-  try {
-    connectionState = useSpacetimeDB();
-  } catch {
-    throw new Error(
-      'Could not find SpacetimeDB client! Did you forget to add a ' +
-        '`SpacetimeDBProvider`? `useTable` must be used in the React component tree ' +
-        'under a `SpacetimeDBProvider` component.'
-    );
-  }
 
   const querySql = toSql(query);
 
@@ -109,9 +134,6 @@ export function useTable<TableDef extends UntypedTableDef>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionState, accessorName, querySql, subscribeApplied]);
 
-  // Invalidate the cached snapshot when computeSnapshot changes (e.g. when
-  // subscribeApplied flips to true) so getSnapshot() recomputes on the next
-  // render instead of returning a stale [rows, false] tuple.
   useEffect(() => {
     lastSnapshotRef.current = null;
   }, [computeSnapshot]);
@@ -181,7 +203,7 @@ export function useTable<TableDef extends UntypedTableDef>(
             callbacks?.onUpdate?.(oldRow, newRow);
             break;
           case 'stayOut':
-            return; // no-op
+            return;
         }
 
         if (ctx.event.id !== latestTransactionEventId.current) {
@@ -231,6 +253,5 @@ export function useTable<TableDef extends UntypedTableDef>(
     return lastSnapshotRef.current;
   }, [computeSnapshot]);
 
-  // SSR fallback can be the same getter
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

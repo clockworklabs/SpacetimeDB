@@ -202,7 +202,23 @@ class ConnectionManagerImpl {
     if (managed.connection) {
       return managed.connection;
     }
+    return this.#install(managed, builder);
+  }
 
+  rebuild(key: string, builder: MockBuilder): MockConnection | null {
+    const managed = this.#connections.get(key);
+    if (!managed || managed.refCount <= 0) {
+      return null;
+    }
+    if (managed.pendingRelease) {
+      clearTimeout(managed.pendingRelease);
+      managed.pendingRelease = null;
+    }
+    this.#teardown(managed);
+    return this.#install(managed, builder);
+  }
+
+  #install(managed: ManagedConnection, builder: MockBuilder): MockConnection {
     const connection = builder.build();
     managed.connection = connection;
 
@@ -250,6 +266,24 @@ class ConnectionManagerImpl {
     return connection;
   }
 
+  #teardown(managed: ManagedConnection): void {
+    if (!managed.connection) return;
+    if (managed.onConnect) {
+      managed.connection.removeOnConnect(managed.onConnect);
+    }
+    if (managed.onDisconnect) {
+      managed.connection.removeOnDisconnect(managed.onDisconnect);
+    }
+    if (managed.onConnectError) {
+      managed.connection.removeOnConnectError(managed.onConnectError);
+    }
+    managed.connection.disconnect();
+    managed.connection = undefined;
+    managed.onConnect = undefined;
+    managed.onDisconnect = undefined;
+    managed.onConnectError = undefined;
+  }
+
   release(key: string): void {
     const managed = this.#connections.get(key);
     if (!managed) {
@@ -266,18 +300,7 @@ class ConnectionManagerImpl {
       if (managed.refCount > 0) {
         return;
       }
-      if (managed.connection) {
-        if (managed.onConnect) {
-          managed.connection.removeOnConnect(managed.onConnect);
-        }
-        if (managed.onDisconnect) {
-          managed.connection.removeOnDisconnect(managed.onDisconnect);
-        }
-        if (managed.onConnectError) {
-          managed.connection.removeOnConnectError(managed.onConnectError);
-        }
-        managed.connection.disconnect();
-      }
+      this.#teardown(managed);
       this.#connections.delete(key);
     }, 0);
   }
@@ -778,6 +801,117 @@ describe('ConnectionManager', () => {
       expect(() => {
         mockConnection.simulateConnect(identity, 'test-token');
       }).not.toThrow();
+    });
+  });
+
+  describe('rebuild', () => {
+    test('returns null for unknown key', () => {
+      const builder = new MockBuilder(new MockConnection());
+      expect(manager.rebuild('unknown-key', builder)).toBeNull();
+    });
+
+    test('returns null when key has no retain', () => {
+      const builder = new MockBuilder(new MockConnection());
+      // Subscribe but don't retain — rebuild should refuse.
+      manager.subscribe('some-key', () => {});
+      expect(manager.rebuild('some-key', builder)).toBeNull();
+    });
+
+    test('tears down the old connection and installs a new one', () => {
+      const firstConn = new MockConnection();
+      const secondConn = new MockConnection();
+      const key = 'test-key';
+
+      manager.retain(key, new MockBuilder(firstConn));
+      expect(manager.getConnection(key)).toBe(firstConn);
+      expect(firstConn.disconnected).toBe(false);
+
+      const rebuilt = manager.rebuild(key, new MockBuilder(secondConn));
+      expect(rebuilt).toBe(secondConn);
+      expect(manager.getConnection(key)).toBe(secondConn);
+      expect(firstConn.disconnected).toBe(true);
+      expect(secondConn.disconnected).toBe(false);
+    });
+
+    test('preserves refCount across rebuild', () => {
+      const firstConn = new MockConnection();
+      const secondConn = new MockConnection();
+      const key = 'test-key';
+
+      manager.retain(key, new MockBuilder(firstConn));
+      manager.retain(key, new MockBuilder(firstConn));
+      expect(manager._getRefCount(key)).toBe(2);
+
+      manager.rebuild(key, new MockBuilder(secondConn));
+      expect(manager._getRefCount(key)).toBe(2);
+    });
+
+    test('preserves listeners across rebuild and notifies them', () => {
+      const firstConn = new MockConnection();
+      const secondConn = new MockConnection();
+      const key = 'test-key';
+      const listener = vi.fn();
+
+      manager.subscribe(key, listener);
+      manager.retain(key, new MockBuilder(firstConn));
+      listener.mockClear();
+
+      manager.rebuild(key, new MockBuilder(secondConn));
+      // Initial install re-emits state → at least one listener call.
+      expect(listener).toHaveBeenCalled();
+    });
+
+    test('cancels pending release', () => {
+      const firstConn = new MockConnection();
+      const secondConn = new MockConnection();
+      const key = 'test-key';
+
+      manager.retain(key, new MockBuilder(firstConn));
+      manager.release(key);
+      expect(manager._hasPendingRelease(key)).toBe(true);
+
+      // Rebuild should cancel the release so the new connection stays alive.
+      manager.retain(key, new MockBuilder(firstConn));
+      manager.rebuild(key, new MockBuilder(secondConn));
+      expect(manager._hasPendingRelease(key)).toBe(false);
+
+      vi.runAllTimers();
+      expect(manager.getConnection(key)).toBe(secondConn);
+      expect(secondConn.disconnected).toBe(false);
+    });
+
+    test('removes old callbacks so stale events do not leak state', () => {
+      const firstConn = new MockConnection();
+      const secondConn = new MockConnection();
+      const key = 'test-key';
+      const listener = vi.fn();
+
+      manager.subscribe(key, listener);
+      manager.retain(key, new MockBuilder(firstConn));
+      manager.rebuild(key, new MockBuilder(secondConn));
+      listener.mockClear();
+
+      // Firing an event on the OLD connection must not notify listeners.
+      firstConn.simulateConnect(testIdentity, 'stale-token');
+      expect(listener).not.toHaveBeenCalled();
+      expect(manager.getSnapshot(key)?.token).not.toBe('stale-token');
+    });
+
+    test('new connection events reach listeners', () => {
+      const firstConn = new MockConnection();
+      const secondConn = new MockConnection();
+      const key = 'test-key';
+      const listener = vi.fn();
+
+      manager.subscribe(key, listener);
+      manager.retain(key, new MockBuilder(firstConn));
+      manager.rebuild(key, new MockBuilder(secondConn));
+      listener.mockClear();
+
+      secondConn.simulateConnect(testIdentity, 'fresh-token');
+      expect(listener).toHaveBeenCalled();
+      expect(manager.getSnapshot(key)?.token).toBe('fresh-token');
+      expect(manager.getSnapshot(key)?.isActive).toBe(true);
     });
   });
 });
