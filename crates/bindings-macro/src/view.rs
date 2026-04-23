@@ -212,7 +212,6 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         (
             quote! {
                 #(#original_attrs)*
-                #[inline(never)]
                 #vis
                 #original_sig
                     #emitted_body

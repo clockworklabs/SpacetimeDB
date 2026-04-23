@@ -22,12 +22,22 @@ use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use wasmtime::{
-    AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmParams, WasmResults,
+    AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
+    WasmResults,
 };
 
 fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
-    // no need to handle `WasmBacktrace` separately; it'll be displayed if it exists in the error.
-    log::info!("{func_type} \"{func}\" raised a runtime error (panic message in module logs): {e:#}");
+    log::info!("{func_type} \"{func}\" runtime error: {e}");
+    if let Some(bt) = e.downcast_ref::<WasmBacktrace>() {
+        let frames_len = bt.frames().len();
+        for (i, frame) in bt.frames().iter().enumerate() {
+            log::info!(
+                "  Frame #{}: {}",
+                frames_len - i,
+                rustc_demangle::demangle(frame.func_name().unwrap_or("<unknown>"))
+            );
+        }
+    }
 }
 
 #[derive(Clone)]
