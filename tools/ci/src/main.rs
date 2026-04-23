@@ -272,6 +272,12 @@ enum CiCmd {
 
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
+    /// Checks that publishable crates satisfy publish constraints.
+    PublishChecks,
+    /// Runs TypeScript workspace tests and template build checks.
+    TypescriptTest,
+    /// Builds the docs site.
+    Docs,
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -375,6 +381,65 @@ fn run_dlls() -> Result<()> {
     .dir("sdks/csharp")
     .run()?;
 
+    Ok(())
+}
+
+fn run_publish_checks() -> Result<()> {
+    cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
+    cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
+
+    let crates = cmd!(
+        "venv/bin/python3",
+        "tools/find-publish-list.py",
+        "--recursive",
+        "--directories",
+        "--quiet",
+        "spacetimedb",
+        "spacetimedb-sdk"
+    )
+    .read()?;
+
+    let mut failed = Vec::new();
+    for crate_dir in crates.split_whitespace() {
+        if let Err(err) = cmd!("venv/bin/python3", "tools/crate-publish-checks.py", crate_dir).run() {
+            eprintln!("crate publish checks failed for {crate_dir}: {err}");
+            failed.push(crate_dir.to_string());
+        }
+    }
+
+    if !failed.is_empty() {
+        bail!("crate publish checks failed for: {}", failed.join(", "));
+    }
+
+    Ok(())
+}
+
+fn run_typescript_tests() -> Result<()> {
+    cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
+    cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
+    cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
+    let diff_status = cmd!(
+        "bash",
+        "tools/check-diff.sh",
+        "templates/chat-react-ts/src/module_bindings"
+    )
+    .run()?;
+    if !diff_status.status.success() {
+        bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
+    }
+    cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
+    cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
+        .dir("templates")
+        .run()?;
+    cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
+        .dir("crates/bindings-typescript")
+        .run()?;
+    Ok(())
+}
+
+fn run_docs_build() -> Result<()> {
+    cmd!("pnpm", "install").dir("docs").run()?;
+    cmd!("pnpm", "build").dir("docs").run()?;
     Ok(())
 }
 
@@ -636,6 +701,18 @@ fn main() -> Result<()> {
 
         Some(CiCmd::GlobalJsonPolicy) => {
             check_global_json_policy()?;
+        }
+
+        Some(CiCmd::PublishChecks) => {
+            run_publish_checks()?;
+        }
+
+        Some(CiCmd::TypescriptTest) => {
+            run_typescript_tests()?;
+        }
+
+        Some(CiCmd::Docs) => {
+            run_docs_build()?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,
