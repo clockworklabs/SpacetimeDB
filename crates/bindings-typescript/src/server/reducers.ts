@@ -60,7 +60,7 @@ export function registerReducer(
   opts?: ReducerOpts,
   lifecycle?: Lifecycle
 ): void {
-  ctx.defineFunction(exportName);
+  ctx.defineFunction(exportName, fn);
 
   if (!(params instanceof RowBuilder)) {
     params = new RowBuilder(params);
@@ -99,12 +99,6 @@ export function registerReducer(
       lifecycleSpec: lifecycle,
       functionName: exportName,
     });
-  }
-
-  // If the function isn't named (e.g. `function foobar() {}`), give it the same
-  // name as the reducer so that it's clear what it is in in backtraces.
-  if (!fn.name) {
-    Object.defineProperty(fn, 'name', { value: exportName, writable: false });
   }
 
   ctx.reducers.push(fn);

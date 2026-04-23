@@ -332,8 +332,8 @@ impl MutTxId {
         };
 
         let idx = idx.index();
-        let cols = idx.indexed_columns.clone();
-        let point = point.into_algebraic_value(&idx.key_type);
+        let cols = idx.indexed_columns().clone();
+        let point = idx.key_into_algebraic_value(point);
         self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
 
@@ -1082,6 +1082,26 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Change the primary key of the table identified by `table_id`.
+    ///
+    /// Updates both the in-memory schema and the `st_table` system table.
+    /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
+    pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
+
+        // Update system tables.
+        let new_pk_col_list = new_primary_key.map(|col| col.into());
+        let old_pk =
+            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,
@@ -1299,10 +1319,8 @@ impl MutTxId {
         let map_violation = |violation, index: &TableIndex, table: &Table, bs: &dyn BlobStore| {
             let violation = table
                 .get_row_ref(bs, violation)
-                .expect("row came from scanning the table")
-                .project(&index.indexed_columns)
-                .expect("`cols` should consist of valid columns for this table");
-
+                .expect("row came from scanning the table");
+            let violation = index.project_row(violation);
             let schema = table.get_schema();
             let violation = UniqueConstraintViolation::build_with_index_schema(schema, index, &index_schema, violation);
             IndexError::from(violation).into()
@@ -1482,6 +1500,7 @@ impl MutTxId {
                     .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id))?;
                 IndexScanPointOrRange::Range(iter)
             }
+            PointOrRange::Unsupported => return Err(IndexError::IndexCannotSeekRange(index_id).into()),
         };
         Ok((table_id, iter))
     }
@@ -3081,9 +3100,7 @@ impl MutTxId {
 
                 tx_row_ptr
             } else {
-                let index_key = tx_row_ref
-                    .project(&commit_index.indexed_columns)
-                    .expect("`tx_row_ref` should be compatible with `commit_index`");
+                let index_key = commit_index.project_row(tx_row_ref);
                 throw!(IndexError::KeyNotFound(index_id, index_key));
             };
 
