@@ -783,7 +783,12 @@ fn main() -> Result<()> {
                     .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
             )
             .run()?;
-            cmd!(format!("{}/spacetime", root_dir_string), &root_arg, "help",).run()?;
+
+            let mut spacetime_path = root_dir.path().join("spacetime");
+            if !std::env::consts::EXE_EXTENSION.is_empty() {
+                spacetime_path.set_extension(std::env::consts::EXE_EXTENSION);
+            }
+            cmd(spacetime_path, [&root_arg, "help"]).run()?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
