@@ -9,7 +9,7 @@ pub mod state_view;
 pub use state_view::{IterByColEqTx, IterByColRangeTx};
 pub mod delete_table;
 mod replay;
-pub use replay::{apply_history, ApplyHistoryCounters, ErrorBehavior, Replay};
+pub use replay::{ErrorBehavior, Replay};
 mod tx;
 pub use tx::{NumDistinctValues, TxId};
 mod tx_state;

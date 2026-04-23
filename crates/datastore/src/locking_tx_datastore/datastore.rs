@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use anyhow::anyhow;
-use core::ops::RangeBounds;
+use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
@@ -33,7 +33,7 @@ use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::{bsatn, AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
@@ -48,6 +48,7 @@ use spacetimedb_table::{
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DatastoreError>;
 
@@ -170,9 +171,13 @@ impl Locking {
     /// The provided closure will be called for each transaction found in the
     /// history, the parameter is the transaction's offset. The closure is called
     /// _before_ the transaction is applied to the database state.
-    pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<'_, F> {
-        let committed_state = self.committed_state.write();
-        Replay::new(self.database_identity, committed_state, progress, error_behavior)
+    pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<F> {
+        Replay {
+            database_identity: self.database_identity,
+            committed_state: self.committed_state.clone(),
+            progress: RefCell::new(progress),
+            error_behavior,
+        }
     }
 
     /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
@@ -994,6 +999,18 @@ impl Locking {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum ReplayError {
+    #[error("Expected tx offset {expected}, encountered {encountered}")]
+    InvalidOffset { expected: u64, encountered: u64 },
+    #[error(transparent)]
+    Decode(#[from] bsatn::DecodeError),
+    #[error(transparent)]
+    Db(#[from] DatastoreError),
+    #[error(transparent)]
+    Any(#[from] anyhow::Error),
+}
+
 /// Construct a [`Metadata`] from the given [`RowRef`],
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
@@ -1024,6 +1041,7 @@ pub(crate) mod tests {
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
+    use bsatn::to_vec;
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -1035,7 +1053,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
     use spacetimedb_primitives::{col_list, ArgId, ColId, ScheduleId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
-    use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
+    use spacetimedb_sats::bsatn::ToBsatn;
     use spacetimedb_sats::layout::RowTypeLayout;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
