@@ -1,6 +1,6 @@
 //! Randomized datastore simulator target built on the shared table workload.
 
-use std::{ops::Bound, path::Path};
+use std::ops::Bound;
 
 use spacetimedb_datastore::{
     execution_context::Workload,
@@ -30,14 +30,11 @@ use crate::{
         properties::{self, TargetPropertyAccess, TargetPropertyState},
     },
     workload::table_ops::{
-        ConnectionWriteState, TableScenarioId, TableWorkloadCase, TableWorkloadEngine, TableWorkloadExecutionFailure,
-        TableWorkloadInteraction, TableWorkloadOutcome,
+        ConnectionWriteState, TableScenarioId, TableWorkloadEngine, TableWorkloadInteraction, TableWorkloadOutcome,
     },
 };
 
-pub type DatastoreSimulatorCase = TableWorkloadCase;
 pub type DatastoreSimulatorOutcome = TableWorkloadOutcome;
-pub type DatastoreExecutionFailure = TableWorkloadExecutionFailure;
 type Interaction = TableWorkloadInteraction;
 
 struct DatastoreTarget;
@@ -45,23 +42,9 @@ struct DatastoreTarget;
 impl TableTargetHarness for DatastoreTarget {
     type Engine = DatastoreEngine;
 
-    fn connection_seed_discriminator() -> u64 {
-        17
-    }
-
     fn build_engine(schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self::Engine> {
         DatastoreEngine::new(schema, num_connections)
     }
-}
-
-pub fn materialize_case(seed: DstSeed, scenario: TableScenarioId, max_interactions: usize) -> DatastoreSimulatorCase {
-    harness::materialize_case::<DatastoreTarget>(seed, scenario, max_interactions)
-}
-
-pub fn run_case_detailed(
-    case: &DatastoreSimulatorCase,
-) -> Result<DatastoreSimulatorOutcome, DatastoreExecutionFailure> {
-    harness::run_case_detailed::<DatastoreTarget>(case)
 }
 
 pub fn run_generated_with_config_and_scenario(
@@ -70,21 +53,6 @@ pub fn run_generated_with_config_and_scenario(
     config: RunConfig,
 ) -> anyhow::Result<DatastoreSimulatorOutcome> {
     harness::run_generated_with_config_and_scenario::<DatastoreTarget>(seed, scenario, config)
-}
-
-pub fn save_case(path: impl AsRef<Path>, case: &DatastoreSimulatorCase) -> anyhow::Result<()> {
-    harness::save_case(path, case)
-}
-
-pub fn load_case(path: impl AsRef<Path>) -> anyhow::Result<DatastoreSimulatorCase> {
-    harness::load_case(path)
-}
-
-pub fn shrink_failure(
-    case: &DatastoreSimulatorCase,
-    failure: &DatastoreExecutionFailure,
-) -> anyhow::Result<DatastoreSimulatorCase> {
-    harness::shrink_failure::<DatastoreTarget>(case, failure)
 }
 
 /// Concrete datastore execution harness for the shared table workload.

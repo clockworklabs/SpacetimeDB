@@ -6,17 +6,14 @@
 //! - [`seed`] for deterministic seeds,
 //! - [`workload`] for scenario identifiers,
 //! - [`targets`] for the executable datastore / relational-db adapters.
-//!
-//! The `spacetimedb-dst` binary drives those pieces through `run`, `replay`,
-//! and `shrink`.
 
-mod bugbase;
 /// Shared run-budget configuration for DST targets.
 pub mod config;
+/// Core traits/runners for pluggable workloads and targets.
+pub mod core;
 mod schema;
 /// Stable seed and RNG utilities used to make runs reproducible.
 pub mod seed;
-mod shrink;
 /// Concrete simulator targets.
 pub mod targets;
 /// Shared workload generators reused by multiple targets.

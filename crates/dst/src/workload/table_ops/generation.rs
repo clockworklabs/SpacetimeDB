@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
+    core::NextInteractionSource,
     schema::SchemaPlan,
     seed::{DstRng, DstSeed},
 };
@@ -13,7 +14,7 @@ use super::{model::GenerationModel, TableScenario, TableWorkloadInteraction};
 /// duration runs do not need to materialize the full interaction list in
 /// memory up front.
 #[derive(Clone, Debug)]
-pub struct InteractionStream<S> {
+pub struct NextInteractionGenerator<S> {
     // Deterministic source for all planner choices.
     rng: DstRng,
     // Scenario-specific workload policy layered on top of the shared model.
@@ -103,7 +104,7 @@ impl<'a> ScenarioPlanner<'a> {
     }
 }
 
-impl<S: TableScenario> InteractionStream<S> {
+impl<S: TableScenario> NextInteractionGenerator<S> {
     pub fn new(
         seed: DstSeed,
         scenario: S,
@@ -161,10 +162,8 @@ impl<S: TableScenario> InteractionStream<S> {
     }
 }
 
-impl<S: TableScenario> Iterator for InteractionStream<S> {
-    type Item = TableWorkloadInteraction;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl<S: TableScenario> NextInteractionGenerator<S> {
+    pub fn pull_next_interaction(&mut self) -> Option<TableWorkloadInteraction> {
         loop {
             // Scenario planning fills `pending` in bursts, but the iterator
             // surface stays one interaction at a time.
@@ -179,5 +178,25 @@ impl<S: TableScenario> Iterator for InteractionStream<S> {
 
             self.fill_pending();
         }
+    }
+}
+
+impl<S: TableScenario> NextInteractionSource for NextInteractionGenerator<S> {
+    type Interaction = TableWorkloadInteraction;
+
+    fn next_interaction(&mut self) -> Option<Self::Interaction> {
+        self.pull_next_interaction()
+    }
+
+    fn request_finish(&mut self) {
+        Self::request_finish(self);
+    }
+}
+
+impl<S: TableScenario> Iterator for NextInteractionGenerator<S> {
+    type Item = TableWorkloadInteraction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pull_next_interaction()
     }
 }

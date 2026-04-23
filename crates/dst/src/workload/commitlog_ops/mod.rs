@@ -3,5 +3,5 @@
 mod generation;
 mod types;
 
-pub(crate) use generation::{materialize_case, InteractionStream};
-pub use types::{CommitlogInteraction, CommitlogWorkloadCase, CommitlogWorkloadFailure, CommitlogWorkloadOutcome};
+pub(crate) use generation::NextInteractionGeneratorComposite;
+pub use types::{CommitlogInteraction, CommitlogWorkloadOutcome};

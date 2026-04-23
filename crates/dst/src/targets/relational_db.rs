@@ -1,6 +1,6 @@
 //! Basic RelationalDB simulator target using the shared table workload.
 
-use std::{ops::Bound, path::Path};
+use std::ops::Bound;
 
 use spacetimedb_core::{
     db::relational_db::{MutTx as RelMutTx, RelationalDB},
@@ -33,14 +33,11 @@ use crate::{
         properties::{self, TargetPropertyAccess, TargetPropertyState},
     },
     workload::table_ops::{
-        ConnectionWriteState, TableScenarioId, TableWorkloadCase, TableWorkloadEngine, TableWorkloadExecutionFailure,
-        TableWorkloadInteraction, TableWorkloadOutcome,
+        ConnectionWriteState, TableScenarioId, TableWorkloadEngine, TableWorkloadInteraction, TableWorkloadOutcome,
     },
 };
 
-pub type RelationalDbSimulatorCase = TableWorkloadCase;
 pub type RelationalDbSimulatorOutcome = TableWorkloadOutcome;
-pub type RelationalDbExecutionFailure = TableWorkloadExecutionFailure;
 type RelationalDbInteraction = TableWorkloadInteraction;
 
 struct RelationalDbTarget;
@@ -48,27 +45,9 @@ struct RelationalDbTarget;
 impl TableTargetHarness for RelationalDbTarget {
     type Engine = RelationalDbEngine;
 
-    fn connection_seed_discriminator() -> u64 {
-        31
-    }
-
     fn build_engine(schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self::Engine> {
         RelationalDbEngine::new(schema, num_connections)
     }
-}
-
-pub fn materialize_case(
-    seed: DstSeed,
-    scenario: TableScenarioId,
-    max_interactions: usize,
-) -> RelationalDbSimulatorCase {
-    harness::materialize_case::<RelationalDbTarget>(seed, scenario, max_interactions)
-}
-
-pub fn run_case_detailed(
-    case: &RelationalDbSimulatorCase,
-) -> Result<RelationalDbSimulatorOutcome, RelationalDbExecutionFailure> {
-    harness::run_case_detailed::<RelationalDbTarget>(case)
 }
 
 pub fn run_generated_with_config_and_scenario(
@@ -77,21 +56,6 @@ pub fn run_generated_with_config_and_scenario(
     config: RunConfig,
 ) -> anyhow::Result<RelationalDbSimulatorOutcome> {
     harness::run_generated_with_config_and_scenario::<RelationalDbTarget>(seed, scenario, config)
-}
-
-pub fn save_case(path: impl AsRef<Path>, case: &RelationalDbSimulatorCase) -> anyhow::Result<()> {
-    harness::save_case(path, case)
-}
-
-pub fn load_case(path: impl AsRef<Path>) -> anyhow::Result<RelationalDbSimulatorCase> {
-    harness::load_case(path)
-}
-
-pub fn shrink_failure(
-    case: &RelationalDbSimulatorCase,
-    failure: &RelationalDbExecutionFailure,
-) -> anyhow::Result<RelationalDbSimulatorCase> {
-    harness::shrink_failure::<RelationalDbTarget>(case, failure)
 }
 
 /// Concrete `RelationalDB` execution harness for the shared table workload.

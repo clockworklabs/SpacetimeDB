@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    path::Path,
     time::Instant,
 };
 
@@ -31,78 +30,17 @@ use spacetimedb_table::page_pool::PagePool;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    bugbase::{load_json, save_json},
     config::RunConfig,
+    core::NextInteractionSource,
     schema::{SchemaPlan, SimRow},
     seed::{DstRng, DstSeed},
-    shrink::shrink_by_removing,
     workload::{
-        commitlog_ops::{
-            materialize_case, CommitlogInteraction, CommitlogWorkloadCase, CommitlogWorkloadFailure,
-            CommitlogWorkloadOutcome,
-        },
+        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
         table_ops::{ConnectionWriteState, TableScenario, TableScenarioId, TableWorkloadInteraction},
     },
 };
 
-pub type RelationalDbCommitlogCase = CommitlogWorkloadCase;
-pub type RelationalDbCommitlogFailure = CommitlogWorkloadFailure;
 pub type RelationalDbCommitlogOutcome = CommitlogWorkloadOutcome;
-
-pub fn materialize_case_for_target(
-    seed: DstSeed,
-    scenario: TableScenarioId,
-    max_interactions: usize,
-) -> RelationalDbCommitlogCase {
-    materialize_case(seed, scenario, max_interactions)
-}
-
-pub fn save_case(path: impl AsRef<Path>, case: &RelationalDbCommitlogCase) -> anyhow::Result<()> {
-    save_json(path, case)
-}
-
-pub fn load_case(path: impl AsRef<Path>) -> anyhow::Result<RelationalDbCommitlogCase> {
-    load_json(path)
-}
-
-pub fn run_case_detailed(
-    case: &RelationalDbCommitlogCase,
-) -> Result<RelationalDbCommitlogOutcome, RelationalDbCommitlogFailure> {
-    info!(
-        "relational_db_commitlog start seed={} scenario={:?} interactions={} connections={}",
-        case.seed.0,
-        case.scenario,
-        case.interactions.len(),
-        case.num_connections
-    );
-    let mut engine = RelationalDbCommitlogEngine::new(case.seed, &case.schema, case.num_connections)
-        .map_err(|err| failure_without_step(format!("bootstrap failed: {err}")))?;
-
-    for (step_index, interaction) in case.interactions.iter().enumerate() {
-        trace!(step_index, ?interaction, "interaction");
-        if let Err(reason) = engine.execute(interaction) {
-            engine.finish();
-            warn!(step_index, %reason, "interaction failed");
-            return Err(RelationalDbCommitlogFailure {
-                step_index,
-                reason,
-                interaction: Some(interaction.clone()),
-            });
-        }
-    }
-
-    let outcome = engine
-        .collect_outcome()
-        .map_err(|err| failure_without_step(err.to_string()))?;
-    engine.finish();
-    info!(
-        applied_steps = outcome.applied_steps,
-        durable_commit_count = outcome.durable_commit_count,
-        replay_table_count = outcome.replay_table_count,
-        "relational_db_commitlog complete"
-    );
-    Ok(outcome)
-}
 
 pub fn run_generated_with_config_and_scenario(
     seed: DstSeed,
@@ -113,7 +51,7 @@ pub fn run_generated_with_config_and_scenario(
     let num_connections = connection_rng.index(3) + 1;
     let mut schema_rng = seed.fork(122).rng();
     let schema = scenario.generate_schema(&mut schema_rng);
-    let mut stream = crate::workload::commitlog_ops::InteractionStream::new(
+    let mut generator = crate::workload::commitlog_ops::NextInteractionGeneratorComposite::new(
         seed,
         scenario,
         schema.clone(),
@@ -126,9 +64,9 @@ pub fn run_generated_with_config_and_scenario(
 
     loop {
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            stream.request_finish();
+            generator.request_finish();
         }
-        let Some(interaction) = stream.next() else {
+        let Some(interaction) = generator.next_interaction() else {
             break;
         };
         trace!(step_index, ?interaction, "streaming interaction");
@@ -140,51 +78,13 @@ pub fn run_generated_with_config_and_scenario(
 
     let outcome = engine.collect_outcome().map_err(anyhow::Error::msg)?;
     engine.finish();
+    info!(
+        applied_steps = outcome.applied_steps,
+        durable_commit_count = outcome.durable_commit_count,
+        replay_table_count = outcome.replay_table_count,
+        "relational_db_commitlog complete"
+    );
     Ok(outcome)
-}
-
-pub fn shrink_failure(
-    case: &RelationalDbCommitlogCase,
-    failure: &RelationalDbCommitlogFailure,
-) -> anyhow::Result<RelationalDbCommitlogCase> {
-    shrink_by_removing(
-        case,
-        failure,
-        |case| {
-            let mut shrunk = case.clone();
-            shrunk.interactions.truncate(failure.step_index.saturating_add(1));
-            shrunk
-        },
-        |case| case.interactions.len(),
-        |case, idx| {
-            let interaction = case.interactions.get(idx)?;
-            if !can_remove_interaction(interaction) {
-                return None;
-            }
-            let mut interactions = case.interactions.clone();
-            interactions.remove(idx);
-            Some(RelationalDbCommitlogCase {
-                seed: case.seed,
-                scenario: case.scenario,
-                num_connections: case.num_connections,
-                schema: case.schema.clone(),
-                interactions,
-            })
-        },
-        |case| match run_case_detailed(case) {
-            Ok(_) => anyhow::bail!("case did not fail"),
-            Err(failure) => Ok(failure),
-        },
-        |expected, candidate| expected.reason == candidate.reason,
-    )
-}
-
-fn can_remove_interaction(interaction: &CommitlogInteraction) -> bool {
-    match interaction {
-        CommitlogInteraction::Table(TableWorkloadInteraction::CommitTx { .. })
-        | CommitlogInteraction::Table(TableWorkloadInteraction::RollbackTx { .. }) => false,
-        _ => true,
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -744,14 +644,6 @@ fn dynamic_schema(name: &str, version: u32) -> TableSchema {
         false,
         None,
     )
-}
-
-fn failure_without_step(reason: String) -> RelationalDbCommitlogFailure {
-    RelationalDbCommitlogFailure {
-        step_index: usize::MAX,
-        reason,
-        interaction: None,
-    }
 }
 
 fn encode_txdata_for_commitlog(tx_data: &DatastoreTxData) -> Option<Txdata> {

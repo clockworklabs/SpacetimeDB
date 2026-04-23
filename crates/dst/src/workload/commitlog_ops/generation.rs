@@ -3,17 +3,18 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use crate::{
+    core::NextInteractionSource,
     schema::SchemaPlan,
     seed::{DstRng, DstSeed},
     workload::{
-        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadCase},
-        table_ops::{self, TableScenario, TableScenarioId},
+        commitlog_ops::CommitlogInteraction,
+        table_ops::{NextInteractionGenerator, TableScenario},
     },
 };
 
 /// Streaming composite interaction source for commitlog-oriented targets.
-pub(crate) struct InteractionStream<S> {
-    base: table_ops::InteractionStream<S>,
+pub(crate) struct NextInteractionGeneratorComposite<S> {
+    base: NextInteractionGenerator<S>,
     rng: DstRng,
     num_connections: usize,
     next_slot: u32,
@@ -21,7 +22,7 @@ pub(crate) struct InteractionStream<S> {
     pending: VecDeque<CommitlogInteraction>,
 }
 
-impl<S: TableScenario> InteractionStream<S> {
+impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
     pub fn new(
         seed: DstSeed,
         scenario: S,
@@ -30,7 +31,7 @@ impl<S: TableScenario> InteractionStream<S> {
         target_interactions: usize,
     ) -> Self {
         Self {
-            base: table_ops::InteractionStream::new(seed.fork(123), scenario, schema, num_connections, target_interactions),
+            base: NextInteractionGenerator::new(seed.fork(123), scenario, schema, num_connections, target_interactions),
             rng: seed.fork(124).rng(),
             num_connections,
             next_slot: 0,
@@ -58,7 +59,8 @@ impl<S: TableScenario> InteractionStream<S> {
             let slot = self.next_slot;
             self.next_slot = self.next_slot.saturating_add(1);
             self.alive_slots.insert(slot);
-            self.pending.push_back(CommitlogInteraction::CreateDynamicTable { conn, slot });
+            self.pending
+                .push_back(CommitlogInteraction::CreateDynamicTable { conn, slot });
             return true;
         }
 
@@ -70,7 +72,8 @@ impl<S: TableScenario> InteractionStream<S> {
                 .iter()
                 .nth(idx)
                 .expect("slot index within alive set bounds");
-            self.pending.push_back(CommitlogInteraction::MigrateDynamicTable { conn, slot });
+            self.pending
+                .push_back(CommitlogInteraction::MigrateDynamicTable { conn, slot });
         }
 
         if !self.alive_slots.is_empty() && self.rng.index(100) < 5 {
@@ -82,17 +85,16 @@ impl<S: TableScenario> InteractionStream<S> {
                 .nth(idx)
                 .expect("slot index within alive set bounds");
             self.alive_slots.remove(&slot);
-            self.pending.push_back(CommitlogInteraction::DropDynamicTable { conn, slot });
+            self.pending
+                .push_back(CommitlogInteraction::DropDynamicTable { conn, slot });
         }
 
         true
     }
 }
 
-impl<S: TableScenario> Iterator for InteractionStream<S> {
-    type Item = CommitlogInteraction;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
+    pub fn pull_next_interaction(&mut self) -> Option<CommitlogInteraction> {
         loop {
             if let Some(next) = self.pending.pop_front() {
                 return Some(next);
@@ -104,28 +106,22 @@ impl<S: TableScenario> Iterator for InteractionStream<S> {
     }
 }
 
-pub(crate) fn materialize_case(
-    seed: DstSeed,
-    scenario: TableScenarioId,
-    max_interactions: usize,
-) -> CommitlogWorkloadCase {
-    let mut connection_rng = seed.fork(121).rng();
-    let num_connections = connection_rng.index(3) + 1;
-    let mut schema_rng = seed.fork(122).rng();
-    let schema = scenario.generate_schema(&mut schema_rng);
-    let interactions = InteractionStream::new(seed, scenario, schema.clone(), num_connections, max_interactions)
-        .collect::<Vec<_>>();
+impl<S: TableScenario> NextInteractionSource for NextInteractionGeneratorComposite<S> {
+    type Interaction = CommitlogInteraction;
 
-    CommitlogWorkloadCase {
-        seed,
-        scenario,
-        num_connections,
-        schema,
-        interactions,
+    fn next_interaction(&mut self) -> Option<Self::Interaction> {
+        self.pull_next_interaction()
+    }
+
+    fn request_finish(&mut self) {
+        Self::request_finish(self);
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn base_schema(case: &CommitlogWorkloadCase) -> &SchemaPlan {
-    &case.schema
+impl<S: TableScenario> Iterator for NextInteractionGeneratorComposite<S> {
+    type Item = CommitlogInteraction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pull_next_interaction()
+    }
 }

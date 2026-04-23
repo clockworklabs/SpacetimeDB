@@ -6,8 +6,8 @@ mod runner;
 mod scenarios;
 mod types;
 
-pub(crate) use generation::InteractionStream;
-pub(crate) use runner::{execute_interactions, run_generated_with_engine};
+pub(crate) use generation::NextInteractionGenerator;
+pub(crate) use runner::run_generated_with_engine;
 pub use scenarios::TableScenarioId;
 pub(crate) use types::{ConnectionWriteState, TableScenario, TableWorkloadEngine};
-pub use types::{TableWorkloadCase, TableWorkloadExecutionFailure, TableWorkloadInteraction, TableWorkloadOutcome};
+pub use types::{TableWorkloadInteraction, TableWorkloadOutcome};

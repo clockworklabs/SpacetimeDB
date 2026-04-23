@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    core::TargetEngine,
     schema::{SchemaPlan, SimRow},
     seed::DstRng,
 };
 
-use super::{generation::ScenarioPlanner, scenarios::TableScenarioId};
+use super::generation::ScenarioPlanner;
 
 /// Scenario hook for shared table-oriented workloads.
 ///
@@ -15,21 +16,6 @@ pub(crate) trait TableScenario: Clone {
     fn generate_schema(&self, rng: &mut DstRng) -> SchemaPlan;
     fn validate_outcome(&self, schema: &SchemaPlan, outcome: &TableWorkloadOutcome) -> anyhow::Result<()>;
     fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize);
-}
-
-/// Materialized shared table-workload case reused by multiple targets.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct TableWorkloadCase {
-    /// Seed used to derive schema and workload decisions.
-    pub seed: crate::seed::DstSeed,
-    /// Shared workload scenario identifier.
-    pub(crate) scenario: TableScenarioId,
-    /// Number of simulated client connections in the run.
-    pub(crate) num_connections: usize,
-    /// Initial schema installed into target before replaying interactions.
-    pub(crate) schema: SchemaPlan,
-    /// Materialized interaction trace for replay and shrinking.
-    pub interactions: Vec<TableWorkloadInteraction>,
 }
 
 /// One generated workload step.
@@ -51,22 +37,31 @@ pub struct TableWorkloadOutcome {
     pub final_rows: Vec<Vec<SimRow>>,
 }
 
-/// First failing interaction observed while executing a generated workload.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct TableWorkloadExecutionFailure {
-    /// Zero-based position of the failing interaction.
-    pub step_index: usize,
-    /// Target-provided error message.
-    pub reason: String,
-    /// Interaction that triggered the failure.
-    pub(crate) interaction: Option<TableWorkloadInteraction>,
-}
-
 /// Minimal engine interface implemented by concrete table-oriented targets.
 pub(crate) trait TableWorkloadEngine {
     fn execute(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), String>;
     fn collect_outcome(&mut self) -> anyhow::Result<TableWorkloadOutcome>;
     fn finish(&mut self);
+}
+
+impl<T> TargetEngine<TableWorkloadInteraction> for T
+where
+    T: TableWorkloadEngine,
+{
+    type Outcome = TableWorkloadOutcome;
+    type Error = String;
+
+    fn execute_interaction(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), Self::Error> {
+        self.execute(interaction)
+    }
+
+    fn finish(&mut self) {
+        TableWorkloadEngine::finish(self);
+    }
+
+    fn collect_outcome(&mut self) -> anyhow::Result<Self::Outcome> {
+        TableWorkloadEngine::collect_outcome(self)
+    }
 }
 
 /// Per-connection write transaction bookkeeping shared by locking targets.
