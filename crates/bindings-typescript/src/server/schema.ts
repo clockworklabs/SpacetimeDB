@@ -67,20 +67,13 @@ export class SchemaInner<
     this.schemaType = getSchemaType(this);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  defineFunction(name: string, fn: Function) {
+  defineFunction(name: string) {
     if (this.existingFunctions.has(name)) {
       throw new TypeError(
         `There is already a reducer or procedure with the name '${name}'`
       );
     }
     this.existingFunctions.add(name);
-
-    // If the function isn't named (e.g. `function foobar() {}`), give it the same
-    // name as the reducer so that it's clear what it is in in backtraces.
-    if (!fn.name) {
-      Object.defineProperty(fn, 'name', { value: name, writable: false });
-    }
   }
 
   resolveSchedules() {
