@@ -56,11 +56,20 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -145,6 +154,7 @@ jobs:
       # `cargo build --manifest-path` (which apparently build different dependency trees).
       # However, we've been unable to fix it so... /shrug
       - name: Check v8 outputs
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         shell: bash
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
@@ -204,10 +214,19 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -278,12 +297,21 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -316,12 +344,21 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -523,6 +560,14 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -550,6 +595,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -612,6 +658,14 @@ jobs:
         id: checkout-stdb
         uses: actions/checkout@v4
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
       - name: Setup dotnet
@@ -650,6 +704,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -664,6 +719,7 @@ jobs:
       # `cargo build --manifest-path` (which apparently build different dependency trees).
       # However, we've been unable to fix it so... /shrug
       - name: Check v8 outputs
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
           if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
@@ -757,6 +813,14 @@ jobs:
         id: checkout-stdb
         uses: actions/checkout@v4
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
       - name: Setup dotnet
@@ -796,6 +860,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -810,6 +875,7 @@ jobs:
       # `cargo build --manifest-path` (which apparently build different dependency trees).
       # However, we've been unable to fix it so... /shrug
       - name: Check v8 outputs
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
           if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
@@ -1158,6 +1224,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -1212,6 +1286,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
+        if: ${{ runner.os != 'Linux' || !startsWith(runner.name, 'ghr-') }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
