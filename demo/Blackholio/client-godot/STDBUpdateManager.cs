@@ -7,6 +7,7 @@ namespace SpacetimeDB
     public partial class STDBUpdateManager : Node
     {
         private const string SingletonNodeName = nameof(STDBUpdateManager);
+
         private static STDBUpdateManager _instance;
         private static STDBUpdateManager Instance => EnsureInstance();
 
@@ -43,7 +44,7 @@ namespace SpacetimeDB
             {
                 Name = SingletonNodeName,
             };
-            root.AddChild(_instance);
+            root.AddChild(_instance, false, InternalMode.Front);
             return _instance;
         }
 
