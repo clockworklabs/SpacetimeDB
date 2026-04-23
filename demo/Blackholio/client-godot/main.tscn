@@ -1,6 +1,20 @@
 [gd_scene format=3 uid="uid://cjb7808stemnn"]
 
-[ext_resource type="Script" uid="uid://c3evgwekyhyuy" path="res://GameManager.cs" id="1_ig7tw"]
+[ext_resource type="Script" uid="uid://p2e72osy6dx5" path="res://GameManager.cs" id="1_7mycd"]
+[ext_resource type="Script" uid="uid://bm2c8ov8aaoi8" path="res://Instantiator.cs" id="2_7mycd"]
+[ext_resource type="PackedScene" uid="uid://j74mpcyku2um" path="res://Circle.tscn" id="3_h2yge"]
+[ext_resource type="PackedScene" uid="uid://3gdkr0fla74a" path="res://Food.tscn" id="4_1bvp3"]
+[ext_resource type="PackedScene" uid="uid://blicbcj7jt37k" path="res://Player.tscn" id="5_lquwl"]
+[ext_resource type="Script" uid="uid://b0l7e61svh6b4" path="res://CameraController.cs" id="6_7mycd"]
 
-[node name="Main" type="Node2D" unique_id=126559554]
-script = ExtResource("1_ig7tw")
+[node name="Main" type="Node2D" unique_id=211175705]
+script = ExtResource("1_7mycd")
+
+[node name="Instantiator" type="Node2D" parent="." unique_id=182682719]
+script = ExtResource("2_7mycd")
+CircleScene = ExtResource("3_h2yge")
+FoodScene = ExtResource("4_1bvp3")
+PlayerScene = ExtResource("5_lquwl")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1030276943]
+script = ExtResource("6_7mycd")
