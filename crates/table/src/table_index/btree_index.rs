@@ -112,6 +112,8 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
         // `self.insert` always returns `Ok(_)`.
         Ok(())
     }
+
+    const IS_RANGED: bool = true;
 }
 
 impl<K: KeySize + Ord> BTreeIndex<K> {
