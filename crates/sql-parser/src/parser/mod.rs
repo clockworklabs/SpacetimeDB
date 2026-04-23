@@ -221,15 +221,23 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
     match expr {
         Expr::Nested(expr) => parse_expr(*expr, depth + 1),
         Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
-        expr @ Expr::Value(_) => Ok(SqlExpr::Lit(parse_literal_expr(expr, SqlUnsupported::Expr)?)),
-        expr @ Expr::UnaryOp {
+        Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
+        Expr::UnaryOp {
             op: UnaryOperator::Plus,
-            ..
-        } => Ok(SqlExpr::Lit(parse_literal_expr(expr, SqlUnsupported::Expr)?)),
-        expr @ Expr::UnaryOp {
+            expr,
+        } => Ok(SqlExpr::Lit(parse_signed_literal_expr(
+            UnaryOperator::Plus,
+            *expr,
+            SqlUnsupported::Expr,
+        )?)),
+        Expr::UnaryOp {
             op: UnaryOperator::Minus,
-            ..
-        } => Ok(SqlExpr::Lit(parse_literal_expr(expr, SqlUnsupported::Expr)?)),
+            expr,
+        } => Ok(SqlExpr::Lit(parse_signed_literal_expr(
+            UnaryOperator::Minus,
+            *expr,
+            SqlUnsupported::Expr,
+        )?)),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();
@@ -263,34 +271,40 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
     }
 }
 
+fn parse_signed_literal_expr(
+    op: UnaryOperator,
+    expr: Expr,
+    unsupported: fn(Expr) -> SqlUnsupported,
+) -> SqlParseResult<SqlLiteral> {
+    match expr {
+        Expr::Value(Value::Number(n, _)) => {
+            let sign = match op {
+                UnaryOperator::Plus => "+",
+                UnaryOperator::Minus => "-",
+                _ => unreachable!("caller only passes unary plus/minus"),
+            };
+            Ok(SqlLiteral::Num(format!("{sign}{n}").into_boxed_str()))
+        }
+        expr => Err(unsupported(Expr::UnaryOp {
+            op,
+            expr: Box::new(expr),
+        })
+        .into()),
+    }
+}
+
 /// Parse a literal expression.
 pub(crate) fn parse_literal_expr(expr: Expr, unsupported: fn(Expr) -> SqlUnsupported) -> SqlParseResult<SqlLiteral> {
-    fn signed_num(
-        sign: &str,
-        op: UnaryOperator,
-        expr: Expr,
-        unsupported: fn(Expr) -> SqlUnsupported,
-    ) -> SqlParseResult<SqlLiteral> {
-        match expr {
-            Expr::Value(Value::Number(n, _)) => Ok(SqlLiteral::Num(format!("{sign}{n}").into_boxed_str())),
-            expr => Err(unsupported(Expr::UnaryOp {
-                op,
-                expr: Box::new(expr),
-            })
-            .into()),
-        }
-    }
-
     match expr {
         Expr::Value(value) => parse_literal(value),
         Expr::UnaryOp {
             op: UnaryOperator::Plus,
             expr,
-        } => signed_num("+", UnaryOperator::Plus, *expr, unsupported),
+        } => parse_signed_literal_expr(UnaryOperator::Plus, *expr, unsupported),
         Expr::UnaryOp {
             op: UnaryOperator::Minus,
             expr,
-        } => signed_num("-", UnaryOperator::Minus, *expr, unsupported),
+        } => parse_signed_literal_expr(UnaryOperator::Minus, *expr, unsupported),
         expr => Err(unsupported(expr).into()),
     }
 }
