@@ -1898,47 +1898,58 @@ impl MutTxId {
             "pre-validation guaranteed at least one backing index",
         );
 
-        // Check for duplicates in the first committed index (all share the same data).
-        let duplicates = commit_table
-            .indexes
-            .get(&index_ids[0])
-            .expect("index must exist")
-            .iter_duplicates();
-
-        if !duplicates.is_empty() {
-            let total_groups = duplicates.len();
-            let examples: String = duplicates
-                .iter()
-                .take(10)
-                .map(|(val, count)| format!("  - {val:?} appears {count} times"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            return Err(anyhow::anyhow!(
-                "Cannot add unique constraint on table {table_id} column(s) {col_list:?}:\n\
-                 {total_groups} duplicate group(s) found.\n{examples}{}",
-                if total_groups > 10 { "\n  ... and more" } else { "" }
-            )
-            .into());
-        }
+        // Revert previously-made-unique `commit_table` and `tx_table` indices. Used on
+        // both the committed-state duplicate path and the tx-state merge-conflict path
+        // so a failing `create_constraint` leaves the tx in the same shape it had before.
+        let revert = |commit_table: &mut Table, tx_table: &mut Table, up_to: usize| {
+            for &id in &index_ids[..up_to] {
+                if let Some(idx) = commit_table.indexes.get_mut(&id) {
+                    idx.make_non_unique();
+                }
+                if let Some(idx) = tx_table.indexes.get_mut(&id) {
+                    idx.make_non_unique();
+                }
+            }
+        };
 
         // Record whether this table had a unique index before.
         let had_unique = commit_table.has_unique_index();
 
-        // Make all matching indices unique on both tables.
-        for &index_id in &index_ids {
-            commit_table
-                .indexes
-                .get_mut(&index_id)
-                .expect("index must exist")
-                .make_unique()
-                .expect("duplicates were already checked");
+        // Try to make each matching index unique on both tables. `make_unique` fails fast on
+        // the first duplicate; only if it fails do we run `iter_duplicates` to build a
+        // human-readable error (showing up to 10 duplicate groups).
+        for (i, &index_id) in index_ids.iter().enumerate() {
+            let commit_idx = commit_table.indexes.get_mut(&index_id).expect("index must exist");
+            if commit_idx.make_unique().is_err() {
+                // `make_unique` restored the failing index to non-unique on error.
+                let duplicates = commit_idx.iter_duplicates();
+                revert(commit_table, tx_table, i);
+                let total = duplicates.len();
+                let examples: String = duplicates
+                    .iter()
+                    .take(10)
+                    .map(|(val, count)| format!("  - {val:?} appears {count} times"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(anyhow::anyhow!(
+                    "Cannot add unique constraint on table {table_id} column(s) {col_list:?}:\n\
+                     {total} duplicate group(s) found.\n{examples}{}",
+                    if total > 10 { "\n  ... and more" } else { "" }
+                )
+                .into());
+            }
 
-            tx_table
-                .indexes
-                .get_mut(&index_id)
-                .expect("tx index must exist")
-                .make_unique()
-                .expect("tx table should have no duplicates");
+            // Tx table can have duplicates too (same-tx inserts before the constraint add).
+            let tx_idx = tx_table.indexes.get_mut(&index_id).expect("tx index must exist");
+            if tx_idx.make_unique().is_err() {
+                // Revert the just-made-unique commit index plus any earlier pair.
+                revert(commit_table, tx_table, i + 1);
+                return Err(anyhow::anyhow!(
+                    "Cannot add unique constraint on table {table_id} column(s) {col_list:?}: \
+                     duplicate values exist in the current transaction"
+                )
+                .into());
+            }
         }
 
         // Check that each pair of unique indices can be merged.
@@ -1950,21 +1961,13 @@ impl MutTxId {
                 commit_idx.can_merge(tx_idx, is_deleted)
             };
             if let Err(violation) = can_merge_result {
-                // Revert all indices before returning the error.
-                for &id in &index_ids {
-                    if let Some(idx) = commit_table.indexes.get_mut(&id) {
-                        idx.make_non_unique();
-                    }
-                    if let Some(idx) = tx_table.indexes.get_mut(&id) {
-                        idx.make_non_unique();
-                    }
-                }
                 let cols = commit_table.indexes[&index_id].indexed_columns().clone();
                 let violation = commit_table
                     .get_row_ref(commit_blob_store, violation)
                     .expect("row came from scanning the table")
                     .project(&cols)
                     .expect("cols should be valid for this table");
+                revert(commit_table, tx_table, index_ids.len());
                 return Err(anyhow::anyhow!(
                     "Unique constraint violation during merge: {violation:?}"
                 )
