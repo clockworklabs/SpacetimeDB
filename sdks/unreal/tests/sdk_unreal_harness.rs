@@ -100,20 +100,13 @@ pub fn make_test_with_suite(suite: &TestSuite, test_name: &str) -> Test {
     assert_existing_file("uproject", &uproject_path);
 
     // Headless compile (no cook)
-    let compile_command = if cfg!(target_os = "windows") {
-        format!(
-            "\"{}\" {}Editor Win64 Development -Project=\"{}\" -waitmutex -skipbuildengine",
-            build_script, suite.unreal_module, uproject_path
-        )
-    } else {
-        format!(
-            "\"{}\" {}Editor {} Development -Project=\"{}\" -skipbuildengine",
-            build_script,
-            suite.unreal_module,
-            host_unreal_platform(),
-            uproject_path
-        )
-    };
+    let compile_command = format!(
+        "\"{}\" {}Editor {} Development -Project=\"{}\" -waitmutex -skipbuildengine",
+        build_script,
+        suite.unreal_module,
+        host_unreal_platform(),
+        uproject_path
+    );
 
     // Run automation test
     let run_command = format!(
