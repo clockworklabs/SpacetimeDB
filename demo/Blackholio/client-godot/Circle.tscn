@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://j74mpcyku2um"]
+
+[ext_resource type="Script" uid="uid://cd0xlwbeuylpo" path="res://CircleController.cs" id="1_ortn3"]
+
+[node name="Circle" type="Node2D" unique_id=752416547]
+script = ExtResource("1_ortn3")
