@@ -92,6 +92,7 @@ impl Drop for Lockfile {
 
 pub mod advisory {
     use chrono::{DateTime, Utc};
+    use log;
     use std::{
         error::Error as StdError,
         fmt,
@@ -198,6 +199,7 @@ pub mod advisory {
                     existing_contents,
                 });
             }
+            log::debug!("Acquired lock on {}", path.display());
             // Now that we own the lock, clear any content that may have been written by a previous holder.
             lock.set_len(0).map_err(|source| LockError {
                 path: path.to_path_buf(),
@@ -250,6 +252,12 @@ pub mod advisory {
     impl fmt::Debug for LockedFile {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("LockedFile").field("path", &self.path).finish()
+        }
+    }
+
+    impl Drop for LockedFile {
+        fn drop(&mut self) {
+            log::debug!("Released lock on {}", self.path.display());
         }
     }
 }
@@ -327,5 +335,17 @@ mod tests {
         assert_eq!(err.source.kind(), ErrorKind::WouldBlock);
         assert_eq!(err.existing_contents.as_deref(), Some("pid=1234"));
         assert!(err.to_string().contains("pid=1234"));
+    }
+
+    #[test]
+    fn dropping_unlocks_file() {
+        let tmp = TempDir::new("locked_file_test").unwrap();
+        let path = tmp.path().join("db.lock");
+        let mut lock = LockedFile::lock(&path).unwrap();
+        lock.write_metadata("pid=1234").unwrap();
+
+        drop(lock);
+
+        let _lock2 = LockedFile::lock(&path).unwrap();
     }
 }

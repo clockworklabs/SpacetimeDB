@@ -8212,6 +8212,7 @@ dependencies = [
  "chrono",
  "fs2",
  "hex",
+ "log",
  "rand 0.9.2",
  "tempdir",
  "thiserror 1.0.69",
