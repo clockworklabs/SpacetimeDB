@@ -180,6 +180,7 @@ pub mod advisory {
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(false)
                 .open(path)
                 .map_err(|source| LockError {
                     path: path.to_path_buf(),
