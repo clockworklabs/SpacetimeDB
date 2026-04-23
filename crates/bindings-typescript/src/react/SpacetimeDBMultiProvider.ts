@@ -3,6 +3,7 @@ import {
   useMemo,
   useSyncExternalStore,
   createContext,
+  useContext,
   useRef,
   useCallback,
 } from 'react';
@@ -76,6 +77,15 @@ function freshFallbackState(): ManagedConnectionState {
  * providers that reference the same `(uri, moduleName)` share a single
  * WebSocket; unmounting one provider releases its retain without tearing the
  * socket while the other is alive.
+ *
+ * **Nesting / composition.** Providers compose by merging. An inner provider's
+ * label map is layered on top of the nearest outer provider's — labels unique
+ * to the outer remain visible from the inner subtree, labels present in both
+ * are shadowed by the inner entry. This is the idiomatic pattern for
+ * persistent-plus-swappable module sets: wrap long-lived modules in an outer
+ * provider, and swap shorter-lived modules with an inner
+ * `<SpacetimeDBMultiProvider key={scopeId}>`. Unmounting the inner provider
+ * only releases the inner's entries.
  *
  * StrictMode-safe: cleanup defers through the pool's setTimeout(0).
  */
@@ -185,9 +195,23 @@ export function SpacetimeDBMultiProvider({
 
   const statusMap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
+  // Compose with any parent MultiProvider: parent labels remain visible, own
+  // labels shadow on collision. Keeps the merged map reference-stable when
+  // neither the parent map nor our own statusMap changed.
+  const parentMap = useContext(SpacetimeDBMultiContext);
+  const mergedMap = useMemo<ManagedConnectionStateMap>(() => {
+    if (!parentMap || parentMap.size === 0) return statusMap;
+    if (statusMap.size === 0) return parentMap;
+    const merged: ManagedConnectionStateMap = new Map(parentMap);
+    for (const [label, state] of statusMap) {
+      merged.set(label, state);
+    }
+    return merged;
+  }, [parentMap, statusMap]);
+
   return React.createElement(
     SpacetimeDBMultiContext.Provider,
-    { value: statusMap },
+    { value: mergedMap },
     children
   );
 }

@@ -237,6 +237,126 @@ describe('SpacetimeDBMultiProvider', () => {
     unmount();
   });
 
+  test('nested provider: outer labels remain visible from inner subtree', () => {
+    const { conn: launcherConn, builder: launcherBuilder } =
+      makeBuilder('mod-launcher');
+    const { conn: coreConn, builder: coreBuilder } = makeBuilder('mod-core');
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <SpacetimeDBMultiProvider
+        connections={{ launcher: launcherBuilder as any }}
+      >
+        <SpacetimeDBMultiProvider connections={{ core: coreBuilder as any }}>
+          {children}
+        </SpacetimeDBMultiProvider>
+      </SpacetimeDBMultiProvider>
+    );
+
+    const { result } = renderHook(
+      () => ({
+        launcher: useSpacetimeDB('launcher'),
+        core: useSpacetimeDB('core'),
+      }),
+      { wrapper }
+    );
+
+    expect(result.current.launcher.getConnection()).toBe(launcherConn);
+    expect(result.current.core.getConnection()).toBe(coreConn);
+  });
+
+  test('nested provider: inner provider shadows outer label on collision', () => {
+    const { conn: outerConn, builder: outerBuilder } =
+      makeBuilder('mod-shared');
+    const { conn: innerConn, builder: innerBuilder } =
+      makeBuilder('mod-shared');
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <SpacetimeDBMultiProvider connections={{ shared: outerBuilder as any }}>
+        <SpacetimeDBMultiProvider connections={{ shared: innerBuilder as any }}>
+          {children}
+        </SpacetimeDBMultiProvider>
+      </SpacetimeDBMultiProvider>
+    );
+
+    const { result } = renderHook(() => useSpacetimeDB('shared'), { wrapper });
+    expect(result.current.getConnection()).toBe(innerConn);
+    // Outer is still retained — the outer and inner map to different pool
+    // entries because they have different URIs.
+    expect(outerConn.disconnected).toBe(false);
+  });
+
+  test('nested provider: inner unmount only releases inner entries', async () => {
+    const { conn: launcherConn, builder: launcherBuilder } = makeBuilder(
+      'mod-launcher-scoped'
+    );
+    const { conn: coreConn, builder: coreBuilder } =
+      makeBuilder('mod-core-scoped');
+
+    function Harness({ showInner }: { showInner: boolean }): React.JSX.Element {
+      return (
+        <SpacetimeDBMultiProvider
+          connections={{ launcher: launcherBuilder as any }}
+        >
+          {showInner ? (
+            <SpacetimeDBMultiProvider
+              connections={{ core: coreBuilder as any }}
+            >
+              <div>inner</div>
+            </SpacetimeDBMultiProvider>
+          ) : (
+            <div>no inner</div>
+          )}
+        </SpacetimeDBMultiProvider>
+      );
+    }
+
+    const { rerender } = render(<Harness showInner={true} />);
+    expect(launcherConn.disconnected).toBe(false);
+    expect(coreConn.disconnected).toBe(false);
+
+    rerender(<Harness showInner={false} />);
+    // Flush the pool's setTimeout(0) deferred teardown.
+    await new Promise(r => setTimeout(r, 10));
+    expect(launcherConn.disconnected).toBe(false);
+    expect(coreConn.disconnected).toBe(true);
+  });
+
+  test('subset swap: changing one label releases that entry, keeps siblings alive', async () => {
+    const { conn: launcherConn, builder: launcherBuilder } =
+      makeBuilder('mod-launcher-keep');
+    const { conn: oldCoreConn, builder: oldCoreBuilder } =
+      makeBuilder('mod-core-v1');
+    const { conn: newCoreConn, builder: newCoreBuilder } =
+      makeBuilder('mod-core-v2');
+
+    function Harness({ coreV }: { coreV: 1 | 2 }): React.JSX.Element {
+      const connections = React.useMemo(
+        () => ({
+          launcher: launcherBuilder as any,
+          core: (coreV === 1 ? oldCoreBuilder : newCoreBuilder) as any,
+        }),
+        [coreV]
+      );
+      return (
+        <SpacetimeDBMultiProvider connections={connections}>
+          <div>project {coreV}</div>
+        </SpacetimeDBMultiProvider>
+      );
+    }
+
+    const { rerender } = render(<Harness coreV={1} />);
+    expect(launcherConn.disconnected).toBe(false);
+    expect(oldCoreConn.disconnected).toBe(false);
+
+    rerender(<Harness coreV={2} />);
+    // Launcher's release→retain on the same pool key cancels the scheduled
+    // cleanup; old-core's entry is orphaned and tears down after setTimeout(0).
+    await new Promise(r => setTimeout(r, 10));
+    expect(launcherConn.disconnected).toBe(false);
+    expect(oldCoreConn.disconnected).toBe(true);
+    expect(newCoreConn.disconnected).toBe(false);
+  });
+
   test('inline connections prop does not churn retain/release each render', () => {
     const { conn, builder } = makeBuilder('mod-inline');
     // We'll pass a fresh object literal on every render below. If the provider
