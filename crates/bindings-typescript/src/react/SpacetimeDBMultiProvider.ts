@@ -38,6 +38,12 @@ export interface SpacetimeDBMultiProviderProps {
    * The same underlying pool keys by `(uri, moduleName)` regardless of
    * label, so two `SpacetimeDBMultiProvider`s that refer to the same
    * `(uri, moduleName)` share a single WebSocket.
+   *
+   * **Do not inline new builders on every render.** Each builder identity
+   * should be stable — build them outside the render or inside a `useMemo`.
+   * The provider compares entries by `(label, uri, moduleName)` to absorb
+   * accidental object-identity churn, but fresh builder objects every render
+   * still do wasted work.
    */
   connections: Record<string, DbConnectionBuilder<DbConnectionImpl<any>>>;
   children?: React.ReactNode;
@@ -49,13 +55,16 @@ type Entry = {
   poolKey: string;
 };
 
-const FALLBACK_STATE: ManagedConnectionState = {
-  isActive: false,
-  identity: undefined,
-  token: undefined,
-  connectionId: ConnectionId.random(),
-  connectionError: undefined,
-};
+/** Fresh per-entry fallback so unrelated labels never collide on connectionId. */
+function freshFallbackState(): ManagedConnectionState {
+  return {
+    isActive: false,
+    identity: undefined,
+    token: undefined,
+    connectionId: ConnectionId.random(),
+    connectionError: undefined,
+  };
+}
 
 /**
  * Mounts multiple SpacetimeDB connections under a single provider, one per
@@ -74,10 +83,15 @@ export function SpacetimeDBMultiProvider({
   connections,
   children,
 }: SpacetimeDBMultiProviderProps): React.JSX.Element {
-  // Stable entry list — label + builder + pool key. Rebuilt only when the
-  // `connections` record identity changes. Order is stable.
+  // Resolve entries with a content-based signature so inline `connections={{...}}`
+  // props don't churn retain/release on every render. Two consecutive renders
+  // whose (label, uri, moduleName) tuples match reuse the same `entries` array
+  // identity, which keeps the effect + snapshot deps stable.
+  const entriesRef = useRef<{ signature: string; entries: Entry[] } | null>(
+    null
+  );
   const entries = useMemo<Entry[]>(() => {
-    return Object.entries(connections).map(([label, builder]) => ({
+    const raw = Object.entries(connections).map(([label, builder]) => ({
       label,
       builder,
       poolKey: ConnectionManager.getKey(
@@ -85,7 +99,12 @@ export function SpacetimeDBMultiProvider({
         builder.getModuleName()
       ),
     }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const signature = raw.map(e => `${e.label}\0${e.poolKey}`).join('\n');
+    if (entriesRef.current && entriesRef.current.signature === signature) {
+      return entriesRef.current.entries;
+    }
+    entriesRef.current = { signature, entries: raw };
+    return raw;
   }, [connections]);
 
   // Retain every entry for the lifetime of this provider.
@@ -120,11 +139,23 @@ export function SpacetimeDBMultiProvider({
     states: ManagedConnectionState[];
     map: ManagedConnectionStateMap;
   } | null>(null);
+  const fallbackStatesRef = useRef<Map<string, ManagedConnectionState>>(
+    new Map()
+  );
 
   const getSnapshot = useCallback((): ManagedConnectionStateMap => {
-    const states = entries.map(
-      ({ poolKey }) => ConnectionManager.getSnapshot(poolKey) ?? FALLBACK_STATE
-    );
+    const states = entries.map(({ label, poolKey }) => {
+      const pooled = ConnectionManager.getSnapshot(poolKey);
+      if (pooled) return pooled;
+      // Stable per-label fallback so consumers don't see churning connectionIds
+      // before the pool has a real state.
+      let fb = fallbackStatesRef.current.get(label);
+      if (!fb) {
+        fb = freshFallbackState();
+        fallbackStatesRef.current.set(label, fb);
+      }
+      return fb;
+    });
 
     // Return the cached map if every state is reference-equal to the last
     // read. This is what keeps `useSyncExternalStore` stable across renders

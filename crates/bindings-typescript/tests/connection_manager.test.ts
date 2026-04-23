@@ -846,7 +846,7 @@ describe('ConnectionManager', () => {
       expect(manager._getRefCount(key)).toBe(2);
     });
 
-    test('preserves listeners across rebuild and notifies them', () => {
+    test('preserves listeners across rebuild and notifies them exactly once per state change', () => {
       const firstConn = new MockConnection();
       const secondConn = new MockConnection();
       const key = 'test-key';
@@ -856,9 +856,14 @@ describe('ConnectionManager', () => {
       manager.retain(key, new MockBuilder(firstConn));
       listener.mockClear();
 
+      // Rebuild does exactly one initial state emission (the install's setState).
       manager.rebuild(key, new MockBuilder(secondConn));
-      // Initial install re-emits state → at least one listener call.
-      expect(listener).toHaveBeenCalled();
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // And the listener is still wired to the NEW connection's events, not
+      // a double-registered pair from old + new.
+      secondConn.simulateConnect(testIdentity, 'fresh');
+      expect(listener).toHaveBeenCalledTimes(2);
     });
 
     test('cancels pending release', () => {
