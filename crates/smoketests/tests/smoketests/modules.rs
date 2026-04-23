@@ -8,7 +8,7 @@ fn test_module_update() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("module-update-{}", std::process::id());
 
     // Initial publish
     test.publish_module_named(&name, false).unwrap();
@@ -100,7 +100,7 @@ fn test_hotswap_module() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("hotswap-module-{}", std::process::id());
 
     // Publish initial module and subscribe to all
     test.publish_module_named(&name, false).unwrap();

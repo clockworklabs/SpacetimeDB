@@ -17,6 +17,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   smoketests:
     needs: [lints]
@@ -27,7 +31,7 @@ jobs:
           - name: Linux
             runner: spacetimedb-new-runner-2
           - name: Windows
-            runner: windows-latest
+            runner: spacetimedb-windows-runner
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -98,6 +102,10 @@ jobs:
           cd $env:USERPROFILE\emsdk
           .\emsdk install 4.0.21
           .\emsdk activate 4.0.21
+          # Add emscripten to PATH for subsequent steps and subprocesses
+          $emsdkPath = "$env:USERPROFILE\emsdk\upstream\emscripten"
+          Add-Content -Path $env:GITHUB_PATH -Value $emsdkPath
+          Write-Host "Added $emsdkPath to PATH"
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
@@ -170,13 +178,6 @@ jobs:
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
           cargo ci smoketests -- --test-threads=1          
-
-      - name: Check for changes
-        run: |
-          tools/check-diff.sh crates/smoketests || {
-              echo 'Error: There is a diff in the smoketests directory.'
-              exit 1
-          }
 
   test:
     needs: [lints]
@@ -262,10 +263,6 @@ jobs:
 
           wasm-bindgen --version
 
-      - name: Build typescript module sdk
-        working-directory: crates/bindings-typescript
-        run: pnpm build
-
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
@@ -298,6 +295,15 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
 
       - name: Run ci lint
         run: cargo ci lint
@@ -336,24 +342,8 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - name: Set up Python env
-        run: |
-          test -d venv || python3 -m venv venv
-          venv/bin/pip3 install argparse toml
       - name: Run checks
-        run: |
-          set -ueo pipefail
-          FAILED=0
-          ROOTS=(spacetimedb spacetimedb-sdk)
-          CRATES=$(venv/bin/python3 tools/find-publish-list.py --recursive --directories --quiet "${ROOTS[@]}")
-          for crate_dir in $CRATES; do
-            if ! venv/bin/python3 tools/crate-publish-checks.py "${crate_dir}"; then
-              FAILED=$(( $FAILED + 1 ))
-            fi
-          done
-          if [ $FAILED -gt 0 ]; then
-            exit 1
-          fi
+        run: cargo ci publish-checks
 
   update:
     name: Test spacetimedb-update flow (${{ matrix.target }})
@@ -383,28 +373,10 @@ jobs:
         shell: bash
         run: sudo apt install -y libssl-dev
 
-      - name: Build spacetimedb-update
-        run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
-        if: runner.os == 'Windows'
-
-      - name: Run self-install
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          ROOT_DIR="$(mktemp -d)"
-          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
-          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
-          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
-          cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
-          "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
-        if: runner.os == 'Windows'
-
       - name: Test spacetimedb-update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
-        if: runner.os != 'Windows'
 
   unreal_engine_tests:
     name: Unreal Engine Tests
@@ -1141,3 +1113,151 @@ jobs:
       - name: Verify crates/smoketests/tests/smoketests/mod.rs lists all entries
         run: |
           cargo ci smoketests check-mod-list
+
+  docs-build:
+    name: Docs build
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Get pnpm store directory
+        working-directory: sdks/typescript
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Docusaurus build
+        run: cargo ci docs
+
+  typescript-test:
+    name: TypeScript - Tests
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Get pnpm store directory
+        shell: bash
+        working-directory: crates/bindings-typescript
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      # - name: Extract SpacetimeDB branch name from file
+      #   id: extract-branch
+      #   run: |
+      #     # Define the path to the branch file
+      #     BRANCH_FILE=".github/spacetimedb-branch.txt"
+
+      #     # Default to master if file doesn't exist
+      #     if [ ! -f "$BRANCH_FILE" ]; then
+      #       echo "::notice::No SpacetimeDB branch file found, using 'master'"
+      #       echo "branch=master" >> $GITHUB_OUTPUT
+      #       exit 0
+      #     fi
+
+      #     # Read and trim whitespace from the file
+      #     branch=$(cat "$BRANCH_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+      #     # Fallback to master if empty
+      #     if [ -z "$branch" ]; then
+      #       echo "::warning::SpacetimeDB branch file is empty, using 'master'"
+      #       branch="master"
+      #     fi
+
+      #     echo "branch=$branch" >> $GITHUB_OUTPUT
+      #     echo "Using SpacetimeDB branch from file: $branch"
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
+          prefix-key: v1
+
+      # # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # # However, we've been unable to fix it so... /shrug
+      # - name: Check v8 outputs
+      #   run: |
+      #     find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+      #     if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+      #       echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+      #       cargo clean -p v8 || true
+      #       cargo build -p v8
+      #     fi
+      #     if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
+      #       echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+      #       cargo clean --release -p v8 || true
+      #       cargo build --release -p v8
+      #     fi
+
+      # - name: Install SpacetimeDB CLI from the local checkout
+      #   run: |
+      #     export CARGO_HOME="$HOME/.cargo"
+      #     echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+      #     cargo install --force --path crates/cli --locked --message-format=short
+      #     cargo install --force --path crates/standalone --locked --message-format=short
+      #     # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+      #     ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      #     # Clear any existing information
+      #     spacetime server clear -y
+
+      - name: Run TypeScript tests
+        run: cargo ci typescript-test
+
+      # - name: Run quickstart-chat tests
+      #   working-directory: examples/quickstart-chat
+      #   run: pnpm test
+      #
+      # # Run this step always, even if the previous steps fail
+      # - name: Print rows in the user table
+      #   if: always()
+      #   run: spacetime sql quickstart-chat "SELECT * FROM user"

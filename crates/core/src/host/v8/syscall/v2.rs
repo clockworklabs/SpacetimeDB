@@ -1,10 +1,10 @@
 use super::super::de::deserialize_js;
 use super::super::error::{
-    collapse_exc_thrown, exception_already_thrown, terminate_execution, ExceptionValue, PinTryCatch, RangeError,
-    SysCallError,
+    check_termination, BufferTooSmall, ErrorOrException, ExcResult, ExceptionThrown, SysCallResult, TypeError, OOB,
 };
 use super::super::error::{
-    throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult, ExceptionThrown, SysCallResult, TypeError, OOB,
+    collapse_exc_thrown, exception_already_thrown, terminate_execution, ExceptionValue, PinTryCatch, RangeError,
+    SysCallError,
 };
 use super::super::from_value::cast;
 use super::super::ser::serialize_to_js;
@@ -193,7 +193,7 @@ fn adapt_fun(
     fun: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>),
 ) -> impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>) {
     move |scope, args, rv| {
-        if throw_if_terminated(scope) {
+        if check_termination(scope).is_err() {
             return;
         }
 
@@ -338,7 +338,7 @@ fn code_error<'scope>(
 fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
     let res = match err_to_errno_and_log::<u16>(abi_call, error) {
         Ok((code, message)) => code_error(scope, code, message.as_deref()),
-        Err(err) => terminate_execution(scope, &err),
+        Err(err) => terminate_execution(scope, err),
     };
     collapse_exc_thrown(scope, res)
 }
@@ -426,7 +426,7 @@ fn hooks_symbol<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, v8::Symbo
 /// Calls the `__call_reducer__` function `fun`.
 pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinTryCatch<'scope, '_, '_, '_>,
-    hooks: &HookFunctions<'scope>,
+    hooks: &HookFunctions<'_>,
     op: ReducerOp<'_>,
     reducer_args_buf: Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {

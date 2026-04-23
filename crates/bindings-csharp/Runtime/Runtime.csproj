@@ -12,6 +12,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>SpacetimeDB</RootNamespace>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <RestoreAdditionalProjectSources Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +24,13 @@
     <!-- Codegen package must be built before this one so that it's included in NuGet Runtime package, but we don't depend on it. -->
     <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Runtime itself) -->
     <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- These must be explicit package dependencies so NuGet consumers can resolve the LLVM toolchain. -->
+  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" IncludeAssets="All" />
   </ItemGroup>
 
   <ItemGroup>

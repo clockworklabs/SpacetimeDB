@@ -1082,6 +1082,26 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Change the primary key of the table identified by `table_id`.
+    ///
+    /// Updates both the in-memory schema and the `st_table` system table.
+    /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
+    pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
+
+        // Update system tables.
+        let new_pk_col_list = new_primary_key.map(|col| col.into());
+        let old_pk =
+            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,
@@ -1954,7 +1974,17 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
+    pub(super) fn commit(self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
+        let (tx_offset, tx_data, tx_metrics, reducer) = self.commit_and_then(|_| {});
+        let tx_data =
+            Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
+        (tx_offset, tx_data, tx_metrics, reducer)
+    }
+
+    pub(super) fn commit_and_then(
+        mut self,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -1988,6 +2018,9 @@ impl MutTxId {
             tx_offset
         };
 
+        let tx_data = Arc::new(tx_data);
+        before_release(&tx_data);
+
         (tx_offset, tx_data, tx_metrics, reducer)
     }
 
@@ -2004,7 +2037,18 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
-    pub(super) fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+    pub(super) fn commit_downgrade(self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        let (tx_data, tx_metrics, tx) = self.commit_downgrade_and_then(workload, |_| {});
+        let tx_data =
+            Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
+        (tx_data, tx_metrics, tx)
+    }
+
+    pub(super) fn commit_downgrade_and_then(
+        mut self,
+        workload: Workload,
+        before_downgrade: impl FnOnce(&Arc<TxData>),
+    ) -> (Arc<TxData>, TxMetrics, TxId) {
         let tx_data = self
             .committed_state_write_lock
             .merge(self.tx_state, self.read_sets, &self.ctx);
@@ -2022,6 +2066,9 @@ impl MutTxId {
             Some(&tx_data),
             &self.committed_state_write_lock,
         );
+
+        let tx_data = Arc::new(tx_data);
+        before_downgrade(&tx_data);
 
         // Update the workload type of the execution context
         self.ctx.workload = workload.workload_type();

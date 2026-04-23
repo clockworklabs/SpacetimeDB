@@ -1,5 +1,5 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
+use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -298,19 +298,6 @@ impl InstanceEnv {
 
     /// Logs a simple `message` at `level`.
     pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
-        /// A backtrace provider that provides nothing.
-        struct Noop;
-        impl BacktraceProvider for Noop {
-            fn capture(&self) -> Box<dyn ModuleBacktrace> {
-                Box::new(Noop)
-            }
-        }
-        impl ModuleBacktrace for Noop {
-            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
-                Vec::new()
-            }
-        }
-
         let record = Record {
             ts: Self::now_for_logging(),
             target: None,
@@ -319,7 +306,7 @@ impl InstanceEnv {
             function,
             message,
         };
-        self.console_log(level, &record, &Noop);
+        self.console_log(level, &record, &());
     }
 
     /// End a console timer by logging the span at INFO level.
