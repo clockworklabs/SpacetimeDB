@@ -1592,7 +1592,7 @@ impl Table {
     pub fn get_indexes_by_cols(&self, cols: &ColList) -> Vec<(IndexId, &TableIndex)> {
         self.indexes
             .iter()
-            .filter(|(_, index)| &index.indexed_columns == cols)
+            .filter(|(_, index)| index.indexed_columns() == cols)
             .map(|(id, idx)| (*id, idx))
             .collect()
     }

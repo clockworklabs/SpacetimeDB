@@ -1959,7 +1959,7 @@ impl MutTxId {
                         idx.make_non_unique();
                     }
                 }
-                let cols = commit_table.indexes[&index_id].indexed_columns.clone();
+                let cols = commit_table.indexes[&index_id].indexed_columns().clone();
                 let violation = commit_table
                     .get_row_ref(commit_blob_store, violation)
                     .expect("row came from scanning the table")
