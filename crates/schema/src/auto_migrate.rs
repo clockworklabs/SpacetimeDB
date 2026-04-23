@@ -301,6 +301,13 @@ pub enum AutoMigrateStep<'def> {
     /// Change the access of a table.
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
 
+    /// Toggle the `is_event` flag of a table. The table must be empty at apply time.
+    ///
+    /// This is a breaking change for subscribed clients (the committed-state
+    /// semantics of the table flip), so this step is always accompanied by a
+    /// `DisconnectAllUsers`.
+    ChangeEventFlag(<TableDef as ModuleDefLookup>::Key<'def>),
+
     /// Change the primary key of a table.
     ///
     /// This updates the `table_primary_key` field in `st_table`
@@ -433,9 +440,6 @@ pub enum AutoMigrateError {
         type1: TableType,
         type2: TableType,
     },
-
-    #[error("Changing the event flag of table {table} requires a manual migration")]
-    ChangeTableEventFlag { table: Identifier },
 
     #[error(
         "Changing the accessor name on index {index} from {old_accessor:?} to {new_accessor:?} requires a manual migration"
@@ -674,14 +678,12 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         }
         .into())
     };
-    let event_ok: Result<()> = if old.is_event == new.is_event {
-        Ok(())
-    } else {
-        Err(AutoMigrateError::ChangeTableEventFlag {
-            table: old.name.clone(),
-        }
-        .into())
-    };
+    if old.is_event != new.is_event {
+        // Flipping `is_event` changes committed-state semantics;
+        // clients must reconnect after the migration.
+        plan.ensure_disconnect_all_users();
+        plan.steps.push(AutoMigrateStep::ChangeEventFlag(key));
+    }
     if old.table_access != new.table_access {
         plan.steps.push(AutoMigrateStep::ChangeAccess(key));
     }
@@ -760,8 +762,8 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     })
     .collect_all_errors::<ProductMonoid<Any, Any>>();
 
-    let ((), (), ProductMonoid(Any(row_type_changed), Any(columns_added))) =
-        (type_ok, event_ok, columns_ok).combine_errors()?;
+    let ((), ProductMonoid(Any(row_type_changed), Any(columns_added))) =
+        (type_ok, columns_ok).combine_errors()?;
 
     // If we're adding a column, we'll rewrite the whole table.
     // That makes any `ChangeColumns` moot, so we can skip it.
@@ -2391,31 +2393,60 @@ mod tests {
     }
 
     #[test]
-    fn test_change_event_flag_rejected() {
-        // non-event → event
-        let old = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .finish();
-        });
-        let new = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .with_event(true)
-                .finish();
-        });
+    fn test_change_event_flag_produces_step() {
+        let build = |is_event: bool| {
+            create_v10_module_def(|builder| {
+                builder
+                    .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_event(is_event)
+                    .finish();
+            })
+        };
+        let assert_flip = |old_is_event: bool, new_is_event: bool| {
+            let old = build(old_is_event);
+            let new = build(new_is_event);
+            let events_key = expect_identifier("events");
+            let plan = ponder_auto_migrate(&old, &new)
+                .expect("toggling `is_event` on an empty table should succeed");
+            assert_eq!(
+                plan.steps,
+                &[
+                    AutoMigrateStep::ChangeEventFlag(&events_key),
+                    AutoMigrateStep::DisconnectAllUsers,
+                ],
+            );
+            assert!(plan.disconnects_all_users(), "{plan:#?}");
+        };
+        assert_flip(false, true);
+        assert_flip(true, false);
+    }
 
-        let result = ponder_auto_migrate(&old, &new);
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
-        );
+    #[test]
+    fn test_change_event_flag_does_not_produce_orphan_sub_object_steps() {
+        // Flipping `is_event` must not trigger spurious index/constraint/sequence diff steps
+        // for a table whose only change is the `is_event` annotation.
+        let build = |is_event: bool| {
+            create_v10_module_def(|builder| {
+                builder
+                    .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_unique_constraint(0)
+                    .with_index(btree(0), "events_id_idx", "events_id_idx")
+                    .with_primary_key(0)
+                    .with_event(is_event)
+                    .finish();
+            })
+        };
 
-        // event → non-event (reverse direction)
-        let result = ponder_auto_migrate(&new, &old);
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
+        let events_key = expect_identifier("events");
+        let old = build(false);
+        let new = build(true);
+        let plan = ponder_auto_migrate(&old, &new).expect("toggling `is_event` on an empty table should succeed");
+        assert_eq!(
+            plan.steps,
+            &[
+                AutoMigrateStep::ChangeEventFlag(&events_key),
+                AutoMigrateStep::DisconnectAllUsers,
+            ],
         );
     }
 

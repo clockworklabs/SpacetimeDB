@@ -10,8 +10,8 @@ use crate::auto_migrate::formatter::ViewInfo;
 use crate::identifier::Identifier;
 
 use super::formatter::{
-    AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
-    RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
+    AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, EventFlagChangeInfo, IndexInfo,
+    MigrationFormatter, NewColumns, RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
 };
 
 /// Color scheme for consistent formatting
@@ -320,6 +320,20 @@ impl MigrationFormatter for TermColorFormatter {
         self.write_action_prefix(&Action::Changed)?;
         self.buffer.write_all(b" access for table ")?;
         self.write_colored(&a.table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b" (")?;
+        self.write_colored(direction, Some(self.colors.access), false)?;
+        self.buffer.write_all(b")\n")
+    }
+
+    fn format_change_event_flag(&mut self, e: &EventFlagChangeInfo) -> io::Result<()> {
+        let direction = if e.new_is_event {
+            "non-event → event"
+        } else {
+            "event → non-event"
+        };
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" event flag for table ")?;
+        self.write_colored(&e.table_name, Some(self.colors.table_name), true)?;
         self.buffer.write_all(b" (")?;
         self.write_colored(direction, Some(self.colors.access), false)?;
         self.buffer.write_all(b")\n")

@@ -118,6 +118,9 @@ pub enum PendingSchemaChange {
     /// The access of the table with [`TableId`] was changed.
     /// The old access was stored.
     TableAlterAccess(TableId, StAccess),
+    /// The `is_event` flag of the table with [`TableId`] was changed.
+    /// The old value is stored.
+    TableAlterEventFlag(TableId, bool),
     /// The row type of the table with [`TableId`] was changed.
     /// The old column schemas was stored.
     /// Only non-representational row-type changes are allowed here,
@@ -148,6 +151,7 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
+            Self::TableAlterEventFlag(table_id, old_is_event) => table_id.heap_usage() + old_is_event.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
             Self::ConstraintRemoved(table_id, constraint_schema) => {

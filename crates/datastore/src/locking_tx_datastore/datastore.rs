@@ -280,6 +280,14 @@ impl Locking {
         tx.alter_table_access(table_id, access)
     }
 
+    pub fn alter_table_event_flag_mut_tx(&self, tx: &mut MutTxId, name: &str, is_event: bool) -> Result<()> {
+        let table_id = self
+            .table_id_from_name_mut_tx(tx, name)?
+            .ok_or_else(|| TableError::NotFound(name.into()))?;
+
+        tx.alter_table_event_flag(table_id, is_event)
+    }
+
     pub fn alter_table_primary_key_mut_tx(
         &self,
         tx: &mut MutTxId,
@@ -3138,6 +3146,105 @@ pub(crate) mod tests {
         let tx = begin_mut_tx(&datastore);
         assert_access(&tx, StAccess::Private);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_non_event_to_event() -> ResultTest<()> {
+        use crate::locking_tx_datastore::test_helpers::check_table_event_flag_altered;
+
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        check_table_event_flag_altered(&datastore, &tx, table_id, false);
+
+        tx.alter_table_event_flag(table_id, true)?;
+        assert_matches!(
+            tx.pending_schema_changes(),
+            &[PendingSchemaChange::TableAlterEventFlag(t, false)] if t == table_id
+        );
+        check_table_event_flag_altered(&datastore, &tx, table_id, true);
+
+        let tx_data = commit(&datastore, tx)?;
+        // Flipping to event inserts one row into `st_event_table`
+        // and does not touch the user table's row data.
+        assert_eq!(
+            tx_data.inserts_for_table(ST_EVENT_TABLE_ID).map(<[_]>::len),
+            Some(1),
+        );
+        assert_eq!(tx_data.inserts_for_table(table_id), None);
+        assert_eq!(tx_data.deletes_for_table(table_id), None);
+
+        let tx = begin_mut_tx(&datastore);
+        check_table_event_flag_altered(&datastore, &tx, table_id, true);
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_event_to_non_event() -> ResultTest<()> {
+        use crate::locking_tx_datastore::test_helpers::check_table_event_flag_altered;
+
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        check_table_event_flag_altered(&datastore, &tx, table_id, true);
+
+        tx.alter_table_event_flag(table_id, false)?;
+        assert_matches!(
+            tx.pending_schema_changes(),
+            &[PendingSchemaChange::TableAlterEventFlag(t, true)] if t == table_id
+        );
+        check_table_event_flag_altered(&datastore, &tx, table_id, false);
+
+        let tx_data = commit(&datastore, tx)?;
+        // Flipping away from event deletes one row from `st_event_table`
+        // and does not touch the user table's row data.
+        assert_eq!(
+            tx_data.deletes_for_table(ST_EVENT_TABLE_ID).map(<[_]>::len),
+            Some(1),
+        );
+        assert_eq!(tx_data.inserts_for_table(table_id), None);
+        assert_eq!(tx_data.deletes_for_table(table_id), None);
+
+        let tx = begin_mut_tx(&datastore);
+        check_table_event_flag_altered(&datastore, &tx, table_id, false);
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_rollback_reverts_live_state_and_st_event_table() -> ResultTest<()> {
+        use crate::locking_tx_datastore::test_helpers::check_table_event_flag_altered;
+
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        check_table_event_flag_altered(&datastore, &tx, table_id, false);
+
+        tx.alter_table_event_flag(table_id, true)?;
+        assert_matches!(
+            tx.pending_schema_changes(),
+            &[PendingSchemaChange::TableAlterEventFlag(t, false)] if t == table_id
+        );
+        check_table_event_flag_altered(&datastore, &tx, table_id, true);
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.pending_schema_changes(), []);
+        check_table_event_flag_altered(&datastore, &tx, table_id, false);
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_event_flag_idempotent_no_pending_change() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.alter_table_event_flag(table_id, false)?;
+        assert_eq!(tx.pending_schema_changes(), []);
         Ok(())
     }
 

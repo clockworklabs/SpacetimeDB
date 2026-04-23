@@ -5,8 +5,8 @@ use crate::error::{DatastoreError, IndexError, TableError, ViewError};
 use crate::locking_tx_datastore::state_view::{iter_st_column_for_table, StateView};
 use crate::system_tables::{
     is_built_in_meta_row, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StFields as _,
-    StIndexRow, StSequenceFields, StTableFields, StTableRow, StViewRow, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID,
-    ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
+    StIndexRow, StSequenceFields, StTableFields, StTableRow, StViewRow, ST_COLUMN_ID, ST_CONSTRAINT_ID,
+    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
 };
 use anyhow::{anyhow, Context};
 use core::cell::RefMut;
@@ -762,6 +762,14 @@ impl<'cs> ReplayCommittedState<'cs> {
             self.st_column_changed(referenced_table_id)?;
         }
 
+        if table_id == ST_EVENT_TABLE_ID {
+            // An `st_event_table` row was inserted; flip `is_event=true`
+            // on the referenced table's cached schema.
+            // The `table_id` is the first (and only) field in `StEventTableRow`.
+            let referenced_table_id = Self::read_table_id(row);
+            self.reschema_table_for_st_event_table_update(referenced_table_id, true);
+        }
+
         Ok(())
     }
 
@@ -805,6 +813,20 @@ impl<'cs> ReplayCommittedState<'cs> {
             })?;
         }
         Ok(())
+    }
+
+    /// Update the in-memory table structure's `is_event` flag in response to
+    /// replay of an `st_event_table` mutation.
+    fn reschema_table_for_st_event_table_update(&mut self, table_id: TableId, is_event: bool) {
+        // We only need to update if we've already constructed the in-memory table structure.
+        // If we haven't yet, then `self.get_table_and_blob_store_or_create` will see the correct schema
+        // (via `schema_for_table_raw`'s live `st_event_table` lookup) when it eventually runs.
+        if let Ok((table, ..)) = self.get_table_and_blob_store_mut(table_id) {
+            assert_eq!(table.num_rows(), 0);
+            table.with_mut_schema(|schema| {
+                schema.is_event = is_event;
+            });
+        }
     }
 
     /// Mark all `st_column` rows which refer to the same column as `st_column_row`
@@ -934,6 +956,14 @@ impl<'cs> ReplayCommittedState<'cs> {
             // If that's the case, `row_ptr` won't be in `self.replay_columns_to_ignore`,
             // which is fine.
             self.replay_columns_to_ignore.remove(&row_ptr);
+        }
+
+        if table_id == ST_EVENT_TABLE_ID {
+            // An `st_event_table` row was deleted; flip `is_event=false`
+            // on the referenced table's cached schema.
+            // The `table_id` is the first (and only) field in `StEventTableRow`.
+            let referenced_table_id = Self::read_table_id(row);
+            self.reschema_table_for_st_event_table_update(referenced_table_id, false);
         }
 
         Ok(())
