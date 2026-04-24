@@ -9,7 +9,7 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 ## At a glance
 
 | Route                                                                                              | Description                                       |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+|----------------------------------------------------------------------------------------------------|---------------------------------------------------|
 | [`POST /v1/database`](#post-v1database)                                                            | Publish a new database given its module code.     |
 | [`PUT /v1/database/:name_or_identity`](#put-v1databasename_or_identity)                            | Publish to a database given its module code.      |
 | [`GET /v1/database/:name_or_identity`](#get-v1databasename_or_identity)                            | Get a JSON description of a database.             |
@@ -23,6 +23,7 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 | [`GET /v1/database/:name_or_identity/schema`](#get-v1databasename_or_identityschema)               | Get the schema for a database.                    |
 | [`GET /v1/database/:name_or_identity/logs`](#get-v1databasename_or_identitylogs)                   | Retrieve logs from a database.                    |
 | [`POST /v1/database/:name_or_identity/sql`](#post-v1databasename_or_identitysql)                   | Run a SQL query against a database.               |
+| [`ANY /v1/database/:name_or_identity/route/{*path}`](#any-v1databasename_or_identityroutepath)     | Access database-defined HTTP APIs.                |
 
 ## `POST /v1/database`
 
@@ -473,3 +474,7 @@ Returns a JSON array of statement results, each of which takes the form:
 The `schema` will be a [JSON-encoded `ProductType`](../00300-internals/00200-sats-json.md) describing the type of the returned rows.
 
 The `rows` will be an array of [JSON-encoded `ProductValue`s](../00300-internals/00200-sats-json.md), each of which conforms to the `schema`.
+
+## `ANY /v1/database/:name_or_identity/route/{*path}`
+
+Access routes defined by a database using [HTTP handlers](../../../00200-core-concepts/00200-functions/000600-HTTP-handlers.md).
