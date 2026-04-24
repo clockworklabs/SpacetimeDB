@@ -361,7 +361,9 @@ mod test {
         host::module_host::create_table_from_def,
     };
     use pretty_assertions::assert_matches;
-    use spacetimedb_datastore::locking_tx_datastore::test_helpers::assert_is_event_state;
+    use spacetimedb_datastore::locking_tx_datastore::test_helpers::{
+        assert_is_event_state, check_table_event_flag_altered,
+    };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
@@ -654,10 +656,7 @@ mod test {
             "flipping the `event` flag should disconnect clients"
         );
         assert_is_event_state(&tx, table_id, true);
-        assert_matches!(
-            tx.pending_schema_changes(),
-            [PendingSchemaChange::TableAlterEventFlag(t, false), ..] if *t == table_id
-        );
+        check_table_event_flag_altered(&tx, table_id, true);
         Ok(())
     }
 
