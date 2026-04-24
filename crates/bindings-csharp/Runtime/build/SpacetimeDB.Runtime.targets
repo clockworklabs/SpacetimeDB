@@ -1,50 +1,32 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <Import
-      Project="$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets"
-      Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1' and '$(ILCompilerTargetsPath)' == '' and '$(PkgMicrosoft_DotNet_ILCompiler_LLVM)' != '' and Exists('$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets')" />
-
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
 
-    <!-- spacetime_10.0 imports -->
-    <WasmImport Include="spacetime_10.0!table_id_from_name" />
-    <WasmImport Include="spacetime_10.0!index_id_from_name" />
-    <WasmImport Include="spacetime_10.0!datastore_table_row_count" />
-    <WasmImport Include="spacetime_10.0!datastore_table_scan_bsatn" />
-    <WasmImport Include="spacetime_10.0!datastore_index_scan_range_bsatn" />
-    <WasmImport Include="spacetime_10.0!datastore_btree_scan_bsatn" />
-    <WasmImport Include="spacetime_10.0!row_iter_bsatn_advance" />
-    <WasmImport Include="spacetime_10.0!row_iter_bsatn_close" />
-    <WasmImport Include="spacetime_10.0!datastore_insert_bsatn" />
-    <WasmImport Include="spacetime_10.0!datastore_update_bsatn" />
-    <WasmImport Include="spacetime_10.0!datastore_delete_by_index_scan_range_bsatn" />
-    <WasmImport Include="spacetime_10.0!datastore_delete_by_btree_scan_bsatn" />
-    <WasmImport Include="spacetime_10.0!datastore_delete_all_by_eq_bsatn" />
-    <WasmImport Include="spacetime_10.0!bytes_source_read" />
-    <WasmImport Include="spacetime_10.0!bytes_sink_write" />
-    <WasmImport Include="spacetime_10.0!console_log" />
-    <WasmImport Include="spacetime_10.0!console_timer_start" />
-    <WasmImport Include="spacetime_10.0!console_timer_end" />
-    <WasmImport Include="spacetime_10.0!volatile_nonatomic_schedule_immediate" />
-    <WasmImport Include="spacetime_10.0!identity" />
+    <WasmImport Include="$(SpacetimeNamespace)!table_id_from_name" />
+    <WasmImport Include="$(SpacetimeNamespace)!index_id_from_name" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_table_row_count" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_table_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_index_scan_range_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_btree_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_advance" />
+    <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_close" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_insert_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_by_index_scan_range_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_by_btree_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_all_by_eq_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!bytes_source_read" />
+    <WasmImport Include="$(SpacetimeNamespace)!bytes_sink_write" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_log" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_timer_start" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_timer_end" />
+    <WasmImport Include="$(SpacetimeNamespace)!volatile_nonatomic_schedule_immediate" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_clear" />
 
-    <!-- spacetime_10.1 imports -->
-    <WasmImport Include="spacetime_10.1!bytes_source_remaining_length" />
-
-    <!-- spacetime_10.2 imports -->
-    <WasmImport Include="spacetime_10.2!get_jwt" />
-
-    <!-- spacetime_10.3 imports -->
-    <WasmImport Include="spacetime_10.3!procedure_start_mut_tx" />
-    <WasmImport Include="spacetime_10.3!procedure_commit_mut_tx" />
-    <WasmImport Include="spacetime_10.3!procedure_abort_mut_tx" />
-    <WasmImport Include="spacetime_10.3!procedure_http_request" />
-
-    <!-- spacetime_10.4 imports -->
-    <WasmImport Include="spacetime_10.4!datastore_index_scan_point_bsatn" />
-    <WasmImport Include="spacetime_10.4!datastore_delete_by_index_scan_point_bsatn" />
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
 
     <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
   </ItemGroup>
