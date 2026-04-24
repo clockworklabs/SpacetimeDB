@@ -43,7 +43,7 @@ use spacetimedb_table::{
     page_pool::PagePool,
     table::Table,
 };
-use std::fs;
+use std::fs::{self, File};
 use std::ops::RangeBounds;
 use std::time::{Duration, Instant};
 use std::{
@@ -708,6 +708,9 @@ impl SnapshotRepository {
         snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
         snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
 
+        // Ensure all the object directories are durable.
+        File::open(object_repo.root())?.sync_all()?;
+
         self.write_snapshot_file(&snapshot_dir, snapshot)?;
 
         log::info!(
@@ -744,6 +747,12 @@ impl SnapshotRepository {
             snapshot_file.write_all(hash.as_bytes())?;
             snapshot_file.write_all(&snapshot_bsatn)?;
             snapshot_file.flush()?;
+            // fsync file + enclosing directory.
+            snapshot_file
+                .into_inner()
+                .expect("buffered writer just flushed")
+                .sync_all()?;
+            File::open(&snapshot_dir.0)?.sync_all()?;
         }
 
         Ok(())
@@ -1102,6 +1111,7 @@ impl SnapshotRepository {
                 if old_file.is_compressed() {
                     std::fs::hard_link(old_path, src.with_extension("_tmp"))?;
                     std::fs::rename(src.with_extension("_tmp"), src)?;
+                    File::open(src.parent().unwrap())?.sync_all()?;
                     if let Some(stats) = stats {
                         stats.hardlinked += 1;
                     }
@@ -1134,6 +1144,7 @@ impl SnapshotRepository {
                 log::error!("Failed to compress object file {path:?}: {err}");
             })?;
         }
+        File::open(dir.root())?.sync_all()?;
 
         // Compress the snapshot file last,
         // which marks the whole snapshot as compressed.
@@ -1142,6 +1153,7 @@ impl SnapshotRepository {
         compress(&old, &snapshot_file.0, None, None).inspect_err(|err| {
             log::error!("Failed to compress snapshot file {snapshot_file:?}: {err}");
         })?;
+        File::open(&snapshot_dir.0)?.sync_all()?;
 
         log::info!(
             "Compressed snapshot {snapshot_dir:?} of replica {}: {compress_type:?}",

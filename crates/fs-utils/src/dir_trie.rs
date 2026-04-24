@@ -123,7 +123,15 @@ impl DirTrie {
         if src_file.is_file() {
             let dst_file = self.file_path(file_id);
             Self::create_parent(&dst_file)?;
-            std::fs::hard_link(src_file, dst_file)?;
+            std::fs::hard_link(&src_file, &dst_file)?;
+            // fsync the file, so its nlink count is durable.
+            // Note that we could also fsync `src_file`.
+            File::open(&dst_file)?.sync_all()?;
+            // fsync directory, so the entry for `dst_file` is durable.
+            // `parent()` is known to succeed, because `self.file_path` creates
+            // a path with a parent.
+            File::open(dst_file.parent().unwrap())?.sync_all()?;
+
             Ok(true)
         } else {
             Ok(false)
@@ -178,6 +186,12 @@ impl DirTrie {
         let contents = contents();
         file.write_all(contents.as_ref())?;
         file.flush()?;
+        // fsync the file.
+        file.into_inner().expect("buffered writer just flushed").sync_all()?;
+        // fsync the directory. `parent()` is known to succeed, because
+        // `self.file_path` creates a path with a parent.
+        File::open(self.file_path(file_id).parent().unwrap())?.sync_all()?;
+
         counter.objects_written += 1;
         Ok(())
     }
