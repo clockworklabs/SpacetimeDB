@@ -1,5 +1,5 @@
-use spacetimedb::http::{handler, router, Request, Response, Router};
-use spacetimedb::{table, HandlerContext, ProcedureContext, Table};
+use spacetimedb::http::{handler, router, HandlerContext, Request, Response, Router};
+use spacetimedb::{table, ProcedureContext, Table};
 
 #[handler]
 fn handler_no_args() -> Response {

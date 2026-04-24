@@ -7,14 +7,17 @@
 
 use crate::{
     rt::{read_bytes_source_as, read_bytes_source_into},
-    IterBuf,
+    IterBuf, ReducerContext, StdbRng, Timestamp, TxContext,
 };
 use bytes::Bytes;
+#[cfg(feature = "rand")]
+use rand08::RngCore;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::http::{
     self as st_http, character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION,
 };
-use spacetimedb_lib::{bsatn, TimeDuration};
+use spacetimedb_lib::{bsatn, Identity, TimeDuration, Uuid};
+use std::cell::{Cell, OnceCell};
 use std::str::FromStr;
 
 pub type Request<T = Body> = http::Request<T>;
@@ -22,6 +25,118 @@ pub type Request<T = Body> = http::Request<T>;
 pub type Response<T = Body> = http::Response<T>;
 
 pub use spacetimedb_bindings_macro::{http_handler as handler, http_router as router};
+
+/// The context that any HTTP handler is provided with.
+///
+/// Each HTTP handler must accept `&mut spacetimedb::http::HandlerContext` as its first argument.
+///
+/// Includes the time of invocation and exposes methods for running transactions
+/// and performing side-effecting operations.
+#[non_exhaustive]
+pub struct HandlerContext {
+    /// The time at which the handler was started.
+    pub timestamp: Timestamp,
+
+    /// Methods for performing HTTP requests.
+    pub http: HttpClient,
+
+    #[cfg(feature = "rand08")]
+    pub(crate) rng: OnceCell<StdbRng>,
+
+    /// A counter used for generating UUIDv7 values.
+    /// **Note:** must be 0..=u32::MAX
+    #[cfg(feature = "rand")]
+    pub(crate) counter_uuid: Cell<u32>,
+}
+
+impl HandlerContext {
+    pub(crate) fn new(timestamp: Timestamp) -> Self {
+        Self {
+            timestamp,
+            http: HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn identity(&self) -> Identity {
+        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Acquire a mutable transaction and execute `body` with read-write access.
+    pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        use core::convert::Infallible;
+        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+            Ok(v) => v,
+            Err(e) => match e {},
+        }
+    }
+
+    /// Acquire a mutable transaction and execute `body` with read-write access.
+    pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        let abort = || {
+            crate::sys::procedure::procedure_abort_mut_tx()
+                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
+        };
+
+        let run = || {
+            let timestamp = crate::sys::procedure::procedure_start_mut_tx()
+                .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
+            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+            // Use the internal auth context (no external caller identity).
+            let tx = ReducerContext::new(crate::Local {}, Identity::ZERO, None, timestamp);
+            let tx = TxContext(tx);
+
+            struct DoOnDrop<F: Fn()>(F);
+            impl<F: Fn()> Drop for DoOnDrop<F> {
+                fn drop(&mut self) {
+                    (self.0)();
+                }
+            }
+            let abort_guard = DoOnDrop(abort);
+            let res = body(&tx);
+            core::mem::forget(abort_guard);
+            res
+        };
+
+        let mut res = run();
+
+        match res {
+            Ok(_) if crate::sys::procedure::procedure_commit_mut_tx().is_err() => {
+                log::warn!("committing anonymous transaction failed");
+                res = run();
+                match res {
+                    Ok(_) => crate::sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
+                    Err(_) => abort(),
+                }
+            }
+            Ok(_) => {}
+            Err(_) => abort(),
+        }
+
+        res
+    }
+
+    /// Create a new random [`Uuid`] `v4` using the built-in RNG.
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
+        let mut random_bytes = [0u8; 4];
+        self.rng().try_fill_bytes(&mut random_bytes)?;
+        Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
+    }
+}
 
 /// Describes an HTTP handler function for use with [`Router`].
 ///

@@ -4,10 +4,10 @@
 // which were not in the `__` reserved namespace and had common names,
 // resulting in name collisions with user code.
 
-use spacetimedb::http::{Request, Response};
+use spacetimedb::http::{HandlerContext, Request, Response};
 
 #[spacetimedb::http::handler]
-fn name(_ctx: &mut spacetimedb::HandlerContext, _req: Request) -> Response {
+fn name(_ctx: &mut HandlerContext, _req: Request) -> Response {
     Response::new(().into())
 }
 

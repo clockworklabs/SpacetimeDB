@@ -29,10 +29,10 @@ error: HTTP router functions must take no arguments
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: unused import: `Router`
- --> tests/ui/http_handlers.rs:1:61
+ --> tests/ui/http_handlers.rs:1:77
   |
-1 | use spacetimedb::http::{handler, router, Request, Response, Router};
-  |                                                             ^^^^^^
+1 | use spacetimedb::http::{handler, router, HandlerContext, Request, Response, Router};
+  |                                                                             ^^^^^^
   |
   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 

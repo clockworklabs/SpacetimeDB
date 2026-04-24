@@ -22,7 +22,10 @@ use std::sync::{Mutex, OnceLock};
 pub use sys::raw::{BytesSink, BytesSource};
 
 #[cfg(feature = "unstable")]
-use crate::{http, HandlerContext, ProcedureContext, ProcedureResult};
+use crate::{
+    http::{self, HandlerContext},
+    ProcedureContext, ProcedureResult,
+};
 
 pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;

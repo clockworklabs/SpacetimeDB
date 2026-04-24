@@ -1,6 +1,6 @@
-use crate::{rand, ReducerContext};
 #[cfg(feature = "unstable")]
-use crate::{HandlerContext, ProcedureContext};
+use crate::{http::HandlerContext, ProcedureContext};
+use crate::{rand, ReducerContext};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use rand::distributions::{Distribution, Standard};

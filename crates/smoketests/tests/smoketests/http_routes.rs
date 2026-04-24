@@ -1,8 +1,7 @@
 use spacetimedb_smoketests::Smoketest;
 
 const MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, Request, Response, Router};
-use spacetimedb::HandlerContext;
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
 use spacetimedb::Table;
 
 #[spacetimedb::table(accessor = entries, public)]
@@ -87,8 +86,8 @@ fn router() -> Router {
 const EXAMPLE_MODULE_CODE: &str = r#"
 use std::str::FromStr;
 
-use spacetimedb::http::{Body, Request, Response, Router};
-use spacetimedb::{HandlerContext, Table};
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
+use spacetimedb::Table;
 
 #[spacetimedb::table(accessor = data)]
 struct Data {
@@ -128,8 +127,7 @@ fn router() -> Router {
 "#;
 
 const STRICT_ROOT_ROUTING_MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, Request, Response, Router};
-use spacetimedb::HandlerContext;
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
 
 #[spacetimedb::http::handler]
 fn empty_root(_ctx: &mut HandlerContext, _req: Request) -> Response {
@@ -162,8 +160,7 @@ fn router() -> Router {
 "#;
 
 const STRICT_NON_ROOT_ROUTING_MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, Request, Response, Router};
-use spacetimedb::HandlerContext;
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
 
 #[spacetimedb::http::handler]
 fn foo(_ctx: &mut HandlerContext, _req: Request) -> Response {
@@ -184,8 +181,7 @@ fn router() -> Router {
 "#;
 
 const FULL_URI_MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, Request, Response, Router};
-use spacetimedb::HandlerContext;
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
 
 #[spacetimedb::http::handler]
 fn echo_uri(_ctx: &mut HandlerContext, req: Request) -> Response {
