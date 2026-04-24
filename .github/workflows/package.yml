@@ -4,9 +4,6 @@ on:
   push:
     tags:
       - '**'
-  branches:
-    - master
-    - release/*
   workflow_dispatch:
 
 permissions:
