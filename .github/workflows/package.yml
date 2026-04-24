@@ -50,57 +50,53 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Add signtool.exe to PATH
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
+      - name: Decode DigiCert client auth certificate
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
         run: |
-          $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
-          $signtool = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
+          echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
 
-          if (-not $signtool) { throw "signtool.exe not found under $root" }
-
-          "Found: $($signtool.FullName)"
-          $dir = Split-Path $signtool.FullName
-          Add-Content -Path $env:GITHUB_PATH -Value $dir
-
-      - name: Write certificate file for signing
-        if: ${{ runner.os == 'Windows' }}
-        shell: powershell
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        uses: digicert/code-signing-software-trust-action@v1
         env:
-          DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
-        run: |
-          [IO.File]::WriteAllBytes("digicert.pfx", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
       - name: Sign binaries for Windows
-        # Disabled for now since the current flow isn't working.
-        if: false
-        #if: ${{ runner.os == 'Windows' }}
-        shell: powershell
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
         env:
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
         run: |
+          targetDir="$GITHUB_WORKSPACE/target/x86_64-pc-windows-msvc/release"
+          for exe in spacetimedb-update.exe spacetimedb-cli.exe spacetimedb-standalone.exe; do
+            echo "Signing $exe..."
+            smctl sign --keypair-alias "$DIGICERT_KEYPAIR_ALIAS" \
+              --input "$targetDir/$exe"
+          done
+
+      - name: Verify signatures
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
+        run: |
           $ErrorActionPreference = 'Stop'
+          $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $signtool = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found" }
+
           $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
-          $certFile = Join-Path $env:GITHUB_WORKSPACE 'digicert.pfx'
-
-          $signtool = Get-Command signtool.exe -ErrorAction Stop
-
-          $files = @(
-            (Join-Path $targetDir 'spacetimedb-update.exe'),
-            (Join-Path $targetDir 'spacetimedb-cli.exe'),
-            (Join-Path $targetDir 'spacetimedb-standalone.exe')
-          )
-
-          foreach ($file in $files) {
-            & $signtool.Path sign /f $certFile /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $file
-            & $signtool.Path verify /v /pa $file
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            & $signtool.FullName verify /v /pa (Join-Path $targetDir $exe)
           }
 
       - name: Package (unix)
