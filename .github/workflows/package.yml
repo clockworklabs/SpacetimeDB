@@ -93,6 +93,10 @@ jobs:
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
         run: |
           targetDir="$GITHUB_WORKSPACE/target/x86_64-pc-windows-msvc/release"
