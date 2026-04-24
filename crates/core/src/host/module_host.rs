@@ -23,7 +23,6 @@ use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::SqlResult;
 use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-pub use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
@@ -49,7 +48,7 @@ use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
-pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
+use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
@@ -912,20 +911,8 @@ pub struct WeakModuleHost {
 #[derive(Debug)]
 pub enum UpdateDatabaseResult {
     NoUpdateNeeded,
-    UpdatePerformed {
-        /// The transaction offset of the successful database update.
-        tx_offset: TransactionOffset,
-        /// The durable transaction offset of the database.
-        /// `None` if the database is in-memory only.
-        durable_offset: Option<DurableOffset>,
-    },
-    UpdatePerformedWithClientDisconnect {
-        /// The transaction offset of the successful database update.
-        tx_offset: TransactionOffset,
-        /// The durable transaction offset of the database.
-        /// `None` if the database is in-memory only.
-        durable_offset: Option<DurableOffset>,
-    },
+    UpdatePerformed,
+    UpdatePerformedWithClientDisconnect,
     AutoMigrateError(Box<ErrorStream<AutoMigrateError>>),
     ErrorExecutingMigration(anyhow::Error),
 }
@@ -934,9 +921,9 @@ impl UpdateDatabaseResult {
     pub fn was_successful(&self) -> bool {
         matches!(
             self,
-            UpdateDatabaseResult::UpdatePerformed { .. }
+            UpdateDatabaseResult::UpdatePerformed
                 | UpdateDatabaseResult::NoUpdateNeeded
-                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }
+                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
         )
     }
 }

@@ -116,7 +116,6 @@ pub struct TemplateConfig {
     pub github_repo: Option<String>,
     pub template_def: Option<TemplateDefinition>,
     pub use_local: bool,
-    pub native_aot: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -132,8 +131,6 @@ pub struct InitOptions {
     pub non_interactive: bool,
     /// When true, suppress the "Next steps" message after init (e.g. when called from `spacetime dev`).
     pub skip_next_steps: bool,
-    /// When true, configure C# projects for NativeAOT-LLVM compilation.
-    pub native_aot: bool,
 }
 
 impl InitOptions {
@@ -149,7 +146,6 @@ impl InitOptions {
             local: args.get_flag("local"),
             non_interactive: args.get_flag("non-interactive"),
             skip_next_steps: false,
-            native_aot: args.get_flag("native-aot"),
         }
     }
 }
@@ -192,12 +188,6 @@ pub fn cli() -> clap::Command {
                 .long("non-interactive")
                 .action(clap::ArgAction::SetTrue)
                 .help("Run in non-interactive mode"),
-        )
-        .arg(
-            Arg::new("native-aot")
-                .long("native-aot")
-                .action(clap::ArgAction::SetTrue)
-                .help("Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)"),
         )
 }
 
@@ -356,7 +346,6 @@ fn create_template_config_from_template_str(
             github_repo: None,
             template_def: Some(template.clone()),
             use_local: true,
-            native_aot: false,
         })
     } else {
         // GitHub template
@@ -369,7 +358,6 @@ fn create_template_config_from_template_str(
             github_repo: Some(template_str.to_string()),
             template_def: None,
             use_local: true,
-            native_aot: false,
         })
     }
 }
@@ -537,13 +525,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
     )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
-    // Add NativeAOT-LLVM package references to C# projects if --native-aot was specified
-    if options.native_aot && template_config.server_lang == Some(ServerLanguage::Csharp) {
-        let server_dir = template_config.project_path.join("spacetimedb");
-        add_native_aot_packages_to_csproj(&server_dir)?;
-    }
-
-    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, options.native_aot)? {
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path)? {
         println!("{} Created {}", "✓".green(), path.display());
     }
 
@@ -623,10 +605,7 @@ fn get_local_database_name(options: &InitOptions, project_name: &str, is_interac
     Ok(database_name)
 }
 
-fn create_default_spacetime_config_if_missing(
-    project_path: &Path,
-    native_aot: bool,
-) -> anyhow::Result<Option<PathBuf>> {
+fn create_default_spacetime_config_if_missing(project_path: &Path) -> anyhow::Result<Option<PathBuf>> {
     let config_path = project_path.join(CONFIG_FILENAME);
     if config_path.exists() {
         return Ok(None);
@@ -641,10 +620,6 @@ fn create_default_spacetime_config_if_missing(
         config
             .additional_fields
             .insert("module-path".to_string(), json!("./spacetimedb"));
-    }
-
-    if native_aot {
-        config.additional_fields.insert("native-aot".to_string(), json!(true));
     }
 
     Ok(Some(config.save_to_dir(project_path)?))
@@ -721,7 +696,6 @@ async fn get_template_config_non_interactive(
         github_repo: None,
         template_def: None,
         use_local: true,
-        native_aot: false,
     })
 }
 
@@ -787,7 +761,6 @@ async fn get_template_config_interactive(
             github_repo: None,
             template_def: None,
             use_local: true,
-            native_aot: false,
         });
     }
 
@@ -872,7 +845,6 @@ async fn get_template_config_interactive(
                 github_repo: None,
                 template_def: Some(template.clone()),
                 use_local: true,
-                native_aot: false,
             });
         } else if client_selection == github_clone_index {
             return loop {
@@ -917,7 +889,6 @@ async fn get_template_config_interactive(
                 github_repo: None,
                 template_def: None,
                 use_local: true,
-                native_aot: false,
             });
         } else {
             unreachable!("Invalid selection index");
@@ -1677,21 +1648,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
         anyhow::bail!("Cannot specify both --template and --lang. Language is determined by the template.");
     }
 
-    // Validate that --native-aot is only used with C# projects
-    if options.native_aot {
-        if let Some(lang) = server_lang
-            && lang.to_lowercase() != "csharp"
-            && lang.to_lowercase() != "c#"
-        {
-            anyhow::bail!("--native-aot is only supported for C# projects (--lang csharp)");
-        }
-        // Print warning about Windows-only support
-        println!(
-            "{}",
-            "Note: NativeAOT-LLVM is experimental and building for this platform is currently only supported on Windows.".yellow()
-        );
-    }
-
     if !is_interactive {
         // In non-interactive mode, validate all required args are present
         if project_name_arg.is_none() {
@@ -1753,62 +1709,6 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
-
-    Ok(())
-}
-
-/// Adds NativeAOT-LLVM package references to an existing C# .csproj file and creates NuGet.Config.
-/// This is called when `--native-aot` is specified during `spacetime init`.
-fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> {
-    let csproj_path = project_path.join("StdbModule.csproj");
-    if !csproj_path.exists() {
-        anyhow::bail!("Could not find StdbModule.csproj at {}", csproj_path.display());
-    }
-
-    let content = std::fs::read_to_string(&csproj_path)?;
-
-    // The NativeAOT-LLVM ItemGroup to add
-    let native_aot_item_group = r#"
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
-    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-  </ItemGroup>
-"#;
-
-    // Insert the ItemGroup before the closing </Project> tag
-    let new_content = if let Some(pos) = content.rfind("</Project>") {
-        let (before, after) = content.split_at(pos);
-        format!("{}{}{}", before.trim_end(), native_aot_item_group, after)
-    } else {
-        anyhow::bail!("Invalid .csproj file: missing </Project> tag");
-    };
-
-    std::fs::write(&csproj_path, new_content)?;
-    println!(
-        "{} Added NativeAOT-LLVM package references to {}",
-        "✓".green(),
-        csproj_path.display()
-    );
-
-    // Create NuGet.Config with the dotnet-experimental feed required for NativeAOT-LLVM packages
-    let nuget_config_path = project_path.join("NuGet.Config");
-    let nuget_config_content = r#"<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <clear />
-    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-</configuration>
-"#;
-
-    std::fs::write(&nuget_config_path, nuget_config_content)?;
-    println!(
-        "{} Created {} with dotnet-experimental feed",
-        "✓".green(),
-        nuget_config_path.display()
-    );
 
     Ok(())
 }
@@ -2115,7 +2015,7 @@ mod tests {
         let project_path = temp.path();
         std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
 
-        let created = create_default_spacetime_config_if_missing(project_path, false)
+        let created = create_default_spacetime_config_if_missing(project_path)
             .unwrap()
             .expect("expected config to be created");
         assert_eq!(created, project_path.join("spacetime.json"));
@@ -2128,23 +2028,6 @@ mod tests {
             parsed.get("module-path").and_then(|v| v.as_str()),
             Some("./spacetimedb")
         );
-        assert!(parsed.get("native-aot").is_none());
-    }
-
-    #[test]
-    fn test_create_default_spacetime_config_with_native_aot() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let project_path = temp.path();
-        std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
-
-        let created = create_default_spacetime_config_if_missing(project_path, true)
-            .unwrap()
-            .expect("expected config to be created");
-        assert_eq!(created, project_path.join("spacetime.json"));
-
-        let content = std::fs::read_to_string(&created).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed.get("native-aot").and_then(|v| v.as_bool()), Some(true));
     }
 
     #[test]

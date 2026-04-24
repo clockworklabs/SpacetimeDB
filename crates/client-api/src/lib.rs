@@ -288,9 +288,6 @@ pub trait ControlStateReadAccess {
     async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>>;
-
-    // Locks
-    async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -347,14 +344,6 @@ pub trait ControlStateWriteAccess: Send + Sync {
         owner_identity: &Identity,
         domain_names: &[DomainName],
     ) -> anyhow::Result<SetDomainsResult>;
-
-    // Locks
-    async fn set_database_lock(
-        &self,
-        caller_identity: &Identity,
-        database_identity: &Identity,
-        locked: bool,
-    ) -> anyhow::Result<()>;
 }
 
 #[async_trait]
@@ -410,10 +399,6 @@ impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAc
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
         (**self).lookup_namespace_owner(name).await
     }
-
-    async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool> {
-        (**self).is_database_locked(database_identity).await
-    }
 }
 
 #[async_trait]
@@ -467,17 +452,6 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     ) -> anyhow::Result<SetDomainsResult> {
         (**self)
             .replace_dns_records(database_identity, owner_identity, domain_names)
-            .await
-    }
-
-    async fn set_database_lock(
-        &self,
-        caller_identity: &Identity,
-        database_identity: &Identity,
-        locked: bool,
-    ) -> anyhow::Result<()> {
-        (**self)
-            .set_database_lock(caller_identity, database_identity, locked)
             .await
     }
 }
