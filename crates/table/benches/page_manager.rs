@@ -763,7 +763,7 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
     let algo = BTreeAlgorithm { columns: cols }.into();
     let idx = tbl.new_index(&algo, unique).unwrap();
     // SAFETY: index was derived from the table.
-    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) };
+    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) }.unwrap();
 
     (tbl, index_id)
 }
