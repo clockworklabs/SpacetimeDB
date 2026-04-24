@@ -104,8 +104,21 @@ macro_rules! path_type {
             }
 
             pub fn write(&self, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
+                use std::io::Write as _;
+
                 self.create_parent()?;
-                std::fs::write(self, contents)
+                let mut file = std::fs::File::create(self)?;
+                file.write_all(contents.as_ref())?;
+                file.sync_all()?;
+
+                // In case the file got created, we also need to fsync the
+                // directory, so that the directory entry becomes durable.
+                if let Some(parent) = self.0.parent()
+                    && parent != std::path::Path::new("") {
+                    std::fs::File::open(parent)?.sync_all()?;
+                }
+
+                Ok(())
             }
 
             /// Opens a file at this path with the given options, ensuring its parent directory exists.
