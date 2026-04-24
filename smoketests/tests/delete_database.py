@@ -55,7 +55,7 @@ pub fn init(ctx: &ReducerContext) {
         self.publish_module(name, clear = False)
         sub = self.subscribe("select * from counter", n = 1000)
         time.sleep(2)
-        self.spacetime("delete", name)
+        self.spacetime("delete", "--yes", name)
 
         updates = sub()
         # At a rate of 100ms, we shouldn't have more than 20 updates in 2secs.

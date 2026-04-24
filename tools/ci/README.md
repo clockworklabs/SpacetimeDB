@@ -195,6 +195,39 @@ Usage: global-json-policy
 
 - `--help`: Print help
 
+### `publish-checks`
+
+**Usage:**
+```bash
+Usage: publish-checks
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `typescript-test`
+
+**Usage:**
+```bash
+Usage: typescript-test
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `docs`
+
+**Usage:**
+```bash
+Usage: docs
+```
+
+**Options:**
+
+- `--help`: Print help
+
 ### `help`
 
 **Usage:**
