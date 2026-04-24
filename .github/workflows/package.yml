@@ -65,6 +65,26 @@ jobs:
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
+      - name: DigiCert healthcheck
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          echo "SM_HOST length: ${#SM_HOST}"
+          echo "SM_API_KEY length: ${#SM_API_KEY}"
+          echo "SM_CLIENT_CERT_PASSWORD length: ${#SM_CLIENT_CERT_PASSWORD}"
+          echo "SM_CLIENT_CERT_FILE: ${SM_CLIENT_CERT_FILE}"
+          if [ -f /d/Certificate_pkcs12.p12 ]; then
+            echo "Cert file size: $(wc -c < /d/Certificate_pkcs12.p12) bytes"
+          else
+            echo "CERT FILE MISSING"
+          fi
+          smctl healthcheck
+
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
