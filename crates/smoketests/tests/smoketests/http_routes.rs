@@ -1,4 +1,6 @@
-use spacetimedb_smoketests::Smoketest;
+use regex::Regex;
+use spacetimedb_smoketests::{workspace_root, Smoketest};
+use std::{fs, path::Path};
 
 const MODULE_CODE: &str = r#"
 use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
@@ -196,6 +198,25 @@ fn router() -> Router {
 
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
+fn extract_rust_code_blocks(doc_path: &Path) -> String {
+    let doc = fs::read_to_string(doc_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", doc_path.display()));
+    let doc = doc.replace("\r\n", "\n");
+
+    let re = Regex::new(r"```rust\n([\s\S]*?)\n```").expect("regex should compile");
+    let blocks: Vec<_> = re
+        .captures_iter(&doc)
+        .map(|cap| cap.get(1).expect("capture group should exist").as_str().to_string())
+        .collect();
+
+    assert!(
+        !blocks.is_empty(),
+        "expected at least one rust code block in {}",
+        doc_path.display()
+    );
+
+    blocks.join("\n\n")
+}
+
 #[test]
 fn http_routes_end_to_end() {
     let test = Smoketest::builder().module_code(MODULE_CODE).build();
@@ -374,4 +395,21 @@ fn http_handler_observes_full_external_uri() {
     let resp = client.get(&url).send().expect("echo-uri failed");
     assert!(resp.status().is_success());
     assert_eq!(resp.text().expect("echo-uri body"), url);
+}
+
+/// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
+#[test]
+fn http_handlers_tutorial_say_hello_route_works() {
+    let module_code = extract_rust_code_blocks(
+        &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+    );
+    let test = Smoketest::builder().module_code(&module_code).build();
+    let identity = test.database_identity.as_ref().expect("database identity missing");
+
+    let url = format!("{}/v1/database/{}/route/say-hello", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(&url).send().expect("say-hello failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("say-hello body"), "Hello!");
 }
