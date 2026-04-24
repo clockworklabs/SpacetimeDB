@@ -841,7 +841,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
     }): Query<ResetDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    program_bytes: Bytes,
+    program_bytes: Option<Bytes>,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let database_identity = name_or_identity.resolve(&ctx).await?;
     let database = worker_ctx_find_database(&ctx, &database_identity)
@@ -856,7 +856,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         &auth.claims.identity,
         DatabaseResetDef {
             database_identity,
-            program_bytes: Some(program_bytes),
+            program_bytes,
             num_replicas,
             host_type: Some(host_type),
         },
@@ -941,7 +941,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                         host_type,
                     }),
                     Extension(auth),
-                    program_bytes,
+                    Some(program_bytes),
                 )
                 .await;
             }
@@ -1471,7 +1471,7 @@ where
             .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
-            .route("/call/{reducer}", self.call_reducer_procedure_post)
+            .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)

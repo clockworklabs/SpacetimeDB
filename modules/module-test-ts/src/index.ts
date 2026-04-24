@@ -132,6 +132,14 @@ const repeatingTestArg = t.row({
 });
 type RepeatingTestArg = Infer<typeof repeatingTestArg>;
 
+// Rust: #[spacetimedb::table(name = nonrepeating_test_arg, scheduled(nonrepeating_test))]
+const nonrepeatingTestArg = t.row({
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  scheduled_at: t.scheduleAt(),
+  prev_time: t.timestamp(),
+});
+type NonrepeatingTestArg = Infer<typeof nonrepeatingTestArg>;
+
 // Rust: #[spacetimedb::table(name = has_special_stuff)]
 const hasSpecialStuffRow = {
   identity: t.identity(),
@@ -217,6 +225,15 @@ const spacetimedb = schema({
     repeatingTestArg
   ),
 
+  // nonrepeating_test_arg table with scheduled(nonrepeating_test)
+  nonrepeatingTestArg: table(
+    {
+      name: 'nonrepeating_test_arg',
+      scheduled: (): any => nonrepeatingTest,
+    },
+    nonrepeatingTestArg
+  ),
+
   // has_special_stuff with Identity and ConnectionId
   hasSpecialStuff: table({ name: 'has_special_stuff' }, hasSpecialStuffRow),
 
@@ -252,6 +269,15 @@ export const init = spacetimedb.init(ctx => {
     scheduled_id: 0n, // u64 autoInc placeholder (engine will assign)
     scheduled_at: ScheduleAt.interval(1000000n), // 1000ms
   });
+
+  const currentTimeMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const oneSecond = 1_000_000n; // 1 second in microseconds
+
+  ctx.db.nonrepeatingTestArg.insert({
+    prev_time: ctx.timestamp,
+    scheduled_id: 1n,
+    scheduled_at: ScheduleAt.time(currentTimeMicros + oneSecond),
+  });
 });
 
 // repeating_test
@@ -260,6 +286,17 @@ export const repeatingTest = spacetimedb.reducer(
   (ctx, { arg }) => {
     const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
     console.trace(`Timestamp: ${ctx.timestamp}, Delta time: ${delta}`);
+  }
+);
+
+// nonrepeating_test
+export const nonrepeatingTest = spacetimedb.reducer(
+  { arg: nonrepeatingTestArg },
+  (ctx, { arg }) => {
+    const delta = ctx.timestamp.since(arg.prev_time);
+    console.trace(
+      `This reducers runs only once, at Timestamp: ${ctx.timestamp}, Delta time: ${delta}`
+    );
   }
 );
 
