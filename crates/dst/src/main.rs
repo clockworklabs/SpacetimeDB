@@ -64,7 +64,8 @@ impl From<ScenarioKind> for TableScenarioId {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     init_tracing();
     match Cli::parse().command {
         Command::Run(args) => run_command(args),

@@ -6,9 +6,10 @@ use crate::{
     core::NextInteractionSource,
     schema::SchemaPlan,
     seed::{DstRng, DstSeed},
+    workload::strategy::{Index, Percent, Strategy},
     workload::{
         commitlog_ops::CommitlogInteraction,
-        table_ops::{NextInteractionGenerator, TableScenario},
+        table_ops::{strategies::ConnectionChoice, NextInteractionGenerator, TableScenario},
     },
 };
 
@@ -50,15 +51,18 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
         };
         self.pending.push_back(CommitlogInteraction::Table(base_op));
 
-        if self.rng.index(100) < 18 {
+        if Percent::new(18).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::ChaosSync);
         }
-        if self.rng.index(100) < 4 {
+        if Percent::new(4).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::CloseReopen);
         }
 
-        if self.rng.index(100) < 9 {
-            let conn = self.rng.index(self.num_connections);
+        if Percent::new(9).sample(&mut self.rng) {
+            let conn = ConnectionChoice {
+                connection_count: self.num_connections,
+            }
+            .sample(&mut self.rng);
             let slot = self.next_slot;
             self.next_slot = self.next_slot.saturating_add(1);
             self.alive_slots.insert(slot);
@@ -67,9 +71,12 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
             return true;
         }
 
-        if !self.alive_slots.is_empty() && self.rng.index(100) < 6 {
-            let conn = self.rng.index(self.num_connections);
-            let idx = self.rng.index(self.alive_slots.len());
+        if !self.alive_slots.is_empty() && Percent::new(6).sample(&mut self.rng) {
+            let conn = ConnectionChoice {
+                connection_count: self.num_connections,
+            }
+            .sample(&mut self.rng);
+            let idx = Index::new(self.alive_slots.len()).sample(&mut self.rng);
             let slot = *self
                 .alive_slots
                 .iter()
@@ -79,9 +86,12 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
                 .push_back(CommitlogInteraction::MigrateDynamicTable { conn, slot });
         }
 
-        if !self.alive_slots.is_empty() && self.rng.index(100) < 5 {
-            let conn = self.rng.index(self.num_connections);
-            let idx = self.rng.index(self.alive_slots.len());
+        if !self.alive_slots.is_empty() && Percent::new(5).sample(&mut self.rng) {
+            let conn = ConnectionChoice {
+                connection_count: self.num_connections,
+            }
+            .sample(&mut self.rng);
+            let idx = Index::new(self.alive_slots.len()).sample(&mut self.rng);
             let slot = *self
                 .alive_slots
                 .iter()

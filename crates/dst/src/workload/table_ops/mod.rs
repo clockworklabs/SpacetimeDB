@@ -4,6 +4,7 @@ mod generation;
 mod model;
 mod runner;
 mod scenarios;
+pub(crate) mod strategies;
 mod types;
 
 pub(crate) use generation::NextInteractionGenerator;

@@ -105,7 +105,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 thin-vec.workspace = true
 tokio-util.workspace = true
-tokio.workspace = true
+tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 tokio-metrics = { version = "0.4.0", features = ["rt"] }
 toml.workspace = true
@@ -133,6 +133,7 @@ tikv-jemalloc-ctl = {workspace = true}
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { workspace = true, features = ["sched"] }
+
 
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.

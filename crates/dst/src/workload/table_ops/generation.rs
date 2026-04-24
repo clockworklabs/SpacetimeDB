@@ -4,9 +4,14 @@ use crate::{
     core::NextInteractionSource,
     schema::SchemaPlan,
     seed::{DstRng, DstSeed},
+    workload::strategy::{Index, Percent, Strategy},
 };
 
-use super::{model::GenerationModel, TableScenario, TableWorkloadInteraction};
+use super::{
+    model::GenerationModel,
+    strategies::{ConnectionChoice, TableChoice, TxControlAction, TxControlChoice},
+    TableScenario, TableWorkloadInteraction,
+};
 
 /// Streaming planner for table-oriented workloads.
 ///
@@ -46,15 +51,18 @@ pub struct ScenarioPlanner<'a> {
 
 impl<'a> ScenarioPlanner<'a> {
     pub fn choose_index(&mut self, len: usize) -> usize {
-        self.rng.index(len)
+        Index::new(len).sample(self.rng)
     }
 
     pub fn choose_table(&mut self) -> usize {
-        self.rng.index(self.model.schema.tables.len())
+        TableChoice {
+            table_count: self.model.schema.tables.len(),
+        }
+        .sample(self.rng)
     }
 
     pub fn roll_percent(&mut self, percent: usize) -> bool {
-        self.rng.index(100) < percent
+        Percent::new(percent).sample(self.rng)
     }
 
     /// Tries to emit one transaction control interaction for `conn`.
@@ -62,25 +70,32 @@ impl<'a> ScenarioPlanner<'a> {
     /// The shared generator owns transaction lifecycle so scenario code can
     /// focus on domain operations like inserts, deletes, and range checks.
     pub fn maybe_control_tx(&mut self, conn: usize, begin_pct: usize, commit_pct: usize, rollback_pct: usize) -> bool {
-        if !self.model.connections[conn].in_tx && self.model.active_writer().is_none() && self.roll_percent(begin_pct) {
-            self.model.begin_tx(conn);
-            self.pending.push_back(TableWorkloadInteraction::BeginTx { conn });
-            return true;
+        match (TxControlChoice {
+            begin_pct,
+            commit_pct,
+            rollback_pct,
+        })
+        .sample(self.rng)
+        {
+            TxControlAction::Begin
+                if !self.model.connections[conn].in_tx && self.model.active_writer().is_none() =>
+            {
+                self.model.begin_tx(conn);
+                self.pending.push_back(TableWorkloadInteraction::BeginTx { conn });
+                true
+            }
+            TxControlAction::Commit if self.model.connections[conn].in_tx => {
+                self.model.commit(conn);
+                self.pending.push_back(TableWorkloadInteraction::CommitTx { conn });
+                true
+            }
+            TxControlAction::Rollback if self.model.connections[conn].in_tx => {
+                self.model.rollback(conn);
+                self.pending.push_back(TableWorkloadInteraction::RollbackTx { conn });
+                true
+            }
+            _ => false,
         }
-
-        if self.model.connections[conn].in_tx && self.roll_percent(commit_pct) {
-            self.model.commit(conn);
-            self.pending.push_back(TableWorkloadInteraction::CommitTx { conn });
-            return true;
-        }
-
-        if self.model.connections[conn].in_tx && self.roll_percent(rollback_pct) {
-            self.model.rollback(conn);
-            self.pending.push_back(TableWorkloadInteraction::RollbackTx { conn });
-            return true;
-        }
-
-        false
     }
 
     pub fn visible_rows(&self, conn: usize, table: usize) -> Vec<crate::schema::SimRow> {
@@ -152,7 +167,12 @@ impl<S: TableScenario> NextInteractionGenerator<S> {
         let conn = self
             .model
             .active_writer()
-            .unwrap_or_else(|| self.rng.index(self.num_connections));
+            .unwrap_or_else(|| {
+                ConnectionChoice {
+                    connection_count: self.num_connections,
+                }
+                .sample(&mut self.rng)
+            });
         let mut planner = ScenarioPlanner {
             rng: &mut self.rng,
             model: &mut self.model,
