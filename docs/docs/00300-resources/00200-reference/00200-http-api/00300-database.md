@@ -477,4 +477,4 @@ The `rows` will be an array of [JSON-encoded `ProductValue`s](../00300-internals
 
 ## `ANY /v1/database/:name_or_identity/route/{*path}`
 
-Access routes defined by a database using [HTTP handlers](../../../00200-core-concepts/00200-functions/000600-HTTP-handlers.md).
+Access routes defined by a database using [HTTP handlers](../../../00200-core-concepts/00200-functions/00600-HTTP-handlers.md).
