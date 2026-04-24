@@ -1488,7 +1488,7 @@ where
         );
 
         let authed_named_router = axum::Router::new()
-            .nest("/{name_or_identity}", db_router)
+            .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>));
 
         // NOTE: HTTP route handlers are intentionally unauthenticated so they can accept
@@ -1497,9 +1497,9 @@ where
         // Authorization headers do not trigger early rejection or attach SpacetimeAuth.
         // Keep these routes merged separately from the authenticated database router.
         let http_route_router = axum::Router::<S>::new()
-            .route("/{name_or_identity}/route", any(handle_http_route_root::<S>))
-            .route("/{name_or_identity}/route/", any(handle_http_route_root_slash::<S>))
-            .route("/{name_or_identity}/route/{*path}", any(handle_http_route::<S>));
+            .route("/:name_or_identity/route", any(handle_http_route_root::<S>))
+            .route("/:name_or_identity/route/", any(handle_http_route_root_slash::<S>))
+            .route("/:name_or_identity/route/*path", any(handle_http_route::<S>));
 
         axum::Router::new()
             .merge(authed_root_router)
