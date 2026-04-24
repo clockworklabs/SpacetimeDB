@@ -15,8 +15,6 @@ cat >NuGet.Config <<EOF
 <configuration>
   <packageSources>
     <clear />
-    <!-- Experimental NuGet feed for Microsoft.DotNet.ILCompiler.LLVM packages -->
-	<add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
     <!-- Local NuGet repositories -->
     <add key="Local SpacetimeDB.BSATN.Runtime" value="${SPACETIMEDB_REPO_PATH}/crates/bindings-csharp/BSATN.Runtime/bin/Release" />
     <!-- We need to override the module runtime as well because the examples use it -->
@@ -32,11 +30,6 @@ cat >NuGet.Config <<EOF
     <packageSource key="Local SpacetimeDB.Runtime">
       <package pattern="SpacetimeDB.Runtime" />
     </packageSource>
-    <!-- Experimental packages for NativeAOT-LLVM compilation -->
-    <packageSource key="dotnet-experimental">
-      <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
-      <package pattern="runtime.*" />
-    </packageSource>
     <!-- Fallback for other packages (e.g. test deps). -->
     <packageSource key="nuget.org">
       <package pattern="*" />
@@ -50,8 +43,6 @@ cat >"${SPACETIMEDB_REPO_PATH}/NuGet.Config" <<EOF
 <configuration>
   <packageSources>
     <clear />
-    <!-- Experimental NuGet feed for Microsoft.DotNet.ILCompiler.LLVM packages -->
-	<add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
     <!-- Local NuGet repositories -->
     <add key="Local SpacetimeDB.BSATN.Runtime" value="crates/bindings-csharp/BSATN.Runtime/bin/Release" />
     <!-- We need to override the module runtime as well because the examples use it -->
@@ -66,11 +57,6 @@ cat >"${SPACETIMEDB_REPO_PATH}/NuGet.Config" <<EOF
     </packageSource>
     <packageSource key="Local SpacetimeDB.Runtime">
       <package pattern="SpacetimeDB.Runtime" />
-    </packageSource>
-    <!-- Experimental packages for NativeAOT-LLVM compilation -->
-    <packageSource key="dotnet-experimental">
-      <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
-      <package pattern="runtime.*" />
     </packageSource>
     <!-- Fallback for other packages (e.g. test deps). -->
     <packageSource key="nuget.org">
