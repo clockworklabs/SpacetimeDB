@@ -44,24 +44,57 @@ pub struct SimRow {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 enum SerdeAlgebraicValue {
-    U64(u64),
-    String(String),
     Bool(bool),
+    I8(i8),
+    U8(u8),
+    I16(i16),
+    U16(u16),
+    I32(i32),
+    U32(u32),
+    I64(i64),
+    U64(u64),
+    I128(i128),
+    U128(u128),
+    String(String),
 }
 
 pub fn generate_supported_type(rng: &mut DstRng) -> AlgebraicType {
-    match rng.index(3) {
-        0 => AlgebraicType::U64,
-        1 => AlgebraicType::String,
-        _ => AlgebraicType::Bool,
+    match rng.index(12) {
+        0 => AlgebraicType::Bool,
+        1 => AlgebraicType::I8,
+        2 => AlgebraicType::U8,
+        3 => AlgebraicType::I16,
+        4 => AlgebraicType::U16,
+        5 => AlgebraicType::I32,
+        6 => AlgebraicType::U32,
+        7 => AlgebraicType::I64,
+        8 => AlgebraicType::U64,
+        9 => AlgebraicType::I128,
+        10 => AlgebraicType::U128,
+        _ => AlgebraicType::String,
     }
 }
 
 pub fn generate_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize) -> AlgebraicValue {
     match ty {
-        AlgebraicType::U64 => AlgebraicValue::U64((rng.next_u64() % 1000) + idx as u64),
-        AlgebraicType::String => AlgebraicValue::String(format!("v{}_{}", idx, rng.next_u64() % 10_000).into()),
         AlgebraicType::Bool => AlgebraicValue::Bool(rng.index(2) == 0),
+        AlgebraicType::I8 => AlgebraicValue::I8(((rng.next_u64() % 64) as i8) - 32),
+        AlgebraicType::U8 => AlgebraicValue::U8((rng.next_u64() % u8::MAX as u64) as u8),
+        AlgebraicType::I16 => AlgebraicValue::I16(((rng.next_u64() % 2048) as i16) - 1024),
+        AlgebraicType::U16 => AlgebraicValue::U16((rng.next_u64() % u16::MAX as u64) as u16),
+        AlgebraicType::I32 => AlgebraicValue::I32(((rng.next_u64() % 200_000) as i32) - 100_000),
+        AlgebraicType::U32 => AlgebraicValue::U32((rng.next_u64() % 1_000_000) as u32),
+        AlgebraicType::I64 => AlgebraicValue::I64(((rng.next_u64() % 2_000_000) as i64) - 1_000_000),
+        AlgebraicType::U64 => AlgebraicValue::U64((rng.next_u64() % 1000) + idx as u64),
+        AlgebraicType::I128 => {
+            let v = ((rng.next_u64() % 2_000_000) as i128) - 1_000_000;
+            AlgebraicValue::I128(v.into())
+        }
+        AlgebraicType::U128 => {
+            let v = (rng.next_u64() % 2_000_000) as u128;
+            AlgebraicValue::U128(v.into())
+        }
+        AlgebraicType::String => AlgebraicValue::String(format!("v{}_{}", idx, rng.next_u64() % 10_000).into()),
         other => panic!("unsupported generated column type: {other:?}"),
     }
 }
@@ -69,9 +102,18 @@ pub fn generate_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize)
 impl From<&AlgebraicValue> for SerdeAlgebraicValue {
     fn from(value: &AlgebraicValue) -> Self {
         match value {
-            AlgebraicValue::U64(value) => Self::U64(*value),
-            AlgebraicValue::String(value) => Self::String(value.to_string()),
             AlgebraicValue::Bool(value) => Self::Bool(*value),
+            AlgebraicValue::I8(value) => Self::I8(*value),
+            AlgebraicValue::U8(value) => Self::U8(*value),
+            AlgebraicValue::I16(value) => Self::I16(*value),
+            AlgebraicValue::U16(value) => Self::U16(*value),
+            AlgebraicValue::I32(value) => Self::I32(*value),
+            AlgebraicValue::U32(value) => Self::U32(*value),
+            AlgebraicValue::I64(value) => Self::I64(*value),
+            AlgebraicValue::U64(value) => Self::U64(*value),
+            AlgebraicValue::I128(value) => Self::I128(value.0),
+            AlgebraicValue::U128(value) => Self::U128(value.0),
+            AlgebraicValue::String(value) => Self::String(value.to_string()),
             other => panic!("unsupported value in simulator row serde: {other:?}"),
         }
     }
@@ -80,9 +122,18 @@ impl From<&AlgebraicValue> for SerdeAlgebraicValue {
 impl From<SerdeAlgebraicValue> for AlgebraicValue {
     fn from(value: SerdeAlgebraicValue) -> Self {
         match value {
-            SerdeAlgebraicValue::U64(value) => Self::U64(value),
-            SerdeAlgebraicValue::String(value) => Self::String(value.into()),
             SerdeAlgebraicValue::Bool(value) => Self::Bool(value),
+            SerdeAlgebraicValue::I8(value) => Self::I8(value),
+            SerdeAlgebraicValue::U8(value) => Self::U8(value),
+            SerdeAlgebraicValue::I16(value) => Self::I16(value),
+            SerdeAlgebraicValue::U16(value) => Self::U16(value),
+            SerdeAlgebraicValue::I32(value) => Self::I32(value),
+            SerdeAlgebraicValue::U32(value) => Self::U32(value),
+            SerdeAlgebraicValue::I64(value) => Self::I64(value),
+            SerdeAlgebraicValue::U64(value) => Self::U64(value),
+            SerdeAlgebraicValue::I128(value) => Self::I128(value.into()),
+            SerdeAlgebraicValue::U128(value) => Self::U128(value.into()),
+            SerdeAlgebraicValue::String(value) => Self::String(value.into()),
         }
     }
 }

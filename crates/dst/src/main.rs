@@ -4,9 +4,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use spacetimedb_dst::{
     config::RunConfig,
     seed::DstSeed,
-    targets::descriptor::{
-        DatastoreDescriptor, RelationalDbCommitlogDescriptor, RelationalDbDescriptor, TargetDescriptor,
-    },
+    targets::descriptor::{DatastoreDescriptor, RelationalDbCommitlogDescriptor, TargetDescriptor},
     workload::table_ops::TableScenarioId,
 };
 
@@ -46,7 +44,6 @@ struct RunArgs {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum TargetKind {
     Datastore,
-    RelationalDb,
     RelationalDbCommitlog,
 }
 
@@ -94,7 +91,6 @@ fn run_command(args: RunArgs) -> anyhow::Result<()> {
 
     match args.target.target {
         TargetKind::Datastore => run_target::<DatastoreDescriptor>(seed, scenario, config),
-        TargetKind::RelationalDb => run_target::<RelationalDbDescriptor>(seed, scenario, config),
         TargetKind::RelationalDbCommitlog => run_target::<RelationalDbCommitlogDescriptor>(seed, scenario, config),
     }
 }

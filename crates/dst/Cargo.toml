@@ -19,12 +19,14 @@ anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio = { version = "0.2.30", package = "madsim-tokio", features = ["full"] }
 spacetimedb-datastore = { workspace = true, features = ["test"] }
 spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.1.0" }
 spacetimedb-commitlog.workspace = true
 spacetimedb_durability = { package = "spacetimedb-durability", path = "../durability", version = "=2.1.0" }
 spacetimedb-execution.workspace = true
 spacetimedb-lib.workspace = true
+spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-schema = { workspace = true, features = ["test"] }

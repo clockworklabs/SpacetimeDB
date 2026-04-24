@@ -3,38 +3,39 @@
 use std::{
     collections::{BTreeMap, HashMap},
     ops::Bound,
-    time::Instant,
+    sync::Arc,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-use spacetimedb_commitlog::{self as commitlog, error::Traversal};
 use spacetimedb_core::{
-    db::relational_db::{MutTx as RelMutTx, RelationalDB, Txdata},
+    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB, Txdata},
     messages::control_db::HostType,
 };
 use spacetimedb_datastore::{
     execution_context::Workload,
-    traits::{IsolationLevel, Program, TxData as DatastoreTxData},
+    traits::{IsolationLevel, Program},
 };
-use spacetimedb_durability::{EmptyHistory, History, TxOffset};
+use spacetimedb_durability::{Durability, EmptyHistory, History};
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
 };
+use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
     def::BTreeAlgorithm,
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
     table_name::TableName,
 };
 use spacetimedb_table::page_pool::PagePool;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 use crate::{
     config::RunConfig,
     core::NextInteractionSource,
     schema::{SchemaPlan, SimRow},
-    seed::{DstRng, DstSeed},
+    seed::DstSeed,
     targets::properties::{PropertyRuntime, TargetPropertyAccess},
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
@@ -103,17 +104,20 @@ struct RelationalDbCommitlogEngine {
     base_table_ids: Vec<TableId>,
     dynamic_tables: HashMap<u32, DynamicTableState>,
     step: usize,
-    commitlog: MockCommitlogFs,
+    durability: Arc<spacetimedb_durability::Local<ProductValue>>,
+    last_observed_durable_offset: Option<u64>,
     last_durable_snapshot: DurableSnapshot,
     pending_snapshot_capture: bool,
     properties: PropertyRuntime,
+    runtime_handle: tokio::runtime::Handle,
+    _runtime_guard: Option<tokio::runtime::Runtime>,
 }
 
 type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
 
 impl RelationalDbCommitlogEngine {
     fn new(seed: DstSeed, schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self> {
-        let db = bootstrap_relational_db()?;
+        let (db, durability, runtime_handle, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
         let mut this = Self {
             db,
             execution: ConnectionWriteState::new(num_connections),
@@ -121,22 +125,16 @@ impl RelationalDbCommitlogEngine {
             base_table_ids: Vec::with_capacity(schema.tables.len()),
             dynamic_tables: HashMap::new(),
             step: 0,
-            commitlog: MockCommitlogFs::new(seed.fork(700)),
+            durability,
+            last_observed_durable_offset: None,
             last_durable_snapshot: BTreeMap::new(),
             pending_snapshot_capture: false,
             properties: PropertyRuntime::default(),
+            runtime_handle,
+            _runtime_guard: runtime_guard,
         };
-        this.initialize_program().map_err(anyhow::Error::msg)?;
         this.install_base_schema().map_err(anyhow::Error::msg)?;
         Ok(this)
-    }
-
-    fn initialize_program(&mut self) -> Result<(), String> {
-        let mut tx = self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        self.db
-            .set_initialized(&mut tx, Program::empty(HostType::Wasm.into()))
-            .map_err(|err| format!("set_initialized failed: {err}"))?;
-        self.commit_tx_capture(tx, "initialize")
     }
 
     fn install_base_schema(&mut self) -> Result<(), String> {
@@ -186,7 +184,10 @@ impl RelationalDbCommitlogEngine {
                 .map_err(|err| format!("create table '{}' failed: {err}", table.name))?;
             self.base_table_ids.push(table_id);
         }
-        self.commit_tx_capture(tx, "install base schema")
+        self.db
+            .commit_tx(tx)
+            .map(|_| ())
+            .map_err(|err| format!("install base schema commit failed: {err}"))
     }
 
     fn execute(&mut self, interaction: &CommitlogInteraction) -> Result<(), String> {
@@ -197,7 +198,87 @@ impl RelationalDbCommitlogEngine {
             CommitlogInteraction::DropDynamicTable { conn, slot } => self.drop_dynamic_table(*conn, *slot),
             CommitlogInteraction::MigrateDynamicTable { conn, slot } => self.migrate_dynamic_table(*conn, *slot),
             CommitlogInteraction::ChaosSync => self.sync_and_snapshot(true),
+            CommitlogInteraction::CloseReopen => self.close_and_reopen(),
         }
+    }
+
+    fn close_and_reopen(&mut self) -> Result<(), String> {
+        if self.execution.active_writer.is_some()
+            || self.execution.tx_by_connection.iter().any(|tx| tx.is_some())
+        {
+            trace!("skip close/reopen while transaction is open");
+            return Ok(());
+        }
+
+        self.sync_and_snapshot(true)?;
+        let history = self.durability.as_history();
+        let persistence = Persistence {
+            durability: self.durability.clone(),
+            disk_size: Arc::new({
+                let durability = self.durability.clone();
+                move || durability.size_on_disk()
+            }),
+            snapshots: None,
+            runtime: self.runtime_handle.clone(),
+        };
+        let (db, connected_clients) = RelationalDB::open(
+            Identity::ZERO,
+            Identity::ZERO,
+            history,
+            Some(persistence),
+            None,
+            PagePool::new_for_test(),
+        )
+        .map_err(|err| format!("close/reopen failed: {err}"))?;
+        if !connected_clients.is_empty() {
+            return Err(format!(
+                "unexpected connected clients after reopen: {connected_clients:?}"
+            ));
+        }
+        self.db = db;
+        self.rebuild_table_handles_after_reopen()?;
+        self.capture_pending_snapshot_if_idle()?;
+        debug!(
+            base_tables = self.base_table_ids.len(),
+            dynamic_tables = self.dynamic_tables.len(),
+            "reopened relational db from durable history"
+        );
+        Ok(())
+    }
+
+    fn rebuild_table_handles_after_reopen(&mut self) -> Result<(), String> {
+        let tx = self.db.begin_tx(Workload::ForTests);
+        let schemas = self
+            .db
+            .get_all_tables(&tx)
+            .map_err(|err| format!("list tables after reopen failed: {err}"))?;
+        let _ = self.db.release_tx(tx);
+
+        let mut by_name = HashMap::with_capacity(schemas.len());
+        for schema in schemas {
+            by_name.insert(schema.table_name.to_string(), schema.table_id);
+        }
+
+        self.base_table_ids.clear();
+        for table in &self.base_schema.tables {
+            let table_id = by_name
+                .get(&table.name)
+                .copied()
+                .ok_or_else(|| format!("base table '{}' missing after reopen", table.name))?;
+            self.base_table_ids.push(table_id);
+        }
+
+        self.dynamic_tables.retain(|slot, state| {
+            let name = dynamic_table_name(*slot, state.version);
+            if let Some(table_id) = by_name.get(&name).copied() {
+                state.table_id = table_id;
+                true
+            } else {
+                false
+            }
+        });
+
+        Ok(())
     }
 
     fn execute_table_op(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), String> {
@@ -223,7 +304,9 @@ impl RelationalDbCommitlogEngine {
                 let tx = self.execution.tx_by_connection[*conn]
                     .take()
                     .ok_or_else(|| format!("connection {conn} has no transaction to commit"))?;
-                self.commit_tx_capture(tx, "commit interaction")?;
+                self.db
+                    .commit_tx(tx)
+                    .map_err(|err| format!("commit interaction failed: {err}"))?;
                 self.execution.active_writer = None;
                 self.capture_pending_snapshot_if_idle()?;
                 self.with_property_runtime(|runtime, access| {
@@ -314,7 +397,9 @@ impl RelationalDbCommitlogEngine {
         let mut tx = self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         self.execution.active_writer = Some(conn);
         f(self, &mut tx)?;
-        self.commit_tx_capture(tx, "auto-commit write")?;
+        self.db
+            .commit_tx(tx)
+            .map_err(|err| format!("auto-commit write failed: {err}"))?;
         self.execution.active_writer = None;
         self.capture_pending_snapshot_if_idle()?;
         Ok(())
@@ -412,35 +497,25 @@ impl RelationalDbCommitlogEngine {
         self.execution.active_writer.unwrap_or(conn)
     }
 
-    fn commit_tx_capture(&mut self, tx: RelMutTx, context: &str) -> Result<(), String> {
-        let committed = self
-            .db
-            .commit_tx(tx)
-            .map_err(|err| format!("{context} commit failed: {err}"))?;
-        if let Some((offset, tx_data, _, _)) = committed {
-            let Some(encoded) = encode_txdata_for_commitlog(&tx_data) else {
-                trace!(step = self.step, context, "commit had no durable payload");
-                return Ok(());
-            };
-            trace!(step = self.step, context, offset, "append tx to mock commitlog");
-            self.commitlog
-                .append(offset, encoded)
-                .map_err(|err| format!("{context} append to mock commitlog failed: {err}"))?;
-        }
-        Ok(())
-    }
-
     fn sync_and_snapshot(&mut self, forced: bool) -> Result<(), String> {
-        let advanced = self
-            .commitlog
-            .sync(forced)
-            .map_err(|err| format!("mock sync failed: {err}"))?;
+        let current = self
+            .durability
+            .durable_tx_offset()
+            .get()
+            .map_err(|err| format!("read durable offset failed: {err}"))?;
+        let advanced = match (self.last_observed_durable_offset, current) {
+            (None, Some(_)) => true,
+            (Some(prev), Some(now)) => now > prev,
+            _ => false,
+        };
+        self.last_observed_durable_offset = current;
         trace!(
             step = self.step,
             forced,
             advanced,
-            durable_count = self.commitlog.durable_count(),
-            "mock sync"
+            durable_offset = ?current,
+            queue_depth = self.durability.queue_depth(),
+            "durability observe"
         );
         if advanced {
             if self.execution.active_writer.is_some() {
@@ -583,16 +658,20 @@ impl RelationalDbCommitlogEngine {
     fn collect_outcome(&mut self) -> Result<RelationalDbCommitlogOutcome, String> {
         self.capture_pending_snapshot_if_idle()?;
         self.sync_and_snapshot(true)?;
-        let history = MockHistory::from_durable(self.commitlog.durable_records())?;
+        let history = self.durability.as_history();
         let replayed = reopen_from_history(history)?;
+        let durable_commit_count = self
+            .last_observed_durable_offset
+            .map(|offset| (offset as usize).saturating_add(1))
+            .unwrap_or(0);
         debug!(
-            durable_commits = self.commitlog.durable_count(),
+            durable_commits = durable_commit_count,
             replay_tables = replayed.len(),
             "replayed durable prefix"
         );
         Ok(RelationalDbCommitlogOutcome {
             applied_steps: self.step,
-            durable_commit_count: self.commitlog.durable_count(),
+            durable_commit_count,
             replay_table_count: replayed.len(),
         })
     }
@@ -640,7 +719,7 @@ impl TargetPropertyAccess for RelationalDbCommitlogEngine {
     }
 }
 
-fn reopen_from_history(history: MockHistory) -> Result<DurableSnapshot, String> {
+fn reopen_from_history(history: impl History<TxData = Txdata>) -> Result<DurableSnapshot, String> {
     debug!("reopen relational db from mocked durable history");
     let (db, connected_clients) = RelationalDB::open(
         Identity::ZERO,
@@ -684,17 +763,58 @@ fn is_user_dst_table(name: &str) -> bool {
     !name.starts_with("st_")
 }
 
-fn bootstrap_relational_db() -> anyhow::Result<RelationalDB> {
+fn bootstrap_relational_db(
+    seed: DstSeed,
+) -> anyhow::Result<(
+    RelationalDB,
+    Arc<spacetimedb_durability::Local<ProductValue>>,
+    tokio::runtime::Handle,
+    Option<tokio::runtime::Runtime>,
+)> {
+    let (runtime_handle, runtime_guard) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        (handle, None)
+    } else {
+        let runtime = tokio::runtime::Runtime::new()?;
+        (runtime.handle().clone(), Some(runtime))
+    };
+    let replica_dir = dst_replica_dir(seed)?;
+    let durability = Arc::new(
+        spacetimedb_durability::Local::open(replica_dir, runtime_handle.clone(), Default::default(), None)
+            .map_err(|err| anyhow::anyhow!("open local durability failed: {err}"))?,
+    );
+    let persistence = Persistence {
+        durability: durability.clone(),
+        disk_size: Arc::new({
+            let durability = durability.clone();
+            move || durability.size_on_disk()
+        }),
+        snapshots: None,
+        runtime: runtime_handle.clone(),
+    };
     let (db, connected_clients) = RelationalDB::open(
         Identity::ZERO,
         Identity::ZERO,
         EmptyHistory::new(),
-        None,
+        Some(persistence),
         None,
         PagePool::new_for_test(),
     )?;
     assert_eq!(connected_clients.len(), 0);
-    Ok(db)
+    db.with_auto_commit(Workload::Internal, |tx| {
+        db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
+    })?;
+    Ok((db, durability, runtime_handle, runtime_guard))
+}
+
+fn dst_replica_dir(seed: DstSeed) -> anyhow::Result<ReplicaDir> {
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "spacetimedb-dst-relational-db-commitlog-{}-{}-{nonce}",
+        seed.0,
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&path)?;
+    Ok(ReplicaDir::from_path_unchecked(path))
 }
 
 fn dynamic_table_name(slot: u32, version: u32) -> String {
@@ -726,168 +846,4 @@ fn dynamic_schema(name: &str, version: u32) -> TableSchema {
         false,
         None,
     )
-}
-
-fn encode_txdata_for_commitlog(tx_data: &DatastoreTxData) -> Option<Txdata> {
-    let _tx_offset = tx_data.tx_offset()?;
-    let mut inserts: Box<_> = tx_data
-        .persistent_inserts()
-        .map(|(table_id, rowdata)| commitlog::payload::txdata::Ops { table_id, rowdata })
-        .collect();
-    inserts.sort_unstable_by_key(|ops| ops.table_id);
-
-    let mut deletes: Box<_> = tx_data
-        .persistent_deletes()
-        .map(|(table_id, rowdata)| commitlog::payload::txdata::Ops { table_id, rowdata })
-        .collect();
-    deletes.sort_unstable_by_key(|ops| ops.table_id);
-
-    let mut truncates: Box<[_]> = tx_data.persistent_truncates().collect();
-    truncates.sort_unstable_by_key(|table_id| *table_id);
-
-    Some(Txdata {
-        inputs: None,
-        outputs: None,
-        mutations: Some(commitlog::payload::txdata::Mutations {
-            inserts,
-            deletes,
-            truncates,
-        }),
-    })
-}
-
-/// Deterministic mocked file/commitlog layer with chaos.
-struct MockCommitlogFs {
-    chaos_rng: DstRng,
-    pending: Vec<(u64, Txdata)>,
-    durable: Vec<(u64, Txdata)>,
-    commits_since_sync: usize,
-}
-
-impl MockCommitlogFs {
-    fn new(seed: DstSeed) -> Self {
-        Self {
-            chaos_rng: seed.rng(),
-            pending: Vec::new(),
-            durable: Vec::new(),
-            commits_since_sync: 0,
-        }
-    }
-
-    fn append(&mut self, tx_offset: u64, txdata: Txdata) -> Result<(), String> {
-        // deterministic append chaos: low-rate injected write failure
-        if self.chaos_rng.index(1000) < 6 {
-            warn!(tx_offset, "mock commitlog injected append error");
-            return Err("injected append error".to_string());
-        }
-        if let Some((last_offset, _)) = self.pending.last().or_else(|| self.durable.last())
-            && tx_offset != last_offset.saturating_add(1)
-        {
-            return Err(format!(
-                "non-contiguous commitlog append: got={tx_offset} expected={}",
-                last_offset.saturating_add(1)
-            ));
-        }
-        self.pending.push((tx_offset, txdata));
-        self.commits_since_sync = self.commits_since_sync.saturating_add(1);
-        trace!(
-            tx_offset,
-            pending = self.pending.len(),
-            durable = self.durable.len(),
-            commits_since_sync = self.commits_since_sync,
-            "mock commitlog append"
-        );
-        Ok(())
-    }
-
-    fn sync(&mut self, forced: bool) -> Result<bool, String> {
-        if self.pending.is_empty() {
-            return Ok(false);
-        }
-
-        // periodic delayed fsync behavior
-        let should_attempt = forced || self.commits_since_sync >= 3 || self.chaos_rng.index(100) < 30;
-        if !should_attempt {
-            trace!(
-                forced,
-                pending = self.pending.len(),
-                commits_since_sync = self.commits_since_sync,
-                "mock sync skipped (delay)"
-            );
-            return Ok(false);
-        }
-
-        // injected fsync miss: pretend sync happened but keep data pending
-        if !forced && self.chaos_rng.index(100) < 12 {
-            self.commits_since_sync = 0;
-            warn!(
-                pending = self.pending.len(),
-                "mock sync injected miss (no durable advance)"
-            );
-            return Ok(false);
-        }
-
-        let mut advanced = false;
-        for pending in self.pending.drain(..) {
-            self.durable.push(pending);
-            advanced = true;
-        }
-        self.commits_since_sync = 0;
-        debug!(durable = self.durable.len(), "mock sync advanced durable prefix");
-        Ok(advanced)
-    }
-
-    fn durable_records(&self) -> &[(u64, Txdata)] {
-        &self.durable
-    }
-
-    fn durable_count(&self) -> usize {
-        self.durable.len()
-    }
-}
-
-/// In-memory history used to replay exactly the durable commitlog prefix.
-struct MockHistory(commitlog::commitlog::Generic<commitlog::repo::Memory, Txdata>);
-
-impl MockHistory {
-    fn from_durable(records: &[(u64, Txdata)]) -> Result<Self, String> {
-        let mut log = commitlog::commitlog::Generic::open(commitlog::repo::Memory::unlimited(), Default::default())
-            .map_err(|err| format!("open in-memory commitlog failed: {err}"))?;
-        for (offset, txdata) in records {
-            log.commit([(*offset, txdata.clone())])
-                .map_err(|err| format!("append durable tx offset={offset} failed: {err}"))?;
-        }
-        Ok(Self(log))
-    }
-}
-
-impl History for MockHistory {
-    type TxData = Txdata;
-
-    fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>
-    where
-        D: commitlog::Decoder,
-        D::Error: From<Traversal>,
-    {
-        self.0.fold_transactions_from(offset, decoder)
-    }
-
-    fn transactions_from<'a, D>(
-        &self,
-        offset: TxOffset,
-        decoder: &'a D,
-    ) -> impl Iterator<Item = Result<commitlog::Transaction<Self::TxData>, D::Error>>
-    where
-        D: commitlog::Decoder<Record = Self::TxData>,
-        D::Error: From<Traversal>,
-        Self::TxData: 'a,
-    {
-        self.0.transactions_from(offset, decoder)
-    }
-
-    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
-        let min = self.0.min_committed_offset().unwrap_or_default();
-        let max = self.0.max_committed_offset();
-        (min, max)
-    }
 }

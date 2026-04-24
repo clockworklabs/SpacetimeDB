@@ -29,25 +29,6 @@ impl TargetDescriptor for DatastoreDescriptor {
 
 }
 
-pub struct RelationalDbDescriptor;
-
-impl TargetDescriptor for RelationalDbDescriptor {
-    const NAME: &'static str = "relational_db";
-    type Scenario = TableScenarioId;
-
-    fn run_streaming(seed: DstSeed, scenario: Self::Scenario, config: RunConfig) -> anyhow::Result<String> {
-        let outcome = crate::targets::relational_db::run_generated_with_config_and_scenario(seed, scenario, config)?;
-        Ok(format!(
-            "ok target={} seed={} tables={} row_counts={:?}",
-            Self::NAME,
-            seed.0,
-            outcome.final_rows.len(),
-            outcome.final_row_counts
-        ))
-    }
-
-}
-
 pub struct RelationalDbCommitlogDescriptor;
 
 impl TargetDescriptor for RelationalDbCommitlogDescriptor {

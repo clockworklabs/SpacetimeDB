@@ -42,7 +42,7 @@ shared workload generators, and concrete DST targets.
   shared table-style workload split into scenarios, generation, model, and
   properties
 - `targets/`:
-  `datastore.rs`, `relational_db.rs`
+  `datastore.rs`, `relational_db_commitlog.rs`
 - binary:
   `src/main.rs`
 
@@ -55,7 +55,7 @@ If you are new to the crate, this order keeps the mental model small:
 3. `seed.rs`
 4. `workload/table_ops/`
 5. `targets/datastore.rs`
-6. `targets/relational_db.rs`
+6. `targets/relational_db_commitlog.rs`
 
 ## Core Model
 
@@ -88,7 +88,7 @@ The main reusable DST workload now lives in `workload/table_ops/`:
 5. `runner.rs`
    generic execute/run helpers shared by multiple targets
 
-Concrete targets like `targets/datastore.rs` and `targets/relational_db.rs`
+Concrete targets like `targets/datastore.rs` and `targets/relational_db_commitlog.rs`
 reuse that workload and swap in target-specific engines and target-owned
 properties.
 
@@ -127,7 +127,7 @@ Core commands:
 ```bash
 cargo run -p spacetimedb-dst -- run --target datastore --scenario banking --duration 5m
 cargo run -p spacetimedb-dst -- run --target datastore --scenario indexed-ranges --duration 5m
-cargo run -p spacetimedb-dst -- run --target relational-db --seed 42 --max-interactions 2000
+cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --seed 42 --max-interactions 2000
 cargo run -p spacetimedb-dst -- replay --target datastore bug.json
 cargo run -p spacetimedb-dst -- shrink --target datastore bug.json
 ```
@@ -163,7 +163,7 @@ In that case:
    - `shrink_failure`
 5. add the target to the CLI `TargetKind`
 
-This is the path `datastore` and `relational_db` use today.
+This is the path `datastore` and `relational_db_commitlog` use today.
 
 ### 2. Add A New Workload Family
 
@@ -270,6 +270,6 @@ single-engine shape used by current table targets.
 
 ## Current Scope
 
-This crate provides shared table workload generation, two concrete targets
-(`datastore` and `relational_db`), and a small CLI for seeded or
+This crate provides shared table workload generation, concrete targets
+(`datastore` and `relational_db_commitlog`), and a small CLI for seeded or
 duration-bounded runs.

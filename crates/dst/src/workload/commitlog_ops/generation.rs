@@ -53,6 +53,9 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
         if self.rng.index(100) < 18 {
             self.pending.push_back(CommitlogInteraction::ChaosSync);
         }
+        if self.rng.index(100) < 4 {
+            self.pending.push_back(CommitlogInteraction::CloseReopen);
+        }
 
         if self.rng.index(100) < 9 {
             let conn = self.rng.index(self.num_connections);

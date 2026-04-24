@@ -17,6 +17,8 @@ pub enum CommitlogInteraction {
     MigrateDynamicTable { conn: usize, slot: u32 },
     /// Ask the mock commitlog file layer to run a sync attempt.
     ChaosSync,
+    /// Close and restart the database from durable history.
+    CloseReopen,
 }
 
 /// Successful run summary for commitlog target.
