@@ -9,21 +9,21 @@
 /**
  * @file FFI.h
  * @brief SpacetimeDB Foreign Function Interface (FFI) layer for C++ modules
- * 
+ *
  * This file re-exports the raw ABI functions with additional type aliases
  * and convenience functions. Since we now use C# style opaque types that
  * are ABI-compatible, no conversion is needed.
- * 
+ *
  * Organization:
  * - Raw C ABI with opaque types is in abi.h
  * - This file provides type aliases and convenience functions
- * 
+ *
  * Key Features:
  * - Type-safe opaque types prevent mixing TableId with IndexId etc.
  * - Full BSATN integration for all data operations
  * - Modern iterator API with proper resource management
  * - Comprehensive error handling with Status codes
- * 
+ *
  * Note: WASI shims for C++ standard library support are provided separately
  * in the module library implementation.
  */
@@ -55,6 +55,7 @@ using ::datastore_delete_by_index_scan_range_bsatn;
 using ::datastore_delete_by_index_scan_point_bsatn;
 using ::datastore_delete_by_btree_scan_bsatn;
 using ::datastore_delete_all_by_eq_bsatn;
+using ::datastore_clear;
 using ::bytes_source_read;
 using ::bytes_source_remaining_length;
 using ::bytes_sink_write;
@@ -92,11 +93,11 @@ inline int16_t call_reducer(
     uint32_t id,
     uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
     uint64_t conn_id_0, uint64_t conn_id_1,
-    uint64_t timestamp, 
-    BytesSource args, 
+    uint64_t timestamp,
+    BytesSource args,
     BytesSink error) {
     return ::__call_reducer__(id, sender_0, sender_1, sender_2, sender_3,
-                             conn_id_0, conn_id_1, timestamp, 
+                             conn_id_0, conn_id_1, timestamp,
                              args, error);
 }
 

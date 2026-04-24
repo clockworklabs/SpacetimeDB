@@ -312,6 +312,11 @@ metrics_group!(
         #[labels(database_identity: Identity, worker_kind: str)]
         pub v8_heap_size_limit_bytes: IntGaugeVec,
 
+        #[name = spacetime_worker_v8_heap_limit_hit]
+        #[help = "The number of times the V8 heap size limit for a has been hit"]
+        #[labels(database_identity: Identity)]
+        pub v8_heap_limit_hit: IntCounterVec,
+
         #[name = spacetime_worker_v8_instance_lane_queue_length]
         #[help = "The number of queued requests waiting for a database's JS instance lane worker"]
         #[labels(database_identity: Identity)]
@@ -491,11 +496,6 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         #[buckets(0.001, 0.01, 0.1, 1.0, 10.0)]
         pub durability_blocking_send_duration: HistogramVec,
-
-        #[name = spacetime_durability_worker_reorder_window_length]
-        #[help = "The number of transactions currently being held in the reorder window"]
-        #[labels(db: Identity)]
-        pub durability_worker_reorder_window_length: IntGaugeVec,
     }
 );
 

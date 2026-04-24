@@ -23,7 +23,7 @@ use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    buffer::{CountWriter, TeeWriter},
+    buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_schema::identifier::Identifier;
@@ -343,16 +343,16 @@ impl InstanceEnv {
     fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
         // We get back a col-list with the columns with generated values.
         // Write those back to `buffer` and then the encoded length to `row_len`.
-        let counter = CountWriter::default();
-        let mut writer = TeeWriter::new(counter, buffer);
-        for col in cols.iter() {
-            // Read the column value to AV and then serialize.
-            let val = row_ref
-                .read_col::<AlgebraicValue>(col)
-                .expect("reading col as AV never panics");
-            bsatn::to_writer(&mut writer, &val).unwrap();
-        }
-        writer.w1.finish()
+        let (_, count) = CountWriter::run(buffer, |writer| {
+            for col in cols.iter() {
+                // Read the column value to AV and then serialize.
+                let val = row_ref
+                    .read_col::<AlgebraicValue>(col)
+                    .expect("reading col as AV never panics");
+                bsatn::to_writer(writer, &val).unwrap();
+            }
+        });
+        count
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
@@ -548,6 +548,20 @@ impl InstanceEnv {
 
         // Delete them and return how many we deleted.
         Ok(stdb.delete_by_rel(tx, table_id, relation))
+    }
+
+    /// Deletes all rows in the table identified by `table_id`.
+    pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
+
+        let rows_deleted = stdb.clear_table(tx, table_id).map_err(NodesError::from)?;
+
+        // To clear a table, we must find all the row pointers,
+        // so we have scanned that many rows.
+        tx.metrics.rows_scanned += rows_deleted as usize;
+
+        Ok(rows_deleted)
     }
 
     /// Returns the `table_id` associated with the given `table_name`.

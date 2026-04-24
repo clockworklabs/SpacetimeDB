@@ -1,10 +1,10 @@
 use super::super::de::deserialize_js;
 use super::super::error::{
-    collapse_exc_thrown, exception_already_thrown, terminate_execution, ExceptionValue, PinTryCatch, RangeError,
-    SysCallError,
+    check_termination, BufferTooSmall, ErrorOrException, ExcResult, ExceptionThrown, SysCallResult, TypeError, OOB,
 };
 use super::super::error::{
-    throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult, ExceptionThrown, SysCallResult, TypeError, OOB,
+    collapse_exc_thrown, exception_already_thrown, terminate_execution, ExceptionValue, PinTryCatch, RangeError,
+    SysCallError,
 };
 use super::super::from_value::cast;
 use super::super::ser::serialize_to_js;
@@ -84,7 +84,7 @@ macro_rules! register_synthetic_module_export {
     };
 }
 
-/// Registers all module -> host syscalls in the JS module `spacetimedb_sys`.
+/// Registers all 2.0 module -> host syscalls in the JS module `spacetimedb_sys`.
 pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
     create_synthetic_module!(
         scope,
@@ -160,6 +160,15 @@ pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
+/// Registers all 2.1 module -> host syscalls in the JS module `spacetimedb_sys`.
+pub(super) fn sys_v2_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(
+        scope,
+        "spacetime:sys@2.1",
+        (with_sys_result, AbiCall::DatastoreClear, datastore_clear),
+    )
+}
+
 /// Registers a function in `module`
 /// where the function has `name` and does `body`.
 fn register_module_fun(
@@ -184,7 +193,7 @@ fn adapt_fun(
     fun: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>),
 ) -> impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>) {
     move |scope, args, rv| {
-        if throw_if_terminated(scope) {
+        if check_termination(scope).is_err() {
             return;
         }
 
@@ -329,7 +338,7 @@ fn code_error<'scope>(
 fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
     let res = match err_to_errno_and_log::<u16>(abi_call, error) {
         Ok((code, message)) => code_error(scope, code, message.as_deref()),
-        Err(err) => terminate_execution(scope, &err),
+        Err(err) => terminate_execution(scope, err),
     };
     collapse_exc_thrown(scope, res)
 }
@@ -417,7 +426,7 @@ fn hooks_symbol<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, v8::Symbo
 /// Calls the `__call_reducer__` function `fun`.
 pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinTryCatch<'scope, '_, '_, '_>,
-    hooks: &HookFunctions<'scope>,
+    hooks: &HookFunctions<'_>,
     op: ReducerOp<'_>,
     reducer_args_buf: Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {
@@ -1162,6 +1171,44 @@ fn datastore_delete_all_by_eq_bsatn(
             .datastore_delete_all_by_eq_bsatn(table_id, relation)?;
         Ok(count)
     })
+}
+
+/// Module ABI that deletes all rows in the table identified by `table_id`.
+///
+/// Returns the number of rows deleted.
+///
+/// # Signature
+///
+/// ```ignore
+/// datastore_clear(table_id: u32) -> u64 throws {
+///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
+/// }
+/// ```
+///
+/// # Types
+///
+/// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
+/// - `u64` is `bigint` in JS restricted to unsigned 64-bit integers.
+///
+/// # Returns
+///
+/// Returns a `u64` containing the number of rows deleted from the table.
+///
+/// # Throws
+///
+/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
+///
+/// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
+///   when called outside of a transaction.
+///
+/// - [`spacetimedb_primitives::errno::NO_SUCH_TABLE`]
+///   when `table_id` is not a known ID of a table.
+///
+/// Throws a `TypeError` if:
+/// - `table_id` is not a `u32`.
+pub fn datastore_clear(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
+    let table_id: TableId = deserialize_js(scope, args.get(0))?;
+    Ok(get_env(scope)?.instance_env.clear(table_id)?)
 }
 
 /// Module ABI to read a JWT payload associated with a connection ID from the system tables.

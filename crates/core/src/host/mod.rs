@@ -177,6 +177,7 @@ pub enum AbiCall {
     DatastoreDeleteByIndexScanPointBsatn,
     DatastoreDeleteByIndexScanRangeBsatn,
     DatastoreDeleteAllByEqBsatn,
+    DatastoreClear,
     BytesSourceRead,
     BytesSourceRemainingLength,
     BytesSinkWrite,
