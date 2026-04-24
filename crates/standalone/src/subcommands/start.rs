@@ -533,7 +533,7 @@ mod tests {
         );
         assert_eq!(config.common.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.common.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, Some(128 * 1024 * 1024));
+        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, 128 * 1024 * 1024);
 
         assert_eq!(
             config.websocket,

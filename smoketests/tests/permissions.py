@@ -23,7 +23,7 @@ class Permissions(Smoketest):
 
         self.new_identity()
         with self.assertRaises(Exception):
-            self.spacetime("delete", self.database_identity)
+            self.spacetime("delete", "--yes", self.database_identity)
 
     def test_describe(self):
         """Ensure that anyone can describe any database"""
@@ -163,4 +163,3 @@ fn lifecycle_{kind}(_ctx: &spacetimedb::ReducerContext) {{}}
         for kind in self.lifecycle_kinds:
             with self.assertRaises(Exception):
                 self.call(f"lifecycle_{kind}")
-
