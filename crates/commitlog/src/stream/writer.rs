@@ -449,21 +449,31 @@ fn create_segment<R: Repo>(
         .as_ref()
         .map(|range| range.end)
         .unwrap_or_default();
-    let mut segment = repo.create_segment(segment_offset, header).or_else(|e| {
-        if e.kind() == io::ErrorKind::AlreadyExists {
-            trace!("segment already exists");
-            let mut s = repo.open_segment_writer(segment_offset)?;
-            let len = s.segment_len()?;
-            trace!("segment len: {len}");
-            if len <= segment::Header::LEN as _ {
-                trace!("overwriting existing segment");
-                s.ftruncate(0, 0)?;
-                return Ok(s);
-            }
-        }
+    let mut segment = loop {
+        match repo.create_segment(segment_offset, header) {
+            Ok(segment) => break segment,
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                trace!("segment already exists");
+                let mut s = repo.open_segment_writer(segment_offset)?;
+                let len = s.segment_len()?;
+                trace!("segment len: {len}");
+                if len <= segment::Header::LEN as _ {
+                    trace!("overwriting existing segment");
+                    repo.remove_segment(segment_offset)?;
+                    continue;
+                }
 
-        Err(e)
-    })?;
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!(
+                        "repo {}: segment {} already exists and is non-empty: {}",
+                        repo, segment_offset, e
+                    ),
+                ));
+            }
+            Err(e) => return Err(e),
+        }
+    };
     fallocate(&mut segment, &commitlog_options)?;
 
     let index_writer = repo
