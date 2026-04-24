@@ -61,7 +61,7 @@ pub fn run_generated_with_config_and_scenario(
         num_connections,
         config.max_interactions_or_default(usize::MAX),
     );
-    let mut engine = RelationalDbCommitlogEngine::new(seed, &schema, num_connections)?;
+    let mut engine = RelationalDbEngine::new(seed, &schema, num_connections)?;
     let deadline = config.deadline();
     let mut step_index = 0usize;
 
@@ -97,7 +97,7 @@ struct DynamicTableState {
 }
 
 /// Engine executing mixed table+lifecycle interactions while recording mocked durable history.
-struct RelationalDbCommitlogEngine {
+struct RelationalDbEngine {
     db: RelationalDB,
     execution: ConnectionWriteState<RelMutTx>,
     base_schema: SchemaPlan,
@@ -110,14 +110,15 @@ struct RelationalDbCommitlogEngine {
     pending_snapshot_capture: bool,
     properties: PropertyRuntime,
     runtime_handle: tokio::runtime::Handle,
+    replica_dir: ReplicaDir,
     _runtime_guard: Option<tokio::runtime::Runtime>,
 }
 
 type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
 
-impl RelationalDbCommitlogEngine {
+impl RelationalDbEngine {
     fn new(seed: DstSeed, schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self> {
-        let (db, durability, runtime_handle, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
+        let (db, durability, runtime_handle, replica_dir, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
         let mut this = Self {
             db,
             execution: ConnectionWriteState::new(num_connections),
@@ -131,6 +132,7 @@ impl RelationalDbCommitlogEngine {
             pending_snapshot_capture: false,
             properties: PropertyRuntime::default(),
             runtime_handle,
+            replica_dir,
             _runtime_guard: runtime_guard,
         };
         this.install_base_schema().map_err(anyhow::Error::msg)?;
@@ -211,11 +213,24 @@ impl RelationalDbCommitlogEngine {
         }
 
         self.sync_and_snapshot(true)?;
-        let history = self.durability.as_history();
+        // In madsim we avoid blocking close here; dropping the close future
+        // triggers actor abort via durability's close guard.
+        drop(self.durability.close());
+
+        let durability = Arc::new(
+            spacetimedb_durability::Local::open(
+                self.replica_dir.clone(),
+                self.runtime_handle.clone(),
+                Default::default(),
+                None,
+            )
+            .map_err(|err| format!("reopen local durability failed: {err}"))?,
+        );
+
         let persistence = Persistence {
-            durability: self.durability.clone(),
+            durability: durability.clone(),
             disk_size: Arc::new({
-                let durability = self.durability.clone();
+                let durability = durability.clone();
                 move || durability.size_on_disk()
             }),
             snapshots: None,
@@ -224,7 +239,7 @@ impl RelationalDbCommitlogEngine {
         let (db, connected_clients) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
-            history,
+            durability.as_history(),
             Some(persistence),
             None,
             PagePool::new_for_test(),
@@ -235,6 +250,7 @@ impl RelationalDbCommitlogEngine {
                 "unexpected connected clients after reopen: {connected_clients:?}"
             ));
         }
+        self.durability = durability;
         self.db = db;
         self.rebuild_table_handles_after_reopen()?;
         self.capture_pending_snapshot_if_idle()?;
@@ -686,7 +702,7 @@ impl RelationalDbCommitlogEngine {
     }
 }
 
-impl TargetPropertyAccess for RelationalDbCommitlogEngine {
+impl TargetPropertyAccess for RelationalDbEngine {
     fn schema_plan(&self) -> &SchemaPlan {
         &self.base_schema
     }
@@ -769,6 +785,7 @@ fn bootstrap_relational_db(
     RelationalDB,
     Arc<spacetimedb_durability::Local<ProductValue>>,
     tokio::runtime::Handle,
+    ReplicaDir,
     Option<tokio::runtime::Runtime>,
 )> {
     let (runtime_handle, runtime_guard) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -779,7 +796,7 @@ fn bootstrap_relational_db(
     };
     let replica_dir = dst_replica_dir(seed)?;
     let durability = Arc::new(
-        spacetimedb_durability::Local::open(replica_dir, runtime_handle.clone(), Default::default(), None)
+        spacetimedb_durability::Local::open(replica_dir.clone(), runtime_handle.clone(), Default::default(), None)
             .map_err(|err| anyhow::anyhow!("open local durability failed: {err}"))?,
     );
     let persistence = Persistence {
@@ -803,7 +820,7 @@ fn bootstrap_relational_db(
     db.with_auto_commit(Workload::Internal, |tx| {
         db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
     })?;
-    Ok((db, durability, runtime_handle, runtime_guard))
+    Ok((db, durability, runtime_handle, replica_dir, runtime_guard))
 }
 
 fn dst_replica_dir(seed: DstSeed) -> anyhow::Result<ReplicaDir> {
