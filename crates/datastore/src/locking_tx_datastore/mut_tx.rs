@@ -1915,6 +1915,25 @@ impl MutTxId {
         // Record whether this table had a unique index before.
         let had_unique = commit_table.has_unique_index();
 
+        // Build a human-readable error from an index's duplicate groups. Used on both the
+        // committed-state and tx-state `make_unique` failure paths (`source` distinguishes
+        // which one fired).
+        let dup_err = |idx: &TableIndex, source: &str| {
+            let duplicates = idx.iter_duplicates();
+            let total = duplicates.len();
+            let examples: String = duplicates
+                .iter()
+                .take(10)
+                .map(|(val, count)| format!("  - {val:?} appears {count} times"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::anyhow!(
+                "Cannot add unique constraint on table {table_id} column(s) {col_list:?} \
+                 ({source}):\n{total} duplicate group(s) found.\n{examples}{}",
+                if total > 10 { "\n  ... and more" } else { "" }
+            )
+        };
+
         // Try to make each matching index unique on both tables. `make_unique` fails fast on
         // the first duplicate; only if it fails do we run `iter_duplicates` to build a
         // human-readable error (showing up to 10 duplicate groups).
@@ -1922,33 +1941,18 @@ impl MutTxId {
             let commit_idx = commit_table.indexes.get_mut(&index_id).expect("index must exist");
             if commit_idx.make_unique().is_err() {
                 // `make_unique` restored the failing index to non-unique on error.
-                let duplicates = commit_idx.iter_duplicates();
+                let err = dup_err(commit_idx, "committed state");
                 revert(commit_table, tx_table, i);
-                let total = duplicates.len();
-                let examples: String = duplicates
-                    .iter()
-                    .take(10)
-                    .map(|(val, count)| format!("  - {val:?} appears {count} times"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                return Err(anyhow::anyhow!(
-                    "Cannot add unique constraint on table {table_id} column(s) {col_list:?}:\n\
-                     {total} duplicate group(s) found.\n{examples}{}",
-                    if total > 10 { "\n  ... and more" } else { "" }
-                )
-                .into());
+                return Err(err.into());
             }
 
             // Tx table can have duplicates too (same-tx inserts before the constraint add).
             let tx_idx = tx_table.indexes.get_mut(&index_id).expect("tx index must exist");
             if tx_idx.make_unique().is_err() {
+                let err = dup_err(tx_idx, "current transaction");
                 // Revert the just-made-unique commit index plus any earlier pair.
                 revert(commit_table, tx_table, i + 1);
-                return Err(anyhow::anyhow!(
-                    "Cannot add unique constraint on table {table_id} column(s) {col_list:?}: \
-                     duplicate values exist in the current transaction"
-                )
-                .into());
+                return Err(err.into());
             }
         }
 
