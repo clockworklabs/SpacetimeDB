@@ -2117,7 +2117,7 @@ mod tests {
         let project_path = temp.path();
         std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
 
-        let created = create_default_spacetime_config_if_missing(project_path, false)
+        let created = create_default_spacetime_config_if_missing(project_path, false, "maincloud")
             .unwrap()
             .expect("expected config to be created");
         assert_eq!(created, project_path.join("spacetime.json"));
@@ -2139,7 +2139,7 @@ mod tests {
         let project_path = temp.path();
         std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
 
-        let created = create_default_spacetime_config_if_missing(project_path, true)
+        let created = create_default_spacetime_config_if_missing(project_path, true, "maincloud")
             .unwrap()
             .expect("expected config to be created");
         assert_eq!(created, project_path.join("spacetime.json"));
