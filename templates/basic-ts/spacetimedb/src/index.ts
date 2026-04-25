@@ -5,6 +5,8 @@ const spacetimedb = schema({
     { public: true },
     {
       name: t.string(),
+      id: t.i128().autoInc(),
+      newcol: t.string().optional().default('default value'),
     }
   ),
 });
@@ -25,7 +27,7 @@ export const onDisconnect = spacetimedb.clientDisconnected(_ctx => {
 export const add = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    ctx.db.person.insert({ name });
+    ctx.db.person.insert({ name, id: 0n, newcol: 'default value' });
   }
 );
 

@@ -340,13 +340,26 @@ mod test {
         host::module_host::create_table_from_def,
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
+    use spacetimedb_datastore::system_tables::{StSequenceRow, ST_SEQUENCE_ID};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64, AlgebraicValue};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
     impl UpdateLogger for TestLogger {
         fn info(&self, _: &str) {}
+    }
+
+    fn sequence_allocated_for_table(stdb: &RelationalDB, tx: &MutTxId, table_id: TableId) -> anyhow::Result<i128> {
+        let sequences = stdb
+            .iter_mut(tx, ST_SEQUENCE_ID)?
+            .map(|row| StSequenceRow::try_from(row).unwrap())
+            .filter(|row| row.table_id == table_id)
+            .collect::<Vec<_>>();
+        let [sequence] = sequences.as_slice() else {
+            anyhow::bail!("expected exactly one sequence for table {table_id}, got {sequences:?}");
+        };
+        Ok(sequence.allocated)
     }
 
     #[test]
@@ -432,7 +445,7 @@ mod test {
         let stdb = TestDB::durable()?;
 
         // Step 1: Table with a primary key (requires unique constraint + index).
-        let module_v1 = {
+        let module_v1: ModuleDef = {
             let mut builder = RawModuleDefV9Builder::new();
             builder
                 .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
@@ -446,7 +459,7 @@ mod test {
         };
 
         // Step 2: Same table, but primary key removed.
-        let module_v2 = {
+        let module_v2: ModuleDef = {
             let mut builder = RawModuleDefV9Builder::new();
             builder
                 .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
@@ -491,6 +504,83 @@ mod test {
             "v2 → v3 migration failed (issue #3934)"
         );
         stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_db_add_column_with_default_preserves_sequence_allocation() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let module_v1: ModuleDef = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type(
+                    "person",
+                    [("id", AlgebraicType::U64), ("name", AlgebraicType::String)],
+                    true,
+                )
+                .with_auto_inc_primary_key(0)
+                .with_index(btree(0), "person_id_idx")
+                .with_access(TableAccess::Public)
+                .finish();
+            builder.finish().try_into().expect("valid module def")
+        };
+
+        let module_v2: ModuleDef = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type(
+                    "person",
+                    [
+                        ("id", AlgebraicType::U64),
+                        ("name", AlgebraicType::String),
+                        ("age", AlgebraicType::U8),
+                    ],
+                    true,
+                )
+                .with_auto_inc_primary_key(0)
+                .with_index(btree(0), "person_id_idx")
+                .with_default_column_value(2, AlgebraicValue::U8(18))
+                .with_access(TableAccess::Public)
+                .finish();
+            builder.finish().try_into().expect("valid module def")
+        };
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in module_v1.tables() {
+            create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+        }
+
+        let table_id = stdb.table_id_from_name_mut(&tx, "person")?.expect("table should exist");
+        insert(&stdb, &mut tx, table_id, &product![0u64, "Alice"])?;
+
+        let allocated_before = sequence_allocated_for_table(&stdb, &tx, table_id)?;
+        assert!(
+            allocated_before > 1,
+            "expected sequence allocation to advance after insert, got {allocated_before}"
+        );
+
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "adding a defaulted column should require client disconnect"
+        );
+
+        let new_table_id = stdb
+            .table_id_from_name_mut(&tx, "person")?
+            .expect("table should still exist after migration");
+        let allocated_after = sequence_allocated_for_table(&stdb, &tx, new_table_id)?;
+
+        assert_eq!(
+            allocated_after, allocated_before,
+            "AddColumns migration reset sequence allocation from {allocated_before} to {allocated_after}"
+        );
 
         Ok(())
     }

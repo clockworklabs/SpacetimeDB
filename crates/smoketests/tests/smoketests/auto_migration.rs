@@ -1,5 +1,16 @@
 use spacetimedb_smoketests::Smoketest;
 
+fn sql_scalar_i128(test: &Smoketest, query: &str) -> i128 {
+    let output = test.sql(query).unwrap();
+    output
+        .lines()
+        .nth(2)
+        .unwrap_or_else(|| panic!("Expected scalar SQL result, got:\n{output}"))
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("Failed to parse scalar SQL result from:\n{output}\nerror: {e}"))
+}
+
 const MODULE_CODE_SIMPLE: &str = r#"
 use spacetimedb::{log, ReducerContext, Table};
 
@@ -407,6 +418,79 @@ fn test_add_table_columns() {
             .any(|l| { l.contains("UPDATE_2: Person { name: \"Robert2\", age: 70, mass: 180, height: 160 }") }),
         "Expected updated schema with default height in logs: {:?}",
         logs2
+    );
+}
+
+const MODULE_CODE_SEQUENCE_ALLOCATED_INIT: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person)]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
+}
+"#;
+
+const MODULE_CODE_SEQUENCE_ALLOCATED_UPDATED: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person)]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    name: String,
+    #[default(18)]
+    age: u8,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name, age: 30 });
+}
+"#;
+
+#[test]
+fn test_add_column_with_default_preserves_sequence_allocation() {
+    let mut test = Smoketest::builder()
+        .module_code(MODULE_CODE_SEQUENCE_ALLOCATED_INIT)
+        .build();
+
+    test.call("add_person", &["Alice"]).unwrap();
+
+    let allocated_before = sql_scalar_i128(
+        &test,
+        "SELECT st_sequence.allocated \
+         FROM st_sequence \
+         JOIN st_table ON st_sequence.table_id = st_table.table_id \
+         WHERE st_table.table_name = 'person'",
+    );
+    assert!(
+        allocated_before > 1,
+        "Expected sequence allocation to advance after insert, got {allocated_before}",
+    );
+
+    test.write_module_code(MODULE_CODE_SEQUENCE_ALLOCATED_UPDATED).unwrap();
+    test.publish_module_clear(false).unwrap();
+
+    let allocated_after = sql_scalar_i128(
+        &test,
+        "SELECT st_sequence.allocated \
+         FROM st_sequence \
+         JOIN st_table ON st_sequence.table_id = st_table.table_id \
+         WHERE st_table.table_name = 'person'",
+    );
+
+    assert_eq!(
+        allocated_after, allocated_before,
+        "Automigration reset st_sequence.allocated from {allocated_before} to {allocated_after}",
     );
 }
 

@@ -17,6 +17,12 @@ pub struct Sequence {
     allocated: i128,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SequenceSnapshot {
+    pub value: i128,
+    pub allocated: i128,
+}
+
 impl MemoryUsage for Sequence {
     fn heap_usage(&self) -> usize {
         // MEMUSE: intentionally ignoring schema
@@ -82,8 +88,22 @@ impl Sequence {
         self.value = new_value;
     }
 
-    pub(super) fn get_value(&self) -> i128 {
-        self.value
+    pub(super) fn snapshot(&self) -> SequenceSnapshot {
+        SequenceSnapshot {
+            value: self.value,
+            allocated: self.allocated,
+        }
+    }
+
+    pub(super) fn restore_snapshot(&mut self, snapshot: SequenceSnapshot) {
+        self.update_value(snapshot.value);
+        if snapshot.allocated < self.schema.min_value || snapshot.allocated > self.schema.max_value {
+            panic!(
+                "Invalid sequence allocation restore: {} is out of bounds for sequence with min_value {} and max_value {}",
+                snapshot.allocated, self.schema.min_value, self.schema.max_value
+            );
+        }
+        self.allocated = snapshot.allocated;
     }
 
     pub(super) fn id(&self) -> SequenceId {

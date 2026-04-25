@@ -2,7 +2,7 @@ use super::{
     committed_state::{CommitTableForInsertion, CommittedState},
     datastore::{Result, TxMetrics},
     delete_table::DeleteTable,
-    sequence::{Sequence, SequencesState},
+    sequence::{Sequence, SequenceSnapshot, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView},
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
@@ -1207,7 +1207,7 @@ impl MutTxId {
         // Store sequence values to restore them later with new table.
         // Using a map from name to value as the new sequence ids will be different.
         // and I am not sure if we should rely on the order of sequences in the table schema.
-        let seq_values: HashMap<_, i128> = original_table_schema
+        let seq_values: HashMap<_, SequenceSnapshot> = original_table_schema
             .sequences
             .iter()
             .map(|s| {
@@ -1216,7 +1216,7 @@ impl MutTxId {
                     self.sequence_state_lock
                         .get_sequence_mut(s.sequence_id)
                         .expect("sequence exists in original schema and should in sequence state.")
-                        .get_value(),
+                        .snapshot(),
                 )
             })
             .collect();
@@ -1252,7 +1252,7 @@ impl MutTxId {
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<RawIdentifier, i128>,
+        seq_values: HashMap<RawIdentifier, SequenceSnapshot>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
@@ -1262,13 +1262,38 @@ impl MutTxId {
                 .sequence_state_lock
                 .get_sequence_mut(seq.sequence_id)
                 .expect("sequence just created");
-            let value = *seq_values
+            let snapshot = *seq_values
                 .get(&seq.sequence_name)
                 .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
-            new_seq.update_value(value);
+            new_seq.restore_snapshot(snapshot);
+            self.update_sequence_allocation(seq.sequence_id, snapshot.allocated)?;
         }
 
         Ok(table_id)
+    }
+
+    fn update_sequence_allocation(&mut self, seq_id: SequenceId, allocated: i128) -> Result<()> {
+        let old_seq_row_ref = self
+            .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &seq_id.into())?
+            .last()
+            .ok_or_else(|| SequenceError::NotFound(seq_id))?;
+        let old_seq_row_ptr = old_seq_row_ref.pointer();
+        let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
+        seq_row.allocated = allocated;
+
+        self.delete(ST_SEQUENCE_ID, old_seq_row_ptr)?;
+        with_sys_table_buf(|buf| {
+            to_writer(buf, &seq_row).unwrap();
+            insert::<false>(
+                &mut self.tx_state,
+                &self.committed_state_write_lock,
+                &mut self.sequence_state_lock,
+                ST_SEQUENCE_ID,
+                buf,
+            )
+        })?;
+
+        Ok(())
     }
 
     /// Create an index.

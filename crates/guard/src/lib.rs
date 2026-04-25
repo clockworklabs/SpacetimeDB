@@ -268,7 +268,6 @@ impl SpacetimeDbGuard {
 
         let data_dir_str = data_dir.display().to_string();
         let pg_port_str = pg_port.map(|p| p.to_string());
-
         let address = "127.0.0.1:0".to_string();
 
         let mut args = vec![
