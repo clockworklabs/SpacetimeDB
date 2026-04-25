@@ -102,7 +102,7 @@ jobs:
 
       - name: Sign binaries for Windows
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
-        shell: bash
+        shell: pwsh
         env:
           SM_HOST: ${{ vars.SM_HOST }}
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
@@ -110,24 +110,22 @@ jobs:
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
         run: |
-          set -e
-          targetDir="$GITHUB_WORKSPACE/target/x86_64-pc-windows-msvc/release"
-          failed=0
-          for exe in spacetimedb-update.exe spacetimedb-cli.exe spacetimedb-standalone.exe; do
-            echo "Signing $exe..."
-            output=$(smctl sign --keypair-alias "$DIGICERT_KEYPAIR_ALIAS" \
-              --input "$targetDir/$exe" 2>&1) || true
-            echo "$output"
-            if echo "$output" | grep -q "FAILED"; then
-              echo "::error::$exe signing FAILED"
-              failed=1
-            else
-              echo "$exe signed successfully"
-            fi
-          done
-          if [ "$failed" -eq 1 ]; then
-            exit 1
-          fi
+          $ErrorActionPreference = 'Continue'
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          $failed = $false
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            Write-Host "Signing $exe..."
+            & smctl sign --verbose --keypair-alias $env:DIGICERT_KEYPAIR_ALIAS --input $path 2>&1 | Tee-Object -Variable output
+            $output = $output -join "`n"
+            if ($output -match 'FAILED') {
+              Write-Host "::error::$exe signing FAILED"
+              $failed = $true
+            } else {
+              Write-Host "$exe signed successfully"
+            }
+          }
+          if ($failed) { exit 1 }
 
       - name: Verify signatures
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
