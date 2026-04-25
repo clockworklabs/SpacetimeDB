@@ -81,7 +81,7 @@ jobs:
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
-      - name: Register signtool with smctl and verify
+      - name: Sync DigiCert certificate to local store and verify
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
         shell: pwsh
         env:
@@ -91,8 +91,9 @@ jobs:
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
         run: |
           $ErrorActionPreference = 'Stop'
-          # Register signtool with smctl so it can find it during signing
-          smctl windows signtool register
+          # Sync certificates from DigiCert cloud to local Windows certificate store
+          # This is required so signtool can find the certificate
+          smctl windows certsync
           # Run healthcheck to confirm everything is connected
           smctl healthcheck
 
