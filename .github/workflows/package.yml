@@ -50,6 +50,22 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Add signtool.exe to PATH
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $signtool = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $signtool) { throw "signtool.exe not found under $root" }
+
+          "Found: $($signtool.FullName)"
+          $dir = Split-Path $signtool.FullName
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
       - name: Decode DigiCert client auth certificate
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
         shell: bash
@@ -65,26 +81,6 @@ jobs:
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
-      - name: DigiCert healthcheck
-        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
-        shell: bash
-        env:
-          SM_HOST: ${{ vars.SM_HOST }}
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-        run: |
-          echo "SM_HOST length: ${#SM_HOST}"
-          echo "SM_API_KEY length: ${#SM_API_KEY}"
-          echo "SM_CLIENT_CERT_PASSWORD length: ${#SM_CLIENT_CERT_PASSWORD}"
-          echo "SM_CLIENT_CERT_FILE: ${SM_CLIENT_CERT_FILE}"
-          if [ -f /d/Certificate_pkcs12.p12 ]; then
-            echo "Cert file size: $(wc -c < /d/Certificate_pkcs12.p12) bytes"
-          else
-            echo "CERT FILE MISSING"
-          fi
-          smctl healthcheck
-
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
@@ -93,34 +89,37 @@ jobs:
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         env:
-          SM_HOST: ${{ vars.SM_HOST }}
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
         run: |
+          set -e
           targetDir="$GITHUB_WORKSPACE/target/x86_64-pc-windows-msvc/release"
+          failed=0
           for exe in spacetimedb-update.exe spacetimedb-cli.exe spacetimedb-standalone.exe; do
             echo "Signing $exe..."
-            smctl sign --keypair-alias "$DIGICERT_KEYPAIR_ALIAS" \
-              --input "$targetDir/$exe"
+            output=$(smctl sign --keypair-alias "$DIGICERT_KEYPAIR_ALIAS" \
+              --input "$targetDir/$exe" 2>&1) || true
+            echo "$output"
+            if echo "$output" | grep -q "FAILED"; then
+              echo "::error::$exe signing FAILED"
+              failed=1
+            else
+              echo "$exe signed successfully"
+            fi
           done
+          if [ "$failed" -eq 1 ]; then
+            exit 1
+          fi
 
       - name: Verify signatures
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
-          $signtool = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-          if (-not $signtool) { throw "signtool.exe not found" }
-
           $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
           foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
-            & $signtool.FullName verify /v /pa (Join-Path $targetDir $exe)
+            $path = Join-Path $targetDir $exe
+            & signtool.exe verify /v /pa $path
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $exe" }
           }
 
       - name: Package (unix)
