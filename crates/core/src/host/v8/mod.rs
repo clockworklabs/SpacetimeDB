@@ -7,7 +7,7 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    get_registered_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
@@ -39,7 +39,7 @@ use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
 use parking_lot::RwLock;
-use prometheus::IntGauge;
+use prometheus::{IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
@@ -50,6 +50,7 @@ use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
+use std::os::raw::c_void;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -1293,14 +1294,49 @@ fn startup_instance_worker<'scope>(
 
 /// Returns a new isolate.
 fn new_isolate(heap_policy: V8HeapPolicyConfig) -> OwnedIsolate {
-    let params = if let Some(heap_limit_bytes) = heap_policy.heap_limit_bytes {
-        v8::CreateParams::default().heap_limits(0, heap_limit_bytes)
-    } else {
-        v8::CreateParams::default()
-    };
+    let params = v8::CreateParams::default().heap_limits(0, heap_policy.heap_limit_bytes);
     let mut isolate = Isolate::new(params);
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
     isolate
+}
+
+/// Run the closure `f` with `callback` set as `scope`'s near-heap-limit callback.
+///
+/// Upon return, the callback will be unregistered and the heap limit will be set back down to as
+/// close to `reset_heap_limit` as the runtime deems reasonable.
+fn with_near_heap_limit_callback<I, Cb, R, F>(scope: &mut I, reset_heap_limit: usize, mut callback: Cb, f: F) -> R
+where
+    Cb: FnMut(usize, usize) -> usize,
+    I: AsMut<Isolate>,
+    F: FnOnce(&mut I) -> R,
+{
+    unsafe extern "C" fn callback_wrapper<F>(
+        data: *mut c_void,
+        current_heap_limit: usize,
+        initial_heap_limit: usize,
+    ) -> usize
+    where
+        F: FnMut(usize, usize) -> usize,
+    {
+        let callback = data.cast::<F>();
+        unsafe { (*callback)(current_heap_limit, initial_heap_limit) }
+    }
+
+    let data = std::ptr::from_mut(&mut callback).cast::<c_void>();
+    let raw_callback: v8::NearHeapLimitCallback = callback_wrapper::<Cb>;
+
+    scope.as_mut().add_near_heap_limit_callback(raw_callback, data);
+
+    // Immediately set up a guard that will remove the callback when this scope exits, because
+    // `data` points to a stack-allocated object and it cannot be allowed to hang around after
+    // this stack frame exits.
+    let mut guard = scopeguard::guard(scope, |isolate| {
+        isolate
+            .as_mut()
+            .remove_near_heap_limit_callback(raw_callback, reset_heap_limit)
+    });
+
+    f(&mut guard)
 }
 
 /// Spawns an instance worker for `program`
@@ -1408,6 +1444,10 @@ async fn spawn_instance_worker(
             replica_ctx,
             hooks: &hooks,
             args: &args,
+            heap_limit_hit_metric: &WORKER_METRICS
+                .v8_heap_limit_hit
+                .with_label_values(&info.database_identity),
+            initial_heap_limit: heap_policy.heap_limit_bytes,
         };
         if let Some(heap_metrics) = heap_metrics.as_mut() {
             let _initial_heap_stats = sample_heap_stats(inst.scope, heap_metrics);
@@ -1667,16 +1707,9 @@ struct V8Instance<'a, 'scope, 'isolate> {
     replica_ctx: &'a Arc<ReplicaContext>,
     hooks: &'a HookFunctions<'scope>,
     args: &'a Global<ArrayBuffer>,
-}
-
-macro_rules! with_call_scope {
-    ($scope:expr, |$call_scope:ident, $hooks:ident| $body:block) => {{
-        // Open a fresh HandleScope for this invocation so call-local V8 handles
-        // are released when the reducer/view/procedure returns.
-        v8::scope!(let $call_scope, $scope);
-        let $hooks = get_registered_hooks($call_scope).expect("module hooks should be registered before invoking JS");
-        $body
-    }};
+    /// Metric for the number of times the v8 heap limit has been hit.
+    heap_limit_hit_metric: &'a IntCounter,
+    initial_heap_limit: usize,
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
@@ -1697,26 +1730,21 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| {
-                let reducer_args_buf = Local::new(scope, self.args);
-                Ok(call_call_reducer(scope, &hooks, op, reducer_args_buf)?)
-            })
+        let args = self.args;
+        common_call(self, budget, op, |scope, hooks, op| {
+            let reducer_args_buf = Local::new(scope, args);
+            Ok(call_call_reducer(scope, hooks, op, reducer_args_buf)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| call_call_view(scope, &hooks, op))
-        })
+        common_call(self, budget, op, |scope, hooks, op| call_call_view(scope, hooks, op))
     }
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| {
-                call_call_view_anon(scope, &hooks, op)
-            })
+        common_call(self, budget, op, |scope, hooks, op| {
+            call_call_view_anon(scope, hooks, op)
         })
     }
 
@@ -1729,10 +1757,8 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
-        let result = with_call_scope!(self.scope, |scope, hooks| {
-            common_call(scope, &hooks, budget, op, |scope, op| {
-                call_call_procedure(scope, &hooks, op)
-            })
+        let result = common_call(self, budget, op, |scope, hooks, op| {
+            call_call_procedure(scope, hooks, op)
         })
         .map_result(|call_result| {
             call_result.map_err(|e| match e {
@@ -1747,73 +1773,130 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 }
 
-fn common_call<'scope, R, O, F>(
-    scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'scope>,
+#[derive(thiserror::Error, Debug)]
+#[error("Javascript module exceeded memory limit (current limit: {current}, initial: {initial})")]
+struct ExceededMemoryLimit {
+    current: usize,
+    initial: usize,
+}
+
+fn common_call<R, O, F>(
+    inst: &mut V8Instance<'_, '_, '_>,
     budget: FunctionBudget,
     op: O,
     call: F,
 ) -> ExecutionResult<R, ExecutionError>
 where
     O: InstanceOp,
-    F: FnOnce(&mut PinTryCatch<'scope, '_, '_, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
+    F: FnOnce(&mut PinTryCatch<'_, '_, '_, '_>, &HookFunctions<'_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
 {
-    // TODO(v8): Start the budget timeout and long-running logger.
-    let env = env_on_isolate_unwrap(scope);
+    let scope = &mut *inst.scope;
 
-    // Start the timer.
-    // We'd like this tightly around `call`.
-    env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+    let heap_limit_hit = Cell::new(0u32);
 
-    // Wrap the call in `TryCatch`.
-    //
-    // `v8::tc_scope!` adds exception handling on top of the current scope; it
-    // does not create a new HandleScope. The fresh per-call HandleScope is
-    // opened by the caller before entering `common_call`.
-    v8::tc_scope!(let scope, scope);
-    let call_result = call(scope, op).map_err(|mut e| {
-        if let ErrorOrException::Exception(_) = e {
-            // If we're terminating execution, don't try to check `instanceof`.
-            if scope.can_continue()
-                && let Some(exc) = scope.exception()
-            {
-                match process_thrown_exception(scope, hooks, exc) {
-                    Ok(Some(err)) => return err,
-                    Ok(None) => {}
-                    Err(exc) => e = ErrorOrException::Exception(exc),
+    // This closure gets called when the configured near heap limit is hit.
+    // We use a near-heap limit as V8 aborts the process when the hard limit is hit.
+    // We'd like to gracefully terminate execution, and not abort,
+    // so we ask V8 to terminate execution as soon as possible
+    // and double the heap limit in the hopes
+    // that V8 manages to stop execution before hitting the new limit.
+    // Note that V8 does not terminate execution immediately when requested
+    // so this mechanism is unfortunately not fool-proof
+    // but we consider it to be good enough.
+    let terminator = error::RemoteTerminator::new(scope);
+    let termination_flag = &terminator.flag;
+
+    let near_heap_limit_callback = |current: usize, initial: usize| {
+        heap_limit_hit.update(|x| x + 1);
+        inst.heap_limit_hit_metric.inc();
+        terminator.terminate_execution(ExceededMemoryLimit { current, initial }.into());
+        current.saturating_mul(2)
+    };
+
+    with_near_heap_limit_callback(scope, inst.initial_heap_limit, near_heap_limit_callback, |scope| {
+        // Open a fresh HandleScope for this invocation so call-local V8 handles
+        // are released when the reducer/view/procedure returns.
+        v8::scope!(let scope, scope);
+
+        // TODO(v8): Start the budget timeout and long-running logger.
+        let env = env_on_isolate_unwrap(scope);
+
+        // Start the timer.
+        // We'd like this tightly around `call`.
+        env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+
+        // Wrap the call in `TryCatch`.
+        //
+        // `v8::tc_scope!` adds exception handling on top of the current scope; it
+        // does not create a new HandleScope. The fresh per-call HandleScope is
+        // opened by the caller before entering `common_call`.
+        v8::tc_scope!(let scope, scope);
+
+        let call_result = call(scope, inst.hooks, op).map_err(|mut e| {
+            if let ErrorOrException::Exception(_) = e {
+                // If we're terminating execution, don't try to check `instanceof`.
+                if scope.can_continue()
+                    && let Some(exc) = scope.exception()
+                {
+                    match process_thrown_exception(scope, inst.hooks, exc) {
+                        Ok(Some(err)) => return err,
+                        Ok(None) => {}
+                        Err(exc) => e = ErrorOrException::Exception(exc),
+                    }
                 }
             }
+
+            let e = e.exc_into_error(scope).map(anyhow::Error::from);
+            let termination_error = termination_flag.clear();
+            if scope.can_continue() {
+                // We can continue.
+                ExecutionError::Recoverable(e.unwrap_or_else(Into::into))
+            } else if scope.has_terminated() {
+                // We can continue if we do `Isolate::cancel_terminate_execution`.
+                // Must be called *after* we check `has_terminated()`, or else it will
+                // cause it to return `false`.
+                scope.cancel_terminate_execution();
+                let e = e.unwrap_or_else(|unknown| termination_error.unwrap_or_else(|| unknown.into()));
+                ExecutionError::Recoverable(e)
+            } else {
+                // We cannot continue.
+                ExecutionError::Trap(e.unwrap_or_else(Into::into))
+            }
+        });
+
+        // Ensure there's no lingering termination request.
+        termination_flag.clear();
+        scope.cancel_terminate_execution();
+
+        let env = env_on_isolate_unwrap(scope);
+
+        // Finish timings.
+        let timings = env.finish_funcall();
+
+        // Derive energy stats.
+        let energy = energy_from_elapsed(budget, timings.total_duration);
+
+        // Reuse the last periodic heap sample instead of querying V8 on every call.
+        // We use this statistic for energy tracking, so eventual consistency is fine.
+        let memory_allocation = env.cached_used_heap_size();
+
+        if heap_limit_hit.get() > 1 {
+            let database_identity = *env.instance_env.database_identity();
+            tracing::warn!(
+                %database_identity,
+                used_heap_size = memory_allocation,
+                current_heap_limit = scope.get_heap_statistics().heap_size_limit(),
+                "Module hit heap limit multiple times in single call, even after doubling!",
+            )
         }
-        let e = e.map_exception(|exc| exc.into_error(scope)).into();
-        if scope.can_continue() {
-            // We can continue.
-            ExecutionError::Recoverable(e)
-        } else if scope.has_terminated() {
-            // We can continue if we do `Isolate::cancel_terminate_execution`.
-            scope.cancel_terminate_execution();
-            ExecutionError::Recoverable(e)
-        } else {
-            // We cannot continue.
-            ExecutionError::Trap(e)
-        }
-    });
 
-    // Finish timings.
-    let timings = env_on_isolate_unwrap(scope).finish_funcall();
-
-    // Derive energy stats.
-    let energy = energy_from_elapsed(budget, timings.total_duration);
-
-    // Reuse the last periodic heap sample instead of querying V8 on every call.
-    // We use this statistic for energy tracking, so eventual consistency is fine.
-    let memory_allocation = env_on_isolate_unwrap(scope).cached_used_heap_size();
-
-    let stats = ExecutionStats {
-        energy,
-        timings,
-        memory_allocation,
-    };
-    ExecutionResult { stats, call_result }
+        let stats = ExecutionStats {
+            energy,
+            timings,
+            memory_allocation,
+        };
+        ExecutionResult { stats, call_result }
+    })
 }
 
 /// Extracts the raw module def by running the registered `__describe_module__` hook.
