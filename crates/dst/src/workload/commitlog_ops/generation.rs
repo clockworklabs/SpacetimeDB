@@ -68,6 +68,12 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
             self.alive_slots.insert(slot);
             self.pending
                 .push_back(CommitlogInteraction::CreateDynamicTable { conn, slot });
+            // Frequently follow a create with migration to stress add-column +
+            // copy + subsequent auto-inc allocation paths.
+            if Percent::new(55).sample(&mut self.rng) {
+                self.pending
+                    .push_back(CommitlogInteraction::MigrateDynamicTable { conn, slot });
+            }
             return true;
         }
 

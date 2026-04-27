@@ -79,12 +79,12 @@ impl DatastoreEngine {
         })
     }
 
-    fn with_mut_tx(
+    fn with_mut_tx<T>(
         &mut self,
         conn: usize,
         table: usize,
-        mut f: impl FnMut(&Locking, TableId, &mut MutTxId) -> Result<(), String>,
-    ) -> Result<(), String> {
+        mut f: impl FnMut(&Locking, TableId, &mut MutTxId) -> Result<T, String>,
+    ) -> Result<T, String> {
         let table_id = *self
             .table_ids
             .get(table)
@@ -104,12 +104,12 @@ impl DatastoreEngine {
                     .datastore
                     .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
                 self.execution.active_writer = Some(conn);
-                f(&self.datastore, table_id, &mut tx)?;
+                let value = f(&self.datastore, table_id, &mut tx)?;
                 self.datastore
                     .commit_mut_tx(tx)
                     .map_err(|err| format!("auto-commit failed on connection {conn}: {err}"))?;
                 self.execution.active_writer = None;
-                Ok(())
+                Ok(value)
             }
         }
     }
@@ -274,9 +274,7 @@ impl TableWorkloadEngine for DatastoreEngine {
                     .commit_mut_tx(tx)
                     .map_err(|err| format!("commit failed on connection {conn}: {err}"))?;
                 self.execution.active_writer = None;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_commit_or_rollback(access)
-                })?;
+                self.with_property_runtime(|runtime, access| runtime.on_commit_or_rollback(access))?;
             }
             Interaction::RollbackTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "rollback")?;
@@ -285,22 +283,20 @@ impl TableWorkloadEngine for DatastoreEngine {
                     .ok_or_else(|| format!("connection {conn} has no transaction to rollback"))?;
                 let _ = self.datastore.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_commit_or_rollback(access)
-                })?;
+                self.with_property_runtime(|runtime, access| runtime.on_commit_or_rollback(access))?;
             }
             Interaction::Insert { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
-                self.with_mut_tx(*conn, *table, |datastore, table_id, tx| {
+                let inserted_row = self.with_mut_tx(*conn, *table, |datastore, table_id, tx| {
                     let bsatn = row.to_bsatn().map_err(|err: anyhow::Error| err.to_string())?;
-                    datastore
+                    let (_, row_ref, _) = datastore
                         .insert_mut_tx(tx, table_id, &bsatn)
                         .map_err(|err| format!("insert failed: {err}"))?;
-                    Ok(())
+                    Ok(SimRow::from_product_value(row_ref.to_product_value()))
                 })?;
                 let step = self.step;
                 self.with_property_runtime(|runtime, access| {
-                    runtime.on_insert(access, step, *conn, *table, row, in_tx)
+                    runtime.on_insert(access, step, *conn, *table, &inserted_row, in_tx)
                 })?;
             }
             Interaction::Delete { conn, table, row } => {

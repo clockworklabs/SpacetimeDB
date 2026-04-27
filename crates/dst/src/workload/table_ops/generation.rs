@@ -77,9 +77,7 @@ impl<'a> ScenarioPlanner<'a> {
         })
         .sample(self.rng)
         {
-            TxControlAction::Begin
-                if !self.model.connections[conn].in_tx && self.model.active_writer().is_none() =>
-            {
+            TxControlAction::Begin if !self.model.connections[conn].in_tx && self.model.active_writer().is_none() => {
                 self.model.begin_tx(conn);
                 self.pending.push_back(TableWorkloadInteraction::BeginTx { conn });
                 true
@@ -164,15 +162,12 @@ impl<S: TableScenario> NextInteractionGenerator<S> {
         // Locking targets allow only one writer at a time. If a writer is
         // already open, keep driving that same connection until it commits or
         // rolls back. Otherwise pick a fresh connection uniformly.
-        let conn = self
-            .model
-            .active_writer()
-            .unwrap_or_else(|| {
-                ConnectionChoice {
-                    connection_count: self.num_connections,
-                }
-                .sample(&mut self.rng)
-            });
+        let conn = self.model.active_writer().unwrap_or_else(|| {
+            ConnectionChoice {
+                connection_count: self.num_connections,
+            }
+            .sample(&mut self.rng)
+        });
         let mut planner = ScenarioPlanner {
             rng: &mut self.rng,
             model: &mut self.model,

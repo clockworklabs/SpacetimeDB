@@ -1,10 +1,11 @@
 //! RelationalDB DST target with mocked commitlog file chaos and replay checks.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     ops::Bound,
     sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    thread::sleep,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use spacetimedb_core::{
@@ -15,17 +16,17 @@ use spacetimedb_datastore::{
     execution_context::Workload,
     traits::{IsolationLevel, Program},
 };
-use spacetimedb_durability::{Durability, EmptyHistory, History};
+use spacetimedb_durability::{EmptyHistory, History};
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
 };
 use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
-use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{SequenceId, TableId};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::{
     def::BTreeAlgorithm,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
     table_name::TableName,
 };
 use spacetimedb_table::page_pool::PagePool;
@@ -92,19 +93,19 @@ pub fn run_generated_with_config_and_scenario(
 
 #[derive(Clone, Debug)]
 struct DynamicTableState {
+    name: String,
     version: u32,
     table_id: TableId,
 }
 
 /// Engine executing mixed table+lifecycle interactions while recording mocked durable history.
 struct RelationalDbEngine {
-    db: RelationalDB,
+    db: Option<RelationalDB>,
     execution: ConnectionWriteState<RelMutTx>,
     base_schema: SchemaPlan,
     base_table_ids: Vec<TableId>,
-    dynamic_tables: HashMap<u32, DynamicTableState>,
+    dynamic_tables: BTreeMap<u32, DynamicTableState>,
     step: usize,
-    durability: Arc<spacetimedb_durability::Local<ProductValue>>,
     last_observed_durable_offset: Option<u64>,
     last_durable_snapshot: DurableSnapshot,
     pending_snapshot_capture: bool,
@@ -118,15 +119,14 @@ type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
 
 impl RelationalDbEngine {
     fn new(seed: DstSeed, schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self> {
-        let (db, durability, runtime_handle, replica_dir, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
+        let (db, runtime_handle, replica_dir, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
         let mut this = Self {
-            db,
+            db: Some(db),
             execution: ConnectionWriteState::new(num_connections),
             base_schema: schema.clone(),
             base_table_ids: Vec::with_capacity(schema.tables.len()),
-            dynamic_tables: HashMap::new(),
+            dynamic_tables: BTreeMap::new(),
             step: 0,
-            durability,
             last_observed_durable_offset: None,
             last_durable_snapshot: BTreeMap::new(),
             pending_snapshot_capture: false,
@@ -140,7 +140,9 @@ impl RelationalDbEngine {
     }
 
     fn install_base_schema(&mut self) -> Result<(), String> {
-        let mut tx = self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = self
+            .db()?
+            .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         for table in &self.base_schema.tables {
             let columns = table
                 .columns
@@ -164,7 +166,7 @@ impl RelationalDbEngine {
                 0,
             )];
             let table_id = self
-                .db
+                .db()?
                 .create_table(
                     &mut tx,
                     TableSchema::new(
@@ -186,7 +188,7 @@ impl RelationalDbEngine {
                 .map_err(|err| format!("create table '{}' failed: {err}", table.name))?;
             self.base_table_ids.push(table_id);
         }
-        self.db
+        self.db()?
             .commit_tx(tx)
             .map(|_| ())
             .map_err(|err| format!("install base schema commit failed: {err}"))
@@ -205,17 +207,24 @@ impl RelationalDbEngine {
     }
 
     fn close_and_reopen(&mut self) -> Result<(), String> {
-        if self.execution.active_writer.is_some()
-            || self.execution.tx_by_connection.iter().any(|tx| tx.is_some())
-        {
+        if self.execution.active_writer.is_some() || self.execution.tx_by_connection.iter().any(|tx| tx.is_some()) {
             trace!("skip close/reopen while transaction is open");
             return Ok(());
         }
 
         self.sync_and_snapshot(true)?;
+        // Explicitly drop the current RelationalDB instance before attempting
+        // to open a new durability+DB pair on the same replica directory.
+        let old_db = self
+            .db
+            .take()
+            .ok_or_else(|| "close/reopen failed: relational db not initialized".to_string())?;
+        self.runtime_handle.block_on(old_db.shutdown());
+        drop(old_db);
+        info!("starting durability");
+
         // In madsim we avoid blocking close here; dropping the close future
         // triggers actor abort via durability's close guard.
-        drop(self.durability.close());
 
         let durability = Arc::new(
             spacetimedb_durability::Local::open(
@@ -250,8 +259,7 @@ impl RelationalDbEngine {
                 "unexpected connected clients after reopen: {connected_clients:?}"
             ));
         }
-        self.durability = durability;
-        self.db = db;
+        self.db = Some(db);
         self.rebuild_table_handles_after_reopen()?;
         self.capture_pending_snapshot_if_idle()?;
         debug!(
@@ -263,14 +271,14 @@ impl RelationalDbEngine {
     }
 
     fn rebuild_table_handles_after_reopen(&mut self) -> Result<(), String> {
-        let tx = self.db.begin_tx(Workload::ForTests);
-        let schemas = self
-            .db
+        let db = self.db()?;
+        let tx = db.begin_tx(Workload::ForTests);
+        let schemas = db
             .get_all_tables(&tx)
             .map_err(|err| format!("list tables after reopen failed: {err}"))?;
-        let _ = self.db.release_tx(tx);
+        let _ = db.release_tx(tx);
 
-        let mut by_name = HashMap::with_capacity(schemas.len());
+        let mut by_name = BTreeMap::new();
         for schema in schemas {
             by_name.insert(schema.table_name.to_string(), schema.table_id);
         }
@@ -284,9 +292,8 @@ impl RelationalDbEngine {
             self.base_table_ids.push(table_id);
         }
 
-        self.dynamic_tables.retain(|slot, state| {
-            let name = dynamic_table_name(*slot, state.version);
-            if let Some(table_id) = by_name.get(&name).copied() {
+        self.dynamic_tables.retain(|_slot, state| {
+            if let Some(table_id) = by_name.get(&state.name).copied() {
                 state.table_id = table_id;
                 true
             } else {
@@ -310,8 +317,10 @@ impl RelationalDbEngine {
                         "connection {conn} cannot begin write transaction while connection {owner} owns lock"
                     ));
                 }
-                self.execution.tx_by_connection[*conn] =
-                    Some(self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests));
+                self.execution.tx_by_connection[*conn] = Some(
+                    self.db()?
+                        .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests),
+                );
                 self.execution.active_writer = Some(*conn);
                 Ok(())
             }
@@ -320,14 +329,12 @@ impl RelationalDbEngine {
                 let tx = self.execution.tx_by_connection[*conn]
                     .take()
                     .ok_or_else(|| format!("connection {conn} has no transaction to commit"))?;
-                self.db
+                self.db()?
                     .commit_tx(tx)
                     .map_err(|err| format!("commit interaction failed: {err}"))?;
                 self.execution.active_writer = None;
                 self.capture_pending_snapshot_if_idle()?;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_commit_or_rollback(access)
-                })?;
+                self.with_property_runtime(|runtime, access| runtime.on_commit_or_rollback(access))?;
                 Ok(())
             }
             TableWorkloadInteraction::RollbackTx { conn } => {
@@ -335,34 +342,32 @@ impl RelationalDbEngine {
                 let tx = self.execution.tx_by_connection[*conn]
                     .take()
                     .ok_or_else(|| format!("connection {conn} has no transaction to rollback"))?;
-                let _ = self.db.rollback_mut_tx(tx);
+                let _ = self.db()?.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
                 self.capture_pending_snapshot_if_idle()?;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_commit_or_rollback(access)
-                })?;
+                self.with_property_runtime(|runtime, access| runtime.on_commit_or_rollback(access))?;
                 Ok(())
             }
             TableWorkloadInteraction::Insert { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
-                self.with_mut_tx(*conn, |engine, tx| {
+                let inserted_row = self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = *engine
                         .base_table_ids
                         .get(*table)
                         .ok_or_else(|| format!("table {table} out of range"))?;
                     let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
-                    engine
-                        .db
+                    let (_, row_ref, _) = engine
+                        .db()?
                         .insert(tx, table_id, &bsatn)
                         .map_err(|err| format!("insert failed: {err}"))?;
-                    Ok(())
+                    Ok(SimRow::from_product_value(row_ref.to_product_value()))
                 })?;
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
                 let step = self.step as u64;
                 self.with_property_runtime(|runtime, access| {
-                    runtime.on_insert(access, step, *conn, *table, row, in_tx)
+                    runtime.on_insert(access, step, *conn, *table, &inserted_row, in_tx)
                 })
             }
             TableWorkloadInteraction::Delete { conn, table, row } => {
@@ -372,7 +377,7 @@ impl RelationalDbEngine {
                         .base_table_ids
                         .get(*table)
                         .ok_or_else(|| format!("table {table} out of range"))?;
-                    let deleted = engine.db.delete_by_rel(tx, table_id, [row.to_product_value()]);
+                    let deleted = engine.db()?.delete_by_rel(tx, table_id, [row.to_product_value()]);
                     if deleted != 1 {
                         return Err(format!("delete expected 1 row, got {deleted}"));
                     }
@@ -382,26 +387,24 @@ impl RelationalDbEngine {
                     self.sync_and_snapshot(false)?;
                 }
                 let step = self.step as u64;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_delete(access, step, *conn, *table, row, in_tx)
-                })
+                self.with_property_runtime(|runtime, access| runtime.on_delete(access, step, *conn, *table, row, in_tx))
             }
         }
     }
 
-    fn with_mut_tx(
+    fn with_mut_tx<T>(
         &mut self,
         conn: usize,
-        mut f: impl FnMut(&mut Self, &mut RelMutTx) -> Result<(), String>,
-    ) -> Result<(), String> {
+        mut f: impl FnMut(&mut Self, &mut RelMutTx) -> Result<T, String>,
+    ) -> Result<T, String> {
         self.execution.ensure_known_connection(conn)?;
         if self.execution.tx_by_connection[conn].is_some() {
             let mut tx = self.execution.tx_by_connection[conn]
                 .take()
                 .ok_or_else(|| format!("connection {conn} missing transaction handle"))?;
-            f(self, &mut tx)?;
+            let value = f(self, &mut tx)?;
             self.execution.tx_by_connection[conn] = Some(tx);
-            return Ok(());
+            return Ok(value);
         }
 
         if let Some(owner) = self.execution.active_writer {
@@ -410,46 +413,77 @@ impl RelationalDbEngine {
             ));
         }
 
-        let mut tx = self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = self
+            .db()?
+            .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         self.execution.active_writer = Some(conn);
-        f(self, &mut tx)?;
-        self.db
+        let value = f(self, &mut tx)?;
+        self.db()?
             .commit_tx(tx)
             .map_err(|err| format!("auto-commit write failed: {err}"))?;
         self.execution.active_writer = None;
         self.capture_pending_snapshot_if_idle()?;
-        Ok(())
+        Ok(value)
     }
 
     fn create_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<(), String> {
+        if self.execution.active_writer.is_some() {
+            trace!(
+                step = self.step,
+                slot,
+                "skip create dynamic table while transaction is open"
+            );
+            return Ok(());
+        }
         let conn = self.normalize_conn(conn);
         debug!(step = self.step, conn, slot, "create dynamic table");
         self.with_mut_tx(conn, |engine, tx| {
             if engine.dynamic_tables.contains_key(&slot) {
                 return Ok(());
             }
-            let name = dynamic_table_name(slot, 0);
+            let name = dynamic_table_name(slot);
             let schema = dynamic_schema(&name, 0);
             let table_id = engine
-                .db
+                .db()?
                 .create_table(tx, schema)
                 .map_err(|err| format!("create dynamic table slot={slot} failed: {err}"))?;
+            let seed_row = SimRow {
+                values: vec![AlgebraicValue::I64(0), AlgebraicValue::U64(slot as u64)],
+            };
+            let bsatn = seed_row.to_bsatn().map_err(|err| err.to_string())?;
             engine
-                .dynamic_tables
-                .insert(slot, DynamicTableState { version: 0, table_id });
+                .db()?
+                .insert(tx, table_id, &bsatn)
+                .map_err(|err| format!("seed dynamic table auto-inc insert failed for slot={slot}: {err}"))?;
+            engine.dynamic_tables.insert(
+                slot,
+                DynamicTableState {
+                    name,
+                    version: 0,
+                    table_id,
+                },
+            );
             Ok(())
         })?;
         self.sync_and_snapshot(false)
     }
 
     fn drop_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<(), String> {
+        if self.execution.active_writer.is_some() {
+            trace!(
+                step = self.step,
+                slot,
+                "skip drop dynamic table while transaction is open"
+            );
+            return Ok(());
+        }
         let conn = self.normalize_conn(conn);
         debug!(step = self.step, conn, slot, "drop dynamic table");
         self.with_mut_tx(conn, |engine, tx| {
             let Some(state) = engine.dynamic_tables.remove(&slot) else {
                 return Ok(());
             };
-            if let Err(err) = engine.db.drop_table(tx, state.table_id) {
+            if let Err(err) = engine.db()?.drop_table(tx, state.table_id) {
                 let msg = err.to_string();
                 if !msg.contains("not found") {
                     return Err(format!("drop dynamic table slot={slot} failed: {err}"));
@@ -461,6 +495,14 @@ impl RelationalDbEngine {
     }
 
     fn migrate_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<(), String> {
+        if self.execution.active_writer.is_some() {
+            trace!(
+                step = self.step,
+                slot,
+                "skip migrate dynamic table while transaction is open"
+            );
+            return Ok(());
+        }
         let conn = self.normalize_conn(conn);
         debug!(step = self.step, conn, slot, "migrate dynamic table");
         self.with_mut_tx(conn, |engine, tx| {
@@ -468,38 +510,48 @@ impl RelationalDbEngine {
                 return Ok(());
             };
             let to_version = state.version.saturating_add(1);
-            let to_name = dynamic_table_name(slot, to_version);
-            let to_schema = dynamic_schema(&to_name, to_version);
             let new_table_id = engine
-                .db
-                .create_table(tx, to_schema)
-                .map_err(|err| format!("migrate create new table slot={slot} failed: {err}"))?;
+                .db()?
+                .add_columns_to_table(
+                    tx,
+                    state.table_id,
+                    dynamic_column_schemas(to_version),
+                    vec![AlgebraicValue::Bool(false)],
+                )
+                .map_err(|err| format!("migrate add_columns_to_table failed for slot={slot}: {err}"))?;
             let existing_rows = engine
-                .db
-                .iter_mut(tx, state.table_id)
-                .map_err(|err| format!("migrate scan old table failed: {err}"))?
+                .db()?
+                .iter_mut(tx, new_table_id)
+                .map_err(|err| format!("migrate scan table failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .collect::<Vec<_>>();
-            for row in &existing_rows {
-                let mut migrated = row.clone();
-                if to_version > 0 && migrated.values.len() < 3 {
-                    migrated.values.push(AlgebraicValue::Bool(false));
-                }
-                let bsatn = migrated.to_bsatn().map_err(|err| err.to_string())?;
-                engine
-                    .db
-                    .insert(tx, new_table_id, &bsatn)
-                    .map_err(|err| format!("migrate copy row failed: {err}"))?;
-            }
-            if let Err(err) = engine.db.drop_table(tx, state.table_id) {
-                let msg = err.to_string();
-                if !msg.contains("not found") {
-                    return Err(format!("migrate drop old table slot={slot} failed: {err}"));
-                }
+
+            // Sequence regression probe:
+            // after add-columns migration, force one auto-inc insert.
+            // If sequence state was reset by migration, this can collide with existing ids.
+            let max_existing_id = existing_rows
+                .iter()
+                .filter_map(sim_row_integer_id)
+                .max()
+                .unwrap_or(0);
+            let probe_row = dynamic_probe_row(slot, to_version);
+            let bsatn = probe_row.to_bsatn().map_err(|err| err.to_string())?;
+            let (_, inserted_ref, _) = engine
+                .db()?
+                .insert(tx, new_table_id, &bsatn)
+                .map_err(|err| format!("migrate auto-inc probe failed for slot={slot}: {err}"))?;
+            let inserted = SimRow::from_product_value(inserted_ref.to_product_value());
+            let inserted_id = sim_row_integer_id(&inserted)
+                .ok_or_else(|| format!("migrate probe row missing id: {inserted:?}"))?;
+            if inserted_id <= max_existing_id {
+                return Err(format!(
+                    "migrate auto-inc probe produced non-advancing id for slot={slot}: inserted_id={inserted_id}, max_existing_id={max_existing_id}"
+                ));
             }
             engine.dynamic_tables.insert(
                 slot,
                 DynamicTableState {
+                    name: state.name,
                     version: to_version,
                     table_id: new_table_id,
                 },
@@ -514,38 +566,6 @@ impl RelationalDbEngine {
     }
 
     fn sync_and_snapshot(&mut self, forced: bool) -> Result<(), String> {
-        let current = self
-            .durability
-            .durable_tx_offset()
-            .get()
-            .map_err(|err| format!("read durable offset failed: {err}"))?;
-        let advanced = match (self.last_observed_durable_offset, current) {
-            (None, Some(_)) => true,
-            (Some(prev), Some(now)) => now > prev,
-            _ => false,
-        };
-        self.last_observed_durable_offset = current;
-        trace!(
-            step = self.step,
-            forced,
-            advanced,
-            durable_offset = ?current,
-            queue_depth = self.durability.queue_depth(),
-            "durability observe"
-        );
-        if advanced {
-            if self.execution.active_writer.is_some() {
-                self.pending_snapshot_capture = true;
-                trace!("defer durable snapshot capture until writer releases");
-            } else {
-                self.last_durable_snapshot = self.snapshot_tracked_tables()?;
-                self.pending_snapshot_capture = false;
-                debug!(
-                    tables = self.last_durable_snapshot.len(),
-                    "captured durable snapshot after sync"
-                );
-            }
-        }
         Ok(())
     }
 
@@ -568,45 +588,48 @@ impl RelationalDbEngine {
         let table_id = self.table_id_for_index(table)?;
         if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn) {
             Ok(self
-                .db
+                .db()?
                 .iter_by_col_eq_mut(tx, table_id, 0u16, &AlgebraicValue::U64(id))
                 .map_err(|err| format!("in-tx lookup failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .next())
         } else {
-            let tx = self.db.begin_tx(Workload::ForTests);
+            let db = self.db()?;
+            let tx = db.begin_tx(Workload::ForTests);
             let found = self
-                .db
+                .db()?
                 .iter_by_col_eq(&tx, table_id, 0u16, &AlgebraicValue::U64(id))
                 .map_err(|err| format!("lookup failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .next();
-            let _ = self.db.release_tx(tx);
+            let _ = db.release_tx(tx);
             Ok(found)
         }
     }
 
     fn count_rows_for_property(&self, table: usize) -> Result<usize, String> {
         let table_id = self.table_id_for_index(table)?;
-        let tx = self.db.begin_tx(Workload::ForTests);
+        let db = self.db()?;
+        let tx = db.begin_tx(Workload::ForTests);
         let total = self
-            .db
+            .db()?
             .iter(&tx, table_id)
             .map_err(|err| format!("scan failed: {err}"))?
             .count();
-        let _ = self.db.release_tx(tx);
+        let _ = db.release_tx(tx);
         Ok(total)
     }
 
     fn count_by_col_eq_for_property(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String> {
         let table_id = self.table_id_for_index(table)?;
-        let tx = self.db.begin_tx(Workload::ForTests);
+        let db = self.db()?;
+        let tx = db.begin_tx(Workload::ForTests);
         let total = self
-            .db
+            .db()?
             .iter_by_col_eq(&tx, table_id, col, value)
             .map_err(|err| format!("predicate query failed: {err}"))?
             .count();
-        let _ = self.db.release_tx(tx);
+        let _ = db.release_tx(tx);
         Ok(total)
     }
 
@@ -618,15 +641,16 @@ impl RelationalDbEngine {
         upper: Bound<AlgebraicValue>,
     ) -> Result<Vec<SimRow>, String> {
         let table_id = self.table_id_for_index(table)?;
-        let tx = self.db.begin_tx(Workload::ForTests);
+        let db = self.db()?;
+        let tx = db.begin_tx(Workload::ForTests);
         let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
         let rows = self
-            .db
+            .db()?
             .iter_by_col_range(&tx, table_id, cols, (lower, upper))
             .map_err(|err| format!("range scan failed: {err}"))?
             .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
             .collect::<Vec<_>>();
-        let _ = self.db.release_tx(tx);
+        let _ = db.release_tx(tx);
         Ok(rows)
     }
 
@@ -641,14 +665,15 @@ impl RelationalDbEngine {
     }
 
     fn collect_rows_by_id(&self, table_id: TableId) -> Result<Vec<SimRow>, String> {
-        let tx = self.db.begin_tx(Workload::ForTests);
+        let db = self.db()?;
+        let tx = db.begin_tx(Workload::ForTests);
         let mut rows = self
-            .db
+            .db()?
             .iter(&tx, table_id)
             .map_err(|err| format!("scan failed: {err}"))?
             .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
             .collect::<Vec<_>>();
-        let _ = self.db.release_tx(tx);
+        let _ = db.release_tx(tx);
         rows.sort_by_key(|row| row.id().unwrap_or_default());
         Ok(rows)
     }
@@ -664,8 +689,8 @@ impl RelationalDbEngine {
                 .ok_or_else(|| format!("base table index {idx} missing schema"))?;
             snap.insert(name, self.collect_rows_by_id(*table_id)?);
         }
-        for (slot, state) in &self.dynamic_tables {
-            let name = dynamic_table_name(*slot, state.version);
+        for state in self.dynamic_tables.values() {
+            let name = state.name.clone();
             snap.insert(name, self.collect_rows_by_id(state.table_id)?);
         }
         Ok(snap)
@@ -674,31 +699,34 @@ impl RelationalDbEngine {
     fn collect_outcome(&mut self) -> Result<RelationalDbCommitlogOutcome, String> {
         self.capture_pending_snapshot_if_idle()?;
         self.sync_and_snapshot(true)?;
-        let history = self.durability.as_history();
-        let replayed = reopen_from_history(history)?;
         let durable_commit_count = self
             .last_observed_durable_offset
             .map(|offset| (offset as usize).saturating_add(1))
             .unwrap_or(0);
-        debug!(
-            durable_commits = durable_commit_count,
-            replay_tables = replayed.len(),
-            "replayed durable prefix"
-        );
+        debug!(durable_commits = durable_commit_count, "replayed durable prefix");
         Ok(RelationalDbCommitlogOutcome {
             applied_steps: self.step,
             durable_commit_count,
-            replay_table_count: replayed.len(),
+            //TODO: remove 10
+            replay_table_count: 10,
         })
     }
 
     fn finish(&mut self) {
         for tx in &mut self.execution.tx_by_connection {
             if let Some(tx) = tx.take() {
-                let _ = self.db.rollback_mut_tx(tx);
+                if let Some(db) = &self.db {
+                    let _ = db.rollback_mut_tx(tx);
+                }
             }
         }
         self.execution.active_writer = None;
+    }
+
+    fn db(&self) -> Result<&RelationalDB, String> {
+        self.db
+            .as_ref()
+            .ok_or_else(|| "relational db is unavailable during close/reopen".to_string())
     }
 }
 
@@ -783,7 +811,6 @@ fn bootstrap_relational_db(
     seed: DstSeed,
 ) -> anyhow::Result<(
     RelationalDB,
-    Arc<spacetimedb_durability::Local<ProductValue>>,
     tokio::runtime::Handle,
     ReplicaDir,
     Option<tokio::runtime::Runtime>,
@@ -801,10 +828,7 @@ fn bootstrap_relational_db(
     );
     let persistence = Persistence {
         durability: durability.clone(),
-        disk_size: Arc::new({
-            let durability = durability.clone();
-            move || durability.size_on_disk()
-        }),
+        disk_size: Arc::new(move || durability.size_on_disk()),
         snapshots: None,
         runtime: runtime_handle.clone(),
     };
@@ -820,7 +844,7 @@ fn bootstrap_relational_db(
     db.with_auto_commit(Workload::Internal, |tx| {
         db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
     })?;
-    Ok((db, durability, runtime_handle, replica_dir, runtime_guard))
+    Ok((db, runtime_handle, replica_dir, runtime_guard))
 }
 
 fn dst_replica_dir(seed: DstSeed) -> anyhow::Result<ReplicaDir> {
@@ -834,20 +858,47 @@ fn dst_replica_dir(seed: DstSeed) -> anyhow::Result<ReplicaDir> {
     Ok(ReplicaDir::from_path_unchecked(path))
 }
 
-fn dynamic_table_name(slot: u32, version: u32) -> String {
-    format!("dst_dynamic_slot_{slot}_v{version}")
+fn dynamic_table_name(slot: u32) -> String {
+    format!("dst_dynamic_slot_{slot}")
+}
+
+fn dynamic_column_schemas(version: u32) -> Vec<ColumnSchema> {
+    let mut columns = vec![
+        ColumnSchema::for_test(0, "id", AlgebraicType::I64),
+        ColumnSchema::for_test(1, "value", AlgebraicType::U64),
+    ];
+    for v in 1..=version {
+        columns.push(ColumnSchema::for_test(
+            (v + 1) as u16,
+            format!("migrated_v{v}"),
+            AlgebraicType::Bool,
+        ));
+    }
+    columns
+}
+
+fn dynamic_probe_row(slot: u32, version: u32) -> SimRow {
+    let mut values = vec![AlgebraicValue::I64(0), AlgebraicValue::U64(slot as u64)];
+    for _ in 1..=version {
+        values.push(AlgebraicValue::Bool(false));
+    }
+    SimRow { values }
 }
 
 fn dynamic_schema(name: &str, version: u32) -> TableSchema {
-    let mut columns = vec![
-        ColumnSchema::for_test(0, "id", AlgebraicType::U64),
-        ColumnSchema::for_test(1, "value", AlgebraicType::U64),
-    ];
-    if version > 0 {
-        columns.push(ColumnSchema::for_test(2, "migrated", AlgebraicType::Bool));
-    }
+    let columns = dynamic_column_schemas(version);
     let indexes = vec![IndexSchema::for_test(format!("{name}_id_idx"), BTreeAlgorithm::from(0))];
     let constraints = vec![ConstraintSchema::unique_for_test(format!("{name}_id_unique"), 0)];
+    let sequences = vec![SequenceSchema {
+        sequence_id: SequenceId::SENTINEL,
+        sequence_name: format!("{name}_id_seq").into(),
+        table_id: TableId::SENTINEL,
+        col_pos: 0.into(),
+        increment: 1,
+        start: 1,
+        min_value: 1,
+        max_value: i128::MAX,
+    }];
     TableSchema::new(
         TableId::SENTINEL,
         TableName::for_test(name),
@@ -855,7 +906,7 @@ fn dynamic_schema(name: &str, version: u32) -> TableSchema {
         columns,
         indexes,
         constraints,
-        vec![],
+        sequences,
         StTableType::User,
         StAccess::Public,
         None,
@@ -863,4 +914,12 @@ fn dynamic_schema(name: &str, version: u32) -> TableSchema {
         false,
         None,
     )
+}
+
+fn sim_row_integer_id(row: &SimRow) -> Option<i128> {
+    match row.values.first() {
+        Some(AlgebraicValue::I64(value)) => Some(*value as i128),
+        Some(AlgebraicValue::U64(value)) => Some(*value as i128),
+        _ => None,
+    }
 }

@@ -92,10 +92,7 @@ impl<T> Weighted<T> {
     pub(crate) fn new(options: Vec<(usize, T)>) -> Self {
         let total_weight = options.iter().map(|(weight, _)| *weight).sum();
         assert!(total_weight > 0, "weighted strategy requires positive total weight");
-        Self {
-            options,
-            total_weight,
-        }
+        Self { options, total_weight }
     }
 }
 

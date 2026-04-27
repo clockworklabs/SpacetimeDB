@@ -26,7 +26,6 @@ impl TargetDescriptor for DatastoreDescriptor {
             outcome.final_row_counts
         ))
     }
-
 }
 
 pub struct RelationalDbCommitlogDescriptor;
@@ -47,5 +46,4 @@ impl TargetDescriptor for RelationalDbCommitlogDescriptor {
             outcome.replay_table_count
         ))
     }
-
 }

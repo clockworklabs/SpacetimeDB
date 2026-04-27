@@ -53,7 +53,9 @@ impl PropertyRuntime {
                 PropertyKind::IndexRangeExcluded => {
                     rules.push(RuleEntry::new(*kind, Box::<IndexRangeExcludedRule>::default()))
                 }
-                PropertyKind::BankingTablesMatch => rules.push(RuleEntry::new(*kind, Box::<BankingMatchRule>::default())),
+                PropertyKind::BankingTablesMatch => {
+                    rules.push(RuleEntry::new(*kind, Box::<BankingMatchRule>::default()))
+                }
             }
         }
         Self { rules }
@@ -73,7 +75,9 @@ impl PropertyRuntime {
         }
         if !in_tx {
             for entry in &mut self.rules {
-                if let Some(every) = entry.periodic_every() && step.is_multiple_of(every) {
+                if let Some(every) = entry.periodic_every()
+                    && step.is_multiple_of(every)
+                {
                     entry.rule.on_periodic(access, table)?;
                 }
             }
@@ -95,7 +99,9 @@ impl PropertyRuntime {
         }
         if !in_tx {
             for entry in &mut self.rules {
-                if let Some(every) = entry.periodic_every() && step.is_multiple_of(every) {
+                if let Some(every) = entry.periodic_every()
+                    && step.is_multiple_of(every)
+                {
                     entry.rule.on_periodic(access, table)?;
                 }
             }
