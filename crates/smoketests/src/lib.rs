@@ -1397,6 +1397,17 @@ log = "0.4"
         self.api_call_internal(method, path, body, "")
     }
 
+    /// Makes an HTTP API call with an optional body and explicit extra headers.
+    pub fn api_call_with_body_and_headers(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        extra_headers: &str,
+    ) -> Result<ApiResponse> {
+        self.api_call_internal(method, path, body, extra_headers)
+    }
+
     /// Makes an HTTP API call with a JSON body.
     pub fn api_call_json(&self, method: &str, path: &str, json_body: &str) -> Result<ApiResponse> {
         self.api_call_internal(

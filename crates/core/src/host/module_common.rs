@@ -4,6 +4,7 @@
 use crate::{
     energy::EnergyMonitor,
     host::{
+        idc_actor::IdcActorSender,
         module_host::ModuleInfo,
         wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
         Scheduler,
@@ -37,7 +38,13 @@ pub fn build_common_module_from_raw(
         replica_ctx.subscriptions.clone(),
     );
 
-    Ok(ModuleCommon::new(replica_ctx, mcc.scheduler, info, mcc.energy_monitor))
+    Ok(ModuleCommon::new(
+        replica_ctx,
+        mcc.scheduler,
+        mcc.idc_sender,
+        info,
+        mcc.energy_monitor,
+    ))
 }
 
 /// Non-runtime-specific parts of a module.
@@ -45,6 +52,7 @@ pub fn build_common_module_from_raw(
 pub(crate) struct ModuleCommon {
     replica_context: Arc<ReplicaContext>,
     scheduler: Scheduler,
+    idc_sender: IdcActorSender,
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 }
@@ -54,12 +62,14 @@ impl ModuleCommon {
     fn new(
         replica_context: Arc<ReplicaContext>,
         scheduler: Scheduler,
+        idc_sender: IdcActorSender,
         info: Arc<ModuleInfo>,
         energy_monitor: Arc<dyn EnergyMonitor>,
     ) -> Self {
         Self {
             replica_context,
             scheduler,
+            idc_sender,
             info,
             energy_monitor,
         }
@@ -88,6 +98,10 @@ impl ModuleCommon {
 
     pub fn scheduler(&self) -> &Scheduler {
         &self.scheduler
+    }
+
+    pub fn idc_sender(&self) -> IdcActorSender {
+        self.idc_sender.clone()
     }
 }
 

@@ -8599,6 +8599,7 @@ dependencies = [
  "serde_json",
  "spacetimedb-core",
  "spacetimedb-guard",
+ "spacetimedb-lib 2.1.0",
  "tempfile",
  "tokio",
  "tokio-postgres",
