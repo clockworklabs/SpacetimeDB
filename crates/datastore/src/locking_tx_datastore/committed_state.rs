@@ -888,7 +888,8 @@ impl CommittedState {
 
             let index = table.new_index(&algo, is_unique)?;
             // SAFETY: `index` was derived from `table`.
-            unsafe { table.insert_index(blob_store, index_id, index) };
+            unsafe { table.insert_index(blob_store, index_id, index) }
+                .expect("rebuilding should not cause constraint violations");
             index_id_map.insert(index_id, table_id);
         }
         Ok(())
@@ -1294,6 +1295,11 @@ impl CommittedState {
             TableAlterAccess(table_id, access) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
+            }
+            // A table's primary key was changed. Change back to the old one.
+            TableAlterPrimaryKey(table_id, old_pk) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|s| s.primary_key = old_pk.and_then(|cl| cl.as_singleton()));
             }
             // A table's row type was changed. Change back to the old one.
             // The row representation of old rows hasn't changed,
