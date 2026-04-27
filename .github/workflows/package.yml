@@ -81,42 +81,9 @@ jobs:
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
-      - name: Sync DigiCert certificate to local store and verify
-        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
-        shell: pwsh
-        env:
-          SM_HOST: ${{ vars.SM_HOST }}
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # Sync certificates from DigiCert cloud to local Windows certificate store
-          # This is required so signtool can find the certificate
-          Write-Host "Syncing certificates from DigiCert cloud..."
-          smctl windows certsync --verbose
-          # Run healthcheck to confirm everything is connected
-          smctl healthcheck
-
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-
-      - name: List synced certificates (diagnostic)
-        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
-        shell: pwsh
-        env:
-          SM_HOST: ${{ vars.SM_HOST }}
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-        run: |
-          Write-Host "=== Certificates in CurrentUser\My ==="
-          Get-ChildItem Cert:\CurrentUser\My | Format-Table Subject, Thumbprint, NotAfter -AutoSize
-          Write-Host "=== Certificates in LocalMachine\My ==="
-          Get-ChildItem Cert:\LocalMachine\My | Format-Table Subject, Thumbprint, NotAfter -AutoSize
-          Write-Host "=== smctl keypair list ==="
-          smctl keypair ls
 
       - name: Sign binaries for Windows
         if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
@@ -130,33 +97,12 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
-
-          # Check if certsync placed a code signing certificate in the store
-          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $cert) {
-            $cert = Get-ChildItem Cert:\LocalMachine\My -CodeSigningCert -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-
-          if ($cert) {
-            $thumbprint = $cert.Thumbprint
-            Write-Host "Found certificate: $($cert.Subject) [$thumbprint]"
-            Write-Host "Signing with signtool /sha1..."
-            foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
-              $path = Join-Path $targetDir $exe
-              Write-Host "Signing $exe..."
-              & signtool.exe sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $path
-              if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
-              Write-Host "$exe signed successfully"
-            }
-          } else {
-            Write-Host "No cert in store, using smctl sign with keypair alias..."
-            foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
-              $path = Join-Path $targetDir $exe
-              Write-Host "Signing $exe..."
-              & smctl sign --verbose --keypair-alias $env:DIGICERT_KEYPAIR_ALIAS --input $path
-              if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
-              Write-Host "$exe signed successfully"
-            }
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            Write-Host "Signing $exe..."
+            & smctl sign --keypair-alias $env:DIGICERT_KEYPAIR_ALIAS --input $path
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
+            Write-Host "$exe signed successfully"
           }
 
       - name: Verify signatures
