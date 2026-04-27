@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "add_player_reducer.ts" = '''
@@ -305,6 +306,9 @@ export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQuer
 
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);
+
+/** The procedures available in this remote SpacetimeDB module. */
+export const procedures = __convertToAccessorMap(proceduresSchema.procedures);
 
 /** The context type returned in callbacks for all possible events. */
 export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
@@ -644,6 +648,13 @@ export const HasSpecialStuff = __t.object("HasSpecialStuff", {
   connectionId: __t.connectionId(),
 });
 export type HasSpecialStuff = __Infer<typeof HasSpecialStuff>;
+
+export const NonrepeatingTestArg = __t.object("NonrepeatingTestArg", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  prevTime: __t.timestamp(),
+});
+export type NonrepeatingTestArg = __Infer<typeof NonrepeatingTestArg>;
 
 export const Person = __t.object("Person", {
   id: __t.u32(),

@@ -20,7 +20,7 @@ fn test_delete_database_aborts_without_confirmation() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("delete-db-abort-{}", std::process::id());
     test.publish_module_named(&name, false).unwrap();
 
     let output = test
@@ -42,7 +42,7 @@ fn test_delete_database_with_confirmation() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("delete-database-{}", std::process::id());
     test.publish_module_named(&name, false).unwrap();
 
     // Start subscription in background to collect updates
@@ -77,7 +77,7 @@ fn test_delete_database_yes_skips_confirmation() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("delete-db-yes-{}", std::process::id());
     test.publish_module_named(&name, false).unwrap();
 
     let output = test
