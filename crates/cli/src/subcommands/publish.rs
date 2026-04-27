@@ -462,15 +462,7 @@ pub async fn exec_from_entry(
 
     let yes = if force { YesFlags::all() } else { YesFlags::default() };
 
-    execute_publish_configs(
-        &mut config,
-        vec![command_config],
-        true,
-        config_dir,
-        clear_database,
-        yes,
-    )
-    .await
+    execute_publish_configs(&mut config, vec![command_config], true, config_dir, clear_database, yes).await
 }
 
 async fn execute_publish_configs<'a>(
