@@ -581,6 +581,14 @@ mod test {
         Ok(())
     }
 
+    /// Verifies that `autoinc` sequence survives a schema migration that adds a column,
+    /// and is also correctly persisted across database replay.
+    ///
+    /// Flow:
+    /// - Create v1 schema and consume a few sequence values.
+    /// - Migrate to v2 (adds a column with a default).
+    /// - Ensure next insert continues the sequence (no reset).
+    /// - Reopen DB and verify allocation cursor is still preserved.
     #[test]
     fn auto_inc_sequence_survives_add_column_migration() -> anyhow::Result<()> {
         let auth_ctx = AuthCtx::for_testing();
@@ -613,6 +621,23 @@ mod test {
             b.finish().try_into().expect("valid module v2")
         };
 
+        // helper to insert + collect sorted ids
+        let insert_and_collect_ids = |stdb: &TestDB, payload: AlgebraicValue| -> anyhow::Result<Vec<i64>> {
+            let mut tx = begin_mut_tx(stdb);
+            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+
+            insert(stdb, &mut tx, table_id, &payload)?;
+
+            let mut ids = stdb
+                .iter_mut(&tx, table_id)?
+                .map(|r| r.read_col::<i64>(0))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            ids.sort();
+            stdb.commit_tx(tx)?;
+            Ok(ids)
+        };
+
         // Create the old tables and insert two rows
         // that use the auto-inc sequence.
         {
@@ -630,7 +655,7 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
-        // Successfully update the database to the new module. 
+        // Successfully update the database to the new module.
         {
             let mut tx = begin_mut_tx(&stdb);
 
@@ -648,20 +673,7 @@ mod test {
         // Check that the new table has reused the sequence
         // from the old table such that the last row has the value 3.
         {
-            let mut tx = begin_mut_tx(&stdb);
-
-            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
-
-            insert(&stdb, &mut tx, table_id, &product![0i64, 99u64])?;
-
-            let mut ids = stdb
-                .iter_mut(&tx, table_id)?
-                .map(|r| r.read_col::<i64>(0))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            ids.sort();
-            stdb.commit_tx(tx)?;
-
+            let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
             assert!(
                 ids.iter().last().unwrap() == &3,
                 "expected id 3 after migration, got {ids:?}"
@@ -673,20 +685,7 @@ mod test {
 
         // After replay, the allocation cursor should be preserved.
         {
-            let mut tx = begin_mut_tx(&stdb);
-
-            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
-
-            insert(&stdb, &mut tx, table_id, &product![0i64, 99u64])?;
-
-            let mut ids = stdb
-                .iter_by_col_range_mut(&tx, table_id, 0u16, AlgebraicValue::I64(0)..)?
-                .map(|r| r.read_col::<i64>(0))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            ids.sort();
-            stdb.commit_tx(tx)?;
-
+            let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
             assert!(
                 ids.iter().last().unwrap() == &4097,
                 "expected id 4097 after reopen, got {ids:?}"

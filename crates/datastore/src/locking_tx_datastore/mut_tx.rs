@@ -1020,6 +1020,7 @@ impl MutTxId {
         sequence_id: SequenceId,
         updater: impl FnOnce(&mut StSequenceRow) -> R,
     ) -> Result<R> {
+        // Fetch the row.
         let st_sequence_ref = self
             .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &sequence_id.into())?
             .last()
@@ -1027,8 +1028,9 @@ impl MutTxId {
         let ptr = st_sequence_ref.pointer();
         let mut row = StSequenceRow::try_from(st_sequence_ref)?;
 
-        let ret = updater(&mut row);
+        // Delete the row, run updates, and insert again.
         self.delete(ST_SEQUENCE_ID, ptr)?;
+        let ret = updater(&mut row);
         self.insert_via_serialize_bsatn(ST_SEQUENCE_ID, &row)?;
 
         Ok(ret)
