@@ -93,7 +93,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           # Sync certificates from DigiCert cloud to local Windows certificate store
           # This is required so signtool can find the certificate
-          smctl windows certsync
+          Write-Host "Syncing certificates from DigiCert cloud..."
+          smctl windows certsync --verbose
           # Run healthcheck to confirm everything is connected
           smctl healthcheck
 
@@ -130,23 +131,32 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
 
-          # Find the code signing certificate synced from DigiCert
-          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
+          # Check if certsync placed a code signing certificate in the store
+          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $cert) {
-            $cert = Get-ChildItem Cert:\LocalMachine\My -CodeSigningCert | Select-Object -First 1
+            $cert = Get-ChildItem Cert:\LocalMachine\My -CodeSigningCert -ErrorAction SilentlyContinue | Select-Object -First 1
           }
-          if (-not $cert) {
-            throw "No code signing certificate found in certificate store"
-          }
-          $thumbprint = $cert.Thumbprint
-          Write-Host "Using certificate: $($cert.Subject) [$thumbprint]"
 
-          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
-            $path = Join-Path $targetDir $exe
-            Write-Host "Signing $exe..."
-            & signtool.exe sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $path
-            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
-            Write-Host "$exe signed successfully"
+          if ($cert) {
+            $thumbprint = $cert.Thumbprint
+            Write-Host "Found certificate: $($cert.Subject) [$thumbprint]"
+            Write-Host "Signing with signtool /sha1..."
+            foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+              $path = Join-Path $targetDir $exe
+              Write-Host "Signing $exe..."
+              & signtool.exe sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $path
+              if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
+              Write-Host "$exe signed successfully"
+            }
+          } else {
+            Write-Host "No cert in store, using smctl sign with keypair alias..."
+            foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+              $path = Join-Path $targetDir $exe
+              Write-Host "Signing $exe..."
+              & smctl sign --verbose --keypair-alias $env:DIGICERT_KEYPAIR_ALIAS --input $path
+              if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
+              Write-Host "$exe signed successfully"
+            }
           }
 
       - name: Verify signatures
