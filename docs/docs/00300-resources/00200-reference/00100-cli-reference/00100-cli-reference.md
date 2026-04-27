@@ -367,7 +367,6 @@ Manage your login to the SpacetimeDB CLI
 * `--auth-host <AUTH-HOST>` — Fetch login token from a different host
 
   Default value: `https://spacetimedb.com`
-* `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
 * `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
 * `--no-browser` — Do not open a browser window
 

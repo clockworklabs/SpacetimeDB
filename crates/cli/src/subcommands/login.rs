@@ -22,6 +22,7 @@ pub fn cli() -> Command {
         .arg(
             Arg::new("server")
                 .long("server-issued-login")
+                .hide(true)
                 .group("login-method")
                 .help("Log in to a SpacetimeDB server directly, without going through a global auth server"),
         )
