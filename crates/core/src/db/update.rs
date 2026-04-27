@@ -586,6 +586,7 @@ mod test {
         let auth_ctx = AuthCtx::for_testing();
         let stdb = TestDB::durable()?;
 
+        // Define the old module that was before.
         let module_v1: ModuleDef = {
             let mut b = RawModuleDefV9Builder::new();
             b.build_table_with_new_type("seq_t", [("id", AlgebraicType::I64)], true)
@@ -596,6 +597,7 @@ mod test {
             b.finish().try_into().expect("valid module v1")
         };
 
+        // Define the module that we're migrating to.
         let module_v2: ModuleDef = {
             let mut b = RawModuleDefV9Builder::new();
             b.build_table_with_new_type(
@@ -604,13 +606,15 @@ mod test {
                 true,
             )
             .with_auto_inc_primary_key(0)
-            .with_index_no_accessor_name(RawIndexAlgorithm::BTree { columns: 0.into() })
+            .with_index_no_accessor_name(btree(0))
             .with_access(TableAccess::Public)
             .with_default_column_value(1, product![0u64].into())
             .finish();
             b.finish().try_into().expect("valid module v2")
         };
 
+        // Create the old tables and insert two rows
+        // that use the auto-inc sequence.
         {
             let mut tx = begin_mut_tx(&stdb);
 
@@ -626,6 +630,7 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
+        // Successfully update the database to the new module. 
         {
             let mut tx = begin_mut_tx(&stdb);
 
@@ -640,6 +645,8 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
+        // Check that the new table has reused the sequence
+        // from the old table such that the last row has the value 3.
         {
             let mut tx = begin_mut_tx(&stdb);
 
@@ -648,7 +655,7 @@ mod test {
             insert(&stdb, &mut tx, table_id, &product![0i64, 99u64])?;
 
             let mut ids = stdb
-                .iter_by_col_range_mut(&tx, table_id, 0u16, AlgebraicValue::I64(0)..)?
+                .iter_mut(&tx, table_id)?
                 .map(|r| r.read_col::<i64>(0))
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -661,8 +668,10 @@ mod test {
             );
         }
 
+        // Check that we can replay.
         let stdb = stdb.reopen()?;
 
+        // After replay, the allocation cursor should be preserved.
         {
             let mut tx = begin_mut_tx(&stdb);
 
