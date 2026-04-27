@@ -10,14 +10,14 @@ config_version=5
 
 [application]
 
-config/name="client-godot"
+config/name="blackholio"
 run/main_scene="uid://cjb7808stemnn"
-config/features=PackedStringArray("4.6", "Forward Plus")
+config/features=PackedStringArray("4.6", "C#", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [dotnet]
 
-project/assembly_name="client-godot"
+project/assembly_name="blackholio"
 
 [physics]
 
@@ -26,3 +26,5 @@ project/assembly_name="client-godot"
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
