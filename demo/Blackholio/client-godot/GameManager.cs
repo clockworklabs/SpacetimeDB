@@ -1,219 +1,145 @@
 using System;
-using System.Collections.Generic;
 using Godot;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
 public partial class GameManager : Node2D
 {
-	private const string ServerUrl = "http://127.0.0.1:3000";
-	private const string ModuleName = "blackholio";
+    public static event Action OnConnected;
+    public static event Action OnSubscriptionApplied;
+    
+    [Export]    
+    private string ServerUrl { get; set; } = "http://127.0.0.1:3000";
+    
+    [Export]
+    private string DatabaseName { get; set; } = "blackholio";
 
-	public static event Action OnConnected;
-	public static event Action OnSubscriptionApplied;
+    [Export]
+    private Color BackgroundColor { get; set; } = Colors.MidnightBlue;
 
-	[Export]
-	private Color BackgroundColor { get; set; } = Colors.MidnightBlue;
+    [Export]
+    private float BorderThickness { get; set; } = 5.0f;
 
-	[Export]
-	private float BorderThickness { get; set; } = 2.0f;
+    [Export]
+    private Color BorderColor { get; set; } = Colors.Goldenrod;
 
-	[Export]
-	private Color BorderColor { get; set; } = Colors.Goldenrod;
+    [Export]
+    private string DefaultPlayerName { get; set; } = "3Blave";
 
-	[Export]
-	private string DefaultPlayerName { get; set; } = "3Blave";
+    private static GameManager Instance { get; set; }
+    public static Identity LocalIdentity { get; private set; }
+    public static DbConnection Conn { get; private set; }
 
-	public static GameManager Instance { get; private set; }
-	public static Identity LocalIdentity { get; private set; }
-	public static DbConnection Conn { get; private set; }
+    public GameManager()
+    {
+        var builder = DbConnection.Builder()
+            .OnConnect(HandleConnect)
+            .OnConnectError(HandleConnectError)
+            .OnDisconnect(HandleDisconnect)
+            .WithUri(ServerUrl)
+            .WithDatabaseName(DatabaseName);
 
-	public static Dictionary<int, EntityController> Entities { get; } = new();
-	public static Dictionary<int, PlayerController> Players { get; } = new();
-	
-	private Instantiator _instantiator;
-	public Instantiator Instantiator => _instantiator ??= GetNode<Instantiator>("Instantiator") ?? new Instantiator();
+        if (AuthToken.TryGetToken(out var authToken))
+        {
+            builder = builder.WithToken(authToken);
+        }
 
-	public GameManager()
-	{
-		var builder = DbConnection.Builder()
-			.OnConnect(HandleConnect)
-			.OnConnectError(HandleConnectError)
-			.OnDisconnect(HandleDisconnect)
-			.WithUri(ServerUrl)
-			.WithDatabaseName(ModuleName);
+        Conn = builder.Build();
+        STDBUpdateManager.Add(Conn);
+    }
 
-		AuthToken.Init();
-		if (AuthToken.Token != string.Empty)
-		{
-			builder = builder.WithToken(AuthToken.Token);
-		}
+    public override void _EnterTree()
+    {
+        Instance = this;
+    }
 
-		Conn = builder.Build();
-		STDBUpdateManager.Add(Conn);
-	}
+    public override void _ExitTree()
+    {
+        Disconnect();
 
-	public override void _EnterTree()
-	{
-		Instance = this;
-	}
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
 
-	public override void _ExitTree()
-	{
-		if (Conn != null)
-		{
-			STDBUpdateManager.Remove(Conn, true);
-			Conn = null;
-		}
+    public static bool IsConnected() => Conn != null && Conn.IsActive;
 
-		Entities.Clear();
-		Players.Clear();
+    private void Disconnect()
+    {
+        STDBUpdateManager.Remove(Conn, true);
+        Conn = null;
+    }
 
-		if (Instance == this)
-		{
-			Instance = null;
-		}
-	}
+    private void HandleConnect(DbConnection conn, Identity identity, string token)
+    {
+        GD.Print("Connected.");
+        AuthToken.SaveToken(token);
+        LocalIdentity = identity;
 
-	public static bool IsConnected() => Conn != null && Conn.IsActive;
+        OnConnected?.Invoke();
+        
+        AddChild(new Instantiator(conn));
 
-	public void Disconnect()
-	{
-		if (Conn == null)
-		{
-			return;
-		}
+        Conn.SubscriptionBuilder()
+            .OnApplied(HandleSubscriptionApplied)
+            .SubscribeToAllTables();
+    }
 
-		STDBUpdateManager.Remove(Conn, true);
-		Conn = null;
-	}
+    private void HandleConnectError(Exception ex)
+    {
+        GD.PrintErr($"Connection error: {ex}");
+    }
 
-	private void HandleConnect(DbConnection conn, Identity identity, string token)
-	{
-		GD.Print("Connected.");
-		AuthToken.SaveToken(token);
-		LocalIdentity = identity;
+    private void HandleDisconnect(DbConnection conn, Exception ex)
+    {
+        GD.Print("Disconnected.");
+        if (ex != null)
+        {
+            GD.PrintErr(ex);
+        }
+    }
 
-		conn.Db.Circle.OnInsert += CircleOnInsert;
-		conn.Db.Entity.OnUpdate += EntityOnUpdate;
-		conn.Db.Entity.OnDelete += EntityOnDelete;
-		conn.Db.Food.OnInsert += FoodOnInsert;
-		conn.Db.Player.OnInsert += PlayerOnInsert;
-		conn.Db.Player.OnDelete += PlayerOnDelete;
+    private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
+    {
+        GD.Print("Subscription applied!");
+        OnSubscriptionApplied?.Invoke();
 
-		OnConnected?.Invoke();
+        // Once we have the initial subscription sync'd to the client cache
+        // Get the world size from the config table and set up the arena
+        var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
+        SetupArena(worldSize);
+        
+        ctx.Reducers.EnterGame(DefaultPlayerName);
+    }
 
-		Conn.SubscriptionBuilder()
-			.OnApplied(HandleSubscriptionApplied)
-			.SubscribeToAllTables();
-	}
+    private void SetupArena(float worldSize)
+    {
+        var polygon = new[]
+        {
+            new Vector2(0, 0),
+            new Vector2(worldSize, 0),
+            new Vector2(worldSize, worldSize),
+            new Vector2(0, worldSize),
+        };
+        var background = new Polygon2D
+        {
+            Name = "Background",
+            Color = BackgroundColor,
+            Position = Vector2.Zero,
+            Polygon = polygon
+        };
+        background.AddChild(new Polygon2D
+        {
+            Name = "Border",
+            Color = BorderColor,
+            Position = Vector2.Zero,
+            InvertEnabled = true,
+            InvertBorder = BorderThickness,
+            Polygon = polygon
+        });
+        AddChild(background, @internal: InternalMode.Front);
 
-	private void HandleConnectError(Exception ex)
-	{
-		GD.PrintErr($"Connection error: {ex}");
-	}
-
-	private void HandleDisconnect(DbConnection conn, Exception ex)
-	{
-		GD.Print("Disconnected.");
-		if (ex != null)
-		{
-			GD.PrintErr(ex);
-		}
-	}
-
-	private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
-	{
-		GD.Print("Subscription applied!");
-		OnSubscriptionApplied?.Invoke();
-
-		var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
-		SetupArena(worldSize);
-		
-		ctx.Reducers.EnterGame(DefaultPlayerName);
-	}
-
-	private void SetupArena(float worldSize)
-	{
-		var polygon = new[]
-		{
-			new Vector2(0, 0),
-			new Vector2(worldSize, 0),
-			new Vector2(worldSize, worldSize),
-			new Vector2(0, worldSize),
-		};
-		var background = new Polygon2D
-		{
-			Name = "Background",
-			Color = BackgroundColor,
-			Position = Vector2.Zero,
-			Polygon = polygon
-		};
-		background.AddChild(new Polygon2D
-		{
-			Name = "Border",
-			Color = BorderColor,
-			Position = Vector2.Zero,
-			InvertEnabled = true,
-			InvertBorder = BorderThickness,
-			Polygon = polygon
-		});
-		AddChild(background, @internal: InternalMode.Front);
-
-		CameraController.WorldSize = worldSize;
-	}
-
-	private void CircleOnInsert(EventContext context, Circle insertedValue)
-	{
-		var player = GetOrCreatePlayer(insertedValue.PlayerId);
-		var entityController = Instantiator.SpawnCircle(insertedValue, player);
-		Entities[insertedValue.EntityId] = entityController;
-	}
-
-	private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
-	{
-		if (Entities.TryGetValue(newEntity.EntityId, out var entityController))
-		{
-			entityController.OnEntityUpdated(newEntity);
-		}
-	}
-
-	private void EntityOnDelete(EventContext context, Entity oldEntity)
-	{
-		if (Entities.Remove(oldEntity.EntityId, out var entityController))
-		{
-			entityController.OnDelete(context);
-		}
-	}
-
-	private void FoodOnInsert(EventContext context, Food insertedValue)
-	{
-		var entityController = Instantiator.SpawnFood(insertedValue);
-		Entities[insertedValue.EntityId] = entityController;
-	}
-
-	private void PlayerOnInsert(EventContext context, Player insertedPlayer)
-	{
-		GetOrCreatePlayer(insertedPlayer.PlayerId);
-	}
-
-	private void PlayerOnDelete(EventContext context, Player deletedValue)
-	{
-		if (Players.Remove(deletedValue.PlayerId, out var playerController))
-		{
-			playerController.QueueFree();
-		}
-	}
-
-	private PlayerController GetOrCreatePlayer(int playerId)
-	{
-		if (!Players.TryGetValue(playerId, out var playerController))
-		{
-			var player = Conn.Db.Player.PlayerId.Find(playerId);
-			playerController = Instantiator.SpawnPlayer(player);
-			Players[playerId] = playerController;
-		}
-
-		return playerController;
-	}
+        AddChild(new CameraController(worldSize));
+    }
 }

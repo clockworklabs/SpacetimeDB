@@ -1,44 +1,141 @@
+using System.Collections.Generic;
 using Godot;
 using SpacetimeDB.Types;
 
 public partial class Instantiator : Node
 {
-    [Export]
-    public PackedScene CircleScene { get; set; }
-
-    [Export]
-    public PackedScene FoodScene { get; set; }
-
-    [Export]
-    public PackedScene PlayerScene { get; set; }
-
-    public CircleController SpawnCircle(Circle circle, PlayerController owner)
+    private DbConnection _conn;
+    private DbConnection Conn
     {
-        var entityController = InstantiateNode<CircleController>(CircleScene, $"Circle - {circle.EntityId}");
-        entityController.Spawn(circle, owner);
-        owner.OnCircleSpawned(entityController);
-        return entityController;
+        get => _conn;
+        set
+        {
+            if (value == _conn) return;
+
+            if (_conn != null)
+            {
+                _conn.Db.Circle.OnInsert -= CircleOnInsert;
+                _conn.Db.Entity.OnUpdate -= EntityOnUpdate;
+                _conn.Db.Entity.OnDelete -= EntityOnDelete;
+                _conn.Db.Food.OnInsert -= FoodOnInsert;
+                _conn.Db.Player.OnInsert -= PlayerOnInsert;
+                _conn.Db.Player.OnDelete -= PlayerOnDelete;
+            }
+            
+            _conn = value;
+
+            if (value != null)
+            {
+                value.Db.Circle.OnInsert += CircleOnInsert;
+                value.Db.Entity.OnUpdate += EntityOnUpdate;
+                value.Db.Entity.OnDelete += EntityOnDelete;
+                value.Db.Food.OnInsert += FoodOnInsert;
+                value.Db.Player.OnInsert += PlayerOnInsert;
+                value.Db.Player.OnDelete += PlayerOnDelete;
+            }
+        }
+    }
+    
+    private static Dictionary<int, EntityController> Entities { get; } = new();
+    private static Dictionary<int, PlayerController> Players { get; } = new();
+    
+    public Instantiator(DbConnection conn)
+    {
+        Conn = conn;
     }
 
-    public FoodController SpawnFood(Food food)
+    public override void _ExitTree()
     {
-        var entityController = InstantiateNode<FoodController>(FoodScene, $"Food - {food.EntityId}");
-        entityController.Spawn(food);
-        return entityController;
+        Conn = null;
     }
 
-    public PlayerController SpawnPlayer(Player player)
+    private void CircleOnInsert(EventContext context, Circle insertedValue)
     {
-        var playerController = InstantiateNode<PlayerController>(PlayerScene, $"PlayerController - {player.Name}");
-        playerController.Initialize(player);
+        var player = GetOrCreatePlayer(insertedValue.PlayerId);
+        var entityController = SpawnCircle(insertedValue, player);
+        Entities[insertedValue.EntityId] = entityController;
+    }
+
+    private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
+    {
+        if (Entities.TryGetValue(newEntity.EntityId, out var entityController))
+        {
+            entityController.OnEntityUpdated(newEntity);
+        }
+    }
+
+    private void EntityOnDelete(EventContext context, Entity oldEntity)
+    {
+        if (Entities.Remove(oldEntity.EntityId, out var entityController))
+        {
+            entityController.OnDelete();
+        }
+    }
+
+    private void FoodOnInsert(EventContext context, Food insertedValue)
+    {
+        var entityController = SpawnFood(insertedValue);
+        Entities[insertedValue.EntityId] = entityController;
+    }
+
+    private void PlayerOnInsert(EventContext context, Player insertedPlayer)
+    {
+        GetOrCreatePlayer(insertedPlayer.PlayerId);
+    }
+
+    private void PlayerOnDelete(EventContext context, Player deletedValue)
+    {
+        if (Players.Remove(deletedValue.PlayerId, out var playerController))
+        {
+            playerController.QueueFree();
+        }
+    }
+
+    private PlayerController GetOrCreatePlayer(int playerId)
+    {
+        if (!Players.TryGetValue(playerId, out var playerController))
+        {
+            var player = Conn.Db.Player.PlayerId.Find(playerId);
+            playerController = SpawnPlayer(player);
+            Players[playerId] = playerController;
+        }
+
         return playerController;
     }
 
-    private T InstantiateNode<T>(PackedScene scene, string nodeName) where T : Node, new()
+    private CircleController SpawnCircle(Circle circle, PlayerController owner)
     {
-        var node = scene?.Instantiate<T>() ?? new T();
-        node.Name = nodeName;
-        AddChild(node);
-        return node;
+        var entityController = new CircleController(circle, owner)
+        {
+            Name = $"Circle - {circle.EntityId}",
+        };
+        
+        AddChild(entityController);
+        
+        return entityController;
+    }
+
+    private FoodController SpawnFood(Food food)
+    {
+        var entityController = new FoodController(food)
+        {
+            Name = $"Food - {food.EntityId}",
+        };
+        
+        AddChild(entityController);
+        
+        return entityController;
+    }
+
+    private PlayerController SpawnPlayer(Player player)
+    {
+        var playerController = new PlayerController(player)
+        {
+            Name = $"Player - {player.Name}"
+        };
+        
+        AddChild(playerController);
+        
+        return playerController;
     }
 }
