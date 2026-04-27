@@ -332,8 +332,8 @@ impl MutTxId {
         };
 
         let idx = idx.index();
-        let cols = idx.indexed_columns.clone();
-        let point = point.into_algebraic_value(&idx.key_type);
+        let cols = idx.indexed_columns().clone();
+        let point = idx.key_into_algebraic_value(point);
         self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
 
@@ -1015,6 +1015,27 @@ impl MutTxId {
         Ok(ret)
     }
 
+    fn update_st_sequence_row<R>(
+        &mut self,
+        sequence_id: SequenceId,
+        updater: impl FnOnce(&mut StSequenceRow) -> R,
+    ) -> Result<R> {
+        // Fetch the row.
+        let st_sequence_ref = self
+            .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &sequence_id.into())?
+            .last()
+            .ok_or(SequenceError::NotFound(sequence_id))?;
+        let ptr = st_sequence_ref.pointer();
+        let mut row = StSequenceRow::try_from(st_sequence_ref)?;
+
+        // Delete the row, run updates, and insert again.
+        self.delete(ST_SEQUENCE_ID, ptr)?;
+        let ret = updater(&mut row);
+        self.insert_via_serialize_bsatn(ST_SEQUENCE_ID, &row)?;
+
+        Ok(ret)
+    }
+
     pub fn view_id_from_name(&self, view_name: &str) -> Result<Option<ViewId>> {
         let view_name = &view_name.into();
         let row = self
@@ -1078,6 +1099,26 @@ impl MutTxId {
 
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterAccess(table_id, old_access));
+
+        Ok(())
+    }
+
+    /// Change the primary key of the table identified by `table_id`.
+    ///
+    /// Updates both the in-memory schema and the `st_table` system table.
+    /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
+    pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
+
+        // Update system tables.
+        let new_pk_col_list = new_primary_key.map(|col| col.into());
+        let old_pk =
+            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
 
         Ok(())
     }
@@ -1187,19 +1228,20 @@ impl MutTxId {
         // Store sequence values to restore them later with new table.
         // Using a map from name to value as the new sequence ids will be different.
         // and I am not sure if we should rely on the order of sequences in the table schema.
-        let seq_values: HashMap<_, i128> = original_table_schema
-            .sequences
-            .iter()
-            .map(|s| {
-                (
-                    s.sequence_name.clone(),
-                    self.sequence_state_lock
-                        .get_sequence_mut(s.sequence_id)
-                        .expect("sequence exists in original schema and should in sequence state.")
-                        .get_value(),
-                )
-            })
-            .collect();
+        let mut seq_values: HashMap<_, (i128, i128)> = HashMap::default();
+        for seq in &original_table_schema.sequences {
+            let value = self
+                .sequence_state_lock
+                .get_sequence_mut(seq.sequence_id)
+                .expect("sequence exists in original schema and should in sequence state.")
+                .get_value();
+            let allocated = self
+                .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &seq.sequence_id.into())?
+                .last()
+                .ok_or(SequenceError::NotFound(seq.sequence_id))?
+                .read_col(StSequenceFields::Allocated)?;
+            seq_values.insert(seq.sequence_name.clone(), (value, allocated));
+        }
 
         // Drop existing table first due to unique constraints on table name in `st_table`
         self.drop_table(table_id)?;
@@ -1229,23 +1271,40 @@ impl MutTxId {
         Ok(new_table_id)
     }
 
+    /// Recreate a table and restore sequence runtime state after a destructive
+    /// schema change (for example `add_columns_to_table`).
+    ///
+    /// `create_table(...)` generates fresh table/sequence IDs and inserts fresh
+    /// rows into `st_sequence`. We then restore preserved `(value, allocated)`
+    /// by sequence name:
+    /// - update in-memory sequence state (`SequencesState`) so this process keeps
+    ///   allocating from the same point;
+    /// - patch the newly created `st_sequence` row so reopen/replay restores the
+    ///   same allocation cursor instead of sequence start.
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<RawIdentifier, i128>,
+        seq_values: HashMap<RawIdentifier, (i128, i128)>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
 
         for seq in table_schema.sequences.iter() {
-            let new_seq = self
-                .sequence_state_lock
-                .get_sequence_mut(seq.sequence_id)
-                .expect("sequence just created");
-            let value = *seq_values
+            let (value, allocated) = *seq_values
                 .get(&seq.sequence_name)
                 .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
-            new_seq.update_value(value);
+            {
+                let new_seq = self
+                    .sequence_state_lock
+                    .get_sequence_mut(seq.sequence_id)
+                    .expect("sequence just created");
+                new_seq.update_value(value);
+                new_seq.update_allocation(allocated);
+            }
+
+            // This updates the new `st_sequence` row created by `create_table(...)`
+            // above (old table rows are already dropped).
+            self.update_st_sequence_row(seq.sequence_id, |st| st.allocated = allocated)?;
         }
 
         Ok(table_id)
@@ -1299,10 +1358,8 @@ impl MutTxId {
         let map_violation = |violation, index: &TableIndex, table: &Table, bs: &dyn BlobStore| {
             let violation = table
                 .get_row_ref(bs, violation)
-                .expect("row came from scanning the table")
-                .project(&index.indexed_columns)
-                .expect("`cols` should consist of valid columns for this table");
-
+                .expect("row came from scanning the table");
+            let violation = index.project_row(violation);
             let schema = table.get_schema();
             let violation = UniqueConstraintViolation::build_with_index_schema(schema, index, &index_schema, violation);
             IndexError::from(violation).into()
@@ -1482,6 +1539,7 @@ impl MutTxId {
                     .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id))?;
                 IndexScanPointOrRange::Range(iter)
             }
+            PointOrRange::Unsupported => return Err(IndexError::IndexCannotSeekRange(index_id).into()),
         };
         Ok((table_id, iter))
     }
@@ -1953,7 +2011,17 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
+    pub(super) fn commit(self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
+        let (tx_offset, tx_data, tx_metrics, reducer) = self.commit_and_then(|_| {});
+        let tx_data =
+            Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
+        (tx_offset, tx_data, tx_metrics, reducer)
+    }
+
+    pub(super) fn commit_and_then(
+        mut self,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -1987,6 +2055,9 @@ impl MutTxId {
             tx_offset
         };
 
+        let tx_data = Arc::new(tx_data);
+        before_release(&tx_data);
+
         (tx_offset, tx_data, tx_metrics, reducer)
     }
 
@@ -2003,7 +2074,18 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
-    pub(super) fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+    pub(super) fn commit_downgrade(self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        let (tx_data, tx_metrics, tx) = self.commit_downgrade_and_then(workload, |_| {});
+        let tx_data =
+            Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
+        (tx_data, tx_metrics, tx)
+    }
+
+    pub(super) fn commit_downgrade_and_then(
+        mut self,
+        workload: Workload,
+        before_downgrade: impl FnOnce(&Arc<TxData>),
+    ) -> (Arc<TxData>, TxMetrics, TxId) {
         let tx_data = self
             .committed_state_write_lock
             .merge(self.tx_state, self.read_sets, &self.ctx);
@@ -2021,6 +2103,9 @@ impl MutTxId {
             Some(&tx_data),
             &self.committed_state_write_lock,
         );
+
+        let tx_data = Arc::new(tx_data);
+        before_downgrade(&tx_data);
 
         // Update the workload type of the execution context
         self.ctx.workload = workload.workload_type();
@@ -3054,9 +3139,7 @@ impl MutTxId {
 
                 tx_row_ptr
             } else {
-                let index_key = tx_row_ref
-                    .project(&commit_index.indexed_columns)
-                    .expect("`tx_row_ref` should be compatible with `commit_index`");
+                let index_key = commit_index.project_row(tx_row_ref);
                 throw!(IndexError::KeyNotFound(index_id, index_key));
             };
 
@@ -3084,11 +3167,11 @@ impl MutTxId {
     }
 
     // Clears the table for `table_id`, removing all rows.
-    pub fn clear_table(&mut self, table_id: TableId) -> Result<usize> {
+    pub fn clear_table(&mut self, table_id: TableId) -> Result<u64> {
         // Get the commit table.
         let (commit_table, commit_bs, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
 
-        // Get the insert table and delete all rows from it.
+        // Get the insert table and delete all rows from it.s
         let (tx_table, tx_blob_store, delete_table) = self
             .tx_state
             .get_table_and_blob_store_or_create_from(table_id, commit_table);

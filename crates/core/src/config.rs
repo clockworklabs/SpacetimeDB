@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 use std::{fmt, io};
 
+use anyhow::Context;
 use serde::Deserialize;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
@@ -12,7 +13,11 @@ use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
 /// **WARNING**: Comments and formatting in the file will be lost.
 pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<Option<T>> {
     match std::fs::read_to_string(path) {
-        Ok(contents) => Ok(Some(toml::from_str(&contents)?)),
+        Ok(contents) => {
+            let config =
+                toml::from_str(&contents).with_context(|| format!("invalid TOML syntax in {}", path.display()))?;
+            Ok(Some(config))
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
     }
@@ -185,8 +190,12 @@ pub struct V8HeapPolicyConfig {
     pub heap_gc_trigger_fraction: f64,
     #[serde(default = "def_retire", deserialize_with = "de_fraction")]
     pub heap_retire_fraction: f64,
-    #[serde(default, rename = "heap-limit-mb", deserialize_with = "de_limit_mb")]
-    pub heap_limit_bytes: Option<usize>,
+    #[serde(
+        default = "def_heap_limit",
+        rename = "heap-limit-mb",
+        deserialize_with = "de_limit_mb"
+    )]
+    pub heap_limit_bytes: usize,
 }
 
 impl Default for V8HeapPolicyConfig {
@@ -196,7 +205,7 @@ impl Default for V8HeapPolicyConfig {
             heap_check_time_interval: def_time_interval(),
             heap_gc_trigger_fraction: def_gc_trigger(),
             heap_retire_fraction: def_retire(),
-            heap_limit_bytes: None,
+            heap_limit_bytes: def_heap_limit(),
         }
     }
 }
@@ -219,12 +228,12 @@ impl V8HeapPolicyConfig {
 
 /// Default number of requests between V8 heap checks.
 fn def_req_interval() -> Option<u64> {
-    Some(65_536)
+    Some(4_096)
 }
 
 /// Default wall-clock interval between V8 heap checks.
 fn def_time_interval() -> Option<Duration> {
-    Some(Duration::from_secs(30))
+    Some(Duration::from_secs(5))
 }
 
 /// Default heap fill fraction that triggers a GC.
@@ -235,6 +244,12 @@ fn def_gc_trigger() -> f64 {
 /// Default heap fill fraction that retires the worker after a GC.
 fn def_retire() -> f64 {
     0.75
+}
+
+/// Default heap limit, in bytes
+fn def_heap_limit() -> usize {
+    // 1 GiB
+    1024 * 1024 * 1024
 }
 
 fn de_nz_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -289,27 +304,26 @@ where
     }
 }
 
-fn de_limit_mb<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+fn de_limit_mb<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = u64::deserialize(deserializer)?;
     if value == 0 {
-        return Ok(None);
+        return Ok(def_heap_limit());
     }
 
     let bytes = value
         .checked_mul(1024 * 1024)
         .ok_or_else(|| serde::de::Error::custom("heap-limit-mb is too large"))?;
 
-    usize::try_from(bytes)
-        .map(Some)
-        .map_err(|_| serde::de::Error::custom("heap-limit-mb does not fit in usize"))
+    usize::try_from(bytes).map_err(|_| serde::de::Error::custom("heap-limit-mb does not fit in usize"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn mkver(major: u64, minor: u64, patch: u64) -> semver::Version {
         semver::Version::new(major, minor, patch)
@@ -339,6 +353,21 @@ mod tests {
             edition: "standalone".to_owned(),
             client_connection_id: None,
         }
+    }
+
+    #[test]
+    fn parse_config_reports_the_invalid_file_path() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, "[module]\nname = \"my-project\n").unwrap();
+
+        let err = match parse_config::<ConfigFile>(&path) {
+            Ok(_) => panic!("expected invalid TOML to fail"),
+            Err(err) => format!("{err:#}"),
+        };
+        assert!(err.contains("invalid TOML syntax"));
+        assert!(err.contains("config.toml"));
+        assert!(err.contains("line 2"));
     }
 
     #[test]
@@ -413,14 +442,14 @@ mod tests {
     fn v8_heap_policy_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
 
-        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(65_536));
+        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(4_096));
         assert_eq!(
             config.v8_heap_policy.heap_check_time_interval,
-            Some(Duration::from_secs(30))
+            Some(Duration::from_secs(5))
         );
         assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.67);
         assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.75);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, None);
+        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 1024 * 1024 * 1024);
     }
 
     #[test]
@@ -443,6 +472,6 @@ mod tests {
         );
         assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, Some(256 * 1024 * 1024));
+        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 256 * 1024 * 1024);
     }
 }

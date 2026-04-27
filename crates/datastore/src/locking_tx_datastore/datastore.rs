@@ -34,7 +34,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::{
     algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
 };
@@ -328,6 +328,19 @@ impl Locking {
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
+    }
+
+    pub fn alter_table_primary_key_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        name: &str,
+        primary_key: Option<ColId>,
+    ) -> Result<()> {
+        let table_id = self
+            .table_id_from_name_mut_tx(tx, name)?
+            .ok_or_else(|| TableError::NotFound(name.into()))?;
+
+        tx.alter_table_primary_key(table_id, primary_key)
     }
 
     pub fn alter_table_row_type_mut_tx(
@@ -967,6 +980,27 @@ impl Locking {
     /// For durability, see `RelationalDB::commit_tx_downgrade`.
     pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
         tx.commit_downgrade(workload)
+    }
+
+    /// Commit `tx` and invoke `before_release` while the write lock is still held.
+    #[allow(clippy::type_complexity)]
+    pub fn commit_mut_tx_and_then(
+        &self,
+        tx: MutTxId,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>> {
+        Ok(Some(tx.commit_and_then(before_release)))
+    }
+
+    /// Commit `tx`, invoke `before_downgrade` while the write lock is still held,
+    /// then downgrade the lock to a read-only transaction.
+    pub fn commit_mut_tx_downgrade_and_then(
+        &self,
+        tx: MutTxId,
+        workload: Workload,
+        before_downgrade: impl FnOnce(&Arc<TxData>),
+    ) -> (Arc<TxData>, TxMetrics, TxId) {
+        tx.commit_downgrade_and_then(workload, before_downgrade)
     }
 }
 
@@ -3560,7 +3594,7 @@ mod tests {
                 .unwrap()
                 .indexes
                 .values()
-                .map(|i| i.key_type.clone())
+                .map(|i| i.key_type().clone())
                 .collect::<Vec<_>>()
         };
         assert_eq!(index_key_types(&tx), [AlgebraicType::U64, sum_original]);

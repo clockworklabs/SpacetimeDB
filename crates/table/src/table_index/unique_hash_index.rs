@@ -3,7 +3,8 @@ use super::{Index, KeySize};
 use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
 use core::borrow::Borrow;
 use core::hash::Hash;
-use spacetimedb_data_structures::map::hash_map::Entry;
+use core::iter::Copied;
+use spacetimedb_data_structures::map::hash_map::{Entry, Values};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 
 // Faster than ahash, so we use this explicitly.
@@ -91,6 +92,17 @@ impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
     fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
         self.seek_point(point)
     }
+
+    type Iter<'a>
+        = Copied<Values<'a, K, RowPointer>>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        self.map.values().copied()
+    }
+
+    const IS_RANGED: bool = false;
 }
 
 impl<K: KeySize + Eq + Hash> UniqueHashIndex<K> {

@@ -2,6 +2,7 @@ import { decompress } from './decompress';
 import { resolveWS } from './ws';
 
 export interface WebsocketAdapter {
+  readonly protocol: string;
   send(msg: Uint8Array): void;
   close(): void;
 
@@ -12,6 +13,10 @@ export interface WebsocketAdapter {
 }
 
 export class WebsocketDecompressAdapter implements WebsocketAdapter {
+  get protocol(): string {
+    return this.#ws.protocol;
+  }
+
   set onclose(handler: (ev: CloseEvent) => void) {
     this.#ws.onclose = handler;
   }
@@ -73,7 +78,7 @@ export class WebsocketDecompressAdapter implements WebsocketAdapter {
     confirmedReads,
   }: {
     url: URL;
-    wsProtocol: string;
+    wsProtocol: string | string[];
     nameOrAddress: string;
     authToken?: string;
     compression: 'gzip' | 'none';

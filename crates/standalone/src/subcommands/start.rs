@@ -190,7 +190,11 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     )
     .await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
-    worker_metrics::spawn_tokio_stats(listen_addr.clone());
+    worker_metrics::spawn_tokio_stats(
+        listen_addr.clone(),
+        "main".to_string(),
+        tokio::runtime::Handle::current(),
+    );
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
     let mut db_routes = DatabaseRoutes::default();
@@ -529,7 +533,7 @@ mod tests {
         );
         assert_eq!(config.common.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.common.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, Some(128 * 1024 * 1024));
+        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, 128 * 1024 * 1024);
 
         assert_eq!(
             config.websocket,

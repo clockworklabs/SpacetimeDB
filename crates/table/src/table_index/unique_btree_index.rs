@@ -1,8 +1,8 @@
 use super::{Index, KeySize, RangedIndex};
 use crate::{indexes::RowPointer, table_index::key_size::KeyBytesStorage};
-use core::{borrow::Borrow, ops::RangeBounds, option::IntoIter};
+use core::{borrow::Borrow, iter::Copied, ops::RangeBounds, option::IntoIter};
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use std::collections::btree_map::{BTreeMap, Entry, Range};
+use std::collections::btree_map::{BTreeMap, Entry, Range, Values};
 
 /// A "unique map" that relates a `K` to a `RowPointer`.
 ///
@@ -70,6 +70,15 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
         self.seek_point(point)
     }
 
+    type Iter<'a>
+        = Copied<Values<'a, K, RowPointer>>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        self.map.values().copied()
+    }
+
     /// Deletes all entries from the map, leaving it empty.
     ///
     /// Unfortunately, this will drop the existing allocation.
@@ -88,6 +97,8 @@ impl<K: Ord + KeySize> Index for UniqueBTreeIndex<K> {
         };
         Err(*found)
     }
+
+    const IS_RANGED: bool = true;
 }
 
 impl<K: KeySize + Ord> UniqueBTreeIndex<K> {
@@ -131,6 +142,7 @@ impl<K: KeySize + Ord> UniqueBTreeIndex<K> {
 }
 
 /// An iterator over the potential value in a unique index for a given key.
+#[derive(Clone)]
 pub struct UniquePointIter {
     /// The iterator seeking for matching keys in the range.
     pub(super) iter: IntoIter<RowPointer>,
