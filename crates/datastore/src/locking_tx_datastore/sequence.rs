@@ -84,7 +84,7 @@ impl Sequence {
 
     /// Update the persisted allocation cursor for the sequence.
     pub(super) fn update_allocation(&mut self, new_allocated: i128) {
-        if new_allocated < self.schema.min_value || new_allocated > self.schema.max_value {
+        if !(self.schema.min_value..=self.schema.max_value).contains(&new_allocated) {
             panic!(
                 "Invalid sequence allocation update: new allocated {} is out of bounds for sequence with min_value {} and max_value {}",
                 new_allocated, self.schema.min_value, self.schema.max_value
