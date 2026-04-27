@@ -13,9 +13,5 @@ public partial class FoodController : EntityController
         new(35 / 255.0f, 245 / 255.0f, 165 / 255.0f),
     ];
 
-    public void Spawn(Food food)
-    {
-        SpawnEntity(food.EntityId);
-        Color = ColorPalette[EntityId % ColorPalette.Length];
-    }
+    public FoodController(Food food) : base(food.EntityId, ColorPalette[food.EntityId % ColorPalette.Length]) { }
 }
