@@ -130,7 +130,7 @@
 use sqlparser::{
     ast::{
         Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
-        Values,
+        Value, Values,
     },
     dialect::PostgreSqlDialect,
     parser::Parser,
@@ -142,7 +142,7 @@ use crate::ast::{
 };
 
 use super::{
-    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_parts, parse_projection, RelParser,
+    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal_expr, parse_parts, parse_projection, RelParser,
     SqlParseResult,
 };
 
@@ -242,11 +242,7 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
                 for row in rows {
                     let mut literals = Vec::new();
                     for expr in row {
-                        if let Expr::Value(value) = expr {
-                            literals.push(parse_literal(value)?);
-                        } else {
-                            return Err(SqlUnsupported::InsertValue(expr).into());
-                        }
+                        literals.push(parse_literal_expr(expr, SqlUnsupported::InsertValue)?);
                     }
                     row_literals.push(literals);
                 }
@@ -274,10 +270,10 @@ fn parse_assignments(assignments: Vec<Assignment>) -> SqlParseResult<Vec<SqlSet>
 
 /// Parse a column/variable assignment in an UPDATE or SET statement
 fn parse_assignment(Assignment { id, value }: Assignment) -> SqlParseResult<SqlSet> {
-    match value {
-        Expr::Value(value) => Ok(SqlSet(parse_parts(id)?, parse_literal(value)?)),
-        _ => Err(SqlUnsupported::Assignment(value).into()),
-    }
+    Ok(SqlSet(
+        parse_parts(id)?,
+        parse_literal_expr(value, SqlUnsupported::Assignment)?,
+    ))
 }
 
 /// Parse a DELETE statement
@@ -311,12 +307,7 @@ fn parse_set_var(variable: ObjectName, mut value: Vec<Expr>) -> SqlParseResult<S
     if value.len() == 1 {
         Ok(SqlSet(
             parse_ident(variable)?,
-            match value.swap_remove(0) {
-                Expr::Value(value) => parse_literal(value)?,
-                expr => {
-                    return Err(SqlUnsupported::Assignment(expr).into());
-                }
-            },
+            parse_literal_expr(value.swap_remove(0), SqlUnsupported::Assignment)?,
         ))
     } else {
         Err(SqlUnsupported::feature(Statement::SetVariable {
@@ -344,22 +335,31 @@ impl RelParser for SqlParser {
                 offset: None,
                 fetch: None,
                 locks,
-            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body),
+            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body, None),
+            Query {
+                with: None,
+                body,
+                order_by,
+                limit: Some(Expr::Value(Value::Number(n, _))),
+                offset: None,
+                fetch: None,
+                locks,
+            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body, Some(n.into_boxed_str())),
             _ => Err(SqlUnsupported::feature(query).into()),
         }
     }
 }
 
 /// Parse a set operation
-fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
+fn parse_set_op(expr: SetExpr, limit: Option<Box<str>>) -> SqlParseResult<SqlSelect> {
     match expr {
-        SetExpr::Select(select) => parse_select(*select).map(SqlSelect::qualify_vars),
+        SetExpr::Select(select) => parse_select(*select, limit).map(SqlSelect::qualify_vars),
         _ => Err(SqlUnsupported::feature(expr).into()),
     }
 }
 
 /// Parse a SELECT statement
-fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
+fn parse_select(select: Select, limit: Option<Box<str>>) -> SqlParseResult<SqlSelect> {
     match select {
         Select {
             distinct: None,
@@ -387,6 +387,7 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
                 project: parse_projection(projection)?,
                 from: SqlParser::parse_from(from)?,
                 filter: parse_expr_opt(selection)?,
+                limit,
             })
         }
         _ => Err(SqlUnsupported::feature(select).into()),
@@ -429,11 +430,30 @@ mod tests {
     fn supported() {
         for sql in [
             "select a from t",
+            "select a from t where x = :sender",
+            "select count(*) as n from t",
+            "select count(*) as n from t join s on t.id = s.id where s.x = 1",
             "insert into t values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
+            "delete from t where x = :sender",
             "update t set a = 1, b = 2",
             "update t set a = 1, b = 2 where c = 3",
+            "update t set a = 1, b = 2 where x = :sender",
+        ] {
+            assert!(parse_sql(sql).is_ok());
+        }
+    }
+
+    #[test]
+    fn signed_numeric_literals_are_supported_across_sql_api() {
+        for sql in [
+            "select a from t where b = -1",
+            "delete from t where a = +1",
+            "insert into t values (-1, +2.5)",
+            "update t set a = -1, b = +2 where c = -3",
+            "set x = -1",
+            "set y to +2.5",
         ] {
             assert!(parse_sql(sql).is_ok());
         }
@@ -450,6 +470,8 @@ mod tests {
             "select a from t where",
             // Empty GROUP BY
             "select a, count(*) from t group by",
+            // Aggregate without alias
+            "select count(*) from t",
             // Empty statement
             "",
             " ",

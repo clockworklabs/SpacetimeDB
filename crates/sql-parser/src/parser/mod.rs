@@ -1,12 +1,16 @@
 use errors::{SqlParseError, SqlRequired, SqlUnsupported};
 use sqlparser::ast::{
-    BinaryOperator, Expr, Ident, Join, JoinConstraint, JoinOperator, ObjectName, Query, SelectItem, TableAlias,
-    TableFactor, TableWithJoins, Value, WildcardAdditionalOptions,
+    BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator,
+    ObjectName, Query, SelectItem, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value,
+    WildcardAdditionalOptions,
 };
 
-use crate::ast::{BinOp, LogOp, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
+use crate::ast::{
+    BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
+};
 
 pub mod errors;
+pub mod recursion;
 pub mod sql;
 pub mod sub;
 
@@ -58,11 +62,14 @@ trait RelParser {
                 Ok(SqlJoin {
                     var,
                     alias,
-                    on: Some(parse_expr(Expr::BinaryOp {
-                        left,
-                        op: BinaryOperator::Eq,
-                        right,
-                    })?),
+                    on: Some(parse_expr(
+                        Expr::BinaryOp {
+                            left,
+                            op: BinaryOperator::Eq,
+                            right,
+                        },
+                        0,
+                    )?),
                 })
             }
             _ => Err(SqlUnsupported::JoinType.into()),
@@ -104,7 +111,7 @@ trait RelParser {
 /// Parse the items of a SELECT clause
 pub(crate) fn parse_projection(mut items: Vec<SelectItem>) -> SqlParseResult<Project> {
     if items.len() == 1 {
-        return parse_project(items.swap_remove(0));
+        return parse_project_or_agg(items.swap_remove(0));
     }
     Ok(Project::Exprs(
         items
@@ -115,7 +122,7 @@ pub(crate) fn parse_projection(mut items: Vec<SelectItem>) -> SqlParseResult<Pro
 }
 
 /// Parse a SELECT clause with only a single item
-pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
+pub(crate) fn parse_project_or_agg(item: SelectItem) -> SqlParseResult<Project> {
     match item {
         SelectItem::Wildcard(WildcardAdditionalOptions {
             opt_exclude: None,
@@ -132,10 +139,45 @@ pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
                 opt_replace: None,
             },
         ) => Ok(Project::Star(Some(parse_ident(table_name)?))),
+        SelectItem::UnnamedExpr(Expr::Function(_)) => Err(SqlUnsupported::AggregateWithoutAlias.into()),
+        SelectItem::ExprWithAlias {
+            expr: Expr::Function(agg_fn),
+            alias,
+        } => parse_agg_fn(agg_fn, alias.into()),
         SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
             Ok(Project::Exprs(vec![parse_project_elem(item)?]))
         }
         item => Err(SqlUnsupported::Projection(item).into()),
+    }
+}
+
+/// Parse an aggregate function in a select list
+fn parse_agg_fn(agg_fn: Function, alias: SqlIdent) -> SqlParseResult<Project> {
+    fn is_count(name: &ObjectName) -> bool {
+        name.0.len() == 1
+            && name
+                .0
+                .first()
+                .is_some_and(|Ident { value, .. }| value.to_lowercase() == "count")
+    }
+    match agg_fn {
+        Function {
+            name,
+            args,
+            over: None,
+            distinct: false,
+            special: false,
+            order_by,
+        } if is_count(&name)
+            && order_by.is_empty()
+            && args.len() == 1
+            && args
+                .first()
+                .is_some_and(|arg| matches!(arg, FunctionArg::Unnamed(FunctionArgExpr::Wildcard))) =>
+        {
+            Ok(Project::Count(alias))
+        }
+        agg_fn => Err(SqlUnsupported::Aggregate(agg_fn).into()),
     }
 }
 
@@ -165,11 +207,37 @@ pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
     }
 }
 
+// These types determine the size of [`parse_expr`]'s stack frame on 64-bit targets.
+// Changing their sizes will require updating the recursion limit to avoid stack overflows.
+// wasm32 has different type layouts, so this guard does not apply there.
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<Expr>() == 168);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<SqlParseResult<SqlExpr>>() == 40);
+
 /// Parse a scalar expression
-pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
+fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
+    recursion::guard(depth, recursion::MAX_RECURSION_EXPR, "sql-parser::parse_expr")?;
     match expr {
-        Expr::Nested(expr) => parse_expr(*expr),
+        Expr::Nested(expr) => parse_expr(*expr, depth + 1),
+        Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } => Ok(SqlExpr::Lit(parse_signed_literal_expr(
+            UnaryOperator::Plus,
+            *expr,
+            SqlUnsupported::Expr,
+        )?)),
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => Ok(SqlExpr::Lit(parse_signed_literal_expr(
+            UnaryOperator::Minus,
+            *expr,
+            SqlUnsupported::Expr,
+        )?)),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();
@@ -181,8 +249,8 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
             op: BinaryOperator::And,
             right,
         } => {
-            let l = parse_expr(*left)?;
-            let r = parse_expr(*right)?;
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
             Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::And))
         }
         Expr::BinaryOp {
@@ -190,22 +258,60 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
             op: BinaryOperator::Or,
             right,
         } => {
-            let l = parse_expr(*left)?;
-            let r = parse_expr(*right)?;
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
             Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::Or))
         }
         Expr::BinaryOp { left, op, right } => {
-            let l = parse_expr(*left)?;
-            let r = parse_expr(*right)?;
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
             Ok(SqlExpr::Bin(Box::new(l), Box::new(r), parse_binop(op)?))
         }
         _ => Err(SqlUnsupported::Expr(expr).into()),
     }
 }
 
+fn parse_signed_literal_expr(
+    op: UnaryOperator,
+    expr: Expr,
+    unsupported: fn(Expr) -> SqlUnsupported,
+) -> SqlParseResult<SqlLiteral> {
+    match expr {
+        Expr::Value(Value::Number(n, _)) => {
+            let sign = match op {
+                UnaryOperator::Plus => "+",
+                UnaryOperator::Minus => "-",
+                _ => unreachable!("caller only passes unary plus/minus"),
+            };
+            Ok(SqlLiteral::Num(format!("{sign}{n}").into_boxed_str()))
+        }
+        expr => Err(unsupported(Expr::UnaryOp {
+            op,
+            expr: Box::new(expr),
+        })
+        .into()),
+    }
+}
+
+/// Parse a literal expression.
+pub(crate) fn parse_literal_expr(expr: Expr, unsupported: fn(Expr) -> SqlUnsupported) -> SqlParseResult<SqlLiteral> {
+    match expr {
+        Expr::Value(value) => parse_literal(value),
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } => parse_signed_literal_expr(UnaryOperator::Plus, *expr, unsupported),
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => parse_signed_literal_expr(UnaryOperator::Minus, *expr, unsupported),
+        expr => Err(unsupported(expr).into()),
+    }
+}
+
 /// Parse an optional scalar expression
 pub(crate) fn parse_expr_opt(opt: Option<Expr>) -> SqlParseResult<Option<SqlExpr>> {
-    opt.map(parse_expr).transpose()
+    opt.map(|expr| parse_expr(expr, 0)).transpose()
 }
 
 /// Parse a scalar binary operator

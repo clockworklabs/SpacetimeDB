@@ -1,20 +1,26 @@
+use anyhow::{bail, Result};
+use derive_more::From;
+use either::Either;
+use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_expr::{
+    expr::{AggType, CollectViews},
+    StatementSource,
+};
+use spacetimedb_lib::{identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
+use spacetimedb_schema::schema::{IndexSchema, TableSchema};
+use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+use spacetimedb_table::table::RowRef;
 use std::{
     borrow::Cow,
     ops::{Bound, Deref, DerefMut},
     sync::Arc,
 };
 
-use derive_more::From;
-use spacetimedb_expr::StatementSource;
-use spacetimedb_lib::{query::Delta, AlgebraicValue};
-use spacetimedb_primitives::{ColId, ColSet, IndexId};
-use spacetimedb_schema::schema::{IndexSchema, TableSchema};
-use spacetimedb_sql_parser::ast::{BinOp, LogOp};
-use spacetimedb_table::table::RowRef;
-
 use crate::rules::{
     ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
-    PushConstAnd, PushConstEq, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
+    PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule,
+    UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -65,19 +71,61 @@ impl DerefMut for ProjectPlan {
     }
 }
 
-impl ProjectPlan {
-    pub fn optimize(self) -> Self {
+impl CollectViews for ProjectPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         match self {
-            Self::None(plan) => Self::None(plan.optimize(vec![])),
+            Self::None(plan) | Self::Name(plan, ..) => plan.collect_views(views),
+        }
+    }
+}
+
+impl ProjectPlan {
+    pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
+        match self {
+            Self::None(plan) => Ok(Self::None(plan.optimize(auth, vec![])?)),
             Self::Name(plan, label, _) => {
-                let plan = plan.optimize(vec![label]);
+                let plan = plan.optimize(auth, vec![label])?;
                 let n = plan.nfields();
                 let pos = plan.position(&label);
-                match n {
+                Ok(match n {
                     1 => Self::None(plan),
                     _ => Self::Name(plan, label, pos),
-                }
+                })
             }
+        }
+    }
+
+    /// Unwrap the underlying physical plan
+    pub fn physical_plan(&self) -> &PhysicalPlan {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan,
+        }
+    }
+
+    /// Does this plan select or return whole (unprojected) rows from a single table?
+    pub fn return_table(&self) -> Option<Arc<TableSchema>> {
+        match self {
+            Self::None(plan) => plan.return_table(),
+            Self::Name(plan, label, _) => plan.find_table_schema(label),
+        }
+    }
+
+    /// Does this plan select or return whole (unprojected) rows from a view?
+    pub fn returns_view_table(&self) -> bool {
+        self.return_table().is_some_and(|schema| schema.is_view())
+    }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
+        }
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_event_table(),
         }
     }
 }
@@ -96,26 +144,104 @@ impl ProjectPlan {
 /// ```sql
 /// select t.a, s.b from t join s ...
 /// ```
+///
+/// TODO: LIMIT and COUNT were added rather hastily.
+/// We should rethink having separate plan types for projections and selections,
+/// as it makes optimization more difficult the more they diverge.
+///
+/// Note that RLS takes a single expression and produces a list of expressions.
+/// Hence why these variants take lists rather than single expressions.
+/// See [spacetimedb_expr::ProjectList] for details.
 #[derive(Debug)]
 pub enum ProjectListPlan {
-    Name(ProjectPlan),
-    List(PhysicalPlan, Vec<(Box<str>, TupleField)>),
+    /// A plan that returns physical rows
+    Name(Vec<ProjectPlan>),
+    /// A plan that returns virtual rows
+    List(Vec<PhysicalPlan>, Vec<TupleField>),
+    /// A plan that limits rows
+    Limit(Box<ProjectListPlan>, u64),
+    /// An aggregate function
+    Agg(Vec<PhysicalPlan>, AggType),
 }
 
 impl ProjectListPlan {
-    pub fn optimize(self) -> Self {
+    pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         match self {
-            Self::Name(plan) => Self::Name(plan.optimize()),
-            Self::List(plan, fields) => Self::List(
-                plan.optimize(
-                    fields
-                        .iter()
-                        .map(|(_, TupleField { label, .. })| label)
-                        .copied()
-                        .collect(),
-                ),
-                fields,
-            ),
+            Self::Name(plan) => Ok(Self::Name(
+                plan.into_iter()
+                    .map(|plan| plan.optimize(auth))
+                    .collect::<Result<_>>()?,
+            )),
+            Self::Limit(plan, n) => {
+                let mut limit = Self::Limit(Box::new(plan.optimize(auth)?), n);
+                // Merge a limit with a scan if possible
+                if PushLimit::matches(&limit).is_some() {
+                    limit = PushLimit::rewrite(limit, ())?;
+                }
+                Ok(limit)
+            }
+            Self::Agg(plan, agg_type) => Ok(Self::Agg(
+                plan.into_iter()
+                    .map(|plan| plan.optimize(auth, vec![]))
+                    .collect::<Result<_>>()?,
+                agg_type,
+            )),
+            Self::List(plans, mut fields) => {
+                let mut optimized_plans = Vec::with_capacity(plans.len());
+                for plan in plans {
+                    // Collect the names of the relvars
+                    let labels = fields.iter().map(|field| field.label).collect();
+                    // Optimize each plan
+                    let optimized_plan = plan.optimize(auth, labels)?;
+                    // Compute the position of each relvar referenced in the projection
+                    for TupleField { label, label_pos, .. } in &mut fields {
+                        *label_pos = optimized_plan.position(label);
+                    }
+                    optimized_plans.push(optimized_plan);
+                }
+                Ok(Self::List(optimized_plans, fields))
+            }
+        }
+    }
+
+    /// Returns an iterator over the underlying physical plans
+    pub fn plan_iter(&self) -> impl Iterator<Item = &PhysicalPlan> + '_ {
+        match self {
+            Self::List(plans, _) | Self::Agg(plans, _) => Either::Left(plans.iter()),
+            Self::Name(plans) => Either::Right(plans.iter().map(|plan| plan.physical_plan())),
+            Self::Limit(plan, _) => plan.plan_iter(),
+        }
+    }
+
+    /// Does this plan select or return whole (unprojected) rows from a single table?
+    pub fn return_table(&self) -> Option<Arc<TableSchema>> {
+        match self {
+            Self::Name(plans) => plans.first().and_then(ProjectPlan::return_table),
+            Self::Limit(plan, _) => plan.return_table(),
+            Self::List(..) | Self::Agg(..) => None,
+        }
+    }
+
+    /// Does this plan select or return whole (unprojected) rows from a view?
+    pub fn returns_view_table(&self) -> bool {
+        self.return_table().is_some_and(|schema| schema.is_view())
+    }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        match self {
+            Self::Limit(plan, _) => plan.reads_from_view(anonymous),
+            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+        }
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    pub fn reads_from_event_table(&self) -> bool {
+        match self {
+            Self::Limit(plan, _) => plan.reads_from_event_table(),
+            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_event_table()),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_event_table()),
         }
     }
 }
@@ -144,7 +270,7 @@ pub struct TupleField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhysicalPlan {
     /// Scan a table row by row, returning row ids
-    TableScan(Arc<TableSchema>, Label, Option<Delta>),
+    TableScan(TableScan, Label),
     /// Fetch row ids from an index
     IxScan(IxScan, Label),
     /// An index join + projection
@@ -155,6 +281,22 @@ pub enum PhysicalPlan {
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
     /// A tuple-at-a-time filter
     Filter(Box<PhysicalPlan>, PhysicalExpr),
+}
+
+impl CollectViews for PhysicalPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.visit(&mut |plan| {
+            let view_info = match plan {
+                Self::TableScan(scan, _) => &scan.schema.view_info,
+                Self::IxScan(scan, _) => &scan.schema.view_info,
+                Self::IxJoin(join, _) => &join.rhs.view_info,
+                _ => return,
+            };
+            if let Some(info) = view_info {
+                views.insert(info.view_id);
+            }
+        });
+    }
 }
 
 impl PhysicalPlan {
@@ -169,7 +311,7 @@ impl PhysicalPlan {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            _ => {}
+            Self::TableScan(..) | Self::IxScan(..) => {}
         }
     }
 
@@ -184,7 +326,7 @@ impl PhysicalPlan {
                 lhs.visit_mut(f);
                 rhs.visit_mut(f);
             }
-            _ => {}
+            Self::TableScan(..) | Self::IxScan(..) => {}
         }
     }
 
@@ -217,13 +359,17 @@ impl PhysicalPlan {
                 },
                 semi,
             ),
-            plan => plan,
+            plan @ Self::TableScan(..) | plan @ Self::IxScan(..) => plan,
         }
     }
 
     /// Applies `f` to a subplan if `ok` returns a match.
     /// Recurses until an `ok` match is found.
-    pub fn map_if<Info>(self, f: impl FnOnce(Self, Info) -> Self, ok: impl Fn(&Self) -> Option<Info>) -> Self {
+    pub fn map_if<Info>(
+        self,
+        f: impl FnOnce(Self, Info) -> Result<Self>,
+        ok: impl Fn(&Self) -> Option<Info>,
+    ) -> Result<Self> {
         if let Some(info) = ok(&self) {
             return f(self, info);
         }
@@ -231,56 +377,71 @@ impl PhysicalPlan {
             // Does `ok` match a subplan?
             plan.any(&|plan| ok(plan).is_some())
         };
-        match self {
-            Self::NLJoin(lhs, rhs) if matches(&lhs) => {
-                // Replace the lhs subtree
-                Self::NLJoin(Box::new(lhs.map_if(f, ok)), rhs)
+        Ok(match self {
+            Self::TableScan(..) | Self::IxScan(..) => self,
+            Self::NLJoin(lhs, rhs) => {
+                if matches(&lhs) {
+                    return Ok(Self::NLJoin(Box::new(lhs.map_if(f, ok)?), rhs));
+                }
+                if matches(&rhs) {
+                    return Ok(Self::NLJoin(lhs, Box::new(rhs.map_if(f, ok)?)));
+                }
+                Self::NLJoin(lhs, rhs)
             }
-            Self::NLJoin(lhs, rhs) if matches(&rhs) => {
-                // Replace the rhs subtree
-                Self::NLJoin(lhs, Box::new(rhs.map_if(f, ok)))
+            Self::HashJoin(join, semi) => {
+                if matches(&join.lhs) {
+                    return Ok(Self::HashJoin(
+                        HashJoin {
+                            lhs: Box::new(join.lhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                if matches(&join.rhs) {
+                    return Ok(Self::HashJoin(
+                        HashJoin {
+                            rhs: Box::new(join.rhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                Self::HashJoin(join, semi)
             }
-            Self::HashJoin(join, semi) if matches(&join.lhs) => Self::HashJoin(
-                HashJoin {
-                    lhs: Box::new(join.lhs.map_if(f, ok)),
-                    ..join
-                },
-                semi,
-            ),
-            Self::HashJoin(join, semi) if matches(&join.rhs) => Self::HashJoin(
-                HashJoin {
-                    rhs: Box::new(join.rhs.map_if(f, ok)),
-                    ..join
-                },
-                semi,
-            ),
-            Self::IxJoin(join, semi) if matches(&join.lhs) => Self::IxJoin(
-                IxJoin {
-                    lhs: Box::new(join.lhs.map_if(f, ok)),
-                    ..join
-                },
-                semi,
-            ),
-            Self::Filter(input, expr) if matches(&input) => {
-                // Replace the input only if there is a match
-                Self::Filter(Box::new(input.map_if(f, ok)), expr)
+            Self::IxJoin(join, semi) => {
+                if matches(&join.lhs) {
+                    return Ok(Self::IxJoin(
+                        IxJoin {
+                            lhs: Box::new(join.lhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                Self::IxJoin(join, semi)
             }
-            _ => self,
-        }
+            Self::Filter(input, expr) => {
+                if matches(&input) {
+                    return Ok(Self::Filter(Box::new(input.map_if(f, ok)?), expr));
+                }
+                Self::Filter(input, expr)
+            }
+        })
     }
 
     /// Applies a rewrite rule once to this plan.
     /// Updates indicator variable if plan was modified.
-    pub fn apply_once<R: RewriteRule<Plan = PhysicalPlan>>(self, ok: &mut bool) -> Self {
+    pub fn apply_once<R: RewriteRule<Plan = PhysicalPlan>>(self, ok: &mut bool) -> Result<Self> {
         if let Some(info) = R::matches(&self) {
             *ok = true;
             return R::rewrite(self, info);
         }
-        self
+        Ok(self)
     }
 
     /// Recursively apply a rule to all subplans until a fixedpoint is reached.
-    pub fn apply_rec<R: RewriteRule<Plan = PhysicalPlan>>(self) -> Self {
+    pub fn apply_rec<R: RewriteRule<Plan = PhysicalPlan>>(self) -> Result<Self> {
         let mut ok = false;
         let plan = self.map_if(
             |plan, info| {
@@ -288,22 +449,22 @@ impl PhysicalPlan {
                 R::rewrite(plan, info)
             },
             R::matches,
-        );
+        )?;
         if ok {
             return plan.apply_rec::<R>();
         }
-        plan
+        Ok(plan)
     }
 
     /// Repeatedly apply a rule until a fixedpoint is reached.
     /// It does not apply rule recursively to subplans.
-    pub fn apply_until<R: RewriteRule<Plan = PhysicalPlan>>(self) -> Self {
+    pub fn apply_until<R: RewriteRule<Plan = PhysicalPlan>>(self) -> Result<Self> {
         let mut ok = false;
-        let plan = self.apply_once::<R>(&mut ok);
+        let plan = self.apply_once::<R>(&mut ok)?;
         if ok {
             return plan.apply_until::<R>();
         }
-        plan
+        Ok(plan)
     }
 
     /// Optimize a plan using the following rewrites:
@@ -313,22 +474,151 @@ impl PhysicalPlan {
     /// 3. Turn filters into index scans if possible
     /// 4. Determine index and semijoins
     /// 5. Compute positions for tuple labels
-    pub fn optimize(self, reqs: Vec<Label>) -> Self {
-        self.map(&Self::canonicalize)
-            .apply_until::<PushConstAnd>()
-            .apply_until::<PushConstEq>()
-            .apply_rec::<ReorderDeltaJoinRhs>()
-            .apply_rec::<PullFilterAboveHashJoin>()
-            .apply_rec::<IxScanEq3Col>()
-            .apply_rec::<IxScanEq2Col>()
-            .apply_rec::<IxScanEq>()
-            .apply_rec::<IxScanAnd>()
-            .apply_rec::<ReorderHashJoin>()
-            .apply_rec::<HashToIxJoin>()
-            .apply_rec::<UniqueIxJoinRule>()
-            .apply_rec::<UniqueHashJoinRule>()
+    pub fn optimize(self, auth: &AuthCtx, reqs: Vec<Label>) -> Result<Self> {
+        let optimized = self
+            .expand_views(auth)
+            .map(&Self::canonicalize)
+            .apply_rec::<PushConstAnd>()?
+            .apply_rec::<PushConstEq>()?
+            .apply_rec::<ReorderDeltaJoinRhs>()?
+            .apply_rec::<PullFilterAboveHashJoin>()?
+            .apply_rec::<IxScanEq3Col>()?
+            .apply_rec::<IxScanEq2Col>()?
+            .apply_rec::<IxScanEq>()?
+            .apply_rec::<IxScanAnd>()?
+            .apply_rec::<ReorderHashJoin>()?
+            .apply_rec::<HashToIxJoin>()?
+            .apply_rec::<UniqueIxJoinRule>()?
+            .apply_rec::<UniqueHashJoinRule>()?
             .introduce_semijoins(reqs)
-            .apply_rec::<ComputePositions>()
+            .apply_rec::<ComputePositions>()?;
+
+        let mut unresolved_name = false;
+
+        // Check that we've derived positional values for all named arguments
+        optimized.visit(&mut |plan| {
+            match plan {
+                Self::Filter(_, expr) => {
+                    expr.visit(&mut |expr| {
+                        if let PhysicalExpr::Field(TupleField { label_pos: None, .. }) = expr {
+                            unresolved_name = true;
+                        }
+                    });
+                }
+                Self::IxJoin(
+                    IxJoin {
+                        lhs_field: TupleField { label_pos: None, .. },
+                        ..
+                    },
+                    _,
+                )
+                | Self::HashJoin(
+                    HashJoin {
+                        lhs_field: TupleField { label_pos: None, .. },
+                        ..
+                    },
+                    _,
+                )
+                | Self::HashJoin(
+                    HashJoin {
+                        rhs_field: TupleField { label_pos: None, .. },
+                        ..
+                    },
+                    _,
+                ) => {
+                    unresolved_name = true;
+                }
+                _ => {}
+            };
+        });
+
+        if unresolved_name {
+            bail!("Could not compute positional arguments during query planning")
+        }
+
+        Ok(optimized)
+    }
+
+    /// If a view is not anonymous, its backing table has a `sender` column.
+    /// This column tracks which rows belong to which caller.
+    ///
+    /// As a result, queries over such views cannot read the entire backing table.
+    /// They must only select the rows corresponding to the caller of the query.
+    /// Hence we must add an implicit selection over these types of views.
+    ///
+    /// Ex.
+    /// ```sql
+    /// SELECT * FROM my_view
+    /// ```
+    ///
+    /// becomes
+    /// ```sql
+    /// SELECT * FROM my_view WHERE sender = :sender
+    /// ```
+    fn expand_views(self, auth: &AuthCtx) -> Self {
+        match self {
+            Self::TableScan(scan, label) if scan.schema.is_view() && !scan.schema.is_anonymous_view() => Self::Filter(
+                Box::new(Self::TableScan(scan, label)),
+                PhysicalExpr::BinOp(
+                    BinOp::Eq,
+                    Box::new(PhysicalExpr::Value(auth.caller().into())),
+                    Box::new(PhysicalExpr::Field(TupleField {
+                        label,
+                        label_pos: None,
+                        field_pos: 0,
+                    })),
+                ),
+            ),
+            Self::IxJoin(
+                IxJoin {
+                    lhs,
+                    rhs,
+                    rhs_label,
+                    rhs_index,
+                    rhs_prefix,
+                    rhs_field,
+                    unique,
+                    lhs_field,
+                    rhs_delta,
+                },
+                semi,
+            ) => Self::IxJoin(
+                IxJoin {
+                    lhs: Box::new(lhs.expand_views(auth)),
+                    rhs,
+                    rhs_label,
+                    rhs_index,
+                    rhs_prefix,
+                    rhs_field,
+                    unique,
+                    lhs_field,
+                    rhs_delta,
+                },
+                semi,
+            ),
+            Self::HashJoin(
+                HashJoin {
+                    lhs,
+                    rhs,
+                    lhs_field,
+                    rhs_field,
+                    unique,
+                },
+                semi,
+            ) => Self::HashJoin(
+                HashJoin {
+                    lhs: Box::new(lhs.expand_views(auth)),
+                    rhs: Box::new(rhs.expand_views(auth)),
+                    lhs_field,
+                    rhs_field,
+                    unique,
+                },
+                semi,
+            ),
+            Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views(auth)), expr),
+            Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views(auth)), Box::new(rhs.expand_views(auth))),
+            Self::TableScan(..) | Self::IxScan(..) => self,
+        }
     }
 
     /// The rewriter assumes a canonicalized plan.
@@ -398,7 +688,14 @@ impl PhysicalPlan {
                     PhysicalExpr::BinOp(op, value, expr)
                         if matches!(&*value, PhysicalExpr::Value(_)) && matches!(&*expr, PhysicalExpr::Field(..)) =>
                     {
-                        PhysicalExpr::BinOp(op, expr, value)
+                        match op {
+                            BinOp::Eq => PhysicalExpr::BinOp(BinOp::Eq, expr, value),
+                            BinOp::Ne => PhysicalExpr::BinOp(BinOp::Ne, expr, value),
+                            BinOp::Lt => PhysicalExpr::BinOp(BinOp::Gt, expr, value),
+                            BinOp::Gt => PhysicalExpr::BinOp(BinOp::Lt, expr, value),
+                            BinOp::Lte => PhysicalExpr::BinOp(BinOp::Gte, expr, value),
+                            BinOp::Gte => PhysicalExpr::BinOp(BinOp::Lte, expr, value),
+                        }
                     }
                     _ => expr,
                 };
@@ -466,20 +763,18 @@ impl PhysicalPlan {
     /// join c on b.id = c.id
     /// ```
     fn introduce_semijoins(self, mut reqs: Vec<Label>) -> Self {
-        impl PhysicalPlan {
-            fn append_required_label(&self, reqs: &mut Vec<Label>, label: Label) {
-                if !reqs.contains(&label) && self.has_label(&label) {
-                    reqs.push(label);
-                }
+        let append_required_label = |plan: &PhysicalPlan, reqs: &mut Vec<Label>, label: Label| {
+            if !reqs.contains(&label) && plan.has_label(&label) {
+                reqs.push(label);
             }
-        }
+        };
         match self {
             Self::Filter(input, expr) => {
                 expr.visit(&mut |expr| {
-                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr {
-                        if !reqs.contains(var) {
-                            reqs.push(*var);
-                        }
+                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr
+                        && !reqs.contains(var)
+                    {
+                        reqs.push(*var);
                     }
                 });
                 Self::Filter(Box::new(input.introduce_semijoins(reqs)), expr)
@@ -489,8 +784,8 @@ impl PhysicalPlan {
                 let mut rhs_reqs = vec![];
 
                 for var in reqs {
-                    lhs.append_required_label(&mut lhs_reqs, var);
-                    rhs.append_required_label(&mut rhs_reqs, var);
+                    append_required_label(&lhs, &mut lhs_reqs, var);
+                    append_required_label(&rhs, &mut rhs_reqs, var);
                 }
                 let lhs = lhs.introduce_semijoins(lhs_reqs);
                 let rhs = rhs.introduce_semijoins(rhs_reqs);
@@ -517,8 +812,8 @@ impl PhysicalPlan {
                 let mut lhs_reqs = vec![u];
                 let mut rhs_reqs = vec![v];
                 for var in reqs {
-                    lhs.append_required_label(&mut lhs_reqs, var);
-                    rhs.append_required_label(&mut rhs_reqs, var);
+                    append_required_label(&lhs, &mut lhs_reqs, var);
+                    append_required_label(&rhs, &mut rhs_reqs, var);
                 }
                 let lhs = lhs.introduce_semijoins(lhs_reqs);
                 let rhs = rhs.introduce_semijoins(rhs_reqs);
@@ -549,7 +844,10 @@ impl PhysicalPlan {
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Lhs)
             }
             Self::IxJoin(join, Semi::All) => {
-                let reqs = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
+                if !reqs.contains(&join.lhs_field.label) {
+                    reqs.push(join.lhs_field.label);
+                }
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)
@@ -562,7 +860,7 @@ impl PhysicalPlan {
     pub(crate) fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
         match self {
             // Is there a unique constraint for these cols?
-            Self::TableScan(schema, var, _) => var == label && schema.is_unique(cols),
+            Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(&**cols),
             // Is there a unique constraint for these cols + the index cols?
             Self::IxScan(
                 IxScan {
@@ -574,7 +872,7 @@ impl PhysicalPlan {
                 var,
             ) => {
                 var == label
-                    && schema.is_unique(&ColSet::from_iter(
+                    && schema.as_ref().is_unique(&*ColSet::from_iter(
                         cols.iter()
                             .chain(prefix.iter().map(|(col_id, _)| *col_id))
                             .chain(vec![*col]),
@@ -607,7 +905,7 @@ impl PhysicalPlan {
                 _,
             ) => {
                 lhs.returns_distinct_values(lhs_label, &ColSet::from(ColId(*lhs_field_pos as u16)))
-                    && rhs.is_unique(cols)
+                    && rhs.as_ref().is_unique(&**cols)
             }
             // If the table in question is on the lhs,
             // and if the lhs returns distinct values,
@@ -658,12 +956,11 @@ impl PhysicalPlan {
             Self::Filter(input, expr) => {
                 let mut cols: Vec<_> = cols.iter().collect();
                 expr.visit(&mut |plan| {
-                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan {
-                        if let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value) {
-                            if proj.label == *label {
-                                cols.push(proj.field_pos.into());
-                            }
-                        }
+                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan
+                        && let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value)
+                        && proj.label == *label
+                    {
+                        cols.push(proj.field_pos.into());
                     }
                 });
                 input.returns_distinct_values(label, &ColSet::from_iter(cols))
@@ -674,7 +971,7 @@ impl PhysicalPlan {
 
     pub fn index_on_field(&self, label: &Label, field: usize) -> bool {
         self.any(&|plan| match plan {
-            Self::TableScan(schema, alias, _)
+            Self::TableScan(TableScan { schema, .. }, alias)
             | Self::IxScan(IxScan { schema, .. }, alias)
             | Self::IxJoin(
                 IxJoin {
@@ -696,7 +993,7 @@ impl PhysicalPlan {
     /// Does this plan introduce this label?
     fn has_label(&self, label: &Label) -> bool {
         self.any(&|plan| match plan {
-            Self::TableScan(_, var, _) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
+            Self::TableScan(_, var) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
                 var == label
             }
             _ => false,
@@ -730,7 +1027,7 @@ impl PhysicalPlan {
     fn labels(&self) -> Vec<Label> {
         fn find(plan: &PhysicalPlan, labels: &mut Vec<Label>) {
             match plan {
-                PhysicalPlan::TableScan(_, alias, _)
+                PhysicalPlan::TableScan(_, alias)
                 | PhysicalPlan::IxScan(_, alias)
                 | PhysicalPlan::IxJoin(IxJoin { rhs_label: alias, .. }, Semi::Rhs) => {
                     labels.push(*alias);
@@ -755,6 +1052,146 @@ impl PhysicalPlan {
         find(self, &mut labels);
         labels
     }
+
+    /// Is this operator a table scan with optional label?
+    pub fn is_table_scan(&self, label: Option<&Label>) -> bool {
+        match self {
+            Self::TableScan(_, var) => label.map(|label| var == label).unwrap_or(true),
+            _ => false,
+        }
+    }
+
+    /// Does this plan scan a table with optional label?
+    pub fn has_table_scan(&self, label: Option<&Label>) -> bool {
+        self.any(&|plan| match plan {
+            Self::TableScan(_, var) => label.map(|label| var == label).unwrap_or(true),
+            _ => false,
+        })
+    }
+
+    /// Is this operator a filter?
+    fn is_filter(&self) -> bool {
+        matches!(self, Self::Filter(..))
+    }
+
+    /// Does this plan contain a filter?
+    pub fn has_filter(&self) -> bool {
+        self.any(&|plan| plan.is_filter())
+    }
+
+    /// Is this operator a scan, index or otherwise, of a delta table?
+    pub fn is_delta_scan(&self) -> bool {
+        match self {
+            Self::TableScan(scan, _) => scan.delta.is_some(),
+            Self::IxScan(scan, _) => scan.delta.is_some(),
+            Self::Filter(input, _) => input.is_delta_scan(),
+            _ => false,
+        }
+    }
+
+    /// If this plan has any simple equality filters such as `x = 0`,
+    /// this method returns the values along with the appropriate table and column.
+    /// Note, this excludes compound equality filters such as `x = 0 and y = 1`.
+    /// Note, this must be called on an optimized plan.
+    /// Hence we must assume index scans have already been generated.
+    pub fn search_args(&self) -> Vec<(TableId, ColId, AlgebraicValue)> {
+        let mut args = vec![];
+        self.visit(&mut |op| match op {
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    arg: Sarg::Eq(col_id, value),
+                    ..
+                },
+                _,
+            ) if scan.prefix.is_empty() => {
+                args.push((scan.schema.table_id, *col_id, value.clone()));
+            }
+            PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, a, b)) => {
+                if let (PhysicalExpr::Field(field), PhysicalExpr::Value(value)) = (&**a, &**b) {
+                    input.visit(&mut |op| match op {
+                        PhysicalPlan::TableScan(scan, name) if *name == field.label => {
+                            args.push((scan.schema.table_id, field.field_pos.into(), value.clone()));
+                        }
+                        _ => {}
+                    });
+                }
+            }
+            _ => {}
+        });
+        args
+    }
+
+    /// Does this plan select or return whole (unprojected) rows from a single table?
+    pub fn return_table(&self) -> Option<Arc<TableSchema>> {
+        match self {
+            Self::TableScan(scan, _) => Some(scan.schema.clone()),
+            Self::IxScan(scan, _) => Some(scan.schema.clone()),
+            Self::Filter(input, _) => input.return_table(),
+            Self::IxJoin(join, Semi::Lhs) => join.lhs.return_table(),
+            Self::IxJoin(join, Semi::Rhs) => Some(join.rhs.clone()),
+            Self::HashJoin(join, Semi::Lhs) => join.lhs.return_table(),
+            Self::HashJoin(join, Semi::Rhs) => join.rhs.return_table(),
+            Self::IxJoin(_, Semi::All) | Self::HashJoin(_, Semi::All) | Self::NLJoin(..) => None,
+        }
+    }
+
+    /// Returns the [`TableSchema`] for a return label.
+    /// Returns `None` if the plan does not return this label.
+    pub fn find_table_schema(&self, name: &Label) -> Option<Arc<TableSchema>> {
+        match self {
+            Self::TableScan(scan, label) if name == label => Some(scan.schema.clone()),
+            Self::IxScan(scan, label) if name == label => Some(scan.schema.clone()),
+            Self::Filter(input, _) => input.find_table_schema(name),
+            Self::IxJoin(join, Semi::Rhs | Semi::All) if name == &join.rhs_label => Some(join.rhs.clone()),
+            Self::IxJoin(join, Semi::Lhs | Semi::All) => join.lhs.find_table_schema(name),
+            Self::HashJoin(join, Semi::Lhs) => join.lhs.find_table_schema(name),
+            Self::HashJoin(join, Semi::Rhs) => join.rhs.find_table_schema(name),
+            Self::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) | Self::NLJoin(lhs, rhs) => {
+                lhs.find_table_schema(name).or_else(|| rhs.find_table_schema(name))
+            }
+            _ => None,
+        }
+    }
+
+    /// Does this plan select or return whole (unprojected) rows from a view?
+    pub fn returns_view_table(&self) -> bool {
+        self.return_table().is_some_and(|schema| schema.is_view())
+    }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        self.any(&|plan| match plan {
+            Self::TableScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
+            Self::TableScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
+            Self::IxScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
+            Self::IxScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
+            Self::IxJoin(join, _) if anonymous => join.rhs.is_anonymous_view(),
+            Self::IxJoin(join, _) => join.rhs.is_view() && !join.rhs.is_anonymous_view(),
+            _ => false,
+        })
+    }
+
+    /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
+    ///
+    /// Note, we only care about index joins because this method is only relevant for subscriptions,
+    /// and index joins are the only type of join allowed in subscriptions.
+    pub fn reads_from_event_table(&self) -> bool {
+        self.any(&|plan| match plan {
+            Self::IxJoin(join, _) => join.rhs.is_event,
+            _ => false,
+        })
+    }
+}
+
+/// Scan a table row by row, returning row ids
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableScan {
+    /// The table on which this index is defined
+    pub schema: Arc<TableSchema>,
+    /// Limit the number of rows scanned
+    pub limit: Option<u64>,
+    /// Is this a delta table?
+    pub delta: Option<Delta>,
 }
 
 /// Fetch and return row ids from a btree index
@@ -762,6 +1199,10 @@ impl PhysicalPlan {
 pub struct IxScan {
     /// The table on which this index is defined
     pub schema: Arc<TableSchema>,
+    /// Limit the number of rows scanned
+    pub limit: Option<u64>,
+    /// Is this an index scan over a delta table?
+    pub delta: Option<Delta>,
     /// The index id
     pub index_id: IndexId,
     /// An equality prefix for multi-column scans
@@ -774,6 +1215,17 @@ pub struct IxScan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sarg {
     Eq(ColId, AlgebraicValue),
+    /// NOTE(centril): We currently never construct this variant.
+    /// We do have non-ranged hash indices.
+    /// This means that when we get around to using this variant,
+    /// we must change the rewrite rules such that we do not emit
+    /// [`IxScan`] on a hash index.
+    ///
+    /// Moreover, an equality scan (the variant above)
+    /// `(a0, b0)` on an index `(a, b, c)` is actually a ranged scan.
+    /// We also currently do not emit such `IxScan`s where the number
+    /// of equalities provided are fewer than the number of columns in the index.
+    /// When we do, we must also account for hash indices in the rewrite rules.
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
@@ -802,6 +1254,8 @@ pub struct IxJoin {
     pub rhs_label: Label,
     /// The index id
     pub rhs_index: IndexId,
+    /// Optional constant prefix values for multi-column index probes.
+    pub rhs_prefix: Vec<AlgebraicValue>,
     /// The index field
     pub rhs_field: ColId,
     /// Is the index a unique constraint index?
@@ -810,6 +1264,8 @@ pub struct IxJoin {
     /// Values are projected from the lhs,
     /// and used to probe the index on the rhs.
     pub lhs_field: TupleField,
+    // Is the rhs a delta table?
+    pub rhs_delta: Option<Delta>,
 }
 
 /// Is this a semijoin?
@@ -845,6 +1301,12 @@ pub trait ProjectField {
 impl ProjectField for RowRef<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {
         self.read_col(field.field_pos).unwrap()
+    }
+}
+
+impl ProjectField for &'_ ProductValue {
+    fn project(&self, field: &TupleField) -> AlgebraicValue {
+        self.elements[field.field_pos].clone()
     }
 }
 
@@ -898,8 +1360,21 @@ impl PhysicalExpr {
         self.eval(row).as_bool().copied().unwrap_or(false)
     }
 
+    /// Evaluate this boolean expression over `row`
+    pub fn eval_bool_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> bool {
+        self.eval_with_metrics(row, bytes_scanned)
+            .as_bool()
+            .copied()
+            .unwrap_or(false)
+    }
+
     /// Evaluate this expression over `row`
     fn eval(&self, row: &impl ProjectField) -> Cow<'_, AlgebraicValue> {
+        self.eval_with_metrics(row, &mut 0)
+    }
+
+    /// Evaluate this expression over `row`
+    fn eval_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> Cow<'_, AlgebraicValue> {
         fn eval_bin_op(op: BinOp, a: &AlgebraicValue, b: &AlgebraicValue) -> bool {
             match op {
                 BinOp::Eq => a == b,
@@ -912,20 +1387,28 @@ impl PhysicalExpr {
         }
         let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
         match self {
-            Self::BinOp(op, a, b) => into(eval_bin_op(*op, &a.eval(row), &b.eval(row))),
+            Self::BinOp(op, a, b) => into(eval_bin_op(
+                *op,
+                &a.eval_with_metrics(row, bytes_scanned),
+                &b.eval_with_metrics(row, bytes_scanned),
+            )),
             Self::LogOp(LogOp::And, exprs) => into(
                 exprs
                     .iter()
                     // ALL is equivalent to AND
-                    .all(|expr| expr.eval_bool(row)),
+                    .all(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
             Self::LogOp(LogOp::Or, exprs) => into(
                 exprs
                     .iter()
                     // ANY is equivalent to OR
-                    .any(|expr| expr.eval_bool(row)),
+                    .any(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
-            Self::Field(field) => Cow::Owned(row.project(field)),
+            Self::Field(field) => {
+                let value = row.project(field);
+                *bytes_scanned += value.size_of();
+                Cow::Owned(value)
+            }
             Self::Value(v) => Cow::Borrowed(v),
         }
     }
@@ -962,27 +1445,34 @@ mod tests {
     use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
-    use spacetimedb_expr::check::{parse_and_type_sub, SchemaView};
+    use spacetimedb_expr::{
+        check::{SchemaView, TypingResult},
+        expr::ProjectName,
+        statement::{parse_and_type_sql, Statement},
+    };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
+        identity::AuthCtx,
         AlgebraicType, AlgebraicValue,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
-        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
+        identifier::Identifier,
+        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
+        table_name::TableName,
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
-        compile::compile_project_plan,
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, Semi, TupleField},
+        compile::{compile_select, compile_select_list},
+        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
     };
 
-    use super::{PhysicalExpr, ProjectPlan};
+    use super::{PhysicalExpr, ProjectPlan, TableScan};
 
     struct SchemaViewer {
-        schemas: Vec<Arc<TableSchema>>,
+        schemas: Vec<Arc<TableOrViewSchema>>,
     }
 
     impl SchemaView for SchemaViewer {
@@ -993,8 +1483,12 @@ mod tests {
                 .map(|schema| schema.table_id)
         }
 
-        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             self.schemas.iter().find(|schema| schema.table_id == table_id).cloned()
+        }
+
+        fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
+            Ok(vec![])
         }
     }
 
@@ -1005,18 +1499,20 @@ mod tests {
         indexes: &[&[usize]],
         unique: &[&[usize]],
         primary_key: Option<usize>,
-    ) -> TableSchema {
-        TableSchema::new(
+    ) -> TableOrViewSchema {
+        TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
-            table_name.to_owned().into_boxed_str(),
+            TableName::new(Identifier::for_test(table_name)),
+            None,
             columns
                 .iter()
                 .enumerate()
                 .map(|(i, (name, ty))| ColumnSchema {
                     table_id,
-                    col_name: (*name).to_owned().into_boxed_str(),
+                    col_name: Identifier::for_test(*name),
                     col_pos: i.into(),
                     col_type: ty.clone(),
+                    alias: None,
                 })
                 .collect(),
             indexes
@@ -1025,10 +1521,11 @@ mod tests {
                 .map(|(i, cols)| IndexSchema {
                     table_id,
                     index_id: i.into(),
-                    index_name: "".to_owned().into_boxed_str(),
+                    index_name: "".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                         columns: ColList::from_iter(cols.iter().copied()),
                     }),
+                    alias: None,
                 })
                 .collect(),
             unique
@@ -1037,7 +1534,7 @@ mod tests {
                 .map(|(i, cols)| ConstraintSchema {
                     table_id,
                     constraint_id: i.into(),
-                    constraint_name: "".to_owned().into_boxed_str(),
+                    constraint_name: "".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: ColSet::from_iter(cols.iter().copied()),
                     }),
@@ -1048,7 +1545,14 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
-        )
+            false,
+            None,
+        )))
+    }
+
+    /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
+    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+        spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
     /// No rewrites applied to a simple table scan
@@ -1071,14 +1575,15 @@ mod tests {
 
         let sql = "select * from t";
 
+        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
-            ProjectPlan::None(PhysicalPlan::TableScan(schema, _, _)) => {
+            ProjectPlan::None(PhysicalPlan::TableScan(TableScan { schema, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
             }
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
     }
 
@@ -1102,8 +1607,9 @@ mod tests {
 
         let sql = "select * from t where x = 5";
 
+        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
@@ -1111,23 +1617,23 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(5))));
 
                 match *input {
-                    PhysicalPlan::TableScan(schema, _, _) => {
+                    PhysicalPlan::TableScan(TableScan { schema, .. }, _) => {
                         assert_eq!(schema.table_id, t_id);
                     }
-                    plan => panic!("unexpected plan: {:#?}", plan),
+                    plan => panic!("unexpected plan: {plan:#?}"),
                 }
             }
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
     }
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1201,8 +1707,9 @@ mod tests {
             join b on q.entity_id = b.entity_id
             where u.identity = 5
         ";
+        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Plan:
         //         rx
@@ -1214,7 +1721,7 @@ mod tests {
         // ix(u)  l
         let plan = match pp {
             ProjectPlan::None(plan) => plan,
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
 
         // Plan:
@@ -1240,7 +1747,7 @@ mod tests {
                 assert_eq!(rhs.table_id, b_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1264,7 +1771,7 @@ mod tests {
                 assert_eq!(rhs.table_id, l_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1286,7 +1793,7 @@ mod tests {
                 assert_eq!(rhs.table_id, l_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(u)
@@ -1303,18 +1810,18 @@ mod tests {
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, u_id);
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         }
     }
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1393,8 +1900,9 @@ mod tests {
             join p on p.id = v.project
             where 5 = m.employee and 5 = v.employee
         ";
+        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Plan:
         //           rx
@@ -1408,7 +1916,7 @@ mod tests {
         // ix(m)  m
         let plan = match pp {
             ProjectPlan::None(plan) => plan,
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
 
         // Plan:
@@ -1436,7 +1944,7 @@ mod tests {
                 assert_eq!(rhs.table_id, p_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1458,7 +1966,7 @@ mod tests {
                 },
                 Semi::Rhs,
             ) => (*rhs, *lhs),
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(w)
@@ -1475,7 +1983,7 @@ mod tests {
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, w_id);
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         }
 
         // Plan:
@@ -1499,7 +2007,7 @@ mod tests {
                 assert_eq!(rhs.table_id, w_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1521,7 +2029,7 @@ mod tests {
                 assert_eq!(rhs.table_id, m_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(m)
@@ -1538,7 +2046,7 @@ mod tests {
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, m_id);
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         }
     }
 
@@ -1566,8 +2074,9 @@ mod tests {
         };
 
         let sql = "select * from t where x = 3 and y = 4 and z = 5";
+        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Select index on (x, y, z)
         match pp {
@@ -1584,12 +2093,34 @@ mod tests {
                     vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
                 );
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
+        };
+
+        // Test permutations of the same query
+        let sql = "select * from t where z = 5 and y = 4 and x = 3";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            )) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
+                assert_eq!(
+                    prefix,
+                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
+                );
+            }
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         let sql = "select * from t where x = 3 and y = 4";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Select index on x
         let plan = match pp {
@@ -1598,7 +2129,7 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(4))));
                 *input
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         match plan {
@@ -1612,12 +2143,12 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
                 assert!(prefix.is_empty());
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         let sql = "select * from t where w = 5 and x = 4";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Select index on x
         let plan = match pp {
@@ -1626,7 +2157,7 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(5))));
                 *input
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         match plan {
@@ -1640,12 +2171,12 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(4)));
                 assert!(prefix.is_empty());
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         let sql = "select * from t where y = 1";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Do not select index on (y, z)
         match pp {
@@ -1654,7 +2185,133 @@ mod tests {
                 assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 2, .. })));
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
+
+        // Select index on [y, z]
+        let sql = "select * from t where y = 1 and z = 2";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            )) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
+            }
+            proj => panic!("unexpected plan: {proj:#?}"),
+        };
+
+        // Check permutations of the same query
+        let sql = "select * from t where z = 2 and y = 1";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            )) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
+            }
+            proj => panic!("unexpected plan: {proj:#?}"),
+        };
+
+        // Select index on (y, z) and filter on (w)
+        let sql = "select * from t where w = 1 and y = 2 and z = 3";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        let plan = match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 0, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
+                *input
+            }
+            proj => panic!("unexpected plan: {proj:#?}"),
+        };
+
+        match plan {
+            PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            ) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(3)));
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(2))]);
+            }
+            plan => panic!("unexpected plan: {plan:#?}"),
+        };
+    }
+
+    #[test]
+    fn limit() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("x", AlgebraicType::U8), ("y", AlgebraicType::U8)],
+            &[&[0]],
+            &[],
+            None,
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let compile = |sql| {
+            let stmt = parse_and_type_sql(sql, &db, &AuthCtx::for_testing()).unwrap();
+            let Statement::Select(select) = stmt else {
+                unreachable!()
+            };
+            let auth = AuthCtx::for_testing();
+            compile_select_list(select).optimize(&auth).unwrap()
+        };
+
+        let plan = compile("select * from t limit 5");
+
+        let ProjectListPlan::Name(mut plans) = plan else {
+            panic!("expected a qualified wildcard projection {{table_name}}.*")
+        };
+
+        assert_eq!(plans.len(), 1);
+        assert!(matches!(
+            plans.pop().unwrap(),
+            ProjectPlan::None(PhysicalPlan::TableScan(TableScan { limit: Some(5), .. }, _))
+        ));
+
+        let plan = compile("select * from t where x = 1 limit 5");
+
+        let ProjectListPlan::Name(mut plans) = plan else {
+            panic!("expected a qualified wildcard projection {{table_name}}.*")
+        };
+
+        assert_eq!(plans.len(), 1);
+        assert!(matches!(
+            plans.pop().unwrap(),
+            ProjectPlan::None(PhysicalPlan::IxScan(IxScan { limit: Some(5), .. }, _))
+        ));
+
+        let plan = compile("select * from t where y = 1 limit 5");
+
+        let ProjectListPlan::Limit(plan, 5) = plan else {
+            panic!("expected an outer LIMIT")
+        };
+
+        assert!(plan.plan_iter().any(|plan| plan.has_filter()));
+        assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
     }
 }

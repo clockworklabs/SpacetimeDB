@@ -16,13 +16,17 @@ pub struct EnergyQuanta {
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta { quanta: 0 };
 
+    // per the comment on [`FunctionBudget::DEFAULT_BUDGET`]: 1 second of wasm runtime is roughtly 2 TeV
+    pub const PER_EXECUTION_SEC: Self = Self::new(2_000_000_000_000);
+    pub const PER_EXECUTION_NANOSEC: Self = Self::new(Self::PER_EXECUTION_SEC.get() / 1_000_000_000);
+
     #[inline]
-    pub fn new(quanta: u128) -> Self {
+    pub const fn new(quanta: u128) -> Self {
         Self { quanta }
     }
 
     #[inline]
-    pub fn get(&self) -> u128 {
+    pub const fn get(&self) -> u128 {
         self.quanta
     }
 
@@ -121,19 +125,21 @@ impl fmt::Debug for EnergyBalance {
     }
 }
 
-/// A measure of energy representing the energy budget for a reducer.
+/// A measure of energy representing the energy budget for a reducer or any callable function.
 ///
 /// In contrast to [`EnergyQuanta`], this is represented by a 64-bit integer. This makes energy handling
 /// for reducers easier, while still providing a unlikely-to-ever-be-reached maximum value (e.g. for wasmtime:
 /// `(u64::MAX eV / 1000 eV/instruction) * 3 ns/instruction = 640 days`)
-#[derive(Copy, Clone, From, Add, Sub)]
-pub struct ReducerBudget(u64);
+#[derive(Copy, Clone, From, Add, Sub, AddAssign, SubAssign)]
+pub struct FunctionBudget(u64);
 
-impl ReducerBudget {
-    pub const DEFAULT_BUDGET: Self = ReducerBudget(1_000_000_000_000_000_000);
+impl FunctionBudget {
+    // 1 second of wasm runtime is roughly 2 TeV, so this is
+    // roughly 1 minute of wasm runtime
+    pub const DEFAULT_BUDGET: Self = FunctionBudget(120_000_000_000_000);
 
-    pub const ZERO: Self = ReducerBudget(0);
-    pub const MAX: Self = ReducerBudget(u64::MAX);
+    pub const ZERO: Self = FunctionBudget(0);
+    pub const MAX: Self = FunctionBudget(u64::MAX);
 
     pub fn new(v: u64) -> Self {
         Self(v)
@@ -149,13 +155,13 @@ impl ReducerBudget {
     }
 }
 
-impl From<ReducerBudget> for EnergyQuanta {
-    fn from(value: ReducerBudget) -> Self {
+impl From<FunctionBudget> for EnergyQuanta {
+    fn from(value: FunctionBudget) -> Self {
         EnergyQuanta::new(value.0.into())
     }
 }
 
-impl fmt::Debug for ReducerBudget {
+impl fmt::Debug for FunctionBudget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("ReducerBudget")
             .field(&EnergyQuanta::from(*self))

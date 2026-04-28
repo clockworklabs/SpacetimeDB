@@ -1,37 +1,58 @@
 use std::path::Path;
+use std::time::Duration;
 use std::{fmt, io};
 
-use toml;
-use toml_edit;
-
-use spacetimedb_lib::Address;
+use anyhow::Context;
+use serde::Deserialize;
+use spacetimedb_lib::ConnectionId;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
-
-pub fn current_version() -> semver::Version {
-    env!("CARGO_PKG_VERSION").parse().unwrap()
-}
 
 /// Parse a TOML file at the given path, returning `None` if the file does not exist.
 ///
 /// **WARNING**: Comments and formatting in the file will be lost.
 pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<Option<T>> {
     match std::fs::read_to_string(path) {
-        Ok(contents) => Ok(Some(toml::from_str(&contents)?)),
+        Ok(contents) => {
+            let config =
+                toml::from_str(&contents).with_context(|| format!("invalid TOML syntax in {}", path.display()))?;
+            Ok(Some(config))
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct MetadataFile {
     pub version: semver::Version,
     pub edition: String,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_address: Option<Address>,
+    /// Unused and always `None` in SpacetimeDB-standalone,
+    /// but used by SpacetimeDB-cloud.
+    pub client_connection_id: Option<ConnectionId>,
 }
 
 impl MetadataFile {
+    pub fn new(edition: &str) -> Self {
+        let mut current_version: semver::Version = env!("CARGO_PKG_VERSION").parse().unwrap();
+        // set the patch version of newly-created metadata files to 0 -- v1.0.0
+        // set `cmp.patch = Some(file_version.patch)` when checking version
+        // compatibility, meaning it won't be forwards-compatible with a
+        // database claiming to be created on v1.0.1, even though that should
+        // work. This can be changed once we release v1.1.0, since we don't
+        // care about its DBs being backwards-compatible with v1.0.0 anyway.
+        if let semver::Version { major: 1, minor: 0, .. } = current_version {
+            current_version.patch = 0;
+        }
+        Self {
+            version: current_version,
+            edition: edition.to_owned(),
+            client_connection_id: None,
+        }
+    }
+
     pub fn read(path: &MetadataTomlPath) -> anyhow::Result<Option<Self>> {
         parse_config(path.as_ref())
     }
@@ -40,15 +61,66 @@ impl MetadataFile {
         path.write(self.to_string())
     }
 
-    pub fn version_compatible_with(&self, version: &semver::Version) -> bool {
-        semver::Comparator {
-            op: semver::Op::Caret,
-            major: self.version.major,
-            minor: Some(self.version.minor),
-            patch: Some(self.version.patch),
-            pre: self.version.pre.clone(),
+    fn check_compatibility(previous: &Self, current: &Self, metafile: &Path) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            previous.edition == current.edition,
+            "metadata.toml at {} indicates that this database is from a different \
+            edition of SpacetimeDB (running {:?}, but this database is {:?})",
+            metafile.display(),
+            current.edition,
+            previous.edition,
+        );
+
+        // This is mostly redundant with the caret comparison below, but
+        // pre-releases make it annoying.
+        if previous.version == current.version {
+            return Ok(());
         }
-        .matches(version)
+
+        // Special-case: SpacetimeDB 2.x can run 1.x databases.
+        if previous.version.major == 1 && current.version.major == 2 {
+            return Ok(());
+        }
+
+        let cmp = semver::Comparator {
+            op: semver::Op::Caret,
+            major: previous.version.major,
+            minor: Some(previous.version.minor),
+            patch: None,
+            // We deal with pre-releases separately above.
+            pre: semver::Prerelease::new("").unwrap(),
+        };
+
+        if cmp.matches(&current.version) {
+            return Ok(());
+        }
+
+        let relation = if previous.version > current.version {
+            "a newer, incompatible"
+        } else if previous.version < current.version {
+            "an older, incompatible"
+        } else {
+            "an incompatible"
+        };
+        anyhow::bail!(
+            "metadata.toml indicates that you are running {relation} database. Your running version is {:?}, but the database on disk is from {:?}.",
+            current.version,
+            previous.version,
+        );
+    }
+
+    /// Check if this meta file is compatible with the default meta
+    /// file of a just-started database, and if so return the metadata
+    /// to write back to the file.
+    ///
+    /// `self` is the metadata file read from a database, and current is
+    /// the default metadata file that the active database version would
+    /// right to a new database.
+    pub fn check_compatibility_and_update(mut self, current: Self, metafile: &Path) -> anyhow::Result<Self> {
+        Self::check_compatibility(&self, &current, metafile)?;
+        // bump the version in the file only if it's being run in a newer database.
+        self.version = std::cmp::max(self.version, current.version);
+        Ok(self)
     }
 }
 
@@ -67,6 +139,8 @@ pub struct ConfigFile {
     pub certificate_authority: Option<CertificateAuthority>,
     #[serde(default)]
     pub logs: LogConfig,
+    #[serde(default)]
+    pub v8_heap_policy: V8HeapPolicyConfig,
 }
 
 impl ConfigFile {
@@ -96,7 +170,7 @@ impl CertificateAuthority {
 }
 
 #[serde_with::serde_as]
-#[derive(serde::Deserialize, Default)]
+#[derive(Clone, serde::Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct LogConfig {
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
@@ -105,49 +179,299 @@ pub struct LogConfig {
     pub directives: Vec<String>,
 }
 
-/// Update the value of a key in a `TOML` document, preserving the formatting and comments of the original value.
-///
-/// ie:
-///
-/// ```toml;no_run
-/// # Moving key = value to key = new_value
-/// old = "value" # Comment
-/// new = "new_value" # Comment
-/// ```
-fn copy_value_with_decor(old_value: Option<&toml_edit::Item>, new_value: &str) -> toml_edit::Item {
-    match old_value {
-        Some(toml_edit::Item::Value(toml_edit::Value::String(old_value))) => {
-            // Creates a new `toml_edit::Value` with the same formatting as the old value.
-            let mut new = toml_edit::Value::String(toml_edit::Formatted::new(new_value.to_string()));
-            let decor = new.decor_mut();
-            // Copy the comments and formatting from the old value.
-            *decor = old_value.decor().clone();
-            new.into()
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct V8HeapPolicyConfig {
+    #[serde(default = "def_req_interval", deserialize_with = "de_nz_u64")]
+    pub heap_check_request_interval: Option<u64>,
+    #[serde(default = "def_time_interval", deserialize_with = "de_nz_duration")]
+    pub heap_check_time_interval: Option<Duration>,
+    #[serde(default = "def_gc_trigger", deserialize_with = "de_fraction")]
+    pub heap_gc_trigger_fraction: f64,
+    #[serde(default = "def_retire", deserialize_with = "de_fraction")]
+    pub heap_retire_fraction: f64,
+    #[serde(
+        default = "def_heap_limit",
+        rename = "heap-limit-mb",
+        deserialize_with = "de_limit_mb"
+    )]
+    pub heap_limit_bytes: usize,
+}
+
+impl Default for V8HeapPolicyConfig {
+    fn default() -> Self {
+        Self {
+            heap_check_request_interval: def_req_interval(),
+            heap_check_time_interval: def_time_interval(),
+            heap_gc_trigger_fraction: def_gc_trigger(),
+            heap_retire_fraction: def_retire(),
+            heap_limit_bytes: def_heap_limit(),
         }
-        _ => new_value.into(),
     }
 }
 
-/// Set the value of a key in a `TOML` document, removing the key if the value is `None`.
-///
-/// **NOTE**: This function will preserve the formatting and comments of the original value.
-pub fn set_opt_value(doc: &mut toml_edit::DocumentMut, key: &str, value: Option<&str>) {
-    let old_value = doc.get(key);
-    if let Some(new) = value {
-        doc[key] = copy_value_with_decor(old_value, new);
-    } else {
-        doc.remove(key);
+impl V8HeapPolicyConfig {
+    pub fn normalized(mut self) -> Self {
+        if self.heap_retire_fraction < self.heap_gc_trigger_fraction {
+            log::warn!(
+                "v8-heap-policy.heap-retire-fraction ({}) is below \
+                 v8-heap-policy.heap-gc-trigger-fraction ({}); using the GC trigger fraction for both",
+                self.heap_retire_fraction,
+                self.heap_gc_trigger_fraction,
+            );
+            self.heap_retire_fraction = self.heap_gc_trigger_fraction;
+        }
+
+        self
     }
 }
 
-/// Set the value of a key in a `TOML` table, removing the key if the value is `None`.
-///
-/// **NOTE**: This function will preserve the formatting and comments of the original value.
-pub fn set_table_opt_value(table: &mut toml_edit::Table, key: &str, value: Option<&str>) {
-    let old_value = table.get(key);
-    if let Some(new) = value {
-        table[key] = copy_value_with_decor(old_value, new);
+/// Default number of requests between V8 heap checks.
+fn def_req_interval() -> Option<u64> {
+    Some(4_096)
+}
+
+/// Default wall-clock interval between V8 heap checks.
+fn def_time_interval() -> Option<Duration> {
+    Some(Duration::from_secs(5))
+}
+
+/// Default heap fill fraction that triggers a GC.
+fn def_gc_trigger() -> f64 {
+    0.67
+}
+
+/// Default heap fill fraction that retires the worker after a GC.
+fn def_retire() -> f64 {
+    0.75
+}
+
+/// Default heap limit, in bytes
+fn def_heap_limit() -> usize {
+    // 1 GiB
+    1024 * 1024 * 1024
+}
+
+fn de_nz_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = u64::deserialize(deserializer)?;
+    Ok((value != 0).then_some(value))
+}
+
+fn de_nz_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum DurationValue {
+        String(String),
+        Seconds(u64),
+    }
+
+    let duration = match DurationValue::deserialize(deserializer)? {
+        DurationValue::String(value) => humantime::parse_duration(&value).map_err(serde::de::Error::custom)?,
+        DurationValue::Seconds(value) => Duration::from_secs(value),
+    };
+
+    Ok((!duration.is_zero()).then_some(duration))
+}
+
+fn de_fraction<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum FractionValue {
+        Integer(u64),
+        Float(f64),
+    }
+
+    let value = match FractionValue::deserialize(deserializer)? {
+        FractionValue::Integer(value) => value as f64,
+        FractionValue::Float(value) => value,
+    };
+
+    if value.is_finite() && (0.0..=1.0).contains(&value) {
+        Ok(value)
     } else {
-        table.remove(key);
+        Err(serde::de::Error::custom(format!(
+            "expected a fraction between 0.0 and 1.0, got {value}"
+        )))
+    }
+}
+
+fn de_limit_mb<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = u64::deserialize(deserializer)?;
+    if value == 0 {
+        return Ok(def_heap_limit());
+    }
+
+    let bytes = value
+        .checked_mul(1024 * 1024)
+        .ok_or_else(|| serde::de::Error::custom("heap-limit-mb is too large"))?;
+
+    usize::try_from(bytes).map_err(|_| serde::de::Error::custom("heap-limit-mb does not fit in usize"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn mkver(major: u64, minor: u64, patch: u64) -> semver::Version {
+        semver::Version::new(major, minor, patch)
+    }
+
+    fn mkver_pre(major: u64, minor: u64, patch: u64, pre: &str) -> semver::Version {
+        semver::Version {
+            major,
+            minor,
+            patch,
+            pre: semver::Prerelease::new(pre).unwrap(),
+            build: semver::BuildMetadata::EMPTY,
+        }
+    }
+
+    fn mkmeta(major: u64, minor: u64, patch: u64) -> MetadataFile {
+        MetadataFile {
+            version: mkver(major, minor, patch),
+            edition: "standalone".to_owned(),
+            client_connection_id: None,
+        }
+    }
+
+    fn mkmeta_pre(major: u64, minor: u64, patch: u64, pre: &str) -> MetadataFile {
+        MetadataFile {
+            version: mkver_pre(major, minor, patch, pre),
+            edition: "standalone".to_owned(),
+            client_connection_id: None,
+        }
+    }
+
+    #[test]
+    fn parse_config_reports_the_invalid_file_path() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, "[module]\nname = \"my-project\n").unwrap();
+
+        let err = match parse_config::<ConfigFile>(&path) {
+            Ok(_) => panic!("expected invalid TOML to fail"),
+            Err(err) => format!("{err:#}"),
+        };
+        assert!(err.contains("invalid TOML syntax"));
+        assert!(err.contains("config.toml"));
+        assert!(err.contains("line 2"));
+    }
+
+    #[test]
+    fn check_metadata_compatibility_checking() {
+        assert_eq!(
+            mkmeta(1, 0, 0)
+                .check_compatibility_and_update(mkmeta(1, 0, 1), Path::new("metadata.toml"))
+                .unwrap()
+                .version,
+            mkver(1, 0, 1)
+        );
+        assert_eq!(
+            mkmeta(1, 0, 1)
+                .check_compatibility_and_update(mkmeta(1, 0, 0), Path::new("metadata.toml"))
+                .unwrap()
+                .version,
+            mkver(1, 0, 1)
+        );
+
+        mkmeta(1, 1, 0)
+            .check_compatibility_and_update(mkmeta(1, 0, 5), Path::new("metadata.toml"))
+            .unwrap_err();
+        mkmeta(2, 0, 0)
+            .check_compatibility_and_update(mkmeta(1, 3, 5), Path::new("metadata.toml"))
+            .unwrap_err();
+        assert_eq!(
+            mkmeta(1, 12, 0)
+                .check_compatibility_and_update(mkmeta(2, 0, 0), Path::new("metadata.toml"))
+                .unwrap()
+                .version,
+            mkver(2, 0, 0)
+        );
+        mkmeta(2, 0, 0)
+            .check_compatibility_and_update(mkmeta(3, 0, 0), Path::new("metadata.toml"))
+            .unwrap_err();
+    }
+
+    #[test]
+    fn check_metadata_compatibility_prerelease() {
+        mkmeta(1, 9, 0)
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta(2, 0, 1), Path::new("metadata.toml"))
+            .unwrap();
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta(2, 0, 0), Path::new("metadata.toml"))
+            .unwrap();
+
+        // Now check some failures..
+
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"), Path::new("metadata.toml"))
+            .unwrap_err();
+
+        mkmeta_pre(2, 0, 0, "rc2")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap_err();
+
+        mkmeta(2, 0, 0)
+            .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap_err();
+    }
+
+    #[test]
+    fn v8_heap_policy_defaults_when_omitted() {
+        let config: ConfigFile = toml::from_str("").unwrap();
+
+        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(4_096));
+        assert_eq!(
+            config.v8_heap_policy.heap_check_time_interval,
+            Some(Duration::from_secs(5))
+        );
+        assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.67);
+        assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.75);
+        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn v8_heap_policy_parses_from_toml() {
+        let toml = r#"
+            [v8-heap-policy]
+            heap-check-request-interval = 0
+            heap-check-time-interval = "45s"
+            heap-gc-trigger-fraction = 0.6
+            heap-retire-fraction = 0.8
+            heap-limit-mb = 256
+        "#;
+
+        let config: ConfigFile = toml::from_str(toml).unwrap();
+
+        assert_eq!(config.v8_heap_policy.heap_check_request_interval, None);
+        assert_eq!(
+            config.v8_heap_policy.heap_check_time_interval,
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
+        assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.8);
+        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 256 * 1024 * 1024);
     }
 }

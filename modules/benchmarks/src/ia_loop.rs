@@ -3,10 +3,10 @@
 #![allow(clippy::too_many_arguments, unused_variables)]
 
 use crate::Load;
-use spacetimedb::{log, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::{log, ReducerContext, SpacetimeType, Table};
 use std::hash::{Hash, Hasher};
 
-#[spacetimedb::table(name = velocity)]
+#[spacetimedb::table(accessor = velocity)]
 pub struct Velocity {
     #[primary_key]
     pub entity_id: u32,
@@ -21,7 +21,7 @@ impl Velocity {
     }
 }
 
-#[spacetimedb::table(name = position)]
+#[spacetimedb::table(accessor = position)]
 pub struct Position {
     #[primary_key]
     pub entity_id: u32,
@@ -48,11 +48,14 @@ impl Position {
 }
 
 pub fn moment_milliseconds() -> u64 {
-    Timestamp::from_micros_since_epoch(1000)
-        .duration_since(Timestamp::UNIX_EPOCH)
-        .ok()
-        .unwrap()
-        .as_millis() as u64
+    1
+    // Duration::from_micros(1000).as_millis() as u64
+    // or previously...
+    // Timestamp::from_micros_since_unix_epoch(1000)
+    //     .duration_since(Timestamp::UNIX_EPOCH)
+    //     .ok()
+    //     .unwrap()
+    //     .as_millis() as u64
 }
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
@@ -65,7 +68,7 @@ pub enum AgentAction {
     Fighting,
 }
 
-#[spacetimedb::table(name = game_enemy_ai_agent_state)]
+#[spacetimedb::table(accessor = game_enemy_ai_agent_state)]
 #[derive(Clone)]
 pub struct GameEnemyAiAgentState {
     #[primary_key]
@@ -75,7 +78,7 @@ pub struct GameEnemyAiAgentState {
     pub action: AgentAction,
 }
 
-#[spacetimedb::table(name = game_targetable_state)]
+#[spacetimedb::table(accessor = game_targetable_state)]
 #[derive(Clone)]
 pub struct GameTargetableState {
     #[primary_key]
@@ -83,7 +86,7 @@ pub struct GameTargetableState {
     pub quad: i64,
 }
 
-#[spacetimedb::table(name = game_live_targetable_state)]
+#[spacetimedb::table(accessor = game_live_targetable_state)]
 pub struct GameLiveTargetableState {
     #[unique]
     pub entity_id: u64,
@@ -91,7 +94,7 @@ pub struct GameLiveTargetableState {
     pub quad: i64,
 }
 
-#[spacetimedb::table(name = game_mobile_entity_state)]
+#[spacetimedb::table(accessor = game_mobile_entity_state)]
 pub struct GameMobileEntityState {
     #[primary_key]
     pub entity_id: u64,
@@ -102,7 +105,7 @@ pub struct GameMobileEntityState {
     pub timestamp: u64,
 }
 
-#[spacetimedb::table(name = game_enemy_state)]
+#[spacetimedb::table(accessor = game_enemy_state)]
 #[derive(Clone)]
 pub struct GameEnemyState {
     #[primary_key]
@@ -117,7 +120,7 @@ pub struct SmallHexTile {
     pub dimension: u32,
 }
 
-#[spacetimedb::table(name = game_herd_cache)]
+#[spacetimedb::table(accessor = game_herd_cache)]
 #[derive(Clone, Debug)]
 pub struct GameHerdCache {
     #[primary_key]
@@ -329,13 +332,11 @@ fn move_agent(
         .find(entity_id)
         .is_some()
     {
-        ctx.db
-            .game_live_targetable_state()
-            .entity_id()
-            .update(GameLiveTargetableState {
-                entity_id,
-                quad: new_hash,
-            });
+        ctx.db.game_live_targetable_state().entity_id().delete(entity_id);
+        ctx.db.game_live_targetable_state().insert(GameLiveTargetableState {
+            entity_id,
+            quad: new_hash,
+        });
     }
     let mobile_entity = ctx
         .db

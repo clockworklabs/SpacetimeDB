@@ -10,9 +10,9 @@ use core::fmt;
 /// as arrays are homogenous dynamically sized product types.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ArrayValue {
-    /// An array of [`SumValue`](crate::SumValue)s.
+    /// An array of [`SumValue`]s.
     Sum(Box<[SumValue]>),
-    /// An array of [`ProductValue`](crate::ProductValue)s.
+    /// An array of [`ProductValue`]s.
     Product(Box<[ProductValue]>),
     /// An array of [`bool`]s.
     Bool(Box<[bool]>),
@@ -113,7 +113,7 @@ impl ArrayValue {
     }
 
     /// Returns a cloning iterator on the elements of `self` as `AlgebraicValue`s.
-    pub fn iter_cloned(&self) -> ArrayValueIterCloned {
+    pub fn iter_cloned(&self) -> ArrayValueIterCloned<'_> {
         match self {
             ArrayValue::Sum(v) => ArrayValueIterCloned::Sum(v.iter()),
             ArrayValue::Product(v) => ArrayValueIterCloned::Product(v.iter()),

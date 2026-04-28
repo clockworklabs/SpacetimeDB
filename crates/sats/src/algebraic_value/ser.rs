@@ -1,6 +1,8 @@
+use crate::bsatn::decode;
+use crate::de::DeserializeSeed;
 use crate::ser::{self, ForwardNamedToSeqProduct, Serialize};
-use crate::{i256, u256};
-use crate::{AlgebraicType, AlgebraicValue, ArrayValue, F32, F64};
+use crate::{i256, u256, WithTypespace};
+use crate::{AlgebraicValue, ArrayValue, F32, F64};
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -81,18 +83,25 @@ impl ser::Serializer for ValueSerializer {
         value.serialize(self).map(|v| AlgebraicValue::sum(tag, v))
     }
 
-    unsafe fn serialize_bsatn(self, ty: &AlgebraicType, mut bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        let res = AlgebraicValue::decode(ty, &mut bsatn);
+    unsafe fn serialize_bsatn<Ty>(self, ty: &Ty, mut bsatn: &[u8]) -> Result<Self::Ok, Self::Error>
+    where
+        for<'a, 'de> WithTypespace<'a, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
+        let res = decode(ty, &mut bsatn);
         // SAFETY: Caller promised that `res.is_ok()`.
-        Ok(unsafe { res.unwrap_unchecked() })
+        let val = unsafe { res.unwrap_unchecked() };
+        Ok(val.into())
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'a, Ty, I: Iterator<Item = &'a [u8]>>(
         self,
-        ty: &crate::AlgebraicType,
+        ty: &Ty,
         total_bsatn_len: usize,
         chunks: I,
-    ) -> Result<Self::Ok, Self::Error> {
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        for<'b, 'de> WithTypespace<'b, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
         // SAFETY: Caller promised `total_bsatn_len == chunks.map(|c| c.len()).sum() <= isize::MAX`.
         unsafe {
             concat_byte_chunks_buf(total_bsatn_len, chunks, |bsatn| {
@@ -206,8 +215,8 @@ unsafe fn write_byte_chunks<'a>(mut dst: *mut u8, chunks: impl Iterator<Item = &
 
 /// Convert a `[MaybeUninit<T>]` into a `[T]` by asserting all elements are initialized.
 ///
-/// Identitcal copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
-/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref
+/// Identical copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
+/// <https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref>
 ///
 /// # Safety
 ///

@@ -4,30 +4,44 @@
 
 partial class Timers
 {
-    partial struct SendMessageTimer : SpacetimeDB.BSATN.IStructuralReadWrite
+    partial struct SendMessageTimer
+        : System.IEquatable<SendMessageTimer>,
+            SpacetimeDB.BSATN.IStructuralReadWrite
     {
         public void ReadFields(System.IO.BinaryReader reader)
         {
-            ScheduledId = BSATN.ScheduledId.Read(reader);
-            ScheduledAt = BSATN.ScheduledAt.Read(reader);
-            Text = BSATN.Text.Read(reader);
+            ScheduledId = BSATN.ScheduledIdRW.Read(reader);
+            ScheduledAt = BSATN.ScheduledAtRW.Read(reader);
+            Text = BSATN.TextRW.Read(reader);
         }
 
         public void WriteFields(System.IO.BinaryWriter writer)
         {
-            BSATN.ScheduledId.Write(writer, ScheduledId);
-            BSATN.ScheduledAt.Write(writer, ScheduledAt);
-            BSATN.Text.Write(writer, Text);
+            BSATN.ScheduledIdRW.Write(writer, ScheduledId);
+            BSATN.ScheduledAtRW.Write(writer, ScheduledAt);
+            BSATN.TextRW.Write(writer, Text);
         }
+
+        object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+        {
+            return new BSATN();
+        }
+
+        public override string ToString() =>
+            $"SendMessageTimer {{ ScheduledId = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledId)}, ScheduledAt = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledAt)}, Text = {SpacetimeDB.BSATN.StringUtil.GenericToString(Text)} }}";
 
         public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<Timers.SendMessageTimer>
         {
-            internal static readonly SpacetimeDB.BSATN.U64 ScheduledId = new();
-            internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAt = new();
-            internal static readonly SpacetimeDB.BSATN.String Text = new();
+            internal static readonly SpacetimeDB.BSATN.U64 ScheduledIdRW = new();
+            internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAtRW = new();
+            internal static readonly SpacetimeDB.BSATN.String TextRW = new();
 
-            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader) =>
-                SpacetimeDB.BSATN.IStructuralReadWrite.Read<Timers.SendMessageTimer>(reader);
+            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader)
+            {
+                var ___result = new Timers.SendMessageTimer();
+                ___result.ReadFields(reader);
+                return ___result;
+            }
 
             public void Write(System.IO.BinaryWriter writer, Timers.SendMessageTimer value)
             {
@@ -41,9 +55,9 @@ partial class Timers
                     _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                         new SpacetimeDB.BSATN.AggregateElement[]
                         {
-                            new(nameof(ScheduledId), ScheduledId.GetAlgebraicType(registrar)),
-                            new(nameof(ScheduledAt), ScheduledAt.GetAlgebraicType(registrar)),
-                            new(nameof(Text), Text.GetAlgebraicType(registrar))
+                            new("ScheduledId", ScheduledIdRW.GetAlgebraicType(registrar)),
+                            new("ScheduledAt", ScheduledAtRW.GetAlgebraicType(registrar)),
+                            new("Text", TextRW.GetAlgebraicType(registrar))
                         }
                     )
                 );
@@ -52,5 +66,58 @@ partial class Timers
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
             ) => GetAlgebraicType(registrar);
         }
+
+        public override int GetHashCode()
+        {
+            var ___hashScheduledId = ScheduledId.GetHashCode();
+            var ___hashScheduledAt = ScheduledAt == null ? 0 : ScheduledAt.GetHashCode();
+            var ___hashText = Text == null ? 0 : Text.GetHashCode();
+            return ___hashScheduledId ^ ___hashScheduledAt ^ ___hashText;
+        }
+
+#nullable enable
+        public bool Equals(Timers.SendMessageTimer that)
+        {
+            var ___eqScheduledId = this.ScheduledId.Equals(that.ScheduledId);
+            var ___eqScheduledAt =
+                this.ScheduledAt == null
+                    ? that.ScheduledAt == null
+                    : this.ScheduledAt.Equals(that.ScheduledAt);
+            var ___eqText = this.Text == null ? that.Text == null : this.Text.Equals(that.Text);
+            return ___eqScheduledId && ___eqScheduledAt && ___eqText;
+        }
+
+        public override bool Equals(object? that)
+        {
+            if (that == null)
+            {
+                return false;
+            }
+            var that_ = that as Timers.SendMessageTimer?;
+            if (((object?)that_) == null)
+            {
+                return false;
+            }
+            return Equals(that_);
+        }
+
+        public static bool operator ==(Timers.SendMessageTimer this_, Timers.SendMessageTimer that)
+        {
+            if (((object?)this_) == null || ((object?)that) == null)
+            {
+                return object.Equals(this_, that);
+            }
+            return this_.Equals(that);
+        }
+
+        public static bool operator !=(Timers.SendMessageTimer this_, Timers.SendMessageTimer that)
+        {
+            if (((object?)this_) == null || ((object?)that) == null)
+            {
+                return !object.Equals(this_, that);
+            }
+            return !this_.Equals(that);
+        }
+#nullable restore
     } // SendMessageTimer
 } // Timers

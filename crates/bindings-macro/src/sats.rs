@@ -19,6 +19,8 @@ pub(crate) struct SatsType<'a> {
     #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
+    /// Was the type marked as `#[repr(C)]`?
+    pub is_repr_c: bool,
 }
 
 pub(crate) enum SatsTypeData<'a> {
@@ -78,6 +80,17 @@ pub(crate) fn sats_type_from_derive(
     extract_sats_type(&input.ident, &input.generics, &input.attrs, data, crate_fallback)
 }
 
+fn is_repr_c(attrs: &[syn::Attribute]) -> bool {
+    let mut is_repr_c = false;
+    for attr in attrs.iter().filter(|a| a.path() == sym::repr) {
+        let _ = attr.parse_nested_meta(|meta| {
+            is_repr_c |= meta.path.is_ident("C");
+            Ok(())
+        });
+    }
+    is_repr_c
+}
+
 pub(crate) fn extract_sats_type<'a>(
     ident: &'a syn::Ident,
     generics: &'a syn::Generics,
@@ -112,6 +125,8 @@ pub(crate) fn extract_sats_type<'a>(
     let krate = krate.unwrap_or(crate_fallback);
     let name = name.unwrap_or_else(|| crate::util::ident_to_litstr(ident));
 
+    let is_repr_c = is_repr_c(attrs);
+
     Ok(SatsType {
         ident,
         generics,
@@ -119,6 +134,7 @@ pub(crate) fn extract_sats_type<'a>(
         krate,
         original_attrs: attrs,
         data,
+        is_repr_c,
     })
 }
 
@@ -127,6 +143,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     let name = &ty.ident;
     let krate = &ty.krate;
 
+    let mut add_impls_for_plain_enum = false;
     let typ = match &ty.data {
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
@@ -150,6 +167,10 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
             )
         }
         SatsTypeData::Sum(variants) => {
+            // To allow an enum, with all-unit variants, as an index key type,
+            // add derive `Filterable` for the enum.
+            add_impls_for_plain_enum = variants.iter().all(|var| var.ty.is_none());
+
             let unit = syn::Type::Tuple(syn::TypeTuple {
                 paren_token: Default::default(),
                 elems: Default::default(),
@@ -170,8 +191,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
                     [#(#variants),*]
                 )
             )
-            // todo!()
-        } // syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
+        }
     };
 
     let mut sats_generics = ty.generics.clone();
@@ -189,7 +209,47 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     }
     let (_, typeid_ty_generics, _) = typeid_generics.split_for_impl();
 
+    let impl_plain_enum_extras = if add_impls_for_plain_enum {
+        // These will mostly be empty as lifetime and type parameters must be constrained
+        // but const parameters don't require constraining.
+        let mut generics = ty.generics.clone();
+        add_type_bounds(&mut generics, &quote!(#krate::FilterableValue));
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        // Assume that the type is `Copy`, as most all-unit enums will be.
+        let filterable_impl = quote! {
+            #[automatically_derived]
+            impl #impl_generics #krate::Private for #name #ty_generics #where_clause {}
+                #[automatically_derived]
+            impl #impl_generics #krate::FilterableValue for #name #ty_generics #where_clause {
+                type Column = #name #ty_generics;
+            }
+            #[automatically_derived]
+            impl #impl_generics #krate::Private for &#name #ty_generics #where_clause {}
+            #[automatically_derived]
+            impl #impl_generics #krate::FilterableValue for &#name #ty_generics #where_clause {
+                type Column = #name #ty_generics;
+            }
+        };
+
+        let mut generics = ty.generics.clone();
+        add_type_bounds(&mut generics, &quote!(#krate::DirectIndexKey));
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        let dik_impl = quote! {
+            #[automatically_derived]
+            impl #impl_generics #krate::DirectIndexKey for #name #ty_generics #where_clause {}
+        };
+
+        Some(quote! {
+            #filterable_impl
+            #dik_impl
+        })
+    } else {
+        None
+    };
+
     quote! {
+        #impl_plain_enum_extras
+
         #[automatically_derived]
         impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
             fn make_type<S: #krate::sats::typespace::TypespaceBuilder>(__typespace: &mut S) -> #krate::sats::AlgebraicType {
@@ -220,6 +280,48 @@ fn add_type_bounds(generics: &mut syn::Generics, trait_bound: &TokenStream) {
     }
 }
 
+/// Returns the list of types if syntactically we see that the `ty`
+/// is `#[repr(C)]` of only primitives.
+///
+/// We later assert semantically in generated code that the list of types
+/// actually are primitives.
+/// We'll also check that `ty` is paddingless.
+fn extract_repr_c_primitive<'a>(ty: &'a SatsType) -> Option<Vec<&'a syn::Ident>> {
+    // Ensure we have a `#[repr(C)]` struct.
+    if !ty.is_repr_c {
+        return None;
+    }
+    let SatsTypeData::Product(fields) = &ty.data else {
+        return None;
+    };
+
+    // Ensure every field is a primitive and collect the idents.
+    const PRIM_TY: &[sym::Symbol] = &[
+        sym::u8,
+        sym::i8,
+        sym::u16,
+        sym::i16,
+        sym::u32,
+        sym::i32,
+        sym::u64,
+        sym::i64,
+        sym::u128,
+        sym::i128,
+        sym::f32,
+        sym::f64,
+    ];
+    let mut field_tys = Vec::with_capacity(fields.len());
+    for field in fields {
+        if let syn::Type::Path(ty) = &field.ty {
+            let ident = ty.path.get_ident().filter(|ident| PRIM_TY.iter().any(|p| ident == p))?;
+            field_tys.push(ident);
+        } else {
+            return None;
+        }
+    }
+    Some(field_tys)
+}
+
 pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
     let (name, tuple_name) = (&ty.ident, &ty.name);
     let spacetimedb_lib = &ty.krate;
@@ -245,23 +347,61 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
     de_generics.params.insert(0, de_lt_param.into());
     let (de_impl_generics, _, de_where_clause) = de_generics.split_for_impl();
 
-    let (iter_n, iter_n2, iter_n3) = (0usize.., 0usize.., 0usize..);
+    let (iter_n, iter_n2, iter_n3, iter_n4, iter_n5, iter_n6, iter_n7) =
+        (0usize.., 0usize.., 0usize.., 0usize.., 0usize.., 0usize.., 0usize..);
 
     match &ty.data {
         SatsTypeData::Product(fields) => {
+            let mut fast_body = None;
+            if let Some(fields) = extract_repr_c_primitive(ty) {
+                fast_body = Some(quote! {
+                    #[inline(always)]
+                    fn deserialize_from_bsatn<R: #spacetimedb_lib::buffer::BufReader<'de>>(
+                        mut deserializer: #spacetimedb_lib::bsatn::Deserializer<'de, R>
+                    ) -> Result<Self, #spacetimedb_lib::bsatn::DecodeError> {
+                        const _: () = {
+                            #(#spacetimedb_lib::bsatn::assert_is_primitive_type::<#fields>();)*
+                        };
+                        // This guarantees that `Self` has no padding.
+                        if const { core::mem::size_of::<Self>() == #(core::mem::size_of::<#fields>())+* } {
+                            let bytes = deserializer.get_slice(core::mem::size_of::<Self>())?;
+                            let ptr = bytes as *const [u8] as *const u8 as *const Self;
+                            // SAFETY:
+                            // - `ptr` is valid for reads, `size_of::<T>()`.
+                            // - `ptr` is trivially properly aligned (alignment = 1).
+                            // - `ptr` points to a properly initialized `Foo`
+                            //   as we've guaranteed that there is no padding.
+                            Ok(unsafe { core::ptr::read(ptr) })
+                        } else {
+                            Self::deserialize(deserializer)
+                        }
+                    }
+                });
+            }
+
             let n_fields = fields.len();
 
             let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
             let field_strings = fields.iter().map(|f| f.name.as_deref().unwrap()).collect::<Vec<_>>();
-            let field_types = fields.iter().map(|f| &f.ty);
+            let field_types = fields.iter().map(|f| f.ty);
             let field_types2 = field_types.clone();
+            let field_types3 = field_types.clone();
+            let field_types4 = field_types.clone();
             quote! {
                 #[allow(non_camel_case_types)]
                 #[allow(clippy::all)]
                 const _: () = {
                     impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #de_where_clause {
+                        #fast_body
+
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                             deserializer.deserialize_product(__ProductVisitor {
+                                _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
+                            })
+                        }
+
+                        fn validate<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+                            deserializer.validate_product(__ProductVisitor {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
                             })
                         }
@@ -288,6 +428,13 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                         .ok_or_else(|| #spacetimedb_lib::de::Error::invalid_product_length(#iter_n, &self))?,)*
                             })
                         }
+                        fn validate_seq_product<A: #spacetimedb_lib::de::SeqProductAccess<'de>>(self, mut tup: A) -> Result<(), A::Error> {
+                            #(
+                                tup.validate_next_element::<#field_types2>()?
+                                    .ok_or_else(|| #spacetimedb_lib::de::Error::invalid_product_length(#iter_n2, &self))?;
+                            )*
+                            Ok(())
+                        }
                         fn visit_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<Self::Output, A::Error> {
                             #(let mut #field_names = None;)*
                             while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
@@ -296,30 +443,59 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                 match __field {
                                     #(__ProductFieldIdent::#field_names => {
                                         if #field_names.is_some() {
-                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n2, Some(#field_strings), &self))
+                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n3, Some(#field_strings), &self))
                                         }
-                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value::<#field_types2>(&mut __prod)?)
+                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value::<#field_types3>(&mut __prod)?)
                                     })*
                                 }
                             }
                             Ok(#name {
                                 #(#field_names:
-                                    #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n3, Some(#field_strings), &self))?,)*
+                                    #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n4, Some(#field_strings), &self))?,)*
                             })
+                        }
+                        fn validate_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<(), A::Error> {
+                            #(let mut #field_names = false;)*
+                            while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
+                                _marker: std::marker::PhantomData,
+                            })? {
+                                match __field {
+                                    #(__ProductFieldIdent::#field_names => {
+                                        if #field_names {
+                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n5, Some(#field_strings), &self))
+                                        }
+                                        #spacetimedb_lib::de::NamedProductAccess::validate_field_value::<#field_types4>(&mut __prod)?;
+                                        #field_names = true;
+                                    })*
+                                }
+                            }
+                            #(
+                                if !#field_names {
+                                    return Err(#spacetimedb_lib::de::Error::missing_field(#iter_n6, Some(#field_strings), &self));
+                                }
+                            )*
+                            Ok(())
                         }
                     }
 
                     impl #de_impl_generics #spacetimedb_lib::de::FieldNameVisitor<'de> for __ProductVisitor #ty_generics #de_where_clause {
                         type Output = __ProductFieldIdent;
 
-                        fn field_names(&self, names: &mut dyn #spacetimedb_lib::de::ValidNames) {
-                            names.extend::<&[&str]>(&[#(#field_strings),*])
+                        fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>> {
+                            [#(#field_strings),*].into_iter().map(Some)
                         }
 
                         fn visit<__E: #spacetimedb_lib::de::Error>(self, name: &str) -> Result<Self::Output, __E> {
                             match name {
                                 #(#field_strings => Ok(__ProductFieldIdent::#field_names),)*
                                 _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
+                            }
+                        }
+
+                        fn visit_seq(self, index: usize) -> Self::Output {
+                            match index {
+                                #(#iter_n7 => __ProductFieldIdent::#field_names,)*
+                                _ => core::unreachable!(),
                             }
                         }
                     }
@@ -350,12 +526,30 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                     }
                 }
             });
+            let arms_validate = variants.iter().map(|var| {
+                let ident = var.ident;
+                if let Some(ty) = var.ty {
+                    quote! {
+                        __Variant::#ident => #spacetimedb_lib::de::VariantAccess::validate::<#ty>(__access)?,
+                    }
+                } else {
+                    quote! {
+                        __Variant::#ident => #spacetimedb_lib::de::VariantAccess::validate::<()>(__access)?,
+                    }
+                }
+            });
             quote! {
                 #[allow(clippy::all)]
                 const _: () = {
                     impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #de_where_clause {
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                             deserializer.deserialize_sum(__SumVisitor {
+                                _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
+                            })
+                        }
+
+                        fn validate<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+                            deserializer.validate_sum(__SumVisitor {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
                             })
                         }
@@ -378,6 +572,14 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                 #(#arms)*
                             }
                         }
+
+                        fn validate_sum<A: #spacetimedb_lib::de::SumAccess<'de>>(self, __data: A) -> Result<(), A::Error> {
+                            let (__variant, __access) = __data.variant(self)?;
+                            match __variant {
+                                #(#arms_validate)*
+                            }
+                            Ok(())
+                        }
                     }
 
                     #[allow(non_camel_case_types)]
@@ -385,11 +587,11 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         #(#variant_idents,)*
                     }
 
-                    impl #de_impl_generics #spacetimedb_lib::de::VariantVisitor for __SumVisitor #ty_generics #de_where_clause {
+                    impl #de_impl_generics #spacetimedb_lib::de::VariantVisitor<'de> for __SumVisitor #ty_generics #de_where_clause {
                         type Output = __Variant;
 
-                        fn variant_names(&self, names: &mut dyn #spacetimedb_lib::de::ValidNames) {
-                            names.extend::<&[&str]>(&[#(#variant_names,)*])
+                        fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
+                            [#(#variant_names,)*].into_iter()
                         }
 
                         fn visit_tag<E: #spacetimedb_lib::de::Error>(self, __tag: u8) -> Result<Self::Output, E> {
@@ -422,8 +624,41 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+    let mut fast_body = None;
     let body = match &ty.data {
         SatsTypeData::Product(fields) => {
+            if let Some(fields) = extract_repr_c_primitive(ty) {
+                fast_body = Some(quote! {
+                    #[inline(always)]
+                    fn serialize_into_bsatn<W: #spacetimedb_lib::buffer::BufWriter>(
+                            &self,
+                            serializer: #spacetimedb_lib::bsatn::Serializer<'_, W>
+                    ) -> Result<(), #spacetimedb_lib::bsatn::EncodeError> {
+                        const _: () = {
+                            #(#spacetimedb_lib::bsatn::assert_is_primitive_type::<#fields>();)*
+                        };
+                        // This guarantees that `Self` has no padding.
+                        if const { core::mem::size_of::<Self>() == #(core::mem::size_of::<#fields>())+* } {
+                            // SAFETY:
+                            // - We know `self` is non-null as it's a shared reference
+                            //   and we know it's valid for reads for `core::mem::size_of::<Self>()` bytes.
+                            //   Alignment of `u8` is 1, so it's trivially satisfied.
+                            //   - The slice is all within `self`, so in the same allocated object.
+                            // - `self` does point to `core::mem::size_of::<Self>()` consecutive `u8`s,
+                            //    as per `assert_is_primitive_type` above,
+                            //    we know none of the fields of `Self` have any padding.
+                            // - We're not going to mutate the memory within `bytes`.
+                            // - We know `core::mem::size_of::<Self>() < isize::MAX`.
+                            let bytes = unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>()) };
+                            serializer.raw_write_bytes(bytes);
+                            Ok(())
+                        } else {
+                            self.serialize(serializer)
+                        }
+                    }
+                });
+            }
+
             let fieldnames = fields.iter().map(|field| field.ident.unwrap());
             let tys = fields.iter().map(|f| &f.ty);
             let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
@@ -456,6 +691,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
     };
     quote! {
         impl #impl_generics #spacetimedb_lib::ser::Serialize for #name #ty_generics #where_clause {
+            #fast_body
             fn serialize<S: #spacetimedb_lib::ser::Serializer>(&self, __serializer: S) -> Result<S::Ok, S::Error> {
                 #body
             }

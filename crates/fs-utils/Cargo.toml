@@ -8,9 +8,17 @@ description = "Assorted utilities for filesystem operations used in SpacetimeDB"
 
 [dependencies]
 anyhow.workspace = true
-thiserror.workspace = true
+log.workspace = true
+chrono = { workspace = true, features = ["alloc", "std"] }
+fs2.workspace = true
 hex.workspace = true
 rand.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+zstd-framed.workspace = true
 
 [dev-dependencies]
 tempdir.workspace = true
+
+[lints]
+workspace = true

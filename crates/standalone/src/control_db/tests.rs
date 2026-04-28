@@ -2,14 +2,15 @@ use std::str::FromStr;
 
 use once_cell::sync::Lazy;
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb_client_api::auth::LOCALHOST;
 use spacetimedb_lib::error::ResultTest;
 use spacetimedb_lib::Hash;
 use tempfile::TempDir;
 
 use super::*;
 
-static ALICE: Lazy<Identity> = Lazy::new(|| Identity::from_hashing_bytes("alice"));
-static BOB: Lazy<Identity> = Lazy::new(|| Identity::from_hashing_bytes("bob"));
+static ALICE: Lazy<Identity> = Lazy::new(|| Identity::from_claims(LOCALHOST, "alice"));
+static BOB: Lazy<Identity> = Lazy::new(|| Identity::from_claims(LOCALHOST, "bob"));
 
 #[test]
 fn test_register_tld() -> anyhow::Result<()> {
@@ -67,11 +68,11 @@ fn test_domain() -> anyhow::Result<()> {
     let tld_owner = cdb.spacetime_lookup_tld(domain.tld())?;
     assert_eq!(tld_owner, Some(*ALICE));
 
-    let registered_addr = cdb.spacetime_dns(&domain)?;
+    let registered_addr = cdb.spacetime_dns(domain.as_ref())?;
     assert_eq!(registered_addr, Some(addr));
 
     // Try lowercase, too
-    let registered_addr = cdb.spacetime_dns(&domain_lower)?;
+    let registered_addr = cdb.spacetime_dns(domain_lower.as_ref())?;
     assert_eq!(registered_addr, Some(addr));
 
     // Reverse should yield the original domain (in mixed-case)
@@ -80,7 +81,31 @@ fn test_domain() -> anyhow::Result<()> {
         reverse_lookup.first().map(ToString::to_string),
         Some(domain.to_string())
     );
-    assert_eq!(reverse_lookup, vec![domain]);
+    assert_eq!(reverse_lookup, vec![domain.clone()]);
+
+    // We can remove the domain records for Alice's database
+    let deleted = cdb.spacetime_replace_domains(&addr, &ALICE, &[]);
+    assert!(matches!(deleted, Ok(SetDomainsResult::Success)));
+
+    // The domain records are gone
+    let registered_addr = cdb.spacetime_dns(domain.as_ref())?;
+    assert_eq!(registered_addr, None);
+
+    // Reverse DNS should yield empty
+    let reverse_lookup = cdb.spacetime_reverse_dns(&addr)?;
+    assert_eq!(reverse_lookup, vec![]);
+
+    // Bob cannot register the TLD
+    let unauthorized = cdb
+        .spacetime_insert_domain(&addr, "this/is/bob".parse()?, *BOB, true)
+        .unwrap();
+    assert!(matches!(unauthorized, InsertDomainResult::PermissionDenied { .. }));
+
+    // Alice can add the domain back
+    let addr = Identity::ZERO;
+    let res = cdb.spacetime_insert_domain(&addr, domain.clone(), *ALICE, true)?;
+    assert!(matches!(res, InsertDomainResult::Success { .. }));
+
     let _ = tmp.close().ok(); // force tmp to not be dropped until here
 
     Ok(())
@@ -110,15 +135,14 @@ fn test_decode() -> ResultTest<()> {
     assert_eq!(dbs.len(), 1);
     assert_eq!(dbs[0].owner_identity, id);
 
-    let mut new_replica = Replica {
+    let new_replica = Replica {
         id: 0,
         database_id: 1,
         node_id: 0,
         leader: true,
     };
 
-    let id = cdb.insert_replica(new_replica.clone())?;
-    new_replica.id = id;
+    let id = cdb.insert_replica(new_replica)?;
 
     let dbs = cdb.get_replicas()?;
 

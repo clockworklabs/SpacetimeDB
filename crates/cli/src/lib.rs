@@ -4,29 +4,29 @@ mod config;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
-mod start;
+pub mod spacetime_config;
 mod subcommands;
 mod tasks;
 pub mod util;
+pub mod version;
 
 use std::process::ExitCode;
 
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
-use spacetimedb_paths::SpacetimePaths;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
 pub use subcommands::*;
 pub use tasks::build;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![
-        version::cli(),
         publish::cli(),
         delete::cli(),
         logs::cli(),
         call::cli(),
         describe::cli(),
-        energy::cli(),
+        dev::cli(),
         sql::cli(),
         dns::cli(),
         generate::cli(),
@@ -36,23 +36,23 @@ pub fn get_subcommands() -> Vec<Command> {
         init::cli(),
         build::cli(),
         server::cli(),
-        upgrade::cli(),
         subscribe::cli(),
         start::cli(),
+        subcommands::version::cli(),
     ]
 }
 
 pub async fn exec_subcommand(
     config: Config,
     paths: &SpacetimePaths,
+    root_dir: Option<&RootDir>,
     cmd: &str,
     args: &ArgMatches,
 ) -> anyhow::Result<ExitCode> {
     match cmd {
-        "version" => version::exec(config, args).await,
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
-        "energy" => energy::exec(config, args).await,
+        "dev" => dev::exec(config, args).await,
         "publish" => publish::exec(config, args).await,
         "delete" => delete::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
@@ -60,15 +60,26 @@ pub async fn exec_subcommand(
         "rename" => dns::exec(config, args).await,
         "generate" => generate::exec(config, args).await,
         "list" => list::exec(config, args).await,
-        "init" => init::exec(config, args).await,
+        "init" => init::exec(config, args).await.map(|_| ()),
         "build" => build::exec(config, args).await.map(drop),
         "server" => server::exec(config, paths, args).await,
         "subscribe" => subscribe::exec(config, args).await,
         "start" => return start::exec(paths, args).await,
         "login" => login::exec(config, args).await,
         "logout" => logout::exec(config, args).await,
-        "upgrade" => upgrade::exec(config, args).await,
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+        "version" => return subcommands::version::exec(paths, root_dir, args).await,
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
     .map(|()| ExitCode::SUCCESS)
+}
+
+/// An error type indicating that the process should exit silently with the
+/// given `ExitCode`.
+#[derive(thiserror::Error, Debug)]
+#[error("exit with {0:?}")]
+pub struct ExitWithCode(pub ExitCode);
+
+impl ExitWithCode {
+    /// Basic unsuccessful termination.
+    pub const FAILURE: Self = ExitWithCode(ExitCode::FAILURE);
 }

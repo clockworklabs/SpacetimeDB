@@ -1,0 +1,140 @@
+---
+description: "GUI framework choice for C# applications in this project"
+globs: **/*.cs, **/*.xaml
+alwaysApply: false
+---
+
+# C# GUI Framework — Use MAUI
+
+When building a **GUI application** in C# for this project, use **.NET MAUI**.
+
+## Setup
+
+```bash
+# Install MAUI workload
+dotnet workload install maui-windows
+
+# Create MAUI app
+dotnet new maui -n MyClient
+cd MyClient
+dotnet add package SpacetimeDB.ClientSDK
+```
+
+## Project File (Windows-only)
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>MyClient</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+    <EnableDefaultMauiItems>true</EnableDefaultMauiItems>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Match to user's installed Windows App Runtime version -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.*" />
+    <PackageReference Include="Microsoft.Maui.Controls" Version="8.*" />
+    <PackageReference Include="SpacetimeDB.ClientSDK" Version="1.*" />
+  </ItemGroup>
+</Project>
+```
+
+## MAUI XAML Gotchas
+
+```xml
+<!-- ❌ WRONG — Ellipse not available in MAUI -->
+<Ellipse Width="32" Height="32" Fill="Blue"/>
+
+<!-- ✅ CORRECT — use BoxView with CornerRadius -->
+<BoxView WidthRequest="32" HeightRequest="32" CornerRadius="16" Color="Blue"/>
+
+<!-- ❌ WRONG — FontStyle not available -->
+<Label FontStyle="Italic" />
+
+<!-- ✅ CORRECT — use FontAttributes -->
+<Label FontAttributes="Italic" />
+```
+
+## ⚠️ Windows Platform Entry Point (REQUIRED)
+
+MAUI Windows apps require platform-specific entry point files. **Without these, the app won't build!**
+
+Create `Platforms/Windows/App.xaml`:
+```xml
+<maui:MauiWinUIApplication
+    x:Class="MyClient.WinUI.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:maui="using:Microsoft.Maui"
+    xmlns:local="using:MyClient.WinUI">
+</maui:MauiWinUIApplication>
+```
+
+Create `Platforms/Windows/App.xaml.cs`:
+```csharp
+using Microsoft.UI.Xaml;
+
+namespace MyClient.WinUI;
+
+public partial class App : MauiWinUIApplication
+{
+    public App()
+    {
+        this.InitializeComponent();
+    }
+
+    protected override MauiApp CreateMauiApp() => MyClient.MauiProgram.CreateMauiApp();
+}
+```
+
+**Required folder structure:**
+```
+client/
+├── App.xaml
+├── App.xaml.cs
+├── MainPage.xaml
+├── MainPage.xaml.cs
+├── MauiProgram.cs
+├── client.csproj
+└── Platforms/
+    └── Windows/
+        ├── App.xaml        ← Entry point
+        └── App.xaml.cs     ← Entry point
+```
+
+## FrameTick with SpacetimeDB
+
+Use a dispatcher timer to call `FrameTick()`:
+
+```csharp
+private DbConnection? _conn;
+private IDispatcherTimer? _timer;
+
+public MainPage()
+{
+    InitializeComponent();
+    
+    _timer = Dispatcher.CreateTimer();
+    _timer.Interval = TimeSpan.FromMilliseconds(16);
+    _timer.Tick += (s, e) => _conn?.FrameTick();
+    _timer.Start();
+}
+```
+
+## Windows App Runtime
+
+- User may be prompted to install Windows App Runtime if missing
+- `WindowsAppSdkDeploymentManagerInitialize=false` avoids package identity errors
+- Match `Microsoft.WindowsAppSDK` version to what user has installed (1.5, 1.6, 1.8, etc.)
+
+## DO NOT USE
+
+- **WPF** — Windows-only, older
+- **Windows Forms** — Legacy
+- **Console apps** — No GUI for user-facing features

@@ -1,8 +1,8 @@
 use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
-    DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    CompilationMode, CompiledModule, Cpp, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
+    TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 use std::{
     future::Future,
@@ -90,13 +90,25 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 #[test]
 #[serial]
 fn test_calling_a_reducer() {
-    test_calling_a_reducer_in_module("spacetimedb-quickstart");
+    test_calling_a_reducer_in_module("module-test");
 }
 
 #[test]
 #[serial]
 fn test_calling_a_reducer_csharp() {
-    test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
+    test_calling_a_reducer_in_module("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_typescript() {
+    test_calling_a_reducer_in_module("module-test-ts");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_cpp() {
+    test_calling_a_reducer_in_module("module-test-cpp");
 }
 
 #[test]
@@ -104,7 +116,7 @@ fn test_calling_a_reducer_csharp() {
 fn test_calling_a_reducer_with_private_table() {
     init();
 
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             module
@@ -116,7 +128,7 @@ fn test_calling_a_reducer_with_private_table() {
             let logs = read_logs(&module)
                 .await
                 .into_iter()
-                .skip_while(|r| r.starts_with("Timestamp"))
+                .filter(|r| !is_scheduled_test_log(r))
                 .collect::<Vec<_>>();
 
             assert_eq!(logs, ["Private, Tyrion!", "Private, World!",].map(String::from));
@@ -124,7 +136,135 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
-/// Invoke the `rust-wasm-test` module,
+/// Returns `true` if `line` was produced by the `repeating_test` or `nonrepeating_test` scheduled reducers.
+fn is_scheduled_test_log(line: &str) -> bool {
+    line.starts_with("Timestamp: ") || line.starts_with("This reducers runs only once")
+}
+
+async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
+    let logs = read_logs(module).await;
+    let mut logs = logs
+        .into_iter()
+        // Filter out log lines from the `repeating_test` and `nonrepeating_test` reducers,
+        // which run on a schedule and can appear in our logs after we've slept.
+        .filter(|line| !is_scheduled_test_log(line))
+        .collect::<Vec<_>>();
+
+    if logs.len() != 1 {
+        panic!("Expected a single log message but found {logs:#?}");
+    };
+
+    logs.swap_remove(0)
+}
+
+fn test_nonrepeating_scheduled_reducer_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            // The `init` reducer schedules `nonrepeating_test` to run 1 second in the future.
+            // Wait long enough for it to fire.
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            let logs = read_logs(&module).await;
+
+            assert!(
+                logs.iter().any(|line| line.starts_with("This reducers runs only once")),
+                "Expected nonrepeating_test reducer to have logged, but got: {logs:#?}",
+            );
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test");
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer_csharp() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer_typescript() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test-ts");
+}
+
+fn test_calling_a_procedure_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{
+  "CallProcedure": {
+    "procedure": "sleep_one_second",
+    "args": "[]",
+    "request_id": 0,
+    "flags": 0
+  }
+}"#
+            .to_string();
+            module.send(json).await.unwrap();
+
+            // It sleeps one second, but we'll wait two just to be safe.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            let log_sleep = read_log_skip_repeating(&module).await;
+
+            assert!(log_sleep.starts_with("Slept from "));
+            assert!(log_sleep.contains("a total of"));
+        },
+    )
+}
+
+#[test]
+#[serial]
+fn test_calling_a_procedure() {
+    test_calling_a_procedure_in_module("module-test");
+}
+
+fn test_calling_with_tx_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{
+  "CallProcedure": {
+    "procedure": "with_tx",
+    "args": "[]",
+    "request_id": 0,
+    "flags": 0
+  }
+}"#
+            .to_string();
+            module.send(json).await.unwrap();
+
+            // Wait 1 second just to be safe.
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            let log = read_log_skip_repeating(&module).await;
+
+            assert!(log.contains("Hello, World!"));
+        },
+    )
+}
+
+#[test]
+#[serial]
+fn test_calling_with_tx() {
+    test_calling_with_tx_in_module("module-test");
+}
+
+/// Invoke the `module-test` module,
 /// use `caller` to invoke its `test` reducer,
 /// and assert that its logs look right.
 ///
@@ -144,7 +284,7 @@ fn test_calling_a_reducer_with_private_table() {
 /// ]
 /// ```
 fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             caller(module.clone()).await;
@@ -176,7 +316,7 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
     );
 }
 
-/// Call the `rust-wasm-test` module's `test` reducer with a variety of ways of passing arguments.
+/// Call the `module-test` module's `test` reducer with a variety of ways of passing arguments.
 #[test]
 #[serial]
 fn test_call_query_macro() {
@@ -187,7 +327,7 @@ fn test_call_query_macro() {
 { "CallReducer": {
   "reducer": "test",
   "args":
-    "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]",
+    "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"foo\": {} }, { \"baz\": \"buzz\" } ]",
   "request_id": 0,
   "flags": 0
 } }"#
@@ -265,7 +405,7 @@ fn test_index_scans() {
     );
 }
 
-async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
+async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
     let now = Instant::now();
 
     // Note: using JSON variant because some functions accept u64 instead, so we rely on JSON's dynamic typing.
@@ -317,6 +457,17 @@ fn test_calling_bench_db_circles_csharp() {
     test_calling_bench_db_circles::<Csharp>();
 }
 
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_typescript() {
+    test_calling_bench_db_circles::<TypeScript>();
+}
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_cpp() {
+    test_calling_bench_db_circles::<Cpp>();
+}
+
 fn test_calling_bench_db_ia_loop<L: ModuleLanguage>() {
     L::get_module().with_module_async(DEFAULT_CONFIG, |module| async move {
         #[rustfmt::skip]
@@ -345,4 +496,15 @@ fn test_calling_bench_db_ia_loop_rust() {
 #[serial]
 fn test_calling_bench_db_ia_loop_csharp() {
     test_calling_bench_db_ia_loop::<Csharp>();
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_typescript() {
+    test_calling_bench_db_ia_loop::<TypeScript>();
+}
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_cpp() {
+    test_calling_bench_db_ia_loop::<Cpp>();
 }

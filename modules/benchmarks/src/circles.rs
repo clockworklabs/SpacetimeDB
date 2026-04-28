@@ -11,7 +11,7 @@ pub struct Vector2 {
 
 // ---------- schemas ----------
 
-#[spacetimedb::table(name = entity)]
+#[spacetimedb::table(accessor = entity)]
 pub struct Entity {
     #[auto_inc]
     #[primary_key]
@@ -30,7 +30,7 @@ impl Entity {
     }
 }
 
-#[spacetimedb::table(name = circle)]
+#[spacetimedb::table(accessor = circle)]
 pub struct Circle {
     #[primary_key]
     pub entity_id: u32,
@@ -42,18 +42,18 @@ pub struct Circle {
 }
 
 impl Circle {
-    pub fn new(entity_id: u32, player_id: u32, x: f32, y: f32, magnitude: f32) -> Self {
+    pub fn new(entity_id: u32, player_id: u32, x: f32, y: f32, magnitude: f32, last_split_time: Timestamp) -> Self {
         Self {
             entity_id,
             player_id,
             direction: Vector2 { x, y },
             magnitude,
-            last_split_time: Timestamp::now(),
+            last_split_time,
         }
     }
 }
 
-#[spacetimedb::table(name = food)]
+#[spacetimedb::table(accessor = food)]
 pub struct Food {
     #[primary_key]
     pub entity_id: u32,
@@ -91,9 +91,14 @@ pub fn insert_bulk_entity(ctx: &ReducerContext, count: u32) {
 #[spacetimedb::reducer]
 pub fn insert_bulk_circle(ctx: &ReducerContext, count: u32) {
     for id in 0..count {
-        ctx.db
-            .circle()
-            .insert(Circle::new(id, id, id as f32, (id + 5) as f32, (id * 5) as f32));
+        ctx.db.circle().insert(Circle::new(
+            id,
+            id,
+            id as f32,
+            (id + 5) as f32,
+            (id * 5) as f32,
+            ctx.timestamp,
+        ));
     }
     log::info!("INSERT CIRCLE: {count}");
 }
@@ -143,7 +148,7 @@ pub fn cross_join_circle_food(ctx: &ReducerContext, expected: u32) {
                 .entity()
                 .id()
                 .find(food.entity_id)
-                .unwrap_or_else(|| panic!("Entity not found: {})", food.entity_id));
+                .unwrap_or_else(|| panic!("Entity not found: {}", food.entity_id));
             black_box(is_overlapping(&circle_entity, &food_entity));
         }
     }

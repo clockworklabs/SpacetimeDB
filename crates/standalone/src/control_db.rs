@@ -1,9 +1,14 @@
+use anyhow::Context;
+use sled::transaction::{
+    self, ConflictableTransactionError, ConflictableTransactionResult, TransactionError, TransactionResult,
+    Transactional, TransactionalTree,
+};
 use spacetimedb::energy;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 
 use spacetimedb_client_api_messages::name::{
-    DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
+    DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld, TldRef,
 };
 use spacetimedb_lib::bsatn;
 use spacetimedb_paths::standalone::ControlDbDir;
@@ -13,9 +18,9 @@ mod tests;
 
 /// A control database when SpacetimeDB is running standalone.
 ///
-/// Important note: The `Addresses` and `Identities` stored in this database
+/// Important note: The `ConnectionId`s and `Identity`s stored in this database
 /// are stored as *LITTLE-ENDIAN* byte arrays. This means that printing such an array
-/// in hexadecimal will result in the REVERSE of the standard way to print `Addresses` and `Identities`.
+/// in hexadecimal will result in the REVERSE of the standard way to print `ConnectionId`s and `Identity`s.
 #[derive(Clone)]
 pub struct ControlDb {
     db: sled::Db,
@@ -33,10 +38,14 @@ pub enum Error {
     RecordAlreadyExists(DomainName),
     #[error("database with identity {0} already exists")]
     DatabaseAlreadyExists(Identity),
+    #[error("database with identity {0} does not exist")]
+    DatabaseNotFound(Identity),
     #[error("failed to register {0} domain")]
     DomainRegistrationFailure(DomainName),
     #[error("failed to decode data")]
     Decoding(#[from] bsatn::DecodeError),
+    #[error("failed to encode data")]
+    Encoding(#[from] bsatn::EncodeError),
     #[error(transparent)]
     DomainParsing(#[from] DomainParsingError),
     #[error(transparent)]
@@ -77,12 +86,23 @@ impl ControlDb {
     }
 }
 
+/// A helper to convert a `sled::IVec` into an `Identity`.
+/// This expects the identity to be in LITTLE_ENDIAN format.
+/// This fails if the `sled::IVec` is not 32 bytes long.
+fn identity_from_le_ivec(ivec: &sled::IVec) -> Result<Identity> {
+    let identity_bytes: [u8; 32] = ivec
+        .as_ref()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("invalid size for identity: {}", ivec.len()))?;
+    Ok(Identity::from_byte_array(identity_bytes))
+}
+
 impl ControlDb {
-    pub fn spacetime_dns(&self, domain: &DomainName) -> Result<Option<Identity>> {
+    pub fn spacetime_dns(&self, domain: &str) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.to_lowercase().as_bytes())?;
         if let Some(value) = value {
-            return Ok(Some(Identity::from_slice(&value[..])));
+            return Ok(Some(identity_from_le_ivec(&value)?));
         }
         Ok(None)
     }
@@ -118,7 +138,7 @@ impl ControlDb {
         try_register_tld: bool,
     ) -> Result<InsertDomainResult> {
         let database_identity = *database_identity;
-        if self.spacetime_dns(&domain)?.is_some() {
+        if self.spacetime_dns(domain.as_ref())?.is_some() {
             return Err(Error::RecordAlreadyExists(domain));
         }
         let tld = domain.tld();
@@ -166,6 +186,107 @@ impl ControlDb {
         })
     }
 
+    /// Replace all domains pointing to `database_identity` with `domain_names`.
+    ///
+    /// That is, delete all existing names pointing to `database_identity`, then
+    /// create all `domain_names`, pointing to `database_identity`.
+    ///
+    /// All existing names in the database and in `domain_names` must be
+    /// owned by `owner_identity`, i.e. their TLD must belong to `owner_identity`.
+    ///
+    /// The `owner_identity` is typically also the owner of the database.
+    ///
+    /// The operation is atomic -- either all `domain_names` are created and
+    /// existing ones deleted, or none.
+    pub fn spacetime_replace_domains(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> Result<SetDomainsResult> {
+        let database_identity_bytes = database_identity.to_byte_array();
+
+        let dns_tree = self.db.open_tree("dns")?;
+        let rev_tree = self.db.open_tree("reverse_dns")?;
+        let tld_tree = self.db.open_tree("top_level_domains")?;
+
+        /// Abort transaction with a user error.
+        #[derive(Debug)]
+        enum AbortWith {
+            Domain(SetDomainsResult),
+            Database(Error),
+        }
+
+        /// Decode the slice into a `Vec<DomainName>`.
+        /// Returns a transaction abort if decoding fails.
+        fn decode_domain_names(ivec: &[u8]) -> ConflictableTransactionResult<Vec<DomainName>, AbortWith> {
+            serde_json::from_slice(ivec).map_err(|e| {
+                log::error!("Control database corruption: invalid domain set in `reverse_dns` tree: {e}");
+                ConflictableTransactionError::Abort(AbortWith::Database(e.into()))
+            })
+        }
+
+        /// Find the owner of the `domain`'s TLD, if there is one.
+        /// Returns a transaction abort if the owner could not be decoded into
+        /// an [`Identity`].
+        fn domain_owner(
+            tlds: &TransactionalTree,
+            domain: &DomainName,
+        ) -> ConflictableTransactionResult<Option<Identity>, AbortWith> {
+            tlds.get(domain.tld().to_lowercase().as_bytes())?
+                .as_ref()
+                .map(identity_from_le_ivec)
+                .transpose()
+                .map_err(|e| ConflictableTransactionError::Abort(AbortWith::Database(e)))
+        }
+
+        let trees = (&dns_tree, &rev_tree, &tld_tree);
+        let result: TransactionResult<(), AbortWith> =
+            Transactional::transaction(&trees, |(dns_tx, rev_tx, tld_tx)| {
+                // Remove all existing names.
+                if let Some(value) = rev_tx.get(database_identity_bytes)? {
+                    for domain in decode_domain_names(&value)? {
+                        if let Some(ref owner) = domain_owner(tld_tx, &domain)?
+                            && owner != owner_identity
+                        {
+                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                                domain: domain.clone(),
+                            }))?;
+                        }
+                        dns_tx.remove(domain.to_lowercase().as_bytes())?;
+                    }
+                    rev_tx.remove(&database_identity_bytes)?;
+                }
+
+                // Insert the new names.
+                for domain in domain_names {
+                    if let Some(ref owner) = domain_owner(tld_tx, domain)?
+                        && owner != owner_identity
+                    {
+                        transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                            domain: domain.clone(),
+                        }))?;
+                    }
+                    tld_tx.insert(domain.tld().to_lowercase().as_bytes(), &owner_identity.to_byte_array())?;
+                    dns_tx.insert(domain.to_lowercase().as_bytes(), &database_identity_bytes)?;
+                }
+                rev_tx.insert(&database_identity_bytes, serde_json::to_vec(domain_names).unwrap())?;
+
+                Ok::<_, ConflictableTransactionError<AbortWith>>(())
+            });
+
+        match result {
+            Ok(()) => Ok(SetDomainsResult::Success),
+            Err(e) => match e {
+                TransactionError::Storage(e) => Err(Error::Database(e)),
+                TransactionError::Abort(abort) => match abort {
+                    AbortWith::Database(e) => Err(e),
+                    AbortWith::Domain(res) => Ok(res),
+                },
+            },
+        }
+    }
+
     /// Inserts a top level domain that will be owned by `owner_identity`.
     ///
     /// # Arguments
@@ -178,7 +299,9 @@ impl ControlDb {
         let current_owner = tree.get(&key)?;
         match current_owner {
             Some(owner) => {
-                if Identity::from_slice(&owner[..]) == owner_identity {
+                let current_owner =
+                    identity_from_le_ivec(&owner).context("Invalid current owner in top_level_domains")?;
+                if current_owner == owner_identity {
                     Ok(RegisterTldResult::AlreadyRegistered { domain: tld })
                 } else {
                     Ok(RegisterTldResult::Unauthorized { domain: tld })
@@ -198,7 +321,7 @@ impl ControlDb {
     pub fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
         match tree.get(domain.as_ref().to_lowercase().as_bytes())? {
-            Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
+            Some(owner) => Ok(Some(identity_from_le_ivec(&owner)?)),
             None => Ok(None),
         }
     }
@@ -209,7 +332,7 @@ impl ControlDb {
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let database = compat::Database::from_slice(&value).unwrap().into();
+            let database = compat::Database::from_slice(&value)?.into();
             databases.push(database);
         }
         Ok(databases)
@@ -229,7 +352,7 @@ impl ControlDb {
         let key = identity.to_be_byte_array();
         let value = tree.get(&key[..])?;
         if let Some(value) = value {
-            let database = compat::Database::from_slice(&value[..]).unwrap().into();
+            let database = compat::Database::from_slice(&value[..])?.into();
             return Ok(Some(database));
         }
         Ok(None)
@@ -246,7 +369,7 @@ impl ControlDb {
 
         database.id = id;
 
-        let buf = sled::IVec::from(compat::Database::from(database).to_vec().unwrap());
+        let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
 
         tree.insert(key, buf.clone())?;
 
@@ -254,6 +377,21 @@ impl ControlDb {
         tree.insert(id.to_be_bytes(), buf)?;
 
         Ok(id)
+    }
+
+    pub(crate) fn update_database(&self, database: Database) -> Result<()> {
+        let Some(stored_database) = self.get_database_by_identity(&database.database_identity)? else {
+            return Err(Error::DatabaseNotFound(database.database_identity));
+        };
+
+        let tree = self.db.open_tree("database_by_identity")?;
+        let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
+        tree.insert(stored_database.database_identity.to_be_byte_array(), buf.clone())?;
+
+        let tree = self.db.open_tree("database")?;
+        tree.insert(stored_database.id.to_be_bytes(), buf)?;
+
+        Ok(())
     }
 
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
@@ -278,7 +416,7 @@ impl ControlDb {
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let replica = bsatn::from_slice(&value[..]).unwrap();
+            let replica = bsatn::from_slice(&value[..])?;
             replicas.push(replica);
         }
         Ok(replicas)
@@ -378,7 +516,7 @@ impl ControlDb {
     pub fn _update_node(&self, node: Node) -> Result<()> {
         let tree = self.db.open_tree("node")?;
 
-        let buf = bsatn::to_vec(&node).unwrap();
+        let buf = bsatn::to_vec(&node)?;
 
         tree.insert(node.id.to_be_bytes(), buf)?;
         Ok(())
@@ -400,7 +538,7 @@ impl ControlDb {
             let balance_entry = match balance_entry {
                 Ok(e) => e,
                 Err(e) => {
-                    log::error!("Invalid iteration in energy_budget control_db tree: {}", e);
+                    log::error!("Invalid iteration in energy_budget control_db tree: {e}");
                     continue;
                 }
             };
@@ -410,10 +548,8 @@ impl ControlDb {
                 given: balance_entry.1.len(),
             })?;
             let balance = i128::from_be_bytes(arr);
-            let energy_balance = EnergyBalance {
-                identity: Identity::from_slice(balance_entry.0.iter().as_slice()),
-                balance,
-            };
+            let identity = identity_from_le_ivec(&balance_entry.0).context("invalid identity in energy_budget")?;
+            let energy_balance = EnergyBalance { identity, balance };
             balances.push(energy_balance);
         }
         Ok(balances)

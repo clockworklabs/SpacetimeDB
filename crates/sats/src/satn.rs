@@ -1,14 +1,15 @@
-use crate::{
-    algebraic_value::ser::ValueSerializer,
-    ser::{self, Serialize},
-    ProductType,
-};
-use crate::{i256, u256};
+use crate::time_duration::TimeDuration;
+use crate::timestamp::Timestamp;
+use crate::uuid::Uuid;
+use crate::{i256, u256, AlgebraicType, AlgebraicValue, ProductValue, Serialize, SumValue, ValueWithType};
+use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
 use core::fmt::Write as _;
-use derive_more::{From, Into};
+use derive_more::{Display, From, Into};
+use std::borrow::Cow;
+use std::marker::PhantomData;
 
-/// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
+/// An extension trait for [`Serialize`] providing formatting methods.
 pub trait Satn: ser::Serialize {
     /// Formats the value using the SATN data format into the formatter `f`.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -16,12 +17,15 @@ pub trait Satn: ser::Serialize {
         Ok(())
     }
 
-    /// Formats the value using the postgres SATN(SatnFormatter { f }, /* AlgebraicType */) formatter `f`.
-    fn fmt_psql(&self, f: &mut fmt::Formatter, ty: &ProductType) -> fmt::Result {
+    /// Formats the value using the postgres SATN(PsqlFormatter { f }, /* PsqlType */) formatter `f`.
+    fn fmt_psql(&self, f: &mut fmt::Formatter, ty: &PsqlType<'_>) -> fmt::Result {
         Writer::with(f, |f| {
-            self.serialize(PsqlFormatter {
-                fmt: SatnFormatter { f },
+            self.serialize(TypedSerializer {
                 ty,
+                f: &mut SqlFormatter {
+                    fmt: SatnFormatter { f },
+                    ty,
+                },
             })
         })?;
         Ok(())
@@ -71,7 +75,7 @@ impl<T: Satn + ?Sized> fmt::Debug for Wrapper<T> {
 /// providing `Display` and `Debug` implementations
 /// that uses postgres SATN formatting for `T`.
 pub struct PsqlWrapper<'a, T: ?Sized> {
-    pub ty: &'a ProductType,
+    pub ty: PsqlType<'a>,
     pub value: T,
 }
 
@@ -86,28 +90,28 @@ impl<T: ?Sized> PsqlWrapper<'_, T> {
 
 impl<T: Satn + ?Sized> fmt::Display for PsqlWrapper<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.value.fmt_psql(f, self.ty)
+        self.value.fmt_psql(f, &self.ty)
     }
 }
 
 impl<T: Satn + ?Sized> fmt::Debug for PsqlWrapper<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.value.fmt_psql(f, self.ty)
+        self.value.fmt_psql(f, &self.ty)
     }
 }
 
 /// Wraps a writer for formatting lists separated by `SEP` into it.
-struct EntryWrapper<'a, 'b, const SEP: char> {
+struct EntryWrapper<'a, 'f, const SEP: char> {
     /// The writer we're formatting into.
-    fmt: Writer<'a, 'b>,
+    fmt: Writer<'a, 'f>,
     /// Whether there were any fields.
     /// Initially `false` and then `true` after calling [`.entry(..)`](EntryWrapper::entry).
     has_fields: bool,
 }
 
-impl<'a, 'b, const SEP: char> EntryWrapper<'a, 'b, SEP> {
+impl<'a, 'f, const SEP: char> EntryWrapper<'a, 'f, SEP> {
     /// Constructs the entry wrapper using the writer `fmt`.
-    fn new(fmt: Writer<'a, 'b>) -> Self {
+    fn new(fmt: Writer<'a, 'f>) -> Self {
         Self { fmt, has_fields: false }
     }
 
@@ -141,14 +145,14 @@ impl<'a, 'b, const SEP: char> EntryWrapper<'a, 'b, SEP> {
 }
 
 /// An implementation of [`fmt::Write`] supporting indented and non-idented formatting.
-enum Writer<'a, 'b> {
+enum Writer<'a, 'f> {
     /// Uses the standard library's formatter i.e. plain formatting.
-    Normal(&'a mut fmt::Formatter<'b>),
+    Normal(&'a mut fmt::Formatter<'f>),
     /// Uses indented formatting.
-    Pretty(IndentedWriter<'a, 'b>),
+    Pretty(IndentedWriter<'a, 'f>),
 }
 
-impl<'a, 'b> Writer<'a, 'b> {
+impl<'f> Writer<'_, 'f> {
     /// Provided with a formatter `f`, runs `func` provided with a `Writer`.
     fn with<R>(f: &mut fmt::Formatter<'_>, func: impl FnOnce(Writer<'_, '_>) -> R) -> R {
         let mut state;
@@ -166,7 +170,7 @@ impl<'a, 'b> Writer<'a, 'b> {
     }
 
     /// Returns a sub-writer without moving `self`.
-    fn as_mut(&mut self) -> Writer<'_, 'b> {
+    fn as_mut(&mut self) -> Writer<'_, 'f> {
         match self {
             Writer::Normal(f) => Writer::Normal(f),
             Writer::Pretty(f) => Writer::Pretty(f.as_mut()),
@@ -175,8 +179,8 @@ impl<'a, 'b> Writer<'a, 'b> {
 }
 
 /// A formatter that adds decoration atop of the standard library's formatter.
-struct IndentedWriter<'a, 'b> {
-    f: &'a mut fmt::Formatter<'b>,
+struct IndentedWriter<'a, 'f> {
+    f: &'a mut fmt::Formatter<'f>,
     state: &'a mut IndentState,
 }
 
@@ -188,9 +192,9 @@ struct IndentState {
     on_newline: bool,
 }
 
-impl<'a, 'b> IndentedWriter<'a, 'b> {
+impl<'f> IndentedWriter<'_, 'f> {
     /// Returns a sub-writer without moving `self`.
-    fn as_mut(&mut self) -> IndentedWriter<'_, 'b> {
+    fn as_mut(&mut self) -> IndentedWriter<'_, 'f> {
         IndentedWriter {
             f: self.f,
             state: self.state,
@@ -198,7 +202,7 @@ impl<'a, 'b> IndentedWriter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> fmt::Write for IndentedWriter<'a, 'b> {
+impl fmt::Write for IndentedWriter<'_, '_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for s in s.split_inclusive('\n') {
             if self.state.on_newline {
@@ -215,7 +219,7 @@ impl<'a, 'b> fmt::Write for IndentedWriter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> fmt::Write for Writer<'a, 'b> {
+impl fmt::Write for Writer<'_, '_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         match self {
             Writer::Normal(f) => f.write_str(s),
@@ -225,14 +229,35 @@ impl<'a, 'b> fmt::Write for Writer<'a, 'b> {
 }
 
 /// Provides the SATN data format implementing [`Serializer`](ser::Serializer).
-struct SatnFormatter<'a, 'b> {
+struct SatnFormatter<'a, 'f> {
     /// The sink / writer / output / formatter.
-    f: Writer<'a, 'b>,
+    f: Writer<'a, 'f>,
 }
 
-/// An error occured during serialization to the SATS data format.
+impl SatnFormatter<'_, '_> {
+    fn ser_variant<T: ser::Serialize + ?Sized>(
+        &mut self,
+        _tag: u8,
+        name: Option<&str>,
+        value: &T,
+    ) -> Result<(), SatnError> {
+        write!(self, "(")?;
+        EntryWrapper::<','>::new(self.f.as_mut()).entry(|mut f| {
+            if let Some(name) = name {
+                write!(f, "{name}")?;
+            }
+            write!(f, " = ")?;
+            value.serialize(SatnFormatter { f })?;
+            Ok(())
+        })?;
+        write!(self, ")")?;
+
+        Ok(())
+    }
+}
+/// An error occurred during serialization to the SATS data format.
 #[derive(From, Into)]
-struct SatnError(fmt::Error);
+pub struct SatnError(fmt::Error);
 
 impl ser::Error for SatnError {
     fn custom<T: fmt::Display>(_msg: T) -> Self {
@@ -240,7 +265,7 @@ impl ser::Error for SatnError {
     }
 }
 
-impl<'a, 'b> SatnFormatter<'a, 'b> {
+impl SatnFormatter<'_, '_> {
     /// Writes `args` formatted to `self`.
     #[inline(always)]
     fn write_fmt(&mut self, args: fmt::Arguments) -> Result<(), SatnError> {
@@ -249,12 +274,12 @@ impl<'a, 'b> SatnFormatter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
+impl<'a, 'f> ser::Serializer for SatnFormatter<'a, 'f> {
     type Ok = ();
     type Error = SatnError;
-    type SerializeArray = ArrayFormatter<'a, 'b>;
-    type SerializeSeqProduct = SeqFormatter<'a, 'b>;
-    type SerializeNamedProduct = NamedFormatter<'a, 'b>;
+    type SerializeArray = ArrayFormatter<'a, 'f>;
+    type SerializeSeqProduct = SeqFormatter<'a, 'f>;
+    type SerializeNamedProduct = NamedFormatter<'a, 'f>;
 
     fn serialize_bool(mut self, v: bool) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
@@ -303,7 +328,7 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
     }
 
     fn serialize_str(mut self, v: &str) -> Result<Self::Ok, Self::Error> {
-        write!(self, "\"{}\"", v)
+        write!(self, "\"{v}\"")
     }
 
     fn serialize_bytes(mut self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -332,77 +357,21 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
 
     fn serialize_variant<T: ser::Serialize + ?Sized>(
         mut self,
-        _tag: u8,
+        tag: u8,
         name: Option<&str>,
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
-        write!(self, "(")?;
-        EntryWrapper::<','>::new(self.f.as_mut()).entry(|mut f| {
-            if let Some(name) = name {
-                write!(f, "{}", name)?;
-            }
-            write!(f, " = ")?;
-            value.serialize(SatnFormatter { f })?;
-            Ok(())
-        })?;
-        write!(self, ")")
-    }
-
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        // TODO(Centril): Consider instead deserializing the `bsatn` through a
-        // deserializer that serializes into `self` directly.
-
-        // First convert the BSATN to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_bsatn(ty, bsatn) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        value.serialize(self)
-    }
-
-    unsafe fn serialize_bsatn_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        ty: &crate::AlgebraicType,
-        total_bsatn_len: usize,
-        bsatn: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // TODO(Centril): Unlike above, in this case we must at minimum concatenate `bsatn`
-        // before we can do the piping mentioned above, but that's better than
-        // serializing to `AlgebraicValue` first, so consider that.
-
-        // First convert the BSATN to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        value.serialize(self)
-    }
-
-    unsafe fn serialize_str_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        total_len: usize,
-        string: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // First convert the `string` to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_str_in_chunks(total_len, string) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        // This incurs a very minor cost of branching on `AlgebraicValue::String`.
-        value.serialize(self)
+        self.ser_variant(tag, name, value)
     }
 }
 
 /// Defines the SATN formatting for arrays.
-struct ArrayFormatter<'a, 'b> {
+struct ArrayFormatter<'a, 'f> {
     /// The formatter for each element separating elements by a `,`.
-    f: EntryWrapper<'a, 'b, ','>,
+    f: EntryWrapper<'a, 'f, ','>,
 }
 
-impl<'a, 'b> ser::SerializeArray for ArrayFormatter<'a, 'b> {
+impl ser::SerializeArray for ArrayFormatter<'_, '_> {
     type Ok = ();
     type Error = SatnError;
 
@@ -418,12 +387,12 @@ impl<'a, 'b> ser::SerializeArray for ArrayFormatter<'a, 'b> {
 }
 
 /// Provides the data format for unnamed products for SATN.
-struct SeqFormatter<'a, 'b> {
+struct SeqFormatter<'a, 'f> {
     /// Delegates to the named format.
-    inner: NamedFormatter<'a, 'b>,
+    inner: NamedFormatter<'a, 'f>,
 }
 
-impl<'a, 'b> ser::SerializeSeqProduct for SeqFormatter<'a, 'b> {
+impl ser::SerializeSeqProduct for SeqFormatter<'_, '_> {
     type Ok = ();
     type Error = SatnError;
 
@@ -437,14 +406,14 @@ impl<'a, 'b> ser::SerializeSeqProduct for SeqFormatter<'a, 'b> {
 }
 
 /// Provides the data format for named products for SATN.
-struct NamedFormatter<'a, 'b> {
+struct NamedFormatter<'a, 'f> {
     /// The formatter for each element separating elements by a `,`.
-    f: EntryWrapper<'a, 'b, ','>,
+    f: EntryWrapper<'a, 'f, ','>,
     /// The index of the element.
     idx: usize,
 }
 
-impl<'a, 'b> ser::SerializeNamedProduct for NamedFormatter<'a, 'b> {
+impl ser::SerializeNamedProduct for NamedFormatter<'_, '_> {
     type Ok = ();
     type Error = SatnError;
 
@@ -456,7 +425,7 @@ impl<'a, 'b> ser::SerializeNamedProduct for NamedFormatter<'a, 'b> {
         let res = self.f.entry(|mut f| {
             // Format the name or use the index if unnamed.
             if let Some(name) = name {
-                write!(f, "{}", name)?;
+                write!(f, "{name}")?;
             } else {
                 write!(f, "{}", self.idx)?;
             }
@@ -475,204 +444,485 @@ impl<'a, 'b> ser::SerializeNamedProduct for NamedFormatter<'a, 'b> {
     }
 }
 
-/// Provides the data format for named products for `SQL`.
-struct PsqlNamedFormatter<'a, 'b> {
-    /// The formatter for each element separating elements by a `,`.
-    f: EntryWrapper<'a, 'b, ','>,
-    /// The index of the element.
-    idx: usize,
-    /// If is not [Self::is_bytes_or_special] to control if we start with `(`
-    start: bool,
-    /// For checking [Self::is_bytes_or_special]
-    ty: &'a ProductType,
-    /// If the current element is a special type.
-    is_special: bool,
+/// Which client is used to format the `SQL` output?
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum PsqlClient {
+    SpacetimeDB,
+    Postgres,
 }
 
-impl<'a, 'b> ser::SerializeNamedProduct for PsqlNamedFormatter<'a, 'b> {
-    type Ok = ();
-    type Error = SatnError;
+pub struct PsqlChars {
+    pub start: char,
+    pub sep: &'static str,
+    pub end: char,
+    pub quote: &'static str,
+}
 
-    fn serialize_element<T: Satn + ser::Serialize + ?Sized>(
-        &mut self,
-        name: Option<&str>,
-        elem: &T,
-    ) -> Result<(), Self::Error> {
-        // For binary data, output in `hex` format and skip the tagging of each value
-        self.is_special = ProductType::is_special_tag(name.unwrap_or_default());
-        self.f.entry(|mut f| {
-            if !self.is_special {
-                if self.start {
-                    write!(f, "(")?; // Closed v
-                    self.start = false;
-                }
-                // Format the name or use the index if unnamed.
-                if let Some(name) = name {
-                    write!(f, "{}", name)?;
-                } else {
-                    write!(f, "{}", self.idx)?;
-                }
-                write!(f, " = ")?;
-            }
-
-            elem.serialize(PsqlFormatter {
-                fmt: SatnFormatter { f },
-                ty: self.ty,
-            })?;
-
-            if !self.is_special {
-                self.idx += 1;
-            }
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-
-    fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        if !self.is_special {
-            write!(self.f.fmt, ")")?;
+impl PsqlClient {
+    pub fn format_chars(&self) -> PsqlChars {
+        match self {
+            PsqlClient::SpacetimeDB => PsqlChars {
+                start: '(',
+                sep: " =",
+                end: ')',
+                quote: "",
+            },
+            PsqlClient::Postgres => PsqlChars {
+                start: '{',
+                sep: ":",
+                end: '}',
+                quote: "\"",
+            },
         }
-        Ok(())
     }
 }
 
-/// Provides the data format for unnamed products for `SQL`.
-struct PsqlSeqFormatter<'a, 'b> {
-    /// Delegates to the named format.
-    inner: PsqlNamedFormatter<'a, 'b>,
+/// How format of the `SQL` output?
+#[derive(Debug, Copy, Clone, PartialEq, Display)]
+pub enum PsqlPrintFmt {
+    /// Print as `hex` format
+    Hex,
+    /// Print as [`Timestamp`] format
+    Timestamp,
+    /// Print as [`TimeDuration`] format
+    Duration,
+    /// Print as `UUID` format
+    Uuid,
+    /// Print as `Satn` format
+    Satn,
 }
 
-impl<'a, 'b> ser::SerializeSeqProduct for PsqlSeqFormatter<'a, 'b> {
-    type Ok = ();
-    type Error = SatnError;
-
-    fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
-        ser::SerializeNamedProduct::serialize_element(&mut self.inner, None, elem)
+impl PsqlPrintFmt {
+    pub fn is_special(&self) -> bool {
+        self != &PsqlPrintFmt::Satn
     }
+    /// Returns if the type is a special type
+    ///
+    /// Is required to check both the enclosing type and the inner element type
+    pub fn use_fmt(tuple: &ProductType, field: &ProductTypeElement, name: Option<&str>) -> PsqlPrintFmt {
+        if tuple.is_identity()
+            || tuple.is_connection_id()
+            || field.algebraic_type.is_identity()
+            || field.algebraic_type.is_connection_id()
+            || name.map(ProductType::is_identity_tag).unwrap_or_default()
+            || name.map(ProductType::is_connection_id_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Hex;
+        };
 
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        ser::SerializeNamedProduct::end(self.inner)
+        if tuple.is_timestamp()
+            || field.algebraic_type.is_timestamp()
+            || name.map(ProductType::is_timestamp_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Timestamp;
+        };
+
+        if tuple.is_time_duration()
+            || field.algebraic_type.is_time_duration()
+            || name.map(ProductType::is_time_duration_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Duration;
+        };
+
+        if tuple.is_uuid() || field.algebraic_type.is_uuid() || name.map(ProductType::is_uuid_tag).unwrap_or_default() {
+            return PsqlPrintFmt::Uuid;
+        };
+
+        PsqlPrintFmt::Satn
+    }
+}
+
+/// A wrapper that remember the `header` of the tuple/struct and the current field
+#[derive(Debug, Clone)]
+pub struct PsqlType<'a> {
+    /// The client used to format the output
+    pub client: PsqlClient,
+    /// The header of the tuple/struct
+    pub tuple: &'a ProductType,
+    /// The current field
+    pub field: &'a ProductTypeElement,
+    /// The index of the field in the tuple/struct
+    pub idx: usize,
+}
+
+impl PsqlType<'_> {
+    /// Returns if the type is a special type
+    ///
+    /// Is required to check both the enclosing type and the inner element type
+    pub fn use_fmt(&self) -> PsqlPrintFmt {
+        PsqlPrintFmt::use_fmt(self.tuple, self.field, None)
     }
 }
 
 /// An implementation of [`Serializer`](ser::Serializer) for `SQL` output.
-struct PsqlFormatter<'a, 'b> {
-    fmt: SatnFormatter<'a, 'b>,
-    ty: &'a ProductType,
+pub struct SqlFormatter<'a, 'f> {
+    fmt: SatnFormatter<'a, 'f>,
+    ty: &'a PsqlType<'a>,
 }
 
-impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
+/// A trait for writing values, after the special types has been determined.
+///
+/// This is used to write values that could have different representations depending on the output format,
+/// as defined by [`PsqlClient`] and [`PsqlPrintFmt`].
+pub trait TypedWriter {
+    type Error: ser::Error;
+
+    /// Writes a value using [`ser::Serializer`]
+    fn write<W: fmt::Display>(&mut self, value: W) -> Result<(), Self::Error>;
+
+    // Values that need special handling:
+
+    fn write_bool(&mut self, value: bool) -> Result<(), Self::Error>;
+    fn write_string(&mut self, value: &str) -> Result<(), Self::Error>;
+    fn write_bytes(&mut self, value: &[u8]) -> Result<(), Self::Error>;
+    fn write_hex(&mut self, value: &[u8]) -> Result<(), Self::Error>;
+    fn write_timestamp(&mut self, value: Timestamp) -> Result<(), Self::Error>;
+    fn write_duration(&mut self, value: TimeDuration) -> Result<(), Self::Error>;
+    fn write_uuid(&mut self, value: Uuid) -> Result<(), Self::Error>;
+    /// Writes a value as an alternative record format, e.g., for use `JSON` inside `SQL`.
+    fn write_alt_record(
+        &mut self,
+        _ty: &PsqlType,
+        _value: &ValueWithType<'_, ProductValue>,
+    ) -> Result<bool, Self::Error> {
+        Ok(false)
+    }
+
+    fn write_record(
+        &mut self,
+        fields: Vec<(Cow<str>, PsqlType, ValueWithType<AlgebraicValue>)>,
+    ) -> Result<(), Self::Error>;
+
+    fn write_variant(
+        &mut self,
+        tag: u8,
+        ty: PsqlType,
+        name: Option<&str>,
+        value: ValueWithType<AlgebraicValue>,
+    ) -> Result<(), Self::Error>;
+}
+
+/// A formatter for arrays that uses the `TypedWriter` trait to write elements.
+pub struct TypedArrayFormatter<'a, 'f, F> {
+    ty: &'a PsqlType<'a>,
+    f: &'f mut F,
+}
+
+impl<F: TypedWriter> ser::SerializeArray for TypedArrayFormatter<'_, '_, F> {
     type Ok = ();
-    type Error = SatnError;
-    type SerializeArray = ArrayFormatter<'a, 'b>;
-    type SerializeSeqProduct = PsqlSeqFormatter<'a, 'b>;
-    type SerializeNamedProduct = PsqlNamedFormatter<'a, 'b>;
+    type Error = F::Error;
+
+    fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
+        elem.serialize(TypedSerializer { ty: self.ty, f: self.f })?;
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        Ok(())
+    }
+}
+
+/// A formatter for sequences that uses the `TypedWriter` trait to write elements.
+pub struct TypedSeqFormatter<'a, 'f, F> {
+    ty: &'a PsqlType<'a>,
+    f: &'f mut F,
+}
+
+impl<F: TypedWriter> ser::SerializeSeqProduct for TypedSeqFormatter<'_, '_, F> {
+    type Ok = ();
+    type Error = F::Error;
+
+    fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
+        elem.serialize(TypedSerializer { ty: self.ty, f: self.f })?;
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        Ok(())
+    }
+}
+
+/// A formatter for named products that uses the `TypedWriter` trait to write elements.
+pub struct TypedNamedProductFormatter<F> {
+    f: PhantomData<F>,
+}
+
+impl<F: TypedWriter> ser::SerializeNamedProduct for TypedNamedProductFormatter<F> {
+    type Ok = ();
+    type Error = F::Error;
+
+    fn serialize_element<T: ser::Serialize + ?Sized>(
+        &mut self,
+        _name: Option<&str>,
+        _elem: &T,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        Ok(())
+    }
+}
+
+/// A serializer that uses the `TypedWriter` trait to serialize values
+pub struct TypedSerializer<'a, 'f, F> {
+    pub ty: &'a PsqlType<'a>,
+    pub f: &'f mut F,
+}
+
+impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
+    type Ok = ();
+    type Error = F::Error;
+    type SerializeArray = TypedArrayFormatter<'a, 'f, F>;
+    type SerializeSeqProduct = TypedSeqFormatter<'a, 'f, F>;
+    type SerializeNamedProduct = TypedNamedProductFormatter<F>;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_bool(v)
+        self.f.write_bool(v)
     }
+
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u8(v)
+        self.f.write(v)
     }
+
     fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u16(v)
+        self.f.write(v)
     }
+
     fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u32(v)
+        self.f.write(v)
     }
+
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u64(v)
+        self.f.write(v)
     }
+
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u128(v)
+        match self.ty.use_fmt() {
+            PsqlPrintFmt::Hex => self.f.write_hex(&v.to_be_bytes()),
+            PsqlPrintFmt::Uuid => self.f.write_uuid(Uuid::from_u128(v)),
+            _ => self.f.write(v),
+        }
     }
+
     fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u256(v)
+        match self.ty.use_fmt() {
+            PsqlPrintFmt::Hex => self.f.write_hex(&v.to_be_bytes()),
+            _ => self.f.write(v),
+        }
     }
+
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_i8(v)
+        self.f.write(v)
     }
+
     fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_i16(v)
+        self.f.write(v)
     }
+
     fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_i32(v)
+        self.f.write(v)
     }
+
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_i64(v)
+        match self.ty.use_fmt() {
+            PsqlPrintFmt::Duration => self.f.write_duration(TimeDuration::from_micros(v)),
+            PsqlPrintFmt::Timestamp => self.f.write_timestamp(Timestamp::from_micros_since_unix_epoch(v)),
+            _ => self.f.write(v),
+        }
     }
+
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_i128(v)
+        self.f.write(v)
     }
+
     fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_i256(v)
+        self.f.write(v)
     }
+
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_f32(v)
+        self.f.write(v)
     }
+
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_f64(v)
+        self.f.write(v)
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_str(v)
+        self.f.write_string(v)
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_bytes(v)
+        if self.ty.use_fmt() == PsqlPrintFmt::Satn {
+            self.f.write_hex(v)
+        } else {
+            self.f.write_bytes(v)
+        }
     }
 
-    fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
-        self.fmt.serialize_array(len)
+    fn serialize_array(self, _len: usize) -> Result<Self::SerializeArray, Self::Error> {
+        Ok(TypedArrayFormatter { ty: self.ty, f: self.f })
     }
 
-    fn serialize_seq_product(self, len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
-        Ok(PsqlSeqFormatter {
-            inner: self.serialize_named_product(len)?,
-        })
+    fn serialize_seq_product(self, _len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
+        Ok(TypedSeqFormatter { ty: self.ty, f: self.f })
     }
 
     fn serialize_named_product(self, _len: usize) -> Result<Self::SerializeNamedProduct, Self::Error> {
-        Ok(PsqlNamedFormatter {
-            f: EntryWrapper::new(self.fmt.f),
+        unreachable!("This should never be called, use `serialize_named_product_raw` instead.");
+    }
+
+    fn serialize_named_product_raw(self, value: &ValueWithType<'_, ProductValue>) -> Result<Self::Ok, Self::Error> {
+        let val = &value.val.elements;
+        assert_eq!(val.len(), value.ty().elements.len());
+        // If the value is a special type, we can write it directly
+        if self.ty.use_fmt().is_special() {
+            // Is a nested product type?
+            // We need to check for both the  enclosing(`self.ty`) type and the inner element type.
+            let (tuple, field) = if let Some(product) = self.ty.field.algebraic_type.as_product() {
+                (product, &product.elements[0])
+            } else {
+                (self.ty.tuple, self.ty.field)
+            };
+            return value.val.serialize(TypedSerializer {
+                ty: &PsqlType {
+                    client: self.ty.client,
+                    tuple,
+                    field,
+                    idx: self.ty.idx,
+                },
+                f: self.f,
+            });
+        }
+        // Allow to switch to an alternative record format, for example to write a `JSON` record.
+        if self.f.write_alt_record(self.ty, value)? {
+            return Ok(());
+        }
+        let mut record = Vec::with_capacity(val.len());
+
+        for (idx, (val, field)) in val.iter().zip(&*value.ty().elements).enumerate() {
+            let ty = PsqlType {
+                client: self.ty.client,
+                tuple: value.ty(),
+                field,
+                idx,
+            };
+            record.push((
+                field
+                    .name()
+                    .map(|n| &**n)
+                    .map(Cow::from)
+                    .unwrap_or_else(|| Cow::from(format!("col_{idx}"))),
+                ty,
+                value.with(&field.algebraic_type, val),
+            ));
+        }
+        self.f.write_record(record)
+    }
+
+    fn serialize_variant_raw(self, sum: &ValueWithType<'_, SumValue>) -> Result<Self::Ok, Self::Error> {
+        let sv = sum.value();
+        let (tag, val) = (sv.tag, &*sv.value);
+        let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
+        let product = ProductType::from([AlgebraicType::sum(sum.ty().clone())]);
+        let ty = PsqlType {
+            client: self.ty.client,
+            tuple: &product,
+            field: &product.elements[0],
             idx: 0,
-            start: true,
-            ty: self.ty,
-            is_special: false,
-        })
+        };
+        self.f.write_variant(
+            tag,
+            ty,
+            var_ty.name().map(|n| &**n),
+            sum.with(&var_ty.algebraic_type, val),
+        )
     }
 
-    fn serialize_variant<T: ser::Serialize + ?Sized>(
+    fn serialize_variant<T: Serialize + ?Sized>(
         self,
+        _tag: u8,
+        _name: Option<&str>,
+        _value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
+        unreachable!("Use `serialize_variant_raw` instead.");
+    }
+}
+
+impl TypedWriter for SqlFormatter<'_, '_> {
+    type Error = SatnError;
+
+    fn write<W: fmt::Display>(&mut self, value: W) -> Result<(), Self::Error> {
+        write!(self.fmt, "{value}")
+    }
+
+    fn write_bool(&mut self, value: bool) -> Result<(), Self::Error> {
+        write!(self.fmt, "{value}")
+    }
+
+    fn write_string(&mut self, value: &str) -> Result<(), Self::Error> {
+        write!(self.fmt, "\"{value}\"")
+    }
+
+    fn write_bytes(&mut self, value: &[u8]) -> Result<(), Self::Error> {
+        self.write_hex(value)
+    }
+
+    fn write_hex(&mut self, value: &[u8]) -> Result<(), Self::Error> {
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => write!(self.fmt, "0x{}", hex::encode(value)),
+            PsqlClient::Postgres => write!(self.fmt, "\"0x{}\"", hex::encode(value)),
+        }
+    }
+
+    fn write_timestamp(&mut self, value: Timestamp) -> Result<(), Self::Error> {
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => write!(self.fmt, "{}", value.to_rfc3339().unwrap()),
+            PsqlClient::Postgres => write!(self.fmt, "\"{}\"", value.to_rfc3339().unwrap()),
+        }
+    }
+
+    fn write_duration(&mut self, value: TimeDuration) -> Result<(), Self::Error> {
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => write!(self.fmt, "{value}"),
+            PsqlClient::Postgres => write!(self.fmt, "\"{}\"", value.to_iso8601()),
+        }
+    }
+
+    fn write_uuid(&mut self, value: Uuid) -> Result<(), Self::Error> {
+        write!(self.fmt, "\"{value}\"")
+    }
+
+    fn write_record(
+        &mut self,
+        fields: Vec<(Cow<str>, PsqlType<'_>, ValueWithType<AlgebraicValue>)>,
+    ) -> Result<(), Self::Error> {
+        let PsqlChars { start, sep, end, quote } = self.ty.client.format_chars();
+        write!(self.fmt, "{start}")?;
+        for (idx, (name, ty, value)) in fields.into_iter().enumerate() {
+            if idx > 0 {
+                write!(self.fmt, ", ")?;
+            }
+            write!(self.fmt, "{quote}{name}{quote}{sep} ")?;
+
+            // Serialize the value
+            value.serialize(TypedSerializer { ty: &ty, f: self })?;
+        }
+        write!(self.fmt, "{end}")?;
+        Ok(())
+    }
+
+    fn write_variant(
+        &mut self,
         tag: u8,
+        ty: PsqlType,
         name: Option<&str>,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_variant(tag, name, value)
-    }
-
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        unsafe { self.fmt.serialize_bsatn(ty, bsatn) }
-    }
-
-    unsafe fn serialize_bsatn_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        ty: &crate::AlgebraicType,
-        total_bsatn_len: usize,
-        bsatn: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        unsafe { self.fmt.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) }
-    }
-
-    unsafe fn serialize_str_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        total_len: usize,
-        string: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        unsafe { self.fmt.serialize_str_in_chunks(total_len, string) }
+        value: ValueWithType<AlgebraicValue>,
+    ) -> Result<(), Self::Error> {
+        self.write_record(vec![(
+            name.map(Cow::from).unwrap_or_else(|| Cow::from(format!("col_{tag}"))),
+            ty,
+            value,
+        )])
     }
 }

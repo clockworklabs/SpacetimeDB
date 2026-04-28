@@ -3,12 +3,13 @@
 //! Meant to be kept slim and trim for use across both native and WASM.
 
 use crate::{i256, u256};
+use bytes::{BufMut, BytesMut};
 use core::cell::Cell;
 use core::fmt;
 use core::str::Utf8Error;
 
 /// An error that occurred when decoding.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DecodeError {
     /// Not enough data was provided in the input.
     BufferLength {
@@ -24,31 +25,36 @@ pub enum DecodeError {
     InvalidUtf8,
     /// Expected the byte to be 0 or 1 to be a valid bool.
     InvalidBool(u8),
+    /// Allocation of `size` elements failed.
+    AllocationFailed(usize),
     /// Custom error not in the other variants of `DecodeError`.
     Other(String),
 }
 
+pub type DecodeResult<T> = Result<T, DecodeError>;
+
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DecodeError::BufferLength {
+            Self::BufferLength {
                 for_type,
                 expected,
                 given,
             } => write!(f, "data too short for {for_type}: Expected {expected}, given {given}"),
-            DecodeError::InvalidLen { expected, given } => {
+            Self::InvalidLen { expected, given } => {
                 write!(f, "unexpected data length: Expected {expected}, given {given}")
             }
-            DecodeError::InvalidTag { tag, sum_name } => {
+            Self::InvalidTag { tag, sum_name } => {
                 write!(
                     f,
                     "unknown tag {tag:#x} for sum type {}",
                     sum_name.as_deref().unwrap_or("<unknown>")
                 )
             }
-            DecodeError::InvalidUtf8 => f.write_str("invalid utf8"),
-            DecodeError::InvalidBool(byte) => write!(f, "byte {byte} not valid as `bool` (must be 0 or 1)"),
-            DecodeError::Other(err) => f.write_str(err),
+            Self::InvalidUtf8 => f.write_str("invalid utf8"),
+            Self::InvalidBool(byte) => write!(f, "byte {byte} not valid as `bool` (must be 0 or 1)"),
+            Self::AllocationFailed(size) => write!(f, "allocation of {size} elements failed"),
+            Self::Other(err) => f.write_str(err),
         }
     }
 }
@@ -309,6 +315,12 @@ impl BufWriter for &mut [u8] {
     }
 }
 
+impl BufWriter for BytesMut {
+    fn put_slice(&mut self, slice: &[u8]) {
+        BufMut::put_slice(self, slice);
+    }
+}
+
 /// A [`BufWriter`] that only counts the bytes.
 #[derive(Default)]
 pub struct CountWriter {
@@ -317,6 +329,14 @@ pub struct CountWriter {
 }
 
 impl CountWriter {
+    /// Run `work` on `writer`, but also count the number of bytes written.
+    pub fn run<W: BufWriter, R>(writer: W, work: impl FnOnce(&mut TeeWriter<W, CountWriter>) -> R) -> (R, usize) {
+        let counter = Self::default();
+        let mut writer = TeeWriter::new(writer, counter);
+        let ret = work(&mut writer);
+        (ret, writer.w2.finish())
+    }
+
     /// Consumes the counter and returns the final count.
     pub fn finish(self) -> usize {
         self.num_bytes
@@ -351,11 +371,7 @@ impl<W1: BufWriter, W2: BufWriter> BufWriter for TeeWriter<W1, W2> {
 impl<'de> BufReader<'de> for &'de [u8] {
     #[inline]
     fn get_chunk(&mut self, size: usize) -> Option<&'de [u8]> {
-        // TODO: split_at_checked once our msrv >= 1.80
-        if self.len() < size {
-            return None;
-        }
-        let (ret, rest) = self.split_at(size);
+        let (ret, rest) = self.split_at_checked(size)?;
         *self = rest;
         Some(ret)
     }

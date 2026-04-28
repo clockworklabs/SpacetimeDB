@@ -47,6 +47,7 @@ impl Separator for Comma {
     const CHAR: char = ',';
 }
 
+#[allow(unused)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SemiColon {}
 

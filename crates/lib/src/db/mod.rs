@@ -3,5 +3,5 @@
 pub mod attr;
 pub mod auth;
 pub mod default_element_ordering;
-pub mod error;
 pub mod raw_def;
+pub mod view;

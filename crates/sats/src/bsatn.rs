@@ -1,7 +1,10 @@
+use core::mem::MaybeUninit;
+
 use crate::buffer::{BufReader, BufWriter, CountWriter};
 use crate::de::{BasicSmallVecVisitor, Deserialize, DeserializeSeed, Deserializer as _};
 use crate::ser::Serialize;
 use crate::{ProductValue, Typespace, WithTypespace};
+use bytes::BytesMut;
 use ser::BsatnError;
 use smallvec::SmallVec;
 
@@ -16,8 +19,9 @@ pub use crate::buffer::DecodeError;
 pub use ser::BsatnError as EncodeError;
 
 /// Serialize `value` into the buffered writer `w` in the BSATN format.
+#[inline]
 pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), EncodeError> {
-    value.serialize(Serializer::new(w))
+    value.serialize_into_bsatn(Serializer::new(w))
 }
 
 /// Serialize `value` into a `Vec<u8>` in the BSATN format.
@@ -105,10 +109,56 @@ codec_funcs!(val: crate::AlgebraicValue);
 codec_funcs!(val: crate::ProductValue);
 codec_funcs!(val: crate::SumValue);
 
+/// Provides a view over a buffer that can reserve an additional `len` bytes
+/// and then provide those as an uninitialized buffer to write into.
+pub trait BufReservedFill {
+    /// Reserves space for `len` in `self` and then runs `fill` to fill it,
+    /// adding `len` to the total length of `self`.
+    ///
+    /// # Safety
+    ///
+    /// `fill` must initialize every byte in the slice.
+    unsafe fn reserve_and_fill(&mut self, len: usize, fill: impl FnOnce(&mut [MaybeUninit<u8>]));
+}
+
+impl BufReservedFill for Vec<u8> {
+    unsafe fn reserve_and_fill(&mut self, len: usize, fill: impl FnOnce(&mut [MaybeUninit<u8>])) {
+        // Get an uninitialized slice within `self` of `len` bytes.
+        let start = self.len();
+        self.reserve(len);
+        let sink = &mut self.spare_capacity_mut()[..len];
+
+        // Run the filling logic.
+        fill(sink);
+
+        // SAFETY: Caller promised that `sink` was fully initialized,
+        // which entails that we initialized `start .. start + len`,
+        // so now we have initialized up to `start + len`.
+        unsafe { self.set_len(start + len) }
+    }
+}
+
+impl BufReservedFill for BytesMut {
+    unsafe fn reserve_and_fill(&mut self, len: usize, fill: impl FnOnce(&mut [MaybeUninit<u8>])) {
+        // Get an uninitialized slice within `self` of `len` bytes.
+        let start = self.len();
+        self.reserve(len);
+        let sink = &mut self.spare_capacity_mut()[..len];
+
+        // Run the filling logic.
+        fill(sink);
+
+        // SAFETY: Caller promised that `sink` was fully initialized,
+        // which entails that we initialized `start .. start + len`,
+        // so now we have initialized up to `start + len`.
+        unsafe { self.set_len(start + len) }
+    }
+}
+
 /// Types that can be encoded to BSATN.
 ///
-/// Implementations of this trait may be more efficient than directly calling [`bsatn::to_vec`].
-/// In particular, for [`RowRef`], this method will use a [`StaticLayout`] if one is available,
+/// Implementations of this trait may be more efficient than directly calling [`to_vec`].
+/// In particular, for `spacetimedb_table::table::RowRef`, this method will use a `StaticLayout` if one is available,
 /// avoiding expensive runtime type dispatch.
 pub trait ToBsatn {
     /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
@@ -116,7 +166,7 @@ pub trait ToBsatn {
 
     /// BSATN-encode the row referred to by `self` into `buf`,
     /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError>;
 
     /// Returns the static size of the type of this object.
     ///
@@ -128,7 +178,7 @@ impl<T: ToBsatn> ToBsatn for &T {
     fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
         T::to_bsatn_vec(*self)
     }
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError> {
         T::to_bsatn_extend(*self, buf)
     }
     fn static_bsatn_size(&self) -> Option<u16> {
@@ -141,7 +191,7 @@ impl ToBsatn for ProductValue {
         to_vec(self)
     }
 
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError> {
         to_writer(buf, self)
     }
 
@@ -150,13 +200,40 @@ impl ToBsatn for ProductValue {
     }
 }
 
+mod private_is_primitive_type {
+    pub trait Sealed {}
+}
+/// A primitive type.
+/// This is purely intended for use in `crates/bindings-macro`.
+///
+/// # Safety
+///
+/// Implementing this guarantees that the type has no padding, recursively.
+#[doc(hidden)]
+pub unsafe trait IsPrimitiveType: private_is_primitive_type::Sealed {}
+macro_rules! is_primitive_type {
+    ($($prim:ty),*) => {
+        $(
+            impl private_is_primitive_type::Sealed for $prim {}
+            // SAFETY:  the type is primitive and has no padding.
+            unsafe impl IsPrimitiveType for $prim {}
+        )*
+    };
+}
+is_primitive_type!(u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64);
+
+/// Enforces that a type is a primitive.
+/// This is purely intended for use in `crates/bindings-macro`.
+pub const fn assert_is_primitive_type<T: IsPrimitiveType>() {}
+
 #[cfg(test)]
 mod tests {
-    use super::{to_vec, DecodeError};
-    use crate::proptest::generate_typed_value;
-    use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue};
+    use super::{to_vec, DecodeError, Deserializer};
+    use crate::de::DeserializeSeed;
+    use crate::proptest::{generate_algebraic_type, generate_typed_value};
+    use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue, WithTypespace};
     use proptest::prelude::*;
-    use proptest::proptest;
+    use proptest::{collection::vec, proptest};
 
     #[test]
     fn type_to_binary_equivalent() {
@@ -172,12 +249,30 @@ mod tests {
         assert_eq!(direct, through_value);
     }
 
+    fn type_non_empty(ty: &AlgebraicType) -> bool {
+        match ty {
+            AlgebraicType::Ref(_) => unreachable!(),
+            AlgebraicType::Array(elem_ty) => type_non_empty(&elem_ty.elem_ty),
+            AlgebraicType::Product(elems) => elems.iter().any(|e| type_non_empty(&e.algebraic_type)),
+            AlgebraicType::Sum(vars) => !vars.is_empty(),
+            _ => true,
+        }
+    }
+
     proptest! {
         #[test]
         fn bsatn_enc_de_roundtrips((ty, val) in generate_typed_value()) {
             let bytes = to_vec(&val).unwrap();
+            prop_assert_eq!(WithTypespace::empty(&ty).validate(Deserializer::new(&mut &bytes[..])), Ok(()));
             let val_decoded = AlgebraicValue::decode(&ty, &mut &bytes[..]).unwrap();
             prop_assert_eq!(val, val_decoded);
+        }
+
+        #[test]
+        fn bsatn_invalid_wont_decode(ty in generate_algebraic_type(), bytes in vec(any::<u8>(), 0..4096)) {
+            prop_assume!(type_non_empty(&ty));
+            prop_assume!(WithTypespace::empty(&ty).validate(Deserializer::new(&mut &bytes[..])).is_err());
+            prop_assert!(AlgebraicValue::decode(&ty, &mut &bytes[..]).is_err());
         }
 
         #[test]

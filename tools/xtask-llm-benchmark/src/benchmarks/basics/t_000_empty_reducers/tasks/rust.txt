@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in Rust that defines a table and these five empty reducers.
+
+TABLES
+- EmptyTable
+  - Struct: EmptyTable
+  - Fields:
+    - id: i32 (primary key)
+
+REDUCERS
+- empty_reducer_no_args: no arguments, returns (), empty body
+- empty_reducer_with_int: (count: i32), returns (), empty body
+- empty_reducer_with_string: (name: String), returns (), empty body
+- empty_reducer_with_two_args: (count: i32, name: String), returns (), empty body
+- empty_reducer_with_three_args: (active: bool, ratio: f32, label: String), returns (), empty body

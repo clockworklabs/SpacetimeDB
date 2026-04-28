@@ -2,10 +2,9 @@ use crate::errors::CliError;
 use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
-use spacetimedb::config::{set_opt_value, set_table_opt_value};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_fs_utils::atomic_write;
 use spacetimedb_paths::cli::CliTomlPath;
-use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use toml_edit::ArrayOfTables;
@@ -70,7 +69,7 @@ fn read_table<'a>(table: &'a toml_edit::Table, key: &'a str) -> Result<Option<&'
             Err(CliError::ConfigType {
                 key: key.to_string(),
                 kind: "table array",
-                found: value.clone(),
+                found: Box::new(value.clone()),
             })
         }
     } else {
@@ -86,7 +85,7 @@ fn read_opt_str(table: &toml_edit::Table, key: &str) -> Result<Option<String>, C
             Err(CliError::ConfigType {
                 key: key.to_string(),
                 kind: "string",
-                found: value.clone(),
+                found: Box::new(value.clone()),
             })
         }
     } else {
@@ -163,15 +162,15 @@ impl RawConfig {
             nickname: Some("local".to_string()),
             ecdsa_public_key: None,
         };
-        let testnet = ServerConfig {
-            host: "testnet.spacetimedb.com".to_string(),
+        let maincloud = ServerConfig {
+            host: "maincloud.spacetimedb.com".to_string(),
             protocol: "https".to_string(),
-            nickname: Some("testnet".to_string()),
+            nickname: Some("maincloud".to_string()),
             ecdsa_public_key: None,
         };
         RawConfig {
-            default_server: local.nickname.clone(),
-            server_configs: vec![local, testnet],
+            default_server: maincloud.nickname.clone(),
+            server_configs: vec![maincloud, local],
             web_session_token: None,
             spacetimedb_token: None,
         }
@@ -221,24 +220,24 @@ impl RawConfig {
         ecdsa_public_key: Option<String>,
         nickname: Option<String>,
     ) -> anyhow::Result<()> {
-        if let Some(nickname) = &nickname {
-            if let Ok(cfg) = self.find_server(nickname) {
-                anyhow::bail!(
-                    "Server nickname {} already in use: {}://{}",
-                    nickname,
-                    cfg.protocol,
-                    cfg.host,
-                );
-            }
+        if let Some(nickname) = &nickname
+            && let Ok(cfg) = self.find_server(nickname)
+        {
+            anyhow::bail!(
+                "Server nickname {} already in use: {}://{}",
+                nickname,
+                cfg.protocol,
+                cfg.host,
+            );
         }
 
         if let Ok(cfg) = self.find_server(&host) {
-            if let Some(nick) = &cfg.nickname {
-                if nick == &host {
-                    anyhow::bail!("Server host name is ambiguous with existing server nickname: {}", nick);
-                }
+            if let Some(nick) = &cfg.nickname
+                && nick == &host
+            {
+                anyhow::bail!("Server host name is ambiguous with existing server nickname: {nick}");
             }
-            anyhow::bail!("Server already configured for host: {}", host);
+            anyhow::bail!("Server already configured for host: {host}");
         }
 
         self.server_configs.push(ServerConfig {
@@ -296,10 +295,10 @@ impl RawConfig {
 
             // If we're removing the default server,
             // unset the default server.
-            if let Some(default_server) = &self.default_server {
-                if cfg.nick_or_host_or_url_is(default_server) {
-                    self.default_server = None;
-                }
+            if let Some(default_server) = &self.default_server
+                && cfg.nick_or_host_or_url_is(default_server)
+            {
+                self.default_server = None;
             }
 
             return Ok(());
@@ -371,32 +370,32 @@ Fetch the server's fingerprint with:
     ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
         // Check if the new nickname or host name would introduce ambiguities between
         // server configurations.
-        if let Some(new_nick) = new_nickname {
-            if let Ok(other_server) = self.find_server(new_nick) {
-                anyhow::bail!(
-                    "Nickname {} conflicts with saved configuration for server {}: {}://{}",
-                    new_nick,
-                    other_server.nick_or_host(),
-                    other_server.protocol,
-                    other_server.host
-                );
-            }
+        if let Some(new_nick) = new_nickname
+            && let Ok(other_server) = self.find_server(new_nick)
+        {
+            anyhow::bail!(
+                "Nickname {} conflicts with saved configuration for server {}: {}://{}",
+                new_nick,
+                other_server.nick_or_host(),
+                other_server.protocol,
+                other_server.host
+            );
         }
-        if let Some(new_host) = new_host {
-            if let Ok(other_server) = self.find_server(new_host) {
-                anyhow::bail!(
-                    "Host {} conflicts with saved configuration for server {}: {}://{}",
-                    new_host,
-                    other_server.nick_or_host(),
-                    other_server.protocol,
-                    other_server.host
-                );
-            }
+        if let Some(new_host) = new_host
+            && let Ok(other_server) = self.find_server(new_host)
+        {
+            anyhow::bail!(
+                "Host {} conflicts with saved configuration for server {}: {}://{}",
+                new_host,
+                other_server.nick_or_host(),
+                other_server.protocol,
+                other_server.host
+            );
         }
 
         let cfg = self.find_server_mut(server)?;
         let old_nickname = if let Some(new_nickname) = new_nickname {
-            std::mem::replace(&mut cfg.nickname, Some(new_nickname.to_string()))
+            cfg.nickname.replace(new_nickname.to_string())
         } else {
             None
         };
@@ -419,10 +418,10 @@ Fetch the server's fingerprint with:
                 if default_server == old_host {
                     *default_server = new_host.unwrap().to_string();
                 }
-            } else if let Some(old_nick) = &old_nickname {
-                if default_server == old_nick {
-                    *default_server = new_nickname.unwrap().to_string();
-                }
+            } else if let Some(old_nick) = &old_nickname
+                && default_server == old_nick
+            {
+                *default_server = new_nickname.unwrap().to_string();
             }
         }
 
@@ -820,13 +819,52 @@ Update the server's fingerprint with:
     pub fn spacetimedb_token(&self) -> Option<&String> {
         self.home.spacetimedb_token.as_ref()
     }
+}
 
-    pub fn spacetimedb_token_or_error(&self) -> anyhow::Result<&String> {
-        if let Some(token) = self.spacetimedb_token() {
-            Ok(token)
-        } else {
-            Err(anyhow::anyhow!("No login token found. Please run `spacetime login`."))
+/// Update the value of a key in a `TOML` document, preserving the formatting and comments of the original value.
+///
+/// ie:
+///
+/// ```toml;no_run
+/// # Moving key = value to key = new_value
+/// old = "value" # Comment
+/// new = "new_value" # Comment
+/// ```
+fn copy_value_with_decor(old_value: Option<&toml_edit::Item>, new_value: &str) -> toml_edit::Item {
+    match old_value {
+        Some(toml_edit::Item::Value(toml_edit::Value::String(old_value))) => {
+            // Creates a new `toml_edit::Value` with the same formatting as the old value.
+            let mut new = toml_edit::Value::String(toml_edit::Formatted::new(new_value.to_string()));
+            let decor = new.decor_mut();
+            // Copy the comments and formatting from the old value.
+            *decor = old_value.decor().clone();
+            new.into()
         }
+        _ => new_value.into(),
+    }
+}
+
+/// Set the value of a key in a `TOML` document, removing the key if the value is `None`.
+///
+/// **NOTE**: This function will preserve the formatting and comments of the original value.
+pub fn set_opt_value(doc: &mut toml_edit::DocumentMut, key: &str, value: Option<&str>) {
+    let old_value = doc.get(key);
+    if let Some(new) = value {
+        doc[key] = copy_value_with_decor(old_value, new);
+    } else {
+        doc.remove(key);
+    }
+}
+
+/// Set the value of a key in a `TOML` table, removing the key if the value is `None`.
+///
+/// **NOTE**: This function will preserve the formatting and comments of the original value.
+pub fn set_table_opt_value(table: &mut toml_edit::Table, key: &str, value: Option<&str>) {
+    let old_value = table.get(key);
+    if let Some(new) = value {
+        table[key] = copy_value_with_decor(old_value, new);
+    } else {
+        table.remove(key);
     }
 }
 
@@ -1000,7 +1038,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "default_server".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1008,7 +1046,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "web_session_token".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1016,7 +1054,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "spacetimedb_token".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1026,7 +1064,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "server_configs".to_string(),
                 kind: "table array",
-                found: toml_edit::table(),
+                found: Box::new(toml_edit::table()),
             },
         )?;
         check_invalid(
@@ -1037,7 +1075,7 @@ nickname =1
             CliError::ConfigType {
                 key: "nickname".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1048,7 +1086,7 @@ host =1
             CliError::ConfigType {
                 key: "host".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
 
@@ -1061,7 +1099,7 @@ protocol =1
             CliError::ConfigType {
                 key: "protocol".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         Ok(())
@@ -1076,10 +1114,12 @@ protocol =1
         let config_path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
 
         let mut local = Config::load(config_path.clone()).unwrap();
-        let mut testnet = Config::load(config_path.clone()).unwrap();
+        let mut testnet = local.clone();
+        let mut maincloud = local.clone();
 
         local.home.default_server = Some("local".to_string());
         testnet.home.default_server = Some("testnet".to_string());
+        maincloud.home.default_server = Some("maincloud".to_string());
 
         let mut handles = vec![];
         let total_threads: usize = 8;
@@ -1116,11 +1156,12 @@ protocol =1
         }
         let local = local.doc().to_string();
         let testnet = testnet.doc().to_string();
+        let maincloud = maincloud.doc().to_string();
 
         // As long the results are any valid config, we're good.
         assert!(results
             .iter()
-            .all(|r| r.trim() == local.trim() || r.trim() == testnet.trim()));
+            .all(|r| r.trim() == local.trim() || r.trim() == testnet.trim() || r.trim() == maincloud.trim()));
         Ok(())
     }
 }

@@ -5,20 +5,20 @@
 //! [`SpacetimePaths`] holds the paths to the various directories used by the CLI & database.
 //!
 //! * **cli-bin-dir**: a directory under which all versions of all
-//!     SpacetimeDB binaries is be stored. Each binary is stored in a
-//!     directory named with version number of the binary in this directory. If a
-//!     binary has any related files required by that binary which are specific to
-//!     that version, for example, template configuration files, these files will be
-//!     installed in this folder as well.
+//!   SpacetimeDB binaries is be stored. Each binary is stored in a
+//!   directory named with version number of the binary in this directory. If a
+//!   binary has any related files required by that binary which are specific to
+//!   that version, for example, template configuration files, these files will be
+//!   installed in this folder as well.
 //!
 //! * **cli-config-dir**: a directory where configuration and state for the CLI,
-//!     as well as the keyfiles used by the server, are stored.
+//!   as well as the keyfiles used by the server, are stored.
 //!
 //! * **cli-bin-file**: the location of the default spacetime CLI executable, which
-//!     is a symlink to the actual `spacetime` binary in the cli-bin-dir.
+//!   is a symlink to the actual `spacetime` binary in the cli-bin-dir.
 //!
 //! * **data-dir**: the directory where all persistent server & database files
-//!     are stored.
+//!   are stored.
 //!
 //! ## Unix Directory Structure
 //!
@@ -173,7 +173,8 @@ pub trait FromPathUnchecked {
 
 path_type! {
     /// The --root-dir for the spacetime installation, if specified.
-    #[non_exhaustive(FALSE)]
+    // TODO: replace cfg(any()) with cfg(false) once stabilized
+    #[non_exhaustive(any())]
     RootDir
 }
 
@@ -193,6 +194,18 @@ impl RootDir {
     pub fn data_dir(&self) -> server::ServerDataDir {
         server::ServerDataDir(self.0.join("data"))
     }
+
+    fn from_paths(paths: &SpacetimePaths) -> Option<Self> {
+        let SpacetimePaths {
+            cli_config_dir,
+            cli_bin_file,
+            cli_bin_dir,
+            data_dir,
+        } = paths;
+        let parent = cli_config_dir.0.parent()?;
+        let parents = [cli_bin_file.0.parent()?, cli_bin_dir.0.parent()?, data_dir.0.parent()?];
+        parents.iter().all(|x| *x == parent).then(|| Self(parent.to_owned()))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -204,7 +217,7 @@ pub struct SpacetimePaths {
 }
 
 impl SpacetimePaths {
-    /// Get the default directories for the currrent platform.
+    /// Get the default directories for the current platform.
     ///
     /// Returns an error if the platform director(y/ies) cannot be found.
     pub fn platform_defaults() -> anyhow::Result<Self> {
@@ -247,17 +260,20 @@ impl SpacetimePaths {
             data_dir: dir.data_dir(),
         }
     }
+
+    pub fn to_root_dir(&self) -> Option<RootDir> {
+        RootDir::from_paths(self)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::{OsStr, OsString};
+    use crate::{PathBufExt, RootDir, SpacetimePaths};
     use std::path::Path;
 
-    use super::*;
-
+    #[cfg(not(windows))]
     mod vars {
-        use super::*;
+        use std::ffi::{OsStr, OsString};
         struct ResetVar<'a>(&'a str, Option<OsString>);
         impl Drop for ResetVar<'_> {
             fn drop(&mut self) {
@@ -266,9 +282,11 @@ mod tests {
         }
         fn maybe_set_var(var: &str, val: Option<impl AsRef<OsStr>>) {
             if let Some(val) = val {
-                std::env::set_var(var, val);
+                // TODO: Audit that the environment access only happens in single-threaded code.
+                unsafe { std::env::set_var(var, val) };
             } else {
-                std::env::remove_var(var);
+                // TODO: Audit that the environment access only happens in single-threaded code.
+                unsafe { std::env::remove_var(var) };
             }
         }
         pub(super) fn with_vars<const N: usize, R>(vars: [(&str, Option<&str>); N], f: impl FnOnce() -> R) -> R {
@@ -303,6 +321,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows() {
+        use crate::SpacetimePaths;
+
         let paths = SpacetimePaths::platform_defaults().unwrap();
         let appdata_local = dirs::data_local_dir().unwrap();
         assert_eq!(paths.cli_config_dir.0, appdata_local.join("config"));

@@ -7,14 +7,23 @@ license-file = "LICENSE"
 description = "The logical expression representation for the SpacetimeDB query engine"
 
 [dependencies]
+anyhow.workspace = true
+bigdecimal.workspace = true
 derive_more.workspace = true
-string-interner.workspace = true
+ethnum.workspace = true
 thiserror.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-sql-parser.workspace = true
+bytes.workspace = true
 
 [dev-dependencies]
-spacetimedb-lib.workspace = true
+pretty_assertions.workspace = true
+spacetimedb = { path = "../bindings", features = ["unstable"] }
+spacetimedb-lib = { path = "../lib" }
+
+[lints]
+workspace = true
