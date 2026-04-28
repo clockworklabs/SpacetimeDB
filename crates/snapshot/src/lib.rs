@@ -23,6 +23,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use log::warn;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::compression::{
@@ -44,7 +45,9 @@ use spacetimedb_table::{
     table::Table,
 };
 use std::fs::{self, File};
+use std::io;
 use std::ops::RangeBounds;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{
     collections::BTreeMap,
@@ -171,6 +174,89 @@ struct BlobEntry {
 struct TableEntry {
     table_id: TableId,
     pages: Vec<blake3::Hash>,
+}
+
+/// A non-durable snapshot created via [SnapshotRepository::create_snapshot].
+///
+/// When [SnapshotRepository::create_snapshot] returns, all objects will have
+/// been written to the underlying object repository, but not `fsync`'ed.
+///
+/// Because this means that the snapshot may be incomplete, the [Snapshot] file
+/// will _not_ have been written, and the snapshot remains locked (via a [Lockfile]).
+///
+/// To turn an [UnflushedSnapshot] into a durable snapshot, call
+/// [UnflushedSnapshot::sync_all]. This will:
+///
+/// - sync all objects the snapshot references
+/// - sync the object repository root
+/// - write and sync the snapshot file
+/// - drop the lock file
+///
+/// This ensures that the snapshot file is present only if all objects are
+/// present and durable, and that the snapshot is considered invalid otherwise.
+///
+/// If [UnflushedSnapshot] is dropped without calling `sync_all`, the [Drop]
+/// impl will attempt to call `sync_all` and log any errors.
+///
+/// This two-stage snapshot creation exists in order to not introduce additional
+/// latency while the datastore is locked for snapshotting.
+#[must_use = "snapshots are not durable until `sync_all` is called"]
+pub struct UnflushedSnapshot {
+    inner: Option<UnflushedSnapshotInner>,
+}
+
+impl UnflushedSnapshot {
+    /// Sync all objects in the snapshot and write out the snapshot file.
+    ///
+    /// Returns the [SnapshotDirPath] on success.
+    pub fn sync_all(mut self) -> Result<SnapshotDirPath, SnapshotError> {
+        self.inner.take().unwrap().sync_all()
+    }
+}
+
+impl Drop for UnflushedSnapshot {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.take()
+            && let Err(e) = inner.sync_all()
+        {
+            warn!("failed to sync unflushed snapshot dropped without syncing: {e}");
+        }
+    }
+}
+
+struct UnflushedSnapshotInner {
+    snapshot: Snapshot,
+    snapshot_dir: SnapshotDirPath,
+    snapshot_repo: SnapshotRepository,
+    object_repo: DirTrie,
+    lockfile: Lockfile,
+}
+
+impl UnflushedSnapshotInner {
+    fn sync_all(self) -> Result<SnapshotDirPath, SnapshotError> {
+        fn fsync(path: &Path) -> io::Result<()> {
+            File::open(path)?.sync_all()
+        }
+
+        // Sync all objects and their parent directories.
+        // The paths yielded by the [Snapshot::files] iterator are constructed
+        // by [DirTree::file_path], which creates a path with a parent.
+        // `parent()` is thus known to succeed.
+        for (_, path) in self.snapshot.files(&self.object_repo) {
+            fsync(&path)?;
+            fsync(path.parent().unwrap())?;
+        }
+        // Sync the root directory of the object repo
+        fsync(self.object_repo.root())?;
+        // Write out the snapshot file (syncs internally).
+        self.snapshot_repo
+            .write_snapshot_file(&self.snapshot_dir, self.snapshot)?;
+
+        // We can now drop the lockfile.
+        drop(self.lockfile);
+
+        Ok(self.snapshot_dir)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -658,7 +744,7 @@ impl SnapshotRepository {
         tables: impl Iterator<Item = &'db mut Table>,
         blobs: &'db dyn BlobStore,
         tx_offset: TxOffset,
-    ) -> Result<SnapshotDirPath, SnapshotError> {
+    ) -> Result<UnflushedSnapshot, SnapshotError> {
         // Invalidate equal to or newer than `tx_offset`.
         //
         // This is because snapshots don't currently track the epoch in which
@@ -692,7 +778,7 @@ impl SnapshotRepository {
         // Before performing any observable operations,
         // acquire a lockfile on the snapshot you want to create.
         // Because we could be compressing the snapshot.
-        let _lock = Lockfile::for_file(&snapshot_dir)?;
+        let lockfile = Lockfile::for_file(&snapshot_dir)?;
 
         // Create the snapshot directory.
         snapshot_dir.create()?;
@@ -708,11 +794,6 @@ impl SnapshotRepository {
         snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
         snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
 
-        // Ensure all the object directories are durable.
-        File::open(object_repo.root())?.sync_all()?;
-
-        self.write_snapshot_file(&snapshot_dir, snapshot)?;
-
         log::info!(
             "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
             self.database_identity,
@@ -721,9 +802,15 @@ impl SnapshotRepository {
             counter.objects_written,
         );
 
-        // Success! return the directory of the newly-created snapshot.
-        // The lockfile will be dropped here.
-        Ok(snapshot_dir)
+        Ok(UnflushedSnapshot {
+            inner: Some(UnflushedSnapshotInner {
+                snapshot,
+                snapshot_dir,
+                snapshot_repo: self.clone(),
+                object_repo,
+                lockfile,
+            }),
+        })
     }
 
     /// Write the on-disk snapshot file containing the BSATN-encoded `snapshot`

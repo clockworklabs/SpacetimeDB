@@ -44,7 +44,7 @@ use spacetimedb_schema::{
     reducer_name::ReducerName,
     schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
 };
-use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
+use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository, UnflushedSnapshot};
 use spacetimedb_table::{
     indexes::RowPointer,
     page_pool::PagePool,
@@ -278,8 +278,10 @@ impl Locking {
     /// Returns an error if [`SnapshotRepository::create_snapshot`] returns an
     /// error.
     pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>> {
-        let maybe_offset_and_path = Self::take_snapshot_internal(&self.committed_state, repo)?;
-        Ok(maybe_offset_and_path.map(|(_, path)| path))
+        Self::take_snapshot_internal(&self.committed_state, repo)?
+            .map(|(_offset, snap)| snap.sync_all())
+            .transpose()
+            .map_err(Into::into)
     }
 
     pub fn assert_system_tables_match(&self) -> Result<()> {
@@ -290,7 +292,7 @@ impl Locking {
     pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &SnapshotRepository,
-    ) -> Result<Option<(TxOffset, SnapshotDirPath)>> {
+    ) -> Result<Option<(TxOffset, UnflushedSnapshot)>> {
         let mut committed_state = committed_state.write();
         let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
             return Ok(None);
@@ -303,9 +305,9 @@ impl Locking {
         );
 
         let (tables, blob_store) = committed_state.persistent_tables_and_blob_store();
-        let snapshot_dir = repo.create_snapshot(tables, blob_store, tx_offset)?;
+        let unflushed_snapshot = repo.create_snapshot(tables, blob_store, tx_offset)?;
 
-        Ok(Some((tx_offset, snapshot_dir)))
+        Ok(Some((tx_offset, unflushed_snapshot)))
     }
 
     /// Returns a list over all the currently connected clients,
