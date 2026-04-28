@@ -511,6 +511,7 @@ macro_rules! procedure_tests {
 procedure_tests!(rust_procedures, "");
 procedure_tests!(typescript_procedures, "-ts");
 procedure_tests!(cpp_procedures, "-cpp");
+procedure_tests!(csharp_procedures, "-cs");
 
 macro_rules! view_tests {
     ($mod_name:ident, $suffix:literal) => {
