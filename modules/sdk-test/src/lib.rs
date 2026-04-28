@@ -480,6 +480,37 @@ define_tables! {
     } #[unique] u Uuid, data i32;
 }
 
+#[spacetimedb::table(accessor = pk_try_update_unique_conflict, public)]
+pub struct PkTryUpdateUniqueConflict {
+    #[primary_key]
+    id: u32,
+    #[unique]
+    unique_value: u32,
+    data: i32,
+}
+
+#[spacetimedb::reducer]
+fn insert_pk_try_update_unique_conflict(ctx: &ReducerContext, id: u32, unique_value: u32, data: i32) {
+    ctx.db
+        .pk_try_update_unique_conflict()
+        .insert(PkTryUpdateUniqueConflict { id, unique_value, data });
+}
+
+#[spacetimedb::reducer]
+fn try_update_pk_try_update_unique_conflict(
+    ctx: &ReducerContext,
+    id: u32,
+    unique_value: u32,
+    data: i32,
+) -> anyhow::Result<()> {
+    ctx.db
+        .pk_try_update_unique_conflict()
+        .id()
+        .try_update(PkTryUpdateUniqueConflict { id, unique_value, data })
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    Ok(())
+}
+
 // Tables mapping a primary key to a boring i32 payload.
 // This allows us to test update and delete events.
 define_tables! {

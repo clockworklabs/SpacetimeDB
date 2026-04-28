@@ -432,7 +432,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     /// or if either the delete or the insertion would violate a constraint.
     /// Callers which intend to handle constraint violation errors should instead use [`Self::try_update`].
     #[track_caller]
-    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
+    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row
+    where
+        Col: PrimaryKey,
+    {
         self.try_update(new_row).unwrap_or_else(|e| panic!("{e}"))
     }
 

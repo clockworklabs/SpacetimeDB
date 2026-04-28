@@ -75,6 +75,7 @@ pub async fn dispatch(test: &str, db_name: &str) {
 
         "on-reducer" => exec_on_reducer(db_name).await,
         "fail-reducer" => exec_fail_reducer(db_name).await,
+        "try-update-unique-conflict" => exec_try_update_unique_conflict(db_name).await,
 
         "insert-vec" => exec_insert_vec(db_name).await,
         "insert-option-some" => exec_insert_option_some(db_name).await,
@@ -340,6 +341,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM unique_identity;",
     "SELECT * FROM unique_connection_id;",
     "SELECT * FROM unique_uuid;",
+    "SELECT * FROM pk_try_update_unique_conflict;",
     "SELECT * FROM pk_u_8;",
     "SELECT * FROM pk_u_16;",
     "SELECT * FROM pk_u_32;",
@@ -1134,6 +1136,174 @@ async fn exec_fail_reducer(db_name: &str) {
 
                         reducer_fail_result(run_checks());
                     })
+                    .unwrap();
+            })
+            .unwrap();
+    });
+
+    test_counter.wait_for_all().await;
+}
+
+/// This tests that `UniqueColumn::try_update()` lets reducers handle a unique
+/// constraint failure on a non-primary-key unique column without panicking.
+async fn exec_try_update_unique_conflict(db_name: &str) {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+    let insert_first_result = test_counter.add_test("insert-first");
+    let insert_second_result = test_counter.add_test("insert-second");
+    let try_update_conflict_result = test_counter.add_test("try-update-conflict");
+
+    let connection = connect(db_name, &test_counter).await;
+
+    let first_id = 1;
+    let first_unique = 10;
+    let first_data = 100;
+    let second_id = 2;
+    let second_unique = 20;
+    let second_data = 200;
+    let failed_update_data = 999;
+
+    subscribe_all_then(&connection, move |ctx| {
+        sub_applied_nothing_result(assert_all_tables_empty(ctx));
+
+        ctx.reducers
+            .insert_pk_try_update_unique_conflict_then(first_id, first_unique, first_data, move |ctx, status| {
+                let run_checks = || {
+                    match &status {
+                        Ok(Ok(())) => {}
+                        other => anyhow::bail!("Expected success but got {other:?}"),
+                    }
+                    if !matches!(ctx.event.status, Status::Committed) {
+                        anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
+                    }
+                    assert_eq_or_bail!(
+                        Reducer::InsertPkTryUpdateUniqueConflict {
+                            id: first_id,
+                            unique_value: first_unique,
+                            data: first_data,
+                        },
+                        ctx.event.reducer
+                    );
+
+                    let row = ctx
+                        .db
+                        .pk_try_update_unique_conflict()
+                        .id()
+                        .find(&first_id)
+                        .ok_or_else(|| anyhow::anyhow!("expected first row to exist"))?;
+                    assert_eq_or_bail!(first_unique, row.unique_value);
+                    assert_eq_or_bail!(first_data, row.data);
+                    Ok(())
+                };
+
+                insert_first_result(run_checks());
+
+                ctx.reducers
+                    .insert_pk_try_update_unique_conflict_then(
+                        second_id,
+                        second_unique,
+                        second_data,
+                        move |ctx, status| {
+                            let run_checks = || {
+                                match &status {
+                                    Ok(Ok(())) => {}
+                                    other => anyhow::bail!("Expected success but got {other:?}"),
+                                }
+                                if !matches!(ctx.event.status, Status::Committed) {
+                                    anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
+                                }
+                                assert_eq_or_bail!(
+                                    Reducer::InsertPkTryUpdateUniqueConflict {
+                                        id: second_id,
+                                        unique_value: second_unique,
+                                        data: second_data,
+                                    },
+                                    ctx.event.reducer
+                                );
+
+                                let first_row = ctx
+                                    .db
+                                    .pk_try_update_unique_conflict()
+                                    .id()
+                                    .find(&first_id)
+                                    .ok_or_else(|| anyhow::anyhow!("expected first row to exist"))?;
+                                let second_row = ctx
+                                    .db
+                                    .pk_try_update_unique_conflict()
+                                    .id()
+                                    .find(&second_id)
+                                    .ok_or_else(|| anyhow::anyhow!("expected second row to exist"))?;
+                                assert_eq_or_bail!(first_unique, first_row.unique_value);
+                                assert_eq_or_bail!(first_data, first_row.data);
+                                assert_eq_or_bail!(second_unique, second_row.unique_value);
+                                assert_eq_or_bail!(second_data, second_row.data);
+                                Ok(())
+                            };
+
+                            insert_second_result(run_checks());
+
+                            ctx.reducers
+                                .try_update_pk_try_update_unique_conflict_then(
+                                    first_id,
+                                    second_unique,
+                                    failed_update_data,
+                                    move |ctx, status| {
+                                        let run_checks = || {
+                                            let err = match status {
+                                                Ok(Err(msg)) => msg,
+                                                Ok(Ok(())) => {
+                                                    anyhow::bail!(
+                                                        "expected unique conflict from try_update reducer, but it succeeded"
+                                                    )
+                                                }
+                                                Err(internal_error) => {
+                                                    anyhow::bail!(
+                                                        "expected handled reducer error, but reducer panicked: {internal_error:?}"
+                                                    )
+                                                }
+                                            };
+
+                                            anyhow::ensure!(
+                                                !err.is_empty(),
+                                                "expected a surfaced reducer error message for the unique conflict"
+                                            );
+                                            anyhow::ensure!(
+                                                !matches!(ctx.event.status, Status::Committed),
+                                                "expected failed try_update reducer not to commit"
+                                            );
+                                            assert_eq_or_bail!(
+                                                Reducer::TryUpdatePkTryUpdateUniqueConflict {
+                                                    id: first_id,
+                                                    unique_value: second_unique,
+                                                    data: failed_update_data,
+                                                },
+                                                ctx.event.reducer
+                                            );
+
+                                            let table = ctx.db.pk_try_update_unique_conflict();
+                                            assert_eq_or_bail!(2, table.count());
+
+                                            let first_row = table
+                                                .id()
+                                                .find(&first_id)
+                                                .ok_or_else(|| anyhow::anyhow!("expected first row to still exist"))?;
+                                            let second_row = table
+                                                .id()
+                                                .find(&second_id)
+                                                .ok_or_else(|| anyhow::anyhow!("expected second row to still exist"))?;
+                                            assert_eq_or_bail!(first_unique, first_row.unique_value);
+                                            assert_eq_or_bail!(first_data, first_row.data);
+                                            assert_eq_or_bail!(second_unique, second_row.unique_value);
+                                            assert_eq_or_bail!(second_data, second_row.data);
+                                            Ok(())
+                                        };
+
+                                        try_update_conflict_result(run_checks());
+                                    },
+                                )
+                                .unwrap();
+                        },
+                    )
                     .unwrap();
             })
             .unwrap();
