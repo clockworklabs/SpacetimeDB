@@ -1,5 +1,5 @@
 use crate::array_value::{ArrayValueIntoIter, ArrayValueIterCloned};
-use crate::{de, AlgebraicValue, SumValue};
+use crate::{de, AlgebraicValue, ProductValue, SumValue};
 use crate::{i256, u256};
 use derive_more::From;
 
@@ -22,6 +22,11 @@ impl ValueDeserializer {
     pub fn from_ref(val: &AlgebraicValue) -> &Self {
         // SAFETY: The conversion is OK due to `repr(transparent)`.
         unsafe { &*(val as *const AlgebraicValue as *const ValueDeserializer) }
+    }
+
+    pub fn from_product_ref(prod: &ProductValue) -> RefProductAccess<'_> {
+        let vals = prod.elements.iter();
+        RefProductAccess { vals }
     }
 }
 
@@ -348,7 +353,7 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
 }
 
 /// Defines deserialization for [`&'de ValueDeserializer`] where product elements are in the input.
-struct RefProductAccess<'a> {
+pub struct RefProductAccess<'a> {
     /// The element values of the product as an iterator of borrowed values.
     vals: std::slice::Iter<'a, AlgebraicValue>,
 }
