@@ -1,4 +1,4 @@
-﻿import { Pool } from 'pg';
+import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { eq, inArray, sql } from 'drizzle-orm';
@@ -110,7 +110,11 @@ async function rpcTransfer(args: Record<string, unknown>) {
   const toId = Number(args.to_id ?? args.to);
   const amount = Number(args.amount);
 
-  if (!Number.isInteger(fromId) || !Number.isInteger(toId) || !Number.isFinite(amount)) {
+  if (
+    !Number.isInteger(fromId) ||
+    !Number.isInteger(toId) ||
+    !Number.isFinite(amount)
+  ) {
     throw new Error('invalid transfer args');
   }
   if (fromId === toId || amount <= 0) return;
@@ -173,7 +177,6 @@ async function rpcGetAccount(args: Record<string, unknown>) {
     balance: balance.toString(),
   };
 }
-
 
 async function rpcVerify() {
   const rawInitial = process.env.SEED_INITIAL_BALANCE;

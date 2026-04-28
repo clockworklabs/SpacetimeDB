@@ -96,10 +96,13 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
             // This means that the subscription was cancelled before it was started.
             // We skip sending the subscription start message.
             self.subscriptions.remove(&query_set_id);
-            if let Some(callback) = sub.on_ended() {
-                return PendingUnsubscribeResult::RunCallback(callback);
-            } else {
-                return PendingUnsubscribeResult::DoNothing;
+            match sub.on_ended() {
+                Some(callback) => {
+                    return PendingUnsubscribeResult::RunCallback(callback);
+                }
+                _ => {
+                    return PendingUnsubscribeResult::DoNothing;
+                }
             }
         }
         if sub.is_ended() {

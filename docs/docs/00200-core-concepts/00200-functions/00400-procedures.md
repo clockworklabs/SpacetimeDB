@@ -145,7 +145,7 @@ export default spacetimedb;
 
 export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
-        ctx.myTable.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
     return {};
 })
@@ -332,7 +332,7 @@ export const maybe_insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.str
         if (a < 10) {
             throw new SenderError("a is less than 10!");
         }
-        ctx.myTable.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
 })
 ```
@@ -873,14 +873,14 @@ SPACETIMEDB_PROCEDURE(Unit, get_request_with_short_timeout, ProcedureContext ctx
 }
 ```
 
-:::note
-All timeouts are clamped to a maximum of 500ms by the host.
-:::
-
 Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
 
 </TabItem>
 </Tabs>
+
+:::note
+If no timeout is specified, HTTP requests default to 30 seconds. User-specified timeouts are clamped to a maximum of 180 seconds by the host.
+:::
 
 ## Calling Reducers from Procedures
 

@@ -16,6 +16,8 @@ Alternately, a new identity and token will be generated during an anonymous conn
 
 Many SpacetimeDB HTTP endpoints either require or optionally accept a token in the `Authorization` header. SpacetimeDB authorization headers are of the form `Authorization: Bearer ${token}`, where `token` is an [OpenID Connect](https://openid.net/developers/how-connect-works/) compliant [JSON Web Token](https://jwt.io/), such as the one returned from [the `POST /v1/identity` HTTP endpoint](./00200-identity.md#post-v1identity).
 
+All `/v1/database` endpoints support anonymous access. If no `Authorization` header is provided, SpacetimeDB will allocate a new anonymous identity for the request. Anonymous requests can access public information (database info, schemas, names) and can call reducers or run SQL queries, but will only have access to public tables and will be rejected when attempting privileged operations like deleting a database or viewing logs.
+
 # Top level routes
 
 | Route                         | Description                                            |

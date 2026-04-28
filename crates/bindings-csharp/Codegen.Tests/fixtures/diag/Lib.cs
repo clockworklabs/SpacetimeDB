@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using SpacetimeDB;
 
@@ -440,10 +441,17 @@ public partial struct MyStruct
 [SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
 [SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
 [SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+[SpacetimeDB.Index.BTree(
+    Name = "TestCanonicalNameWithoutAccessor",
+    Columns = ["SecondaryIndexingColumn"]
+)]
 public partial struct TestIndexIssues
 {
     [SpacetimeDB.Index.BTree(Accessor = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
     public int SelfIndexingColumn;
+
+    public int SecondaryIndexingColumn;
 }
 
 [SpacetimeDB.Table(
@@ -554,18 +562,34 @@ public partial class Module
     }
 
     // TODO: Investigate why void return breaks the FFI generation
-    // // Invalid: Void return type is not Vec<T> or Option<T>
+    // // Invalid: Void return type is not List<T> or T?
     // [SpacetimeDB.View(Accessor = "view_def_no_return", Public = true)]
     // public static void ViewDefNoReturn(ViewContext ctx)
     // {
     //     return;
     // }
 
-    // Invalid: Wrong return type is not Vec<T> or Option<T>
+    // Invalid: Wrong return type is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
     public static Player ViewDefWrongReturn(ViewContext ctx)
     {
         return new Player { Identity = new() };
+    }
+
+    // Valid: IEnumerable<T> return type (from Iter()) is supported
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
+    {
+        return ctx.Db.Player.Iter();
+    }
+
+    // Valid: IEnumerable<T> return type (from Filter()) is supported
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
+        ViewContext ctx
+    )
+    {
+        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
     }
 
     // Invalid: Returns type that is not a SpacetimeType

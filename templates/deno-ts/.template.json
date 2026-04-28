@@ -1,5 +1,10 @@
 {
   "description": "Deno TypeScript client and server template",
   "client_lang": "typescript",
-  "server_lang": "typescript"
+  "server_lang": "typescript",
+  "builtWith": [
+    "deno",
+    "typescript",
+    "spacetimedb"
+  ]
 }

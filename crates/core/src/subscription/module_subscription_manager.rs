@@ -10,6 +10,7 @@ use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue
 use crate::subscription::delta::eval_delta;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
+use crate::util::adaptive_recv::AdaptiveUnboundedReceiver;
 use crate::worker_metrics::WORKER_METRICS;
 type V2EvalUpdatesResult = (Vec<V2ClientUpdate>, Vec<(SubscriptionIdV2, Box<str>)>, ExecutionMetrics);
 use core::mem;
@@ -37,6 +38,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 /// Clients are uniquely identified by their Identity and ConnectionId.
@@ -97,7 +99,7 @@ impl Plan {
     }
 
     /// Returns the index ids from which this subscription reads
-    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         self.plans
             .iter()
             .flat_map(|plan| plan.index_ids())
@@ -115,7 +117,7 @@ impl Plan {
     }
 
     /// Return the search arguments for this query
-    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
+    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         let mut args = HashSet::new();
         for arg in self
             .plans
@@ -250,7 +252,7 @@ impl QueryState {
     }
 
     /// Return the search arguments for this query
-    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
+    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         self.query.search_args()
     }
 }
@@ -406,16 +408,16 @@ impl QueriedTableIndexIds {
     /// Note, different queries may read from the same index.
     /// Hence we only remove this key from the map if its ref count goes to zero.
     pub fn delete_index_id(&mut self, table_id: TableId, index_id: IndexId) {
-        if let Some(ids) = self.ids.get_mut(&table_id) {
-            if let Some(n) = ids.get_mut(&index_id) {
-                *n -= 1;
+        if let Some(ids) = self.ids.get_mut(&table_id)
+            && let Some(n) = ids.get_mut(&index_id)
+        {
+            *n -= 1;
 
-                if *n == 0 {
-                    ids.remove(&index_id);
+            if *n == 0 {
+                ids.remove(&index_id);
 
-                    if ids.is_empty() {
-                        self.ids.remove(&table_id);
-                    }
+                if ids.is_empty() {
+                    self.ids.remove(&table_id);
                 }
             }
         }
@@ -466,14 +468,14 @@ impl JoinEdges {
     /// If this query has any join edges, remove them from the map.
     fn remove_query(&mut self, query: &Query) {
         for (edge, rhs_val) in query.join_edges() {
-            if let Some(values) = self.edges.get_mut(&edge) {
-                if let Some(hashes) = values.get_mut(&rhs_val) {
-                    hashes.remove(&query.hash);
-                    if hashes.is_empty() {
-                        values.remove(&rhs_val);
-                        if values.is_empty() {
-                            self.edges.remove(&edge);
-                        }
+            if let Some(values) = self.edges.get_mut(&edge)
+                && let Some(hashes) = values.get_mut(&rhs_val)
+            {
+                hashes.remove(&query.hash);
+                if hashes.is_empty() {
+                    values.remove(&rhs_val);
+                    if values.is_empty() {
+                        self.edges.remove(&edge);
                     }
                 }
             }
@@ -828,10 +830,10 @@ impl SubscriptionManager {
     /// Remove any clients that have been marked for removal
     pub fn remove_dropped_clients(&mut self) {
         for id in self.clients.keys().copied().collect::<Vec<_>>() {
-            if let Some(client) = self.clients.get(&id) {
-                if client.dropped.load(Ordering::Relaxed) {
-                    self.remove_all_subscriptions(&id);
-                }
+            if let Some(client) = self.clients.get(&id)
+                && client.dropped.load(Ordering::Relaxed)
+            {
+                self.remove_all_subscriptions(&id);
             }
         }
     }
@@ -1203,14 +1205,30 @@ impl SubscriptionManager {
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
+    pub fn remove_all_subscriptions(&mut self, client: &ClientId) -> Vec<Query> {
+        let mut removed_query_hashes = HashSet::new();
+        if let Some(client_info) = self.clients.get(client) {
+            removed_query_hashes.extend(client_info.legacy_subscriptions.iter().copied());
+            removed_query_hashes.extend(client_info.subscription_ref_count.keys().copied());
+        }
+        let removed_queries = removed_query_hashes
+            .into_iter()
+            .filter_map(|hash| self.queries.get(&hash).map(|q| q.query.clone()))
+            .collect::<Vec<_>>();
+
         self.remove_legacy_subscriptions(client);
         let Some(client_info) = self.remove_client_and_inform_send_worker(*client) else {
-            return;
+            return removed_queries;
         };
 
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
+        let v1_query_hashes = client_info
+            .v1_subscriptions
+            .values()
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>();
         for (subscription_id, queries) in client_info.v2_subscriptions {
             for query_hash in queries {
                 let Some(query_state) = self.queries.get_mut(&query_hash) else {
@@ -1231,15 +1249,15 @@ impl SubscriptionManager {
             }
         }
         // This loop can be removed once v1 subscriptions are removed.
-        for query_hash in client_info.subscription_ref_count.keys() {
-            let Some(query_state) = self.queries.get_mut(query_hash) else {
+        for query_hash in v1_query_hashes {
+            let Some(query_state) = self.queries.get_mut(&query_hash) else {
                 // This can happen if they are cliented up in the v2 loop above.
                 continue;
             };
             query_state.subscriptions.remove(client);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
             if !query_state.has_subscribers() {
-                queries_to_remove.push(*query_hash);
+                queries_to_remove.push(query_hash);
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
                     &mut self.join_edges,
@@ -1252,6 +1270,8 @@ impl SubscriptionManager {
         for query_hash in queries_to_remove {
             self.queries.remove(&query_hash);
         }
+
+        removed_queries
     }
 
     /// Find the queries that need to be evaluated for this table update.
@@ -1284,14 +1304,14 @@ impl SubscriptionManager {
     fn queries_for_table_update<'a>(
         &'a self,
         table_update: &'a DatabaseTableUpdate,
-        find_rhs_val: &impl Fn(&JoinEdge, &ProductValue) -> Option<AlgebraicValue>,
+        find_rhs_val: impl Fn(&JoinEdge, &ProductValue) -> Option<AlgebraicValue>,
     ) -> impl Iterator<Item = &'a QueryHash> {
         let mut queries = HashSet::new();
         for hash in table_update
             .inserts
             .iter()
             .chain(table_update.deletes.iter())
-            .flat_map(|row| self.queries_for_row(table_update.table_id, row, find_rhs_val))
+            .flat_map(|row| self.queries_for_row(table_update.table_id, row, &find_rhs_val))
         {
             queries.insert(hash);
         }
@@ -1441,7 +1461,7 @@ impl SubscriptionManager {
             .iter()
             .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
             .flat_map(|table_update| {
-                self.queries_for_table_update(table_update, &|edge, row| find_rhs_val(edge, row, tx))
+                self.queries_for_table_update(table_update, |edge, row| find_rhs_val(edge, row, tx))
             })
             // deduplicate queries by their hash
             .filter({
@@ -1460,8 +1480,6 @@ impl SubscriptionManager {
             })
             .fold(FoldState::default(), |mut acc, (qstate, plan, _hash)| {
                 let table_name = plan.subscribed_table_name().clone();
-                // let subscriptions_for_query = qstate.v2_subscriptions
-
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
                         tracing::error!(
@@ -1547,7 +1565,7 @@ impl SubscriptionManager {
             .iter()
             .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
             .flat_map(|table_update| {
-                self.queries_for_table_update(table_update, &|edge, row| find_rhs_val(edge, row, tx))
+                self.queries_for_table_update(table_update, |edge, row| find_rhs_val(edge, row, tx))
             })
             // deduplicate queries by their hash
             .filter({
@@ -1699,7 +1717,7 @@ impl SendWorkerClient {
 /// See comment on the `send_worker_tx` field in [`SubscriptionManager`] for motivation.
 struct SendWorker {
     /// Receiver end of the [`SubscriptionManager`]'s `send_worker_tx` channel.
-    rx: mpsc::UnboundedReceiver<SendWorkerMessage>,
+    rx: AdaptiveUnboundedReceiver<SendWorkerMessage>,
 
     /// `subscription_send_queue_length` metric labeled for this database's `Identity`.
     ///
@@ -1740,6 +1758,12 @@ impl Drop for SendWorker {
 }
 
 impl SendWorker {
+    // Keep the worker warm briefly after handling a message so bursts do not
+    // pay a park/unpark cost on every enqueue, while still parking quickly
+    // once traffic goes quiet.
+    const BASELINE_LINGER: Duration = Duration::from_micros(25);
+    const MAX_LINGER: Duration = Duration::from_micros(200);
+
     fn is_client_dropped_or_cancelled(&self, client_id: &ClientId) -> bool {
         self.clients
             .get(client_id)
@@ -1798,7 +1822,7 @@ impl SendWorker {
         database_identity_to_clean_up_metric: Option<Identity>,
     ) -> Self {
         Self {
-            rx,
+            rx: AdaptiveUnboundedReceiver::new(rx, Self::BASELINE_LINGER, Self::MAX_LINGER),
             queue_length_metric,
             clients: Default::default(),
             database_identity_to_clean_up_metric,
@@ -2103,20 +2127,18 @@ impl SendWorker {
                 }
             }
         }
-        if !sent_to_caller {
-            if let Some(caller) = caller {
-                let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
-                    request_id: event.request_id.unwrap(), // TODO: Handle error here.
-                    timestamp: event.timestamp,
-                    result: ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
-                        ret_value: event.reducer_return_value.clone().unwrap_or_default(),
-                        transaction_update: ws_v2::TransactionUpdate {
-                            query_sets: vec![].into_boxed_slice(),
-                        },
-                    }),
-                });
-                send_to_client(&caller, Some(tx_offset), OutboundMessage::V2(server_message));
-            }
+        if !sent_to_caller && let Some(caller) = caller {
+            let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                request_id: event.request_id.unwrap(), // TODO: Handle error here.
+                timestamp: event.timestamp,
+                result: ws_v2::ReducerOutcome::Ok(ws_v2::ReducerOk {
+                    ret_value: event.reducer_return_value.clone().unwrap_or_default(),
+                    transaction_update: ws_v2::TransactionUpdate {
+                        query_sets: vec![].into_boxed_slice(),
+                    },
+                }),
+            });
+            send_to_client(&caller, Some(tx_offset), OutboundMessage::V2(server_message));
         }
     }
 
@@ -2203,8 +2225,11 @@ mod tests {
     }
 
     fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<Plan>> {
+        compile_plan_with_auth(db, sql, AuthCtx::for_testing())
+    }
+
+    fn compile_plan_with_auth(db: &RelationalDB, sql: &str, auth: AuthCtx) -> ResultTest<Arc<Plan>> {
         with_read_only(db, |tx| {
-            let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
             let hash = QueryHash::from_string(sql, auth.caller(), has_param);
@@ -2218,6 +2243,14 @@ mod tests {
 
     fn client(connection_id: u128, db: &Arc<RelationalDB>) -> ClientConnectionSender {
         let (identity, connection_id) = id(connection_id);
+        client_with_identity(identity, connection_id, db)
+    }
+
+    fn client_with_identity(
+        identity: Identity,
+        connection_id: ConnectionId,
+        db: &Arc<RelationalDB>,
+    ) -> ClientConnectionSender {
         ClientConnectionSender::dummy(
             ClientActorId {
                 identity,
@@ -2804,7 +2837,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .collect::<Vec<_>>();
 
         assert!(hashes.len() == 3);
@@ -2822,7 +2855,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .collect::<Vec<_>>();
 
         assert!(hashes.len() == 1);
@@ -2863,7 +2896,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -2879,7 +2912,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -2895,7 +2928,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 

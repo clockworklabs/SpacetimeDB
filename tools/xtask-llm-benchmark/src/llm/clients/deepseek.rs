@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::http::HttpClient;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
-    deepseek_ctx_limit_tokens, deterministic_trim_prefix, non_context_reserve_tokens_env, Segment,
+    deepseek_ctx_limit_tokens, deterministic_trim_prefix, estimate_tokens, non_context_reserve_tokens_env, Segment,
 };
 use crate::llm::types::Vendor;
 
@@ -30,7 +30,15 @@ impl DeepSeekClient {
 
         let ctx_limit = deepseek_ctx_limit_tokens(model);
         let reserve = non_context_reserve_tokens_env(Vendor::DeepSeek);
-        let allowance = ctx_limit.saturating_sub(reserve);
+        let system_tok = system.as_deref().map(estimate_tokens).unwrap_or(0);
+        let segments_tok: usize = segs.iter().map(|s| estimate_tokens(&s.text)).sum();
+        // API counts tokens differently; reserve extra headroom so we stay under limit
+        const DEEPSEEK_HEADROOM_EXTRA: usize = 25_000;
+        let allowance = ctx_limit
+            .saturating_sub(reserve)
+            .saturating_sub(system_tok)
+            .saturating_sub(segments_tok)
+            .saturating_sub(DEEPSEEK_HEADROOM_EXTRA);
         static_prefix = deterministic_trim_prefix(&static_prefix, allowance);
 
         #[derive(Serialize)]

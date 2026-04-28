@@ -3,7 +3,6 @@ import type { ReducerSchema } from '../lib/reducer_schema';
 import type { ParamsObj } from '../lib/reducers';
 import type { CoerceRow } from '../lib/table';
 import { RowBuilder, type InferTypeOfRow } from '../lib/type_builders';
-import type { CamelCase } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
 import type { SubscriptionEventContextInterface } from './event_context';
 import type { UntypedRemoteModule } from './spacetime_module';
@@ -25,11 +24,10 @@ export type ReducersView<RemoteModule> = IfAny<
   RemoteModule,
   ReducersViewLoose,
   RemoteModule extends UntypedRemoteModule
-    ? // x: camelCase(name)
-      {
-        [K in RemoteModule['reducers'][number] as CamelCase<
-          K['accessorName']
-        >]: (params: InferTypeOfRow<K['params']>) => Promise<void>;
+    ? {
+        [K in RemoteModule['reducers'][number] as K['accessorName']]: (
+          params: InferTypeOfRow<K['params']>
+        ) => Promise<void>;
       }
     : never
 >;
@@ -69,7 +67,7 @@ type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
     /** @type {UntypedReducerDef} */
     readonly [i in keyof T]: {
       name: T[i]['reducerName'];
-      accessorName: CamelCase<T[i]['accessorName']>;
+      accessorName: T[i]['accessorName'];
       params: T[i]['params']['row'];
       paramsType: T[i]['paramsSpacetimeType'];
     };

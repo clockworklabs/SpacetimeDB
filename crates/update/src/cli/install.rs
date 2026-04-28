@@ -61,6 +61,37 @@ fn releases_url() -> String {
 
 const MIRROR_BASE_URL: &str = "https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com";
 
+/// Fetch the latest version tag from the mirror.
+///
+/// This is the single source of truth for mirror version resolution.
+async fn fetch_latest_version_from_mirror(client: &reqwest::Client) -> anyhow::Result<semver::Version> {
+    let inner = async || {
+        let url = format!("{MIRROR_BASE_URL}/latest-version");
+        let tag = client.get(&url).send().await?.error_for_status()?.text().await?;
+        let ver_str = tag.trim().strip_prefix('v').unwrap_or(tag.trim());
+        semver::Version::parse(ver_str).context("Could not parse version")
+    };
+    inner().await.context("Could not fetch latest version from mirror")
+}
+
+/// Fetch the latest release version from GitHub, falling back to the mirror.
+///
+/// Returns `None` if both sources are unreachable.
+pub(crate) async fn fetch_latest_release_version(client: &reqwest::Client) -> anyhow::Result<semver::Version> {
+    // Try GitHub first.
+    let url = format!("{}/latest", releases_url());
+    if let Ok(resp) = client.get(&url).send().await
+        && resp.status().is_success()
+        && let Ok(release) = resp.json::<Release>().await
+        && let Ok(v) = release.version()
+    {
+        return Ok(v);
+    }
+
+    // Fall back to mirror.
+    fetch_latest_version_from_mirror(client).await
+}
+
 pub(super) fn mirror_asset_url(version: &semver::Version, asset_name: &str) -> String {
     format!("{MIRROR_BASE_URL}/refs/tags/v{version}/{asset_name}")
 }
@@ -70,26 +101,12 @@ async fn mirror_release(
     version: Option<&semver::Version>,
     download_name: &str,
 ) -> anyhow::Result<(semver::Version, Release)> {
-    let tag = match version {
-        Some(v) => format!("v{v}"),
-        None => {
-            let url = format!("{MIRROR_BASE_URL}/latest-version");
-            client
-                .get(&url)
-                .send()
-                .await?
-                .error_for_status()?
-                .text()
-                .await?
-                .trim()
-                .to_owned()
-        }
+    let release_version = match version {
+        Some(v) => v.clone(),
+        None => fetch_latest_version_from_mirror(client).await?,
     };
-    let ver_str = tag.strip_prefix('v').unwrap_or(&tag);
-    let release_version =
-        semver::Version::parse(ver_str).with_context(|| format!("Could not parse version from mirror: {tag}"))?;
     let release = Release {
-        tag_name: tag.clone(),
+        tag_name: format!("v{release_version}"),
         assets: vec![ReleaseAsset {
             name: download_name.to_owned(),
             browser_download_url: mirror_asset_url(&release_version, download_name),
@@ -125,10 +142,10 @@ pub(super) async fn download_and_install(
             .await?
             .error_for_status()
             .map_err(|e| {
-                if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                    if let Some(version) = &version {
-                        return anyhow::anyhow!(e).context(format!("No release found for version {version}"));
-                    }
+                if e.status() == Some(reqwest::StatusCode::NOT_FOUND)
+                    && let Some(version) = &version
+                {
+                    return anyhow::anyhow!(e).context(format!("No release found for version {version}"));
                 }
                 anyhow::anyhow!(e).context("Could not fetch release info")
             })?
@@ -244,13 +261,8 @@ pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Resu
             .collect(),
         Err(_) => {
             eprintln!("GitHub unavailable, fetching latest version from mirror...");
-            let url = format!("{MIRROR_BASE_URL}/latest-version");
-            let tag = client.get(&url).send().await?.error_for_status()?.text().await?;
-            let ver_str = tag.trim();
-            let ver_str = ver_str.strip_prefix('v').unwrap_or(ver_str);
-            semver::Version::parse(ver_str)
-                .with_context(|| format!("Could not parse version from mirror: {ver_str}"))?;
-            Ok(vec![ver_str.to_owned()])
+            let version = fetch_latest_version_from_mirror(client).await?;
+            Ok(vec![version.to_string()])
         }
     }
 }
@@ -262,7 +274,7 @@ pub(super) struct ReleaseAsset {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Release {
+pub struct Release {
     tag_name: String,
     pub(super) assets: Vec<ReleaseAsset>,
 }

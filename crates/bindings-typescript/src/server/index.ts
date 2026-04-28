@@ -8,7 +8,7 @@ export {
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
-export type { Reducer, ReducerCtx } from '../lib/reducers';
+export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
 export type { ReducerExport } from './reducers';
 export { type DbView } from './db_view';
 export * from './query';
@@ -21,5 +21,6 @@ export { toCamelCase } from '../lib/util';
 export type { Uuid } from '../lib/uuid';
 export type { Random } from './rng';
 export type { ViewExport, ViewCtx, AnonymousViewCtx } from './views';
+export { Range, type Bound } from './range';
 
 import './polyfills'; // Ensure polyfills are loaded

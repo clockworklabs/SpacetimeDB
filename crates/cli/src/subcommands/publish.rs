@@ -12,8 +12,8 @@ use std::{env, fs};
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::spacetime_config::{
-    find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
-    SpacetimeConfig,
+    find_and_load_with_env, find_and_load_with_env_from, CommandConfig, CommandSchema, CommandSchemaBuilder,
+    FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
@@ -28,11 +28,12 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
         .key(Key::new("js_file").module_specific())
-        .key(Key::new("num_replicas"))
+        .key(Key::new("num_replicas").module_specific())
         .key(Key::new("break_clients"))
         .key(Key::new("anon_identity"))
         .key(Key::new("parent"))
         .key(Key::new("organization"))
+        .key(Key::new("native_aot").module_specific())
         .exclude("clear-database")
         .exclude("force")
         .exclude("no_config")
@@ -76,19 +77,30 @@ pub fn get_filtered_publish_configs<'a>(
             .collect();
 
         if matched.is_empty() {
-            anyhow::bail!(
-                "No database target matches '{}'. Available databases: {}",
-                cli_database,
-                spacetime_config
-                    .collect_all_targets_with_inheritance()
-                    .iter()
-                    .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            // When there is exactly one target in the config and the CLI-provided
+            // database name doesn't match it, use that target's settings (e.g.
+            // native-aot, module-path, build-options) and let CommandConfig merge
+            // the CLI database name on top.  This handles the common case where
+            // `spacetime init` generated a random database suffix that differs
+            // from the name the user passes on the CLI, while still picking up
+            // module-specific config.
+            let all_targets = spacetime_config.collect_all_targets_with_inheritance();
+            if all_targets.len() == 1 {
+                all_targets
+            } else {
+                anyhow::bail!(
+                    "No database target matches '{}'. Available databases: {}",
+                    cli_database,
+                    all_targets
+                        .iter()
+                        .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+        } else {
+            matched
         }
-
-        matched
     } else {
         all_targets
     };
@@ -223,6 +235,12 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .action(Set)
                 .help("Environment name for config file layering (e.g., dev, staging)")
         )
+        .arg(
+            Arg::new("native_aot")
+                .long("native-aot")
+                .action(SetTrue)
+                .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -246,13 +264,17 @@ fn confirm_and_clear(
     Ok(builder)
 }
 
-fn confirm_major_version_upgrade() -> Result<(), anyhow::Error> {
+fn confirm_major_version_upgrade(force: bool) -> Result<(), anyhow::Error> {
     println!(
         "It looks like you're trying to do a major version upgrade from 1.0 to 2.0. We recommend first looking at the upgrade notes before committing to this upgrade: https://spacetimedb.com/docs/upgrade"
     );
     println!();
     println!("WARNING: Once you publish you cannot revert back to version 1.0.");
     println!();
+
+    if force {
+        return Ok(());
+    }
 
     let mut input = String::new();
     print!("Please type 'upgrade' to accept this change: ");
@@ -289,13 +311,23 @@ pub async fn exec_with_options(
     let env = args.get_one::<String>("env").map(|s| s.as_str());
 
     // Get publish configs (from spacetime.json or empty)
-    let owned_loaded;
+    let mut owned_loaded;
     let loaded_config_ref = if no_config {
         None
     } else if let Some(pre) = pre_loaded_config {
         Some(pre)
     } else {
+        // First, try to load config from current directory
         owned_loaded = find_and_load_with_env(env)?;
+
+        // If no config found and --module-path is specified, try loading from module path.
+        if owned_loaded.is_none()
+            && args.contains_id("module_path")
+            && let Some(module_path) = args.get_one::<PathBuf>("module_path")
+        {
+            owned_loaded = find_and_load_with_env_from(env, module_path.clone())?;
+        }
+
         owned_loaded.as_ref().inspect(|loaded| {
             if !quiet_config {
                 for path in &loaded.loaded_files {
@@ -416,6 +448,7 @@ async fn execute_publish_configs<'a>(
         let parent = parent_opt.as_deref();
         let org_opt = command_config.get_one::<String>("organization")?;
         let org = org_opt.as_deref();
+        let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
@@ -425,13 +458,13 @@ async fn execute_publish_configs<'a>(
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
-        if let Some(path_to_project) = path_to_project.as_ref() {
-            if !path_to_project.exists() {
-                return Err(anyhow::anyhow!(
-                    "Project path does not exist: {}",
-                    path_to_project.display()
-                ));
-            }
+        if let Some(path_to_project) = path_to_project.as_ref()
+            && !path_to_project.exists()
+        {
+            return Err(anyhow::anyhow!(
+                "Project path does not exist: {}",
+                path_to_project.display()
+            ));
         }
 
         // Decide program file path and read program.
@@ -443,6 +476,16 @@ async fn execute_publish_configs<'a>(
             println!("(JS) Skipping build. Instead we are publishing {}", path.display());
             (path.clone(), "Js")
         } else {
+            // Set EXPERIMENTAL_WASM_AOT environment variable if native_aot is enabled
+            // This is read by the C# build system (MSBuild) and by csharp.rs to determine output paths
+            if native_aot {
+                println!("Using NativeAOT-LLVM compilation (experimental)");
+                // SAFETY: We are single-threaded at this point and no other code is reading
+                // this environment variable concurrently.
+                unsafe {
+                    env::set_var("EXPERIMENTAL_WASM_AOT", "1");
+                }
+            }
             build::exec_with_argstring(
                 path_to_project
                     .as_ref()
@@ -539,10 +582,10 @@ async fn execute_publish_configs<'a>(
                     println!("{op} database with identity: {database_identity}");
                 }
 
-                if is_maincloud_host(&database_host) {
-                    if let Some(domain) = domain.as_ref() {
-                        println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
-                    }
+                if is_maincloud_host(&database_host)
+                    && let Some(domain) = domain.as_ref()
+                {
+                    println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
                 }
             }
             PublishResult::PermissionDenied { name } => {
@@ -671,7 +714,7 @@ async fn apply_pre_publish_if_needed(
             PrePublishResult::ManualMigrate(manual) => manual.major_version_upgrade,
         };
         if major_version_upgrade {
-            confirm_major_version_upgrade()?;
+            confirm_major_version_upgrade(force)?;
         }
 
         match pre {

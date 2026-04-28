@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const log = table({
+const log = table({
   name: 'log',
   indexes: [{ name: 'byUserDay', algorithm: 'btree', columns: ['userId', 'day'] }],
 }, {

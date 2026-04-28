@@ -12,7 +12,6 @@ import type {
   ReadonlyIndexes,
   ReadonlyRangedIndex,
   ReadonlyUniqueIndex,
-  UntypedIndex,
 } from '../lib/indexes.ts';
 import type { Bound } from '../server/range.ts';
 import type { Prettify } from '../lib/type_util.ts';
@@ -67,6 +66,7 @@ export class TableCacheImpl<
   TableName extends TableNamesOf<RemoteModule>,
 > implements ClientTableCoreImplementable<RemoteModule, TableName>
 {
+  private readonly hasPrimaryKey: boolean;
   private rows: Map<
     ComparablePrimitive,
     [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
@@ -84,23 +84,30 @@ export class TableCacheImpl<
     this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
-    // Build indexes
-    const indexesDef = this.tableDef.indexes || [];
-    for (const idx of indexesDef) {
-      // TODO: don't do this. See comment in `tableToSchema` in `schema.ts`
-      const idxDef = idx as UntypedIndex<
-        keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
-      >;
+    this.hasPrimaryKey = Object.values(this.tableDef.columns).some(
+      col => col.columnMetadata.isPrimaryKey === true
+    );
+    // Build index views from the resolved runtime index metadata.
+    //
+    // We intentionally use `resolvedIndexes` rather than `indexes`:
+    // - `indexes` is declarative table-level config (`IndexOpts`) used mainly for typing.
+    // - `resolvedIndexes` is the runtime shape (`UntypedIndex`) that includes both
+    //   field-level and explicit table-level indexes.
+    for (const idxDef of this.tableDef.resolvedIndexes) {
       const index = this.#makeReadonlyIndex(this.tableDef, idxDef);
+      // IMPORTANT: for duplicate accessor names, client cache uses assignment
+      // semantics and later entries overwrite earlier ones. This matches prior
+      // behavior and is intentionally different from server runtime merge logic.
       (this as any)[idxDef.name] = index;
     }
   }
 
   // TODO: this just scans the whole table; we should build proper index structures
   #makeReadonlyIndex<
-    I extends UntypedIndex<
-      keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
-    >,
+    I extends TableDefForTableName<
+      RemoteModule,
+      TableName
+    >['resolvedIndexes'][number],
   >(
     tableDef: TableDefForTableName<RemoteModule, TableName>,
     idx: I
@@ -278,11 +285,7 @@ export class TableCacheImpl<
       return pendingCallbacks;
     }
 
-    // TODO: performance
-    const hasPrimaryKey = Object.values(this.tableDef.columns).some(
-      col => col.columnMetadata.isPrimaryKey === true
-    );
-    if (hasPrimaryKey) {
+    if (this.hasPrimaryKey) {
       const insertMap = new Map<
         ComparablePrimitive,
         [

@@ -61,6 +61,7 @@ fn resolve_sys_module_inner<'scope>(
             (1, 2) => Ok(v1::sys_v1_2(scope)),
             (1, 3) => Ok(v1::sys_v1_3(scope)),
             (2, 0) => Ok(v2::sys_v2_0(scope)),
+            (2, 1) => Ok(v2::sys_v2_1(scope)),
             _ => Err(TypeError(format!(
                 "Could not import {spec:?}, likely because this module was built for a newer version of SpacetimeDB.\n\
             It requires sys module v{major}.{minor}, but that version is not supported by the database."
@@ -76,7 +77,7 @@ fn resolve_sys_module_inner<'scope>(
 /// This handles any (future) ABI version differences.
 pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinTryCatch<'scope, '_, '_, '_>,
-    hooks: &HookFunctions<'scope>,
+    hooks: &HookFunctions<'_>,
     op: ReducerOp<'_>,
     reducer_args_buf: Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {

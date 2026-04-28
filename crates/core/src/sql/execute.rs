@@ -5,19 +5,16 @@ use super::ast::SchemaViewer;
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::estimation::estimate_rows_scanned;
+use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{
-    DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError,
-    ViewCallResult, ViewOutcome, WasmInstance,
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError, ViewCallResult,
+    ViewOutcome, WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
-use crate::util::slow::SlowQueryLogger;
-use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
-use smallvec::SmallVec;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
@@ -27,152 +24,11 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
-use spacetimedb_vm::eval::run_ast;
-use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
-use spacetimedb_vm::relation::MemTable;
 use tokio::sync::oneshot;
 
 pub struct StmtResult {
     pub schema: ProductType,
     pub rows: Vec<ProductValue>,
-}
-
-// TODO(cloutiertyler): we could do this the swift parsing way in which
-// we always generate a plan, but it may contain errors
-
-pub(crate) fn collect_result(
-    result: &mut Vec<MemTable>,
-    updates: &mut SmallVec<[DatabaseTableUpdate; 1]>,
-    r: CodeResult,
-) -> Result<(), DBError> {
-    match r {
-        CodeResult::Value(_) => {}
-        CodeResult::Table(x) => result.push(x),
-        CodeResult::Block(lines) => {
-            for x in lines {
-                collect_result(result, updates, x)?;
-            }
-        }
-        CodeResult::Halt(err) => return Err(DBError::VmUser(err)),
-        CodeResult::Pass(x) => match x {
-            None => {}
-            Some(update) => {
-                updates.push(DatabaseTableUpdate {
-                    table_name: update.table_name,
-                    table_id: update.table_id,
-                    inserts: update.inserts.into(),
-                    deletes: update.deletes.into(),
-                });
-            }
-        },
-    }
-
-    Ok(())
-}
-
-fn execute(
-    p: &mut DbProgram<'_, '_>,
-    ast: Vec<CrudExpr>,
-    sql: &str,
-    updates: &mut SmallVec<[DatabaseTableUpdate; 1]>,
-) -> Result<Vec<MemTable>, DBError> {
-    let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
-        p.db.query_limit(tx)?.map(Duration::from_millis)
-    } else {
-        None
-    };
-    let _slow_query_logger = SlowQueryLogger::new(sql, slow_query_threshold, p.tx.ctx().workload()).log_guard();
-    let mut result = Vec::with_capacity(ast.len());
-    let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-    // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-    collect_result(&mut result, updates, run_ast(p, query, [].into()).into())?;
-    Ok(result)
-}
-
-/// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
-///
-/// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-///
-/// Also, in case the execution takes more than x, log it as `slow query`
-pub fn execute_sql(
-    db: &RelationalDB,
-    sql: &str,
-    ast: Vec<CrudExpr>,
-    auth: AuthCtx,
-    subs: Option<&ModuleSubscriptions>,
-) -> Result<Vec<MemTable>, DBError> {
-    if CrudExpr::is_reads(&ast) {
-        let mut updates = SmallVec::new();
-        db.with_read_only(Workload::Sql, |tx| {
-            execute(
-                &mut DbProgram::new(db, &mut TxMode::Tx(tx), auth),
-                ast,
-                sql,
-                &mut updates,
-            )
-        })
-    } else if subs.is_none() {
-        let mut updates = SmallVec::new();
-        db.with_auto_commit(Workload::Sql, |mut_tx| {
-            execute(
-                &mut DbProgram::new(db, &mut mut_tx.into(), auth),
-                ast,
-                sql,
-                &mut updates,
-            )
-        })
-    } else {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
-        let mut updates = SmallVec::with_capacity(ast.len());
-        let res = execute(
-            &mut DbProgram::new(db, &mut (&mut tx).into(), auth.clone()),
-            ast,
-            sql,
-            &mut updates,
-        );
-        if res.is_ok() && !updates.is_empty() {
-            let event = ModuleEvent {
-                timestamp: Timestamp::now(),
-                caller_identity: auth.caller(),
-                caller_connection_id: None,
-                function_call: ModuleFunctionCall {
-                    reducer: <_>::default(),
-                    reducer_id: u32::MAX.into(),
-                    args: ArgsTuple::default(),
-                },
-                status: EventStatus::Committed(DatabaseUpdate { tables: updates }),
-                reducer_return_value: None,
-                energy_quanta_used: EnergyQuanta::ZERO,
-                host_execution_duration: Duration::ZERO,
-                request_id: None,
-                timer: None,
-            };
-            commit_and_broadcast_event(subs.unwrap(), None, event, tx);
-            res
-        } else {
-            db.finish_tx(tx, res)
-        }
-    }
-}
-
-/// Like [`execute_sql`], but for providing your own `tx`.
-///
-/// Returns None if you pass a mutable query with an immutable tx.
-pub fn execute_sql_tx<'a>(
-    db: &RelationalDB,
-    tx: impl Into<TxMode<'a>>,
-    sql: &str,
-    ast: Vec<CrudExpr>,
-    auth: AuthCtx,
-) -> Result<Option<Vec<MemTable>>, DBError> {
-    let mut tx = tx.into();
-
-    if matches!(tx, TxMode::Tx(_)) && !CrudExpr::is_reads(&ast) {
-        return Ok(None);
-    }
-
-    let mut updates = SmallVec::new(); // No subscription updates in this path, because it requires owning the tx.
-    execute(&mut DbProgram::new(db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
 #[derive(Debug)]
@@ -299,7 +155,7 @@ fn run_inner<I: WasmInstance>(
 
             // Update views
             let (result, trapped) = match instance {
-                Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller())?,
+                Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller()),
                 None => (ViewCallResult::default(tx), false),
             };
 
@@ -372,7 +228,6 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::db::relational_db::tests_utils::{self, begin_tx, insert, with_auto_commit, TestDB};
-    use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use spacetimedb_datastore::system_tables::{
@@ -384,17 +239,9 @@ pub(crate) mod tests {
     use spacetimedb_lib::{AlgebraicValue, Identity};
     use spacetimedb_primitives::{col_list, ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
-    use spacetimedb_schema::relation::Header;
-    use spacetimedb_vm::eval::test_helpers::create_game_data;
-
-    pub(crate) fn execute_for_testing(
-        db: &Arc<RelationalDB>,
-        sql_text: &str,
-        q: Vec<CrudExpr>,
-    ) -> Result<Vec<MemTable>, DBError> {
-        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
-        execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
-    }
+    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+    use spacetimedb_schema::table_name::TableName;
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &Arc<RelationalDB>, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
@@ -411,7 +258,100 @@ pub(crate) mod tests {
             .map(|x| x.rows)
     }
 
-    fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    struct TestRows {
+        data: Vec<ProductValue>,
+    }
+
+    struct GameData {
+        location: TestRows,
+        inv: TestRows,
+        player: TestRows,
+        location_ty: ProductType,
+        inv_ty: ProductType,
+        player_ty: ProductType,
+    }
+
+    fn create_game_data() -> GameData {
+        let inv_ty = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let inv = TestRows {
+            data: vec![product!(1u64, "health")],
+        };
+
+        let player_ty = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
+        let player = TestRows {
+            data: vec![product!(100u64, 1u64), product!(200u64, 1u64), product!(300u64, 1u64)],
+        };
+
+        let location_ty = ProductType::from([
+            ("entity_id", AlgebraicType::U64),
+            ("x", AlgebraicType::F32),
+            ("z", AlgebraicType::F32),
+        ]);
+        let location = TestRows {
+            data: vec![product!(100u64, 0.0f32, 32.0f32), product!(100u64, 1.0f32, 31.0f32)],
+        };
+
+        GameData {
+            location,
+            inv,
+            player,
+            location_ty,
+            inv_ty,
+            player_ty,
+        }
+    }
+
+    fn create_table_with_rows(
+        db: &RelationalDB,
+        tx: &mut crate::db::relational_db::MutTx,
+        table_name: &str,
+        schema: ProductType,
+        rows: &[ProductValue],
+        access: StAccess,
+    ) -> ResultTest<Arc<TableSchema>> {
+        let columns = schema
+            .elements
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, element)| ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_name: Identifier::new(element.name.unwrap()).unwrap(),
+                col_type: element.algebraic_type,
+                col_pos: ColId(i as _),
+                alias: None,
+            })
+            .collect();
+
+        let table_id = db.create_table(
+            tx,
+            TableSchema::new(
+                TableId::SENTINEL,
+                TableName::for_test(table_name),
+                None,
+                columns,
+                vec![],
+                vec![],
+                vec![],
+                StTableType::User,
+                access,
+                None,
+                None,
+                false,
+                None,
+            ),
+        )?;
+        let schema = db.schema_for_table_mut(tx, table_id)?;
+
+        for row in rows {
+            insert(db, tx, table_id, row)?;
+        }
+
+        Ok(schema)
+    }
+
+    fn create_data(total_rows: u64) -> ResultTest<(TestDB, TestRows)> {
         let stdb = TestDB::durable()?;
 
         let rows: Vec<_> = (1..=total_rows)
@@ -419,25 +359,22 @@ pub(crate) mod tests {
             .collect();
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
-        let schema = with_auto_commit(&stdb, |tx| {
+        with_auto_commit(&stdb, |tx| {
             create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
         })?;
-        let header = Header::from(&*schema).into();
-
-        Ok((stdb, MemTable::new(header, schema.table_access, rows)))
+        Ok((stdb, TestRows { data: rows }))
     }
 
-    fn create_identity_table(table_name: &str) -> ResultTest<(TestDB, MemTable)> {
+    fn create_identity_table(table_name: &str) -> ResultTest<(TestDB, TestRows)> {
         let stdb = TestDB::durable()?;
         let head = ProductType::from([("identity", AlgebraicType::identity())]);
         let rows = vec![product!(Identity::ZERO), product!(Identity::ONE)];
 
-        let schema = with_auto_commit(&stdb, |tx| {
+        with_auto_commit(&stdb, |tx| {
             create_table_with_rows(&stdb, tx, table_name, head.clone(), &rows, StAccess::Public)
         })?;
-        let header = Header::from(&*schema).into();
 
-        Ok((stdb, MemTable::new(header, schema.table_access, rows)))
+        Ok((stdb, TestRows { data: rows }))
     }
 
     #[test]

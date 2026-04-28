@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const primitive = table(
+const primitive = table(
   {
     name: 'primitive',
   },

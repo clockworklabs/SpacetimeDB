@@ -4,6 +4,7 @@ import {
   ConnectionId,
   Identity,
   ScheduleAt,
+  toCamelCase,
   type Infer,
 } from '../src/index';
 import * as ws from '../src/sdk/client_api';
@@ -156,5 +157,11 @@ describe('Identity', () => {
         '0x00000000000000000000000000000000'
       ),
     };
+  });
+});
+
+describe(toCamelCase, () => {
+  it('converts PascalCase to camelCase', () => {
+    expect(toCamelCase('FooBar')).toEqual('fooBar');
   });
 });

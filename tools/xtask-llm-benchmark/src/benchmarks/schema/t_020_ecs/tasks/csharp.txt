@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that models a minimal ECS and computes next positions.
+Write a SpacetimeDB backend module in C# that models a minimal ECS and computes next positions.
 
 TABLES
 - Entity
