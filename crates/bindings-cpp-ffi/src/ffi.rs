@@ -60,8 +60,14 @@ mod host_stubs {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
 
-    fn test_sources() -> &'static Mutex<HashMap<u32, Vec<u8>>> {
-        static ONCE: OnceLock<Mutex<HashMap<u32, Vec<u8>>>> = OnceLock::new();
+    /// Source data with read cursor: `(data, cursor)`.
+    struct SourceState {
+        data: Vec<u8>,
+        cursor: usize,
+    }
+
+    fn test_sources() -> &'static Mutex<HashMap<u32, SourceState>> {
+        static ONCE: OnceLock<Mutex<HashMap<u32, SourceState>>> = OnceLock::new();
         ONCE.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
@@ -74,7 +80,10 @@ mod host_stubs {
 
     pub fn register_test_source(data: Vec<u8>) -> BytesSource {
         let handle = NEXT_HANDLE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        test_sources().lock().unwrap().insert(handle, data);
+        test_sources()
+            .lock()
+            .unwrap()
+            .insert(handle, SourceState { data, cursor: 0 });
         BytesSource { inner: handle }
     }
 
@@ -106,29 +115,36 @@ mod host_stubs {
     }
 
     pub unsafe fn bytes_source_read(source: BytesSource, buf: *mut u8, len: *mut usize) -> i16 {
-        if let Some(data) = test_sources().lock().unwrap().get(&source.inner) {
+        if let Some(state) = test_sources().lock().unwrap().get_mut(&source.inner) {
             // SAFETY: caller guarantees `len` and `buf` are valid
             let len_ref = unsafe { &mut *len };
             let max = *len_ref;
-            let available = data.len();
-            let to_copy = max.min(available);
+            let remaining = state.data.len() - state.cursor;
+            let to_copy = max.min(remaining);
             if to_copy > 0 {
-                unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), buf, to_copy) };
+                unsafe { std::ptr::copy_nonoverlapping(state.data.as_ptr().add(state.cursor), buf, to_copy) };
+                state.cursor += to_copy;
                 *len_ref = to_copy;
+            } else {
+                *len_ref = 0;
             }
-            -1
+            if state.cursor < state.data.len() {
+                0
+            } else {
+                -1
+            }
         } else {
             errno::NO_SUCH_BYTES
         }
     }
 
     pub unsafe fn bytes_source_remaining_length(source: BytesSource, len: *mut u32) -> i16 {
-        if let Some(data) = test_sources().lock().unwrap().get(&source.inner) {
+        if let Some(state) = test_sources().lock().unwrap().get(&source.inner) {
             // SAFETY: caller guarantees `len` is valid
-            unsafe { *len = data.len() as u32 };
+            unsafe { *len = (state.data.len() - state.cursor) as u32 };
             0
         } else {
-            errno::NO_SUCH_BYTES as i32 as i16
+            errno::NO_SUCH_BYTES
         }
     }
 }
