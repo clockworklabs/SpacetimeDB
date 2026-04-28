@@ -133,6 +133,9 @@ pub trait Index {
     /// The trait imposes no particular order.
     /// Implementations may provide a non-deterministic order.
     fn iter(&self) -> Self::Iter<'_>;
+
+    /// Whether the index is ranged or not.
+    const IS_RANGED: bool;
 }
 
 pub trait RangedIndex: Index {

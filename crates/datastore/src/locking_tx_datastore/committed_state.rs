@@ -8,12 +8,11 @@ use super::{
 };
 use crate::{
     db_metrics::DB_METRICS,
-    error::{DatastoreError, TableError, ViewError},
+    error::TableError,
     execution_context::ExecutionContext,
     locking_tx_datastore::{mut_tx::ViewReadSets, state_view::ScanOrIndex, IterByColRangeTx},
     system_tables::{
-        system_tables, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StIndexRow,
-        StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewRow, SystemTable, ST_CLIENT_ID,
+        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_CLIENT_ID,
         ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
         ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX,
         ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID,
@@ -33,13 +32,13 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColList, ColSet, IndexId, SequenceId, TableId, ViewId};
+use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -87,24 +86,6 @@ pub struct CommittedState {
     ///     - system tables: `st_view_sub`, `st_view_arg`
     ///     - Tables which back views.
     pub(super) ephemeral_tables: EphemeralTables,
-
-    /// Set of tables whose `st_table` entries have been updated during the currently-replaying transaction,
-    /// mapped to the current most-recent `st_table` row.
-    ///
-    /// When processing an insert to `st_table`, if the table already exists, we'll record it here.
-    /// Then, when we see a corresponding delete, we know that the table has not been dropped,
-    /// and so we won't delete the in-memory structure or insert its ID into [`Self::replay_table_dropped`].
-    ///
-    /// When looking up the `st_table` row for a table, if it has an entry here,
-    /// that means there are two rows resident in `st_table` at this point in replay.
-    /// We return the row recorded here rather than inspecting `st_table`.
-    ///
-    /// We remove from this set when we reach the matching delete,
-    /// and assert this set is empty at the end of each transaction.
-    ///
-    /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
-    /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
-    pub(super) replay_table_updated: IntMap<TableId, RowPointer>,
 }
 
 impl CommittedState {
@@ -138,7 +119,6 @@ impl MemoryUsage for CommittedState {
             page_pool: _,
             read_sets,
             ephemeral_tables,
-            replay_table_updated,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -147,7 +127,6 @@ impl MemoryUsage for CommittedState {
             + index_id_map.heap_usage()
             + read_sets.heap_usage()
             + ephemeral_tables.heap_usage()
-            + replay_table_updated.heap_usage()
     }
 }
 
@@ -205,24 +184,6 @@ impl StateView for CommittedState {
             None => Ok(ScanOrIndex::scan_eq(cols, val, self.iter(table_id)?)),
         }
     }
-
-    /// Find the `st_table` row for `table_id`, first inspecting [`Self::replay_table_updated`],
-    /// then falling back to [`Self::iter_by_col_eq`] of `st_table`.
-    fn find_st_table_row(&self, table_id: TableId) -> Result<StTableRow> {
-        let row_ref = if let Some(row_ptr) = self.replay_table_updated.get(&table_id) {
-            let (table, blob_store, _) = self.get_table_and_blob_store(table_id)?;
-            // Safety: `row_ptr` is stored in `self.replay_table_updated`,
-            // meaning it was inserted into `st_table` by `replay_insert`
-            // and has not yet been deleted by `replay_delete_by_rel`.
-            unsafe { table.get_row_ref_unchecked(blob_store, *row_ptr) }
-        } else {
-            self.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &table_id.into())?
-                .next()
-                .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?
-        };
-
-        StTableRow::try_from(row_ref)
-    }
 }
 
 impl CommittedState {
@@ -235,94 +196,6 @@ impl CommittedState {
             read_sets: <_>::default(),
             page_pool,
             ephemeral_tables: <_>::default(),
-            replay_table_updated: <_>::default(),
-        }
-    }
-
-    /// Delete all but the highest-allocation `st_sequence` row for each system sequence.
-    ///
-    /// Prior versions of `RelationalDb::migrate_system_tables` (defined in the `core` crate)
-    /// initialized newly-created system sequences to `allocation: 4097`,
-    /// while `committed_state::bootstrap_system_tables` sets `allocation: 4096`.
-    /// This affected the system table migration which added
-    /// `st_view_view_id_seq` and `st_view_arg_id_seq`.
-    /// As a result, when replaying these databases' commitlogs without a snapshot,
-    /// we will end up with two rows in `st_sequence` for each of these sequences,
-    /// resulting in a unique constraint violation in `CommittedState::build_indexes`.
-    /// We call this method in [`super::datastore::Locking::rebuild_state_after_replay`]
-    /// to avoid that unique constraint violation.
-    pub(super) fn fixup_delete_duplicate_system_sequence_rows(&mut self) {
-        struct StSequenceRowInfo {
-            sequence_id: SequenceId,
-            allocated: i128,
-            row_pointer: RowPointer,
-        }
-
-        // Get all the `st_sequence` rows which refer to sequences on system tables,
-        // including any duplicates caused by the bug described above.
-        let sequence_rows = self
-            .table_scan(ST_SEQUENCE_ID)
-            .expect("`st_sequence` should exist")
-            .filter_map(|row_ref| {
-                // Read the table ID to which the sequence refers,
-                // in order to determine if this is a system sequence or not.
-                let table_id = row_ref
-                    .read_col::<TableId>(StSequenceFields::TableId)
-                    .expect("`st_sequence` row should conform to `st_sequence` schema");
-
-                // If this sequence refers to a system table, it may need a fixup.
-                // User tables' sequences will never need fixups.
-                table_id_is_reserved(table_id).then(|| {
-                    let allocated = row_ref
-                        .read_col::<i128>(StSequenceFields::Allocated)
-                        .expect("`st_sequence` row should conform to `st_sequence` schema");
-                    let sequence_id = row_ref
-                        .read_col::<SequenceId>(StSequenceFields::SequenceId)
-                        .expect("`st_sequence` row should conform to `st_sequence` schema");
-                    StSequenceRowInfo {
-                        allocated,
-                        sequence_id,
-                        row_pointer: row_ref.pointer(),
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let (st_sequence, blob_store, ..) = self
-            .get_table_and_blob_store_mut(ST_SEQUENCE_ID)
-            .expect("`st_sequence` should exist");
-
-        // Track the row with the highest allocation for each sequence.
-        let mut highest_allocations: HashMap<SequenceId, (i128, RowPointer)> = HashMap::default();
-
-        for StSequenceRowInfo {
-            sequence_id,
-            allocated,
-            row_pointer,
-        } in sequence_rows
-        {
-            // For each `st_sequence` row which refers to a system table,
-            // if we've already seen a row for the same sequence,
-            // keep only the row with the higher allocation.
-            if let Some((prev_allocated, prev_row_pointer)) =
-                highest_allocations.insert(sequence_id, (allocated, row_pointer))
-            {
-                // We have a duplicate row. We want to keep whichever has the higher `allocated`,
-                // and delete the other.
-                let row_pointer_to_delete = if prev_allocated > allocated {
-                    // The previous row has a higher allocation than the new row,
-                    // so delete the new row and restore `previous` to `highest_allocations`.
-                    highest_allocations.insert(sequence_id, (prev_allocated, prev_row_pointer));
-                    row_pointer
-                } else {
-                    // The previous row does not have a higher allocation than the new,
-                    // so delete the previous row and keep the new one.
-                    prev_row_pointer
-                };
-
-                st_sequence.delete(blob_store, row_pointer_to_delete, |_| ())
-                    .expect("Duplicated `st_sequence` row at `row_pointer_to_delete` should be present in `st_sequence` during fixup");
-            }
         }
     }
 
@@ -521,105 +394,6 @@ impl CommittedState {
             sequence_state.insert(seq);
         }
         Ok(sequence_state)
-    }
-
-    pub(super) fn build_indexes(&mut self) -> Result<()> {
-        let st_indexes = self.tables.get(&ST_INDEX_ID).unwrap();
-        let rows = st_indexes
-            .scan_rows(&self.blob_store)
-            .map(StIndexRow::try_from)
-            .collect::<Result<Vec<_>>>()?;
-
-        let st_constraints = self.tables.get(&ST_CONSTRAINT_ID).unwrap();
-        let unique_constraints: HashSet<(TableId, ColSet)> = st_constraints
-            .scan_rows(&self.blob_store)
-            .map(StConstraintRow::try_from)
-            .filter_map(Result::ok)
-            .filter_map(|constraint| match constraint.constraint_data {
-                StConstraintData::Unique { columns } => Some((constraint.table_id, columns)),
-                _ => None,
-            })
-            .collect();
-
-        for index_row in rows {
-            let index_id = index_row.index_id;
-            let table_id = index_row.table_id;
-            let (table, blob_store, index_id_map, _) = self
-                .get_table_and_blob_store_mut(table_id)
-                .expect("index should exist in committed state; cannot create it");
-            let algo: IndexAlgorithm = index_row.index_algorithm.into();
-            let columns: ColSet = algo.columns().into();
-            let is_unique = unique_constraints.contains(&(table_id, columns));
-
-            let index = table.new_index(&algo, is_unique)?;
-            // SAFETY: `index` was derived from `table`.
-            unsafe { table.insert_index(blob_store, index_id, index) };
-            index_id_map.insert(index_id, table_id);
-        }
-        Ok(())
-    }
-
-    pub(super) fn collect_ephemeral_tables(&mut self) -> Result<()> {
-        self.ephemeral_tables = self.ephemeral_tables()?.into_iter().collect();
-        Ok(())
-    }
-
-    fn ephemeral_tables(&self) -> Result<Vec<TableId>> {
-        let mut tables = vec![ST_VIEW_SUB_ID, ST_VIEW_ARG_ID];
-
-        let Some(st_view) = self.tables.get(&ST_VIEW_ID) else {
-            return Ok(tables);
-        };
-        let backing_tables = st_view
-            .scan_rows(&self.blob_store)
-            .map(|row_ref| {
-                let view_row = StViewRow::try_from(row_ref)?;
-                view_row
-                    .table_id
-                    .ok_or_else(|| DatastoreError::View(ViewError::TableNotFound(view_row.view_id)))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        tables.extend(backing_tables);
-
-        Ok(tables)
-    }
-
-    /// After replaying all old transactions,
-    /// inserts and deletes into the system tables
-    /// might not be reflected in the schemas of the built tables.
-    /// So we must re-schema every built table.
-    pub(super) fn reschema_tables(&mut self) -> Result<()> {
-        // For already built tables, we need to reschema them to account for constraints et al.
-        let mut schemas = Vec::with_capacity(self.tables.len());
-        for table_id in self.tables.keys().copied() {
-            schemas.push(self.schema_for_table_raw(table_id)?);
-        }
-        for (table, schema) in self.tables.values_mut().zip(schemas) {
-            table.with_mut_schema(|s| *s = schema);
-        }
-        Ok(())
-    }
-
-    /// After replaying all old transactions, tables which have rows will
-    /// have been created in memory, but tables with no rows will not have
-    /// been created. This function ensures that they are created.
-    pub(super) fn build_missing_tables(&mut self) -> Result<()> {
-        // Find all ids of tables that are in `st_tables` but haven't been built.
-        let table_ids = self
-            .get_table(ST_TABLE_ID)
-            .unwrap()
-            .scan_rows(&self.blob_store)
-            .map(|r| r.read_col(StTableFields::TableId).unwrap())
-            .filter(|table_id| self.get_table(*table_id).is_none())
-            .collect::<Vec<_>>();
-
-        // Construct their schemas and insert tables for them.
-        for table_id in table_ids {
-            let schema = self.schema_for_table(table_id)?;
-            self.create_table(table_id, schema);
-        }
-        Ok(())
     }
 
     /// Returns an iterator doing a full table scan on `table_id`.
@@ -1046,7 +820,7 @@ impl CommittedState {
         Table::new(schema, SquashedOffset::COMMITTED_STATE)
     }
 
-    fn create_table(&mut self, table_id: TableId, schema: Arc<TableSchema>) {
+    pub(super) fn create_table(&mut self, table_id: TableId, schema: Arc<TableSchema>) {
         self.tables.insert(table_id, Self::make_table(schema));
     }
 
