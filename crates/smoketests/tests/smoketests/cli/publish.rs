@@ -223,9 +223,7 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
 
     // Create a config with a different database name
     let config_content = r#"{
-  "publish": {
-    "database": "config-db-name"
-  }
+  "database": "config-db-name"
 }"#;
     std::fs::write(module_dir.join("spacetime.json"), config_content).expect("failed to write config");
 
