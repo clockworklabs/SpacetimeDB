@@ -858,7 +858,6 @@ public static class QueryBuilderExtensions
 
     public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Timestamp> col, Timestamp value) =>
         col.Neq(SqlLit.Timestamp(value));
-
 }
 
 internal static class SqlFormat
@@ -906,6 +905,9 @@ internal static class SqlFormat
 
     public static string FormatTimestampLiteral(Timestamp timestamp) =>
         FormatStringLiteral(
-            timestamp.ToStd().ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture)
+            timestamp
+                .ToStd()
+                .ToUniversalTime()
+                .ToString(TimestampFormat, CultureInfo.InvariantCulture)
         );
 }
