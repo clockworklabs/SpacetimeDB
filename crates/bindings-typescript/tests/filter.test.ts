@@ -29,25 +29,6 @@ describe('filter.ts timestamp support', () => {
     ).toBe(false);
   });
 
-  it('evaluates timestamp equality against ISO strings', () => {
-    const ts = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
-
-    expect(evaluate(eq('createdAt', ts.toISOString()), { createdAt: ts })).toBe(
-      true
-    );
-  });
-
-  it('evaluates timestamp equality against numeric micros', () => {
-    const ts = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
-    const micros = Number(ts.microsSinceUnixEpoch);
-
-    expect(evaluate(eq('createdAt', micros), { createdAt: ts })).toBe(true);
-    expect(evaluate(eq('createdAt', micros + 1), { createdAt: ts })).toBe(false);
-    expect(evaluate(eq('createdAt', micros + 0.5), { createdAt: ts })).toBe(
-      false
-    );
-  });
-
   it('renders timestamp literals as ISO strings', () => {
     const ts = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
 

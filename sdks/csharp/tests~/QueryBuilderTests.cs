@@ -253,39 +253,6 @@ public sealed class QueryBuilderTests
     }
 
     [Fact]
-    public void Where_Timestamp_MicrosOverloads_FormatCorrectly()
-    {
-        var table = MakeTable("T");
-        const long micros = 1_737_582_793_990_639L;
-        var expected = new Timestamp(micros).ToString();
-
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
-            table.Where(c => c.CreatedAt.Eq(micros)).ToSql()
-        );
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
-            table.Where(c => c.CreatedAt.Neq(micros)).ToSql()
-        );
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" < '{expected}')",
-            table.Where(c => c.CreatedAt.Lt(micros)).ToSql()
-        );
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <= '{expected}')",
-            table.Where(c => c.CreatedAt.Lte(micros)).ToSql()
-        );
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" > '{expected}')",
-            table.Where(c => c.CreatedAt.Gt(micros)).ToSql()
-        );
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" >= '{expected}')",
-            table.Where(c => c.CreatedAt.Gte(micros)).ToSql()
-        );
-    }
-
-    [Fact]
     public void IxCol_EqNeq_FormatsCorrectly()
     {
         var ix = new IxCol<Row, string>("T", "Name");
@@ -314,23 +281,6 @@ public sealed class QueryBuilderTests
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
             table.Where((_, ix) => ix.CreatedAt.Neq(timestamp)).ToSql()
-        );
-    }
-
-    [Fact]
-    public void IxCol_Timestamp_MicrosOverloads_FormatCorrectly()
-    {
-        var table = MakeTable("T");
-        const long micros = 1_737_582_793_990_639L;
-        var expected = new Timestamp(micros).ToString();
-
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
-            table.Where((_, ix) => ix.CreatedAt.Eq(micros)).ToSql()
-        );
-        Assert.Equal(
-            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
-            table.Where((_, ix) => ix.CreatedAt.Neq(micros)).ToSql()
         );
     }
 

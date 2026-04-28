@@ -765,24 +765,6 @@ public static class QueryBuilderExtensions
     public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, Timestamp> col, Timestamp value) =>
         col.Gte(SqlLit.Timestamp(value));
 
-    public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Eq(new Timestamp(microsSinceUnixEpoch));
-
-    public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Neq(new Timestamp(microsSinceUnixEpoch));
-
-    public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Lt(new Timestamp(microsSinceUnixEpoch));
-
-    public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Lte(new Timestamp(microsSinceUnixEpoch));
-
-    public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Gt(new Timestamp(microsSinceUnixEpoch));
-
-    public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Gte(new Timestamp(microsSinceUnixEpoch));
-
     public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, string> col, ReadOnlySpan<char> value) =>
         col.Eq(SqlLit.String(value));
 
@@ -877,11 +859,6 @@ public static class QueryBuilderExtensions
     public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Timestamp> col, Timestamp value) =>
         col.Neq(SqlLit.Timestamp(value));
 
-    public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Eq(new Timestamp(microsSinceUnixEpoch));
-
-    public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Timestamp> col, long microsSinceUnixEpoch) =>
-        col.Neq(new Timestamp(microsSinceUnixEpoch));
 }
 
 internal static class SqlFormat
