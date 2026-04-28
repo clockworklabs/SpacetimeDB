@@ -1025,36 +1025,6 @@ jobs:
       - name: Check global.json policy
         run: cargo ci global-json-policy
 
-  warn-python-smoketests:
-    name: Check for Python smoketest edits
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fail if Python smoketests were modified
-        run: |
-          MERGE_BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
-          PYTHON_SMOKETEST_CHANGES="$(git diff --name-only "$MERGE_BASE" HEAD -- 'smoketests/**.py')"
-
-          if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
-            echo "::error::This PR modifies legacy Python smoketests. Please add new tests to the Rust smoketests in crates/smoketests/ instead."
-            echo ""
-            echo "Changed files:"
-            echo "$PYTHON_SMOKETEST_CHANGES"
-            echo ""
-            echo "The Python smoketests are being replaced by Rust smoketests."
-            echo "See crates/smoketests/DEVELOP.md for instructions on adding Rust smoketests."
-            exit 1
-          fi
-
-          echo "No Python smoketest changes detected."
-
   smoketests_mod_rs_complete:
     name: Check smoketests/mod.rs is complete
     runs-on: ubuntu-latest
