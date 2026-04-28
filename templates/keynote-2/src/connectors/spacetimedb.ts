@@ -1,32 +1,19 @@
 import type { ReducerConnector } from '../core/connectors';
 import * as mod from '../../module_bindings';
+import { deriveWebsocketUrl } from '../core/stdbUrl';
+import type { SpacetimeConnectorConfig } from '../config.ts';
 
-function useConfirmedReads(): boolean {
-  switch (process.env.STDB_CONFIRMED_READS) {
-    case '0':
-      return false;
-    case '1':
-      return true;
-    default:
-      return true;
-  }
-}
+export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector {
+  const {
+    initialBalance,
+    stdbCompression,
+    stdbConfirmedReads,
+    stdbModule: moduleName,
+    stdbUrl: url,
+  } = config;
 
-export function spacetimedb(
-  url = process.env.STDB_URL!,
-  moduleName = process.env.STDB_MODULE!,
-): ReducerConnector {
-  let ready!: Promise<void>;
+  let ready: ReturnType<typeof Promise.withResolvers<void>>;
   let conn: mod.DbConnection;
-  let resolveReady!: () => void;
-  let rejectReady!: (e: unknown) => void;
-
-  function armReady() {
-    ready = new Promise<void>((res, rej) => {
-      resolveReady = res;
-      rejectReady = rej;
-    });
-  }
 
   async function connectWithBindings() {
     if (!url) throw new Error('STDB_URL not set');
@@ -34,46 +21,49 @@ export function spacetimedb(
 
     const Db = mod.DbConnection;
 
-    armReady();
+    ready = Promise.withResolvers<void>();
 
     const subscriptions: string[] = [];
     if (process.env.VERIFY === '1') {
       console.log('[spacetimedb] subscribing to accounts');
       subscriptions.push('SELECT * FROM accounts');
     }
-    let subscribed = subscriptions.length === 0;
+    const subscribed = Promise.withResolvers<void>();
+    if (subscriptions.length === 0) subscribed.resolve();
 
     const builder = Db.builder()
-      .withUri(url)
+      .withUri(deriveWebsocketUrl(url))
       .withDatabaseName(moduleName)
-      .withConfirmedReads(useConfirmedReads())
+      .withCompression(stdbCompression)
+      .withConfirmedReads(stdbConfirmedReads)
       .onConnect((ctx) => {
         console.log('[stdb] connected');
         const conn = ctx;
 
-        resolveReady();
+        ready.resolve();
 
         if (subscriptions.length > 0) {
           conn
             .subscriptionBuilder()
             .onApplied((_sCtx) => {
-              subscribed = true;
+              subscribed.resolve();
             })
             .onError((ctx) => {
               console.error('[stdb] subscription failed', ctx.event?.message);
+              subscribed.reject(ctx.event);
             })
             .subscribe(subscriptions);
         }
       })
       .onConnectError((_ctx, err: any) => {
-        console.error('[stdb] onConnectError', err);
-
         if (err instanceof Error) {
-          rejectReady(err);
+          ready.reject(err);
+        } else if (err && err.error instanceof Error) {
+          ready.reject(err.error);
         } else if (err && typeof err.message === 'string') {
-          rejectReady(new Error(err.message));
+          ready.reject(new Error(err.message));
         } else {
-          rejectReady(
+          ready.reject(
             new Error(`Spacetime connection error: ${JSON.stringify(err)}`),
           );
         }
@@ -82,21 +72,20 @@ export function spacetimedb(
 
     conn = builder.build();
 
-    while (!subscribed) {
-      await new Promise((res) => setTimeout(res, 25));
-    }
+    await ready.promise;
+    await subscribed.promise;
   }
 
   return {
     name: 'spacetimedb',
-    maxInflightPerWorker: 16384,
+    maxInflightPerWorker: 512,
 
     async open() {
       try {
         await connectWithBindings();
-        await ready;
+        await ready.promise;
       } catch (err) {
-        console.error('[spacetimedb] open() failed', err);
+        console.error('[spacetimedb] open() failed:', err);
         throw err;
       }
     },
@@ -105,12 +94,12 @@ export function spacetimedb(
       try {
         conn.disconnect();
       } catch (e) {
-        console.error('[spacetimedb] close() failed', e);
+        console.error('[spacetimedb] close() failed:', e);
       }
     },
 
     async createWorker(): Promise<ReducerConnector> {
-      const worker = spacetimedb(url, moduleName);
+      const worker = spacetimedb(config);
       await worker.open();
       worker.verify = async () => {
         throw new Error(
@@ -122,13 +111,13 @@ export function spacetimedb(
     },
 
     async call(fn: string, args: Record<string, any>) {
-      await ready;
+      await ready.promise;
 
       switch (fn) {
         case 'seed': {
           return conn.reducers.seed({
             n: args.accounts,
-            initialBalance: args.initialBalance,
+            initialBalance: BigInt(args.initialBalance),
           });
         }
 
@@ -167,7 +156,7 @@ export function spacetimedb(
     async verify() {
       if (!conn) throw new Error('SpacetimeDB not connected');
 
-      const rawInitial = process.env.SEED_INITIAL_BALANCE;
+      const rawInitial = initialBalance;
       if (!rawInitial) {
         console.warn(
           '[spacetimedb] SEED_INITIAL_BALANCE not set; skipping verification',

@@ -1,4 +1,4 @@
-﻿export type RpcRequest = {
+export type RpcRequest = {
   name?: string;
   args?: Record<string, unknown>;
 };

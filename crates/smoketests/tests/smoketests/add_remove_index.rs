@@ -15,7 +15,7 @@ fn test_add_then_remove_index() {
         .build();
 
     // TODO: Does the name do anything? Other tests just let the DB assign.
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("add-remove-index-{}", std::process::id());
 
     // Publish and attempt a subscribing to a join query.
     // There are no indices, resulting in an unsupported unindexed join.

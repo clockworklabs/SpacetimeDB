@@ -132,7 +132,10 @@ public static partial class Module
     }
 
     [SpacetimeDB.Table(Accessor = "score", Public = true)]
-    [SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+    [SpacetimeDB.Index.BTree(
+        Accessor = "by_player_and_level",
+        Columns = new[] { "PlayerId", "Level" }
+    )]
     public partial struct Score
     {
         public uint PlayerId;
@@ -196,6 +199,93 @@ public static partial class Module
 
         [SpacetimeDB.Index.BTree]
         public ulong PlayerId;
+    }
+
+    // === Equality Test Tables and Types ===
+
+    // Struct for testing struct equality (used in Product and Order)
+    [SpacetimeDB.Type]
+    public partial struct ProductItem
+    {
+        public uint ProductId;
+        public int Quantity;
+    }
+
+    // Simple struct - basic value type equality testing
+    [SpacetimeDB.Table(Accessor = "equality_person", Public = true)]
+    public partial struct EqualityPerson
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+        public string Name;
+    }
+
+    // Complex struct with multiple fields for equality testing
+    [SpacetimeDB.Table(Accessor = "equality_product", Public = true)]
+    public partial struct EqualityProduct
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+        public string Name;
+        public int Price; // Price in cents
+        public int Quantity;
+    }
+
+    // Record with reference type fields for equality testing
+    [SpacetimeDB.Table(Accessor = "equality_order", Public = true)]
+    public partial record EqualityOrder
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+        public string? CustomerName;
+        public List<ProductItem>? Items;
+    }
+
+    // Enum for equality testing
+    public enum TestStatus
+    {
+        Pending,
+        Active,
+        Completed
+    }
+
+    // Custom sum type for testing TaggedEnum equality
+    [SpacetimeDB.Type]
+    public partial record GameAction : TaggedEnum<(string Move, string Attack, int Defend)> { }
+
+    [SpacetimeDB.Table(Accessor = "player_action", Public = true)]
+    public partial struct PlayerAction
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+        public GameAction Action;
+    }
+
+    // List of nullable sum types - tests nullable suffix handling
+    [SpacetimeDB.Table(Accessor = "action_batch", Public = true)]
+    public partial struct ActionBatch
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+        public List<GameAction?> Actions;
+    }
+
+    // Table WITHOUT primary key - triggers RawIndexDefV10.Equals/GetHashCode path
+    [SpacetimeDB.Table(Accessor = "log_entry", Public = true)]
+    public partial struct LogEntry
+    {
+        public string Message;
+        public ulong Timestamp;
+    }
+
+    // Scheduled table - tests ScheduleAt sum type (manually-written, uses ReferenceUse)
+    [SpacetimeDB.Table(Accessor = "scheduled_task", Scheduled = "ExecuteScheduledTask", ScheduledAt = "ScheduledAt")]
+    public partial struct ScheduledTask
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+        public string TaskName;
+        public ScheduleAt ScheduledAt;
     }
 
     // At-most-one row: return T?
@@ -392,6 +482,51 @@ public static partial class Module
             );
     }
 
+    // IEnumerable<T> view support - manual list building with filtering
+    [SpacetimeDB.View(Accessor = "ienumerable_players_from_iter", Public = true)]
+    public static IEnumerable<Player> IEnumerablePlayersFromIter(AnonymousViewContext ctx)
+    {
+        var result = new List<Player>();
+        foreach (var playerLevel in ctx.Db.player_level.Level.Filter(1ul))
+        {
+            if (ctx.Db.player.Id.Find(playerLevel.PlayerId) is Player player)
+            {
+                result.Add(player);
+            }
+        }
+        return result;
+    }
+
+    // IEnumerable<T> view support - direct filter-to-list conversion
+    [SpacetimeDB.View(Accessor = "ienumerable_admins_from_filter", Public = true)]
+    public static IEnumerable<User> IEnumerableAdminsFromFilter(AnonymousViewContext ctx)
+    {
+        return ctx.Db.user.IsAdmin.Filter(true).ToList();
+    }
+
+    // IEnumerable<T> view support - complex logic with joins and custom objects
+    [SpacetimeDB.View(Accessor = "ienumerable_players_with_levels", Public = true)]
+    public static IEnumerable<PlayerAndLevel> IEnumerablePlayersWithLevels(AnonymousViewContext ctx)
+    {
+        var result = new List<PlayerAndLevel>();
+        foreach (var playerLevel in ctx.Db.player_level.Level.Filter(1ul))
+        {
+            if (ctx.Db.player.Id.Find(playerLevel.PlayerId) is Player player)
+            {
+                result.Add(
+                    new PlayerAndLevel
+                    {
+                        Id = player.Id,
+                        Identity = player.Identity,
+                        Name = player.Name,
+                        Level = playerLevel.Level,
+                    }
+                );
+            }
+        }
+        return result;
+    }
+
     [SpacetimeDB.Reducer]
     public static void Delete(ReducerContext ctx, uint id)
     {
@@ -500,11 +635,7 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertViewPkMembershipSecondary(
-        ReducerContext ctx,
-        ulong id,
-        ulong playerId
-    )
+    public static void InsertViewPkMembershipSecondary(ReducerContext ctx, ulong id, ulong playerId)
     {
         ctx.Db.view_pk_membership_secondary.Insert(
             new ViewPkMembershipSecondary { Id = id, PlayerId = playerId }
@@ -837,6 +968,255 @@ public static partial class Module
 
     [SpacetimeDB.Reducer]
     public static void Noop(ReducerContext ctx) { }
+
+    // === Equality Test Reducers ===
+
+    [SpacetimeDB.Reducer]
+    public static void AddEqualityPerson(ReducerContext ctx, uint id, string name)
+    {
+        ctx.Db.equality_person.Insert(new EqualityPerson { Id = id, Name = name });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void AddEqualityProduct(ReducerContext ctx, uint id, string name, int price, int quantity)
+    {
+        ctx.Db.equality_product.Insert(new EqualityProduct { Id = id, Name = name, Price = price, Quantity = quantity });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void AddEqualityOrder(ReducerContext ctx, uint id, string? customerName, List<ProductItem>? items)
+    {
+        ctx.Db.equality_order.Insert(new EqualityOrder { Id = id, CustomerName = customerName, Items = items });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void RunEqualityTests(ReducerContext ctx)
+    {
+        Log.Info("=== Testing Equality ===");
+
+        // Test 1: Direct string comparison (no allocation)
+        bool stringEqual = "Alice" == "Alice";
+        Log.Info($"Test 1 - String equality: {stringEqual}");
+
+        // Test 2: Enum equality (no allocation)
+        var s1 = TestStatus.Pending;
+        var s2 = TestStatus.Pending;
+        bool enumEqual = s1 == s2;
+        Log.Info($"Test 2 - Enum equality: {enumEqual}");
+
+        // Test 3: Integer equality (no allocation)
+        int i1 = 42;
+        int i2 = 42;
+        bool intEqual = i1 == i2;
+        Log.Info($"Test 3 - Int equality: {intEqual}");
+
+        Log.Info("=== Equality Tests Complete ===");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void RunComplexEqualityTests(ReducerContext ctx)
+    {
+        Log.Info("=== Testing Complex Equality ===");
+
+        // Test struct .Equals() - this used to cause boxing/allocation
+        var item1 = new ProductItem { ProductId = 1, Quantity = 10 };
+        var item2 = new ProductItem { ProductId = 1, Quantity = 10 };
+        var item3 = new ProductItem { ProductId = 2, Quantity = 5 };
+
+        bool structEqual = item1.Equals(item2);
+        bool structNotEqual = item1.Equals(item3);
+        Log.Info($"Struct equality (same): {structEqual}");
+        Log.Info($"Struct equality (different): {structNotEqual}");
+
+        // Test Person struct equality (table type)
+        var person1 = new EqualityPerson { Id = 100, Name = "Test" };
+        var person2 = new EqualityPerson { Id = 100, Name = "Test" };
+        var person3 = new EqualityPerson { Id = 200, Name = "Other" };
+
+        bool personEqual = person1.Equals(person2);
+        bool personNotEqual = person1.Equals(person3);
+        Log.Info($"Person struct equality (same): {personEqual}");
+        Log.Info($"Person struct equality (different): {personNotEqual}");
+
+        Log.Info("=== Complex Equality Tests Complete ===");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void RunEnumEqualityTests(ReducerContext ctx)
+    {
+        var s1 = TestStatus.Pending;
+        var s2 = TestStatus.Pending;
+        var s3 = TestStatus.Active;
+
+        bool equal1 = s1 == s2; // Should be true
+        bool equal2 = s1 == s3; // Should be false
+
+        Log.Info($"Enum equality (same): {equal1}");
+        Log.Info($"Enum equality (different): {equal2}");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void TestTableWithoutPrimaryKey(ReducerContext ctx)
+    {
+        Log.Info("=== Testing Table WITHOUT Primary Key (RawIndexDefV10 path) ===");
+
+        // This triggers RawIndexDefV10.Equals/GetHashCode which previously failed
+        ctx.Db.log_entry.Insert(new LogEntry { Message = "Test 1", Timestamp = 1000 });
+        ctx.Db.log_entry.Insert(new LogEntry { Message = "Test 2", Timestamp = 2000 });
+
+        int count = 0;
+        foreach (var entry in ctx.Db.log_entry.Iter())
+        {
+            count++;
+            Log.Info($"LogEntry: {entry.Message} at {entry.Timestamp}");
+        }
+
+        Log.Info($"Total log entries: {count}");
+        Log.Info("=== Table Without Primary Key Test Complete ===");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void TestSumTypeEquality(ReducerContext ctx)
+    {
+        Log.Info("=== Testing Sum Type (TaggedEnum) Equality ===");
+
+        // Test sum type equality via generated Equals
+        var action1 = new GameAction.Move("North");
+        var action2 = new GameAction.Move("North");
+        var action3 = new GameAction.Attack("Sword");
+
+        bool equal = action1.Equals(action2);
+        bool notEqual = action1.Equals(action3);
+
+        Log.Info($"Sum type equality (same variant): {equal}");
+        Log.Info($"Sum type equality (different variant): {!notEqual}");
+
+        // Insert and retrieve sum type from table
+        ctx.Db.player_action.Insert(new PlayerAction { Id = 1, Action = action1 });
+        ctx.Db.player_action.Insert(new PlayerAction { Id = 2, Action = action3 });
+
+        foreach (var pa in ctx.Db.player_action.Iter())
+        {
+            var desc = pa.Action switch
+            {
+                GameAction.Move(var m) => $"Move: {m}",
+                GameAction.Attack(var a) => $"Attack: {a}",
+                GameAction.Defend(var d) => $"Defend: {d}",
+                _ => "Unknown"
+            };
+            Log.Info($"PlayerAction {pa.Id}: {desc}");
+        }
+
+        Log.Info("=== Sum Type Equality Test Complete ===");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void TestListOfNullableSumTypes(ReducerContext ctx)
+    {
+        Log.Info("=== Testing List of Nullable Sum Types ===");
+
+        // This exercises SumTypeUse with nullable suffix (GameAction?)
+        var actions = new List<GameAction?>
+        {
+            new GameAction.Move("North"),
+            null,
+            new GameAction.Attack("Bow"),
+            null
+        };
+
+        ctx.Db.action_batch.Insert(new ActionBatch { Id = 1, Actions = actions });
+
+        foreach (var batch in ctx.Db.action_batch.Iter())
+        {
+            Log.Info($"Batch {batch.Id} has {batch.Actions?.Count ?? 0} actions");
+            if (batch.Actions != null)
+            {
+                for (int i = 0; i < batch.Actions.Count; i++)
+                {
+                    var desc = batch.Actions[i] switch
+                    {
+                        null => "null",
+                        GameAction.Move(var m) => $"Move({m})",
+                        GameAction.Attack(var a) => $"Attack({a})",
+                        GameAction.Defend(var d) => $"Defend({d})",
+                        _ => "Unknown"
+                    };
+                    Log.Info($"  Action {i}: {desc}");
+                }
+            }
+        }
+
+        Log.Info("=== List of Nullable Sum Types Test Complete ===");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void ExecuteScheduledTask(ReducerContext ctx, ScheduledTask task)
+    {
+        Log.Info($"Executing scheduled task: {task.TaskName}");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void ScheduleTask(ReducerContext ctx, ulong delayMicros)
+    {
+        Log.Info("=== Testing Scheduled Table (ScheduleAt sum type) ===");
+
+        // ScheduleAt is a manually-written sum type - tests ReferenceUse path
+        var scheduledAt = ScheduleAt.TimeSpanFromMicroseconds((long)delayMicros);
+
+        ctx.Db.scheduled_task.Insert(new ScheduledTask
+        {
+            Id = 1,
+            TaskName = "Test Task",
+            ScheduledAt = scheduledAt
+        });
+
+        Log.Info($"Scheduled task for {delayMicros} microseconds from now");
+        Log.Info("=== Scheduled Table Test Complete ===");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void TestReducerWithSumTypeParam(ReducerContext ctx, GameAction action)
+    {
+        Log.Info("=== Testing Reducer with Sum Type Parameter ===");
+
+        // This exercises SumTypeUse.EqualsStatement for parameter comparison
+        var match = action switch
+        {
+            GameAction.Move(var m) => $"Moving: {m}",
+            GameAction.Attack(var a) => $"Attacking with: {a}",
+            GameAction.Defend(var d) => $"Defending with power: {d}",
+            _ => "Unknown action"
+        };
+
+        Log.Info(match);
+        Log.Info("=== Reducer with Sum Type Parameter Test Complete ===");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void RunAllEqualityTests(ReducerContext ctx)
+    {
+        Log.Info("========== Starting Equality Tests ==========");
+
+        // Insert test data
+        ctx.Db.equality_person.Insert(new EqualityPerson { Id = 1, Name = "Alice" });
+        ctx.Db.equality_product.Insert(new EqualityProduct { Id = 1, Name = "Widget", Price = 999, Quantity = 100 });
+
+        // Run tests
+        RunEqualityTests(ctx);
+        RunComplexEqualityTests(ctx);
+        RunEnumEqualityTests(ctx);
+
+        // New tests for sum type fixes
+        TestTableWithoutPrimaryKey(ctx);
+        TestSumTypeEquality(ctx);
+        TestListOfNullableSumTypes(ctx);
+        ScheduleTask(ctx, 1000000); // 1 second delay
+
+        // Test reducer with sum type parameter
+        TestReducerWithSumTypeParam(ctx, new GameAction.Attack("Magic Sword"));
+
+        Log.Info("========== All Equality Tests Complete ==========");
+    }
 
     [SpacetimeDB.Procedure]
     public static void InsertWithTxPanic(ProcedureContext ctx)

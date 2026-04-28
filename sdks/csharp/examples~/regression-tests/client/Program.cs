@@ -54,8 +54,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.NullableVecView())
         .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)))
         .AddQuery(qb =>
-            qb.From.Player()
-                .LeftSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
+            qb.From.Player().LeftSemijoin(qb.From.PlayerLevel(), (p, pl) => p.Id.Eq(pl.PlayerId))
         )
         .AddQuery(qb =>
             qb.From.Player()
@@ -80,6 +79,15 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.WhereTestView())
         .AddQuery(qb => qb.From.FindWhereTest())
         .AddQuery(qb => qb.From.WhereTestQuery())
+        .AddQuery(qb => qb.From.IenumerablePlayersFromIter())
+        .AddQuery(qb => qb.From.IenumerableAdminsFromFilter())
+        .AddQuery(qb => qb.From.IenumerablePlayersWithLevels())
+        .AddQuery(qb => qb.From.EqualityPerson())
+        .AddQuery(qb => qb.From.EqualityProduct())
+        .AddQuery(qb => qb.From.EqualityOrder())
+        .AddQuery(qb => qb.From.PlayerAction())
+        .AddQuery(qb => qb.From.ActionBatch())
+        .AddQuery(qb => qb.From.LogEntry())
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -206,6 +214,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 
         ValidateWhereSubscription(ctx, UPDATED_WHERE_TEST_NAME);
         ValidateWhereTestViews(ctx, UPDATED_WHERE_TEST_VALUE, UPDATED_WHERE_TEST_NAME);
+        ValidateIEnumerableViews(ctx);
     };
 
     conn.Db.TestEvent.OnInsert += (EventContext ctx, TestEvent row) =>
@@ -238,8 +247,14 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             ctx.Event.Status is Status.Committed,
             $"EmitTestEvent should commit, got {ctx.Event.Status}"
         );
-        Debug.Assert(name == EXPECTED_TEST_EVENT_NAME, $"Expected name={EXPECTED_TEST_EVENT_NAME}, got {name}");
-        Debug.Assert(value == EXPECTED_TEST_EVENT_VALUE, $"Expected value={EXPECTED_TEST_EVENT_VALUE}, got {value}");
+        Debug.Assert(
+            name == EXPECTED_TEST_EVENT_NAME,
+            $"Expected name={EXPECTED_TEST_EVENT_NAME}, got {name}"
+        );
+        Debug.Assert(
+            value == EXPECTED_TEST_EVENT_VALUE,
+            $"Expected value={EXPECTED_TEST_EVENT_VALUE}, got {value}"
+        );
     };
 
     conn.Reducers.OnNoop += (ReducerEventContext ctx) =>
@@ -287,6 +302,96 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         waiting--;
         ValidateCommittedReducer("InsertViewPkMembershipSecondary", ctx);
     };
+
+    // Equality test reducer callbacks
+    conn.Reducers.OnRunAllEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunAllEqualityTests callback");
+        // Note: waiting-- happens after validation in this callback
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"RunAllEqualityTests should commit, got {ctx.Event.Status}"
+        );
+
+        // Validate results while subscription is still active
+        // Must happen here before UnsubscribeThen removes the data
+        if (ctx.Event.Status is Status.Committed)
+        {
+            Log.Info("Validating equality test results...");
+            ValidateEqualityResults(ctx);
+            Log.Info("Equality tests completed and validated");
+        }
+        // Decrement waiting here after validation is complete
+        waiting--;
+    };
+
+    conn.Reducers.OnAddEqualityPerson += (ReducerEventContext ctx, uint id, string name) =>
+    {
+        Log.Info($"Got AddEqualityPerson callback: id={id}, name={name}");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnAddEqualityProduct += (ReducerEventContext ctx, uint id, string name, int price, int quantity) =>
+    {
+        Log.Info($"Got AddEqualityProduct callback: id={id}, name={name}");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnRunEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunEqualityTests callback");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnRunComplexEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunComplexEqualityTests callback");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    conn.Reducers.OnRunEnumEqualityTests += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got RunEnumEqualityTests callback");
+        // Note: waiting-- happens in OnRunAllEqualityTests after all tests complete
+    };
+
+    // Equality test table insert callbacks
+    conn.Db.EqualityPerson.OnInsert += (EventContext ctx, EqualityPerson row) =>
+    {
+        Log.Info($"EqualityPerson.OnInsert: Id={row.Id}, Name={row.Name}");
+    };
+
+    conn.Db.EqualityProduct.OnInsert += (EventContext ctx, EqualityProduct row) =>
+    {
+        Log.Info($"EqualityProduct.OnInsert: Id={row.Id}, Name={row.Name}, Price={row.Price}");
+    };
+
+    conn.Db.EqualityOrder.OnInsert += (EventContext ctx, EqualityOrder row) =>
+    {
+        Log.Info($"EqualityOrder.OnInsert: Id={row.Id}, Customer={row.CustomerName}");
+    };
+
+    conn.Db.PlayerAction.OnInsert += (EventContext ctx, PlayerAction row) =>
+    {
+        var actionDesc = row.Action switch
+        {
+            GameAction.Move(var m) => $"Move({m})",
+            GameAction.Attack(var a) => $"Attack({a})",
+            GameAction.Defend(var d) => $"Defend({d})",
+            _ => "Unknown"
+        };
+        Log.Info($"PlayerAction.OnInsert: Id={row.Id}, Action={actionDesc}");
+    };
+
+    conn.Db.ActionBatch.OnInsert += (EventContext ctx, ActionBatch row) =>
+    {
+        Log.Info($"ActionBatch.OnInsert: Id={row.Id}, Actions.Count={row.Actions?.Count ?? 0}");
+    };
+
+    conn.Db.LogEntry.OnInsert += (EventContext ctx, LogEntry row) =>
+    {
+        Log.Info($"LogEntry.OnInsert: {row.Message} at {row.Timestamp}");
+    };
 }
 
 const uint MAX_ID = 10;
@@ -298,9 +403,7 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
     Log.Debug("Checking indexes...");
     foreach (var data in conn.Db.ExampleData.Iter())
     {
-        Debug.Assert(
-            conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data)
-        );
+        Debug.Assert(conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data));
     }
     var outOfIndex = conn.Db.ExampleData.Iter().ToHashSet();
 
@@ -437,12 +540,18 @@ void ValidateQueryingWithIndexesExamples(IRemoteDbContext conn)
         "Advanced predicate rows should satisfy admin || name == Charlie"
     );
     Debug.Assert(
-        advancedUsers.Select(u => u.Name).OrderBy(n => n).SequenceEqual(new[] { "Alice", "Charlie" }),
+        advancedUsers
+            .Select(u => u.Name)
+            .OrderBy(n => n)
+            .SequenceEqual(new[] { "Alice", "Charlie" }),
         "Expected Alice and Charlie from advanced predicate"
     );
 }
 
-void ValidateWhereSubscription(IRemoteDbContext conn, string expectedTestName = "this_name_will_get_updated")
+void ValidateWhereSubscription(
+    IRemoteDbContext conn,
+    string expectedTestName = "this_name_will_get_updated"
+)
 {
     Log.Debug("Checking typed WHERE subscription...");
     Debug.Assert(conn.Db.WhereTest != null, "conn.Db.WhereTest != null");
@@ -467,10 +576,7 @@ void ValidateWhereTestViews(
 )
 {
     Log.Debug("Checking where_test views...");
-    Debug.Assert(
-        conn.Db.WhereTestView != null,
-        "WhereTestView should not be null"
-    );
+    Debug.Assert(conn.Db.WhereTestView != null, "WhereTestView should not be null");
     Debug.Assert(
         conn.Db.WhereTestView.Count == 1,
         $"Expected exactly one WhereTestView row, got {conn.Db.WhereTestView.Count}"
@@ -486,10 +592,7 @@ void ValidateWhereTestViews(
         $"Expected WhereTestView row name={expectedId2Name}, got {viewRow.Name}"
     );
 
-    Debug.Assert(
-        conn.Db.WhereTestQuery != null,
-        "WhereTestQuery should not be null"
-    );
+    Debug.Assert(conn.Db.WhereTestQuery != null, "WhereTestQuery should not be null");
     Debug.Assert(
         conn.Db.WhereTestQuery.Count == 1,
         $"Expected exactly one WhereTestQuery row, got {conn.Db.WhereTestQuery.Count}"
@@ -505,16 +608,134 @@ void ValidateWhereTestViews(
         $"Expected WhereTestQuery row name={expectedId2Name}, got {queryRow.Name}"
     );
 
-    Debug.Assert(
-        conn.Db.FindWhereTest != null,
-        "FindWhereTest should not be null"
-    );
+    Debug.Assert(conn.Db.FindWhereTest != null, "FindWhereTest should not be null");
     Debug.Assert(
         conn.Db.FindWhereTest.Count == 1,
         $"Expected exactly one FindWhereTest row, got {conn.Db.FindWhereTest.Count}"
     );
     var anonRow = conn.Db.FindWhereTest.Iter().First();
     Debug.Assert(anonRow.Id == 3, $"Expected FindWhereTest row id=3, got {anonRow.Id}");
+}
+
+void ValidateIEnumerableViews(IRemoteDbContext conn)
+{
+    Log.Debug("Checking IEnumerable views...");
+
+    // Validate IEnumerablePlayersFromIter - should return all players
+    Debug.Assert(
+        conn.Db.IenumerablePlayersFromIter != null,
+        "IenumerablePlayersFromIter should not be null"
+    );
+    var players = conn.Db.IenumerablePlayersFromIter.Iter().ToList();
+    Debug.Assert(players.Count >= 1, $"Expected at least 1 player, got {players.Count}");
+
+    // Validate IEnumerableAdminsFromFilter - should return only admin users
+    Debug.Assert(
+        conn.Db.IenumerableAdminsFromFilter != null,
+        "IenumerableAdminsFromFilter should not be null"
+    );
+    var admins = conn.Db.IenumerableAdminsFromFilter.Iter().ToList();
+    Debug.Assert(admins.Count >= 1, $"Expected at least 1 admin user, got {admins.Count}");
+    Debug.Assert(
+        admins.All(u => u.IsAdmin),
+        "All users in IenumerableAdminsFromFilter should be admins"
+    );
+
+    // Validate IEnumerablePlayersWithLevels - should return players with their levels
+    Debug.Assert(
+        conn.Db.IenumerablePlayersWithLevels != null,
+        "IenumerablePlayersWithLevels should not be null"
+    );
+    var playersWithLevels = conn.Db.IenumerablePlayersWithLevels.Iter().ToList();
+    Debug.Assert(
+        playersWithLevels.Count >= 1,
+        $"Expected at least 1 player with level, got {playersWithLevels.Count}"
+    );
+
+    // Verify the structure matches PlayerAndLevel
+    foreach (var playerWithLevel in playersWithLevels)
+    {
+        Debug.Assert(playerWithLevel.Id > 0, "PlayerAndLevel.Id should be > 0");
+        Debug.Assert(
+            !string.IsNullOrEmpty(playerWithLevel.Name),
+            "PlayerAndLevel.Name should not be null or empty"
+        );
+        Debug.Assert(playerWithLevel.Level > 0, "PlayerAndLevel.Level should be > 0");
+    }
+
+    Log.Debug("IEnumerable views validation completed successfully");
+}
+
+void ValidateEqualitySubscriptions(IRemoteDbContext conn)
+{
+    Log.Debug("Checking equality test subscriptions...");
+
+    // Verify all equality test tables are accessible
+    Debug.Assert(conn.Db.EqualityPerson != null, "EqualityPerson subscription should not be null");
+    Debug.Assert(conn.Db.EqualityProduct != null, "EqualityProduct subscription should not be null");
+    Debug.Assert(conn.Db.EqualityOrder != null, "EqualityOrder subscription should not be null");
+    Debug.Assert(conn.Db.PlayerAction != null, "PlayerAction subscription should not be null");
+    Debug.Assert(conn.Db.ActionBatch != null, "ActionBatch subscription should not be null");
+    Debug.Assert(conn.Db.LogEntry != null, "LogEntry subscription should not be null");
+
+    Log.Debug("Equality test subscriptions validated successfully");
+}
+
+void RunEqualityTests(SubscriptionEventContext ctx)
+{
+    Log.Debug("Running equality tests...");
+
+    // Single waiting increment for the entire equality test phase
+    // This ensures we wait for all callbacks AND validation before proceeding
+    waiting++;
+
+    // Test 1: Add a person
+    Log.Debug("Equality Test: Adding EqualityPerson...");
+    ctx.Reducers.AddEqualityPerson(1, "Alice");
+
+    // Test 2: Add a product
+    Log.Debug("Equality Test: Adding EqualityProduct...");
+    ctx.Reducers.AddEqualityProduct(1, "Widget", 999, 100);
+
+    // Test 3: Run the comprehensive equality test suite
+    Log.Debug("Equality Test: Running RunAllEqualityTests...");
+    ctx.Reducers.RunAllEqualityTests();
+
+    Log.Debug("Equality tests initiated - waiting for completion");
+}
+
+void ValidateEqualityResults(IRemoteDbContext conn)
+{
+    Log.Debug("Validating equality test results...");
+
+    // Validate EqualityPerson data
+    var alice = conn.Db.EqualityPerson.Id.Find(1);
+    Debug.Assert(alice != null, "Alice should be in EqualityPerson table");
+    Debug.Assert(alice.Name == "Alice", $"Expected Alice, got {alice.Name}");
+
+    // Validate EqualityProduct data
+    var product = conn.Db.EqualityProduct.Id.Find(1);
+    Debug.Assert(product != null, "Widget should be in EqualityProduct table");
+    Debug.Assert(product.Name == "Widget", $"Expected Widget, got {product.Name}");
+    Debug.Assert(product.Price == 999, $"Expected Price=999, got {product.Price}");
+
+    // Validate PlayerAction data (inserted by TestSumTypeEquality)
+    var actions = conn.Db.PlayerAction.Iter().ToList();
+    Debug.Assert(actions.Count >= 2, $"Expected at least 2 PlayerActions, got {actions.Count}");
+
+    // Validate ActionBatch data (inserted by TestListOfNullableSumTypes)
+    var batches = conn.Db.ActionBatch.Iter().ToList();
+    Debug.Assert(batches.Count >= 1, $"Expected at least 1 ActionBatch, got {batches.Count}");
+    var batch = batches.FirstOrDefault(b => b.Id == 1);
+    Debug.Assert(batch != null, "Expected ActionBatch with Id=1");
+    Debug.Assert(batch.Actions != null, "ActionBatch should have non-null Actions list");
+    Debug.Assert(batch.Actions.Count == 4, $"Expected 4 actions (2 null), got {batch.Actions.Count}");
+
+    // Validate LogEntry data (inserted by TestTableWithoutPrimaryKey)
+    var logEntries = conn.Db.LogEntry.Iter().ToList();
+    Debug.Assert(logEntries.Count >= 2, $"Expected at least 2 LogEntries, got {logEntries.Count}");
+
+    Log.Debug("Equality test results validated successfully");
 }
 
 void ValidateSemijoinSubscriptions(IRemoteDbContext conn, Identity identity)
@@ -604,8 +825,7 @@ void ExecViewPkOnUpdate()
     SubscriptionHandle? phaseHandle = null;
 
     Log.Debug($"Starting {testName}");
-    phaseHandle = db
-        .SubscriptionBuilder()
+    phaseHandle = db.SubscriptionBuilder()
         .OnApplied(ctx =>
         {
             void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
@@ -638,10 +858,12 @@ void ExecViewPkOnUpdate()
             waiting++;
             ctx.Reducers.UpdateViewPkPlayer(playerId, after);
         })
-        .OnError((_, err) =>
-        {
-            throw err;
-        })
+        .OnError(
+            (_, err) =>
+            {
+                throw err;
+            }
+        )
         .AddQuery(q => q.From.AllViewPkPlayers())
         .Subscribe();
 }
@@ -677,8 +899,7 @@ void ExecViewPkJoinQueryBuilder()
     SubscriptionHandle? phaseHandle = null;
 
     Log.Debug($"Starting {testName}");
-    phaseHandle = db
-        .SubscriptionBuilder()
+    phaseHandle = db.SubscriptionBuilder()
         .OnApplied(ctx =>
         {
             void OnAllViewPkPlayersUpdate(EventContext _, ViewPkPlayer oldRow, ViewPkPlayer newRow)
@@ -714,15 +935,18 @@ void ExecViewPkJoinQueryBuilder()
             waiting++;
             ctx.Reducers.UpdateViewPkPlayer(playerId, after);
         })
-        .OnError((_, err) =>
-        {
-            throw err;
-        })
+        .OnError(
+            (_, err) =>
+            {
+                throw err;
+            }
+        )
         .AddQuery(q =>
-            q.From.ViewPkMembership().RightSemijoin(
-                q.From.AllViewPkPlayers(),
-                (membership, player) => membership.PlayerId.Eq(player.Id)
-            )
+            q.From.ViewPkMembership()
+                .RightSemijoin(
+                    q.From.AllViewPkPlayers(),
+                    (membership, player) => membership.PlayerId.Eq(player.Id)
+                )
         )
         .Subscribe();
 }
@@ -760,8 +984,7 @@ void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
     SubscriptionHandle? phaseHandle = null;
 
     Log.Debug($"Starting {testName}");
-    phaseHandle = db
-        .SubscriptionBuilder()
+    phaseHandle = db.SubscriptionBuilder()
         .OnApplied(ctx =>
         {
             void OnSenderViewPkPlayersBUpdate(
@@ -804,15 +1027,18 @@ void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
             waiting++;
             ctx.Reducers.UpdateViewPkPlayer(playerId, after);
         })
-        .OnError((_, err) =>
-        {
-            throw err;
-        })
+        .OnError(
+            (_, err) =>
+            {
+                throw err;
+            }
+        )
         .AddQuery(q =>
-            q.From.SenderViewPkPlayersA().RightSemijoin(
-                q.From.SenderViewPkPlayersB(),
-                (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
-            )
+            q.From.SenderViewPkPlayersA()
+                .RightSemijoin(
+                    q.From.SenderViewPkPlayersB(),
+                    (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
+                )
         )
         .Subscribe();
 }
@@ -821,7 +1047,12 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     ValidateWhereSubscription(context);
     ValidateWhereTestViews(context);
+    ValidateIEnumerableViews(context);
     ValidateSemijoinSubscriptions(context, context.Identity!.Value);
+
+    // Run equality tests
+    ValidateEqualitySubscriptions(context);
+    RunEqualityTests(context);
 
     // Do some operations that alter row state;
     // we will check that everything is in sync in the callbacks for these reducer calls.

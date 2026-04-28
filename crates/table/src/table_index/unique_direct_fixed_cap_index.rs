@@ -94,6 +94,15 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
         UniquePointIter::new(point)
     }
 
+    type Iter<'a>
+        = UniqueDirectFixedCapIndexRangeIter<'a>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        UniqueDirectFixedCapIndexRangeIter::new(&self.array)
+    }
+
     fn num_keys(&self) -> usize {
         self.len
     }
@@ -113,6 +122,8 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
         }
         Ok(())
     }
+
+    const IS_RANGED: bool = true;
 }
 
 impl<K: ToFromUsize + KeySize> RangedIndex for UniqueDirectFixedCapIndex<K> {

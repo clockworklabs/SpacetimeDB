@@ -1,6 +1,12 @@
+> ⚠️ **Internal Project** ⚠️
+>
+> This project is intended for internal use only. It is **not** stable and may change without notice.
+
 # SpacetimeDB.Runtime
 
-This project contains the core SpacetimeDB SATS typesystem, attributes for the codegen as well as runtime bindings for SpacetimeDB WebAssembly modules.
+This project contains the runtime bindings for SpacetimeDB WebAssembly modules. See the [C# module library reference](https://spacetimedb.com/docs/modules/c-sharp) for stable, user-facing documentation.
+
+SpacetimeDB modules are compiled to WebAssembly modules that expose a specific interface; see the [module ABI reference](https://spacetimedb.com/docs/webassembly-abi).
 
 The runtime bindings are currently implementing via `Wasi.Sdk` package, which is a .NET implementation of the [WASI](https://wasi.dev/) standard. This is likely to change in the future.
 
@@ -21,3 +27,5 @@ To regenenerate the `Autogen` folder, run:
 ```sh
 cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
 ```
+
+This folder contains the type definitions used to serialize the `RawModuleDef` that is returned by `__describe_module__`.

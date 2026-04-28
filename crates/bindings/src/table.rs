@@ -113,6 +113,14 @@ pub trait Table: TableInternal + ExplicitNames {
         count > 0
     }
 
+    /// Clears the table of all rows.
+    ///
+    /// Returns the number of rows that were deleted,
+    /// i.e., the value of [`self.count()`](Table::count) before this call.
+    fn clear(&self) -> u64 {
+        sys::datastore_clear(Self::table_id()).expect("datastore_clear() call failed")
+    }
+
     // Re-integrates the BSATN of the `generated_cols` into `row`.
     #[doc(hidden)]
     fn integrate_generated_columns(row: &mut Self::Row, generated_cols: &[u8]);
@@ -428,8 +436,7 @@ fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) ->
     let index_id = Col::index_id();
     let point = IterBuf::serialize(col_val).unwrap();
 
-    let iter = sys::datastore_index_scan_point_bsatn(index_id, &point)
-        .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_point_bsatn`: {e}"));
+    let iter = datastore_index_scan_point_bsatn(index_id, &point);
     let mut iter = TableIter::new_with_buf(iter, point);
 
     // We will always find either 0 or 1 rows here due to the unique constraint.
@@ -439,6 +446,13 @@ fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) ->
         "`datastore_index_scan_point_bsatn` on unique field cannot return >1 rows"
     );
     row
+}
+
+/// See `sys::datastore_index_scan_point_bsatn`.
+/// Panics when the aforementioned errors.
+fn datastore_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> sys::RowIter {
+    sys::datastore_index_scan_point_bsatn(index_id, point)
+        .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
 }
 
 /// A read-only handle to a unique (single-column) index.
@@ -646,10 +660,7 @@ where
     Idx: IndexIsPointed,
 {
     let index_id = Idx::index_id();
-    let iter = point.with_point_arg(|point| {
-        sys::datastore_index_scan_point_bsatn(index_id, point)
-            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
-    });
+    let iter = point.with_point_arg(|point| datastore_index_scan_point_bsatn(index_id, point));
     TableIter::new(iter)
 }
 
@@ -972,10 +983,7 @@ where
     let index_id = Idx::index_id();
 
     let iter = if const { is_point_scan::<Idx, B, _, _>() } {
-        b.with_point_arg(|point| {
-            sys::datastore_index_scan_point_bsatn(index_id, point)
-                .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
-        })
+        b.with_point_arg(|point| datastore_index_scan_point_bsatn(index_id, point))
     } else {
         let args = b.get_range_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();

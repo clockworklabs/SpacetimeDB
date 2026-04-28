@@ -1,9 +1,11 @@
 use super::same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter};
 use super::{key_size::KeyBytesStorage, Index, KeySize, RangedIndex};
 use crate::indexes::RowPointer;
+use crate::table_index::same_key_entry::ManySameKeyEntryIter;
+use core::borrow::Borrow;
 use core::ops::RangeBounds;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use std::collections::btree_map::{BTreeMap, Range};
+use std::collections::btree_map::{BTreeMap, Range, Values};
 
 /// A multi map that relates a `K` to a *set* of `RowPointer`s.
 #[derive(Debug, PartialEq, Eq)]
@@ -56,7 +58,7 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     /// and multimaps do not bind one `key` to the same `ptr`.
     fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
         self.num_rows += 1;
-        self.num_key_bytes.add_to_key_bytes::<Self>(&key);
+        self.num_key_bytes.add_to_key_bytes(&key);
         self.map.entry(key).or_default().push(ptr);
         Ok(())
     }
@@ -65,22 +67,7 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     ///
     /// Returns whether `key -> ptr` was present.
     fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
-        let Some(vset) = self.map.get_mut(key) else {
-            return false;
-        };
-
-        let (deleted, is_empty) = vset.delete(ptr);
-
-        if is_empty {
-            self.map.remove(key);
-        }
-
-        if deleted {
-            self.num_rows -= 1;
-            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
-        }
-
-        deleted
+        self.delete(key, ptr)
     }
 
     type PointIter<'a>
@@ -88,8 +75,17 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
     where
         Self: 'a;
 
-    fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
-        same_key_iter(self.map.get(key))
+    fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_> {
+        self.seek_point(point)
+    }
+
+    type Iter<'a>
+        = BTreeIndexIter<'a, K>
+    where
+        Self: 'a;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        BTreeIndexIter::new(self.map.values())
     }
 
     fn num_keys(&self) -> usize {
@@ -116,6 +112,59 @@ impl<K: Ord + KeySize> Index for BTreeIndex<K> {
         // `self.insert` always returns `Ok(_)`.
         Ok(())
     }
+
+    const IS_RANGED: bool = true;
+}
+
+impl<K: KeySize + Ord> BTreeIndex<K> {
+    /// See [`Index::delete`].
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`BTreeMap::remove`].
+    pub fn delete<Q>(&mut self, key: &Q, ptr: RowPointer) -> bool
+    where
+        Q: ?Sized + KeySize + Ord,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        let Some(vset) = self.map.get_mut(key) else {
+            return false;
+        };
+
+        let (deleted, is_empty) = vset.delete(ptr);
+
+        if is_empty {
+            self.map.remove(key);
+        }
+
+        if deleted {
+            self.num_rows -= 1;
+            self.num_key_bytes.sub_from_key_bytes(key);
+        }
+
+        deleted
+    }
+
+    /// See [`Index::seek_point`].
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`BTreeMap::get`].
+    pub fn seek_point<Q>(&self, point: &Q) -> <Self as Index>::PointIter<'_>
+    where
+        Q: ?Sized + Ord,
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        same_key_iter(self.map.get(point))
+    }
 }
 
 impl<K: Ord + KeySize> RangedIndex for BTreeIndex<K> {
@@ -127,35 +176,47 @@ impl<K: Ord + KeySize> RangedIndex for BTreeIndex<K> {
     /// Returns an iterator over the multimap that yields all the `V`s
     /// of the `K`s that fall within the specified `range`.
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
-        BTreeIndexRangeIter {
-            outer: self.map.range((range.start_bound(), range.end_bound())),
-            inner: SameKeyEntry::empty_iter(),
-        }
+        self.seek_range(range)
     }
 }
 
-/// An iterator over values in a [`BTreeIndex`] where the keys are in a certain range.
-#[derive(Clone)]
-pub struct BTreeIndexRangeIter<'a, K> {
-    /// The outer iterator seeking for matching keys in the range.
-    outer: Range<'a, K, SameKeyEntry>,
-    /// The inner iterator for the value set for a found key.
-    inner: SameKeyEntryIter<'a>,
+impl<K: KeySize + Ord> BTreeIndex<K> {
+    /// See [`RangedIndex::seek_range`].
+    ///
+    /// This version has relaxed bounds
+    /// where relaxed means that the key type can be borrowed from the index's key type
+    /// and need not be `Index::Key` itself.
+    /// This allows e.g., queries with `&str` rather than providing an owned string key.
+    /// This can be exploited to avoid heap alloctions in some situations,
+    /// e.g., borrowing the input directly from BSATN.
+    /// This is similar to the bounds on [`BTreeMap::range`].
+    pub fn seek_range<Q: ?Sized + Ord>(&self, range: &impl RangeBounds<Q>) -> <Self as RangedIndex>::RangeIter<'_>
+    where
+        <Self as Index>::Key: Borrow<Q>,
+    {
+        BTreeIndexRangeIter::new(RangeValues(self.map.range((range.start_bound(), range.end_bound()))))
+    }
 }
 
-impl<K> Iterator for BTreeIndexRangeIter<'_, K> {
-    type Item = RowPointer;
+/// An iterator over all the values in a [`BTreeIndex`].
+pub type BTreeIndexIter<'a, K> = ManySameKeyEntryIter<'a, Values<'a, K, SameKeyEntry>>;
+
+/// An iterator over values in a [`BTreeIndex`] where the keys are in a certain range.
+pub type BTreeIndexRangeIter<'a, K> = ManySameKeyEntryIter<'a, RangeValues<'a, K, SameKeyEntry>>;
+
+/// An iterator over a key range in a [`BTreeMap`] providing only the values.
+pub struct RangeValues<'a, K, V>(Range<'a, K, V>);
+
+impl<K, V> Clone for RangeValues<'_, K, V> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<'a, K, V> Iterator for RangeValues<'a, K, V> {
+    type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // While the inner iterator has elements, yield them.
-            if let Some(val) = self.inner.next() {
-                return Some(val);
-            }
-            // Advance and get a new inner, if possible, or quit.
-            // We'll come back and yield elements from it in the next iteration.
-            let inner = self.outer.next().map(|(_, i)| i)?;
-            self.inner = inner.iter();
-        }
+        self.0.next().map(|(_, v)| v)
     }
 }

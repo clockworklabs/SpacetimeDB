@@ -8,7 +8,7 @@
 /**
  * @file abi.h
  * @brief Raw C ABI interface for SpacetimeDB modules
- * 
+ *
  * This file contains the raw C-compatible ABI declarations.
  * These functions use only C-compatible types and are suitable
  * for extern "C" linkage.
@@ -34,6 +34,10 @@
 // Point scan delete is in spacetime_10.4
 #define STDB_IMPORT_10_4(name) \
     __attribute__((import_module("spacetime_10.4"), import_name(#name))) extern
+
+// Clear syscall is in spacetime_10.4
+#define STDB_IMPORT_10_5(name) \
+    __attribute__((import_module("spacetime_10.5"), import_name(#name))) extern
 
 // Import opaque types into global namespace for C compatibility
 using SpacetimeDB::Status;
@@ -73,7 +77,7 @@ Status datastore_table_scan_bsatn(TableId table_id, RowIter* out);
 STDB_IMPORT(datastore_index_scan_range_bsatn)
 Status datastore_index_scan_range_bsatn(
     IndexId index_id, const uint8_t* prefix_ptr, size_t prefix_len, ColId prefix_elems,
-    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len, 
+    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len,
     RowIter* out);
 
 STDB_IMPORT_10_4(datastore_index_scan_point_bsatn)
@@ -85,7 +89,7 @@ Status datastore_index_scan_point_bsatn(
 STDB_IMPORT(datastore_btree_scan_bsatn)
 Status datastore_btree_scan_bsatn(
     IndexId index_id, const uint8_t* prefix_ptr, size_t prefix_len, ColId prefix_elems,
-    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len, 
+    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len,
     RowIter* out);
 
 // ===== Row Iterator Operations =====
@@ -106,7 +110,7 @@ Status datastore_update_bsatn(TableId table_id, IndexId index_id, uint8_t* row_p
 STDB_IMPORT(datastore_delete_by_index_scan_range_bsatn)
 Status datastore_delete_by_index_scan_range_bsatn(
     IndexId index_id, const uint8_t* prefix_ptr, size_t prefix_len, ColId prefix_elems,
-    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len, 
+    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len,
     uint32_t* out);
 
 STDB_IMPORT_10_4(datastore_delete_by_index_scan_point_bsatn)
@@ -117,13 +121,16 @@ Status datastore_delete_by_index_scan_point_bsatn(
 STDB_IMPORT(datastore_delete_by_btree_scan_bsatn)
 Status datastore_delete_by_btree_scan_bsatn(
     IndexId index_id, const uint8_t* prefix_ptr, size_t prefix_len, ColId prefix_elems,
-    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len, 
+    const uint8_t* rstart_ptr, size_t rstart_len, const uint8_t* rend_ptr, size_t rend_len,
     uint32_t* out);
 
 STDB_IMPORT(datastore_delete_all_by_eq_bsatn)
 Status datastore_delete_all_by_eq_bsatn(
     TableId table_id, const uint8_t* rel_ptr, size_t rel_len,
     uint32_t* out);
+
+STDB_IMPORT_10_5(datastore_clear)
+Status datastore_clear(TableId table_id, uint64_t* out);
 
 // ===== Bytes Source/Sink Operations =====
 STDB_IMPORT(bytes_source_read)
@@ -205,8 +212,8 @@ int16_t __call_reducer__(
     uint32_t id,
     uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
     uint64_t conn_id_0, uint64_t conn_id_1,
-    uint64_t timestamp, 
-    BytesSource args, 
+    uint64_t timestamp,
+    BytesSource args,
     BytesSink error);
 
 // ========================================================================
