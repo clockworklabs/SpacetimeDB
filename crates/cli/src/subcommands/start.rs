@@ -46,30 +46,6 @@ enum Edition {
     Cloud,
 }
 
-/// Check whether the forwarded args already contain `--listen-addr` or `-l`.
-///
-/// Handles all common forms:
-/// - `--listen-addr <value>` (two separate tokens)
-/// - `--listen-addr=<value>`
-/// - `-l <value>` (two separate tokens)
-/// - `-l<value>` (short flag with attached value, e.g. `-l0.0.0.0:4000`)
-fn has_listen_addr_arg(args: impl Iterator<Item = impl AsRef<std::ffi::OsStr>>) -> bool {
-    for arg in args {
-        let s = arg.as_ref().to_string_lossy();
-        if s == "--listen-addr" || s.starts_with("--listen-addr=") {
-            return true;
-        }
-        if s == "-l"
-            || (s.starts_with("-l")
-                && !s.starts_with("--")
-                && s.as_bytes().get(2).is_some_and(|b| !b.is_ascii_alphabetic()))
-        {
-            return true;
-        }
-    }
-    false
-}
-
 pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<ExitCode> {
     let edition = args.get_one::<Edition>("edition").unwrap();
     let forwarded_args: Vec<OsString> = args.get_many::<OsString>("args").unwrap_or_default().cloned().collect();
@@ -85,9 +61,9 @@ pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> 
         .arg("--jwt-key-dir")
         .arg(&paths.cli_config_dir);
 
-    if !has_listen_addr_arg(forwarded_args.iter())
-        && let Some(config_addr) = config.start_listen_addr()
-    {
+    if let Some(config_addr) = config.start_listen_addr() {
+        // Prepend the config default; standalone takes the last --listen-addr value,
+        // so an explicit flag in forwarded_args wins.
         cmd.arg("--listen-addr").arg(config_addr);
     }
 
@@ -138,75 +114,5 @@ pub(crate) fn exec_replace(cmd: &mut Command) -> io::Result<ExitCode> {
 
         cmd.status()
             .map(|status| ExitCode::from(status.code().unwrap_or(1).try_into().unwrap_or(1)))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detects_long_flag_separate_value() {
-        assert!(has_listen_addr_arg(["--listen-addr", "0.0.0.0:4000"].iter()));
-    }
-
-    #[test]
-    fn detects_long_flag_equals_value() {
-        assert!(has_listen_addr_arg(["--listen-addr=0.0.0.0:4000"].iter()));
-    }
-
-    #[test]
-    fn detects_short_flag_separate_value() {
-        assert!(has_listen_addr_arg(["-l", "0.0.0.0:4000"].iter()));
-    }
-
-    #[test]
-    fn detects_short_flag_attached_value() {
-        assert!(has_listen_addr_arg(["-l0.0.0.0:4000"].iter()));
-    }
-
-    #[test]
-    fn detects_short_flag_attached_ipv6() {
-        assert!(has_listen_addr_arg(["-l[::1]:4000"].iter()));
-    }
-
-    #[test]
-    fn ignores_unrelated_long_flag() {
-        assert!(!has_listen_addr_arg(["--data-dir", "/tmp"].iter()));
-    }
-
-    #[test]
-    fn ignores_unrelated_short_flag() {
-        assert!(!has_listen_addr_arg(["-d", "/tmp"].iter()));
-    }
-
-    #[test]
-    fn no_false_positive_on_hyphen_l_prefix_flag() {
-        assert!(!has_listen_addr_arg(["-log"].iter()));
-    }
-
-    #[test]
-    fn no_false_positive_on_hyphen_li() {
-        assert!(!has_listen_addr_arg(["-li"].iter()));
-    }
-
-    #[test]
-    fn returns_false_for_empty() {
-        let empty: Vec<&str> = vec![];
-        assert!(!has_listen_addr_arg(empty.iter()));
-    }
-
-    #[test]
-    fn detects_among_many_args() {
-        assert!(has_listen_addr_arg(
-            ["--data-dir", "/tmp", "--listen-addr", "0.0.0.0:4000", "--in-memory"].iter()
-        ));
-    }
-
-    #[test]
-    fn detects_short_among_many_args() {
-        assert!(has_listen_addr_arg(
-            ["--data-dir", "/tmp", "-l", "127.0.0.1:5000"].iter()
-        ));
     }
 }
