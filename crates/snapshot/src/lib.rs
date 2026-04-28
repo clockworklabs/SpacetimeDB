@@ -235,7 +235,9 @@ struct UnflushedSnapshotInner {
 impl UnflushedSnapshotInner {
     fn sync_all(self) -> Result<SnapshotDirPath, SnapshotError> {
         fn fsync(path: &Path) -> io::Result<()> {
-            File::open(path)?.sync_all()
+            File::open(path)
+                .and_then(|fd| fd.sync_all())
+                .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync {}: {}", path.display(), e)))
         }
 
         // Sync all objects and their parent directories.
