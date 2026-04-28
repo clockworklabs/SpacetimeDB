@@ -176,7 +176,7 @@ describe('TableScan.toSql', () => {
   it('renders Timestamp literals as RFC3339 strings', () => {
     const qb = makeQueryBuilder(schemaDef);
     const timestamp = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
-    const sql = toSql(qb.person.where(row => row.createdAt.eq(timestamp)).build());
+    const sql = toSql(qb.person.where(row => row.createdAt.eq(timestamp)));
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."createdAt" = '2024-01-01T00:00:00.123000Z'`
@@ -186,7 +186,7 @@ describe('TableScan.toSql', () => {
   it('supports Timestamp comparisons in where predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
     const timestamp = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
-    const sql = toSql(qb.person.where(row => row.createdAt.gt(timestamp)).build());
+    const sql = toSql(qb.person.where(row => row.createdAt.gt(timestamp)));
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."createdAt" > '2024-01-01T00:00:00.123000Z'`
