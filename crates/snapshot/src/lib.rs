@@ -736,9 +736,13 @@ impl SnapshotRepository {
     /// where `tables` is the committed state of all the tables in the database,
     /// and `blobs` is the committed state's blob store.
     ///
-    /// Returns the path of the newly-created snapshot directory.
+    /// The returned [UnflushedSnapshot] is **not** durable -- call
+    /// [UnflushedSnapshot::sync_all] to finalize it (see the struct docs for
+    /// more details).
     ///
-    /// **NOTE**: The current snapshot is uncompressed to avoid the potential slowdown.
+    /// Also note that the snapshot remains locked for as long as [UnflushedSnapshot]
+    /// is alive. It will not appear in [Self::all_snapshots] nor can it be
+    /// modified by methods in [SnapshotRepository].
     pub fn create_snapshot<'db>(
         &self,
         tables: impl Iterator<Item = &'db mut Table>,

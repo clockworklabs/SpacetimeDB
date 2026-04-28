@@ -123,7 +123,7 @@ impl DirTrie {
         if src_file.is_file() {
             let dst_file = self.file_path(file_id);
             Self::create_parent(&dst_file)?;
-            std::fs::hard_link(&src_file, &dst_file)?;
+            std::fs::hard_link(src_file, dst_file)?;
             Ok(true)
         } else {
             Ok(false)
