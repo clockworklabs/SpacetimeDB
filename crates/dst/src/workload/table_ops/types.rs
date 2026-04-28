@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 use crate::{
     core::TargetEngine,
     schema::{SchemaPlan, SimRow},
@@ -19,7 +17,7 @@ pub(crate) trait TableScenario: Clone {
 }
 
 /// One generated workload step.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TableWorkloadInteraction {
     BeginTx { conn: usize },
     CommitTx { conn: usize },
@@ -29,7 +27,7 @@ pub enum TableWorkloadInteraction {
 }
 
 /// Final state gathered from a table-workload engine after execution ends.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TableWorkloadOutcome {
     /// Row count for each table in schema order.
     pub final_row_counts: Vec<u64>,

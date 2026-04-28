@@ -1,11 +1,9 @@
 //! Serializable interaction model for relational-db + commitlog DST.
 
-use serde::{Deserialize, Serialize};
-
 use crate::workload::table_ops::TableWorkloadInteraction;
 
 /// One interaction in the commitlog-oriented mixed workload.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommitlogInteraction {
     /// Reused base workload interaction from `table_ops`.
     Table(TableWorkloadInteraction),
@@ -22,7 +20,7 @@ pub enum CommitlogInteraction {
 }
 
 /// Successful run summary for commitlog target.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitlogWorkloadOutcome {
     pub applied_steps: usize,
     pub durable_commit_count: usize,

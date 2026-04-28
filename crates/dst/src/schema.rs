@@ -1,19 +1,18 @@
 //! Shared schema and row model used by DST targets.
 
-use serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 
 use crate::seed::DstRng;
 
 /// Generated schema for one simulator case.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SchemaPlan {
     /// User-visible tables installed before the workload starts.
     pub tables: Vec<TablePlan>,
 }
 
 /// Table definition used by simulators.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TablePlan {
     /// Stable logical table name used in generated interactions and assertions.
     pub name: String,
@@ -27,7 +26,7 @@ pub struct TablePlan {
 }
 
 /// Column definition used by simulators.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ColumnPlan {
     /// Column name installed into the target schema.
     pub name: String,
@@ -40,22 +39,6 @@ pub struct ColumnPlan {
 pub struct SimRow {
     /// Column values in schema order.
     pub values: Vec<AlgebraicValue>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-enum SerdeAlgebraicValue {
-    Bool(bool),
-    I8(i8),
-    U8(u8),
-    I16(i16),
-    U16(u16),
-    I32(i32),
-    U32(u32),
-    I64(i64),
-    U64(u64),
-    I128(i128),
-    U128(u128),
-    String(String),
 }
 
 pub fn generate_supported_type(rng: &mut DstRng) -> AlgebraicType {
@@ -99,67 +82,6 @@ pub fn generate_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize)
     }
 }
 
-impl From<&AlgebraicValue> for SerdeAlgebraicValue {
-    fn from(value: &AlgebraicValue) -> Self {
-        match value {
-            AlgebraicValue::Bool(value) => Self::Bool(*value),
-            AlgebraicValue::I8(value) => Self::I8(*value),
-            AlgebraicValue::U8(value) => Self::U8(*value),
-            AlgebraicValue::I16(value) => Self::I16(*value),
-            AlgebraicValue::U16(value) => Self::U16(*value),
-            AlgebraicValue::I32(value) => Self::I32(*value),
-            AlgebraicValue::U32(value) => Self::U32(*value),
-            AlgebraicValue::I64(value) => Self::I64(*value),
-            AlgebraicValue::U64(value) => Self::U64(*value),
-            AlgebraicValue::I128(value) => Self::I128(value.0),
-            AlgebraicValue::U128(value) => Self::U128(value.0),
-            AlgebraicValue::String(value) => Self::String(value.to_string()),
-            other => panic!("unsupported value in simulator row serde: {other:?}"),
-        }
-    }
-}
-
-impl From<SerdeAlgebraicValue> for AlgebraicValue {
-    fn from(value: SerdeAlgebraicValue) -> Self {
-        match value {
-            SerdeAlgebraicValue::Bool(value) => Self::Bool(value),
-            SerdeAlgebraicValue::I8(value) => Self::I8(value),
-            SerdeAlgebraicValue::U8(value) => Self::U8(value),
-            SerdeAlgebraicValue::I16(value) => Self::I16(value),
-            SerdeAlgebraicValue::U16(value) => Self::U16(value),
-            SerdeAlgebraicValue::I32(value) => Self::I32(value),
-            SerdeAlgebraicValue::U32(value) => Self::U32(value),
-            SerdeAlgebraicValue::I64(value) => Self::I64(value),
-            SerdeAlgebraicValue::U64(value) => Self::U64(value),
-            SerdeAlgebraicValue::I128(value) => Self::I128(value.into()),
-            SerdeAlgebraicValue::U128(value) => Self::U128(value.into()),
-            SerdeAlgebraicValue::String(value) => Self::String(value.into()),
-        }
-    }
-}
-
-impl Serialize for SimRow {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let values = self.values.iter().map(SerdeAlgebraicValue::from).collect::<Vec<_>>();
-        values.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SimRow {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let values = Vec::<SerdeAlgebraicValue>::deserialize(deserializer)?
-            .into_iter()
-            .map(AlgebraicValue::from)
-            .collect();
-        Ok(Self { values })
-    }
-}
 
 impl SimRow {
     pub fn to_product_value(&self) -> ProductValue {

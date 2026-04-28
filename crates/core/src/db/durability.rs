@@ -35,6 +35,7 @@ pub(super) fn request_durability(
 pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &runtime::Handle, database_identity: Identity) {
     let rt = runtime.clone();
     rt.spawn(async move {
+        log::info!("starting spawn close");
         let label = format!("[{database_identity}]");
         match timeout(Duration::from_secs(10), durability.close()).await {
             Err(_elapsed) => {
@@ -44,6 +45,8 @@ pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &runtime::Handle
                 info!("{label} durability shut down at tx offset: {offset:?}");
             }
         }
+
+        log::info!("closing spawn close");
     });
 }
 

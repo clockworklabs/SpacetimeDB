@@ -707,8 +707,7 @@ impl RelationalDbEngine {
         Ok(RelationalDbCommitlogOutcome {
             applied_steps: self.step,
             durable_commit_count,
-            //TODO: remove 10
-            replay_table_count: 10,
+            replay_table_count: self.last_durable_snapshot.len(),
         })
     }
 

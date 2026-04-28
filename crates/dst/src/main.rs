@@ -4,8 +4,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use spacetimedb_dst::{
     config::RunConfig,
     seed::DstSeed,
-    targets::descriptor::{DatastoreDescriptor, RelationalDbCommitlogDescriptor, TargetDescriptor},
-    workload::table_ops::TableScenarioId,
+    targets::descriptor::{DatastoreDescriptor, RelationalDbCommitlogDescriptor, StandaloneHostDescriptor, TargetDescriptor},
+    workload::{module_ops::HostScenarioId, table_ops::TableScenarioId},
 };
 
 #[derive(Parser, Debug)]
@@ -45,6 +45,7 @@ struct RunArgs {
 enum TargetKind {
     Datastore,
     RelationalDbCommitlog,
+    StandaloneHost,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -52,20 +53,10 @@ enum ScenarioKind {
     RandomCrud,
     IndexedRanges,
     Banking,
+    HostSmoke,
 }
 
-impl From<ScenarioKind> for TableScenarioId {
-    fn from(value: ScenarioKind) -> Self {
-        match value {
-            ScenarioKind::RandomCrud => TableScenarioId::RandomCrud,
-            ScenarioKind::IndexedRanges => TableScenarioId::IndexedRanges,
-            ScenarioKind::Banking => TableScenarioId::Banking,
-        }
-    }
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     init_tracing();
     match Cli::parse().command {
         Command::Run(args) => run_command(args),
@@ -88,11 +79,36 @@ fn init_tracing() {
 fn run_command(args: RunArgs) -> anyhow::Result<()> {
     let seed = resolve_seed(args.seed);
     let config = build_config(args.duration.as_deref(), args.max_interactions)?;
-    let scenario = TableScenarioId::from(args.target.scenario);
 
     match args.target.target {
-        TargetKind::Datastore => run_target::<DatastoreDescriptor>(seed, scenario, config),
-        TargetKind::RelationalDbCommitlog => run_target::<RelationalDbCommitlogDescriptor>(seed, scenario, config),
+        TargetKind::Datastore => {
+            let scenario = map_table_scenario(args.target.scenario)?;
+            run_target::<DatastoreDescriptor>(seed, scenario, config)
+        }
+        TargetKind::RelationalDbCommitlog => {
+            let scenario = map_table_scenario(args.target.scenario)?;
+            run_target::<RelationalDbCommitlogDescriptor>(seed, scenario, config)
+        }
+        TargetKind::StandaloneHost => {
+            let scenario = map_host_scenario(args.target.scenario)?;
+            run_target::<StandaloneHostDescriptor>(seed, scenario, config)
+        }
+    }
+}
+
+fn map_table_scenario(scenario: ScenarioKind) -> anyhow::Result<TableScenarioId> {
+    match scenario {
+        ScenarioKind::RandomCrud => Ok(TableScenarioId::RandomCrud),
+        ScenarioKind::IndexedRanges => Ok(TableScenarioId::IndexedRanges),
+        ScenarioKind::Banking => Ok(TableScenarioId::Banking),
+        ScenarioKind::HostSmoke => anyhow::bail!("scenario host-smoke is only valid for --target standalone-host"),
+    }
+}
+
+fn map_host_scenario(scenario: ScenarioKind) -> anyhow::Result<HostScenarioId> {
+    match scenario {
+        ScenarioKind::HostSmoke => Ok(HostScenarioId::HostSmoke),
+        _ => anyhow::bail!("target standalone-host only supports --scenario host-smoke"),
     }
 }
 
@@ -118,9 +134,9 @@ fn build_config(duration: Option<&str>, max_interactions: Option<usize>) -> anyh
     }
 }
 
-fn run_target<D: TargetDescriptor<Scenario = TableScenarioId>>(
+fn run_target<D: TargetDescriptor>(
     seed: DstSeed,
-    scenario: TableScenarioId,
+    scenario: D::Scenario,
     config: RunConfig,
 ) -> anyhow::Result<()> {
     let line = D::run_streaming(seed, scenario, config)?;

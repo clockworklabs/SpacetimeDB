@@ -1,8 +1,6 @@
 mod banking;
 mod random_crud;
 
-use serde::{Deserialize, Serialize};
-
 use crate::{schema::SchemaPlan, seed::DstRng};
 
 use super::{generation::ScenarioPlanner, TableScenario, TableWorkloadOutcome};
@@ -16,7 +14,7 @@ pub(crate) struct IndexedRangesScenario;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct BankingScenario;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum TableScenarioId {
     #[default]
     RandomCrud,

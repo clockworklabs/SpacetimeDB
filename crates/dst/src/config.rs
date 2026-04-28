@@ -2,10 +2,8 @@
 
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-
 /// Common stop conditions for generated DST runs.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RunConfig {
     /// Hard cap on generated interactions. `None` means no interaction budget.
     pub max_interactions: Option<usize>,

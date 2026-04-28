@@ -314,7 +314,9 @@ impl SchedulerActor {
                 if let Some(key) = self.key_map.get(&id) {
                     self.queue.remove(key);
                 }
-                let key = self.queue.insert_at(QueueItem::Id { id, at: effective_at }, real_at.into());
+                let key = self
+                    .queue
+                    .insert_at(QueueItem::Id { id, at: effective_at }, real_at.into());
                 self.key_map.insert(id, key);
             }
             SchedulerMessage::ScheduleImmediate { function_name, args } => {

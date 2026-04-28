@@ -17,9 +17,11 @@ bench = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
+bytes.workspace = true
+spacetimedb-cli.workspace = true
+spacetimedb-client-api.workspace = true
+spacetimedb-client-api-messages.workspace = true
 spacetimedb-datastore = { workspace = true, features = ["test"] }
 spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.1.0" }
 spacetimedb-commitlog.workspace = true
@@ -30,9 +32,8 @@ spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-standalone.workspace = true
 spacetimedb-table.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-
-[target.'cfg(madsim)'.dependencies]
 madsim = { path = "../../../../madsim/madsim" }

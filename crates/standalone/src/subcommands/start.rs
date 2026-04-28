@@ -1,5 +1,6 @@
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
+#[cfg(not(madsim))]
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
 use std::net::IpAddr;
@@ -20,6 +21,7 @@ use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
+#[cfg(not(madsim))]
 use tokio::net::TcpListener;
 
 pub fn cli() -> clap::Command {
@@ -197,13 +199,26 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     );
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
+    #[cfg(madsim)]
+    {
+        let _ = (pg_port, ctx, listen_addr);
+        anyhow::bail!("standalone start server mode is not supported under madsim");
+    }
+
+    #[cfg(not(madsim))]
     let mut db_routes = DatabaseRoutes::default();
-    db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
-    db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
-    db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
+    #[cfg(not(madsim))]
+    {
+        db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
+        db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
+        db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
+    }
+    #[cfg(not(madsim))]
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
+    #[cfg(not(madsim))]
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
 
+    #[cfg(not(madsim))]
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
     let listen_addr = if let Some((host, port_str)) = listen_addr.rsplit_once(':') {
@@ -249,38 +264,41 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         listen_addr.to_string()
     };
 
-    let tcp = TcpListener::bind(&listen_addr).await.context(format!(
-        "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
-    ))?;
-    socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
-
-    if let Some(pg_port) = pg_port {
-        let server_addr = listen_addr.split(':').next().unwrap();
-        let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await.context(format!(
-            "failed to bind the SpacetimeDB PostgreSQL wire protocol server to {server_addr}:{pg_port}, please check that the port is valid and not already in use"
+    #[cfg(not(madsim))]
+    {
+        let tcp = TcpListener::bind(&listen_addr).await.context(format!(
+            "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
         ))?;
+        socket2::SockRef::from(&tcp).set_nodelay(true)?;
+        log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
 
-        let notify = Arc::new(tokio::sync::Notify::new());
-        let shutdown_notify = notify.clone();
-        tokio::select! {
-            _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
-            _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
-                shutdown_notify.notified().await;
-            }) => {},
-            _ = tokio::signal::ctrl_c() => {
-                println!("Shutting down servers...");
-                notify.notify_waiters(); // Notify all tasks
+        if let Some(pg_port) = pg_port {
+            let server_addr = listen_addr.split(':').next().unwrap();
+            let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await.context(format!(
+                "failed to bind the SpacetimeDB PostgreSQL wire protocol server to {server_addr}:{pg_port}, please check that the port is valid and not already in use"
+            ))?;
+
+            let notify = Arc::new(tokio::sync::Notify::new());
+            let shutdown_notify = notify.clone();
+            tokio::select! {
+                _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
+                _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
+                    shutdown_notify.notified().await;
+                }) => {},
+                _ = tokio::signal::ctrl_c() => {
+                    println!("Shutting down servers...");
+                    notify.notify_waiters(); // Notify all tasks
+                }
             }
+        } else {
+            log::warn!("PostgreSQL wire protocol server disabled");
+            axum::serve(tcp, service)
+                .with_graceful_shutdown(async {
+                    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+                    log::info!("Shutting down server...");
+                })
+                .await?;
         }
-    } else {
-        log::warn!("PostgreSQL wire protocol server disabled");
-        axum::serve(tcp, service)
-            .with_graceful_shutdown(async {
-                tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-                log::info!("Shutting down server...");
-            })
-            .await?;
     }
 
     Ok(())

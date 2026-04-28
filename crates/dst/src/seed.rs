@@ -4,10 +4,8 @@
 //! `DstSeed::fork` is used to derive independent substreams without requiring
 //! callers to manually coordinate RNG state.
 
-use serde::{Deserialize, Serialize};
-
 /// Top-level seed value for a deterministic run.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct DstSeed(pub u64);
 
 impl DstSeed {

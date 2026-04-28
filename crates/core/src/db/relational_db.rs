@@ -133,10 +133,13 @@ impl std::fmt::Debug for RelationalDB {
 
 impl Drop for RelationalDB {
     fn drop(&mut self) {
+        log::info!("starting drop");
         // Attempt to flush the outstanding transactions.
         if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
             spawn_durability_close(durability, &runtime, self.database_identity);
         }
+
+        log::info!("drop done");
     }
 }
 
@@ -1007,7 +1010,7 @@ impl RelationalDB {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
     }
 
-    pub(crate) fn add_columns_to_table(
+    pub fn add_columns_to_table(
         &self,
         tx: &mut MutTx,
         table_id: TableId,
