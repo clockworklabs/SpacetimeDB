@@ -292,8 +292,8 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help(
                     "Skip confirmation prompts. With no value, defaults to 'all' \
                      (equivalent to --yes=all). To skip specific prompts, pass one or \
-                     more values from {all, remote, migrate, break-clients, skip-login} \
-                     joined by '|', e.g. --yes='migrate|break-clients'. The value must be \
+                     more of: all, remote, migrate, break-clients, skip-login -- joined \
+                     by '|', e.g. --yes='migrate|break-clients'. The value must be \
                      attached with '=' (so `--yes my-db` treats `my-db` as the database name)."
                 )
         )

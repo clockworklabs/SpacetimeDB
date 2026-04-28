@@ -112,7 +112,7 @@ Run `spacetime help publish` for more detailed information.
    If an organization is given, the organization member's permissions apply to the new database.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
-* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more values from {all, remote, migrate, break-clients, skip-login} joined by '|', e.g. --yes='migrate|break-clients'. The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name).
+* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login -- joined by '|', e.g. --yes='migrate|break-clients'. The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name).
 
   Possible values:
   - `all`:
