@@ -1110,9 +1110,10 @@ impl ReducerContext {
     /// use spacetimedb::{reducer, ReducerContext, Uuid};
     ///
     /// #[reducer]
-    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Uuid {
-    ///     let uuid = ctx.new_uuid_v4();
+    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
+    ///     let uuid = ctx.new_uuid_v4()?;
     ///     log::info!(uuid);
+    ///     Ok(())
     /// }
     /// # }
     /// ```
@@ -1131,9 +1132,10 @@ impl ReducerContext {
     /// use spacetimedb::{reducer, ReducerContext, Uuid};
     ///
     /// #[reducer]
-    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v7()?;
     ///     log::info!(uuid);
+    ///     Ok(())
     /// }
     /// # }
     /// ```

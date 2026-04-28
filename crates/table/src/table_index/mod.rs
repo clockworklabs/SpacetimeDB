@@ -1807,13 +1807,6 @@ pub struct IndexKey<'a> {
     key: TypedIndexKey<'a>,
 }
 
-impl IndexKey<'_> {
-    /// Converts the key into an [`AlgebraicValue`].
-    pub fn into_algebraic_value(self, key_type: &AlgebraicType) -> AlgebraicValue {
-        self.key.into_algebraic_value(key_type)
-    }
-}
-
 /// A decoded range scan bound, which may be a point or a range.
 #[derive(Debug, PartialEq, Eq, EnumAsInner)]
 pub enum PointOrRange<'a> {
@@ -1834,12 +1827,12 @@ pub struct TableIndex {
     /// The key type of this index.
     /// This is the projection of the row type to the types of the columns indexed.
     // NOTE(centril): This is accessed in index scan ABIs for decoding, so don't `Box<_>` it.
-    pub key_type: AlgebraicType,
+    key_type: AlgebraicType,
 
     /// Given a full row, typed at some `ty: ProductType`,
     /// these columns are the ones that this index indexes.
     /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
-    pub indexed_columns: ColList,
+    indexed_columns: ColList,
 }
 
 impl MemoryUsage for TableIndex {
@@ -1893,6 +1886,32 @@ impl TableIndex {
     /// Returns whether this index supports range queries.
     pub fn is_ranged(&self) -> bool {
         self.idx.is_ranged()
+    }
+
+    /// Returns the indexed columns of this index.
+    pub fn indexed_columns(&self) -> &ColList {
+        &self.indexed_columns
+    }
+
+    /// Returns the key type of this index.
+    pub fn key_type(&self) -> &AlgebraicType {
+        &self.key_type
+    }
+
+    /// Recomputes the key type of the index.
+    ///
+    /// Assumes that `row_type` is layout compatible with the row type
+    /// that `self` was constructed with.
+    /// The method may panic otherwise.
+    pub fn recompute_key_type(&mut self, row_type: &ProductType) {
+        self.key_type = row_type
+            .project(&self.indexed_columns)
+            .expect("new row type should have as many columns as before")
+    }
+
+    /// Converts `key` into an [`AlgebraicValue`]
+    pub fn key_into_algebraic_value(&self, key: IndexKey<'_>) -> AlgebraicValue {
+        key.key.into_algebraic_value(&self.key_type)
     }
 
     /// Derives a key for this index from `value`.
@@ -2306,6 +2325,15 @@ impl TableIndex {
         // 1. We're passing the same `ColList` that was provided during construction.
         // 2. Forward caller requirements.
         unsafe { TypedIndexKey::from_row_ref(&self.key_type, &self.idx, &self.indexed_columns, row_ref) }.into()
+    }
+
+    /// Projects `row_ref` to the columns of `self`.
+    ///
+    /// May panic if `row_ref` doesn't belong to the same table as this inex.
+    pub fn project_row(&self, row_ref: RowRef<'_>) -> AlgebraicValue {
+        row_ref
+            .project(&self.indexed_columns)
+            .expect("`row_ref` should belong to the same table as this index")
     }
 
     /// Inserts `ptr` with the value `row` to this index.

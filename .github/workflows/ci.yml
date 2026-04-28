@@ -102,10 +102,6 @@ jobs:
           cd $env:USERPROFILE\emsdk
           .\emsdk install 4.0.21
           .\emsdk activate 4.0.21
-          # Add emscripten to PATH for subsequent steps and subprocesses
-          $emsdkPath = "$env:USERPROFILE\emsdk\upstream\emscripten"
-          Add-Content -Path $env:GITHUB_PATH -Value $emsdkPath
-          Write-Host "Added $emsdkPath to PATH"
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
@@ -891,15 +887,16 @@ jobs:
             const targetRepo = process.env.TARGET_REPO;
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
+            const publicPrNumber = context.payload.pull_request?.number ?? context.payload.inputs?.pr_number;
             const preDispatch = new Date().toISOString();
-  
+
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
               owner: targetOwner,
               repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
-              inputs: { public_ref: publicRef }
+              inputs: { public_ref: publicRef, public_pr_number: String(publicPrNumber) }
             });
   
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -1027,36 +1024,6 @@ jobs:
 
       - name: Check global.json policy
         run: cargo ci global-json-policy
-
-  warn-python-smoketests:
-    name: Check for Python smoketest edits
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fail if Python smoketests were modified
-        run: |
-          MERGE_BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
-          PYTHON_SMOKETEST_CHANGES="$(git diff --name-only "$MERGE_BASE" HEAD -- 'smoketests/**.py')"
-
-          if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
-            echo "::error::This PR modifies legacy Python smoketests. Please add new tests to the Rust smoketests in crates/smoketests/ instead."
-            echo ""
-            echo "Changed files:"
-            echo "$PYTHON_SMOKETEST_CHANGES"
-            echo ""
-            echo "The Python smoketests are being replaced by Rust smoketests."
-            echo "See crates/smoketests/DEVELOP.md for instructions on adding Rust smoketests."
-            exit 1
-          fi
-
-          echo "No Python smoketest changes detected."
 
   smoketests_mod_rs_complete:
     name: Check smoketests/mod.rs is complete

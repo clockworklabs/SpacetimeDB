@@ -332,8 +332,8 @@ impl MutTxId {
         };
 
         let idx = idx.index();
-        let cols = idx.indexed_columns.clone();
-        let point = point.into_algebraic_value(&idx.key_type);
+        let cols = idx.indexed_columns().clone();
+        let point = idx.key_into_algebraic_value(point);
         self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
 
@@ -1015,6 +1015,27 @@ impl MutTxId {
         Ok(ret)
     }
 
+    fn update_st_sequence_row<R>(
+        &mut self,
+        sequence_id: SequenceId,
+        updater: impl FnOnce(&mut StSequenceRow) -> R,
+    ) -> Result<R> {
+        // Fetch the row.
+        let st_sequence_ref = self
+            .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &sequence_id.into())?
+            .last()
+            .ok_or(SequenceError::NotFound(sequence_id))?;
+        let ptr = st_sequence_ref.pointer();
+        let mut row = StSequenceRow::try_from(st_sequence_ref)?;
+
+        // Delete the row, run updates, and insert again.
+        self.delete(ST_SEQUENCE_ID, ptr)?;
+        let ret = updater(&mut row);
+        self.insert_via_serialize_bsatn(ST_SEQUENCE_ID, &row)?;
+
+        Ok(ret)
+    }
+
     pub fn view_id_from_name(&self, view_name: &str) -> Result<Option<ViewId>> {
         let view_name = &view_name.into();
         let row = self
@@ -1207,19 +1228,20 @@ impl MutTxId {
         // Store sequence values to restore them later with new table.
         // Using a map from name to value as the new sequence ids will be different.
         // and I am not sure if we should rely on the order of sequences in the table schema.
-        let seq_values: HashMap<_, i128> = original_table_schema
-            .sequences
-            .iter()
-            .map(|s| {
-                (
-                    s.sequence_name.clone(),
-                    self.sequence_state_lock
-                        .get_sequence_mut(s.sequence_id)
-                        .expect("sequence exists in original schema and should in sequence state.")
-                        .get_value(),
-                )
-            })
-            .collect();
+        let mut seq_values: HashMap<_, (i128, i128)> = HashMap::default();
+        for seq in &original_table_schema.sequences {
+            let value = self
+                .sequence_state_lock
+                .get_sequence_mut(seq.sequence_id)
+                .expect("sequence exists in original schema and should in sequence state.")
+                .get_value();
+            let allocated = self
+                .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &seq.sequence_id.into())?
+                .last()
+                .ok_or(SequenceError::NotFound(seq.sequence_id))?
+                .read_col(StSequenceFields::Allocated)?;
+            seq_values.insert(seq.sequence_name.clone(), (value, allocated));
+        }
 
         // Drop existing table first due to unique constraints on table name in `st_table`
         self.drop_table(table_id)?;
@@ -1249,23 +1271,40 @@ impl MutTxId {
         Ok(new_table_id)
     }
 
+    /// Recreate a table and restore sequence runtime state after a destructive
+    /// schema change (for example `add_columns_to_table`).
+    ///
+    /// `create_table(...)` generates fresh table/sequence IDs and inserts fresh
+    /// rows into `st_sequence`. We then restore preserved `(value, allocated)`
+    /// by sequence name:
+    /// - update in-memory sequence state (`SequencesState`) so this process keeps
+    ///   allocating from the same point;
+    /// - patch the newly created `st_sequence` row so reopen/replay restores the
+    ///   same allocation cursor instead of sequence start.
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<RawIdentifier, i128>,
+        seq_values: HashMap<RawIdentifier, (i128, i128)>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
 
         for seq in table_schema.sequences.iter() {
-            let new_seq = self
-                .sequence_state_lock
-                .get_sequence_mut(seq.sequence_id)
-                .expect("sequence just created");
-            let value = *seq_values
+            let (value, allocated) = *seq_values
                 .get(&seq.sequence_name)
                 .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
-            new_seq.update_value(value);
+            {
+                let new_seq = self
+                    .sequence_state_lock
+                    .get_sequence_mut(seq.sequence_id)
+                    .expect("sequence just created");
+                new_seq.update_value(value);
+                new_seq.update_allocation(allocated);
+            }
+
+            // This updates the new `st_sequence` row created by `create_table(...)`
+            // above (old table rows are already dropped).
+            self.update_st_sequence_row(seq.sequence_id, |st| st.allocated = allocated)?;
         }
 
         Ok(table_id)
@@ -1319,10 +1358,8 @@ impl MutTxId {
         let map_violation = |violation, index: &TableIndex, table: &Table, bs: &dyn BlobStore| {
             let violation = table
                 .get_row_ref(bs, violation)
-                .expect("row came from scanning the table")
-                .project(&index.indexed_columns)
-                .expect("`cols` should consist of valid columns for this table");
-
+                .expect("row came from scanning the table");
+            let violation = index.project_row(violation);
             let schema = table.get_schema();
             let violation = UniqueConstraintViolation::build_with_index_schema(schema, index, &index_schema, violation);
             IndexError::from(violation).into()
@@ -3102,9 +3139,7 @@ impl MutTxId {
 
                 tx_row_ptr
             } else {
-                let index_key = tx_row_ref
-                    .project(&commit_index.indexed_columns)
-                    .expect("`tx_row_ref` should be compatible with `commit_index`");
+                let index_key = commit_index.project_row(tx_row_ref);
                 throw!(IndexError::KeyNotFound(index_id, index_key));
             };
 
