@@ -284,6 +284,8 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
 
         Ok(())
     }
+
+    const IS_RANGED: bool = true;
 }
 
 impl<K: ToFromUsize + KeySize> RangedIndex for UniqueDirectIndex<K> {
