@@ -1,6 +1,8 @@
 namespace SpacetimeDB.Tests;
 
 using System;
+using System.Globalization;
+using System.Threading;
 using Xunit;
 
 public sealed class QueryBuilderTests
@@ -215,7 +217,7 @@ public sealed class QueryBuilderTests
     {
         var table = MakeTable("T");
         var timestamp = new Timestamp(1_737_582_793_990_639L);
-        var expected = timestamp.ToString();
+        const string expected = "2025-01-22T21:53:13.990639Z";
 
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
@@ -228,7 +230,7 @@ public sealed class QueryBuilderTests
     {
         var table = MakeTable("T");
         var timestamp = new Timestamp(1_737_582_793_990_639L);
-        var expected = timestamp.ToString();
+        const string expected = "2025-01-22T21:53:13.990639Z";
 
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
@@ -272,7 +274,7 @@ public sealed class QueryBuilderTests
     {
         var table = MakeTable("T");
         var timestamp = new Timestamp(1_737_582_793_990_639L);
-        var expected = timestamp.ToString();
+        const string expected = "2025-01-22T21:53:13.990639Z";
 
         Assert.Equal(
             $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
@@ -282,6 +284,31 @@ public sealed class QueryBuilderTests
             $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
             table.Where((_, ix) => ix.CreatedAt.Neq(timestamp)).ToSql()
         );
+    }
+
+    [Fact]
+    public void FormatLiteral_Timestamp_UsesInvariantCulture()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expectedSql =
+            "SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '2025-01-22T21:53:13.990639Z')";
+        var originalCulture = Thread.CurrentThread.CurrentCulture;
+
+        try
+        {
+            // Ensure the format is agnostic to the culture. Using ar-SA because it's different than Gregorian, which is used in UTC.
+            Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo("ar-SA");
+
+            Assert.Equal(
+                expectedSql,
+                table.Where(c => c.CreatedAt.Eq(timestamp)).ToSql()
+            );
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]

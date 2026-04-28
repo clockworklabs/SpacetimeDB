@@ -863,6 +863,8 @@ public static class QueryBuilderExtensions
 
 internal static class SqlFormat
 {
+    private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'";
+
     public static string QuoteIdent(string ident)
     {
         ident ??= string.Empty;
@@ -903,5 +905,7 @@ internal static class SqlFormat
     }
 
     public static string FormatTimestampLiteral(Timestamp timestamp) =>
-        FormatStringLiteral(timestamp.ToString());
+        FormatStringLiteral(
+            timestamp.ToStd().ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture)
+        );
 }
