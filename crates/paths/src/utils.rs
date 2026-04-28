@@ -106,13 +106,13 @@ macro_rules! path_type {
             pub fn write(&self, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
                 use std::io::Write as _;
 
-                let path = self.0.canonicalize()?;
+                let path = &self.0;
                 let parent = path.parent().ok_or_else(||
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
                         format!("cannot replace {} without enclosing directory", path.display()))
                 )?;
-                std::fs::create_dir_all(&path)?;
+                std::fs::create_dir_all(&parent)?;
 
                 let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
                 tmp.write_all(contents.as_ref())?;
