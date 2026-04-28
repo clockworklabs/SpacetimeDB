@@ -196,6 +196,40 @@ fn router() -> Router {
 }
 "#;
 
+const HANDLE_REQUEST_BODY_MODULE_CODE: &str = r#"
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
+
+#[spacetimedb::http::handler]
+fn reverse_bytes(_ctx: &mut HandlerContext, req: Request) -> Response {
+    let mut reversed = req.into_body().into_bytes().to_vec();
+    reversed.reverse();
+    Response::new(Body::from_bytes(reversed))
+}
+
+#[spacetimedb::http::handler]
+fn reverse_words(_ctx: &mut HandlerContext, req: Request) -> Response {
+    let body = match req.into_body().into_string() {
+        Ok(body) => body,
+        Err(_) => {
+            return Response::builder()
+                .status(400)
+                .body(Body::from_bytes("request body must be valid UTF-8"))
+                .expect("response builder should not fail");
+        }
+    };
+
+    let reversed = body.split(' ').rev().collect::<Vec<_>>().join(" ");
+    Response::new(Body::from_bytes(reversed))
+}
+
+#[spacetimedb::http::router]
+fn router() -> Router {
+    Router::new()
+        .post("/reverse-bytes", reverse_bytes)
+        .post("/reverse-words", reverse_words)
+}
+"#;
+
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
 fn extract_rust_code_blocks(doc_path: &Path) -> String {
@@ -395,6 +429,77 @@ fn http_handler_observes_full_external_uri() {
     let resp = client.get(&url).send().expect("echo-uri failed");
     assert!(resp.status().is_success());
     assert_eq!(resp.text().expect("echo-uri body"), url);
+}
+
+#[test]
+fn handle_request_body() {
+    let test = Smoketest::builder()
+        .module_code(HANDLE_REQUEST_BODY_MODULE_CODE)
+        .build();
+    let identity = test.database_identity.as_ref().expect("database identity missing");
+
+    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client
+        .post(format!("{base}/reverse-bytes"))
+        .body(vec![0xFF, 0x00, 0xFE, 0x7F])
+        .send()
+        .expect("reverse-bytes invalid utf-8 failed");
+    assert!(resp.status().is_success());
+    assert_eq!(
+        resp.bytes().expect("reverse-bytes invalid utf-8 body").as_ref(),
+        [0x7F, 0xFE, 0x00, 0xFF]
+    );
+
+    let resp = client
+        .post(format!("{base}/reverse-bytes"))
+        .body("abcba")
+        .send()
+        .expect("reverse-bytes palindrome failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.bytes().expect("reverse-bytes palindrome body").as_ref(), b"abcba");
+
+    let resp = client
+        .post(format!("{base}/reverse-bytes"))
+        .body("stressed")
+        .send()
+        .expect("reverse-bytes non-palindrome failed");
+    assert!(resp.status().is_success());
+    assert_eq!(
+        resp.bytes().expect("reverse-bytes non-palindrome body").as_ref(),
+        b"desserts"
+    );
+
+    let resp = client
+        .post(format!("{base}/reverse-words"))
+        .body(vec![0x66, 0x6F, 0x80, 0x6F])
+        .send()
+        .expect("reverse-words invalid utf-8 failed");
+    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(
+        resp.text().expect("reverse-words invalid utf-8 body"),
+        "request body must be valid UTF-8"
+    );
+
+    let resp = client
+        .post(format!("{base}/reverse-words"))
+        .body("step on no pets")
+        .send()
+        .expect("reverse-words palindrome failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("reverse-words palindrome body"), "pets no on step");
+
+    let resp = client
+        .post(format!("{base}/reverse-words"))
+        .body("red green blue")
+        .send()
+        .expect("reverse-words non-palindrome failed");
+    assert!(resp.status().is_success());
+    assert_eq!(
+        resp.text().expect("reverse-words non-palindrome body"),
+        "blue green red"
+    );
 }
 
 /// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
