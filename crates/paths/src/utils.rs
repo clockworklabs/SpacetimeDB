@@ -106,17 +106,19 @@ macro_rules! path_type {
             pub fn write(&self, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
                 use std::io::Write as _;
 
-                self.create_parent()?;
-                let mut file = std::fs::File::create(self)?;
-                file.write_all(contents.as_ref())?;
-                file.sync_all()?;
+                let path = self.0.canonicalize()?;
+                let parent = path.parent().ok_or_else(||
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("cannot replace {} without enclosing directory", path.display()))
+                )?;
+                std::fs::create_dir_all(&path)?;
 
-                // In case the file got created, we also need to fsync the
-                // directory, so that the directory entry becomes durable.
-                if let Some(parent) = self.0.parent()
-                    && parent != std::path::Path::new("") {
-                    std::fs::File::open(parent)?.sync_all()?;
-                }
+                let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+                tmp.write_all(contents.as_ref())?;
+                tmp.as_file().sync_all()?;
+                tmp.persist(&path)?;
+                std::fs::File::open(parent)?.sync_all()?;
 
                 Ok(())
             }
