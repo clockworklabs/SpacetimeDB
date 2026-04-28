@@ -4,9 +4,7 @@ use super::wasmtime_module::{
     call_view_export, decode_view_result_sink_code, CallViewAnonType, CallViewType, ViewResultSinkError,
 };
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
-use crate::database_logger::{
-    BacktraceFrame, BacktraceFrameKind, BacktraceFrameSymbol, BacktraceProvider, ModuleBacktrace, Record,
-};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
@@ -1973,55 +1971,19 @@ impl WasmInstanceEnv {
 type Fut<'caller, T> = Box<dyn Send + 'caller + Future<Output = T>>;
 
 impl<T> BacktraceProvider for wasmtime::StoreContext<'_, T> {
-    fn capture(&self) -> Box<dyn ModuleBacktrace + '_> {
+    fn capture(&self) -> Box<dyn ModuleBacktrace> {
         Box::new(wasmtime::WasmBacktrace::capture(self))
     }
 }
 
 impl ModuleBacktrace for wasmtime::WasmBacktrace {
-    fn frames(&self) -> Box<dyn Iterator<Item = BacktraceFrame<'_>> + '_> {
-        let is_end_short_backtrace = |func_name: &str| {
-            func_name.contains("__spacetimedb_end_short_backtrace") || func_name.contains("__rust_end_short_backtrace")
-        };
-        let is_begin_short_backtrace = |func_name: &str| {
-            func_name.contains("__spacetimedb_begin_short_backtrace")
-                || func_name.contains("__rust_begin_short_backtrace")
-        };
-
-        let frames = self.frames();
-
-        // Handle gracefully the case where there's no `end_short_backtrace` frame in the stack
-        // (e.g. because the trace wasn't collected in a panic handler, or isn't from rust code).
-        let frames = frames
+    fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+        self.frames()
             .iter()
-            .position(|f| f.func_name().is_some_and(is_end_short_backtrace))
-            .map_or(frames, |i| &frames[i + 1..]);
-
-        let frames = frames
-            .split(|f| f.func_name().is_some_and(is_begin_short_backtrace))
-            .next()
-            .unwrap();
-
-        Box::new(frames.iter().map(|f| BacktraceFrame {
-            func_name: f.func_name(),
-            file: None,
-            line: None,
-            column: None,
-            kind: BacktraceFrameKind::Wasm {
-                module_name: f.module().name(),
-                symbols: f.symbols().iter().map(BacktraceFrameSymbol::from).collect(),
-            },
-        }))
-    }
-}
-
-impl<'a> From<&'a wasmtime::FrameSymbol> for BacktraceFrameSymbol<'a> {
-    fn from(sym: &'a wasmtime::FrameSymbol) -> Self {
-        Self {
-            name: sym.name(),
-            file: sym.file(),
-            line: sym.line(),
-            column: sym.column(),
-        }
+            .map(|f| BacktraceFrame {
+                module_name: None,
+                func_name: f.func_name(),
+            })
+            .collect()
     }
 }
