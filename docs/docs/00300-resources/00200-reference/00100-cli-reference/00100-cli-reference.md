@@ -111,6 +111,7 @@ Run `spacetime help publish` for more detailed information.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
 
 
 
@@ -367,7 +368,6 @@ Manage your login to the SpacetimeDB CLI
 * `--auth-host <AUTH-HOST>` — Fetch login token from a different host
 
   Default value: `https://spacetimedb.com`
-* `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
 * `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
 * `--no-browser` — Do not open a browser window
 
@@ -415,6 +415,7 @@ Initializes a new spacetime project.
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
 
 
 
