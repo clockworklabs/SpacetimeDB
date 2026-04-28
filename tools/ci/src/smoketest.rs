@@ -179,6 +179,11 @@ fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Res
     let status = cmd.args(&args).status()?;
 
     ensure!(status.success(), "Tests failed");
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "crates/smoketests").run()?;
+    ensure!(
+        diff_status.status.success(),
+        "There is a diff in the smoketests directory."
+    );
     Ok(())
 }
 
@@ -209,10 +214,11 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
         let ft = entry.file_type()?;
         if ft.is_dir() {
             expected.insert(name.to_string());
-        } else if ft.is_file() && path.extension() == Some(OsStr::new("rs")) {
-            if let Some(stem) = path.file_stem() {
-                expected.insert(stem.to_string_lossy().to_string());
-            }
+        } else if ft.is_file()
+            && path.extension() == Some(OsStr::new("rs"))
+            && let Some(stem) = path.file_stem()
+        {
+            expected.insert(stem.to_string_lossy().to_string());
         }
     }
 

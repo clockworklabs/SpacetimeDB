@@ -292,15 +292,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // If config has a module-path and CLI didn't provide one, resolve spacetimedb_dir from it.
     // This handles the case where spacetime.json specifies module-path but has no publish targets.
-    if module_path_from_cli.is_none() {
-        if let Some(config_module_path) = loaded_config
+    if module_path_from_cli.is_none()
+        && let Some(config_module_path) = loaded_config
             .as_ref()
             .and_then(|lc| lc.config.additional_fields.get("module-path"))
             .and_then(|v| v.as_str())
-        {
-            let p = PathBuf::from(config_module_path);
-            spacetimedb_dir = if p.is_absolute() { p } else { project_dir.join(p) };
-        }
+    {
+        let p = PathBuf::from(config_module_path);
+        spacetimedb_dir = if p.is_absolute() { p } else { project_dir.join(p) };
     }
 
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
@@ -386,10 +385,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if !has_any_config_files
         && module_path_from_cli.is_none()
         && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir())
+        && let Some(found_module) = find_module_path(&std::env::current_dir()?)
     {
-        if let Some(found_module) = find_module_path(&std::env::current_dir()?) {
-            spacetimedb_dir = found_module;
-        }
+        spacetimedb_dir = found_module;
     }
 
     if !has_any_config_files && (!spacetimedb_dir.exists() || !spacetimedb_dir.is_dir()) {
@@ -437,6 +435,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
             }
+
+            // Clear publish_configs so they're rebuilt after init with the correct
+            // spacetimedb_dir. Without this, configs built before init contain the
+            // pre-init (stale) module path and the block below would overwrite the
+            // correctly-updated spacetimedb_dir.
+            publish_configs.clear();
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
@@ -472,8 +476,23 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
     let using_spacetime_config = spacetime_config.is_some();
-    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> =
-        spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
+    let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> = {
+        let mut entries = spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
+        // Inherit top-level `module-path` into generate entries that don't specify their own.
+        // Without this, `generate` entries fall back to the hardcoded "spacetimedb" default
+        // even when the top-level config has a module-path set.
+        if let Some(top_level_module_path) = spacetime_config
+            .and_then(|c| c.additional_fields.get("module-path"))
+            .cloned()
+        {
+            for entry in &mut entries {
+                entry
+                    .entry("module-path".to_string())
+                    .or_insert(top_level_module_path.clone());
+            }
+        }
+        entries
+    };
 
     // Re-resolve publish targets now that config files may have been created by init.
     if publish_configs.is_empty() {
@@ -490,10 +509,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let use_local = resolved_server == "local";
 
-    if !no_config {
-        if let Some(path) = create_default_spacetime_config_if_missing(&project_dir)? {
-            println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
-        }
+    if !no_config && let Some(path) = create_default_spacetime_config_if_missing(&project_dir)? {
+        println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
     }
 
     // If we don't have any publish configs by now, we need to ask the user about the
@@ -543,10 +560,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 .and_then(|cfg| cfg.get_config_value("database"))
                 .and_then(|v| v.as_str())
         });
-        if let Some(db_name) = db_to_persist {
-            if let Some(path) = create_local_spacetime_config_if_missing(&project_dir, db_name)? {
-                println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
-            }
+        if let Some(db_name) = db_to_persist
+            && let Some(path) = create_local_spacetime_config_if_missing(&project_dir, db_name)?
+        {
+            println!("{} Created {}", "✓".green(), strip_verbatim_prefix(&path).display());
         }
     }
 
@@ -680,6 +697,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     // Safety prompt: warn if any selected database target is defined in spacetime.json.
+    // spacetime.local.json is gitignored and personal, so it's fine for dev use.
     if let Some(ref lc) = loaded_config {
         let database_sources = resolve_database_sources(&lc.config);
         let databases_from_main_config: Vec<String> = db_names_for_logging
@@ -797,14 +815,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
         move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
-                if matches!(
+            if let Ok(event) = res
+                && matches!(
                     event.kind,
                     notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_)
-                ) && event.paths.iter().any(|p| !should_ignore_path(p, &gitignore))
-                {
-                    let _ = tx.send(());
-                }
+                )
+                && event.paths.iter().any(|p| !should_ignore_path(p, &gitignore))
+            {
+                let _ = tx.send(());
             }
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
@@ -1004,20 +1022,18 @@ async fn generate_build_and_publish(
                 .map(|l| l == Language::TypeScript)
                 .unwrap_or(false);
 
-        if is_ts_client {
-            if let Some(first_db_name) = first_config.get_config_value("database").and_then(|v| v.as_str()) {
-                let server_for_env =
-                    server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
+        if is_ts_client && let Some(first_db_name) = first_config.get_config_value("database").and_then(|v| v.as_str())
+        {
+            let server_for_env = server.or_else(|| first_config.get_config_value("server").and_then(|v| v.as_str()));
 
-                println!(
-                    "{} {}...",
-                    "Updating .env.local with database name".cyan(),
-                    first_db_name
-                );
-                let env_path = project_dir.join(".env.local");
-                let server_host_url = config.get_host_url(server_for_env)?;
-                upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
-            }
+            println!(
+                "{} {}...",
+                "Updating .env.local with database name".cyan(),
+                first_db_name
+            );
+            let env_path = project_dir.join(".env.local");
+            let server_host_url = config.get_host_url(server_for_env)?;
+            upsert_env_db_names_and_hosts(&env_path, &server_host_url, first_db_name)?;
         }
     }
 
@@ -1096,10 +1112,10 @@ async fn generate_build_and_publish(
         }
 
         // Forward per-target build options if set
-        if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str()) {
-            if !build_opts.is_empty() {
-                publish_entry.insert("build-options".to_string(), json!(build_opts));
-            }
+        if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str())
+            && !build_opts.is_empty()
+        {
+            publish_entry.insert("build-options".to_string(), json!(build_opts));
         }
 
         // Forward break-clients if set
@@ -1374,28 +1390,28 @@ fn format_log_record<W: WriteColor>(
     let mut need_space_before_filename = false;
     let mut need_colon_sep = false;
     let dimmed = ColorSpec::new().set_dimmed(true).clone();
-    if let Some(function) = &record.function {
-        if function.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            write!(out, "{function}")?;
-            out.reset()?;
-            need_space_before_filename = true;
-            need_colon_sep = true;
-        }
+    if let Some(function) = &record.function
+        && function.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        write!(out, "{function}")?;
+        out.reset()?;
+        need_space_before_filename = true;
+        need_colon_sep = true;
     }
-    if let Some(filename) = &record.filename {
-        if filename.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            if need_space_before_filename {
-                write!(out, " ")?;
-            }
-            write!(out, "{filename}")?;
-            if let Some(line) = record.line_number {
-                write!(out, ":{line}")?;
-            }
-            out.reset()?;
-            need_colon_sep = true;
+    if let Some(filename) = &record.filename
+        && filename.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        if need_space_before_filename {
+            write!(out, " ")?;
         }
+        write!(out, "{filename}")?;
+        if let Some(line) = record.line_number {
+            write!(out, ":{line}")?;
+        }
+        out.reset()?;
+        need_colon_sep = true;
     }
     if need_colon_sep {
         write!(out, ": ")?;
@@ -1481,12 +1497,11 @@ fn build_gitignore_matcher(project_dir: &Path, spacetimedb_dir: &Path) -> Gitign
 fn should_ignore_path(path: &Path, gitignore: &Gitignore) -> bool {
     // Layer 1: always-ignore directories
     for component in path.components() {
-        if let std::path::Component::Normal(c) = component {
-            if let Some(s) = c.to_str() {
-                if ALWAYS_IGNORE_DIRS.contains(&s) {
-                    return true;
-                }
-            }
+        if let std::path::Component::Normal(c) = component
+            && let Some(s) = c.to_str()
+            && ALWAYS_IGNORE_DIRS.contains(&s)
+        {
+            return true;
         }
     }
 

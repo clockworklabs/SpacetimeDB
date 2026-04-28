@@ -17,8 +17,11 @@ namespace SpacetimeDB {
 
 // Enhanced ReducerContext with database access - matches Rust pattern
 struct ReducerContext {
-    // Core fields - directly accessible like in Rust
-    Identity sender;
+private:
+    Identity sender_;
+
+public:
+    // Core fields - sender is exposed via sender() like Rust, other fields remain directly accessible
     std::optional<ConnectionId> connection_id;
     Timestamp timestamp;
     
@@ -37,6 +40,10 @@ private:
     mutable uint32_t counter_uuid_ = 0;
     
 public:
+    Identity sender() const {
+        return sender_;
+    }
+
     // Returns the authorization information for the caller of this reducer
     const AuthCtx& sender_auth() const {
         return sender_auth_;
@@ -110,7 +117,7 @@ public:
     ReducerContext() : sender_auth_(AuthCtx::internal()) {}
     
     ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts)
-        : sender(s), connection_id(cid), timestamp(ts), 
+        : sender_(s), connection_id(cid), timestamp(ts), 
           sender_auth_(AuthCtx::from_connection_id_opt(cid, s)) {}
 };
 

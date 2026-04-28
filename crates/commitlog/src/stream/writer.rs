@@ -228,13 +228,16 @@ where
                     segment,
                     offset_index: index,
                 }
-            } else if let Some(current_segment) = self.current_segment.take() {
-                current_segment
             } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "no current segment, expected segment header",
-                ));
+                match self.current_segment.take() {
+                    Some(current_segment) => current_segment,
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "no current segment, expected segment header",
+                        ));
+                    }
+                }
             };
 
             // What follows is commits to be written to `current_segment`,

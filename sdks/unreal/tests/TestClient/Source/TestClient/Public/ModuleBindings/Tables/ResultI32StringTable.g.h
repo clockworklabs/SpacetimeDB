@@ -20,7 +20,7 @@ class TESTCLIENT_API UResultI32StringTable : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for result_i32_string table*/
+    /** Update function for result_i_32_string table*/
     FTableAppliedDiff<FResultI32StringType> Update(TArray<FWithBsatn<FResultI32StringType>> InsertsRef, TArray<FWithBsatn<FResultI32StringType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnResultI32StringDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("result_i32_string");
+    const FString TableName = TEXT("result_i_32_string");
 
     TSharedPtr<UClientCache<FResultI32StringType>> Data;
 };

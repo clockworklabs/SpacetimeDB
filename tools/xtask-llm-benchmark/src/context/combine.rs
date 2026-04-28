@@ -198,10 +198,10 @@ struct Row {
 }
 
 fn belongs_to_crate(paths: &serde_json::Map<String, Value>, id: &str, crate_name: &str) -> bool {
-    if let Some(p) = paths.get(id).and_then(Value::as_object) {
-        if let Some(arr) = p.get("path").and_then(Value::as_array) {
-            return arr.first().and_then(Value::as_str) == Some(crate_name);
-        }
+    if let Some(p) = paths.get(id).and_then(Value::as_object)
+        && let Some(arr) = p.get("path").and_then(Value::as_array)
+    {
+        return arr.first().and_then(Value::as_str) == Some(crate_name);
     }
     false
 }
@@ -212,14 +212,14 @@ fn full_path(
     id: &str,
     crate_name: &str,
 ) -> String {
-    if let Some(p) = paths.get(id).and_then(Value::as_object) {
-        if let Some(arr) = p.get("path").and_then(Value::as_array) {
-            let mut segs: Vec<String> = arr.iter().filter_map(Value::as_str).map(|s| s.to_string()).collect();
-            if let Some(name) = index.get(id).and_then(|it| it.get("name")).and_then(Value::as_str) {
-                segs.push(name.to_string());
-            }
-            return segs.join("::");
+    if let Some(p) = paths.get(id).and_then(Value::as_object)
+        && let Some(arr) = p.get("path").and_then(Value::as_array)
+    {
+        let mut segs: Vec<String> = arr.iter().filter_map(Value::as_str).map(|s| s.to_string()).collect();
+        if let Some(name) = index.get(id).and_then(|it| it.get("name")).and_then(Value::as_str) {
+            segs.push(name.to_string());
         }
+        return segs.join("::");
     }
     let nm = index
         .get(id)
@@ -233,10 +233,10 @@ fn item_kind(item: &Value) -> String {
     if let Some(k) = item.get("kind").and_then(Value::as_str) {
         return k.to_string();
     }
-    if let Some(inner) = item.get("inner").and_then(Value::as_object) {
-        if let Some((k, _)) = inner.iter().next() {
-            return k.to_string();
-        }
+    if let Some(inner) = item.get("inner").and_then(Value::as_object)
+        && let Some((k, _)) = inner.iter().next()
+    {
+        return k.to_string();
     }
     "unknown".to_string()
 }
@@ -247,10 +247,10 @@ fn item_docs(item: &Value) -> String {
     }
     if let Some(inner) = item.get("inner").and_then(Value::as_object) {
         for (_k, v) in inner {
-            if let Some(m) = v.as_object() {
-                if let Some(d) = m.get("docs").and_then(Value::as_str) {
-                    return d.to_string();
-                }
+            if let Some(m) = v.as_object()
+                && let Some(d) = m.get("docs").and_then(Value::as_str)
+            {
+                return d.to_string();
             }
         }
     }

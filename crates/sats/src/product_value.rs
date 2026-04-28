@@ -69,6 +69,14 @@ impl From<ColId> for InvalidFieldError {
 }
 
 impl ProductValue {
+    /// Pushes a single value to he product.
+    pub fn push(self, val: impl Into<AlgebraicValue>) -> Self {
+        let mut vals: Vec<_> = self.elements.into();
+        vals.reserve(1);
+        vals.push(val.into());
+        Self::from(vals)
+    }
+
     /// Borrow the value at field of `self` identified by `col_pos`.
     ///
     /// The `name` is non-functional and is only used for error-messages.
@@ -189,7 +197,7 @@ impl ProductValue {
 }
 
 impl<'a> ValueWithType<'a, ProductValue> {
-    pub fn elements(&self) -> impl ExactSizeIterator<Item = ValueWithType<'a, AlgebraicValue>> {
+    pub fn elements(&self) -> impl ExactSizeIterator<Item = ValueWithType<'a, AlgebraicValue>> + use<'a> {
         self.ty_s().with_values(self.value())
     }
 }

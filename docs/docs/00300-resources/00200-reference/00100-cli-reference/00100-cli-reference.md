@@ -111,6 +111,7 @@ Run `spacetime help publish` for more detailed information.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
 
 
 
@@ -159,6 +160,11 @@ Run `spacetime help logs` for more detailed information.
 
   Possible values: `text`, `json`
 
+* `-l`, `--level <LEVEL>` — Filter logs by severity level. Only messages at the specified level or higher will be shown. Levels from least to most severe: trace, debug, info, warn, error, panic.
+
+  Possible values: `trace`, `debug`, `info`, `warn`, `error`, `panic`
+
+* `--level-exact` — When combined with --level, show only logs at exactly the specified level instead of that level and above.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 
@@ -316,6 +322,7 @@ Run `spacetime help generate` for more detailed information.
 
   Default value: `SpacetimeDB.Types`
 * `--unreal-module-name <UNREAL_MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
+* `--module-prefix <MODULE_PREFIX>` — The module prefix to use for generated types (only used with --lang unrealcpp)
 * `-l`, `--lang <LANG>` — The language to generate
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
@@ -361,7 +368,6 @@ Manage your login to the SpacetimeDB CLI
 * `--auth-host <AUTH-HOST>` — Fetch login token from a different host
 
   Default value: `https://spacetimedb.com`
-* `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
 * `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
 * `--no-browser` — Do not open a browser window
 
@@ -409,6 +415,7 @@ Initializes a new spacetime project.
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
 
 
 

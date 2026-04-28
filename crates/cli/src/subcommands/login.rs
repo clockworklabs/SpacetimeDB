@@ -1,5 +1,5 @@
-use crate::util::decode_identity;
 use crate::Config;
+use crate::{logout::ensure_logged_out, util::decode_identity};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
@@ -22,6 +22,7 @@ pub fn cli() -> Command {
         .arg(
             Arg::new("server")
                 .long("server-issued-login")
+                .hide(true)
                 .group("login-method")
                 .help("Log in to a SpacetimeDB server directly, without going through a global auth server"),
         )
@@ -62,17 +63,23 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server_issued_login: Option<&String> = args.get_one("server");
     let open_browser = !args.get_flag("no-browser");
 
+    let _was_logged_in = ensure_logged_out(&mut config, &host).await;
+
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
         config.save();
+        match decode_identity(token) {
+            Ok(identity) => println!("Logged in with identity {identity}"),
+            Err(_) => println!("Token saved."),
+        }
         return Ok(());
     }
 
     if let Some(server) = server_issued_login {
         let host = Url::parse(&config.get_host_url(Some(server))?)?;
-        spacetimedb_token_cached(&mut config, &host, true, open_browser).await?;
+        spacetimedb_login_and_save(&mut config, &host, true, open_browser).await?;
     } else {
-        spacetimedb_token_cached(&mut config, &host, false, open_browser).await?;
+        spacetimedb_login_and_save(&mut config, &host, false, open_browser).await?;
     }
 
     Ok(())
@@ -105,24 +112,7 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     Ok(())
 }
 
-async fn spacetimedb_token_cached(
-    config: &mut Config,
-    host: &Url,
-    direct_login: bool,
-    open_browser: bool,
-) -> anyhow::Result<String> {
-    // Currently, this token does not expire. However, it will at some point in the future. When that happens,
-    // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
-    if let Some(token) = config.spacetimedb_token() {
-        println!("You are already logged in.");
-        println!("If you want to log out, use spacetime logout.");
-        Ok(token.clone())
-    } else {
-        spacetimedb_login_force(config, host, direct_login, open_browser).await
-    }
-}
-
-pub async fn spacetimedb_login_force(
+pub async fn spacetimedb_login_and_save(
     config: &mut Config,
     host: &Url,
     direct_login: bool,
@@ -134,16 +124,19 @@ pub async fn spacetimedb_login_force(
         println!("WARNING: This login will NOT work for any other servers.");
         token
     } else {
-        let session_token = web_login_cached(config, host, open_browser).await?;
+        let session_token = web_login_or_cached(config, host, open_browser).await?;
         spacetimedb_login(host, &session_token).await?
     };
     config.set_spacetimedb_token(token.clone());
     config.save();
 
+    let identity = decode_identity(&token)?;
+    println!("Logged in with identity {identity}");
+
     Ok(token)
 }
 
-async fn web_login_cached(config: &mut Config, host: &Url, open_browser: bool) -> anyhow::Result<String> {
+async fn web_login_or_cached(config: &mut Config, host: &Url, open_browser: bool) -> anyhow::Result<String> {
     if let Some(session_token) = config.web_session_token() {
         // Currently, these session tokens do not expire. At some point in the future, we may also need to check this session token for validity.
         Ok(session_token.clone())

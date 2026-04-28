@@ -11,6 +11,8 @@ use tokio::runtime;
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::Instrument;
 
+use crate::util::thread_scheduling::apply_compute_thread_hint;
+
 /// A handle to a pool of Tokio executors for running database WASM code on.
 ///
 /// Each database has a [`SingleCoreExecutor`],
@@ -239,7 +241,7 @@ impl CorePinner {
     #[inline]
     fn do_pin(move_core_rx: &mut watch::Receiver<CoreId>) {
         let core_id = *move_core_rx.borrow_and_update();
-        core_affinity::set_for_current(core_id);
+        apply_compute_thread_hint(Some(core_id));
     }
 
     /// Pin the current thread to the appropriate core.
@@ -252,10 +254,10 @@ impl CorePinner {
     /// Repin the current thread to the new appropriate core, if it's changed
     /// since the last call to `pin_now()` or `pin_if_changed()`.
     pub fn pin_if_changed(&mut self) {
-        if let Some(move_core_rx) = &mut self.move_core_rx {
-            if let Ok(true) = move_core_rx.has_changed() {
-                Self::do_pin(move_core_rx);
-            }
+        if let Some(move_core_rx) = &mut self.move_core_rx
+            && let Ok(true) = move_core_rx.has_changed()
+        {
+            Self::do_pin(move_core_rx);
         }
     }
 
@@ -382,10 +384,10 @@ pub struct LoadBalanceOnDropGuard {
 
 impl Drop for LoadBalanceOnDropGuard {
     fn drop(&mut self) {
-        if let Some((manager, database_executor_id)) = &self.inner {
-            if let Some(cores) = manager.upgrade() {
-                cores.lock().unwrap().deallocate(*database_executor_id);
-            }
+        if let Some((manager, database_executor_id)) = &self.inner
+            && let Some(cores) = manager.upgrade()
+        {
+            cores.lock().unwrap().deallocate(*database_executor_id);
         }
     }
 }

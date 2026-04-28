@@ -1,7 +1,7 @@
 pub mod de;
 pub mod ser;
 
-use crate::{AlgebraicType, ArrayValue, ProductValue, SumValue};
+use crate::{impl_deserialize, AlgebraicType, ArrayValue, Deserialize, ProductValue, SumValue};
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use derive_more::From;
@@ -116,6 +116,8 @@ pub enum AlgebraicValue {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(Rust, packed)]
 pub struct Packed<T>(pub T);
+
+impl_deserialize!([T: Deserialize<'de>] Packed<T>, de => <_>::deserialize(de).map(Packed));
 
 impl<T> From<T> for Packed<T> {
     fn from(value: T) -> Self {

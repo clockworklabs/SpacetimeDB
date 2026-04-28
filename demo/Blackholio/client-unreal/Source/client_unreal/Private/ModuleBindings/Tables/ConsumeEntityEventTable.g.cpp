@@ -19,7 +19,12 @@ void UConsumeEntityEventTable::PostInitialize()
 
 FTableAppliedDiff<FConsumeEntityEventType> UConsumeEntityEventTable::Update(TArray<FWithBsatn<FConsumeEntityEventType>> InsertsRef, TArray<FWithBsatn<FConsumeEntityEventType>> DeletesRef)
 {
-    FTableAppliedDiff<FConsumeEntityEventType> Diff = BaseUpdate<FConsumeEntityEventType>(InsertsRef, DeletesRef, Data, TableName);
+    // Event tables are callback-only: do not persist rows in the local cache.
+    FTableAppliedDiff<FConsumeEntityEventType> Diff;
+    for (const FWithBsatn<FConsumeEntityEventType>& Insert : InsertsRef)
+    {
+        Diff.Inserts.Add(Insert.Bsatn, Insert.Row);
+    }
 
     return Diff;
 }

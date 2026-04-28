@@ -19,7 +19,7 @@ pub mod raw {
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
     #[link(wasm_import_module = "spacetime_10.0")]
-    extern "C" {
+    unsafe extern "C" {
         /// Queries the `table_id` associated with the given (table) `name`
         /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
         ///
@@ -592,7 +592,7 @@ pub mod raw {
 
     // See comment on previous `extern "C"` block re: ABI version.
     #[link(wasm_import_module = "spacetime_10.1")]
-    extern "C" {
+    unsafe extern "C" {
         /// Read the remaining length of a [`BytesSource`] and write it to `out`.
         ///
         /// Note that the host automatically frees byte sources which are exhausted.
@@ -621,7 +621,7 @@ pub mod raw {
 
     // See comment on previous `extern "C"` block re: ABI version.
     #[link(wasm_import_module = "spacetime_10.2")]
-    extern "C" {
+    unsafe extern "C" {
         /// Finds the JWT payload associated with `connection_id`.
         /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
         /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
@@ -646,7 +646,7 @@ pub mod raw {
 
     #[cfg(feature = "unstable")]
     #[link(wasm_import_module = "spacetime_10.3")]
-    extern "C" {
+    unsafe extern "C" {
         /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
         ///
         /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
@@ -786,7 +786,7 @@ pub mod raw {
     }
 
     #[link(wasm_import_module = "spacetime_10.4")]
-    extern "C" {
+    unsafe extern "C" {
         /// Finds all rows in the index identified by `index_id`,
         /// according to `point = point_ptr[..point_len]` in WASM memory.
         ///
@@ -863,6 +863,26 @@ pub mod raw {
             point_len: usize,
             out: *mut u32,
         ) -> u16;
+    }
+
+    #[link(wasm_import_module = "spacetime_10.5")]
+    unsafe extern "C" {
+        /// Deletes all rows in the table identified by `table_id`.
+        ///
+        /// The number of rows deleted is written to the WASM pointer `out`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -1039,10 +1059,12 @@ fn cvt(x: u16) -> Result<()> {
 ///   before writing a safe and valid `T` to it.
 #[inline]
 unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T> {
-    let mut out = MaybeUninit::uninit();
-    let f_code = f(out.as_mut_ptr());
-    cvt(f_code)?;
-    Ok(out.assume_init())
+    unsafe {
+        let mut out = MaybeUninit::uninit();
+        let f_code = f(out.as_mut_ptr());
+        cvt(f_code)?;
+        Ok(out.assume_init())
+    }
 }
 
 /// Runs the given function `f`.
@@ -1168,6 +1190,21 @@ pub fn datastore_update_bsatn(table_id: TableId, index_id: IndexId, row: &mut [u
 #[inline]
 pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> Result<u32> {
     unsafe { call(|out| raw::datastore_delete_all_by_eq_bsatn(table_id, relation.as_ptr(), relation.len(), out)) }
+}
+
+/// Deletes all rows in the table identified by `table_id`.
+///
+/// The number of rows deleted is returned.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+#[inline]
+pub fn datastore_clear(table_id: TableId) -> Result<u64> {
+    unsafe { call(|out| raw::datastore_clear(table_id, out)) }
 }
 
 /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.

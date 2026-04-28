@@ -296,13 +296,13 @@ impl Publisher for TypeScriptPublisher {
         };
         pnpm_cmd.arg("install").arg("--ignore-workspace").current_dir(source);
         // When using NODEJS_DIR, prepend it to PATH so pnpm.cmd can find node.
-        if let Some(ref dir) = pnpm_exe {
-            if let Some(parent) = dir.parent() {
-                let mut paths: Vec<PathBuf> = env::split_paths(&env::var("PATH").unwrap_or_default()).collect();
-                paths.insert(0, parent.to_path_buf());
-                if let Ok(new_path) = env::join_paths(paths) {
-                    pnpm_cmd.env("PATH", new_path);
-                }
+        if let Some(ref dir) = pnpm_exe
+            && let Some(parent) = dir.parent()
+        {
+            let mut paths: Vec<PathBuf> = env::split_paths(&env::var("PATH").unwrap_or_default()).collect();
+            paths.insert(0, parent.to_path_buf());
+            if let Ok(new_path) = env::join_paths(paths) {
+                pnpm_cmd.env("PATH", new_path);
             }
         }
         run(&mut pnpm_cmd, "pnpm install (typescript)")?;

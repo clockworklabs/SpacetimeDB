@@ -1,4 +1,4 @@
-﻿import { spawnServer } from './utils.ts';
+import { spawnServer } from './utils.ts';
 
 type RpcServerConfig = {
   name: string;

@@ -61,20 +61,35 @@ export interface TableToSchema<
   accessorName: AccName;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
+  // Declarative user-provided table-level indexes.
   indexes: T['idxs'];
+  // Resolved runtime index metadata used by runtime consumers (e.g. TableCache).
+  resolvedIndexes: readonly UntypedIndex<keyof T['rowType']['row'] & string>[];
   constraints: T['constraints'];
 }
 
 export function tablesToSchema<
   const T extends Record<string, UntypedTableSchema>,
 >(ctx: ModuleContext, tables: T): TablesToSchema<T> {
+  // `TablesToSchema<T>['tables']` is intentionally readonly in the public type,
+  // but we need a mutable builder while materializing it from entries.
+  type MutableTableDefs = {
+    -readonly [AccName in keyof TablesToSchema<T>['tables']]: TablesToSchema<T>['tables'][AccName];
+  };
+  const tableDefs = Object.create(null) as MutableTableDefs;
+  for (const [accName, schema] of Object.entries(tables) as [
+    keyof T & string,
+    T[keyof T & string],
+  ][]) {
+    tableDefs[accName] = tableToSchema(
+      accName,
+      schema,
+      schema.tableDef(ctx, accName)
+    ) as TablesToSchema<T>['tables'][typeof accName];
+  }
+
   return {
-    tables: Object.fromEntries(
-      Object.entries(tables).map(([accName, schema]) => [
-        accName,
-        tableToSchema(accName, schema, schema.tableDef(ctx, accName)),
-      ])
-    ) as TablesToSchema<T>['tables'],
+    tables: tableDefs as TablesToSchema<T>['tables'],
   };
 }
 
@@ -90,6 +105,46 @@ export function tableToSchema<
     schema.rowType.algebraicType.value.elements[i].name;
 
   type AllowedCol = keyof T['rowType']['row'] & string;
+  // Build fully-resolved runtime index metadata from the host-facing RawTableDef.
+  // This is intentionally separate from `schema.idxs`, which keeps the original
+  // user-declared `IndexOpts` shape for type-level inference.
+  const resolvedIndexes: UntypedIndex<AllowedCol>[] = tableDef.indexes.map(
+    idx => {
+      const accessorName = idx.accessorName;
+      if (typeof accessorName !== 'string' || accessorName.length === 0) {
+        throw new TypeError(
+          `Index '${idx.sourceName ?? '<unknown>'}' on table '${tableDef.sourceName}' is missing accessor name`
+        );
+      }
+
+      const columnIds =
+        idx.algorithm.tag === 'Direct'
+          ? [idx.algorithm.value]
+          : idx.algorithm.value;
+
+      const unique = tableDef.constraints.some(
+        c =>
+          c.data.tag === 'Unique' &&
+          c.data.value.columns.every(col => columnIds.includes(col))
+      );
+
+      const algorithm = (
+        {
+          BTree: 'btree',
+          Hash: 'hash',
+          Direct: 'direct',
+        } as const
+      )[idx.algorithm.tag];
+
+      return {
+        name: accessorName,
+        unique,
+        algorithm,
+        columns: columnIds.map(getColName) as AllowedCol[],
+      };
+    }
+  );
+
   return {
     // For client,`schama.tableName` will always be there as canonical name.
     // For module, if explicit name is not provided via `name`, accessor name will
@@ -98,29 +153,16 @@ export function tableToSchema<
     accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
+    // Keep declarative indexes in their original shape for type-level consumers.
+    indexes: schema.idxs,
     constraints: tableDef.constraints.map(c => ({
       name: c.sourceName,
       constraint: 'unique',
       columns: c.data.value.columns.map(getColName) as [string],
     })),
-    // TODO: horrible horrible horrible. we smuggle this `Array<UntypedIndex>`
-    // by casting it to an `Array<IndexOpts>` as `TableToSchema` expects.
-    // This is then used in `TableCacheImpl.constructor` and who knows where else.
-    // We should stop lying about our types.
-    indexes: tableDef.indexes.map((idx): UntypedIndex<AllowedCol> => {
-      const columnIds =
-        idx.algorithm.tag === 'Direct'
-          ? [idx.algorithm.value]
-          : idx.algorithm.value;
-      return {
-        name: idx.accessorName!,
-        unique: tableDef.constraints.some(c =>
-          c.data.value.columns.every(col => columnIds.includes(col))
-        ),
-        algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
-        columns: columnIds.map(getColName),
-      };
-    }) as T['idxs'],
+    // Expose resolved runtime indexes separately so runtime users don't have to
+    // reinterpret `indexes` with unsafe casts.
+    resolvedIndexes,
     tableDef,
     ...(tableDef.isEvent ? { isEvent: true } : {}),
   };

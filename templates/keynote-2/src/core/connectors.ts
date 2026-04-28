@@ -1,4 +1,4 @@
-﻿export interface BaseConnector {
+export interface BaseConnector {
   name: string;
   open(workers?: number): Promise<void>;
   close(): Promise<void>;
@@ -7,6 +7,8 @@
     balance: bigint;
   } | null>;
   verify(): Promise<void>;
+
+  maxInflightPerWorker?: number;
 
   createWorker?(opts: { index: number; total: number }): Promise<BaseConnector>;
 }
@@ -19,7 +21,7 @@ export interface SqlConnector extends BaseConnector {
 }
 
 export interface ReducerConnector extends BaseConnector {
-  reducer(name: string, args?: Record<string, any>): Promise<unknown>;
+  call(name: string, args?: Record<string, any>): Promise<unknown>;
 }
 
 export interface RpcConnector extends BaseConnector {
