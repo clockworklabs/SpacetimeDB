@@ -36,8 +36,6 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime server clear`↴](#spacetime-server-clear)
 * [`spacetime subscribe`↴](#spacetime-subscribe)
 * [`spacetime start`↴](#spacetime-start)
-* [`spacetime lock`↴](#spacetime-lock)
-* [`spacetime unlock`↴](#spacetime-unlock)
 * [`spacetime version`↴](#spacetime-version)
 
 ## `spacetime`
@@ -63,8 +61,6 @@ This document contains the help content for the `spacetime` command-line program
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `start` — Start a local SpacetimeDB instance
-* `lock` — Lock a database to prevent accidental deletion
-* `unlock` — Unlock a database to allow deletion
 * `version` — Manage installed spacetime versions
 
 ###### **Options:**
@@ -372,7 +368,6 @@ Manage your login to the SpacetimeDB CLI
 * `--auth-host <AUTH-HOST>` — Fetch login token from a different host
 
   Default value: `https://spacetimedb.com`
-* `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
 * `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
 * `--no-browser` — Do not open a browser window
 
@@ -621,51 +616,6 @@ Run `spacetime start --help` to see all options.
 
   Possible values: `standalone`, `cloud`
 
-
-
-
-## `spacetime lock`
-
-Lock a database to prevent it from being deleted.
-
-A locked database cannot be deleted until it is unlocked with `spacetime unlock`.
-This is a safety mechanism to protect production databases from accidental deletion.
-
-**Usage:** `spacetime lock [OPTIONS] [database]`
-
-Run `spacetime help lock` for more detailed information.
-
-
-###### **Arguments:**
-
-* `<DATABASE>` — The name or identity of the database to lock
-
-###### **Options:**
-
-* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
-* `--no-config` — Ignore spacetime.json configuration
-
-
-
-## `spacetime unlock`
-
-Unlock a database that was previously locked with `spacetime lock`.
-
-After unlocking, the database can be deleted normally with `spacetime delete`.
-
-**Usage:** `spacetime unlock [OPTIONS] [database]`
-
-Run `spacetime help unlock` for more detailed information.
-
-
-###### **Arguments:**
-
-* `<DATABASE>` — The name or identity of the database to unlock
-
-###### **Options:**
-
-* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
-* `--no-config` — Ignore spacetime.json configuration
 
 
 
