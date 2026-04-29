@@ -32,7 +32,9 @@ use crate::{
     core::{self, TargetEngine},
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
-    targets::properties::{DynamicMigrationProbe, PropertyRuntime, TargetPropertyAccess},
+    targets::properties::{
+        CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableObservation, TargetPropertyAccess,
+    },
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
         table_ops::{
@@ -43,12 +45,34 @@ use crate::{
 };
 
 pub type RelationalDbCommitlogOutcome = CommitlogWorkloadOutcome;
+type RelationalDbCommitlogSource = crate::workload::commitlog_ops::NextInteractionGeneratorComposite<TableScenarioId>;
+type RelationalDbCommitlogProperties = PropertyRuntime;
 
 pub async fn run_generated_with_config_and_scenario(
     seed: DstSeed,
     scenario: TableScenarioId,
     config: RunConfig,
 ) -> anyhow::Result<RelationalDbCommitlogOutcome> {
+    let (source, engine, properties) = build(seed, scenario, &config)?;
+    let outcome = core::run_streaming(source, engine, properties, config).await?;
+    info!(
+        applied_steps = outcome.applied_steps,
+        durable_commit_count = outcome.durable_commit_count,
+        replay_table_count = outcome.replay_table_count,
+        "relational_db_commitlog complete"
+    );
+    Ok(outcome)
+}
+
+fn build(
+    seed: DstSeed,
+    scenario: TableScenarioId,
+    config: &RunConfig,
+) -> anyhow::Result<(
+    RelationalDbCommitlogSource,
+    RelationalDbEngine,
+    RelationalDbCommitlogProperties,
+)> {
     let mut connection_rng = seed.fork(121).rng();
     let num_connections = connection_rng.index(3) + 1;
     let mut schema_rng = seed.fork(122).rng();
@@ -60,15 +84,9 @@ pub async fn run_generated_with_config_and_scenario(
         num_connections,
         config.max_interactions_or_default(usize::MAX),
     );
-    let engine = RelationalDbEngine::new(seed, scenario, &schema, num_connections)?;
-    let outcome = core::run_streaming(generator, engine, config).await?;
-    info!(
-        applied_steps = outcome.applied_steps,
-        durable_commit_count = outcome.durable_commit_count,
-        replay_table_count = outcome.replay_table_count,
-        "relational_db_commitlog complete"
-    );
-    Ok(outcome)
+    let engine = RelationalDbEngine::new(seed, &schema, num_connections)?;
+    let properties = PropertyRuntime::for_table_workload(scenario, schema.clone(), num_connections);
+    Ok((generator, engine, properties))
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +107,6 @@ struct RelationalDbEngine {
     last_observed_durable_offset: Option<u64>,
     last_durable_snapshot: DurableSnapshot,
     pending_snapshot_capture: bool,
-    properties: PropertyRuntime,
     durability: Arc<InMemoryCommitlogDurability>,
     runtime_handle: tokio::runtime::Handle,
     commitlog_repo: MemoryCommitlogRepo,
@@ -99,12 +116,7 @@ struct RelationalDbEngine {
 type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
 
 impl RelationalDbEngine {
-    fn new(
-        seed: DstSeed,
-        scenario: TableScenarioId,
-        schema: &SchemaPlan,
-        num_connections: usize,
-    ) -> anyhow::Result<Self> {
+    fn new(seed: DstSeed, schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self> {
         let (db, runtime_handle, commitlog_repo, durability, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
         let mut this = Self {
             db: Some(db),
@@ -116,7 +128,6 @@ impl RelationalDbEngine {
             last_observed_durable_offset: None,
             last_durable_snapshot: BTreeMap::new(),
             pending_snapshot_capture: false,
-            properties: PropertyRuntime::for_table_workload(scenario, schema.clone(), num_connections),
             durability,
             runtime_handle,
             commitlog_repo,
@@ -181,22 +192,25 @@ impl RelationalDbEngine {
             .map_err(|err| format!("install base schema commit failed: {err}"))
     }
 
-    async fn execute(&mut self, interaction: &CommitlogInteraction) -> Result<(), String> {
+    async fn execute(&mut self, interaction: &CommitlogInteraction) -> Result<CommitlogObservation, String> {
         self.step = self.step.saturating_add(1);
         match interaction {
-            CommitlogInteraction::Table(op) => self.execute_table_op(op),
+            CommitlogInteraction::Table(op) => self.execute_table_op(op).map(CommitlogObservation::Table),
             CommitlogInteraction::CreateDynamicTable { conn, slot } => self.create_dynamic_table(*conn, *slot),
             CommitlogInteraction::DropDynamicTable { conn, slot } => self.drop_dynamic_table(*conn, *slot),
             CommitlogInteraction::MigrateDynamicTable { conn, slot } => self.migrate_dynamic_table(*conn, *slot),
-            CommitlogInteraction::ChaosSync => self.sync_and_snapshot(true),
+            CommitlogInteraction::ChaosSync => {
+                self.sync_and_snapshot(true)?;
+                Ok(CommitlogObservation::Applied)
+            }
             CommitlogInteraction::CloseReopen => self.close_and_reopen().await,
         }
     }
 
-    async fn close_and_reopen(&mut self) -> Result<(), String> {
+    async fn close_and_reopen(&mut self) -> Result<CommitlogObservation, String> {
         if self.execution.active_writer.is_some() || self.execution.tx_by_connection.iter().any(|tx| tx.is_some()) {
             trace!("skip close/reopen while transaction is open");
-            return Ok(());
+            return Ok(CommitlogObservation::Skipped);
         }
 
         self.sync_and_snapshot(true)?;
@@ -247,7 +261,7 @@ impl RelationalDbEngine {
             dynamic_tables = self.dynamic_tables.len(),
             "reopened relational db from durable history"
         );
-        Ok(())
+        Ok(CommitlogObservation::Applied)
     }
 
     fn rebuild_table_handles_after_reopen(&mut self) -> Result<(), String> {
@@ -284,7 +298,7 @@ impl RelationalDbEngine {
         Ok(())
     }
 
-    fn execute_table_op(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), String> {
+    fn execute_table_op(&mut self, interaction: &TableWorkloadInteraction) -> Result<TableObservation, String> {
         match std::panic::catch_unwind(AssertUnwindSafe(|| self.execute_table_op_inner(interaction))) {
             Ok(result) => result,
             Err(payload) => Err(format!(
@@ -294,9 +308,9 @@ impl RelationalDbEngine {
         }
     }
 
-    fn execute_table_op_inner(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), String> {
+    fn execute_table_op_inner(&mut self, interaction: &TableWorkloadInteraction) -> Result<TableObservation, String> {
         trace!(step = self.step, ?interaction, "table interaction");
-        let applied: Result<(), String> = match &interaction.op {
+        match &interaction.op {
             TableOperation::BeginTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
                 if self.execution.tx_by_connection[*conn].is_some() {
@@ -312,7 +326,7 @@ impl RelationalDbEngine {
                         .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests),
                 );
                 self.execution.active_writer = Some(*conn);
-                Ok(())
+                Ok(TableObservation::Applied)
             }
             TableOperation::CommitTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "commit")?;
@@ -324,8 +338,7 @@ impl RelationalDbEngine {
                     .map_err(|err| format!("commit interaction failed: {err}"))?;
                 self.execution.active_writer = None;
                 self.capture_pending_snapshot_if_idle()?;
-                self.with_property_runtime(|runtime, access| runtime.on_commit_or_rollback(access))?;
-                Ok(())
+                Ok(TableObservation::CommitOrRollback)
             }
             TableOperation::RollbackTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "rollback")?;
@@ -335,8 +348,7 @@ impl RelationalDbEngine {
                 let _ = self.db()?.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
                 self.capture_pending_snapshot_if_idle()?;
-                self.with_property_runtime(|runtime, access| runtime.on_commit_or_rollback(access))?;
-                Ok(())
+                Ok(TableObservation::CommitOrRollback)
             }
             TableOperation::Insert { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -355,11 +367,12 @@ impl RelationalDbEngine {
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
-                let step = self.step as u64;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_insert(access, step, *conn, *table, &inserted_row, in_tx)
-                })?;
-                Ok(())
+                Ok(TableObservation::RowInserted {
+                    conn: *conn,
+                    table: *table,
+                    row: inserted_row,
+                    in_tx,
+                })
             }
             TableOperation::Delete { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -377,11 +390,12 @@ impl RelationalDbEngine {
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
-                let step = self.step as u64;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_delete(access, step, *conn, *table, row, in_tx)
-                })?;
-                Ok(())
+                Ok(TableObservation::RowDeleted {
+                    conn: *conn,
+                    table: *table,
+                    row: row.clone(),
+                    in_tx,
+                })
             }
             TableOperation::DuplicateInsert { conn, table, row } => {
                 let outcome = self.with_mut_tx(*conn, |engine, tx| {
@@ -400,9 +414,9 @@ impl RelationalDbEngine {
                     }
                 })?;
                 match outcome {
-                    Ok(()) => self.with_property_runtime(|runtime, access| {
-                        runtime.on_expected_error(access, ExpectedErrorKind::UniqueConstraintViolation, interaction)
-                    }),
+                    Ok(()) => Ok(TableObservation::ExpectedError(
+                        ExpectedErrorKind::UniqueConstraintViolation,
+                    )),
                     Err(err) => Err(format!("[ExpectedErrorMatches] {err}; interaction={interaction:?}")),
                 }
             }
@@ -415,9 +429,7 @@ impl RelationalDbEngine {
                     Ok(engine.db()?.delete_by_rel(tx, table_id, [row.to_product_value()]))
                 })?;
                 if deleted == 0 {
-                    self.with_property_runtime(|runtime, access| {
-                        runtime.on_expected_error(access, ExpectedErrorKind::MissingRow, interaction)
-                    })
+                    Ok(TableObservation::ExpectedError(ExpectedErrorKind::MissingRow))
                 } else {
                     Err(format!(
                         "[ExpectedErrorDoesNotMutate] missing delete removed {deleted} rows; interaction={interaction:?}"
@@ -443,7 +455,7 @@ impl RelationalDbEngine {
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
-                Ok(())
+                Ok(TableObservation::Applied)
             }
             TableOperation::BatchDelete { conn, table, rows } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -463,7 +475,7 @@ impl RelationalDbEngine {
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
-                Ok(())
+                Ok(TableObservation::Applied)
             }
             TableOperation::Reinsert { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -486,12 +498,15 @@ impl RelationalDbEngine {
                 if !in_tx {
                     self.sync_and_snapshot(false)?;
                 }
-                Ok(())
+                Ok(TableObservation::Applied)
             }
             TableOperation::PointLookup { conn, table, id } => {
                 let actual = self.lookup_base_row(*conn, *table, *id)?;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_point_lookup(access, *conn, *table, *id, &actual)
+                Ok(TableObservation::PointLookup {
+                    conn: *conn,
+                    table: *table,
+                    id: *id,
+                    actual,
                 })
             }
             TableOperation::PredicateCount {
@@ -501,8 +516,12 @@ impl RelationalDbEngine {
                 value,
             } => {
                 let actual = self.count_by_col_eq_in_connection(*conn, *table, *col, value)?;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_predicate_count(access, *conn, *table, *col, value, actual)
+                Ok(TableObservation::PredicateCount {
+                    conn: *conn,
+                    table: *table,
+                    col: *col,
+                    value: value.clone(),
+                    actual,
                 })
             }
             TableOperation::RangeScan {
@@ -513,17 +532,24 @@ impl RelationalDbEngine {
                 upper,
             } => {
                 let actual = self.range_scan_in_connection(*conn, *table, cols, lower.clone(), upper.clone())?;
-                self.with_property_runtime(|runtime, access| {
-                    runtime.on_range_scan(access, *conn, *table, cols, lower, upper, &actual)
+                Ok(TableObservation::RangeScan {
+                    conn: *conn,
+                    table: *table,
+                    cols: cols.clone(),
+                    lower: lower.clone(),
+                    upper: upper.clone(),
+                    actual,
                 })
             }
             TableOperation::FullScan { conn, table } => {
                 let actual = self.collect_rows_in_connection(*conn, *table)?;
-                self.with_property_runtime(|runtime, access| runtime.on_full_scan(access, *conn, *table, &actual))
+                Ok(TableObservation::FullScan {
+                    conn: *conn,
+                    table: *table,
+                    actual,
+                })
             }
-        };
-        applied?;
-        self.with_property_runtime(|runtime, access| runtime.on_table_interaction(access, interaction))
+        }
     }
 
     fn with_mut_tx<T>(
@@ -560,14 +586,14 @@ impl RelationalDbEngine {
         Ok(value)
     }
 
-    fn create_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<(), String> {
+    fn create_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<CommitlogObservation, String> {
         if self.execution.active_writer.is_some() {
             trace!(
                 step = self.step,
                 slot,
                 "skip create dynamic table while transaction is open"
             );
-            return Ok(());
+            return Ok(CommitlogObservation::Skipped);
         }
         let conn = self.normalize_conn(conn);
         debug!(step = self.step, conn, slot, "create dynamic table");
@@ -599,17 +625,18 @@ impl RelationalDbEngine {
             );
             Ok(())
         })?;
-        self.sync_and_snapshot(false)
+        self.sync_and_snapshot(false)?;
+        Ok(CommitlogObservation::Applied)
     }
 
-    fn drop_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<(), String> {
+    fn drop_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<CommitlogObservation, String> {
         if self.execution.active_writer.is_some() {
             trace!(
                 step = self.step,
                 slot,
                 "skip drop dynamic table while transaction is open"
             );
-            return Ok(());
+            return Ok(CommitlogObservation::Skipped);
         }
         let conn = self.normalize_conn(conn);
         debug!(step = self.step, conn, slot, "drop dynamic table");
@@ -625,17 +652,18 @@ impl RelationalDbEngine {
             }
             Ok(())
         })?;
-        self.sync_and_snapshot(false)
+        self.sync_and_snapshot(false)?;
+        Ok(CommitlogObservation::Applied)
     }
 
-    fn migrate_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<(), String> {
+    fn migrate_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<CommitlogObservation, String> {
         if self.execution.active_writer.is_some() {
             trace!(
                 step = self.step,
                 slot,
                 "skip migrate dynamic table while transaction is open"
             );
-            return Ok(());
+            return Ok(CommitlogObservation::Skipped);
         }
         let conn = self.normalize_conn(conn);
         debug!(step = self.step, conn, slot, "migrate dynamic table");
@@ -683,10 +711,10 @@ impl RelationalDbEngine {
                 inserted_row: inserted,
             }))
         })?;
-        if let Some(probe) = probe {
-            self.with_property_runtime(|runtime, access| runtime.on_dynamic_migration_probe(access, &probe))?;
-        }
-        self.sync_and_snapshot(false)
+        self.sync_and_snapshot(false)?;
+        Ok(probe
+            .map(CommitlogObservation::DynamicMigrationProbe)
+            .unwrap_or(CommitlogObservation::Skipped))
     }
 
     fn normalize_conn(&self, conn: usize) -> usize {
@@ -855,16 +883,6 @@ impl RelationalDbEngine {
         Ok(rows)
     }
 
-    fn with_property_runtime<T>(
-        &mut self,
-        f: impl FnOnce(&mut PropertyRuntime, &Self) -> Result<T, String>,
-    ) -> Result<T, String> {
-        let mut runtime = std::mem::take(&mut self.properties);
-        let result = f(&mut runtime, self);
-        self.properties = runtime;
-        result
-    }
-
     fn collect_rows_by_id(&self, table_id: TableId) -> Result<Vec<SimRow>, String> {
         let db = self.db()?;
         let tx = db.begin_tx(Workload::ForTests);
@@ -901,7 +919,6 @@ impl RelationalDbEngine {
         self.capture_pending_snapshot_if_idle()?;
         self.sync_and_snapshot(true)?;
         let table = self.collect_table_outcome()?;
-        self.with_property_runtime(|runtime, access| runtime.on_table_workload_finish(access, &table))?;
         let durable_commit_count = self
             .last_observed_durable_offset
             .map(|offset| (offset as usize).saturating_add(1))
@@ -983,10 +1000,14 @@ impl TargetPropertyAccess for RelationalDbEngine {
 }
 
 impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
+    type Observation = CommitlogObservation;
     type Outcome = RelationalDbCommitlogOutcome;
     type Error = String;
 
-    async fn execute_interaction(&mut self, interaction: &CommitlogInteraction) -> Result<(), Self::Error> {
+    async fn execute_interaction(
+        &mut self,
+        interaction: &CommitlogInteraction,
+    ) -> Result<Self::Observation, Self::Error> {
         self.execute(interaction).await
     }
 

@@ -8,10 +8,14 @@ use std::ops::Bound;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 
 use crate::{
+    core::StreamingProperties,
     schema::{SchemaPlan, SimRow},
-    workload::table_ops::{
-        ExpectedErrorKind, ExpectedModel, ExpectedResult, TableOperation, TableScenario, TableWorkloadInteraction,
-        TableWorkloadOutcome,
+    workload::{
+        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
+        table_ops::{
+            ExpectedErrorKind, ExpectedModel, ExpectedResult, TableOperation, TableScenario, TableWorkloadInteraction,
+            TableWorkloadOutcome,
+        },
     },
 };
 
@@ -55,6 +59,59 @@ pub(crate) struct DynamicMigrationProbe {
     pub to_version: u32,
     pub existing_rows: Vec<SimRow>,
     pub inserted_row: SimRow,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum TableObservation {
+    Applied,
+    RowInserted {
+        conn: usize,
+        table: usize,
+        row: SimRow,
+        in_tx: bool,
+    },
+    RowDeleted {
+        conn: usize,
+        table: usize,
+        row: SimRow,
+        in_tx: bool,
+    },
+    ExpectedError(ExpectedErrorKind),
+    PointLookup {
+        conn: usize,
+        table: usize,
+        id: u64,
+        actual: Option<SimRow>,
+    },
+    PredicateCount {
+        conn: usize,
+        table: usize,
+        col: u16,
+        value: AlgebraicValue,
+        actual: usize,
+    },
+    RangeScan {
+        conn: usize,
+        table: usize,
+        cols: Vec<u16>,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+        actual: Vec<SimRow>,
+    },
+    FullScan {
+        conn: usize,
+        table: usize,
+        actual: Vec<SimRow>,
+    },
+    CommitOrRollback,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum CommitlogObservation {
+    Table(TableObservation),
+    Applied,
+    Skipped,
+    DynamicMigrationProbe(DynamicMigrationProbe),
 }
 
 #[derive(Clone, Debug)]
@@ -489,6 +546,92 @@ impl PropertyRuntime {
                 .observe(&ctx, PropertyEvent::TableWorkloadFinished(outcome))?;
         }
         Ok(())
+    }
+
+    fn observe_table_observation(
+        &mut self,
+        access: &dyn TargetPropertyAccess,
+        interaction: &TableWorkloadInteraction,
+        observation: &TableObservation,
+    ) -> Result<(), String> {
+        match observation {
+            TableObservation::Applied => {}
+            TableObservation::RowInserted {
+                conn,
+                table,
+                row,
+                in_tx,
+            } => self.on_insert(access, 0, *conn, *table, row, *in_tx)?,
+            TableObservation::RowDeleted {
+                conn,
+                table,
+                row,
+                in_tx,
+            } => self.on_delete(access, 0, *conn, *table, row, *in_tx)?,
+            TableObservation::ExpectedError(kind) => self.on_expected_error(access, *kind, interaction)?,
+            TableObservation::PointLookup {
+                conn,
+                table,
+                id,
+                actual,
+            } => self.on_point_lookup(access, *conn, *table, *id, actual)?,
+            TableObservation::PredicateCount {
+                conn,
+                table,
+                col,
+                value,
+                actual,
+            } => self.on_predicate_count(access, *conn, *table, *col, value, *actual)?,
+            TableObservation::RangeScan {
+                conn,
+                table,
+                cols,
+                lower,
+                upper,
+                actual,
+            } => self.on_range_scan(access, *conn, *table, cols, lower, upper, actual)?,
+            TableObservation::FullScan { conn, table, actual } => self.on_full_scan(access, *conn, *table, actual)?,
+            TableObservation::CommitOrRollback => {}
+        }
+
+        self.on_table_interaction(access, interaction)?;
+
+        if matches!(observation, TableObservation::CommitOrRollback) {
+            self.on_commit_or_rollback(access)?;
+        }
+        Ok(())
+    }
+}
+
+impl<E> StreamingProperties<CommitlogInteraction, CommitlogObservation, E> for PropertyRuntime
+where
+    E: crate::core::TargetEngine<
+            CommitlogInteraction,
+            Observation = CommitlogObservation,
+            Outcome = CommitlogWorkloadOutcome,
+            Error = String,
+        > + TargetPropertyAccess,
+{
+    fn observe(
+        &mut self,
+        engine: &E,
+        interaction: &CommitlogInteraction,
+        observation: &CommitlogObservation,
+    ) -> Result<(), String> {
+        match (interaction, observation) {
+            (CommitlogInteraction::Table(table_interaction), CommitlogObservation::Table(table_observation)) => {
+                self.observe_table_observation(engine, table_interaction, table_observation)
+            }
+            (_, CommitlogObservation::DynamicMigrationProbe(probe)) => self.on_dynamic_migration_probe(engine, probe),
+            (_, CommitlogObservation::Applied | CommitlogObservation::Skipped) => Ok(()),
+            (other, observation) => Err(format!(
+                "observation {observation:?} does not match interaction {other:?}"
+            )),
+        }
+    }
+
+    fn finish(&mut self, engine: &E, outcome: &CommitlogWorkloadOutcome) -> Result<(), String> {
+        self.on_table_workload_finish(engine, &outcome.table)
     }
 }
 

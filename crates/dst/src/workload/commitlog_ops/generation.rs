@@ -54,11 +54,11 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
         if Percent::new(18).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::ChaosSync);
         }
-        if Percent::new(4).sample(&mut self.rng) {
+        if Percent::new(1).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::CloseReopen);
         }
 
-        if Percent::new(9).sample(&mut self.rng) {
+        if Percent::new(1).sample(&mut self.rng) {
             let conn = ConnectionChoice {
                 connection_count: self.num_connections,
             }
