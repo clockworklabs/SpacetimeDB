@@ -421,7 +421,7 @@ impl ToProtocol for TransactionUpdateMessage {
         protocol.assert_matches_format_switch(&update);
         let request_id = database_update
             .request_id
-            .or_else(|| event.as_ref().map(|event| event.request_id))
+            .or_else(|| event.as_ref().and_then(|event| event.request_id))
             .unwrap_or(0);
         match update {
             ws_v1::FormatSwitch::Bsatn(update) => {
