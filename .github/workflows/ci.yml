@@ -376,6 +376,13 @@ jobs:
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -396,6 +403,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
@@ -527,6 +542,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
+
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1186,6 +1209,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
