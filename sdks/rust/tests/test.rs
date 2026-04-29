@@ -684,7 +684,7 @@ mod case_conversion_rust_ts_client {
     use spacetimedb_testing::sdk::Test;
 
     const MODULE: &str = "sdk-test-case-conversion";
-    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../typescript/case-conversion-test-client");
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../crates/bindings-typescript/case-conversion-test-client");
 
     fn make_test(subcommand: &str) -> Test {
         Test::builder()
