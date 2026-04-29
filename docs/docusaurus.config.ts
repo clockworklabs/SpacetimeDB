@@ -197,7 +197,6 @@ const config: Config = {
         },
       ],
     },
-    footer: {},
     prism: {},
     colorMode: {
       disableSwitch: true,
