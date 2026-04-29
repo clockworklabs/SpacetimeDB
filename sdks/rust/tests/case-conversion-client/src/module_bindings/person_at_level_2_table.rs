@@ -79,9 +79,40 @@ impl<'ctx> __sdk::Table for PersonAtLevel2TableHandle<'ctx> {
     }
 }
 
+/// Access to the `person_2_id` unique index on the table `Level2Person`,
+/// which allows point queries on the field of the same name
+/// via the [`PersonAtLevel2Person2IdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.person_at_level_2().person_2_id().find(...)`.
+pub struct PersonAtLevel2Person2IdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<Person2, u32>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
+
+impl<'ctx> PersonAtLevel2TableHandle<'ctx> {
+    /// Get a handle on the `person_2_id` unique index on the table `Level2Person`.
+    pub fn person_2_id(&self) -> PersonAtLevel2Person2IdUnique<'ctx> {
+        PersonAtLevel2Person2IdUnique {
+            imp: self.imp.get_unique_constraint::<u32>("person_2_id"),
+            phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'ctx> PersonAtLevel2Person2IdUnique<'ctx> {
+    /// Find the subscribed row whose `person_2_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u32) -> Option<Person2> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<Person2>("Level2Person");
+    _table.add_unique_constraint::<u32>("person_2_id", |row| &row.person_2_id);
 }
 
 #[doc(hidden)]
