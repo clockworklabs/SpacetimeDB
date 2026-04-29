@@ -2,7 +2,7 @@ namespace SpacetimeDB.Internal;
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT && NET10_0_OR_GREATER
 using WasmImportLinkageAttribute = System.Runtime.InteropServices.WasmImportLinkageAttribute;
 #else
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]

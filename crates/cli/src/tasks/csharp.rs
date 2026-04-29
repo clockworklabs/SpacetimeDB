@@ -4,8 +4,18 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn parse_major_version(version: &str) -> Option<u8> {
+pub(crate) fn parse_major_version(version: &str) -> Option<u8> {
     version.split('.').next()?.parse::<u8>().ok()
+}
+
+/// Describes which C# build path to use.
+enum CsharpBuildPath {
+    /// .NET 8 JIT via the `wasi-experimental` workload (Mono WASM).
+    Net8Jit,
+    /// .NET 8 NativeAOT-LLVM (opt-in via `--native-aot`).
+    Net8Aot,
+    /// .NET 10 NativeAOT-LLVM (auto-detected, only available path for .NET 10).
+    Net10Aot,
 }
 
 pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
@@ -17,17 +27,56 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         };
     }
 
-    let experimental_wasm_aot = std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1");
+    let native_aot_flag = std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1");
 
-    if experimental_wasm_aot {
-        let version = dotnet!("--version").read().unwrap_or_default();
-        if parse_major_version(&version) != Some(10) {
-            anyhow::bail!(concat!(
-                ".NET SDK 10.0 is required for NativeAOT-LLVM C# builds, but found {version}.\n",
-                "If you have multiple versions of .NET SDK installed, configure your project using https://learn.microsoft.com/en-us/dotnet/core/tools/global-json."
-            ));
+    // Detect the .NET SDK version available at the project path (respects global.json).
+    let dotnet_version_str = match dotnet!("--version").read() {
+        Ok(v) => v,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            anyhow::bail!("dotnet not found in PATH. Please install .NET SDK 8.0 or 10.0.")
         }
-    } else {
+        Err(error) => anyhow::bail!("{error}"),
+    };
+    let dotnet_major = parse_major_version(&dotnet_version_str);
+
+    // Determine the build path based on SDK version and --native-aot flag.
+    let build_path = match (dotnet_major, native_aot_flag) {
+        // .NET 10: always use NativeAOT-LLVM, no flag needed.
+        (Some(10), _) => {
+            if native_aot_flag {
+                println!("Note: --native-aot is not needed with .NET 10 (NativeAOT-LLVM is used automatically).");
+            }
+            CsharpBuildPath::Net10Aot
+        }
+        // .NET 8 with --native-aot: use NativeAOT-LLVM with .NET 8 ILCompiler packages.
+        (Some(8), true) => CsharpBuildPath::Net8Aot,
+        // .NET 8 without flag: use the existing wasi-experimental JIT path.
+        (Some(8), false) => CsharpBuildPath::Net8Jit,
+        // Unsupported version.
+        _ => {
+            anyhow::bail!(
+                "Unsupported .NET SDK version: {dotnet_version_str}. SpacetimeDB requires .NET SDK 8.0 or 10.0.\n\
+                 If you have multiple versions installed, configure your project using \
+                 https://learn.microsoft.com/en-us/dotnet/core/tools/global-json."
+            );
+        }
+    };
+
+    // For NativeAOT paths, ensure EXPERIMENTAL_WASM_AOT is set in the environment so MSBuild
+    // conditionals in .csproj/.props/.targets files activate correctly.
+    match &build_path {
+        CsharpBuildPath::Net8Aot | CsharpBuildPath::Net10Aot => {
+            // SAFETY: We are single-threaded at this point and no other code is reading
+            // this environment variable concurrently.
+            unsafe {
+                std::env::set_var("EXPERIMENTAL_WASM_AOT", "1");
+            }
+        }
+        CsharpBuildPath::Net8Jit => {}
+    }
+
+    // For the JIT path, ensure the wasi-experimental workload is installed.
+    if matches!(build_path, CsharpBuildPath::Net8Jit) {
         // Check if the `wasi-experimental` workload is installed. Unfortunately, we
         // have to do this by inspecting the human-readable output. There is a
         // hidden `--machine-readable` flag but it also mixes in human-readable
@@ -35,18 +84,6 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         match dotnet!("workload", "list").read() {
             Ok(workloads) if workloads.contains("wasi-experimental") => {}
             Ok(_) => {
-                // If wasi-experimental is not found, first check if we're running
-                // on .NET SDK 8.0. We can't even install that workload on older
-                // versions, and we don't support .NET 9.0 yet, so this helps to
-                // provide a nicer message than "Workload ID wasi-experimental is not recognized.".
-                let version = dotnet!("--version").read().unwrap_or_default();
-                if parse_major_version(&version) != Some(8) {
-                    anyhow::bail!(concat!(
-                        ".NET SDK 8.0 is required, but found {version}.\n",
-                        "If you have multiple versions of .NET SDK installed, configure your project using https://learn.microsoft.com/en-us/dotnet/core/tools/global-json."
-                    ));
-                }
-
                 // Finally, try to install the workload ourselves. On some systems
                 // this might require elevated privileges, so print a nice error
                 // message if it fails.
@@ -63,9 +100,6 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
                     "You might need to install it manually by running `dotnet workload install wasi-experimental` with privileged rights."
                 ))?;
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                anyhow::bail!("dotnet not found in PATH. Please install .NET SDK 8.0.")
-            }
             Err(error) => anyhow::bail!("{error}"),
         };
     }
@@ -80,26 +114,21 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         )
     })?;
 
-    if experimental_wasm_aot {
-        dotnet!(
-            "publish",
-            "-c",
-            config_name,
-            "-v",
-            "quiet",
-            "/p:IlcLlvmTarget=wasm32-unknown-wasip1",
-            "/p:WasmEnableThreads=false"
-        )
-        .run()?;
-    } else {
-        // run dotnet publish using cmd macro
-        dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
-    }
+    // JIT and AOT builds use the same `dotnet publish` command.
+    // Build-specific configuration (TFM, AOT settings, ILCompiler packages)
+    // is handled by build_path detection and MSBuild props/targets.
+    dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
 
-    // check if file exists
-    let subdir = if experimental_wasm_aot { "publish" } else { "AppBundle" };
-    let target_framework = if experimental_wasm_aot { "net10.0" } else { "net8.0" };
-    // TODO: This code looks for build outputs in both `bin` and `bin~` as output directories. @bfops feels like we shouldn't have to look for `bin~`, since the `~` suffix is just intended to cause Unity to ignore directories, and that shouldn't be relevant here. We do think we've seen `bin~` appear though, and it's not harmful to do the extra checks, so we're merging for now due to imminent code freeze. At some point, it would be good to figure out if we do actually see `bin~` in module directories, and where that's coming from (which could suggest a bug).
+    // Determine output path based on build path.
+    // Both JIT and AOT builds produce StdbModule.wasm, but in different subdirectories:
+    // - JIT (wasi-experimental): AppBundle/StdbModule.wasm
+    // - AOT (NativeAOT-LLVM): publish/StdbModule.wasm
+    let (target_framework, subdir) = match &build_path {
+        CsharpBuildPath::Net10Aot => ("net10.0", "publish"),
+        CsharpBuildPath::Net8Aot => ("net8.0", "publish"),
+        CsharpBuildPath::Net8Jit => ("net8.0", "AppBundle"),
+    };
+
     // check for the old .NET 7 path for projects that haven't migrated yet
     let bad_output_paths = [
         project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm")),

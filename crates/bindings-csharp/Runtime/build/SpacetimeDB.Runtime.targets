@@ -4,6 +4,12 @@
       Project="$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets"
       Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1' and '$(ILCompilerTargetsPath)' == '' and '$(PkgMicrosoft_DotNet_ILCompiler_LLVM)' != '' and Exists('$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets')" />
 
+  <!-- Override IlcLlvmTarget AFTER the ILCompiler.LLVM.targets import (which defaults to wasip2).
+       SpacetimeDB's host only supports WASI Preview 1 (wasip1). -->
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <IlcLlvmTarget>wasm32-unknown-wasip1</IlcLlvmTarget>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
@@ -46,6 +52,9 @@
     <WasmImport Include="spacetime_10.4!datastore_index_scan_point_bsatn" />
     <WasmImport Include="spacetime_10.4!datastore_delete_by_index_scan_point_bsatn" />
 
+    <!-- spacetime_10.5 imports -->
+    <WasmImport Include="spacetime_10.5!datastore_clear" />
+
     <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
   </ItemGroup>
 
@@ -54,11 +63,38 @@
     <_WasmNativeFileForLinking Include="@(NativeFileReference)" />
   </ItemGroup>
 
+  <!-- Strip .wit files from the WASI runtime overlay to prevent NativeAOT-LLVM from
+       generating WebAssembly Component Model exports (wasip2). SpacetimeDB's host only
+       supports WASI Preview 1 (wasip1), so component-model exports cause failures. -->
+  <Target Name="UseWasiRuntimeOverlayWithoutComponentWit"
+          Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'"
+          AfterTargets="SetupProperties"
+          BeforeTargets="LinkNativeLlvm">
+    <PropertyGroup>
+      <_OriginalIlcSdkPath>$(IlcSdkPath)</_OriginalIlcSdkPath>
+      <_WasiRuntimeOverlayDir>$(IntermediateOutputPath)native-hidden-no-wit\</_WasiRuntimeOverlayDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_WasiRuntimeOverlaySource Include="$(IlcFrameworkNativePath)**\*" Exclude="$(IlcFrameworkNativePath)**\*.wit" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(_WasiRuntimeOverlayDir)" />
+    <MakeDir Directories="$(_WasiRuntimeOverlayDir)" />
+    <Copy SourceFiles="@(_WasiRuntimeOverlaySource)"
+          DestinationFiles="@(_WasiRuntimeOverlaySource->'$(_WasiRuntimeOverlayDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+
+    <PropertyGroup>
+      <IlcFrameworkNativePath>$(_WasiRuntimeOverlayDir)</IlcFrameworkNativePath>
+      <IlcSdkPath>$(_OriginalIlcSdkPath)</IlcSdkPath>
+    </PropertyGroup>
+  </Target>
+
   <!-- Auto-download WASI SDK on the first run. -->
   <!-- Adapted from https://github.com/dotnet/dotnet-wasi-sdk/blob/2dbb00c779180873d3ed985e59e431f56404d8da/src/Wasi.Sdk/build/Wasi.Sdk.targets#L245-L262 -->
   <!-- Executes before the errors in https://github.com/dotnet/runtime/blob/57fd56a99d4c97ac2f95fe84640f2a3f653f4dd7/src/mono/wasi/build/WasiApp.Native.targets#L41-L50. -->
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
-  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks">
+  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks;_InitializeWasiSdk">
     <PropertyGroup>
       <WasiSdkVersion>29</WasiSdkVersion>
 

@@ -111,7 +111,7 @@ Run `spacetime help publish` for more detailed information.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
-* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules targeting .NET 8 (experimental). Not needed for .NET 10, which uses NativeAOT-LLVM automatically.
 
 
 
@@ -415,7 +415,8 @@ Initializes a new spacetime project.
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
-* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation targeting .NET 8 (experimental). Not needed for .NET 10, which uses NativeAOT-LLVM automatically.
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g., `8` or `10`). When omitted, the CLI auto-detects from the installed SDK or prompts interactively if multiple versions are available.
 
 
 

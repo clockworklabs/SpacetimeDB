@@ -134,6 +134,8 @@ pub struct InitOptions {
     pub skip_next_steps: bool,
     /// When true, configure C# projects for NativeAOT-LLVM compilation.
     pub native_aot: bool,
+    /// Explicit .NET major version override (e.g. 8 or 10). When set, skips auto-detection.
+    pub dotnet_version: Option<u8>,
 }
 
 impl InitOptions {
@@ -150,6 +152,9 @@ impl InitOptions {
             non_interactive: args.get_flag("non-interactive"),
             skip_next_steps: false,
             native_aot: args.get_flag("native-aot"),
+            dotnet_version: args
+                .get_one::<String>("dotnet-version")
+                .and_then(|s| s.parse::<u8>().ok()),
         }
     }
 }
@@ -198,6 +203,12 @@ pub fn cli() -> clap::Command {
                 .long("native-aot")
                 .action(clap::ArgAction::SetTrue)
                 .help("Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)"),
+        )
+        .arg(
+            Arg::new("dotnet-version")
+                .long("dotnet-version")
+                .value_name("VERSION")
+                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted."),
         )
 }
 
@@ -530,21 +541,42 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
 
     template_config.use_local = use_local;
 
+    // For C# projects, resolve the target .NET version before scaffolding.
+    // This may prompt the user interactively if multiple SDKs are installed.
+    let dotnet_major = if template_config.server_lang == Some(ServerLanguage::Csharp) {
+        Some(resolve_dotnet_major(options, is_interactive)?)
+    } else {
+        None
+    };
+
     ensure_empty_directory(
         &template_config.project_name,
         &template_config.project_path,
         is_server_only,
     )?;
-    init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
+    init_from_template(
+        &template_config,
+        &template_config.project_path,
+        is_server_only,
+        dotnet_major,
+    )
+    .await?;
 
-    // Add NativeAOT-LLVM package references to C# projects if --native-aot was specified
-    if options.native_aot && template_config.server_lang == Some(ServerLanguage::Csharp) {
+    // Add NativeAOT-LLVM project configuration for C# projects when:
+    //   - --native-aot was explicitly specified, OR
+    //   - .NET 10 was selected/detected as the target
+    let needs_native_aot = if template_config.server_lang == Some(ServerLanguage::Csharp) {
+        options.native_aot || dotnet_major == Some(10)
+    } else {
+        false
+    };
+    if needs_native_aot {
         let server_dir = template_config.project_path.join("spacetimedb");
-        add_native_aot_packages_to_csproj(&server_dir)?;
+        add_native_aot_packages_to_csproj(&server_dir, dotnet_major)?;
     }
 
     let default_server = config.default_server_name().unwrap_or("maincloud");
-    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, options.native_aot, default_server)? {
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, needs_native_aot, default_server)? {
         println!("{} Created {}", "✓".green(), path.display());
     }
 
@@ -1331,13 +1363,14 @@ pub async fn init_from_template(
     config: &TemplateConfig,
     project_path: &Path,
     is_server_only: bool,
+    dotnet_major: Option<u8>,
 ) -> anyhow::Result<()> {
     println!("{}", "Initializing project from template...".cyan());
 
     match config.template_type {
-        TemplateType::Builtin => init_builtin(config, project_path, is_server_only)?,
+        TemplateType::Builtin => init_builtin(config, project_path, is_server_only, dotnet_major)?,
         TemplateType::GitHub => init_github_template(config, project_path, is_server_only)?,
-        TemplateType::Empty => init_empty(config, project_path)?,
+        TemplateType::Empty => init_empty(config, project_path, dotnet_major)?,
     }
 
     // Install AI assistant rules for multiple editors/tools
@@ -1348,7 +1381,12 @@ pub async fn init_from_template(
     Ok(())
 }
 
-fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bool) -> anyhow::Result<()> {
+fn init_builtin(
+    config: &TemplateConfig,
+    project_path: &Path,
+    is_server_only: bool,
+    dotnet_major: Option<u8>,
+) -> anyhow::Result<()> {
     let template_def = config
         .template_def
         .as_ref()
@@ -1417,6 +1455,16 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         None => {}
     }
 
+    // For C# projects targeting .NET 10, override the template global.json
+    // (the embedded template ships with 8.0.100 which is wrong for .NET 10).
+    if config.server_lang == Some(ServerLanguage::Csharp) && dotnet_major == Some(10) {
+        let global_json_path = server_dir.join("global.json");
+        let net10_global_json =
+            "{\n  \"sdk\": {\n    \"version\": \"10.0.100\",\n    \"rollForward\": \"latestMinor\"\n  }\n}\n";
+        std::fs::write(&global_json_path, net10_global_json)?;
+        println!("Updating global.json to use .NET 10 (NativeAOT-LLVM).");
+    }
+
     Ok(())
 }
 
@@ -1454,7 +1502,7 @@ fn init_github_template(config: &TemplateConfig, project_path: &Path, is_server_
     Ok(())
 }
 
-fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+fn init_empty(config: &TemplateConfig, project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
     match config.server_lang {
         Some(ServerLanguage::Rust) => {
             println!("Setting up Rust server...");
@@ -1464,7 +1512,7 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
         Some(ServerLanguage::Csharp) => {
             println!("Setting up C# server...");
             let server_dir = project_path.join("spacetimedb");
-            init_empty_csharp_server(&server_dir, &config.project_name)?;
+            init_empty_csharp_server(&server_dir, &config.project_name, dotnet_major)?;
         }
         Some(ServerLanguage::TypeScript) => {
             println!("Setting up TypeScript server...");
@@ -1488,8 +1536,8 @@ fn init_empty_rust_server(server_dir: &Path, project_name: &str) -> anyhow::Resu
     Ok(())
 }
 
-fn init_empty_csharp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
-    init_csharp_project(server_dir)
+fn init_empty_csharp_server(server_dir: &Path, _project_name: &str, dotnet_major: Option<u8>) -> anyhow::Result<()> {
+    init_csharp_project(server_dir, dotnet_major)
 }
 
 fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
@@ -1600,6 +1648,83 @@ fn check_for_cargo() -> bool {
     false
 }
 
+/// Returns the set of major .NET SDK versions installed (e.g. {8, 10}).
+fn detect_installed_dotnet_majors() -> Vec<u8> {
+    let output = duct::cmd!("dotnet", "--list-sdks").read().unwrap_or_default();
+    let mut majors: Vec<u8> = output
+        .lines()
+        .filter_map(|line| {
+            // Each line looks like: "8.0.100 [C:\Program Files\dotnet\sdk]"
+            let version_str = line.split_whitespace().next()?;
+            crate::tasks::csharp::parse_major_version(version_str)
+        })
+        .collect();
+    majors.sort();
+    majors.dedup();
+    majors
+}
+
+/// Determine the target .NET major version for a C# project.
+///
+/// Resolution order:
+///   1. Explicit `--dotnet-version` flag
+///   2. Interactive prompt (if multiple supported versions are installed)
+///   3. Auto-detect from `dotnet --version` (single supported version or non-interactive)
+fn resolve_dotnet_major(options: &InitOptions, is_interactive: bool) -> anyhow::Result<u8> {
+    // 1. Explicit flag takes priority.
+    if let Some(v) = options.dotnet_version {
+        match v {
+            8 | 10 => return Ok(v),
+            _ => anyhow::bail!("Unsupported --dotnet-version {v}. Supported values: 8, 10."),
+        }
+    }
+
+    // --native-aot is for .NET 8 AOT builds (NativeAOT-LLVM with net8.0 TFM).
+    // .NET 10 always uses NativeAOT-LLVM, no flag needed.
+    if options.native_aot {
+        return Ok(8);
+    }
+
+    let installed = detect_installed_dotnet_majors();
+    let supported: Vec<u8> = installed.iter().copied().filter(|&v| v == 8 || v == 10).collect();
+
+    match supported.len() {
+        0 => {
+            // Fall back to whatever `dotnet --version` reports.
+            let ver = duct::cmd!("dotnet", "--version").read().unwrap_or_default();
+            crate::tasks::csharp::parse_major_version(&ver).ok_or_else(|| {
+                anyhow::anyhow!("Could not detect .NET SDK version. Please install .NET SDK 8.0 or 10.0.")
+            })
+        }
+        1 => Ok(supported[0]),
+        _ => {
+            // Multiple supported versions — prompt if interactive, else use highest.
+            if is_interactive {
+                let theme = ColorfulTheme::default();
+                let choices: Vec<String> = supported
+                    .iter()
+                    .map(|v| match v {
+                        8 => ".NET 8 (JIT — stable, uses wasi-experimental workload)".to_string(),
+                        10 => ".NET 10 (NativeAOT-LLVM — experimental, better performance)".to_string(),
+                        other => format!(".NET {other}"),
+                    })
+                    .collect();
+
+                let selection = Select::with_theme(&theme)
+                    .with_prompt("Multiple .NET SDKs found. Which version should this C# module target?")
+                    .items(&choices)
+                    .default(choices.len() - 1) // Default to highest (typically .NET 10)
+                    .interact()?;
+
+                Ok(supported[selection])
+            } else {
+                // Non-interactive: use the highest supported version.
+                Ok(*supported.last().unwrap())
+            }
+        }
+    }
+}
+
 fn check_for_dotnet() -> bool {
     use std::fmt::Write;
 
@@ -1694,6 +1819,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
         );
     }
 
+    // Validate that --dotnet-version is only used with C# projects
+    if let Some(v) = options.dotnet_version {
+        if let Some(lang) = server_lang
+            && lang.to_lowercase() != "csharp"
+            && lang.to_lowercase() != "c#"
+        {
+            anyhow::bail!("--dotnet-version is only supported for C# projects (--lang csharp)");
+        }
+        if v != 8 && v != 10 {
+            anyhow::bail!("Unsupported --dotnet-version {v}. Supported values: 8, 10.");
+        }
+    }
+
     if !is_interactive {
         // In non-interactive mode, validate all required args are present
         if project_name_arg.is_none() {
@@ -1731,7 +1869,20 @@ pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
+pub fn init_csharp_project(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
+    check_for_dotnet();
+    check_for_git();
+
+    let global_json = match dotnet_major {
+        Some(10) => {
+            println!("{} Scaffolding for .NET 10 (NativeAOT-LLVM).", "ℹ".blue(),);
+            "{\n  \"sdk\": {\n    \"version\": \"10.0.100\",\n    \"rollForward\": \"latestMinor\"\n  }\n}\n"
+        }
+        _ => {
+            include_str!("../../../../templates/basic-cs/spacetimedb/global.json")
+        }
+    };
+
     let export_files = vec![
         (
             include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
@@ -1741,14 +1892,8 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
             include_str!("../../../../templates/basic-cs/spacetimedb/Lib.cs"),
             "Lib.cs",
         ),
-        (
-            include_str!("../../../../templates/basic-cs/spacetimedb/global.json"),
-            "global.json",
-        ),
+        (global_json, "global.json"),
     ];
-
-    check_for_dotnet();
-    check_for_git();
 
     for data_file in export_files {
         let path = project_path.join(data_file.1);
@@ -1760,8 +1905,18 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
 }
 
 /// Adds NativeAOT-LLVM project configuration to an existing C# .csproj file and creates NuGet.Config.
-/// This is called when `--native-aot` is specified during `spacetime init`.
-fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> {
+///
+/// The configuration differs depending on the target .NET version:
+///
+/// **.NET 8 AOT** (`--native-aot`): Keeps `net8.0` TFM and adds explicit ILCompiler.LLVM 8.0.0-*
+/// package references, gated on `EXPERIMENTAL_WASM_AOT=1`.
+///
+/// **.NET 10 AOT**: Replaces the TFM with `net10.0` directly (no conditional needed since the
+/// project is definitively targeting .NET 10). ILCompiler.LLVM refs are provided transitively
+/// by the SpacetimeDB.Runtime NuGet package.
+///
+/// Both paths need a NuGet.Config with the dotnet-experimental feed for ILCompiler.LLVM resolution.
+fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
     let csproj_path = project_path.join("StdbModule.csproj");
     if !csproj_path.exists() {
         anyhow::bail!("Could not find StdbModule.csproj at {}", csproj_path.display());
@@ -1769,55 +1924,27 @@ fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> 
 
     let content = std::fs::read_to_string(&csproj_path)?;
 
-    // The NativeAOT-LLVM configuration to add
-    let native_aot_config = r#"
-  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-    <TargetFramework>net10.0</TargetFramework>
-    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-    <PublishTrimmed>true</PublishTrimmed>
-    <SelfContained>true</SelfContained>
-    <WasmEnableThreads>false</WasmEnableThreads>
-  </PropertyGroup>
-
-  <Target Name="UseWasiRuntimeOverlayWithoutComponentWit"
-          Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'"
-          AfterTargets="SetupProperties"
-          BeforeTargets="LinkNativeLlvm">
-    <PropertyGroup>
-      <_OriginalIlcSdkPath>$(IlcSdkPath)</_OriginalIlcSdkPath>
-      <_WasiRuntimeOverlayDir>$(IntermediateOutputPath)native-hidden-no-wit\</_WasiRuntimeOverlayDir>
-    </PropertyGroup>
-
-    <ItemGroup>
-      <_WasiRuntimeOverlaySource Include="$(IlcFrameworkNativePath)**\*" Exclude="$(IlcFrameworkNativePath)**\*.wit" />
-    </ItemGroup>
-
-    <RemoveDir Directories="$(_WasiRuntimeOverlayDir)" />
-    <MakeDir Directories="$(_WasiRuntimeOverlayDir)" />
-    <Copy SourceFiles="@(_WasiRuntimeOverlaySource)"
-          DestinationFiles="@(_WasiRuntimeOverlaySource->'$(_WasiRuntimeOverlayDir)%(RecursiveDir)%(Filename)%(Extension)')" />
-
-    <PropertyGroup>
-      <IlcFrameworkNativePath>$(_WasiRuntimeOverlayDir)</IlcFrameworkNativePath>
-      <IlcSdkPath>$(_OriginalIlcSdkPath)</IlcSdkPath>
-    </PropertyGroup>
-  </Target>
-
+    let new_content = if dotnet_major == Some(8) {
+        // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
+        let native_aot_config = r#"
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
-    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
 "#;
-
-    // Insert the NativeAOT config before the closing </Project> tag
-    let new_content = if let Some(pos) = content.rfind("</Project>") {
-        let (before, after) = content.split_at(pos);
-        format!("{}{}{}", before.trim_end(), native_aot_config, after)
+        if let Some(pos) = content.rfind("</Project>") {
+            let (before, after) = content.split_at(pos);
+            format!("{}{}{}", before.trim_end(), native_aot_config, after)
+        } else {
+            anyhow::bail!("Invalid .csproj file: missing </Project> tag");
+        }
     } else {
-        anyhow::bail!("Invalid .csproj file: missing </Project> tag");
+        // .NET 10 AOT: directly set TFM to net10.0 (no conditional needed).
+        // ILCompiler.LLVM comes transitively via the SpacetimeDB.Runtime NuGet package.
+        content.replace(
+            "<TargetFramework>net8.0</TargetFramework>",
+            "<TargetFramework>net10.0</TargetFramework>",
+        )
     };
 
     std::fs::write(&csproj_path, new_content)?;
@@ -1827,7 +1954,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> 
         csproj_path.display()
     );
 
-    // Create NuGet.Config with the dotnet-experimental feed required for NativeAOT-LLVM packages
+    // Create NuGet.Config with the dotnet-experimental feed required for ILCompiler.LLVM packages
     let nuget_config_path = project_path.join("NuGet.Config");
     let nuget_config_content = r#"<?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -1918,7 +2045,7 @@ pub async fn exec_init_rust(args: &ArgMatches) -> anyhow::Result<()> {
 
 pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-    init_csharp_project(project_path)?;
+    init_csharp_project(project_path, None)?;
 
     println!(
         "{}",
