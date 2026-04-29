@@ -13,7 +13,74 @@
 
     SpacetimeDBClient.instance.Connect(AuthToken.Token, "localhost:3000", "basicchat", false);
  */
-#if !UNITY_5_3_OR_NEWER
+#if UNITY_5_3_OR_NEWER
+using UnityEngine;
+
+namespace SpacetimeDB
+{
+    // This is an optional helper class to store your auth token in PlayerPrefs
+    // Override GetTokenKey() if you want to use a player pref key specific to your game
+    public static class AuthToken
+    {
+        public static string Token => PlayerPrefs.GetString(GetTokenKey());
+
+        public static void SaveToken(string token)
+        {
+            PlayerPrefs.SetString(GetTokenKey(), token);
+        }
+
+        private static string GetTokenKey()
+        {
+            var key = "spacetimedb.identity_token";
+#if UNITY_EDITOR
+            // Different editors need different keys
+            key += $" - {Application.dataPath}";
+#endif
+            return key;
+        }
+    }
+}
+#elif GODOT
+using Godot;
+
+namespace SpacetimeDB
+{
+    // This is an optional helper class to store your auth token in PlayerPrefs
+    // You can use keySuffix to save and retrieve different tokens
+    public static class AuthToken
+    {
+        private const string Path = "user://spacetimedb-token.cfg";
+        private const string Section = "stdb";
+        private static string Key => "identity_token";
+
+        private static ConfigFile _config;
+        private static ConfigFile Config => _config ??= new ConfigFile();
+
+        public static string GetToken(string keySuffix = null)
+        {
+            var key = GetKey(keySuffix);
+            if(!Config.HasSectionKey(Section, key))
+            {
+                Config.Load(Path);
+            }
+            return Config.GetValue(Section, key, default(string)).As<string>();
+        }
+	    public static bool TryGetToken(out string result) => TryGetToken(null, out result);
+	    public static bool TryGetToken(string keySuffix, out string result) {
+		    result = GetToken(keySuffix);
+		    return !string.IsNullOrWhiteSpace(result);
+	    }
+
+        public static void SaveToken(string token, string keySuffix = null)
+        {
+            Config.SetValue(Section, GetKey(keySuffix), token);
+            Config.Save(Path);
+        }
+
+        private static string GetKey(string suffix) => string.IsNullOrWhiteSpace(suffix) ? Key : $"{Key}_{suffix}";
+    }
+}
+#else
 using System;
 using System.IO;
 using System.Linq;
@@ -95,33 +162,6 @@ namespace SpacetimeDB
                 lines.Add(newAuthLine);
             }
             File.WriteAllLines(settingsPath, lines);
-        }
-    }
-}
-#else
-using UnityEngine;
-
-namespace SpacetimeDB
-{
-    // This is an optional helper class to store your auth token in PlayerPrefs
-    // Override GetTokenKey() if you want to use a player pref key specific to your game
-    public static class AuthToken
-    {
-        public static string Token => PlayerPrefs.GetString(GetTokenKey());
-
-        public static void SaveToken(string token)
-        {
-            PlayerPrefs.SetString(GetTokenKey(), token);
-        }
-
-        private static string GetTokenKey()
-        {
-            var key = "spacetimedb.identity_token";
-#if UNITY_EDITOR
-            // Different editors need different keys
-            key += $" - {Application.dataPath}";
-#endif
-            return key;
         }
     }
 }
