@@ -66,8 +66,11 @@ fn test_build_csharp_module() {
     // Create nuget.config with local package sources
     // Use <clear /> to avoid inheriting sources from machine/user config
     let packed_projects = ["BSATN.Runtime", "Runtime"];
-    let mut sources =
-        String::from("    <clear />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n");
+    let mut sources = String::from(
+        "    <clear />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n",
+    );
+    // Add experimental NuGet feed for Microsoft.DotNet.ILCompiler.LLVM packages
+    sources.push_str("    <add key=\"dotnet-experimental\" value=\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json\" />\n");
     let mut mappings = String::new();
 
     for project in &packed_projects {
@@ -83,6 +86,8 @@ fn test_build_csharp_module() {
             package_name, package_name
         ));
     }
+    // Add mappings for experimental packages
+    mappings.push_str("    <packageSource key=\"dotnet-experimental\">\n      <package pattern=\"Microsoft.DotNet.ILCompiler.LLVM\" />\n      <package pattern=\"runtime.*\" />\n    </packageSource>\n");
     // Add fallback for other packages
     mappings.push_str("    <packageSource key=\"nuget.org\">\n      <package pattern=\"*\" />\n    </packageSource>\n");
 
