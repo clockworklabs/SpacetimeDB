@@ -29,7 +29,7 @@ jobs:
       matrix:
         include:
           - name: Linux
-            runner: spacetimedb-new-runner-2
+            runner: spacetimedb-new-runner-2-testing
           - name: Windows
             runner: spacetimedb-windows-runner
     runs-on: ${{ matrix.runner }}
