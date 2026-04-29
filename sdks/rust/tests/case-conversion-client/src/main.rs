@@ -131,7 +131,7 @@ fn exec_insert_player() {
             .subscribe();
     });
 
-    test_counter.wait_for_all();
+    futures::executor::block_on(test_counter.wait_for_all());
 }
 
 /// Test: Insert a person via AddPerson2 reducer using query builder subscription.
@@ -183,7 +183,7 @@ fn exec_insert_person() {
             .subscribe();
     });
 
-    test_counter.wait_for_all();
+    futures::executor::block_on(test_counter.wait_for_all());
 }
 
 /// Test: Ban a player via BanPlayer1 reducer (which has explicit name `banPlayer1`).
@@ -228,7 +228,7 @@ fn exec_ban_player() {
             .subscribe();
     });
 
-    test_counter.wait_for_all();
+    futures::executor::block_on(test_counter.wait_for_all());
 }
 
 /// Test: Query builder with a filter on a digit-boundary column.
@@ -275,7 +275,7 @@ fn exec_query_builder_filter() {
             .subscribe();
     });
 
-    test_counter.wait_for_all();
+    futures::executor::block_on(test_counter.wait_for_all());
 }
 
 /// Test: Query builder with a JOIN between player_1 and person_2.
@@ -353,7 +353,7 @@ fn exec_query_builder_join() {
             .subscribe();
     });
 
-    test_counter.wait_for_all();
+    futures::executor::block_on(test_counter.wait_for_all());
 }
 
 /// Query view named Level2Person
@@ -400,5 +400,5 @@ fn exec_view() {
             .subscribe();
     });
 
-    test_counter.wait_for_all();
+    futures::executor::block_on(test_counter.wait_for_all());
 }

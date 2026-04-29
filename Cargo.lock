@@ -791,10 +791,11 @@ dependencies = [
 
 [[package]]
 name = "case-conversion-client"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
+ "futures",
  "spacetimedb-sdk",
  "test-counter",
 ]
@@ -7131,7 +7132,7 @@ name = "sdk-test-case-conversion"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 2.0.0",
+ "spacetimedb 2.1.0",
 ]
 
 [[package]]

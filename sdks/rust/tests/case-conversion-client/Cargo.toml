@@ -9,6 +9,7 @@ spacetimedb-sdk = { path = "../.." }
 test-counter = { path = "../test-counter" }
 anyhow.workspace = true
 env_logger.workspace = true
+futures.workspace = true
 
 [lints]
 workspace = true
