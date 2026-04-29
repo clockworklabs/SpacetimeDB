@@ -108,7 +108,7 @@ Run `spacetime help publish` for more detailed information.
    If an organization is given, the organization member's permissions apply to the new database.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
-* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login -- joined by '|', e.g. --yes='migrate|break-clients'. The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name).
+* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login, delete-data. Multiple values can be comma-separated (--yes=migrate,break-clients) or given via repeated flags (--yes=migrate --yes=break-clients). The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name).
 
   Possible values:
   - `all`:
@@ -121,6 +121,8 @@ Run `spacetime help publish` for more detailed information.
     Skip the "this will BREAK existing clients" confirmation
   - `skip-login`:
     Don't prompt the user to log in; act non-interactively for auth
+  - `delete-data`:
+    Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation
 
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)

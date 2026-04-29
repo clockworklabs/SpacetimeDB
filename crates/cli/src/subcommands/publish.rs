@@ -1,6 +1,6 @@
 use anyhow::{ensure, Context};
 use clap::Arg;
-use clap::ArgAction::{Set, SetTrue};
+use clap::ArgAction::{self, Set, SetTrue};
 use clap::{value_parser, ArgMatches, ValueEnum};
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
@@ -33,38 +33,39 @@ pub enum YesValue {
     BreakClients,
     /// Don't prompt the user to log in; act non-interactively for auth.
     SkipLogin,
+    /// Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation.
+    DeleteData,
 }
 
 /// Decoded `--yes` selections, used at every prompt site.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct YesFlags {
-    pub remote: bool,
-    pub migrate: bool,
+    pub publish_to_remote: bool,
+    pub migrate_major_version: bool,
     pub break_clients: bool,
     pub skip_login: bool,
-    /// True iff `--yes` was passed with no value or `--yes=all`. Used for destructive prompts
-    /// not represented by an explicit option (e.g. `confirm_and_clear`) to preserve back-compat.
-    pub all: bool,
+    pub delete_data: bool,
 }
 
 impl YesFlags {
     pub fn all() -> Self {
         Self {
-            remote: true,
-            migrate: true,
+            publish_to_remote: true,
+            migrate_major_version: true,
             break_clients: true,
             skip_login: true,
-            all: true,
+            delete_data: true,
         }
     }
 
     fn merge(&mut self, value: YesValue) {
         match value {
             YesValue::All => *self = YesFlags::all(),
-            YesValue::Remote => self.remote = true,
-            YesValue::Migrate => self.migrate = true,
+            YesValue::Remote => self.publish_to_remote = true,
+            YesValue::Migrate => self.migrate_major_version = true,
             YesValue::BreakClients => self.break_clients = true,
             YesValue::SkipLogin => self.skip_login = true,
+            YesValue::DeleteData => self.delete_data = true,
         }
     }
 }
@@ -272,17 +273,19 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
             Arg::new("yes")
                 .long("yes")
                 .short('y')
-                .num_args(0..=4)
+                .action(ArgAction::Append)
+                .num_args(0..=1)
                 .require_equals(true)
-                .value_delimiter('|')
+                .value_delimiter(',')
                 .default_missing_value("all")
                 .value_parser(value_parser!(YesValue))
                 .help(
                     "Skip confirmation prompts. With no value, defaults to 'all' \
                      (equivalent to --yes=all). To skip specific prompts, pass one or \
-                     more of: all, remote, migrate, break-clients, skip-login -- joined \
-                     by '|', e.g. --yes='migrate|break-clients'. The value must be \
-                     attached with '=' (so `--yes my-db` treats `my-db` as the database name)."
+                     more of: all, remote, migrate, break-clients, skip-login, delete-data. \
+                     Multiple values can be comma-separated (--yes=migrate,break-clients) or \
+                     given via repeated flags (--yes=migrate --yes=break-clients). The value \
+                     must be attached with '=' (so `--yes my-db` treats `my-db` as the database name)."
                 )
         )
         .arg(
@@ -532,7 +535,7 @@ async fn execute_publish_configs<'a>(
         };
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
-            if !y_or_n(yes.remote, "Are you sure you want to proceed?")? {
+            if !y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?")? {
                 anyhow::bail!("Publish aborted by user.");
             }
         }
@@ -553,7 +556,7 @@ async fn execute_publish_configs<'a>(
 
             // note that this only happens in the case where we've passed a `name_or_identity`, but that's required if we pass `--clear-database`.
             if clear_database == ClearMode::Always {
-                builder = confirm_and_clear(name_or_identity, yes.all, builder)?;
+                builder = confirm_and_clear(name_or_identity, yes.delete_data, builder)?;
             } else {
                 builder = apply_pre_publish_if_needed(
                     builder,
@@ -744,7 +747,7 @@ async fn apply_pre_publish_if_needed(
             PrePublishResult::ManualMigrate(manual) => manual.major_version_upgrade,
         };
         if major_version_upgrade {
-            confirm_major_version_upgrade(yes.migrate)?;
+            confirm_major_version_upgrade(yes.migrate_major_version)?;
         }
 
         match pre {
@@ -757,7 +760,7 @@ async fn apply_pre_publish_if_needed(
                 println!("{}", manual.reason);
                 println!("Proceeding with database clear due to --delete-data=on-conflict.");
 
-                builder = confirm_and_clear(name_or_identity, yes.all, builder)?;
+                builder = confirm_and_clear(name_or_identity, yes.delete_data, builder)?;
             }
             PrePublishResult::AutoMigrate(auto) => {
                 println!("{}", auto.migrate_plan);
@@ -1219,32 +1222,58 @@ mod tests {
     fn test_yes_flag_no_value_is_all() {
         let matches = cli().get_matches_from(vec!["publish", "--yes"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(yes.all);
-        assert!(yes.remote && yes.migrate && yes.break_clients && yes.skip_login);
+        assert!(
+            yes.publish_to_remote
+                && yes.migrate_major_version
+                && yes.break_clients
+                && yes.skip_login
+                && yes.delete_data
+        );
     }
 
     #[test]
     fn test_yes_flag_explicit_all() {
         let matches = cli().get_matches_from(vec!["publish", "--yes=all"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(yes.all);
-        assert!(yes.remote && yes.migrate && yes.break_clients && yes.skip_login);
+        assert!(
+            yes.publish_to_remote
+                && yes.migrate_major_version
+                && yes.break_clients
+                && yes.skip_login
+                && yes.delete_data
+        );
     }
 
     #[test]
     fn test_yes_flag_single_value() {
         let matches = cli().get_matches_from(vec!["publish", "--yes=remote"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(yes.remote);
-        assert!(!yes.migrate && !yes.break_clients && !yes.skip_login && !yes.all);
+        assert!(yes.publish_to_remote);
+        assert!(!yes.migrate_major_version && !yes.break_clients && !yes.skip_login && !yes.delete_data);
     }
 
     #[test]
-    fn test_yes_flag_pipe_separated_multiple_values() {
-        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate|skip-login"]);
+    fn test_yes_flag_comma_separated_multiple_values() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate,skip-login"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(yes.migrate && yes.skip_login);
-        assert!(!yes.remote && !yes.break_clients && !yes.all);
+        assert!(yes.migrate_major_version && yes.skip_login);
+        assert!(!yes.publish_to_remote && !yes.break_clients && !yes.delete_data);
+    }
+
+    #[test]
+    fn test_yes_flag_repeated_invocations_accumulate() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate", "--yes=skip-login"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(yes.migrate_major_version && yes.skip_login);
+        assert!(!yes.publish_to_remote && !yes.break_clients && !yes.delete_data);
+    }
+
+    #[test]
+    fn test_yes_flag_delete_data_only() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=delete-data"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(yes.delete_data);
+        assert!(!yes.publish_to_remote && !yes.migrate_major_version && !yes.break_clients && !yes.skip_login);
     }
 
     #[test]
@@ -1253,7 +1282,7 @@ mod tests {
         // plus the token treated as the positional database name. require_equals enforces this.
         let matches = cli().get_matches_from(vec!["publish", "--yes", "my-db"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(yes.all);
+        assert!(yes.delete_data && yes.publish_to_remote);
         assert_eq!(
             matches.get_one::<String>("name|identity").map(String::as_str),
             Some("my-db"),
@@ -1270,6 +1299,12 @@ mod tests {
     fn test_yes_flag_omitted_means_no_skips() {
         let matches = cli().get_matches_from(vec!["publish", "my-db"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(!yes.all && !yes.remote && !yes.migrate && !yes.break_clients && !yes.skip_login);
+        assert!(
+            !yes.publish_to_remote
+                && !yes.migrate_major_version
+                && !yes.break_clients
+                && !yes.skip_login
+                && !yes.delete_data
+        );
     }
 }
