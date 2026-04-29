@@ -543,7 +543,8 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
         add_native_aot_packages_to_csproj(&server_dir)?;
     }
 
-    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, options.native_aot)? {
+    let default_server = config.default_server_name().unwrap_or("maincloud");
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, options.native_aot, default_server)? {
         println!("{} Created {}", "✓".green(), path.display());
     }
 
@@ -626,6 +627,7 @@ fn get_local_database_name(options: &InitOptions, project_name: &str, is_interac
 fn create_default_spacetime_config_if_missing(
     project_path: &Path,
     native_aot: bool,
+    default_server: &str,
 ) -> anyhow::Result<Option<PathBuf>> {
     let config_path = project_path.join(CONFIG_FILENAME);
     if config_path.exists() {
@@ -635,7 +637,7 @@ fn create_default_spacetime_config_if_missing(
     let mut config = SpacetimeConfig::default();
     config
         .additional_fields
-        .insert("server".to_string(), json!("maincloud"));
+        .insert("server".to_string(), json!(default_server));
 
     if project_path.join("spacetimedb").is_dir() {
         config
@@ -2115,7 +2117,7 @@ mod tests {
         let project_path = temp.path();
         std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
 
-        let created = create_default_spacetime_config_if_missing(project_path, false)
+        let created = create_default_spacetime_config_if_missing(project_path, false, "maincloud")
             .unwrap()
             .expect("expected config to be created");
         assert_eq!(created, project_path.join("spacetime.json"));
@@ -2137,7 +2139,7 @@ mod tests {
         let project_path = temp.path();
         std::fs::create_dir_all(project_path.join("spacetimedb")).unwrap();
 
-        let created = create_default_spacetime_config_if_missing(project_path, true)
+        let created = create_default_spacetime_config_if_missing(project_path, true, "maincloud")
             .unwrap()
             .expect("expected config to be created");
         assert_eq!(created, project_path.join("spacetime.json"));
