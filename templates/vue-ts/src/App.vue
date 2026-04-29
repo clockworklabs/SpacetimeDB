@@ -1,3 +1,25 @@
+<script setup lang="ts">
+import { ref } from 'vue';
+import { tables, reducers } from './module_bindings';
+import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/vue';
+
+const conn = useSpacetimeDB();
+const name = ref('');
+
+// Subscribe to all people in the database
+const [people] = useTable(tables.person);
+
+const addReducer = useReducer(reducers.add);
+
+const addPerson = () => {
+  if (!name.value.trim() || !conn.isActive) return;
+
+  // Call the add reducer
+  addReducer({ name: name.value });
+  name.value = '';
+};
+</script>
+
 <template>
   <div :style="{ padding: '2rem' }">
     <h1>SpacetimeDB Vue App</h1>
@@ -37,25 +59,3 @@
     </div>
   </div>
 </template>
-
-<script setup lang="ts">
-import { ref } from 'vue';
-import { tables, reducers } from './module_bindings';
-import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/vue';
-
-const conn = useSpacetimeDB();
-const name = ref('');
-
-// Subscribe to all people in the database
-const [people] = useTable(tables.person);
-
-const addReducer = useReducer(reducers.add);
-
-const addPerson = () => {
-  if (!name.value.trim() || !conn.isActive) return;
-
-  // Call the add reducer
-  addReducer({ name: name.value });
-  name.value = '';
-};
-</script>

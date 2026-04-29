@@ -2,6 +2,9 @@ import { decompress } from './decompress';
 import { openWebSocket, type WebSocketAdapter, type WebSocketArgs } from './ws';
 
 export class WebsocketDecompressAdapter implements WebSocketAdapter {
+  get protocol(): string {
+    return this.#ws.protocol;
+  }
   set onclose(handler: (ev: CloseEvent) => void) {
     this.#ws.onclose = handler;
   }

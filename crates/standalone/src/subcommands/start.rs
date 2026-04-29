@@ -34,7 +34,7 @@ pub fn cli() -> clap::Command {
                 .default_value("0.0.0.0:3000")
                 .help(
                     "The address and port where SpacetimeDB should listen for connections. \
-                     This defaults to to listen on all IP addresses on port 80.",
+                     This defaults to listening on all IP addresses on port 3000.",
                 ),
         )
         .arg(
@@ -533,7 +533,7 @@ mod tests {
         );
         assert_eq!(config.common.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.common.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, Some(128 * 1024 * 1024));
+        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, 128 * 1024 * 1024);
 
         assert_eq!(
             config.websocket,

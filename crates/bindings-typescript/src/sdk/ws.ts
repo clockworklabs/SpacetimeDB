@@ -27,6 +27,7 @@ async function resolveWS(): Promise<typeof WebSocket> {
 }
 
 export interface WebSocketAdapter {
+  readonly protocol: string;
   send(msg: Uint8Array<ArrayBuffer>): void;
   close(): void;
 
@@ -38,7 +39,7 @@ export interface WebSocketAdapter {
 
 export interface WebSocketArgs {
   url: URL;
-  wsProtocol: string;
+  wsProtocol: string[];
   nameOrAddress: string;
   authToken?: string;
   compression: 'gzip' | 'brotli' | 'none';
