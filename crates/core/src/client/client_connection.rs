@@ -7,16 +7,14 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
-use super::messages::{OneOffQueryResponseMessage, ProcedureResultMessage};
+use super::messages::OneOffQueryResponseMessage;
 use super::{message_handlers, ClientActorId, MessageHandleError, OutboundMessage};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{
-    CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
-    ReducerCallResult,
+    FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError,
 };
-use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
 use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
@@ -31,7 +29,7 @@ use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
+use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -841,7 +839,7 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         flags: ws_v1::CallReducerFlags,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+    ) -> Result<(), ReducerCallError> {
         let caller = match flags {
             ws_v1::CallReducerFlags::FullUpdate => Some(self.sender()),
             // Setting `sender = None` causes `eval_updates` to skip sending to the caller
@@ -850,7 +848,7 @@ impl ClientConnection {
         };
 
         self.module()
-            .call_reducer(
+            .enqueue_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
                 caller,
@@ -869,9 +867,9 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         _flags: ws_v2::CallReducerFlags,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+    ) -> Result<(), ReducerCallError> {
         self.module()
-            .call_reducer(
+            .enqueue_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(self.sender()),
@@ -889,23 +887,21 @@ impl ClientConnection {
         args: FunctionArgs,
         request_id: RequestId,
         timer: Instant,
-    ) -> Result<(), BroadcastError> {
-        let CallProcedureReturn { result, tx_offset } = self
-            .module()
-            .call_procedure(
+    ) -> Result<(), ProcedureCallError> {
+        self.module()
+            .enqueue_procedure(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
                 args,
+                crate::host::module_host::ProcedureResponseTarget::V1 {
+                    subscriptions: self.module().subscriptions().clone(),
+                    sender: self.sender(),
+                    request_id,
+                },
             )
-            .await;
-
-        let message = ProcedureResultMessage::from_result(&result, request_id);
-
-        self.module()
-            .subscriptions()
-            .send_procedure_message(self.sender(), message, tx_offset)
+            .await
     }
 
     pub async fn call_procedure_v2(
@@ -915,49 +911,21 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         _flags: ws_v2::CallProcedureFlags,
-    ) -> Result<(), BroadcastError> {
-        let CallProcedureReturn { result, tx_offset } = self
-            .module()
-            .call_procedure(
+    ) -> Result<(), ProcedureCallError> {
+        self.module()
+            .enqueue_procedure(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
                 FunctionArgs::Bsatn(args),
+                crate::host::module_host::ProcedureResponseTarget::V2 {
+                    subscriptions: self.module().subscriptions().clone(),
+                    sender: self.sender(),
+                    request_id,
+                },
             )
-            .await;
-
-        let (status, timestamp, execution_duration) = match result {
-            Ok(ProcedureCallResult {
-                return_val,
-                execution_duration,
-                start_timestamp,
-            }) => (
-                ws_v2::ProcedureStatus::Returned(
-                    bsatn::to_vec(&return_val)
-                        .expect("Procedure return value failed to serialize to BSATN")
-                        .into(),
-                ),
-                start_timestamp,
-                TimeDuration::from(execution_duration),
-            ),
-            Err(err) => (
-                ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
-                Timestamp::UNIX_EPOCH,
-                TimeDuration::ZERO,
-            ),
-        };
-
-        let message = ws_v2::ProcedureResult {
-            status,
-            timestamp,
-            total_host_execution_duration: execution_duration,
-            request_id,
-        };
-
-        self.module()
-            .subscriptions()
-            .send_procedure_message_v2(self.sender(), message, tx_offset)
+            .await
     }
 
     pub async fn subscribe_single(
@@ -965,15 +933,9 @@ impl ClientConnection {
         subscription: ws_v1::SubscribeSingle,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe_single", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_single_subscription(Some(&host), me.sender, me.auth.clone(), subscription, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_single_subscription(self.sender(), self.auth.clone(), subscription, timer)
+            .await
     }
 
     pub async fn unsubscribe(
@@ -995,30 +957,18 @@ impl ClientConnection {
         request: ws_v2::Subscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe_v2", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_v2_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
     pub async fn subscribe_multi(
         &self,
         request: ws_v1::SubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe_multi", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_multi_subscription(Some(&host), me.sender, me.auth.clone(), request, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_multi_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
 
     pub async fn unsubscribe_multi(
@@ -1041,27 +991,16 @@ impl ClientConnection {
         request: ws_v2::Unsubscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("unsubscribe_v2", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .remove_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer)
-                    .await
-            })
-            .await?
+            .call_view_remove_v2_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
 
     pub async fn subscribe(&self, subscription: ws_v1::Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_legacy_subscriber(Some(&host), me.sender, me.auth.clone(), subscription, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_legacy_subscription(self.sender(), self.auth.clone(), subscription, timer)
+            .await
+            .map(|metrics| metrics.unwrap_or_default())
     }
 
     pub async fn one_off_query_json(

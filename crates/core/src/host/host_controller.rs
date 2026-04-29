@@ -711,7 +711,7 @@ async fn make_module_host(
     unregister: impl Fn() + Send + Sync + 'static,
     core: AllocatedJobCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
-    // `make_actor` is blocking, as it needs to compile the wasm to native code,
+    // `prepare_module` is blocking, as it needs to compile the wasm to native code,
     // which may be computationally expensive - sometimes up to 1s for a large module.
     // TODO: change back to using `spawn_rayon` here - asyncify runs on tokio blocking
     //       threads, but those aren't for computation. Also, wasmtime uses rayon
@@ -729,8 +729,8 @@ async fn make_module_host(
         HostType::Wasm => {
             asyncify(move || {
                 let start = Instant::now();
-                let module = runtimes.wasmtime.make_actor(mcc, &program.bytes, core)?;
-                trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
+                let module = runtimes.wasmtime.prepare_module(mcc, &program.bytes, core)?;
+                trace!("wasmtime::prepare_module blocked for {:?}", start.elapsed());
                 let module_host = ModuleHost::new(module, unregister, database_identity);
                 Ok((program, module_host))
             })
@@ -738,8 +738,8 @@ async fn make_module_host(
         }
         HostType::Js => {
             let start = Instant::now();
-            let module = runtimes.v8.make_actor(mcc, &program.bytes, core).await?;
-            trace!("v8::make_actor blocked for {:?}", start.elapsed());
+            let module = runtimes.v8.prepare_module(mcc, &program.bytes, core).await?;
+            trace!("v8::prepare_module blocked for {:?}", start.elapsed());
             let module_host = ModuleHost::new(module, unregister, database_identity);
             Ok((program, module_host))
         }

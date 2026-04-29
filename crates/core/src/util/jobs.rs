@@ -337,6 +337,23 @@ impl SingleCoreExecutor {
         Self::spawn(AllocatedJobCore::default())
     }
 
+    /// Spawn a long-lived local task onto the executor thread without waiting for completion.
+    ///
+    /// The reducer-lane request loop uses this fire-and-forget entrypoint because it is meant to
+    /// stay resident on the executor for the lifetime of the module host. Re-entering the
+    /// completion-oriented `run_job(...)` API from inside that loop would deadlock the reducer
+    /// lane on itself.
+    pub fn spawn_loop<F, Fut>(&self, f: F)
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + 'static,
+    {
+        self.inner
+            .job_tx
+            .send(Box::new(move || f().boxed_local()))
+            .unwrap_or_else(|_| panic!("job thread exited"));
+    }
+
     /// Run a job for this database executor.
     pub async fn run_job<F, R>(&self, f: F) -> R
     where

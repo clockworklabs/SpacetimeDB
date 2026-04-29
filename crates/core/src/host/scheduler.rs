@@ -367,6 +367,33 @@ pub(crate) struct CallScheduledFunctionResult {
     reschedule: Option<Reschedule>,
 }
 
+impl CallScheduledFunctionResult {
+    pub(crate) fn no_reschedule() -> Self {
+        Self { reschedule: None }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ScheduledFunctionKind {
+    Reducer,
+    Procedure,
+}
+
+pub(crate) fn scheduled_function_kind(
+    module: &ModuleInfo,
+    db: &RelationalDB,
+    params: &ScheduledFunctionParams,
+) -> anyhow::Result<Option<ScheduledFunctionKind>> {
+    let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    let Some((_timestamp, _instant, params)) = call_params_for_queued_item(module, db, &tx, params.0.clone())? else {
+        return Ok(None);
+    };
+    Ok(Some(match params {
+        CallParams::Reducer(_) => ScheduledFunctionKind::Reducer,
+        CallParams::Procedure(_) => ScheduledFunctionKind::Procedure,
+    }))
+}
+
 #[derive(Debug)]
 struct Reschedule {
     at_ts: Timestamp,

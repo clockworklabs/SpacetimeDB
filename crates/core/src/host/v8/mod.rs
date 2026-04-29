@@ -7,7 +7,7 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
     call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    get_registered_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
@@ -92,14 +92,14 @@ impl V8Runtime {
         }
     }
 
-    pub async fn make_actor(
+    pub async fn prepare_module(
         &self,
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
     ) -> anyhow::Result<ModuleWithInstance> {
         V8_RUNTIME_GLOBAL
-            .make_actor(mcc, program_bytes, core, self.heap_policy)
+            .prepare_module(mcc, program_bytes, core, self.heap_policy)
             .await
     }
 }
@@ -208,7 +208,7 @@ impl V8RuntimeInner {
         Self { _priv: () }
     }
 
-    async fn make_actor(
+    async fn prepare_module(
         &self,
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
@@ -236,7 +236,7 @@ impl V8RuntimeInner {
         let mcc = Either::Right(mcc);
         let load_balance_guard = Arc::new(core.guard);
         let core_pinner = core.pinner;
-        let (common, init_inst) = spawn_instance_worker(
+        let (common, _bootstrap_instance) = spawn_instance_worker(
             program.clone(),
             mcc,
             load_balance_guard.clone(),
@@ -255,7 +255,7 @@ impl V8RuntimeInner {
             lane_queue,
         };
 
-        Ok(ModuleWithInstance::Js { module, init_inst })
+        Ok(ModuleWithInstance::Js { module })
     }
 }
 
@@ -282,6 +282,14 @@ impl JsModule {
         self.common.info().clone()
     }
 
+    pub(crate) fn load_balance_guard(&self) -> Arc<LoadBalanceOnDropGuard> {
+        self.load_balance_guard.clone()
+    }
+
+    pub(crate) fn core_pinner(&self) -> CorePinner {
+        self.core_pinner.clone()
+    }
+
     async fn create_instance_with_queue(&self, request_queue: Arc<JsWorkerQueue>) -> JsInstance {
         let program = self.program.clone();
         let common = self.common.clone();
@@ -304,7 +312,62 @@ impl JsModule {
         instance
     }
 
-    pub async fn create_instance(&self) -> JsInstance {
+    /// Create the long-lived inline reducer-lane instance on the current thread.
+    ///
+    /// Unlike pooled procedure instances, this does not spawn a worker thread or a reply queue.
+    /// The caller is expected to invoke request-loop work directly against the returned isolate on
+    /// the same OS thread that created it.
+    pub fn create_instance(&self) -> V8ModuleInstance {
+        let mut isolate = new_isolate(self.heap_policy);
+        let (context, args, common, heap_metrics) = {
+            scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
+
+            let instance_env = InstanceEnv::new(self.common.replica_ctx().clone(), self.common.scheduler().clone());
+            scope.set_slot(JsInstanceEnv::new(instance_env));
+
+            catch_exception(scope, |scope| Ok(builtins::evaluate_builtins(scope)?))
+                .expect("our builtin code shouldn't error");
+
+            let (hooks, module_common) =
+                startup_instance_worker(scope, self.program.clone(), Either::Left(self.common.clone()))
+                    .expect("validated module state should always boot a fresh inline instance");
+            env_on_isolate_unwrap(scope).set_module_def(module_common.info().module_def.clone());
+
+            if let Some(get_error_constructor) = hooks.get_error_constructor {
+                scope
+                    .get_current_context()
+                    .set_embedder_data(GET_ERROR_CONSTRUCTOR_SLOT, get_error_constructor.into());
+            }
+
+            let args = Global::new(scope, ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE));
+            let mut heap_metrics = Some(V8HeapMetrics::new(&module_common.info().database_identity));
+            if let Some(metrics) = heap_metrics.as_mut() {
+                let _initial_heap_stats = sample_heap_stats(scope, metrics);
+            }
+
+            (
+                Global::new(scope, scope.get_current_context()),
+                args,
+                InstanceCommon::new(&module_common),
+                heap_metrics,
+            )
+        };
+
+        V8ModuleInstance {
+            module: self.clone(),
+            isolate,
+            context,
+            args,
+            common,
+            heap_metrics,
+            trapped: false,
+            requests_since_heap_check: 0,
+            last_heap_check_at: Instant::now(),
+        }
+    }
+
+    /// Create a pooled procedure instance backed by its own worker thread.
+    pub async fn create_pooled_instance(&self) -> JsInstance {
         // We use a rendezvous channel for pooled instances, because they are checked
         // out one request at a time and subsequently returned to the pool, unlike the
         // long lived instance used for executing reducers.
@@ -313,6 +376,187 @@ impl JsModule {
 
     async fn create_lane_instance(&self) -> JsInstance {
         self.create_instance_with_queue(self.lane_queue.clone()).await
+    }
+}
+
+/// The inline reducer-lane V8 instance.
+///
+/// This owns the live isolate and current context directly on the reducer thread. The shared main
+/// request loop executes against this instance without bouncing back through a request/reply worker
+/// queue. That keeps reducer-lane work on the same OS thread as the isolate it is mutating.
+pub struct V8ModuleInstance {
+    module: JsModule,
+    isolate: OwnedIsolate,
+    context: Global<Context>,
+    args: Global<ArrayBuffer>,
+    common: InstanceCommon,
+    heap_metrics: Option<V8HeapMetrics>,
+    trapped: bool,
+    requests_since_heap_check: u64,
+    last_heap_check_at: Instant,
+}
+
+impl V8ModuleInstance {
+    fn with_v8_instance<R>(&mut self, f: impl for<'scope> FnOnce(&mut InstanceCommon, &mut V8Instance<'_, 'scope, '_>) -> R) -> R {
+        let heap_policy = self.module.heap_policy;
+        let database_identity = self.common.info().database_identity;
+        let trapped = &mut self.trapped;
+        let heap_metrics = &mut self.heap_metrics;
+        let requests_since_heap_check = &mut self.requests_since_heap_check;
+        let last_heap_check_at = &mut self.last_heap_check_at;
+        v8::scope!(let handle_scope, &mut self.isolate);
+        let context = Local::new(handle_scope, &self.context);
+        scope_with_context!(let scope, handle_scope, context);
+
+        let hooks = get_registered_hooks(scope).expect("validated module should always register hooks");
+        let replica_ctx = self.module.common.replica_ctx().clone();
+        let mut inst = V8Instance {
+            scope,
+            replica_ctx: &replica_ctx,
+            hooks: &hooks,
+            args: &self.args,
+            heap_limit_hit_metric: &WORKER_METRICS
+                .v8_heap_limit_hit
+                .with_label_values(&self.common.info().database_identity),
+            initial_heap_limit: self.module.heap_policy.heap_limit_bytes,
+        };
+
+        let res = f(&mut self.common, &mut inst);
+        if !*trapped {
+            let Some(heap_metrics) = heap_metrics.as_mut() else {
+                return res;
+            };
+
+            let request_check_due = heap_policy.heap_check_request_interval.is_some_and(|interval| {
+                *requests_since_heap_check += 1;
+                *requests_since_heap_check >= interval
+            });
+            let time_check_due = heap_policy
+                .heap_check_time_interval
+                .is_some_and(|interval| last_heap_check_at.elapsed() >= interval);
+            if request_check_due || time_check_due {
+                *requests_since_heap_check = 0;
+                *last_heap_check_at = Instant::now();
+                if let Some((used, limit)) = should_retire_worker_for_heap(inst.scope, heap_metrics, heap_policy) {
+                    *trapped = true;
+                    log::warn!(
+                        "retiring inline JS reducer instance after V8 heap stayed high post-GC: used={}MiB limit={}MiB db={}",
+                        used / (1024 * 1024),
+                        limit / (1024 * 1024),
+                        database_identity,
+                    );
+                }
+            }
+        }
+        res
+    }
+
+    pub fn trapped(&self) -> bool {
+        self.trapped
+    }
+
+    pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
+        let (res, trapped) = self.with_v8_instance(|common, inst| common.call_reducer_with_tx(None, params, inst));
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn call_view(&mut self, cmd: ViewCommand) -> ViewCommandResult {
+        let (res, trapped) = self.with_v8_instance(|common, inst| common.handle_cmd(cmd, inst));
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn clear_all_clients(&mut self) -> anyhow::Result<()> {
+        self.with_v8_instance(|common, _inst| common.clear_all_clients())
+    }
+
+    pub fn call_identity_connected(
+        &mut self,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ClientConnectedError> {
+        let info = self.common.info();
+        let (res, trapped) = self.with_v8_instance(|common, inst| {
+            let call_reducer = |tx, params| common.call_reducer_with_tx(tx, params, inst);
+            let mut trapped = false;
+            let res = call_identity_connected(caller_auth, caller_connection_id, &info, call_reducer, &mut trapped);
+            (res, trapped)
+        });
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn call_identity_disconnected(
+        &mut self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ReducerCallError> {
+        let info = self.common.info();
+        let (res, trapped) = self.with_v8_instance(|common, inst| {
+            let call_reducer = |tx, params| common.call_reducer_with_tx(tx, params, inst);
+            let mut trapped = false;
+            let res = ModuleHost::call_identity_disconnected_inner(
+                caller_identity,
+                caller_connection_id,
+                &info,
+                call_reducer,
+                &mut trapped,
+            );
+            (res, trapped)
+        });
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        let info = self.common.info();
+        let (res, trapped) = self.with_v8_instance(|common, inst| {
+            let call_reducer = |tx, params| common.call_reducer_with_tx(tx, params, inst);
+            let mut trapped = false;
+            let res = ModuleHost::disconnect_client_inner(client_id, &info, call_reducer, &mut trapped);
+            (res, trapped)
+        });
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        let info = self.common.info();
+        let (res, trapped) = self.with_v8_instance(|common, inst| {
+            let replica_ctx = inst.replica_ctx().clone();
+            init_database(&replica_ctx, &info.module_def, program, |tx, params| {
+                common.call_reducer_with_tx(tx, params, inst)
+            })
+        });
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn update_database(
+        &mut self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.with_v8_instance(|common, inst| common.update_database(program, old_module_info, policy, inst))
+    }
+
+    pub(in crate::host) async fn call_scheduled_function(
+        &mut self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        // Scheduled reducers keep their scheduler bookkeeping inside the instance-level helper.
+        // The shared request loop only decides that this scheduled function stays on the inline
+        // reducer lane instead of leaving through the detached procedure pool.
+        let (res, trapped) = self.with_v8_instance(|common, inst| {
+            common
+                .call_scheduled_function(params, inst)
+                .now_or_never()
+                .expect("inline scheduled reducer execution should not suspend")
+        });
+        self.trapped = trapped;
+        res
     }
 }
 

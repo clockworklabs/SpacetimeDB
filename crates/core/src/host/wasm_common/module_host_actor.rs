@@ -313,6 +313,7 @@ pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
 
 pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
 
+#[derive(Clone)]
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     common: ModuleCommon,

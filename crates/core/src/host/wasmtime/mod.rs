@@ -107,7 +107,7 @@ pub type Module = WasmModuleHostActor<WasmtimeModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
 impl WasmtimeRuntime {
-    pub fn make_actor(
+    pub fn prepare_module(
         &self,
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
@@ -130,11 +130,10 @@ impl WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
+        let (module, _bootstrap_instance) = WasmModuleHostActor::new(mcc, module)?;
         Ok(super::module_host::ModuleWithInstance::Wasm {
             module,
             executor: core.spawn_async_executor(),
-            init_inst: Box::new(init_inst),
         })
     }
 }

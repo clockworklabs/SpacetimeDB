@@ -22,7 +22,6 @@ use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMes
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::host::FunctionArgs;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
-use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
@@ -57,9 +56,19 @@ pub struct ModuleHandle {
 
 impl ModuleHandle {
     async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+        let sender = self.client.sender();
         let result = self
             .client
-            .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
+            .module()
+            .call_reducer(
+                sender.id.identity,
+                Some(sender.id.connection_id),
+                Some(sender),
+                Some(0),
+                Some(Instant::now()),
+                reducer,
+                args,
+            )
             .await;
         let result = match result {
             Ok(result) => result.into(),
