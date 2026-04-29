@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     core::NextInteractionSource,
-    schema::SchemaPlan,
+    schema::{SchemaPlan, TablePlan},
     seed::{DstRng, DstSeed},
     workload::strategy::{Index, Percent, Strategy},
 };
@@ -79,17 +79,17 @@ impl<'a> ScenarioPlanner<'a> {
         {
             TxControlAction::Begin if !self.model.connections[conn].in_tx && self.model.active_writer().is_none() => {
                 self.model.begin_tx(conn);
-                self.pending.push_back(TableWorkloadInteraction::BeginTx { conn });
+                self.pending.push_back(TableWorkloadInteraction::begin_tx(conn));
                 true
             }
             TxControlAction::Commit if self.model.connections[conn].in_tx => {
                 self.model.commit(conn);
-                self.pending.push_back(TableWorkloadInteraction::CommitTx { conn });
+                self.pending.push_back(TableWorkloadInteraction::commit_tx(conn));
                 true
             }
             TxControlAction::Rollback if self.model.connections[conn].in_tx => {
                 self.model.rollback(conn);
-                self.pending.push_back(TableWorkloadInteraction::RollbackTx { conn });
+                self.pending.push_back(TableWorkloadInteraction::rollback_tx(conn));
                 true
             }
             _ => false,
@@ -100,6 +100,10 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.visible_rows(conn, table)
     }
 
+    pub fn table_plan(&self, table: usize) -> &TablePlan {
+        &self.model.schema.tables[table]
+    }
+
     pub fn make_row(&mut self, table: usize) -> crate::schema::SimRow {
         self.model.make_row(self.rng, table)
     }
@@ -108,8 +112,25 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.insert(conn, table, row);
     }
 
+    pub fn batch_insert(&mut self, conn: usize, table: usize, rows: &[crate::schema::SimRow]) {
+        self.model.batch_insert(conn, table, rows);
+    }
+
     pub fn delete(&mut self, conn: usize, table: usize, row: crate::schema::SimRow) {
         self.model.delete(conn, table, row);
+    }
+
+    pub fn batch_delete(&mut self, conn: usize, table: usize, rows: &[crate::schema::SimRow]) {
+        self.model.batch_delete(conn, table, rows);
+    }
+
+    pub fn reinsert(&mut self, conn: usize, table: usize, row: crate::schema::SimRow) {
+        self.model.delete(conn, table, row.clone());
+        self.model.insert(conn, table, row);
+    }
+
+    pub fn absent_row(&mut self, conn: usize, table: usize) -> crate::schema::SimRow {
+        self.model.absent_row(self.rng, conn, table)
     }
 
     pub fn push_interaction(&mut self, interaction: TableWorkloadInteraction) {
@@ -151,7 +172,7 @@ impl<S: TableScenario> NextInteractionGenerator<S> {
                 self.finalize_conn += 1;
                 if self.model.connections[conn].in_tx {
                     self.model.commit(conn);
-                    self.pending.push_back(TableWorkloadInteraction::CommitTx { conn });
+                    self.pending.push_back(TableWorkloadInteraction::commit_tx(conn));
                     return;
                 }
             }

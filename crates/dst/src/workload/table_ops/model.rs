@@ -1,3 +1,5 @@
+use std::ops::Bound;
+
 use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
@@ -5,7 +7,7 @@ use crate::{
     seed::{DstRng, DstSeed},
 };
 
-use super::TableWorkloadInteraction;
+use super::{ExpectedResult, TableOperation, TableWorkloadInteraction};
 
 /// Generator-side model of committed rows plus per-connection pending writes.
 ///
@@ -68,6 +70,14 @@ impl GenerationModel {
         rows
     }
 
+    pub(crate) fn absent_row(&mut self, rng: &mut DstRng, conn: usize, table: usize) -> SimRow {
+        let mut row = self.make_row(rng, table);
+        while self.visible_rows(conn, table).iter().any(|candidate| candidate == &row) {
+            row = self.make_row(rng, table);
+        }
+        row
+    }
+
     pub(crate) fn active_writer(&self) -> Option<usize> {
         self.active_writer
     }
@@ -89,6 +99,12 @@ impl GenerationModel {
         }
     }
 
+    pub(crate) fn batch_insert(&mut self, conn: usize, table: usize, rows: &[SimRow]) {
+        for row in rows {
+            self.insert(conn, table, row.clone());
+        }
+    }
+
     pub(crate) fn delete(&mut self, conn: usize, table: usize, row: SimRow) {
         let pending = &mut self.connections[conn];
         if pending.in_tx {
@@ -98,6 +114,12 @@ impl GenerationModel {
             pending.staged_deletes.push((table, row));
         } else {
             self.committed[table].retain(|candidate| *candidate != row);
+        }
+    }
+
+    pub(crate) fn batch_delete(&mut self, conn: usize, table: usize, rows: &[SimRow]) {
+        for row in rows {
+            self.delete(conn, table, row.clone());
         }
     }
 
@@ -154,8 +176,11 @@ impl ExpectedModel {
     }
 
     pub fn apply(&mut self, interaction: &TableWorkloadInteraction) {
-        match interaction {
-            TableWorkloadInteraction::BeginTx { conn } => {
+        if !matches!(interaction.expected, ExpectedResult::Ok) {
+            return;
+        }
+        match &interaction.op {
+            TableOperation::BeginTx { conn } => {
                 assert!(
                     self.active_writer.is_none(),
                     "multiple concurrent writers in expected model"
@@ -163,7 +188,7 @@ impl ExpectedModel {
                 self.connections[*conn].in_tx = true;
                 self.active_writer = Some(*conn);
             }
-            TableWorkloadInteraction::CommitTx { conn } => {
+            TableOperation::CommitTx { conn } => {
                 assert_eq!(self.active_writer, Some(*conn), "commit by non-owner in expected model");
                 let state = &mut self.connections[*conn];
                 for (table, row) in state.staged_deletes.drain(..) {
@@ -175,7 +200,7 @@ impl ExpectedModel {
                 state.in_tx = false;
                 self.active_writer = None;
             }
-            TableWorkloadInteraction::RollbackTx { conn } => {
+            TableOperation::RollbackTx { conn } => {
                 assert_eq!(
                     self.active_writer,
                     Some(*conn),
@@ -187,26 +212,87 @@ impl ExpectedModel {
                 state.in_tx = false;
                 self.active_writer = None;
             }
-            TableWorkloadInteraction::Insert { conn, table, row } => {
-                let state = &mut self.connections[*conn];
-                if state.in_tx {
-                    state.staged_inserts.push((*table, row.clone()));
-                } else {
-                    self.committed[*table].push(row.clone());
+            TableOperation::Insert { conn, table, row } => {
+                self.insert(*conn, *table, row.clone());
+            }
+            TableOperation::Delete { conn, table, row } => {
+                self.delete(*conn, *table, row.clone());
+            }
+            TableOperation::BatchInsert { conn, table, rows } => {
+                for row in rows {
+                    self.insert(*conn, *table, row.clone());
                 }
             }
-            TableWorkloadInteraction::Delete { conn, table, row } => {
-                let state = &mut self.connections[*conn];
-                if state.in_tx {
-                    state
-                        .staged_inserts
-                        .retain(|(pending_table, candidate)| !(*pending_table == *table && *candidate == *row));
-                    state.staged_deletes.push((*table, row.clone()));
-                } else {
-                    self.committed[*table].retain(|candidate| *candidate != *row);
+            TableOperation::BatchDelete { conn, table, rows } => {
+                for row in rows {
+                    self.delete(*conn, *table, row.clone());
                 }
+            }
+            TableOperation::Reinsert { conn, table, row } => {
+                self.delete(*conn, *table, row.clone());
+                self.insert(*conn, *table, row.clone());
+            }
+            TableOperation::DuplicateInsert { .. }
+            | TableOperation::DeleteMissing { .. }
+            | TableOperation::PointLookup { .. }
+            | TableOperation::PredicateCount { .. }
+            | TableOperation::RangeScan { .. }
+            | TableOperation::FullScan { .. } => {}
+        }
+    }
+
+    pub fn visible_rows(&self, conn: usize, table: usize) -> Vec<SimRow> {
+        let mut rows = self.committed[table].clone();
+        let pending = &self.connections[conn];
+        for (pending_table, row) in &pending.staged_deletes {
+            if *pending_table == table {
+                rows.retain(|candidate| candidate != row);
             }
         }
+        for (pending_table, row) in &pending.staged_inserts {
+            if *pending_table == table {
+                rows.push(row.clone());
+            }
+        }
+        rows
+    }
+
+    pub fn lookup_by_id(&self, conn: usize, table: usize, id: u64) -> Option<SimRow> {
+        self.visible_rows(conn, table)
+            .into_iter()
+            .find(|row| row.id() == Some(id))
+    }
+
+    pub fn predicate_count(&self, conn: usize, table: usize, col: u16, value: &AlgebraicValue) -> usize {
+        self.visible_rows(conn, table)
+            .into_iter()
+            .filter(|row| row.values.get(col as usize) == Some(value))
+            .count()
+    }
+
+    pub fn range_scan(
+        &self,
+        conn: usize,
+        table: usize,
+        cols: &[u16],
+        lower: &Bound<AlgebraicValue>,
+        upper: &Bound<AlgebraicValue>,
+    ) -> Vec<SimRow> {
+        let mut rows = self
+            .visible_rows(conn, table)
+            .into_iter()
+            .filter(|row| {
+                let key = row.project_key(cols).to_algebraic_value();
+                bound_contains_lower(lower, &key) && bound_contains_upper(upper, &key)
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|lhs, rhs| {
+            lhs.project_key(cols)
+                .to_algebraic_value()
+                .cmp(&rhs.project_key(cols).to_algebraic_value())
+                .then_with(|| lhs.values.cmp(&rhs.values))
+        });
+        rows
     }
 
     pub fn committed_rows(mut self) -> Vec<Vec<SimRow>> {
@@ -214,5 +300,42 @@ impl ExpectedModel {
             table_rows.sort_by_key(|row| row.id().unwrap_or_default());
         }
         self.committed
+    }
+
+    fn insert(&mut self, conn: usize, table: usize, row: SimRow) {
+        let state = &mut self.connections[conn];
+        if state.in_tx {
+            state.staged_inserts.push((table, row));
+        } else {
+            self.committed[table].push(row);
+        }
+    }
+
+    fn delete(&mut self, conn: usize, table: usize, row: SimRow) {
+        let state = &mut self.connections[conn];
+        if state.in_tx {
+            state
+                .staged_inserts
+                .retain(|(pending_table, candidate)| !(*pending_table == table && *candidate == row));
+            state.staged_deletes.push((table, row));
+        } else {
+            self.committed[table].retain(|candidate| *candidate != row);
+        }
+    }
+}
+
+fn bound_contains_lower(bound: &Bound<AlgebraicValue>, key: &AlgebraicValue) -> bool {
+    match bound {
+        Bound::Included(value) => key >= value,
+        Bound::Excluded(value) => key > value,
+        Bound::Unbounded => true,
+    }
+}
+
+fn bound_contains_upper(bound: &Bound<AlgebraicValue>, key: &AlgebraicValue) -> bool {
+    match bound {
+        Bound::Included(value) => key <= value,
+        Bound::Excluded(value) => key < value,
+        Bound::Unbounded => true,
     }
 }

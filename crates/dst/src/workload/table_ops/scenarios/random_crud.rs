@@ -1,3 +1,5 @@
+use std::ops::Bound;
+
 use spacetimedb_sats::AlgebraicType;
 
 use crate::{
@@ -142,17 +144,138 @@ fn fill_pending_with_tuning(planner: &mut ScenarioPlanner<'_>, conn: usize, tuni
 
     let table = planner.choose_table();
     let visible_rows = planner.visible_rows(conn, table);
+    if emit_query(planner, conn, table, &visible_rows) {
+        return;
+    }
+    if planner.roll_percent(5) {
+        let row = planner.absent_row(conn, table);
+        planner.push_interaction(TableWorkloadInteraction::delete_missing(conn, table, row));
+        return;
+    }
     let choose_insert = visible_rows.is_empty() || planner.roll_percent(tuning.insert_pct);
     if choose_insert {
+        if planner.roll_percent(10) {
+            let count = 2 + planner.choose_index(3);
+            let rows = (0..count).map(|_| planner.make_row(table)).collect::<Vec<_>>();
+            planner.batch_insert(conn, table, &rows);
+            planner.push_interaction(TableWorkloadInteraction::batch_insert(conn, table, rows));
+            return;
+        }
         let row = planner.make_row(table);
         planner.insert(conn, table, row.clone());
-        planner.push_interaction(TableWorkloadInteraction::Insert { conn, table, row });
+        planner.push_interaction(TableWorkloadInteraction::insert(conn, table, row));
+        return;
+    }
+
+    if visible_rows.len() >= 2 && planner.roll_percent(10) {
+        let count = 2 + planner.choose_index(visible_rows.len().min(3) - 1);
+        let mut candidates = visible_rows.clone();
+        let mut rows = Vec::with_capacity(count);
+        for _ in 0..count {
+            let idx = planner.choose_index(candidates.len());
+            rows.push(candidates.remove(idx));
+        }
+        planner.batch_delete(conn, table, &rows);
+        planner.push_interaction(TableWorkloadInteraction::batch_delete(conn, table, rows));
+        return;
+    }
+    if planner.roll_percent(6) {
+        let row = visible_rows[planner.choose_index(visible_rows.len())].clone();
+        planner.reinsert(conn, table, row.clone());
+        planner.push_interaction(TableWorkloadInteraction::reinsert(conn, table, row));
         return;
     }
 
     let row = visible_rows[planner.choose_index(visible_rows.len())].clone();
     planner.delete(conn, table, row.clone());
-    planner.push_interaction(TableWorkloadInteraction::Delete { conn, table, row });
+    planner.push_interaction(TableWorkloadInteraction::delete(conn, table, row));
+}
+
+fn emit_query(
+    planner: &mut ScenarioPlanner<'_>,
+    conn: usize,
+    table: usize,
+    visible_rows: &[crate::schema::SimRow],
+) -> bool {
+    if !planner.roll_percent(25) {
+        return false;
+    }
+    if visible_rows.is_empty() {
+        planner.push_interaction(TableWorkloadInteraction::full_scan(conn, table));
+        return true;
+    }
+
+    match planner.choose_index(4) {
+        0 => {
+            let row = &visible_rows[planner.choose_index(visible_rows.len())];
+            if let Some(id) = row.id() {
+                planner.push_interaction(TableWorkloadInteraction::point_lookup(conn, table, id));
+                true
+            } else {
+                false
+            }
+        }
+        1 => {
+            let col = choose_predicate_col(planner, table);
+            let row = &visible_rows[planner.choose_index(visible_rows.len())];
+            if let Some(value) = row.values.get(col as usize).cloned() {
+                planner.push_interaction(TableWorkloadInteraction::predicate_count(conn, table, col, value));
+                true
+            } else {
+                false
+            }
+        }
+        2 => {
+            let extra_indexes = planner.table_plan(table).extra_indexes.clone();
+            let Some(cols) = extra_indexes
+                .into_iter()
+                .find(|cols| range_cols_supported(planner, table, cols))
+            else {
+                planner.push_interaction(TableWorkloadInteraction::full_scan(conn, table));
+                return true;
+            };
+            let mut rows = visible_rows.to_vec();
+            rows.sort_by(|lhs, rhs| {
+                lhs.project_key(&cols)
+                    .to_algebraic_value()
+                    .cmp(&rhs.project_key(&cols).to_algebraic_value())
+                    .then_with(|| lhs.values.cmp(&rhs.values))
+            });
+            let lower = rows[0].project_key(&cols).to_algebraic_value();
+            let upper = rows[rows.len() - 1].project_key(&cols).to_algebraic_value();
+            planner.push_interaction(TableWorkloadInteraction::range_scan(
+                conn,
+                table,
+                cols,
+                Bound::Included(lower),
+                Bound::Included(upper),
+            ));
+            true
+        }
+        _ => {
+            planner.push_interaction(TableWorkloadInteraction::full_scan(conn, table));
+            true
+        }
+    }
+}
+
+fn choose_predicate_col(planner: &mut ScenarioPlanner<'_>, table: usize) -> u16 {
+    let column_count = planner.table_plan(table).columns.len();
+    if column_count <= 1 {
+        0
+    } else {
+        1 + planner.choose_index(column_count - 1) as u16
+    }
+}
+
+fn range_cols_supported(planner: &ScenarioPlanner<'_>, table: usize, cols: &[u16]) -> bool {
+    cols.iter().all(|col| {
+        planner
+            .table_plan(table)
+            .columns
+            .get(*col as usize)
+            .is_some_and(|column| is_range_compatible(&column.ty))
+    })
 }
 
 fn is_range_compatible(ty: &AlgebraicType) -> bool {

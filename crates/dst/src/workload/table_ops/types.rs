@@ -1,3 +1,7 @@
+use std::ops::Bound;
+
+use spacetimedb_sats::AlgebraicValue;
+
 use crate::{
     schema::{SchemaPlan, SimRow},
     seed::DstRng,
@@ -17,12 +21,188 @@ pub(crate) trait TableScenario: Clone {
 
 /// One generated workload step.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TableWorkloadInteraction {
-    BeginTx { conn: usize },
-    CommitTx { conn: usize },
-    RollbackTx { conn: usize },
-    Insert { conn: usize, table: usize, row: SimRow },
-    Delete { conn: usize, table: usize, row: SimRow },
+pub struct PlannedInteraction {
+    pub op: TableOperation,
+    pub expected: ExpectedResult,
+}
+
+pub type TableWorkloadInteraction = PlannedInteraction;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TableOperation {
+    BeginTx {
+        conn: usize,
+    },
+    CommitTx {
+        conn: usize,
+    },
+    RollbackTx {
+        conn: usize,
+    },
+    Insert {
+        conn: usize,
+        table: usize,
+        row: SimRow,
+    },
+    Delete {
+        conn: usize,
+        table: usize,
+        row: SimRow,
+    },
+    DuplicateInsert {
+        conn: usize,
+        table: usize,
+        row: SimRow,
+    },
+    DeleteMissing {
+        conn: usize,
+        table: usize,
+        row: SimRow,
+    },
+    BatchInsert {
+        conn: usize,
+        table: usize,
+        rows: Vec<SimRow>,
+    },
+    BatchDelete {
+        conn: usize,
+        table: usize,
+        rows: Vec<SimRow>,
+    },
+    Reinsert {
+        conn: usize,
+        table: usize,
+        row: SimRow,
+    },
+    PointLookup {
+        conn: usize,
+        table: usize,
+        id: u64,
+    },
+    PredicateCount {
+        conn: usize,
+        table: usize,
+        col: u16,
+        value: AlgebraicValue,
+    },
+    RangeScan {
+        conn: usize,
+        table: usize,
+        cols: Vec<u16>,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    },
+    FullScan {
+        conn: usize,
+        table: usize,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExpectedResult {
+    Ok,
+    Err(ExpectedErrorKind),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExpectedErrorKind {
+    UniqueConstraintViolation,
+    MissingRow,
+}
+
+impl PlannedInteraction {
+    pub fn ok(op: TableOperation) -> Self {
+        Self {
+            op,
+            expected: ExpectedResult::Ok,
+        }
+    }
+
+    pub fn expected_err(op: TableOperation, kind: ExpectedErrorKind) -> Self {
+        Self {
+            op,
+            expected: ExpectedResult::Err(kind),
+        }
+    }
+
+    pub fn begin_tx(conn: usize) -> Self {
+        Self::ok(TableOperation::BeginTx { conn })
+    }
+
+    pub fn commit_tx(conn: usize) -> Self {
+        Self::ok(TableOperation::CommitTx { conn })
+    }
+
+    pub fn rollback_tx(conn: usize) -> Self {
+        Self::ok(TableOperation::RollbackTx { conn })
+    }
+
+    pub fn insert(conn: usize, table: usize, row: SimRow) -> Self {
+        Self::ok(TableOperation::Insert { conn, table, row })
+    }
+
+    pub fn delete(conn: usize, table: usize, row: SimRow) -> Self {
+        Self::ok(TableOperation::Delete { conn, table, row })
+    }
+
+    pub fn duplicate_insert(conn: usize, table: usize, row: SimRow) -> Self {
+        Self::expected_err(
+            TableOperation::DuplicateInsert { conn, table, row },
+            ExpectedErrorKind::UniqueConstraintViolation,
+        )
+    }
+
+    pub fn delete_missing(conn: usize, table: usize, row: SimRow) -> Self {
+        Self::expected_err(
+            TableOperation::DeleteMissing { conn, table, row },
+            ExpectedErrorKind::MissingRow,
+        )
+    }
+
+    pub fn batch_insert(conn: usize, table: usize, rows: Vec<SimRow>) -> Self {
+        Self::ok(TableOperation::BatchInsert { conn, table, rows })
+    }
+
+    pub fn batch_delete(conn: usize, table: usize, rows: Vec<SimRow>) -> Self {
+        Self::ok(TableOperation::BatchDelete { conn, table, rows })
+    }
+
+    pub fn reinsert(conn: usize, table: usize, row: SimRow) -> Self {
+        Self::ok(TableOperation::Reinsert { conn, table, row })
+    }
+
+    pub fn point_lookup(conn: usize, table: usize, id: u64) -> Self {
+        Self::ok(TableOperation::PointLookup { conn, table, id })
+    }
+
+    pub fn predicate_count(conn: usize, table: usize, col: u16, value: AlgebraicValue) -> Self {
+        Self::ok(TableOperation::PredicateCount {
+            conn,
+            table,
+            col,
+            value,
+        })
+    }
+
+    pub fn range_scan(
+        conn: usize,
+        table: usize,
+        cols: Vec<u16>,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) -> Self {
+        Self::ok(TableOperation::RangeScan {
+            conn,
+            table,
+            cols,
+            lower,
+            upper,
+        })
+    }
+
+    pub fn full_scan(conn: usize, table: usize) -> Self {
+        Self::ok(TableOperation::FullScan { conn, table })
+    }
 }
 
 /// Final state gathered from a table-workload engine after execution ends.

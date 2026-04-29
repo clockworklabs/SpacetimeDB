@@ -30,9 +30,9 @@ impl TargetDescriptor for RelationalDbCommitlogDescriptor {
 
     fn run_streaming(seed: DstSeed, scenario: Self::Scenario, config: RunConfig) -> TargetRunFuture {
         Box::pin(async move {
-            let outcome = crate::targets::relational_db_commitlog::run_generated_with_config_and_scenario(
-                seed, scenario, config,
-            )?;
+            let outcome =
+                crate::targets::relational_db_commitlog::run_generated_with_config_and_scenario(seed, scenario, config)
+                    .await?;
             Ok(format!(
                 "ok target={} seed={} steps={} durable_commits={} replay_tables={}",
                 Self::NAME,

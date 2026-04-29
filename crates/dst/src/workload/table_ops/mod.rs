@@ -10,4 +10,4 @@ pub(crate) use generation::NextInteractionGenerator;
 pub(crate) use model::ExpectedModel;
 pub use scenarios::TableScenarioId;
 pub(crate) use types::{ConnectionWriteState, TableScenario};
-pub use types::{TableWorkloadInteraction, TableWorkloadOutcome};
+pub use types::{ExpectedErrorKind, ExpectedResult, TableOperation, TableWorkloadInteraction, TableWorkloadOutcome};

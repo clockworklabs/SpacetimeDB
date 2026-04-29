@@ -78,16 +78,8 @@ pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: usize) {
         let mirror = row.clone();
         planner.insert(conn, 0, row.clone());
         planner.insert(conn, 1, mirror.clone());
-        planner.push_interaction(TableWorkloadInteraction::Insert {
-            conn,
-            table: 0,
-            row: row.clone(),
-        });
-        planner.push_interaction(TableWorkloadInteraction::Insert {
-            conn,
-            table: 1,
-            row: mirror.clone(),
-        });
+        planner.push_interaction(TableWorkloadInteraction::insert(conn, 0, row.clone()));
+        planner.push_interaction(TableWorkloadInteraction::insert(conn, 1, mirror.clone()));
         return;
     }
 
@@ -95,14 +87,6 @@ pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: usize) {
     let mirror = row.clone();
     planner.delete(conn, 0, row.clone());
     planner.delete(conn, 1, mirror.clone());
-    planner.push_interaction(TableWorkloadInteraction::Delete {
-        conn,
-        table: 0,
-        row: row.clone(),
-    });
-    planner.push_interaction(TableWorkloadInteraction::Delete {
-        conn,
-        table: 1,
-        row: mirror.clone(),
-    });
+    planner.push_interaction(TableWorkloadInteraction::delete(conn, 0, row.clone()));
+    planner.push_interaction(TableWorkloadInteraction::delete(conn, 1, mirror.clone()));
 }
