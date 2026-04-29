@@ -189,7 +189,7 @@ public interface ITableView<View, T>
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         // `datastore_delete_all_by_eq_bsatn` expects an array-like BSATN.
-        // Write a length of 1 without actually wrapping the `row` into array
+        // Write a length of 1 without actually wrapping the `row` into an array
         // (annoyingly, that would require passing `TRW` through a bunch of APIs).
         writer.Write(1U);
         row.WriteFields(writer);
