@@ -157,6 +157,22 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.1)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
+  crates/bindings-typescript/case-conversion-test-client:
+    dependencies:
+      spacetimedb:
+        specifier: workspace:*
+        version: link:..
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.33
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
   crates/bindings-typescript/test-app:
     dependencies:
       react:
