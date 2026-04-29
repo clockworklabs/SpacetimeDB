@@ -30,26 +30,12 @@ pub trait TargetEngine<I> {
     fn collect_outcome(&mut self) -> anyhow::Result<Self::Outcome>;
 }
 
-/// Target-owned property lifecycle hooks.
-pub trait PropertySet<I, O> {
-    type Error;
-
-    fn on_interaction(&mut self, interaction: &I, step: usize) -> Result<(), Self::Error>;
-    fn on_finish(&mut self, outcome: &O) -> Result<(), Self::Error>;
-}
-
 /// Shared streaming runner.
-pub fn run_streaming<I, S, E, P>(
-    mut source: S,
-    mut engine: E,
-    mut properties: P,
-    cfg: RunConfig,
-) -> anyhow::Result<E::Outcome>
+pub fn run_streaming<I, S, E>(mut source: S, mut engine: E, cfg: RunConfig) -> anyhow::Result<E::Outcome>
 where
     I: Clone,
     S: NextInteractionSource<Interaction = I>,
     E: TargetEngine<I, Error = String>,
-    P: PropertySet<I, E::Outcome, Error = String>,
 {
     let deadline = cfg.deadline();
     let mut step = 0usize;
@@ -63,15 +49,9 @@ where
         engine
             .execute_interaction(&interaction)
             .map_err(|e| anyhow::anyhow!("interaction execution failed at step {step}: {e}"))?;
-        properties
-            .on_interaction(&interaction, step)
-            .map_err(|e| anyhow::anyhow!("property failed at step {step}: {e}"))?;
         step = step.saturating_add(1);
     }
     engine.finish();
     let outcome = engine.collect_outcome()?;
-    properties
-        .on_finish(&outcome)
-        .map_err(|e| anyhow::anyhow!("finish property failed: {e}"))?;
     Ok(outcome)
 }

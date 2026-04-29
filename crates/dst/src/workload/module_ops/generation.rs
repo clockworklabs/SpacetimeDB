@@ -26,7 +26,12 @@ pub(crate) struct NextInteractionGenerator {
 }
 
 impl NextInteractionGenerator {
-    pub fn new(seed: DstSeed, scenario: HostScenarioId, reducers: Vec<ModuleReducerSpec>, target_interactions: usize) -> Self {
+    pub fn new(
+        seed: DstSeed,
+        scenario: HostScenarioId,
+        reducers: Vec<ModuleReducerSpec>,
+        target_interactions: usize,
+    ) -> Self {
         Self {
             scenario,
             reducers,
@@ -42,10 +47,12 @@ impl NextInteractionGenerator {
 
     fn choose_action(&mut self) -> ActionKind {
         match self.scenario {
-            HostScenarioId::HostSmoke => {
-                Weighted::new(vec![(85, ActionKind::Reducer), (10, ActionKind::Wait), (5, ActionKind::Reopen)])
-                    .sample(&mut self.rng)
-            }
+            HostScenarioId::HostSmoke => Weighted::new(vec![
+                (85, ActionKind::Reducer),
+                (10, ActionKind::Wait),
+                (5, ActionKind::Reopen),
+            ])
+            .sample(&mut self.rng),
         }
     }
 

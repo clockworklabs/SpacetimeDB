@@ -5,7 +5,7 @@
 //! - [`config`] for run budgets,
 //! - [`seed`] for deterministic seeds,
 //! - [`workload`] for scenario identifiers,
-//! - [`targets`] for the executable datastore / relational-db adapters.
+//! - [`targets`] for executable relational-db / standalone-host adapters.
 
 /// Shared run-budget configuration for DST targets.
 pub mod config;

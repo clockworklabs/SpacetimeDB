@@ -1,14 +1,13 @@
-//! Shared transactional table workload used by datastore-like targets.
+//! Shared transactional table workload used by table-oriented targets.
 
 mod generation;
 mod model;
-mod runner;
 mod scenarios;
 pub(crate) mod strategies;
 mod types;
 
 pub(crate) use generation::NextInteractionGenerator;
-pub(crate) use runner::run_generated_with_engine;
+pub(crate) use model::ExpectedModel;
 pub use scenarios::TableScenarioId;
-pub(crate) use types::{ConnectionWriteState, TableScenario, TableWorkloadEngine};
+pub(crate) use types::{ConnectionWriteState, TableScenario};
 pub use types::{TableWorkloadInteraction, TableWorkloadOutcome};

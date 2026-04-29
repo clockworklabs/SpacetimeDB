@@ -82,7 +82,6 @@ pub fn generate_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize)
     }
 }
 
-
 impl SimRow {
     pub fn to_product_value(&self) -> ProductValue {
         ProductValue::from_iter(self.values.iter().cloned())

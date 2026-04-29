@@ -32,48 +32,26 @@ use crate::{
     config::RunConfig,
     core::NextInteractionSource,
     seed::DstSeed,
-    workload::module_ops::{HostScenarioId, ModuleInteraction, ModuleReducerSpec, ModuleWorkloadOutcome, NextInteractionGenerator},
+    workload::module_ops::{
+        HostScenarioId, ModuleInteraction, ModuleReducerSpec, ModuleWorkloadOutcome, NextInteractionGenerator,
+    },
 };
 
 pub type StandaloneHostOutcome = ModuleWorkloadOutcome;
 
-pub fn run_generated_with_config_and_scenario(
-    seed: DstSeed,
-    scenario: HostScenarioId,
-    config: RunConfig,
-) -> anyhow::Result<StandaloneHostOutcome> {
-    run_with_madsim_determinism(seed, scenario, config)
-}
-
-fn run_with_madsim_determinism(
-    seed: DstSeed,
-    scenario: HostScenarioId,
-    config: RunConfig,
-) -> anyhow::Result<StandaloneHostOutcome> {
-    // Compile and cache module bytes before entering the deterministic replay.
-    // Module compilation may use host system threads, so do it outside the run.
+pub fn prepare_generated_run() -> anyhow::Result<()> {
     let _ = compiled_module()?;
-    let (first_outcome, first_trace) = run_once_in_madsim_runtime(seed, scenario, config.clone())?;
-    let (second_outcome, second_trace) = run_once_in_madsim_runtime(seed, scenario, config)?;
-    if first_trace != second_trace {
-        anyhow::bail!("madsim deterministic replay mismatch: interaction trace differs");
-    }
-    if first_outcome != second_outcome {
-        anyhow::bail!("madsim deterministic replay mismatch: outcome differs");
-    }
-    Ok(first_outcome)
+    Ok(())
 }
 
-fn run_once_in_madsim_runtime(
+pub async fn run_generated_with_config_and_scenario(
     seed: DstSeed,
     scenario: HostScenarioId,
     config: RunConfig,
-) -> anyhow::Result<(StandaloneHostOutcome, Vec<ModuleInteraction>)> {
-    let mut runtime = madsim::runtime::Runtime::with_seed_and_config(seed.0, madsim::Config::default());
-    runtime.set_allow_system_thread(true);
-    runtime.block_on(run_once_async(seed, scenario, config))
+) -> anyhow::Result<StandaloneHostOutcome> {
+    let (outcome, _) = run_once_async(seed, scenario, config).await?;
+    Ok(outcome)
 }
-
 
 async fn run_once_async(
     seed: DstSeed,
@@ -108,12 +86,8 @@ async fn run_once_async(
     }
 
     // Replay contract: same seed/scenario/config must produce same interaction sequence.
-    let mut replay = NextInteractionGenerator::new(
-        seed,
-        scenario,
-        reducers,
-        config.max_interactions_or_default(usize::MAX),
-    );
+    let mut replay =
+        NextInteractionGenerator::new(seed, scenario, reducers, config.max_interactions_or_default(usize::MAX));
     let replayed = (0..trace_log.len())
         .filter_map(|_| replay.next_interaction())
         .collect::<Vec<_>>();
@@ -148,9 +122,11 @@ fn compiled_module() -> anyhow::Result<Arc<CompiledModuleInfo>> {
 }
 
 async fn extract_reducer_specs(module: Arc<CompiledModuleInfo>) -> anyhow::Result<Vec<ModuleReducerSpec>> {
-    let module_def =
-        spacetimedb_core::host::extract_schema(module.program_bytes.clone().to_vec().into_boxed_slice(), module.host_type)
-            .await?;
+    let module_def = spacetimedb_core::host::extract_schema(
+        module.program_bytes.clone().to_vec().into_boxed_slice(),
+        module.host_type,
+    )
+    .await?;
     Ok(module_def
         .reducers()
         .filter(|reducer| reducer.visibility == FunctionVisibility::ClientCallable)
@@ -193,7 +169,9 @@ impl StandaloneHostEngine {
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
         )));
         let _ = std::fs::remove_dir_all(&root_dir);
-        let session = open_session(&root_dir, &module, None).await.map_err(anyhow::Error::msg)?;
+        let session = open_session(&root_dir, &module, None)
+            .await
+            .map_err(anyhow::Error::msg)?;
         Ok(Self {
             root_dir,
             session: Some(session),
@@ -307,11 +285,13 @@ async fn open_session(
     let caller_identity = Identity::ZERO;
     let db_identity = match maybe_db_identity {
         Some(identity) => identity,
-        None => SpacetimeAuth::alloc(&env)
-            .await
-            .map_err(|e| format!("db identity allocation failed: {e:#?}"))?
-            .claims
-            .identity,
+        None => {
+            SpacetimeAuth::alloc(&env)
+                .await
+                .map_err(|e| format!("db identity allocation failed: {e:#?}"))?
+                .claims
+                .identity
+        }
     };
 
     if env

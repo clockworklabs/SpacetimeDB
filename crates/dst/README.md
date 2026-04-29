@@ -17,8 +17,8 @@ generated and executed as a deterministic stream.
 
 ## Current Targets
 
-- `datastore`
 - `relational-db-commitlog`
+- `standalone-host`
 
 Both targets reuse shared workload families and share the same streaming runner.
 
@@ -48,8 +48,8 @@ Examples:
 ## CLI
 
 ```bash
-cargo run -p spacetimedb-dst -- run --target datastore --scenario banking --duration 5m
-cargo run -p spacetimedb-dst -- run --target datastore --scenario indexed-ranges --duration 5m
+cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario banking --duration 5m
+cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario indexed-ranges --duration 5m
 cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --seed 42 --max-interactions 2000
 ```
 

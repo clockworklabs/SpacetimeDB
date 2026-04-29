@@ -1,4 +1,4 @@
-//! Target-level property runtime shared by datastore-oriented targets.
+//! Target-level property runtime shared by table-oriented targets.
 //!
 //! Properties are defined once here and plugged into any target that
 //! implements [`TargetPropertyAccess`].
@@ -7,7 +7,10 @@ use std::ops::Bound;
 
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 
-use crate::schema::{SchemaPlan, SimRow};
+use crate::{
+    schema::{SchemaPlan, SimRow},
+    workload::table_ops::{ExpectedModel, TableScenario, TableWorkloadInteraction, TableWorkloadOutcome},
+};
 
 /// Target adapter for property evaluation.
 pub(crate) trait TargetPropertyAccess {
@@ -59,6 +62,32 @@ impl PropertyRuntime {
             }
         }
         Self { rules }
+    }
+
+    pub fn for_table_workload<S>(scenario: S, schema: SchemaPlan, num_connections: usize) -> Self
+    where
+        S: TableScenario + 'static,
+    {
+        let mut runtime = Self::default();
+        runtime
+            .rules
+            .push(RuleEntry::non_periodic(Box::new(ExpectedTableStateRule::new(
+                scenario,
+                schema,
+                num_connections,
+            ))));
+        runtime
+    }
+
+    pub fn on_table_interaction(
+        &mut self,
+        access: &dyn TargetPropertyAccess,
+        interaction: &TableWorkloadInteraction,
+    ) -> Result<(), String> {
+        for entry in &mut self.rules {
+            entry.rule.on_table_interaction(access, interaction)?;
+        }
+        Ok(())
     }
 
     pub fn on_insert(
@@ -115,24 +144,45 @@ impl PropertyRuntime {
         }
         Ok(())
     }
+
+    pub fn on_table_workload_finish(
+        &mut self,
+        access: &dyn TargetPropertyAccess,
+        outcome: &TableWorkloadOutcome,
+    ) -> Result<(), String> {
+        for entry in &mut self.rules {
+            entry.rule.on_table_workload_finish(access, outcome)?;
+        }
+        Ok(())
+    }
 }
 
 struct RuleEntry {
-    kind: PropertyKind,
+    periodic_every: Option<u64>,
     rule: Box<dyn PropertyRule>,
 }
 
 impl RuleEntry {
     fn new(kind: PropertyKind, rule: Box<dyn PropertyRule>) -> Self {
-        Self { kind, rule }
+        Self {
+            periodic_every: match kind {
+                PropertyKind::SelectSelectOptimizer | PropertyKind::WhereTrueFalseNull => Some(16),
+                PropertyKind::IndexRangeExcluded => Some(64),
+                _ => None,
+            },
+            rule,
+        }
+    }
+
+    fn non_periodic(rule: Box<dyn PropertyRule>) -> Self {
+        Self {
+            periodic_every: None,
+            rule,
+        }
     }
 
     fn periodic_every(&self) -> Option<u64> {
-        match self.kind {
-            PropertyKind::SelectSelectOptimizer | PropertyKind::WhereTrueFalseNull => Some(16),
-            PropertyKind::IndexRangeExcluded => Some(64),
-            _ => None,
-        }
+        self.periodic_every
     }
 }
 
@@ -150,6 +200,14 @@ impl Default for PropertyRuntime {
 }
 
 trait PropertyRule {
+    fn on_table_interaction(
+        &mut self,
+        _access: &dyn TargetPropertyAccess,
+        _interaction: &TableWorkloadInteraction,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
     fn on_insert(
         &mut self,
         _access: &dyn TargetPropertyAccess,
@@ -180,6 +238,59 @@ trait PropertyRule {
 
     fn on_commit_or_rollback(&mut self, _access: &dyn TargetPropertyAccess) -> Result<(), String> {
         Ok(())
+    }
+
+    fn on_table_workload_finish(
+        &mut self,
+        _access: &dyn TargetPropertyAccess,
+        _outcome: &TableWorkloadOutcome,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+struct ExpectedTableStateRule<S> {
+    scenario: S,
+    schema: SchemaPlan,
+    expected: ExpectedModel,
+}
+
+impl<S: TableScenario> ExpectedTableStateRule<S> {
+    fn new(scenario: S, schema: SchemaPlan, num_connections: usize) -> Self {
+        let table_count = schema.tables.len();
+        Self {
+            scenario,
+            schema,
+            expected: ExpectedModel::new(table_count, num_connections),
+        }
+    }
+}
+
+impl<S: TableScenario> PropertyRule for ExpectedTableStateRule<S> {
+    fn on_table_interaction(
+        &mut self,
+        _access: &dyn TargetPropertyAccess,
+        interaction: &TableWorkloadInteraction,
+    ) -> Result<(), String> {
+        self.expected.apply(interaction);
+        Ok(())
+    }
+
+    fn on_table_workload_finish(
+        &mut self,
+        _access: &dyn TargetPropertyAccess,
+        outcome: &TableWorkloadOutcome,
+    ) -> Result<(), String> {
+        let expected_rows = self.expected.clone().committed_rows();
+        if outcome.final_rows != expected_rows {
+            return Err(format!(
+                "[ExpectedTableState] final table state mismatch: expected={expected_rows:?} actual={:?}",
+                outcome.final_rows
+            ));
+        }
+        self.scenario
+            .validate_outcome(&self.schema, outcome)
+            .map_err(|err| format!("[ExpectedTableState] scenario invariant failed: {err}"))
     }
 }
 

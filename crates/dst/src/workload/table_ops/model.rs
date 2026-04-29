@@ -127,8 +127,8 @@ impl GenerationModel {
 
 /// Replay model for the expected final committed state of a table workload.
 ///
-/// The shared runner applies every interaction here in parallel with the real
-/// target execution, then compares the collected target outcome against this
+/// Target property runtimes apply every table interaction here in parallel with
+/// real target execution, then compare the collected target outcome against this
 /// model at the end of the run.
 #[derive(Clone, Debug)]
 pub struct ExpectedModel {

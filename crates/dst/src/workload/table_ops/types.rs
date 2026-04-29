@@ -1,5 +1,4 @@
 use crate::{
-    core::TargetEngine,
     schema::{SchemaPlan, SimRow},
     seed::DstRng,
 };
@@ -33,33 +32,6 @@ pub struct TableWorkloadOutcome {
     pub final_row_counts: Vec<u64>,
     /// Full committed rows for each table in schema order.
     pub final_rows: Vec<Vec<SimRow>>,
-}
-
-/// Minimal engine interface implemented by concrete table-oriented targets.
-pub(crate) trait TableWorkloadEngine {
-    fn execute(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), String>;
-    fn collect_outcome(&mut self) -> anyhow::Result<TableWorkloadOutcome>;
-    fn finish(&mut self);
-}
-
-impl<T> TargetEngine<TableWorkloadInteraction> for T
-where
-    T: TableWorkloadEngine,
-{
-    type Outcome = TableWorkloadOutcome;
-    type Error = String;
-
-    fn execute_interaction(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), Self::Error> {
-        self.execute(interaction)
-    }
-
-    fn finish(&mut self) {
-        TableWorkloadEngine::finish(self);
-    }
-
-    fn collect_outcome(&mut self) -> anyhow::Result<Self::Outcome> {
-        TableWorkloadEngine::collect_outcome(self)
-    }
 }
 
 /// Per-connection write transaction bookkeeping shared by locking targets.

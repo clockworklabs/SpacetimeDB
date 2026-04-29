@@ -1,6 +1,6 @@
 //! Serializable interaction model for relational-db + commitlog DST.
 
-use crate::workload::table_ops::TableWorkloadInteraction;
+use crate::workload::table_ops::{TableWorkloadInteraction, TableWorkloadOutcome};
 
 /// One interaction in the commitlog-oriented mixed workload.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,4 +25,5 @@ pub struct CommitlogWorkloadOutcome {
     pub applied_steps: usize,
     pub durable_commit_count: usize,
     pub replay_table_count: usize,
+    pub table: TableWorkloadOutcome,
 }

@@ -4,19 +4,18 @@ use std::{
     collections::BTreeMap,
     ops::Bound,
     sync::Arc,
-    thread::sleep,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use spacetimedb_core::{
-    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB, Txdata},
+    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB},
     messages::control_db::HostType,
 };
 use spacetimedb_datastore::{
     execution_context::Workload,
     traits::{IsolationLevel, Program},
 };
-use spacetimedb_durability::{EmptyHistory, History};
+use spacetimedb_durability::EmptyHistory;
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
@@ -34,13 +33,15 @@ use tracing::{debug, info, trace};
 
 use crate::{
     config::RunConfig,
-    core::NextInteractionSource,
+    core::{self, TargetEngine},
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
     targets::properties::{PropertyRuntime, TargetPropertyAccess},
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
-        table_ops::{ConnectionWriteState, TableScenario, TableScenarioId, TableWorkloadInteraction},
+        table_ops::{
+            ConnectionWriteState, TableScenario, TableScenarioId, TableWorkloadInteraction, TableWorkloadOutcome,
+        },
     },
 };
 
@@ -55,33 +56,15 @@ pub fn run_generated_with_config_and_scenario(
     let num_connections = connection_rng.index(3) + 1;
     let mut schema_rng = seed.fork(122).rng();
     let schema = scenario.generate_schema(&mut schema_rng);
-    let mut generator = crate::workload::commitlog_ops::NextInteractionGeneratorComposite::new(
+    let generator = crate::workload::commitlog_ops::NextInteractionGeneratorComposite::new(
         seed,
-        scenario,
+        scenario.clone(),
         schema.clone(),
         num_connections,
         config.max_interactions_or_default(usize::MAX),
     );
-    let mut engine = RelationalDbEngine::new(seed, &schema, num_connections)?;
-    let deadline = config.deadline();
-    let mut step_index = 0usize;
-
-    loop {
-        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            generator.request_finish();
-        }
-        let Some(interaction) = generator.next_interaction() else {
-            break;
-        };
-        trace!(step_index, ?interaction, "streaming interaction");
-        engine
-            .execute(&interaction)
-            .map_err(|reason| anyhow::anyhow!("workload failed at step {step_index}: {reason}"))?;
-        step_index = step_index.saturating_add(1);
-    }
-
-    let outcome = engine.collect_outcome().map_err(anyhow::Error::msg)?;
-    engine.finish();
+    let engine = RelationalDbEngine::new(seed, scenario, &schema, num_connections)?;
+    let outcome = core::run_streaming(generator, engine, config)?;
     info!(
         applied_steps = outcome.applied_steps,
         durable_commit_count = outcome.durable_commit_count,
@@ -118,7 +101,12 @@ struct RelationalDbEngine {
 type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
 
 impl RelationalDbEngine {
-    fn new(seed: DstSeed, schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self> {
+    fn new(
+        seed: DstSeed,
+        scenario: TableScenarioId,
+        schema: &SchemaPlan,
+        num_connections: usize,
+    ) -> anyhow::Result<Self> {
         let (db, runtime_handle, replica_dir, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
         let mut this = Self {
             db: Some(db),
@@ -130,7 +118,7 @@ impl RelationalDbEngine {
             last_observed_durable_offset: None,
             last_durable_snapshot: BTreeMap::new(),
             pending_snapshot_capture: false,
-            properties: PropertyRuntime::default(),
+            properties: PropertyRuntime::for_table_workload(scenario, schema.clone(), num_connections),
             runtime_handle,
             replica_dir,
             _runtime_guard: runtime_guard,
@@ -306,7 +294,7 @@ impl RelationalDbEngine {
 
     fn execute_table_op(&mut self, interaction: &TableWorkloadInteraction) -> Result<(), String> {
         trace!(step = self.step, ?interaction, "table interaction");
-        match interaction {
+        let applied: Result<(), String> = match interaction {
             TableWorkloadInteraction::BeginTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
                 if self.execution.tx_by_connection[*conn].is_some() {
@@ -368,7 +356,8 @@ impl RelationalDbEngine {
                 let step = self.step as u64;
                 self.with_property_runtime(|runtime, access| {
                     runtime.on_insert(access, step, *conn, *table, &inserted_row, in_tx)
-                })
+                })?;
+                Ok(())
             }
             TableWorkloadInteraction::Delete { conn, table, row } => {
                 let in_tx = self.execution.tx_by_connection[*conn].is_some();
@@ -387,9 +376,14 @@ impl RelationalDbEngine {
                     self.sync_and_snapshot(false)?;
                 }
                 let step = self.step as u64;
-                self.with_property_runtime(|runtime, access| runtime.on_delete(access, step, *conn, *table, row, in_tx))
+                self.with_property_runtime(|runtime, access| {
+                    runtime.on_delete(access, step, *conn, *table, row, in_tx)
+                })?;
+                Ok(())
             }
-        }
+        };
+        applied?;
+        self.with_property_runtime(|runtime, access| runtime.on_table_interaction(access, interaction))
     }
 
     fn with_mut_tx<T>(
@@ -565,7 +559,7 @@ impl RelationalDbEngine {
         self.execution.active_writer.unwrap_or(conn)
     }
 
-    fn sync_and_snapshot(&mut self, forced: bool) -> Result<(), String> {
+    fn sync_and_snapshot(&mut self, _forced: bool) -> Result<(), String> {
         Ok(())
     }
 
@@ -699,6 +693,8 @@ impl RelationalDbEngine {
     fn collect_outcome(&mut self) -> Result<RelationalDbCommitlogOutcome, String> {
         self.capture_pending_snapshot_if_idle()?;
         self.sync_and_snapshot(true)?;
+        let table = self.collect_table_outcome()?;
+        self.with_property_runtime(|runtime, access| runtime.on_table_workload_finish(access, &table))?;
         let durable_commit_count = self
             .last_observed_durable_offset
             .map(|offset| (offset as usize).saturating_add(1))
@@ -708,6 +704,23 @@ impl RelationalDbEngine {
             applied_steps: self.step,
             durable_commit_count,
             replay_table_count: self.last_durable_snapshot.len(),
+            table,
+        })
+    }
+
+    fn collect_table_outcome(&self) -> Result<TableWorkloadOutcome, String> {
+        let mut final_rows = Vec::with_capacity(self.base_table_ids.len());
+        let mut final_row_counts = Vec::with_capacity(self.base_table_ids.len());
+
+        for &table_id in &self.base_table_ids {
+            let rows = self.collect_rows_by_id(table_id)?;
+            final_row_counts.push(rows.len() as u64);
+            final_rows.push(rows);
+        }
+
+        Ok(TableWorkloadOutcome {
+            final_row_counts,
+            final_rows,
         })
     }
 
@@ -762,48 +775,21 @@ impl TargetPropertyAccess for RelationalDbEngine {
     }
 }
 
-fn reopen_from_history(history: impl History<TxData = Txdata>) -> Result<DurableSnapshot, String> {
-    debug!("reopen relational db from mocked durable history");
-    let (db, connected_clients) = RelationalDB::open(
-        Identity::ZERO,
-        Identity::ZERO,
-        history,
-        None,
-        None,
-        PagePool::new_for_test(),
-    )
-    .map_err(|err| format!("reopen from history failed: {err}"))?;
-    if !connected_clients.is_empty() {
-        return Err(format!(
-            "unexpected connected clients after replay: {connected_clients:?}"
-        ));
+impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
+    type Outcome = RelationalDbCommitlogOutcome;
+    type Error = String;
+
+    fn execute_interaction(&mut self, interaction: &CommitlogInteraction) -> Result<(), Self::Error> {
+        self.execute(interaction)
     }
 
-    let tx = db.begin_tx(Workload::ForTests);
-    let schemas = db
-        .get_all_tables(&tx)
-        .map_err(|err| format!("list tables after replay failed: {err}"))?;
-    let mut snapshot = BTreeMap::<String, Vec<SimRow>>::new();
-    for schema in schemas {
-        let name = schema.table_name.to_string();
-        if !is_user_dst_table(&name) {
-            continue;
-        }
-        let mut rows = db
-            .iter(&tx, schema.table_id)
-            .map_err(|err| format!("scan replay table '{name}' failed: {err}"))?
-            .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-            .collect::<Vec<_>>();
-        rows.sort_by_key(|row| row.id().unwrap_or_default());
-        snapshot.insert(name, rows);
+    fn finish(&mut self) {
+        Self::finish(self);
     }
-    let _ = db.release_tx(tx);
-    debug!(tables = snapshot.len(), "reopen snapshot collected");
-    Ok(snapshot)
-}
 
-fn is_user_dst_table(name: &str) -> bool {
-    !name.starts_with("st_")
+    fn collect_outcome(&mut self) -> anyhow::Result<Self::Outcome> {
+        RelationalDbEngine::collect_outcome(self).map_err(anyhow::Error::msg)
+    }
 }
 
 fn bootstrap_relational_db(
