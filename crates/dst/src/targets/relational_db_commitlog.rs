@@ -2,11 +2,21 @@
 
 use std::{
     collections::BTreeMap,
+    io,
     ops::Bound,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
+use spacetimedb_commitlog::{
+    commitlog::Generic as GenericCommitlog,
+    error as commitlog_error,
+    payload::Txdata as CommitlogTxdata,
+    repo::{Memory as MemoryCommitlogRepo, SizeOnDisk},
+    Decoder as CommitlogDecoder, Transaction as CommitlogTransaction,
+};
 use spacetimedb_core::{
     db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB},
     messages::control_db::HostType,
@@ -15,20 +25,20 @@ use spacetimedb_datastore::{
     execution_context::Workload,
     traits::{IsolationLevel, Program},
 };
-use spacetimedb_durability::EmptyHistory;
+use spacetimedb_durability::{Close, Durability, DurableOffset, EmptyHistory, History, PreparedTx, TxOffset};
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
 };
-use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
 use spacetimedb_primitives::{SequenceId, TableId};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
     def::BTreeAlgorithm,
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
     table_name::TableName,
 };
 use spacetimedb_table::page_pool::PagePool;
+use tokio::sync::watch;
 use tracing::{debug, info, trace};
 
 use crate::{
@@ -93,8 +103,9 @@ struct RelationalDbEngine {
     last_durable_snapshot: DurableSnapshot,
     pending_snapshot_capture: bool,
     properties: PropertyRuntime,
+    durability: Arc<InMemoryCommitlogDurability>,
     runtime_handle: tokio::runtime::Handle,
-    replica_dir: ReplicaDir,
+    commitlog_repo: MemoryCommitlogRepo,
     _runtime_guard: Option<tokio::runtime::Runtime>,
 }
 
@@ -107,7 +118,7 @@ impl RelationalDbEngine {
         schema: &SchemaPlan,
         num_connections: usize,
     ) -> anyhow::Result<Self> {
-        let (db, runtime_handle, replica_dir, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
+        let (db, runtime_handle, commitlog_repo, durability, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
         let mut this = Self {
             db: Some(db),
             execution: ConnectionWriteState::new(num_connections),
@@ -119,8 +130,9 @@ impl RelationalDbEngine {
             last_durable_snapshot: BTreeMap::new(),
             pending_snapshot_capture: false,
             properties: PropertyRuntime::for_table_workload(scenario, schema.clone(), num_connections),
+            durability,
             runtime_handle,
-            replica_dir,
+            commitlog_repo,
             _runtime_guard: runtime_guard,
         };
         this.install_base_schema().map_err(anyhow::Error::msg)?;
@@ -209,34 +221,20 @@ impl RelationalDbEngine {
             .ok_or_else(|| "close/reopen failed: relational db not initialized".to_string())?;
         self.runtime_handle.block_on(old_db.shutdown());
         drop(old_db);
-        info!("starting durability");
+        info!("starting in-memory durability");
 
-        // In madsim we avoid blocking close here; dropping the close future
-        // triggers actor abort via durability's close guard.
-
-        let durability = Arc::new(
-            spacetimedb_durability::Local::open(
-                self.replica_dir.clone(),
-                self.runtime_handle.clone(),
-                Default::default(),
-                None,
-            )
-            .map_err(|err| format!("reopen local durability failed: {err}"))?,
-        );
-
+        let durability = InMemoryCommitlogDurability::open(self.commitlog_repo.clone())
+            .map_err(|err| format!("reopen in-memory durability failed: {err}"))?;
         let persistence = Persistence {
             durability: durability.clone(),
-            disk_size: Arc::new({
-                let durability = durability.clone();
-                move || durability.size_on_disk()
-            }),
+            disk_size: Arc::new(in_memory_size_on_disk),
             snapshots: None,
             runtime: self.runtime_handle.clone(),
         };
         let (db, connected_clients) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
-            durability.as_history(),
+            durability.clone(),
             Some(persistence),
             None,
             PagePool::new_for_test(),
@@ -247,6 +245,7 @@ impl RelationalDbEngine {
                 "unexpected connected clients after reopen: {connected_clients:?}"
             ));
         }
+        self.durability = durability;
         self.db = Some(db);
         self.rebuild_table_handles_after_reopen()?;
         self.capture_pending_snapshot_if_idle()?;
@@ -559,7 +558,13 @@ impl RelationalDbEngine {
         self.execution.active_writer.unwrap_or(conn)
     }
 
-    fn sync_and_snapshot(&mut self, _forced: bool) -> Result<(), String> {
+    fn sync_and_snapshot(&mut self, forced: bool) -> Result<(), String> {
+        let durable_offset = self.durability.durable_tx_offset().last_seen();
+        if forced || durable_offset != self.last_observed_durable_offset {
+            self.last_observed_durable_offset = durable_offset;
+            self.pending_snapshot_capture = true;
+            self.capture_pending_snapshot_if_idle()?;
+        }
         Ok(())
     }
 
@@ -792,12 +797,112 @@ impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
     }
 }
 
+type RelationalTxData = CommitlogTxdata<ProductValue>;
+
+struct InMemoryCommitlogDurability {
+    log: Mutex<GenericCommitlog<MemoryCommitlogRepo, RelationalTxData>>,
+    durable_tx: watch::Sender<Option<TxOffset>>,
+    durable_rx: watch::Receiver<Option<TxOffset>>,
+    closed: AtomicBool,
+}
+
+impl InMemoryCommitlogDurability {
+    fn open(repo: MemoryCommitlogRepo) -> io::Result<Arc<Self>> {
+        let log = GenericCommitlog::open(repo, Default::default())?;
+        let durable_offset = log.max_committed_offset();
+        let (durable_tx, durable_rx) = watch::channel(durable_offset);
+        Ok(Arc::new(Self {
+            log: Mutex::new(log),
+            durable_tx,
+            durable_rx,
+            closed: AtomicBool::new(false),
+        }))
+    }
+
+    fn flush_and_sync(&self) -> Option<TxOffset> {
+        let mut log = self.log.lock().expect("in-memory commitlog poisoned");
+        log.flush().expect("in-memory commitlog flush failed");
+        log.sync();
+        let durable_offset = log.max_committed_offset();
+        let _ = self.durable_tx.send(durable_offset);
+        durable_offset
+    }
+}
+
+impl Durability for InMemoryCommitlogDurability {
+    type TxData = RelationalTxData;
+
+    fn append_tx(&self, tx: PreparedTx<Self::TxData>) {
+        if self.closed.load(Ordering::SeqCst) {
+            panic!("in-memory durability is closed");
+        }
+        let mut log = self.log.lock().expect("in-memory commitlog poisoned");
+        log.commit([tx.into_transaction()])
+            .expect("in-memory commitlog commit failed");
+        log.flush().expect("in-memory commitlog flush failed");
+        log.sync();
+        let durable_offset = log.max_committed_offset();
+        let _ = self.durable_tx.send(durable_offset);
+    }
+
+    fn durable_tx_offset(&self) -> DurableOffset {
+        self.durable_rx.clone().into()
+    }
+
+    fn close(&self) -> Close {
+        self.closed.store(true, Ordering::SeqCst);
+        let durable_offset = self.flush_and_sync();
+        Box::pin(async move { durable_offset })
+    }
+}
+
+impl History for InMemoryCommitlogDurability {
+    type TxData = RelationalTxData;
+
+    fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>
+    where
+        D: CommitlogDecoder,
+        D::Error: From<commitlog_error::Traversal>,
+    {
+        self.log
+            .lock()
+            .expect("in-memory commitlog poisoned")
+            .fold_transactions_from(offset, decoder)
+    }
+
+    fn transactions_from<'a, D>(
+        &self,
+        offset: TxOffset,
+        decoder: &'a D,
+    ) -> impl Iterator<Item = Result<CommitlogTransaction<Self::TxData>, D::Error>>
+    where
+        D: CommitlogDecoder<Record = Self::TxData>,
+        D::Error: From<commitlog_error::Traversal>,
+        Self::TxData: 'a,
+    {
+        self.log
+            .lock()
+            .expect("in-memory commitlog poisoned")
+            .transactions_from(offset, decoder)
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        let log = self.log.lock().expect("in-memory commitlog poisoned");
+        let min = log.min_committed_offset().unwrap_or_default();
+        let max = log.max_committed_offset();
+        (min, max)
+    }
+}
+
 fn bootstrap_relational_db(
-    seed: DstSeed,
+    _seed: DstSeed,
 ) -> anyhow::Result<(
     RelationalDB,
     tokio::runtime::Handle,
-    ReplicaDir,
+    MemoryCommitlogRepo,
+    Arc<InMemoryCommitlogDurability>,
     Option<tokio::runtime::Runtime>,
 )> {
     let (runtime_handle, runtime_guard) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -806,14 +911,12 @@ fn bootstrap_relational_db(
         let runtime = tokio::runtime::Runtime::new()?;
         (runtime.handle().clone(), Some(runtime))
     };
-    let replica_dir = dst_replica_dir(seed)?;
-    let durability = Arc::new(
-        spacetimedb_durability::Local::open(replica_dir.clone(), runtime_handle.clone(), Default::default(), None)
-            .map_err(|err| anyhow::anyhow!("open local durability failed: {err}"))?,
-    );
+    let commitlog_repo = MemoryCommitlogRepo::unlimited();
+    let durability = InMemoryCommitlogDurability::open(commitlog_repo.clone())
+        .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?;
     let persistence = Persistence {
         durability: durability.clone(),
-        disk_size: Arc::new(move || durability.size_on_disk()),
+        disk_size: Arc::new(in_memory_size_on_disk),
         snapshots: None,
         runtime: runtime_handle.clone(),
     };
@@ -829,18 +932,11 @@ fn bootstrap_relational_db(
     db.with_auto_commit(Workload::Internal, |tx| {
         db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
     })?;
-    Ok((db, runtime_handle, replica_dir, runtime_guard))
+    Ok((db, runtime_handle, commitlog_repo, durability, runtime_guard))
 }
 
-fn dst_replica_dir(seed: DstSeed) -> anyhow::Result<ReplicaDir> {
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "spacetimedb-dst-relational-db-commitlog-{}-{}-{nonce}",
-        seed.0,
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&path)?;
-    Ok(ReplicaDir::from_path_unchecked(path))
+fn in_memory_size_on_disk() -> io::Result<SizeOnDisk> {
+    Ok(SizeOnDisk::default())
 }
 
 fn dynamic_table_name(slot: u32) -> String {
