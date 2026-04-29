@@ -696,7 +696,9 @@ mod case_conversion_rust_ts_client {
             .with_client(CLIENT)
             .with_language("typescript")
             .with_bindings_dir("src/module_bindings")
-            .with_compile_command("sh -c 'pnpm install && pnpm run build'")
+            .with_compile_command(
+                "sh -c 'pnpm install && pnpm --dir .. run build && pnpm exec prettier --write src/module_bindings && pnpm run build'",
+            )
             .with_run_command(format!("node dist/index.js {}", subcommand))
             .build()
     }

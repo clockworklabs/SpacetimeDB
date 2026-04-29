@@ -79,6 +79,23 @@ impl<'ctx> __sdk::Table for PersonAtLevel2TableHandle<'ctx> {
     }
 }
 
+pub struct PersonAtLevel2UpdateCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableWithPrimaryKey for PersonAtLevel2TableHandle<'ctx> {
+    type UpdateCallbackId = PersonAtLevel2UpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PersonAtLevel2UpdateCallbackId {
+        PersonAtLevel2UpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PersonAtLevel2UpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
 /// Access to the `person_2_id` unique index on the table `Level2Person`,
 /// which allows point queries on the field of the same name
 /// via the [`PersonAtLevel2Person2IdUnique::find`] method.
