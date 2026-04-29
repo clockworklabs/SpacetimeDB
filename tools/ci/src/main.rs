@@ -76,7 +76,10 @@ fn check_global_json_policy() -> Result<()> {
         }
 
         let contents = fs::read_to_string(&p)?;
-        if contents != root_contents {
+        // Templates are exempt from content matching to preserve the .NET 8 JIT path for
+        // module developers importing templates, while the main codebase uses .NET 10 AOT.
+        // TODO: Remove this exemption once .NET 10 is the default and templates should use it.
+        if contents != root_contents && !is_template_global_json {
             eprintln!("Error: {} does not match the root global.json contents", p.display());
             ok = false;
         } else if !is_template_global_json || !is_symlink {
