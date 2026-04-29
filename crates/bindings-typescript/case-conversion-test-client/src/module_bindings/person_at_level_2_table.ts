@@ -8,15 +8,12 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "spacetimedb";
-import {
-  Person3Info,
-} from "./types";
-
+} from 'spacetimedb';
+import { Person3Info } from './types';
 
 export default __t.row({
-  person2Id: __t.u32().primaryKey().name("Person2Id"),
-  firstName: __t.string().name("FirstName"),
+  person2Id: __t.u32().primaryKey().name('Person2Id'),
+  firstName: __t.string().name('FirstName'),
   playerRef: __t.u32(),
   get personInfo() {
     return Person3Info;
