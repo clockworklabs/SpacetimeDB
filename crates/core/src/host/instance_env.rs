@@ -1,5 +1,5 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceProvider, LogLevel, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -23,7 +23,7 @@ use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    buffer::{CountWriter, TeeWriter},
+    buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_schema::identifier::Identifier;
@@ -298,6 +298,19 @@ impl InstanceEnv {
 
     /// Logs a simple `message` at `level`.
     pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
+        /// A backtrace provider that provides nothing.
+        struct Noop;
+        impl BacktraceProvider for Noop {
+            fn capture(&self) -> Box<dyn ModuleBacktrace> {
+                Box::new(Noop)
+            }
+        }
+        impl ModuleBacktrace for Noop {
+            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+                Vec::new()
+            }
+        }
+
         let record = Record {
             ts: Self::now_for_logging(),
             target: None,
@@ -306,7 +319,7 @@ impl InstanceEnv {
             function,
             message,
         };
-        self.console_log(level, &record, &());
+        self.console_log(level, &record, &Noop);
     }
 
     /// End a console timer by logging the span at INFO level.
@@ -330,16 +343,16 @@ impl InstanceEnv {
     fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
         // We get back a col-list with the columns with generated values.
         // Write those back to `buffer` and then the encoded length to `row_len`.
-        let counter = CountWriter::default();
-        let mut writer = TeeWriter::new(counter, buffer);
-        for col in cols.iter() {
-            // Read the column value to AV and then serialize.
-            let val = row_ref
-                .read_col::<AlgebraicValue>(col)
-                .expect("reading col as AV never panics");
-            bsatn::to_writer(&mut writer, &val).unwrap();
-        }
-        writer.w1.finish()
+        let (_, count) = CountWriter::run(buffer, |writer| {
+            for col in cols.iter() {
+                // Read the column value to AV and then serialize.
+                let val = row_ref
+                    .read_col::<AlgebraicValue>(col)
+                    .expect("reading col as AV never panics");
+                bsatn::to_writer(writer, &val).unwrap();
+            }
+        });
+        count
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {

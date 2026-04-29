@@ -175,7 +175,7 @@ where
             .route("/", self.create_post)
             .route("/public-key", self.public_key_get)
             .route("/websocket-token", self.websocket_token_post)
-            .route("/{identity}/verify", self.verify_get)
-            .route("/{identity}/databases", self.databases_get)
+            .route("/:identity/verify", self.verify_get)
+            .route("/:identity/databases", self.databases_get)
     }
 }
