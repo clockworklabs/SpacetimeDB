@@ -32,7 +32,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
 use derive_more::From;
-use futures::{future::LocalBoxFuture, lock::Mutex, FutureExt};
+use futures::{lock::Mutex, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
@@ -74,8 +74,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
-use tracing::Instrument;
-
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
     pub tables: SmallVec<[DatabaseTableUpdate; 1]>,
@@ -838,15 +836,23 @@ pub(crate) enum ProcedureResponseTarget {
     },
 }
 
-type RunOnThreadFn = Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>;
+#[derive(Clone)]
+enum OneOffQueryResponseTarget {
+    V1Json {
+        client: Arc<ClientConnectionSender>,
+        message_id: Vec<u8>,
+    },
+    V1Bsatn {
+        client: Arc<ClientConnectionSender>,
+        message_id: Vec<u8>,
+    },
+    V2 {
+        client: Arc<ClientConnectionSender>,
+        request_id: u32,
+    },
+}
 
 enum MainQueueRequest {
-    /// Legacy arbitrary module-thread work that does not itself re-enter the request loop.
-    ///
-    /// This remains as an escape hatch for a few non-hot host operations. Reducer, procedure,
-    /// lifecycle, scheduler, and view-command work all use typed requests below so the new
-    /// architecture stays explicit where it matters.
-    RunFunction(RunOnThreadFn),
     Reducer {
         params: CallReducerParams,
         completion: Option<oneshot::Sender<ReducerCallResult>>,
@@ -859,6 +865,20 @@ enum MainQueueRequest {
     ViewCommand {
         cmd: ViewCommand,
         completion: oneshot::Sender<Result<ViewCommandResult, ViewCallError>>,
+    },
+    OneOffQuery {
+        auth: AuthCtx,
+        query: String,
+        timer: Instant,
+        response_target: OneOffQueryResponseTarget,
+        completion: oneshot::Sender<Result<Option<ExecutionMetrics>, anyhow::Error>>,
+    },
+    UnsubscribeMulti {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v1::UnsubscribeMulti,
+        timer: Instant,
+        completion: oneshot::Sender<Result<Option<ExecutionMetrics>, DBError>>,
     },
     DisconnectClient {
         client_id: ClientActorId,
@@ -1111,6 +1131,51 @@ async fn try_start_scheduled_procedure<M: PreparedModule>(
     instance.start_scheduled_procedure(params, completion, Arc::clone(pool), on_panic);
 }
 
+fn run_one_off_query_json(
+    db: Arc<RelationalDB>,
+    subscriptions: ModuleSubscriptions,
+    auth: AuthCtx,
+    query: String,
+    client: Arc<ClientConnectionSender>,
+    message_id: Vec<u8>,
+    timer: Instant,
+) -> Result<Option<ExecutionMetrics>, anyhow::Error> {
+    ModuleHost::one_off_query_inner::<ws_v1::JsonFormat>(
+        db,
+        subscriptions,
+        auth,
+        query,
+        client,
+        message_id,
+        timer,
+        crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool,
+        |msg: OneOffQueryResponseMessage<ws_v1::JsonFormat>| msg.into(),
+    )
+}
+
+fn run_one_off_query_bsatn(
+    db: Arc<RelationalDB>,
+    subscriptions: ModuleSubscriptions,
+    auth: AuthCtx,
+    query: String,
+    client: Arc<ClientConnectionSender>,
+    message_id: Vec<u8>,
+    timer: Instant,
+) -> Result<Option<ExecutionMetrics>, anyhow::Error> {
+    let rlb_pool = subscriptions.bsatn_rlb_pool.clone();
+    ModuleHost::one_off_query_inner::<ws_v1::BsatnFormat>(
+        db,
+        subscriptions,
+        auth,
+        query,
+        client,
+        message_id,
+        timer,
+        rlb_pool,
+        |msg: OneOffQueryResponseMessage<ws_v1::BsatnFormat>| msg.into(),
+    )
+}
+
 async fn run_request_loop<M: PreparedModule>(
     module: M,
     main_queue: Arc<MainQueue>,
@@ -1124,9 +1189,6 @@ async fn run_request_loop<M: PreparedModule>(
 
     while let Some(msg) = main_queue.recv_async().await {
         match msg {
-            MainQueueRequest::RunFunction(f) => {
-                f().await;
-            }
             MainQueueRequest::Reducer { params, completion } => {
                 let result = instance.call_reducer(params);
                 if let Some(completion) = completion {
@@ -1145,6 +1207,38 @@ async fn run_request_loop<M: PreparedModule>(
             }
             MainQueueRequest::ViewCommand { cmd, completion } => {
                 let _ = completion.send(Ok(instance.call_view(cmd)));
+            }
+            MainQueueRequest::OneOffQuery {
+                auth,
+                query,
+                timer,
+                response_target,
+                completion,
+            } => {
+                let db = module_info.relational_db().clone();
+                let subscriptions = module_info.subscriptions.clone();
+                let result = match response_target {
+                    OneOffQueryResponseTarget::V1Json { client, message_id } => {
+                        run_one_off_query_json(db, subscriptions, auth, query, client, message_id, timer)
+                    }
+                    OneOffQueryResponseTarget::V1Bsatn { client, message_id } => {
+                        run_one_off_query_bsatn(db, subscriptions, auth, query, client, message_id, timer)
+                    }
+                    OneOffQueryResponseTarget::V2 { client, request_id } => {
+                        let rlb_pool = subscriptions.bsatn_rlb_pool.clone();
+                        ModuleHost::one_off_query_v2_inner(db, subscriptions, auth, query, client, request_id, rlb_pool)
+                    }
+                };
+                let _ = completion.send(result);
+            }
+            MainQueueRequest::UnsubscribeMulti {
+                sender,
+                auth,
+                request,
+                timer,
+                completion,
+            } => {
+                let _ = completion.send(module_info.subscriptions.remove_multi_subscription(sender, auth, request, timer));
             }
             MainQueueRequest::DisconnectClient { client_id } => {
                 if let Err(err) = instance.disconnect_client(client_id) {
@@ -1801,75 +1895,6 @@ impl ModuleHost {
         }
     }
 
-    /// Run a function on the JobThread for this module.
-    /// This would deadlock if it is called within another call to `on_module_thread`.
-    /// Since this is async, and `f` is sync, deadlocking shouldn't be a problem.
-    pub async fn on_module_thread<F, R>(&self, label: &str, f: F) -> Result<R, anyhow::Error>
-    where
-        F: FnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.on_module_thread_async(label, async move || f()).await
-    }
-
-    /// Run an async function on the JobThread for this module.
-    /// Similar to `on_module_thread`, but for async functions.
-    pub async fn on_module_thread_async<F, R>(&self, label: &str, f: F) -> Result<R, anyhow::Error>
-    where
-        F: AsyncFnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.guard_closed()?;
-
-        let timer_guard = self.start_call_timer(label);
-        let span = tracing::Span::current();
-        let (tx, rx) = oneshot::channel();
-        self.main_queue()
-            .send_async(MainQueueRequest::RunFunction(Box::new(move || {
-                async move {
-                    drop(timer_guard);
-                    let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
-                    if let Err(Err(_panic)) = tx.send(result) {
-                        tracing::warn!("uncaught panic on module request loop")
-                    }
-                }
-                .boxed_local()
-            })))
-            .await
-            .map_err(|_| anyhow::anyhow!(NoSuchModule))?;
-
-        Ok(match rx.await.expect("module request loop should keep running while host is alive") {
-            Ok(result) => result,
-            Err(panic) => std::panic::resume_unwind(panic),
-        })
-    }
-
-    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(()) + use<>> {
-        // Record the time until our function starts running.
-        let queue_timer = WORKER_METRICS
-            .reducer_wait_time
-            .with_label_values(&self.info.database_identity, label)
-            .start_timer();
-        let queue_length_gauge = WORKER_METRICS
-            .instance_queue_length
-            .with_label_values(&self.info.database_identity);
-        queue_length_gauge.inc();
-        {
-            let queue_length = queue_length_gauge.get();
-            WORKER_METRICS
-                .instance_queue_length_histogram
-                .with_label_values(&self.info.database_identity)
-                .observe(queue_length as f64);
-        }
-        // Ensure that we always decrement the gauge.
-        scopeguard::guard((), move |_| {
-            // Decrement the queue length gauge when we're done.
-            // This is done in a defer so that it happens even if the reducer call panics.
-            queue_length_gauge.dec();
-            queue_timer.stop_and_record();
-        })
-    }
-
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
         let _ = label;
         self.guard_closed()?;
@@ -2350,6 +2375,30 @@ impl ModuleHost {
                 unreachable!("unexpected SQL result in call_view_remove_v2_subscription")
             }
         }
+    }
+
+    pub async fn call_view_remove_multi_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v1::UnsubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        self.guard_closed()
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+        let (tx, rx) = oneshot::channel();
+        self.main_queue()
+            .send_async(MainQueueRequest::UnsubscribeMulti {
+                sender,
+                auth,
+                request,
+                timer,
+                completion: tx,
+            })
+            .await
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+        rx.await
+            .expect("module request loop should keep running while host is alive")
     }
 
     pub async fn call_view_add_multi_subscription(
@@ -2873,122 +2922,158 @@ impl ModuleHost {
     /// This only returns an error if there is a db-level problem.
     /// An error with the query itself will be sent to the client.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn one_off_query<F: BuildableWebsocketFormat>(
+    fn one_off_query_inner<F: BuildableWebsocketFormat>(
+        db: Arc<RelationalDB>,
+        subscriptions: ModuleSubscriptions,
+        auth: AuthCtx,
+        query: String,
+        client: Arc<ClientConnectionSender>,
+        message_id: Vec<u8>,
+        timer: Instant,
+        rlb_pool: impl RowListBuilderSource<F>,
+        // We take this because we only have a way to convert with the concrete types (Bsatn and Json)
+        into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage,
+    ) -> Result<Option<ExecutionMetrics>, anyhow::Error> {
+        let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+        let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+            let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+            let _ = tx_offset_sender.send(tx_offset);
+            db.report_read_tx_metrics(reducer, tx_metrics);
+        });
+
+        let result: Result<(ws_v1::OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
+            let tx = SchemaViewer::new(&*tx, &auth);
+
+            let (plans, _, table_name, _) = compile_subscription(&query, &tx, &auth)?;
+
+            let optimized = plans
+                .into_iter()
+                .map(|plan| plan.optimize(&auth))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            check_row_limit(
+                &optimized,
+                &db,
+                &tx,
+                |plan, tx| estimate_rows_scanned(tx, plan),
+                &auth,
+            )?;
+
+            let return_table = || optimized.first().and_then(|plan| plan.return_table());
+
+            let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
+            let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
+            let num_private_cols = return_table().map(|schema| schema.num_private_cols()).unwrap_or_default();
+
+            let optimized = optimized
+                .into_iter()
+                .map(PipelinedProject::from)
+                .collect::<Vec<_>>();
+
+            let table_name = table_name.into();
+
+            if returns_view_table && num_private_cols > 0 {
+                let optimized = optimized
+                    .into_iter()
+                    .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
+                    .collect::<Vec<_>>();
+                return execute_plan_for_view::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
+                    .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
+                    .context("One-off queries are not allowed to modify the database");
+            }
+
+            execute_plan::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
+                .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
+                .context("One-off queries are not allowed to modify the database")
+        })();
+
+        let total_host_execution_duration = timer.elapsed().into();
+        let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
+            Ok((rows, metrics)) => (
+                into_message(OneOffQueryResponseMessage {
+                    message_id,
+                    error: None,
+                    results: vec![rows],
+                    total_host_execution_duration,
+                }),
+                Some(metrics),
+            ),
+            Err(err) => (
+                into_message(OneOffQueryResponseMessage {
+                    message_id,
+                    error: Some(format!("{err}")),
+                    results: vec![],
+                    total_host_execution_duration,
+                }),
+                None,
+            ),
+        };
+
+        subscriptions.send_client_message(client, message, (&*tx, tx_offset_receiver))?;
+        Ok(metrics)
+    }
+
+    pub async fn one_off_query_json(
         &self,
         auth: AuthCtx,
         query: String,
         client: Arc<ClientConnectionSender>,
         message_id: Vec<u8>,
         timer: Instant,
-        rlb_pool: impl 'static + Send + RowListBuilderSource<F>,
-        // We take this because we only have a way to convert with the concrete types (Bsatn and Json)
-        into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
     ) -> Result<(), anyhow::Error> {
-        let replica_ctx = self.replica_ctx();
-        let db = self.relational_db().clone();
-        let subscriptions = replica_ctx.subscriptions.clone();
+        self.guard_closed()?;
         log::debug!("One-off query: {query}");
-        let metrics = self
-            .on_module_thread("one_off_query", move || {
-                let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
-                let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
-                    let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
-                    let _ = tx_offset_sender.send(tx_offset);
-                    db.report_read_tx_metrics(reducer, tx_metrics);
-                });
-
-                // We wrap the actual query in a closure so we can use ? to handle errors without making
-                // the entire transaction abort with an error.
-                let result: Result<(ws_v1::OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
-                    let tx = SchemaViewer::new(&*tx, &auth);
-
-                    let (
-                        // A query may compile down to several plans.
-                        // This happens when there are multiple RLS rules per table.
-                        // The original query is the union of these plans.
-                        plans,
-                        _,
-                        table_name,
-                        _,
-                    ) = compile_subscription(&query, &tx, &auth)?;
-
-                    // Optimize each fragment
-                    let optimized = plans
-                        .into_iter()
-                        .map(|plan| plan.optimize(&auth))
-                        .collect::<Result<Vec<_>, _>>()?;
-
-                    check_row_limit(
-                        &optimized,
-                        &db,
-                        &tx,
-                        // Estimate the number of rows this query will scan
-                        |plan, tx| estimate_rows_scanned(tx, plan),
-                        &auth,
-                    )?;
-
-                    let return_table = || optimized.first().and_then(|plan| plan.return_table());
-
-                    let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
-                    let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
-                    let num_private_cols = return_table()
-                        .map(|schema| schema.num_private_cols())
-                        .unwrap_or_default();
-
-                    let optimized = optimized
-                        .into_iter()
-                        // Convert into something we can execute
-                        .map(PipelinedProject::from)
-                        .collect::<Vec<_>>();
-
-                    let table_name = table_name.into();
-
-                    if returns_view_table && num_private_cols > 0 {
-                        let optimized = optimized
-                            .into_iter()
-                            .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
-                            .collect::<Vec<_>>();
-                        // Execute the union and return the results
-                        return execute_plan_for_view::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                            .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
-                            .context("One-off queries are not allowed to modify the database");
-                    }
-
-                    // Execute the union and return the results
-                    execute_plan::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                        .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
-                        .context("One-off queries are not allowed to modify the database")
-                })();
-
-                let total_host_execution_duration = timer.elapsed().into();
-                let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
-                    Ok((rows, metrics)) => (
-                        into_message(OneOffQueryResponseMessage {
-                            message_id,
-                            error: None,
-                            results: vec![rows],
-                            total_host_execution_duration,
-                        }),
-                        Some(metrics),
-                    ),
-                    Err(err) => (
-                        into_message(OneOffQueryResponseMessage {
-                            message_id,
-                            error: Some(format!("{err}")),
-                            results: vec![],
-                            total_host_execution_duration,
-                        }),
-                        None,
-                    ),
-                };
-
-                subscriptions.send_client_message(client, message, (&*tx, tx_offset_receiver))?;
-                Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
+        let (tx, rx) = oneshot::channel();
+        self.main_queue()
+            .send_async(MainQueueRequest::OneOffQuery {
+                auth,
+                query,
+                timer,
+                response_target: OneOffQueryResponseTarget::V1Json { client, message_id },
+                completion: tx,
             })
-            .await??;
+            .await
+            .map_err(|_| anyhow::anyhow!(NoSuchModule))?;
+        let metrics = rx
+            .await
+            .expect("module request loop should keep running while host is alive")?;
 
         if let Some(metrics) = metrics {
             // Record the metrics for the one-off query
+            self.relational_db()
+                .exec_counters_for(WorkloadType::Sql)
+                .record(&metrics);
+        }
+
+        Ok(())
+    }
+
+    pub async fn one_off_query_bsatn(
+        &self,
+        auth: AuthCtx,
+        query: String,
+        client: Arc<ClientConnectionSender>,
+        message_id: Vec<u8>,
+        timer: Instant,
+    ) -> Result<(), anyhow::Error> {
+        self.guard_closed()?;
+        log::debug!("One-off query: {query}");
+        let (tx, rx) = oneshot::channel();
+        self.main_queue()
+            .send_async(MainQueueRequest::OneOffQuery {
+                auth,
+                query,
+                timer,
+                response_target: OneOffQueryResponseTarget::V1Bsatn { client, message_id },
+                completion: tx,
+            })
+            .await
+            .map_err(|_| anyhow::anyhow!(NoSuchModule))?;
+        let metrics = rx
+            .await
+            .expect("module request loop should keep running while host is alive")?;
+
+        if let Some(metrics) = metrics {
             self.relational_db()
                 .exec_counters_for(WorkloadType::Sql)
                 .record(&metrics);
@@ -3008,18 +3093,24 @@ impl ModuleHost {
         query: String,
         client: Arc<ClientConnectionSender>,
         request_id: u32,
-        _timer: Instant,
-        rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
+        timer: Instant,
     ) -> Result<(), anyhow::Error> {
-        let replica_ctx = self.replica_ctx();
-        let db = self.relational_db().clone();
-        let subscriptions = replica_ctx.subscriptions.clone();
+        self.guard_closed()?;
         log::debug!("One-off query: {query}");
-        let metrics = self
-            .on_module_thread("one_off_query_v2", move || {
-                Self::one_off_query_v2_inner(db, subscriptions, auth, query, client, request_id, rlb_pool)
+        let (tx, rx) = oneshot::channel();
+        self.main_queue()
+            .send_async(MainQueueRequest::OneOffQuery {
+                auth,
+                query,
+                timer,
+                response_target: OneOffQueryResponseTarget::V2 { client, request_id },
+                completion: tx,
             })
-            .await??;
+            .await
+            .map_err(|_| anyhow::anyhow!(NoSuchModule))?;
+        let metrics = rx
+            .await
+            .expect("module request loop should keep running while host is alive")?;
 
         if let Some(metrics) = metrics {
             self.relational_db()

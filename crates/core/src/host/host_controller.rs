@@ -366,30 +366,6 @@ impl HostController {
         Ok(launched.module_host.info)
     }
 
-    /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
-    /// this controller, launching the host if necessary.
-    ///
-    /// If the computation `F` panics, the host is removed from this controller,
-    /// releasing its resources.
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn using_database<F, Fut, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
-    where
-        F: FnOnce(Arc<RelationalDB>) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = T> + Send + 'static,
-        T: Send + 'static,
-    {
-        trace!("using database {}/{}", database.database_identity, replica_id);
-        let module = self.get_or_launch_module_host(database, replica_id).await?;
-        let on_panic = self.unregister_fn(replica_id);
-        scopeguard::defer_on_unwind!({
-            warn!("database operation panicked");
-            on_panic();
-        });
-
-        let db = module.relational_db().clone();
-        let result = module.on_module_thread_async("using_database", move || f(db)).await?;
-        Ok(result)
-    }
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
     /// program.
     ///
