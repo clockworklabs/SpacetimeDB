@@ -20,7 +20,6 @@ members = [
   "crates/language-test-support",
   "crates/typescript-tests",
   "crates/csharp-tests",
-  "crates/cpp-tests",
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
