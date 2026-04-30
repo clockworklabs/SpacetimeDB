@@ -118,6 +118,7 @@ macro_rules! path_type {
                 tmp.write_all(contents.as_ref())?;
                 tmp.as_file().sync_all()?;
                 tmp.persist(&path)?;
+                #[cfg(not(target_os = "windows"))]
                 std::fs::File::open(parent)?.sync_all()?;
 
                 Ok(())
