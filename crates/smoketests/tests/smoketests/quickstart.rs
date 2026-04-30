@@ -207,6 +207,18 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
         mappings.push((package.to_string(), package.to_string()));
     }
 
+    // Ensure dotnet-experimental feed exists (needed for NativeAOT-LLVM ILCompiler packages)
+    if !sources.iter().any(|(k, _)| k == "dotnet-experimental") {
+        sources.push((
+            "dotnet-experimental".to_string(),
+            PathBuf::from("https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json"),
+        ));
+    }
+    if !mappings.iter().any(|(k, _)| k == "dotnet-experimental") {
+        mappings.push(("dotnet-experimental".to_string(), "Microsoft.DotNet.ILCompiler.LLVM".to_string()));
+        mappings.push(("dotnet-experimental".to_string(), "runtime.*".to_string()));
+    }
+
     // Ensure nuget.org fallback exists
     if !sources.iter().any(|(k, _)| k == "nuget.org") {
         sources.push((

@@ -113,6 +113,18 @@ jobs:
           .\emsdk install 4.0.21
           .\emsdk activate 4.0.21
 
+      # Install WASI SDK for .NET 10 NativeAOT-LLVM compilation.
+      - name: Install WASI SDK (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wasiDir = "$env:USERPROFILE\.wasi-sdk"
+          Invoke-WebRequest -Uri "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-windows.tar.gz" -OutFile "$env:TEMP\wasi-sdk.tar.gz"
+          New-Item -ItemType Directory -Force -Path $wasiDir | Out-Null
+          tar -xzf "$env:TEMP\wasi-sdk.tar.gz" -C $wasiDir --strip-components=1
+          echo "WASI_SDK_PATH=$wasiDir" >> $env:GITHUB_ENV
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
