@@ -22,7 +22,6 @@ detect_emcmake_command() {
 
 EMCMAKE_CMD=$(detect_emcmake_command)
 echo "Using emcmake command: $EMCMAKE_CMD"
-SPACETIMEDB_SERVER_URL="${SPACETIMEDB_SERVER_URL:-}"
 
 # Parse arguments
 MAX_PARALLEL=16
@@ -53,9 +52,7 @@ check_server_running() {
     curl -s http://127.0.0.1:3000/health >/dev/null 2>&1
 }
 
-if [ -n "$SPACETIMEDB_SERVER_URL" ]; then
-    echo "Using SpacetimeDB server from SPACETIMEDB_SERVER_URL=$SPACETIMEDB_SERVER_URL"
-elif ! check_server_running; then
+if ! check_server_running; then
     echo "Starting SpacetimeDB server..."
     nohup spacetime start > "$TMP_DIR/spacetime.log" 2>&1 &
     
@@ -256,11 +253,7 @@ publish_module() {
     local db_name=$(echo "testmod-${module}" | sed 's/_/-/g')
     echo "  📤 Publishing $module as $db_name..."
     local PUBLISH_ERROR_FILE="$TMP_DIR/publish_error_${module}.txt"
-    local server_args=()
-    if [ -n "$SPACETIMEDB_SERVER_URL" ]; then
-        server_args=(--server "$SPACETIMEDB_SERVER_URL")
-    fi
-    timeout 60 spacetime publish "${server_args[@]}" --bin-path "$wasm" -c "$db_name" -y >"$PUBLISH_ERROR_FILE" 2>&1
+    timeout 60 spacetime publish --bin-path "$wasm" -c "$db_name" -y >"$PUBLISH_ERROR_FILE" 2>&1
     local publish_exit=$?
 
     local expected_marker
