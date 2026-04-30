@@ -352,9 +352,19 @@ enum ModuleHostInner {
     Js(Box<V8ModuleHost>),
 }
 
+/// Wasm has two instance managers: one for procedures and one for reducers/views.
+///
+/// Reducers are executed serially by the `SingleCoreExecutor`, so the instance pool
+/// contains only a single instance.
+///
+/// This is not the case for procedures which can be executed concurrently.
+///
+/// Both managers need to be able to create fresh instances from the same compiled module,
+/// so they share the module via `Arc`.
 struct WasmtimeModuleHost {
     executor: SingleCoreExecutor,
-    instance_manager: ModuleInstanceManager<super::wasmtime::Module>,
+    main_instance: ModuleInstanceManager<Arc<super::wasmtime::Module>>,
+    procedure_instances: ModuleInstanceManager<Arc<super::wasmtime::Module>>,
 }
 
 struct V8ModuleHost {
@@ -403,6 +413,16 @@ impl GenericModule for super::v8::JsModule {
     }
     fn host_type(&self) -> HostType {
         HostType::Js
+    }
+}
+
+impl<M: GenericModule> GenericModule for Arc<M> {
+    type Instance = M::Instance;
+    async fn create_instance(&self) -> Self::Instance {
+        (**self).create_instance().await
+    }
+    fn host_type(&self) -> HostType {
+        (**self).host_type()
     }
 }
 
@@ -747,102 +767,87 @@ impl CallProcedureParams {
 /// Holds a [`Module`] and a set of [`Instance`]s from it,
 /// and allocates the [`Instance`]s to be used for function calls.
 ///
-/// Capable of managing and allocating multiple instances of the same module,
-/// but this functionality is currently unused, as only one reducer runs at a time.
-/// When we introduce procedures, it will be necessary to have multiple instances,
-/// as each procedure invocation will have its own sandboxed instance,
-/// and multiple procedures can run concurrently with up to one reducer.
+/// This can either back a single long-lived serialized execution lane
+/// or a pool that grows to support concurrent procedure execution.
 struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
-    module_instances_metric: ModuleInstancesMetric,
-    create_instance_time_metric: CreateInstanceTimeMetric,
+    metrics: InstanceManagerMetrics,
 }
 
-/// Handle on the `spacetime_module_create_instance_time_seconds` label for a particular database
-/// which calls `remove_label_values` to clean up on drop.
-struct CreateInstanceTimeMetric {
-    metric: Histogram,
+/// The [`ModuleHost`] now manages two instance pools for wasm: one for
+/// reducers/views and another for procedures, and both write to the same
+/// metric labels. Therefore both must share the same handles or else each
+/// copy would try to unregister the same metric labels independently on drop.
+#[derive(Clone)]
+struct InstanceManagerMetrics {
+    inner: Arc<InstanceManagerMetricsInner>,
+}
+
+/// Shared metric state for all instance managers of a module host.
+struct InstanceManagerMetricsInner {
+    module_instances_metric: IntGauge,
+    create_instance_time_metric: Histogram,
     host_type: HostType,
     database_identity: Identity,
 }
 
-/// Handle on the `spacetime_module_instances` label for a particular database
-/// which calls `remove_label_values` to clean up on drop.
-struct ModuleInstancesMetric {
-    metric: IntGauge,
-    host_type: HostType,
-    database_identity: Identity,
-    count: std::sync::Mutex<i64>,
-}
-
-impl Drop for CreateInstanceTimeMetric {
+impl Drop for InstanceManagerMetricsInner {
     fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_create_instance_time_seconds
             .remove_label_values(&self.database_identity, &self.host_type);
-    }
-}
-
-impl Drop for ModuleInstancesMetric {
-    fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_instances
             .remove_label_values(&self.database_identity, &self.host_type);
     }
 }
 
-impl ModuleInstancesMetric {
-    fn inc(&self) {
-        let mut count = self.count.lock().unwrap();
-        *count += 1;
-        self.metric.set(*count);
-    }
-
-    fn dec(&self) {
-        let mut count = self.count.lock().unwrap();
-        if *count == 0 {
-            return;
+impl InstanceManagerMetrics {
+    fn new(host_type: HostType, database_identity: Identity) -> Self {
+        Self {
+            inner: Arc::new(InstanceManagerMetricsInner {
+                module_instances_metric: WORKER_METRICS
+                    .module_instances
+                    .with_label_values(&database_identity, &host_type),
+                create_instance_time_metric: WORKER_METRICS
+                    .module_create_instance_time_seconds
+                    .with_label_values(&database_identity, &host_type),
+                host_type,
+                database_identity,
+            }),
         }
-        *count -= 1;
-        self.metric.set(*count);
     }
-}
 
-impl CreateInstanceTimeMetric {
-    fn observe(&self, duration: std::time::Duration) {
-        self.metric.observe(duration.as_secs_f64());
+    fn inc_instances(&self) {
+        self.inner.module_instances_metric.inc();
+    }
+
+    fn dec_instances(&self) {
+        self.inner.module_instances_metric.dec();
+    }
+
+    fn observe_create_instance_time(&self, duration: std::time::Duration) {
+        self.inner.create_instance_time_metric.observe(duration.as_secs_f64());
     }
 }
 
 impl<M: GenericModule> ModuleInstanceManager<M> {
-    fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
+    fn new(module: M, init_inst: Option<M::Instance>, metrics: InstanceManagerMetrics) -> Self {
         let host_type = module.host_type();
-        let module_instances_metric = ModuleInstancesMetric {
-            metric: WORKER_METRICS
-                .module_instances
-                .with_label_values(&database_identity, &host_type),
-            host_type,
-            database_identity,
-            count: std::sync::Mutex::new(1),
-        };
-
-        let create_instance_time_metric = CreateInstanceTimeMetric {
-            metric: WORKER_METRICS
-                .module_create_instance_time_seconds
-                .with_label_values(&database_identity, &host_type),
-            host_type,
-            database_identity,
-        };
+        debug_assert_eq!(metrics.inner.host_type, host_type);
 
         let mut instances = VecDeque::new();
+        let has_init_inst = init_inst.is_some();
         instances.extend(init_inst);
+        if has_init_inst {
+            metrics.inc_instances();
+        }
 
         Self {
             instances: Mutex::new(instances),
             module,
-            module_instances_metric,
-            create_instance_time_metric,
+            metrics,
         }
     }
 
@@ -861,8 +866,8 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             let start_time = std::time::Instant::now();
             let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
-            self.create_instance_time_metric.observe(elapsed_time);
-            self.module_instances_metric.inc();
+            self.metrics.observe_create_instance_time(elapsed_time);
+            self.metrics.inc_instances();
             res
         }
     }
@@ -872,7 +877,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             // Don't return trapped instances;
             // they may have left internal data structures in the guest `Instance`
             // (WASM linear memory, V8 global scope) in a bad state.
-            self.module_instances_metric.dec();
+            self.metrics.dec_instances();
             return;
         }
 
@@ -1082,16 +1087,21 @@ impl ModuleHost {
                 init_inst,
             } => {
                 info = module.info();
-                let instance_manager = ModuleInstanceManager::new(module, Some(init_inst), database_identity);
+                let module = Arc::new(module);
+                let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
+                let instance_manager = ModuleInstanceManager::new(module.clone(), Some(init_inst), metrics.clone());
+                let procedure_instances = ModuleInstanceManager::new(module, None, metrics);
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     executor,
-                    instance_manager,
+                    main_instance: instance_manager,
+                    procedure_instances,
                 })))
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
                 let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
-                let procedure_instances = ModuleInstanceManager::new(module.clone(), None, database_identity);
+                let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
+                let procedure_instances = ModuleInstanceManager::new(module.clone(), None, metrics);
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module,
                     instance_lane,
@@ -1232,7 +1242,7 @@ impl ModuleHost {
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(wasm) => {
                 let executor = &wasm.executor;
-                let instance_manager = &wasm.instance_manager;
+                let instance_manager = &wasm.main_instance;
                 instance_manager
                     .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
                     .await
@@ -1285,9 +1295,8 @@ impl ModuleHost {
 
     /// Run a function for this module using pooled instances.
     ///
-    /// For WASM, this is identical to [`Self::call`].
-    /// For V8/JS, this uses the pooled procedure instances instead of the
-    /// single instance lane.
+    /// For WASM and V8/JS, this uses the pooled procedure instances instead of the
+    /// serialized reducer/view execution lane.
     async fn call_pooled<A, R>(
         &self,
         label: &str,
@@ -1309,7 +1318,7 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                host.instance_manager
+                host.procedure_instances
                     .with_instance(async |mut inst| {
                         host.executor
                             .run_job(async move || {
@@ -1333,13 +1342,37 @@ impl ModuleHost {
     }
 
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.call_pooled(
-            label,
-            cmd,
-            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
-            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd).await),
-        )
-        .await?
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("pooled operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                host.main_instance
+                    .with_instance(async |mut inst| {
+                        host.executor
+                            .run_job(async move || {
+                                drop(timer_guard);
+                                (Ok::<_, ViewCallError>(inst.call_view(cmd)), inst)
+                            })
+                            .await
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                host.procedure_instances
+                    .with_instance(async |inst| {
+                        drop(timer_guard);
+                        let res = Ok::<_, ViewCallError>(inst.call_view(cmd).await);
+                        (res, inst)
+                    })
+                    .await
+            }
+        }
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -1940,13 +1973,44 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.call_pooled(
-            "unknown scheduled function",
-            params,
-            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
-            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
-        )
-        .await?
+        self.guard_closed()?;
+        let label = "unknown scheduled function";
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("pooled operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let manager = if params.uses_procedure_pool(&self.info) {
+                    &host.procedure_instances
+                } else {
+                    &host.main_instance
+                };
+
+                manager
+                    .with_instance(async |mut inst| {
+                        host.executor
+                            .run_job(async move || {
+                                drop(timer_guard);
+                                (Ok(inst.call_scheduled_function(params).await), inst)
+                            })
+                            .await
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                host.procedure_instances
+                    .with_instance(async |inst| {
+                        drop(timer_guard);
+                        let res = Ok(inst.call_scheduled_function(params).await);
+                        (res, inst)
+                    })
+                    .await
+            }
+        }
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -2510,14 +2574,14 @@ impl ModuleHost {
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
         match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.replica_ctx(),
+            ModuleHostInner::Wasm(wasm) => wasm.main_instance.module.replica_ctx(),
             ModuleHostInner::Js(js) => js.module.replica_ctx(),
         }
     }
 
     fn scheduler(&self) -> &Scheduler {
         match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.scheduler(),
+            ModuleHostInner::Wasm(wasm) => wasm.main_instance.module.scheduler(),
             ModuleHostInner::Js(js) => js.module.scheduler(),
         }
     }
@@ -2550,7 +2614,9 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{
+        GenericModule, GenericModuleInstance, HostType, InstanceManagerMetrics, ModuleHost, ModuleInstanceManager,
+    };
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
@@ -2561,7 +2627,37 @@ mod tests {
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+
+    #[derive(Clone)]
+    struct TestModule {
+        next_id: Arc<AtomicUsize>,
+    }
+
+    struct TestInstance {
+        id: usize,
+        trapped: bool,
+    }
+
+    impl GenericModule for TestModule {
+        type Instance = TestInstance;
+
+        async fn create_instance(&self) -> Self::Instance {
+            let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+            TestInstance { id, trapped: false }
+        }
+
+        fn host_type(&self) -> HostType {
+            HostType::Wasm
+        }
+    }
+
+    impl GenericModuleInstance for TestInstance {
+        fn trapped(&self) -> bool {
+            self.trapped
+        }
+    }
 
     fn v2_client_config() -> ClientConfig {
         ClientConfig {
@@ -2653,6 +2749,64 @@ mod tests {
                 other => panic!("Expected v2 OneOffQueryResult, got: {other:?}"),
             }
         });
+
+        Ok(())
+    }
+
+    #[test]
+    fn wasm_serialized_instance_is_reused_until_trap() -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let module = TestModule {
+            next_id: Arc::new(AtomicUsize::new(1)),
+        };
+        let metrics = InstanceManagerMetrics::new(HostType::Wasm, Identity::ZERO);
+        let manager = ModuleInstanceManager::new(module, Some(TestInstance { id: 0, trapped: false }), metrics);
+
+        let first = runtime.block_on(manager.with_instance(async |inst| (inst.id, inst)));
+        let second = runtime.block_on(manager.with_instance(async |inst| (inst.id, inst)));
+        assert_eq!(first, 0);
+        assert_eq!(second, 0);
+
+        let trapped = runtime.block_on(manager.with_instance(async |mut inst| {
+            inst.trapped = true;
+            (inst.id, inst)
+        }));
+        assert_eq!(trapped, 0);
+
+        let replacement = runtime.block_on(manager.with_instance(async |inst| (inst.id, inst)));
+        assert_eq!(replacement, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn wasm_procedure_pool_does_not_consume_serialized_instance() -> anyhow::Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let module = Arc::new(TestModule {
+            next_id: Arc::new(AtomicUsize::new(1)),
+        });
+        let metrics = InstanceManagerMetrics::new(HostType::Wasm, Identity::ZERO);
+        let serialized = ModuleInstanceManager::new(
+            module.clone(),
+            Some(TestInstance { id: 0, trapped: false }),
+            metrics.clone(),
+        );
+        let procedures = ModuleInstanceManager::new(module, None, metrics);
+
+        let (serialized_id, procedure_id, serialized_reuse) = runtime.block_on(async {
+            let serialized_inst = serialized.get_instance().await;
+            let procedure_inst = procedures.get_instance().await;
+            let serialized_id = serialized_inst.id;
+            let procedure_id = procedure_inst.id;
+            serialized.return_instance(serialized_inst).await;
+            procedures.return_instance(procedure_inst).await;
+            let serialized_reuse = serialized.with_instance(async |inst| (inst.id, inst)).await;
+            (serialized_id, procedure_id, serialized_reuse)
+        });
+
+        assert_eq!(serialized_id, 0);
+        assert_eq!(procedure_id, 1);
+        assert_eq!(serialized_reuse, 0);
 
         Ok(())
     }

@@ -277,6 +277,45 @@ enum QueueItem {
 #[derive(Clone)]
 pub(crate) struct ScheduledFunctionParams(QueueItem);
 
+impl ScheduledFunctionParams {
+    pub(crate) fn uses_procedure_pool(&self, module: &ModuleInfo) -> bool {
+        match &self.0 {
+            QueueItem::VolatileNonatomicImmediate { function_name, .. } => {
+                module.module_def.procedure_full(function_name.as_str()).is_some()
+            }
+            QueueItem::Id { id, .. } => {
+                let db = &**module.relational_db();
+                let tx = db.begin_tx(Workload::Internal);
+                let table_id_col = StScheduledFields::TableId.col_id();
+                let function_name_col = StScheduledFields::ReducerName.col_id();
+
+                match db.iter_by_col_eq(&tx, ST_SCHEDULED_ID, table_id_col, &id.table_id.into()) {
+                    Ok(mut rows) => match rows.next() {
+                        Some(row) => match row.read_col::<Box<str>>(function_name_col) {
+                            Ok(function_name) => module.module_def.procedure_full(function_name.as_ref()).is_some(),
+                            Err(err) => {
+                                log::warn!(
+                                    "failed to read scheduled function name for table {}: {err:#}",
+                                    id.table_id
+                                );
+                                false
+                            }
+                        },
+                        None => false,
+                    },
+                    Err(err) => {
+                        log::warn!(
+                            "failed to scan scheduled function metadata for table {}: {err:#}",
+                            id.table_id
+                        );
+                        false
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum CallScheduledFunctionError {
     #[error(transparent)]
