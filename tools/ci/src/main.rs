@@ -465,8 +465,6 @@ fn main() -> Result<()> {
                 "--exclude",
                 "spacetimedb-sdk",
                 "--exclude",
-                "spacetimedb-language-test-support",
-                "--exclude",
                 "spacetimedb-typescript-tests",
                 "--exclude",
                 "spacetimedb-csharp-tests",
