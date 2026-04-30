@@ -28,7 +28,7 @@ struct ScenarioTuning {
 }
 
 const RANDOM_CRUD_TUNING: ScenarioTuning = ScenarioTuning {
-    min_tables: 1,
+    min_tables: 2,
     table_count_choices: 3,
     min_extra_cols: 1,
     extra_col_choices: 4,
@@ -45,7 +45,7 @@ const RANDOM_CRUD_TUNING: ScenarioTuning = ScenarioTuning {
 };
 
 const INDEXED_RANGES_TUNING: ScenarioTuning = ScenarioTuning {
-    min_tables: 1,
+    min_tables: 2,
     table_count_choices: 2,
     min_extra_cols: 3,
     extra_col_choices: 3,
@@ -70,7 +70,7 @@ pub fn generate_indexed_ranges_schema(rng: &mut DstRng) -> SchemaPlan {
 }
 
 fn generate_schema_with_tuning(rng: &mut DstRng, tuning: ScenarioTuning) -> SchemaPlan {
-    let table_count = tuning.min_tables + rng.index(tuning.table_count_choices);
+    let table_count = tuning.min_tables + mixed_index(rng, tuning.table_count_choices);
     let mut tables = Vec::with_capacity(table_count);
 
     for table_idx in 0..table_count {
@@ -123,6 +123,12 @@ fn generate_schema_with_tuning(rng: &mut DstRng, tuning: ScenarioTuning) -> Sche
     }
 
     SchemaPlan { tables }
+}
+
+fn mixed_index(rng: &mut DstRng, len: usize) -> usize {
+    assert!(len > 0, "len must be non-zero");
+    let value = rng.next_u64();
+    ((value ^ (value >> 32)) as usize) % len
 }
 
 pub fn validate_outcome(_schema: &SchemaPlan, _outcome: &TableWorkloadOutcome) -> anyhow::Result<()> {

@@ -7,8 +7,9 @@ use futures::FutureExt;
 use indexmap::IndexMap;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::HashMap;
-use tokio::runtime;
 use tokio::sync::{mpsc, oneshot, watch};
+#[cfg(not(madsim))]
+use tokio::runtime;
 use tracing::Instrument;
 
 use crate::util::thread_scheduling::apply_compute_thread_hint;
@@ -289,10 +290,14 @@ pub struct SingleCoreExecutor {
 struct SingleCoreExecutorInner {
     /// The sending end of a channel over which we send jobs.
     job_tx: mpsc::UnboundedSender<Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>>,
+    #[cfg(madsim)]
+    /// Retains the allocation guard for the lifetime of the simulated executor.
+    _guard: LoadBalanceOnDropGuard,
 }
 
 impl SingleCoreExecutor {
     /// Spawn a `SingleCoreExecutor` on the given core.
+    #[cfg(not(madsim))]
     fn spawn(core: AllocatedJobCore) -> Self {
         let AllocatedJobCore { guard, mut pinner } = core;
 
@@ -322,6 +327,28 @@ impl SingleCoreExecutor {
             // This is very important to do - otherwise, in-progress tasks will be
             // dropped and cancelled.
             rt.block_on(local)
+        });
+
+        Self { inner }
+    }
+
+    /// Spawn a simulated `SingleCoreExecutor`.
+    ///
+    /// In simulation, job execution models the same logical single-core queue
+    /// without creating an OS thread or re-entering a Tokio runtime with
+    /// `Handle::block_on`.
+    #[cfg(madsim)]
+    fn spawn(core: AllocatedJobCore) -> Self {
+        let AllocatedJobCore { guard, pinner: _ } = core;
+
+        let (job_tx, mut job_rx) = mpsc::unbounded_channel();
+
+        let inner = Arc::new(SingleCoreExecutorInner { job_tx, _guard: guard });
+
+        tokio::task::spawn_local(async move {
+            while let Some(job) = job_rx.recv().await {
+                tokio::task::spawn_local(job());
+            }
         });
 
         Self { inner }

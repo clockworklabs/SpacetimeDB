@@ -1,6 +1,6 @@
 //! RelationalDB DST target with mocked commitlog file chaos and replay checks.
 
-use std::{collections::BTreeMap, io, ops::Bound, panic::AssertUnwindSafe, sync::Arc};
+use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, panic::AssertUnwindSafe, sync::Arc};
 
 use spacetimedb_commitlog::repo::{Memory as MemoryCommitlogRepo, SizeOnDisk};
 use spacetimedb_core::{
@@ -32,11 +32,13 @@ use crate::{
     core::{self, TargetEngine},
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
+    targets::buggified_repo::BuggifiedRepo,
     targets::properties::{
         CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableObservation, TargetPropertyAccess,
     },
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
+        commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
         table_ops::{
             ConnectionWriteState, ExpectedErrorKind, TableOperation, TableScenario, TableScenarioId,
             TableWorkloadInteraction, TableWorkloadOutcome,
@@ -96,6 +98,98 @@ struct DynamicTableState {
     table_id: TableId,
 }
 
+#[derive(Default)]
+struct RunStats {
+    interactions: InteractionSummary,
+    table_ops: TableOperationSummary,
+    transactions: TransactionStats,
+    runtime: RuntimeStats,
+}
+
+#[derive(Default)]
+struct TransactionStats {
+    explicit_begin: usize,
+    explicit_commit: usize,
+    explicit_rollback: usize,
+    auto_commit: usize,
+    read_tx: Cell<usize>,
+}
+
+#[derive(Default)]
+struct RuntimeStats {
+    durability_actors_started: usize,
+}
+
+impl RunStats {
+    fn record_interaction_requested(&mut self, interaction: &CommitlogInteraction) {
+        match interaction {
+            CommitlogInteraction::Table(_) => self.interactions.table += 1,
+            CommitlogInteraction::CreateDynamicTable { .. } => self.interactions.create_dynamic_table += 1,
+            CommitlogInteraction::DropDynamicTable { .. } => self.interactions.drop_dynamic_table += 1,
+            CommitlogInteraction::MigrateDynamicTable { .. } => self.interactions.migrate_dynamic_table += 1,
+            CommitlogInteraction::ChaosSync => self.interactions.chaos_sync += 1,
+            CommitlogInteraction::CloseReopen => self.interactions.close_reopen_requested += 1,
+        }
+    }
+
+    fn record_interaction_result(&mut self, interaction: &CommitlogInteraction, observation: &CommitlogObservation) {
+        if matches!(observation, CommitlogObservation::Skipped) {
+            self.interactions.skipped += 1;
+        }
+        if matches!(interaction, CommitlogInteraction::CloseReopen) {
+            match observation {
+                CommitlogObservation::Skipped => self.interactions.close_reopen_skipped += 1,
+                CommitlogObservation::Applied => self.interactions.close_reopen_applied += 1,
+                _ => {}
+            }
+        }
+    }
+
+    fn record_table_operation(&mut self, op: &TableOperation) {
+        match op {
+            TableOperation::BeginTx { .. } => self.table_ops.begin_tx += 1,
+            TableOperation::CommitTx { .. } => self.table_ops.commit_tx += 1,
+            TableOperation::RollbackTx { .. } => self.table_ops.rollback_tx += 1,
+            TableOperation::Insert { .. } => self.table_ops.insert += 1,
+            TableOperation::Delete { .. } => self.table_ops.delete += 1,
+            TableOperation::DuplicateInsert { .. } => self.table_ops.duplicate_insert += 1,
+            TableOperation::DeleteMissing { .. } => self.table_ops.delete_missing += 1,
+            TableOperation::BatchInsert { .. } => self.table_ops.batch_insert += 1,
+            TableOperation::BatchDelete { .. } => self.table_ops.batch_delete += 1,
+            TableOperation::Reinsert { .. } => self.table_ops.reinsert += 1,
+            TableOperation::PointLookup { .. } => self.table_ops.point_lookup += 1,
+            TableOperation::PredicateCount { .. } => self.table_ops.predicate_count += 1,
+            TableOperation::RangeScan { .. } => self.table_ops.range_scan += 1,
+            TableOperation::FullScan { .. } => self.table_ops.full_scan += 1,
+        }
+    }
+
+    fn record_read_tx(&self) {
+        self.transactions
+            .read_tx
+            .set(self.transactions.read_tx.get().saturating_add(1));
+    }
+
+    fn transaction_summary(&self, durable_commit_count: usize) -> TransactionSummary {
+        TransactionSummary {
+            explicit_begin: self.transactions.explicit_begin,
+            explicit_commit: self.transactions.explicit_commit,
+            explicit_rollback: self.transactions.explicit_rollback,
+            auto_commit: self.transactions.auto_commit,
+            read_tx: self.transactions.read_tx.get(),
+            durable_commit_count,
+        }
+    }
+
+    fn runtime_summary(&self) -> RuntimeSummary {
+        RuntimeSummary {
+            known_tokio_tasks_scheduled: self.runtime.durability_actors_started,
+            durability_actors_started: self.runtime.durability_actors_started,
+            runtime_alive_tasks: runtime_alive_tasks(),
+        }
+    }
+}
+
 /// Engine executing mixed table+lifecycle interactions while recording mocked durable history.
 struct RelationalDbEngine {
     db: Option<RelationalDB>,
@@ -108,8 +202,10 @@ struct RelationalDbEngine {
     last_durable_snapshot: DurableSnapshot,
     pending_snapshot_capture: bool,
     durability: Arc<InMemoryCommitlogDurability>,
+    durability_opts: spacetimedb_durability::local::Options,
     runtime_handle: tokio::runtime::Handle,
-    commitlog_repo: MemoryCommitlogRepo,
+    commitlog_repo: StressCommitlogRepo,
+    stats: RunStats,
     _runtime_guard: Option<tokio::runtime::Runtime>,
 }
 
@@ -117,7 +213,8 @@ type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
 
 impl RelationalDbEngine {
     fn new(seed: DstSeed, schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self> {
-        let (db, runtime_handle, commitlog_repo, durability, runtime_guard) = bootstrap_relational_db(seed.fork(700))?;
+        let (db, runtime_handle, commitlog_repo, durability, durability_opts, runtime_guard) =
+            bootstrap_relational_db(seed.fork(700))?;
         let mut this = Self {
             db: Some(db),
             execution: ConnectionWriteState::new(num_connections),
@@ -129,8 +226,15 @@ impl RelationalDbEngine {
             last_durable_snapshot: BTreeMap::new(),
             pending_snapshot_capture: false,
             durability,
+            durability_opts,
             runtime_handle,
             commitlog_repo,
+            stats: RunStats {
+                runtime: RuntimeStats {
+                    durability_actors_started: 1,
+                },
+                ..Default::default()
+            },
             _runtime_guard: runtime_guard,
         };
         this.install_base_schema().map_err(anyhow::Error::msg)?;
@@ -194,7 +298,8 @@ impl RelationalDbEngine {
 
     async fn execute(&mut self, interaction: &CommitlogInteraction) -> Result<CommitlogObservation, String> {
         self.step = self.step.saturating_add(1);
-        match interaction {
+        self.stats.record_interaction_requested(interaction);
+        let observation = match interaction {
             CommitlogInteraction::Table(op) => self.execute_table_op(op).map(CommitlogObservation::Table),
             CommitlogInteraction::CreateDynamicTable { conn, slot } => self.create_dynamic_table(*conn, *slot),
             CommitlogInteraction::DropDynamicTable { conn, slot } => self.drop_dynamic_table(*conn, *slot),
@@ -204,7 +309,9 @@ impl RelationalDbEngine {
                 Ok(CommitlogObservation::Applied)
             }
             CommitlogInteraction::CloseReopen => self.close_and_reopen().await,
-        }
+        }?;
+        self.stats.record_interaction_result(interaction, &observation);
+        Ok(observation)
     }
 
     async fn close_and_reopen(&mut self) -> Result<CommitlogObservation, String> {
@@ -228,7 +335,7 @@ impl RelationalDbEngine {
             InMemoryCommitlogDurability::open_with_repo(
                 self.commitlog_repo.clone(),
                 self.runtime_handle.clone(),
-                Default::default(),
+                self.durability_opts,
             )
             .map_err(|err| format!("reopen in-memory durability failed: {err}"))?,
         );
@@ -252,6 +359,7 @@ impl RelationalDbEngine {
                 "unexpected connected clients after reopen: {connected_clients:?}"
             ));
         }
+        self.stats.runtime.durability_actors_started += 1;
         self.durability = durability;
         self.db = Some(db);
         self.rebuild_table_handles_after_reopen()?;
@@ -267,6 +375,7 @@ impl RelationalDbEngine {
     fn rebuild_table_handles_after_reopen(&mut self) -> Result<(), String> {
         let db = self.db()?;
         let tx = db.begin_tx(Workload::ForTests);
+        self.stats.record_read_tx();
         let schemas = db
             .get_all_tables(&tx)
             .map_err(|err| format!("list tables after reopen failed: {err}"))?;
@@ -300,7 +409,11 @@ impl RelationalDbEngine {
 
     fn execute_table_op(&mut self, interaction: &TableWorkloadInteraction) -> Result<TableObservation, String> {
         match std::panic::catch_unwind(AssertUnwindSafe(|| self.execute_table_op_inner(interaction))) {
-            Ok(result) => result,
+            Ok(Ok(observation)) => {
+                self.stats.record_table_operation(&interaction.op);
+                Ok(observation)
+            }
+            Ok(Err(err)) => Err(err),
             Err(payload) => Err(format!(
                 "[DatastoreNeverPanics] interaction panicked: interaction={interaction:?}, payload={}",
                 panic_payload_to_string(&payload)
@@ -326,6 +439,7 @@ impl RelationalDbEngine {
                         .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests),
                 );
                 self.execution.active_writer = Some(*conn);
+                self.stats.transactions.explicit_begin += 1;
                 Ok(TableObservation::Applied)
             }
             TableOperation::CommitTx { conn } => {
@@ -337,6 +451,7 @@ impl RelationalDbEngine {
                     .commit_tx(tx)
                     .map_err(|err| format!("commit interaction failed: {err}"))?;
                 self.execution.active_writer = None;
+                self.stats.transactions.explicit_commit += 1;
                 self.capture_pending_snapshot_if_idle()?;
                 Ok(TableObservation::CommitOrRollback)
             }
@@ -347,6 +462,7 @@ impl RelationalDbEngine {
                     .ok_or_else(|| format!("connection {conn} has no transaction to rollback"))?;
                 let _ = self.db()?.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
+                self.stats.transactions.explicit_rollback += 1;
                 self.capture_pending_snapshot_if_idle()?;
                 Ok(TableObservation::CommitOrRollback)
             }
@@ -582,6 +698,7 @@ impl RelationalDbEngine {
             .commit_tx(tx)
             .map_err(|err| format!("auto-commit write failed: {err}"))?;
         self.execution.active_writer = None;
+        self.stats.transactions.auto_commit += 1;
         self.capture_pending_snapshot_if_idle()?;
         Ok(value)
     }
@@ -758,6 +875,7 @@ impl RelationalDbEngine {
         } else {
             let db = self.db()?;
             let tx = db.begin_tx(Workload::ForTests);
+            self.stats.record_read_tx();
             let found = self
                 .db()?
                 .iter_by_col_eq(&tx, table_id, 0u16, &AlgebraicValue::U64(id))
@@ -823,6 +941,7 @@ impl RelationalDbEngine {
         } else {
             let db = self.db()?;
             let tx = db.begin_tx(Workload::ForTests);
+            self.stats.record_read_tx();
             let rows = self
                 .db()?
                 .iter_by_col_range(&tx, table_id, col_list, (lower, upper))
@@ -840,6 +959,7 @@ impl RelationalDbEngine {
         let table_id = self.table_id_for_index(table)?;
         let db = self.db()?;
         let tx = db.begin_tx(Workload::ForTests);
+        self.stats.record_read_tx();
         let total = self
             .db()?
             .iter(&tx, table_id)
@@ -853,6 +973,7 @@ impl RelationalDbEngine {
         let table_id = self.table_id_for_index(table)?;
         let db = self.db()?;
         let tx = db.begin_tx(Workload::ForTests);
+        self.stats.record_read_tx();
         let total = self
             .db()?
             .iter_by_col_eq(&tx, table_id, col, value)
@@ -872,6 +993,7 @@ impl RelationalDbEngine {
         let table_id = self.table_id_for_index(table)?;
         let db = self.db()?;
         let tx = db.begin_tx(Workload::ForTests);
+        self.stats.record_read_tx();
         let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
         let rows = self
             .db()?
@@ -886,6 +1008,7 @@ impl RelationalDbEngine {
     fn collect_rows_by_id(&self, table_id: TableId) -> Result<Vec<SimRow>, String> {
         let db = self.db()?;
         let tx = db.begin_tx(Workload::ForTests);
+        self.stats.record_read_tx();
         let mut rows = self
             .db()?
             .iter(&tx, table_id)
@@ -928,6 +1051,11 @@ impl RelationalDbEngine {
             applied_steps: self.step,
             durable_commit_count,
             replay_table_count: self.last_durable_snapshot.len(),
+            schema: schema_summary(&self.base_schema),
+            interactions: self.stats.interactions.clone(),
+            table_ops: self.stats.table_ops.clone(),
+            transactions: self.stats.transaction_summary(durable_commit_count),
+            runtime: self.stats.runtime_summary(),
             table,
         })
     }
@@ -1020,15 +1148,17 @@ impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
     }
 }
 
-type InMemoryCommitlogDurability = Local<ProductValue, MemoryCommitlogRepo>;
+type StressCommitlogRepo = BuggifiedRepo<MemoryCommitlogRepo>;
+type InMemoryCommitlogDurability = Local<ProductValue, StressCommitlogRepo>;
 
 fn bootstrap_relational_db(
-    _seed: DstSeed,
+    seed: DstSeed,
 ) -> anyhow::Result<(
     RelationalDB,
     tokio::runtime::Handle,
-    MemoryCommitlogRepo,
+    StressCommitlogRepo,
     Arc<InMemoryCommitlogDurability>,
+    spacetimedb_durability::local::Options,
     Option<tokio::runtime::Runtime>,
 )> {
     let (runtime_handle, runtime_guard) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -1037,9 +1167,12 @@ fn bootstrap_relational_db(
         let runtime = tokio::runtime::Runtime::new()?;
         (runtime.handle().clone(), Some(runtime))
     };
-    let commitlog_repo = MemoryCommitlogRepo::unlimited();
+    enable_madsim_buggify();
+
+    let commitlog_repo = BuggifiedRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024));
+    let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
-        InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), runtime_handle.clone(), Default::default())
+        InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), runtime_handle.clone(), durability_opts)
             .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?,
     );
     let persistence = Persistence {
@@ -1060,7 +1193,58 @@ fn bootstrap_relational_db(
     db.with_auto_commit(Workload::Internal, |tx| {
         db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
     })?;
-    Ok((db, runtime_handle, commitlog_repo, durability, runtime_guard))
+    Ok((
+        db,
+        runtime_handle,
+        commitlog_repo,
+        durability,
+        durability_opts,
+        runtime_guard,
+    ))
+}
+
+fn commitlog_stress_options(seed: DstSeed) -> spacetimedb_durability::local::Options {
+    let mut opts = spacetimedb_durability::local::Options::default();
+    opts.commitlog.max_segment_size = 2 * 1024;
+    opts.commitlog.offset_index_interval_bytes = NonZeroU64::new(256).expect("256 > 0");
+    opts.commitlog.offset_index_require_segment_fsync = seed.0 % 2 == 0;
+    opts.commitlog.write_buffer_size = 512;
+    opts
+}
+
+fn enable_madsim_buggify() {
+    #[cfg(madsim)]
+    madsim::buggify::enable();
+}
+
+fn runtime_alive_tasks() -> Option<usize> {
+    // The madsim runtime exposes live task metrics on `Runtime`, but the target
+    // only receives Tokio-compatible handles. Keep this explicit instead of
+    // reporting madsim-tokio's dummy zero-valued metrics as real data.
+    None
+}
+
+fn schema_summary(schema: &SchemaPlan) -> SchemaSummary {
+    let initial_tables = schema.tables.len();
+    let initial_columns = schema.tables.iter().map(|table| table.columns.len()).sum();
+    let max_columns_per_table = schema
+        .tables
+        .iter()
+        .map(|table| table.columns.len())
+        .max()
+        .unwrap_or_default();
+    let extra_indexes = schema
+        .tables
+        .iter()
+        .map(|table| table.extra_indexes.len())
+        .sum::<usize>();
+    SchemaSummary {
+        initial_tables,
+        initial_columns,
+        max_columns_per_table,
+        initial_indexes: initial_tables + extra_indexes,
+        extra_indexes,
+    }
 }
 
 fn in_memory_size_on_disk() -> io::Result<SizeOnDisk> {

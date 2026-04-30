@@ -4,4 +4,7 @@ mod generation;
 mod types;
 
 pub(crate) use generation::NextInteractionGeneratorComposite;
-pub use types::{CommitlogInteraction, CommitlogWorkloadOutcome};
+pub use types::{
+    CommitlogInteraction, CommitlogWorkloadOutcome, InteractionSummary, RuntimeSummary, SchemaSummary,
+    TableOperationSummary, TransactionSummary,
+};
