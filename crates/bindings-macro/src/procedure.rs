@@ -1,6 +1,6 @@
 use crate::reducer::{assert_only_lifetime_generics, extract_typed_args, generate_explicit_names_impl};
 use crate::sym;
-use crate::util::{check_duplicate, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, ident_to_litstr, match_meta, native_test_utils_registration};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::Parser as _;
@@ -86,12 +86,16 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
             spacetimedb::rt::register_procedure::<_, _, #func_name>(#func_name)
         }
     };
+    let test_utils_registration = native_test_utils_registration(quote! {
+        spacetimedb::rt::register_procedure_for_tests::<_, _, #func_name>(#func_name)
+    });
 
     let generate_explicit_names = generate_explicit_names_impl(&procedure_name.value(), func_name, explicit_name);
 
     Ok(quote! {
         const _: () = {
             #generated_describe_function
+            #test_utils_registration
         };
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }

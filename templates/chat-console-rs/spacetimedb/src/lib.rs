@@ -100,7 +100,10 @@ mod tests {
     #[test]
     fn test_validate_name() {
         assert_eq!(validate_name("Alice".to_string()), Ok("Alice".to_string()));
-        assert_eq!(validate_name("".to_string()), Err("Names must not be empty".to_string()));
+        assert_eq!(
+            validate_name("".to_string()),
+            Err("Names must not be empty".to_string())
+        );
     }
 
     /// Verify that all expected tables are registered in this module.
@@ -114,5 +117,30 @@ mod tests {
         assert!(names.contains(&"message"), "expected table 'message', got: {names:?}");
         assert_eq!(names.len(), 2, "unexpected extra tables: {names:?}");
     }
-}
 
+    #[test]
+    fn module_def_is_registered() {
+        let spacetimedb::spacetimedb_lib::RawModuleDef::V10(module) = spacetimedb::test_utils::module_def() else {
+            panic!("expected v10 module definition");
+        };
+
+        let tables = module.tables().expect("expected tables section");
+        assert!(tables.iter().any(|table| table.source_name.as_ref() == "user"));
+        assert!(tables.iter().any(|table| table.source_name.as_ref() == "message"));
+        assert_eq!(tables.len(), 2, "unexpected extra tables: {tables:?}");
+
+        let reducers = module.reducers().expect("expected reducers section");
+        for expected in [
+            "set_name",
+            "send_message",
+            "init",
+            "identity_connected",
+            "identity_disconnected",
+        ] {
+            assert!(
+                reducers.iter().any(|reducer| reducer.source_name.as_ref() == expected),
+                "expected reducer '{expected}', got: {reducers:?}",
+            );
+        }
+    }
+}

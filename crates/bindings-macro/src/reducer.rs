@@ -1,5 +1,5 @@
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta, native_test_utils_registration};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser as _;
@@ -140,10 +140,14 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             spacetimedb::rt::register_reducer::<_, #func_name>(#func_name)
         }
     };
+    let test_utils_registration = native_test_utils_registration(quote! {
+        spacetimedb::rt::register_reducer_for_tests::<_, #func_name>(#func_name)
+    });
 
     Ok(quote! {
         const _: () = {
             #generated_describe_function
+            #test_utils_registration
         };
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }

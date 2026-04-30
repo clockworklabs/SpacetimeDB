@@ -7,7 +7,7 @@ use syn::{FnArg, ItemFn, LitStr};
 
 use crate::reducer::generate_explicit_names_impl;
 use crate::sym;
-use crate::util::{check_duplicate_msg, match_meta};
+use crate::util::{check_duplicate_msg, match_meta, native_test_utils_registration};
 
 pub(crate) struct ViewArgs {
     name: Option<LitStr>,
@@ -164,6 +164,9 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
             spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
         }
     };
+    let test_utils_registration = native_test_utils_registration(quote! {
+        spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register_for_tests::<_, #func_name, _, _>(#func_name)
+    });
 
     let explicit_name = args.name.as_ref();
     let generate_explicit_names = generate_explicit_names_impl(&view_name, func_name, explicit_name);
@@ -225,7 +228,10 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     Ok(quote! {
         #emitted_fn
 
-        const _: () = { #generated_describe_function };
+        const _: () = {
+            #generated_describe_function
+            #test_utils_registration
+        };
 
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }

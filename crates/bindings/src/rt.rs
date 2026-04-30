@@ -423,6 +423,19 @@ impl ViewRegistrar<ViewContext> {
     {
         register_view::<A, I, T>(view)
     }
+
+    #[cfg(feature = "test-utils")]
+    #[inline]
+    #[doc(hidden)]
+    pub fn register_for_tests<'a, A, I, T, V>(view: V)
+    where
+        A: Args<'a>,
+        T: ViewReturn,
+        I: FnInfo<Invoke = ViewFn>,
+        V: View<'a, A, T>,
+    {
+        register_view_for_tests::<A, I, T>(view)
+    }
 }
 
 impl ViewRegistrar<AnonymousViewContext> {
@@ -435,6 +448,19 @@ impl ViewRegistrar<AnonymousViewContext> {
         V: AnonymousView<'a, A, T>,
     {
         register_anonymous_view::<A, I, T>(view)
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[inline]
+    #[doc(hidden)]
+    pub fn register_for_tests<'a, A, I, T, V>(view: V)
+    where
+        A: Args<'a>,
+        T: ViewReturn,
+        I: FnInfo<Invoke = AnonymousFn>,
+        V: AnonymousView<'a, A, T>,
+    {
+        register_anonymous_view_for_tests::<A, I, T>(view)
     }
 }
 
@@ -796,6 +822,21 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
     })
 }
 
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn register_reducer_for_tests<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        if let Some(lifecycle) = I::LIFECYCLE {
+            module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
+        } else {
+            module.inner.add_reducer(I::NAME, params);
+        }
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
 #[cfg(feature = "unstable")]
 pub fn register_procedure<'a, A, Ret, I>(_: impl Procedure<'a, A, Ret>)
 where
@@ -808,6 +849,23 @@ where
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
         module.inner.add_procedure(I::NAME, params, ret_ty);
         module.procedures.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
+#[cfg(all(feature = "test-utils", feature = "unstable"))]
+#[doc(hidden)]
+pub fn register_procedure_for_tests<'a, A, Ret, I>(_: impl Procedure<'a, A, Ret>)
+where
+    A: Args<'a>,
+    Ret: SpacetimeType + Serialize,
+    I: FnInfo<Invoke = ProcedureFn>,
+{
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
+        module.inner.add_procedure(I::NAME, params, ret_ty);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -832,6 +890,25 @@ where
     })
 }
 
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn register_view_for_tests<'a, A, I, T>(_: impl View<'a, A, T>)
+where
+    A: Args<'a>,
+    I: FnInfo<Invoke = ViewFn>,
+    T: ViewReturn,
+{
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let return_type = I::return_type(&mut module.inner).unwrap();
+        module
+            .inner
+            .add_view(I::NAME, module.views.len(), true, false, params, return_type);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
 /// Registers a describer for the anonymous view `I` with arguments `A` and return type `Vec<T>`.
 pub fn register_anonymous_view<'a, A, I, T>(_: impl AnonymousView<'a, A, T>)
 where
@@ -846,6 +923,25 @@ where
             .inner
             .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
         module.views_anon.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn register_anonymous_view_for_tests<'a, A, I, T>(_: impl AnonymousView<'a, A, T>)
+where
+    A: Args<'a>,
+    I: FnInfo<Invoke = AnonymousFn>,
+    T: ViewReturn,
+{
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let return_type = I::return_type(&mut module.inner).unwrap();
+        module
+            .inner
+            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -910,6 +1006,16 @@ static VIEWS: OnceLock<Vec<ViewFn>> = OnceLock::new();
 /// An anonymous view function takes in `(AnonymousViewContext, Args)` and returns a Vec of bytes.
 pub type AnonymousFn = fn(AnonymousViewContext, &[u8]) -> Vec<u8>;
 static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
+
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn module_def_for_tests() -> RawModuleDef {
+    let mut module = ModuleBuilder::default();
+    for describer in &mut *DESCRIBERS.lock().unwrap() {
+        describer(&mut module)
+    }
+    RawModuleDef::V10(module.inner.finish())
+}
 
 /// Called by the host when the module is initialized
 /// to describe the module into a serialized form that is returned.
@@ -1299,6 +1405,37 @@ macro_rules! __make_register_reftype {
             extern "C" fn __register_describer() {
                 $crate::rt::register_reftype::<$ty>()
             }
+
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            #[used]
+            #[cfg_attr(
+                any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                ),
+                unsafe(link_section = ".init_array")
+            )]
+            #[cfg_attr(
+                any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
+                ),
+                unsafe(link_section = "__DATA,__mod_init_func")
+            )]
+            #[cfg_attr(target_os = "windows", unsafe(link_section = ".CRT$XCU"))]
+            static _STDB_TEST_UTILS_INIT: unsafe extern "C" fn() = {
+                unsafe extern "C" fn __stdb_test_utils_register() {
+                    $crate::rt::register_reftype::<$ty>()
+                }
+                __stdb_test_utils_register
+            };
         };
     };
 }
