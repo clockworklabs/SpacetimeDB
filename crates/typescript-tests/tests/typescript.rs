@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{Context, Result};
 use spacetimedb_language_test_support::{
     artifact_dir, parse_junit, print_results, require_tool, run_command, run_command_forward, HarnessArgs,

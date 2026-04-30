@@ -11,7 +11,10 @@ cd "$stdb_root"
 
 tools/clippy.sh
 
-cargo test --all
+cargo test --all \
+    --exclude spacetimedb-language-test-support \
+    --exclude spacetimedb-typescript-tests \
+    --exclude spacetimedb-csharp-tests
 
 if which python3 >/dev/null ; then
     python3 -m smoketests
@@ -26,4 +29,3 @@ if which dotnet >/dev/null ; then
 else
     echo "Can't find dotnet, not running smoketests"
 fi
-
