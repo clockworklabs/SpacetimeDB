@@ -211,11 +211,16 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
     if !sources.iter().any(|(k, _)| k == "dotnet-experimental") {
         sources.push((
             "dotnet-experimental".to_string(),
-            PathBuf::from("https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json"),
+            PathBuf::from(
+                "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json",
+            ),
         ));
     }
     if !mappings.iter().any(|(k, _)| k == "dotnet-experimental") {
-        mappings.push(("dotnet-experimental".to_string(), "Microsoft.DotNet.ILCompiler.LLVM".to_string()));
+        mappings.push((
+            "dotnet-experimental".to_string(),
+            "Microsoft.DotNet.ILCompiler.LLVM".to_string(),
+        ));
         mappings.push(("dotnet-experimental".to_string(), "runtime.*".to_string()));
     }
 
