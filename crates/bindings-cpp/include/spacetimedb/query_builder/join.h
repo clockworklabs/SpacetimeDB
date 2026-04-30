@@ -13,6 +13,12 @@ struct IxJoinEq;
 template<typename TRow, auto MemberPtr>
 struct member_tag {};
 
+template<typename T>
+struct is_ix_col : std::false_type {};
+
+template<typename T>
+struct is_ix_join_eq : std::false_type {};
+
 inline std::false_type indexed_member_lookup(...);
 
 template<typename TRow, auto MemberPtr>
@@ -36,12 +42,27 @@ public:
         return eq(rhs);
     }
 
+    // Keep mismatched indexed-column comparisons on a dedicated overload so they
+    // fail here with a clear diagnostic instead of falling through to BoolExpr.
+    template<typename TOtherRow, typename TOtherValue>
+    [[nodiscard]] auto eq(const IxCol<TOtherRow, TOtherValue>&) const {
+        static_assert(std::is_same_v<TValue, TOtherValue>, "Semijoin indexed equality requires both sides to have the same value type.");
+        return IxJoinEq<TRow, TOtherRow, TValue>{};
+    }
+
+    template<typename TOtherRow, typename TOtherValue>
+    [[nodiscard]] auto Eq(const IxCol<TOtherRow, TOtherValue>& rhs) const {
+        return eq(rhs);
+    }
+
     template<typename TRhs>
+        requires(!is_ix_col<std::remove_cvref_t<TRhs>>::value)
     [[nodiscard]] BoolExpr<TRow> eq(const TRhs& rhs) const {
         return compare(BoolExpr<TRow>::Kind::Eq, rhs);
     }
 
     template<typename TRhs>
+        requires(!is_ix_col<std::remove_cvref_t<TRhs>>::value)
     [[nodiscard]] BoolExpr<TRow> Eq(const TRhs& rhs) const { return eq(rhs); }
 
     [[nodiscard]] constexpr const ColumnRef<TRow>& column_ref() const { return column_; }
@@ -58,6 +79,9 @@ private:
     friend class IxCol;
 };
 
+template<typename TRow, typename TValue>
+struct is_ix_col<IxCol<TRow, TValue>> : std::true_type {};
+
 namespace detail {
 
 template<typename, typename TRow, auto MemberPtr>
@@ -70,6 +94,9 @@ struct IxJoinEq {
     ColumnRef<TLeftRow> lhs;
     ColumnRef<TRightRow> rhs;
 };
+
+template<typename TLeftRow, typename TRightRow, typename TValue>
+struct is_ix_join_eq<IxJoinEq<TLeftRow, TRightRow, TValue>> : std::true_type {};
 
 template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols>
 class LeftSemiJoin {
@@ -269,28 +296,52 @@ template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename T
 [[nodiscard]] auto left_semijoin_impl(const Table<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
     const auto join = std::forward<TFn>(predicate)(left.ix_cols(), right.ix_cols());
-    return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
+    using TJoin = std::remove_cvref_t<decltype(join)>;
+    if constexpr (is_ix_join_eq<TJoin>::value) {
+        return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
+    } else {
+        static_assert(is_ix_join_eq<TJoin>::value, "Semijoin predicate must compare two indexed columns with eq().");
+        return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, {}, {});
+    }
 }
 
 template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
 [[nodiscard]] auto left_semijoin_impl(const FromWhere<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
     const auto join = std::forward<TFn>(predicate)(left.table().ix_cols(), right.ix_cols());
-    return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
+    using TJoin = std::remove_cvref_t<decltype(join)>;
+    if constexpr (is_ix_join_eq<TJoin>::value) {
+        return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
+    } else {
+        static_assert(is_ix_join_eq<TJoin>::value, "Semijoin predicate must compare two indexed columns with eq().");
+        return LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, {}, {}, left.expr());
+    }
 }
 
 template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
 [[nodiscard]] auto right_semijoin_impl(const Table<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
     const auto join = std::forward<TFn>(predicate)(left.ix_cols(), right.ix_cols());
-    return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
+    using TJoin = std::remove_cvref_t<decltype(join)>;
+    if constexpr (is_ix_join_eq<TJoin>::value) {
+        return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, join.lhs, join.rhs);
+    } else {
+        static_assert(is_ix_join_eq<TJoin>::value, "Semijoin predicate must compare two indexed columns with eq().");
+        return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left, right, {}, {});
+    }
 }
 
 template<typename TLeftRow, typename TLeftCols, typename TLeftIxCols, typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
 [[nodiscard]] auto right_semijoin_impl(const FromWhere<TLeftRow, TLeftCols, TLeftIxCols>& left, const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) {
     static_assert(can_be_lookup_table_v<Table<TRightRow, TRightCols, TRightIxCols>>, "Lookup side of a semijoin must opt in via CanBeLookupTable.");
     const auto join = std::forward<TFn>(predicate)(left.table().ix_cols(), right.ix_cols());
-    return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
+    using TJoin = std::remove_cvref_t<decltype(join)>;
+    if constexpr (is_ix_join_eq<TJoin>::value) {
+        return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, join.lhs, join.rhs, left.expr());
+    } else {
+        static_assert(is_ix_join_eq<TJoin>::value, "Semijoin predicate must compare two indexed columns with eq().");
+        return RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>(left.table(), right, {}, {}, left.expr());
+    }
 }
 
 } // namespace detail
