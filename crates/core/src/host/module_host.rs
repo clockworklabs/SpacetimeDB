@@ -367,6 +367,12 @@ struct WasmtimeModuleHost {
     procedure_instances: ModuleInstanceManager<Arc<super::wasmtime::Module>>,
 }
 
+#[derive(Clone, Copy)]
+enum InstanceKind {
+    Main,
+    Procedure,
+}
+
 struct V8ModuleHost {
     module: super::v8::JsModule,
     instance_lane: super::v8::JsInstanceLane,
@@ -1074,6 +1080,16 @@ pub struct RefInstance<'a, I: WasmInstance> {
 }
 
 impl ModuleHost {
+    fn wasm_instance_manager<'a>(
+        host: &'a WasmtimeModuleHost,
+        kind: InstanceKind,
+    ) -> &'a ModuleInstanceManager<Arc<super::wasmtime::Module>> {
+        match kind {
+            InstanceKind::Main => &host.main_instance,
+            InstanceKind::Procedure => &host.procedure_instances,
+        }
+    }
+
     pub(super) fn new(
         module: ModuleWithInstance,
         on_panic: impl Fn() + Send + Sync + 'static,
@@ -1214,44 +1230,6 @@ impl ModuleHost {
     }
 
     /// Run a function for this module which has access to the module instance.
-    async fn with_instance<Guard, A, R>(
-        &self,
-        kind: &str,
-        label: &str,
-        arg: A,
-        timer: impl FnOnce(&str) -> Guard,
-        work_wasm: impl AsyncFnOnce(Guard, &SingleCoreExecutor, Box<ModuleInstance>, A) -> (R, Box<ModuleInstance>),
-        work_js: impl AsyncFnOnce(Guard, &super::v8::JsInstanceLane, A) -> R,
-    ) -> Result<R, NoSuchModule> {
-        self.guard_closed()?;
-        let timer_guard = timer(label);
-
-        // Operations on module instances (e.g. calling reducers) is blocking,
-        // partially because the computation can potentially take a long time
-        // and partially because interacting with the database requires taking
-        // a blocking lock. So, we run `f` on a dedicated thread with `self.executor`.
-        // This will bubble up any panic that may occur.
-
-        // If a function call panics, we **must** ensure to call `self.on_panic`
-        // so that the module is discarded by the host controller.
-        scopeguard::defer_on_unwind!({
-            log::warn!("{kind} {label} panicked");
-            (self.on_panic)();
-        });
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => {
-                let executor = &wasm.executor;
-                let instance_manager = &wasm.main_instance;
-                instance_manager
-                    .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
-                    .await
-            }
-            ModuleHostInner::Js(js) => work_js(timer_guard, &js.instance_lane, arg).await,
-        })
-    }
-
-    /// Run a function for this module which has access to the module instance.
     ///
     /// For WASM, the function is run on the module's JobThread.
     /// For V8/JS, the function is run in the current task.
@@ -1266,113 +1244,32 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.with_instance(
+        self.call_with_selected_instance(
             "reducer",
             label,
+            InstanceKind::Main,
             arg,
-            |l| self.start_call_timer(l),
-            // Operations on module instances (e.g. calling reducers) is blocking,
-            // partially because the computation can potentially take a long time
-            // and partially because interacting with the database requires taking a blocking lock.
-            // So, we run `work` on a dedicated thread with `self.executor`.
-            // This will bubble up any panic that may occur.
-            async move |timer_guard, executor, mut inst, arg| {
-                executor
-                    .run_job(async move || {
-                        drop(timer_guard);
-                        (wasm(arg, &mut inst).await, inst)
-                    })
-                    .await
-            },
-            async move |timer_guard, inst, arg| {
+            wasm,
+            async move |arg, lane| {
                 super::v8::assert_not_on_js_module_thread(label);
-                drop(timer_guard);
-                js(arg, inst).await
+                js(arg, lane).await
             },
+            async move |_arg, _inst| unreachable!("main-instance call should not use pooled JS instances"),
         )
         .await
     }
 
-    /// Run a function for this module using pooled instances.
-    ///
-    /// For WASM and V8/JS, this uses the pooled procedure instances instead of the
-    /// serialized reducer/view execution lane.
-    async fn call_pooled<A, R>(
-        &self,
-        label: &str,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &JsInstance) -> R,
-    ) -> Result<R, NoSuchModule>
-    where
-        R: Send + 'static,
-        A: Send + 'static,
-    {
-        self.guard_closed()?;
-        let timer_guard = self.start_call_timer(label);
-
-        scopeguard::defer_on_unwind!({
-            log::warn!("pooled operation {label} panicked");
-            (self.on_panic)();
-        });
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                host.procedure_instances
-                    .with_instance(async |mut inst| {
-                        host.executor
-                            .run_job(async move || {
-                                drop(timer_guard);
-                                (wasm(arg, &mut inst).await, inst)
-                            })
-                            .await
-                    })
-                    .await
-            }
-            ModuleHostInner::Js(host) => {
-                host.procedure_instances
-                    .with_instance(async |inst| {
-                        drop(timer_guard);
-                        let res = js(arg, &inst).await;
-                        (res, inst)
-                    })
-                    .await
-            }
-        })
-    }
-
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.guard_closed()?;
-        let timer_guard = self.start_call_timer(label);
-
-        scopeguard::defer_on_unwind!({
-            log::warn!("pooled operation {label} panicked");
-            (self.on_panic)();
-        });
-
-        match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                host.main_instance
-                    .with_instance(async |mut inst| {
-                        host.executor
-                            .run_job(async move || {
-                                drop(timer_guard);
-                                (Ok::<_, ViewCallError>(inst.call_view(cmd)), inst)
-                            })
-                            .await
-                    })
-                    .await
-            }
-            ModuleHostInner::Js(host) => {
-                host.procedure_instances
-                    .with_instance(async |inst| {
-                        drop(timer_guard);
-                        let res = Ok::<_, ViewCallError>(inst.call_view(cmd).await);
-                        (res, inst)
-                    })
-                    .await
-            }
-        }
+        self.call_with_selected_instance(
+            "view operation",
+            label,
+            InstanceKind::Main,
+            cmd,
+            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
+            async |cmd, lane| lane.call_view(cmd).await,
+            async |_cmd, _inst| unreachable!("main-instance view call should not use pooled JS instances"),
+        )
+        .await?
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -1960,57 +1857,101 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.call_pooled(
+        self.call_with_selected_instance(
+            "pooled operation",
             name,
+            InstanceKind::Procedure,
             params,
             async move |params, inst| inst.call_procedure(params).await,
+            async move |_params, _lane| unreachable!("procedure call should not use the serialized JS lane"),
             async move |params, inst| inst.call_procedure(params).await,
         )
         .await
     }
 
-    pub(super) async fn call_scheduled_function(
+    pub(super) async fn call_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
+        self.call_with_selected_instance(
+            "scheduled operation",
+            "scheduled reducer",
+            InstanceKind::Main,
+            params,
+            async |params, inst| Ok(inst.call_scheduled_function(params).await),
+            async |params, lane| Ok(lane.call_scheduled_function(params).await),
+            async |_params, _inst| unreachable!("scheduled reducer should not use pooled JS instances"),
+        )
+        .await?
+    }
+
+    pub(super) async fn call_scheduled_procedure(
+        &self,
+        params: ScheduledFunctionParams,
+    ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
+        self.call_with_selected_instance(
+            "scheduled operation",
+            "scheduled procedure",
+            InstanceKind::Procedure,
+            params,
+            async |params, inst| Ok(inst.call_scheduled_function(params).await),
+            async |_params, _lane| unreachable!("scheduled procedure should not use the serialized JS lane"),
+            async |params, inst| Ok(inst.call_scheduled_function(params).await),
+        )
+        .await?
+    }
+
+    async fn call_with_selected_instance<A, R>(
+        &self,
+        kind: &str,
+        label: &str,
+        instance_kind: InstanceKind,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        js_main: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
+        js_procedure: impl AsyncFnOnce(A, &JsInstance) -> R,
+    ) -> Result<R, NoSuchModule>
+    where
+        R: Send + 'static,
+        A: Send + 'static,
+    {
         self.guard_closed()?;
-        let label = "unknown scheduled function";
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
-            log::warn!("pooled operation {label} panicked");
+            log::warn!("{kind} {label} panicked");
             (self.on_panic)();
         });
 
-        match &*self.inner {
+        Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let manager = if params.uses_procedure_pool(&self.info) {
-                    &host.procedure_instances
-                } else {
-                    &host.main_instance
-                };
-
-                manager
+                Self::wasm_instance_manager(host, instance_kind)
                     .with_instance(async |mut inst| {
                         host.executor
                             .run_job(async move || {
                                 drop(timer_guard);
-                                (Ok(inst.call_scheduled_function(params).await), inst)
+                                (wasm(arg, &mut inst).await, inst)
                             })
                             .await
                     })
                     .await
             }
-            ModuleHostInner::Js(host) => {
-                host.procedure_instances
-                    .with_instance(async |inst| {
-                        drop(timer_guard);
-                        let res = Ok(inst.call_scheduled_function(params).await);
-                        (res, inst)
-                    })
-                    .await
-            }
-        }
+            ModuleHostInner::Js(host) => match instance_kind {
+                InstanceKind::Main => {
+                    drop(timer_guard);
+                    js_main(arg, &host.instance_lane).await
+                }
+                InstanceKind::Procedure => {
+                    host.procedure_instances
+                        .with_instance(async |inst| {
+                            drop(timer_guard);
+                            let res = js_procedure(arg, &inst).await;
+                            (res, inst)
+                        })
+                        .await
+                }
+            },
+        })
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,

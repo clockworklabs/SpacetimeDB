@@ -278,7 +278,7 @@ enum QueueItem {
 pub(crate) struct ScheduledFunctionParams(QueueItem);
 
 impl ScheduledFunctionParams {
-    pub(crate) fn uses_procedure_pool(&self, module: &ModuleInfo) -> bool {
+    pub(crate) fn is_procedure(&self, module: &ModuleInfo) -> bool {
         match &self.0 {
             QueueItem::VolatileNonatomicImmediate { function_name, .. } => {
                 module.module_def.procedure_full(function_name.as_str()).is_some()
@@ -379,7 +379,12 @@ impl SchedulerActor {
             return;
         };
 
-        let result = module_host.call_scheduled_function(ScheduledFunctionParams(item)).await;
+        let params = ScheduledFunctionParams(item);
+        let result = if params.is_procedure(module_host.info()) {
+            module_host.call_scheduled_procedure(params).await
+        } else {
+            module_host.call_scheduled_reducer(params).await
+        };
 
         match result {
             // If the module already exited, leave the `ScheduledFunction` in

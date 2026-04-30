@@ -1258,6 +1258,22 @@ impl JsInstanceLane {
         .await
         .map_err(|_| ViewCallError::InternalError(instance_lane_worker_error("call_view")))
     }
+
+    /// Run a scheduled function on the instance lane exactly once.
+    ///
+    /// If the worker disappears before replying, we replace it for future
+    /// requests and panic so the host discards the broken module generation.
+    pub(in crate::host) async fn call_scheduled_function(
+        &self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        self.run_once("call_scheduled_function", |inst: JsInstance| async move {
+            inst.send_request(|reply_tx| JsWorkerRequest::CallScheduledFunction { reply_tx, params })
+                .await
+        })
+        .await
+        .unwrap_or_else(|_| panic!("{}", instance_lane_worker_error("call_scheduled_function")))
+    }
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
