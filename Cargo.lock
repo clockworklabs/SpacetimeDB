@@ -8137,14 +8137,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-cpp-tests"
-version = "2.1.0"
-dependencies = [
- "anyhow",
- "spacetimedb-language-test-support",
-]
-
-[[package]]
 name = "spacetimedb-csharp-tests"
 version = "2.1.0"
 dependencies = [
