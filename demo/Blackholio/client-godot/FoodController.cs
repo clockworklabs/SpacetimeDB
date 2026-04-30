@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using SpacetimeDB.Types;
 
 public partial class FoodController : EntityController
