@@ -114,7 +114,7 @@ macro_rules! path_type {
                 )?;
                 std::fs::create_dir_all(&parent)?;
 
-                let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+                let mut tmp = $crate::__tempfile::NamedTempFile::new_in(parent)?;
                 tmp.write_all(contents.as_ref())?;
                 tmp.as_file().sync_all()?;
                 tmp.persist(&path)?;
