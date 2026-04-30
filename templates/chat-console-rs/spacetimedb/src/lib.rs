@@ -92,3 +92,27 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
         log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_name() {
+        assert_eq!(validate_name("Alice".to_string()), Ok("Alice".to_string()));
+        assert_eq!(validate_name("".to_string()), Err("Names must not be empty".to_string()));
+    }
+
+    /// Verify that all expected tables are registered in this module.
+    ///
+    /// `ALL_TABLE_NAMES` is a distributed slice populated at link time by the
+    /// `#[table]` macro — no setup or initialization required.
+    #[test]
+    fn all_tables_are_registered() {
+        let names = spacetimedb::test_utils::all_table_names();
+        assert!(names.contains(&"user"), "expected table 'user', got: {names:?}");
+        assert!(names.contains(&"message"), "expected table 'message', got: {names:?}");
+        assert_eq!(names.len(), 2, "unexpected extra tables: {names:?}");
+    }
+}
+

@@ -85,6 +85,9 @@ pub mod raw {
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
         pub fn datastore_table_row_count(table_id: TableId, out: *mut u64) -> u16;
+        // pub fn datastore_table_row_count<T: InstanceId>(table_id: TableId, out: *mut u64, instance_id: T) -> u16;
+        // // datastore.table_row_count()
+        // pub fn datastore_table_row_count<T: Instance>(table_id: TableId, out: *mut u64, instance: *T) -> u16;
 
         /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
         ///

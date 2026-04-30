@@ -1281,6 +1281,58 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         quote! {}
     };
 
+    // When the `test-utils` feature is active on `spacetimedb-bindings-macro`,
+    // Cargo sets CARGO_FEATURE_TEST_UTILS in the proc-macro's environment.
+    // We check this at macro-expansion time and conditionally emit a
+    // `#[distributed_slice]` static so that `spacetimedb::test_utils::ALL_TABLE_NAMES`
+    // is populated at link time — with no impact on normal WASM builds.
+    // When the `test-utils` feature is active, emit a platform init-section entry
+    // that calls `spacetimedb::test_utils::__register_table_name` before the test
+    // runner starts.  This is the same mechanism used by the `ctor` crate:
+    //   - ELF (Linux/Android/…): `.init_array`
+    //   - Mach-O (macOS/iOS/…):  `__DATA,__mod_init_func`
+    //   - COFF (Windows):        `.CRT$XCU`
+    // All generated paths are under `spacetimedb::`, so no extra direct dependency
+    // is required from the user's crate.
+    let test_utils_registration = if cfg!(feature = "test-utils") {
+        quote! {
+            #[cfg(not(target_arch = "wasm32"))]
+            #[used]
+            #[cfg_attr(
+                any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                ),
+                unsafe(link_section = ".init_array")
+            )]
+            #[cfg_attr(
+                any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
+                ),
+                unsafe(link_section = "__DATA,__mod_init_func")
+            )]
+            #[cfg_attr(target_os = "windows", unsafe(link_section = ".CRT$XCU"))]
+            static _STDB_TABLE_INIT: unsafe extern "C" fn() = {
+                unsafe extern "C" fn __stdb_register_table() {
+                    spacetimedb::test_utils::__register_table_name(
+                        <#tablehandle_ident as spacetimedb::table::TableInternal>::TABLE_NAME,
+                    );
+                }
+                __stdb_register_table
+            };
+        }
+    } else {
+        quote! {}
+    };
+
     let emission = quote! {
         const _: () = {
             #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
@@ -1322,6 +1374,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
 
             #describe_table_func
+
+            #test_utils_registration
         };
     };
 

@@ -18,6 +18,8 @@ mod rng;
 pub mod rt;
 #[doc(hidden)]
 pub mod table;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 #[doc(hidden)]
 pub use spacetimedb_query_builder as query_builder;

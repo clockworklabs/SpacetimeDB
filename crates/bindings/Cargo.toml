@@ -18,6 +18,7 @@ default = ["rand"]
 rand = ["rand08"]
 rand08 = ["dep:rand08", "dep:getrandom02"]
 unstable = ["spacetimedb-bindings-sys/unstable"]
+test-utils = ["spacetimedb-bindings-macro/test-utils"]
 
 [dependencies]
 spacetimedb-bindings-sys.workspace = true

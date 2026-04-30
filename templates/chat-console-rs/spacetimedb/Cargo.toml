@@ -12,3 +12,9 @@ crate-type = ["cdylib"]
 [dependencies]
 spacetimedb = { path = "../../../crates/bindings" }
 log.workspace = true
+
+[dev-dependencies]
+# Enables `spacetimedb::test_utils::ALL_TABLE_NAMES`, a link-time slice
+# containing every table name registered by the `#[table]` macro.
+# Only active during `cargo test` — has no effect on the WASM build.
+spacetimedb = { path = "../../../crates/bindings", features = ["test-utils"] }
