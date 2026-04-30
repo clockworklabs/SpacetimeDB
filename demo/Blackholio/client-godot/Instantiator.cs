@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Godot;
 using SpacetimeDB.Types;
 
@@ -46,6 +46,7 @@ public partial class Instantiator : Node
 
     public override void _ExitTree()
     {
+        GD.PrintErr("Instantiator Exit Tree");
         Conn = null;
     }
 

@@ -1,6 +1,8 @@
-[gd_scene format=3 uid="uid://cjb7808stemnn"]
+[gd_scene format=3 uid="uid://bu0hxewrjspqk"]
 
-[ext_resource type="Script" uid="uid://p2e72osy6dx5" path="res://GameManager.cs" id="1_7mycd"]
+[ext_resource type="Script" uid="uid://ce8dl6ahr07ou" path="res://GameManager.cs" id="1_ig7tw"]
 
-[node name="Main" type="Node2D" unique_id=211175705]
-script = ExtResource("1_7mycd")
+[node name="Main" type="Node2D" unique_id=1765328469]
+script = ExtResource("1_ig7tw")
+ServerUrl = "https://maincloud.spacetimedb.com"
+DatabaseName = "lis-blackholio-godot"
