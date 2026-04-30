@@ -53,7 +53,7 @@ use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_lib::http::{RequestAndBody, ResponseAndBody};
+use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Timestamp};
@@ -747,7 +747,8 @@ impl CallProcedureParams {
 pub struct CallHttpHandlerParams {
     pub timestamp: Timestamp,
     pub handler_id: HttpHandlerId,
-    pub request: RequestAndBody,
+    pub request: HttpRequest,
+    pub request_body: Bytes,
 }
 
 /// Holds a [`Module`] and a set of [`Instance`]s from it,
@@ -1948,8 +1949,9 @@ impl ModuleHost {
     pub async fn call_http_handler(
         &self,
         handler_id: HttpHandlerId,
-        request: RequestAndBody,
-    ) -> Result<ResponseAndBody, HttpHandlerCallError> {
+        request: HttpRequest,
+        request_body: Bytes,
+    ) -> Result<(HttpResponse, Bytes), HttpHandlerCallError> {
         if self.info.module_def.get_http_handler_by_id(handler_id).is_none() {
             return Err(HttpHandlerCallError::NoSuchHandler);
         }
@@ -1958,6 +1960,7 @@ impl ModuleHost {
             timestamp: Timestamp::now(),
             handler_id,
             request,
+            request_body,
         };
 
         self.call_pooled(

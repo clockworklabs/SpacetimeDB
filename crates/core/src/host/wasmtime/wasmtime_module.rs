@@ -424,9 +424,13 @@ pub(super) type CallHttpHandlerType = TypedFunc<
         u32,
         // timestamp
         u64,
-        // byte source id for request
+        // byte source id for request metadata
         u32,
-        // byte sink id for response
+        // byte source id for request body
+        u32,
+        // byte sink id for response metadata
+        u32,
+        // byte sink id for response body
         u32,
     ),
     i32,
@@ -677,10 +681,15 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         prepare_store_for_call(store, budget);
 
         let call_type = op.call_type();
-        let (request_source, result_sink) =
+        let (request_source, response_sink) =
             store
                 .data_mut()
                 .start_funcall(op.name.clone(), op.request_bytes, op.timestamp, call_type);
+        let request_body_source = store
+            .data_mut()
+            .create_extra_bytes_source(op.request_body_bytes)
+            .expect("failed to register http handler request body");
+        let response_body_sink = store.data_mut().create_extra_bytes_sink();
 
         let Some(call_http_handler) = self.call_http_handler.as_ref() else {
             let res = module_host_actor::HttpHandlerExecuteResult {
@@ -701,21 +710,25 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                     op.id.0,
                     op.timestamp.to_micros_since_unix_epoch() as u64,
                     request_source.0,
-                    result_sink,
+                    request_body_source.0,
+                    response_sink,
+                    response_body_sink,
                 ),
             )
             .await;
 
         store.data_mut().terminate_dangling_anon_tx();
 
-        let (stats, result_bytes) = finish_opcall(store, budget);
+        let (stats, result_bytes, response_body_bytes) = finish_http_handler_opcall(store, budget, response_body_sink);
 
         let call_result = call_result.and_then(|code| {
-            (code == 0).then_some(result_bytes.into()).ok_or_else(|| {
+            (code == 0)
+                .then_some((result_bytes.into(), response_body_bytes.into()))
+                .ok_or_else(|| {
                 anyhow::anyhow!(
                     "{CALL_HTTP_HANDLER_DUNDER} returned unexpected code {code}. HTTP handlers should return code 0 or trap."
                 )
-            })
+                })
         });
 
         let res = module_host_actor::HttpHandlerExecuteResult { stats, call_result };
@@ -792,6 +805,16 @@ fn finish_opcall(store: &mut Store<WasmInstanceEnv>, initial_budget: FunctionBud
         memory_allocation: get_memory_size(store),
     };
     (stats, ret_bytes)
+}
+
+fn finish_http_handler_opcall(
+    store: &mut Store<WasmInstanceEnv>,
+    initial_budget: FunctionBudget,
+    response_body_sink: u32,
+) -> (ExecutionStats, Vec<u8>, Vec<u8>) {
+    let response_body_bytes = store.data_mut().take_extra_bytes_sink(response_body_sink);
+    let (stats, response_bytes) = finish_opcall(store, initial_budget);
+    (stats, response_bytes, response_body_bytes)
 }
 
 fn zero_execution_stats(store: &Store<WasmInstanceEnv>) -> ExecutionStats {

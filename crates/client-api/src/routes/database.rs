@@ -277,20 +277,19 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
         return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());
     };
 
+    // TODO(streaming-http): stop collecting the full request body here once route dispatch can
+    // hand Axum's body stream through the WASM handler ABI incrementally.
     let body = body.collect().await.map_err(log_and_500)?.to_bytes();
     let forwarded_uri = reconstruct_external_uri(&original_uri, &parts.headers);
-    let request = st_http::RequestAndBody {
-        request: st_http::Request {
-            method: st_method.clone(),
-            headers: headers_to_st(parts.headers),
-            timeout: None,
-            uri: forwarded_uri,
-            version: http_version_to_st(parts.version),
-        },
-        body,
+    let request = st_http::Request {
+        method: st_method.clone(),
+        headers: headers_to_st(parts.headers),
+        timeout: None,
+        uri: forwarded_uri,
+        version: http_version_to_st(parts.version),
     };
 
-    let response = match module.call_http_handler(handler_id, request).await {
+    let response = match module.call_http_handler(handler_id, request, body).await {
         Ok(response) => response,
         Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchHandler) => {
             return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());
@@ -311,7 +310,7 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
         }
     };
 
-    let response = response_from_st(response)?;
+    let response = response_from_st(response.0, response.1)?;
     Ok(response.into_response())
 }
 
@@ -401,10 +400,14 @@ fn headers_to_st(headers: http::HeaderMap) -> st_http::Headers {
         .collect()
 }
 
-fn response_from_st(response: st_http::ResponseAndBody) -> axum::response::Result<http::Response<Body>> {
-    let st_http::ResponseAndBody { response, body } = response;
+fn response_from_st(
+    response: st_http::Response,
+    body: Bytes,
+) -> axum::response::Result<http::Response<Body>> {
     let st_http::Response { headers, version, code } = response;
 
+    // TODO(streaming-http): stop materializing the whole response body before building the Axum
+    // response once the handler ABI can stream directly into the outbound HTTP body.
     let mut response = http::Response::new(Body::from(body));
     *response.version_mut() = match version {
         st_http::Version::Http09 => http::Version::HTTP_09,

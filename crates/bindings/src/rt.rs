@@ -1179,21 +1179,56 @@ extern "C" fn __call_procedure__(
     0
 }
 
-/// Called by the host to execute an HTTP handler.
+/// Called by the host to execute the HTTP handler identified by `id`
+/// in response to the HTTP request `(request, request_body)`.
+///
+/// The `timestamp` will be the time as of the handler's invocation,
+/// encoded appropriately for conversion to a `spacetimedb_lib::Timestamp`,
+/// i.e. as microseconds since the Unix epoch.
+///
+/// The `request` will contain a BSATN-encoded `spacetimedb_lib::http::Request`
+/// with the metadata of the request, including URI, method, headers &c.
+///
+/// The `request_body` will contain the raw bytes of the request body.
+/// If the request included an empty HTTP body, then `request_body` will be [`BytesSource::INVALID`].
+///
+/// The HTTP handler should write a BSATN-encoded `spacetimedb_lib::http::Response` to `response_sink`
+/// containing the response metdata, including status, headers &c.
+///
+/// The HTTP handler should also write the raw bytes of its HTTP response body to the `response_body_sink`.
+///
+/// HTTP handlers always return the errno 0. All other return values are reserved.
 #[cfg(feature = "unstable")]
 #[unsafe(no_mangle)]
-extern "C" fn __call_http_handler__(id: usize, timestamp: u64, request: BytesSource, result_sink: BytesSink) -> i16 {
+extern "C" fn __call_http_handler__(
+    id: usize,
+    timestamp: u64,
+    request: BytesSource,
+    request_body: BytesSource,
+    response_sink: BytesSink,
+    response_body_sink: BytesSink,
+) -> i16 {
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
     let mut ctx = HandlerContext::new(timestamp);
 
     let handlers = HTTP_HANDLERS.get().unwrap();
-    let request = read_bytes_source_as::<spacetimedb_lib::http::RequestAndBody>(request);
-    let request = http::request_from_wire(request);
+    let request = read_bytes_source_as::<spacetimedb_lib::http::Request>(request);
+    // TODO(streaming-http): stop reading the full request body into guest memory once handlers
+    // can consume the body incrementally from the host-provided byte source.
+    let request_body = if request_body == BytesSource::INVALID {
+        bytes::Bytes::new()
+    } else {
+        let mut buf = IterBuf::take();
+        read_bytes_source_into(request_body, &mut buf);
+        buf.clone().into()
+    };
+    let request = http::request_from_wire(request, request_body);
 
     let response = handlers[id](&mut ctx, request);
-    let response = http::response_into_wire(response);
-    let bytes = bsatn::to_vec(&response).expect("failed to serialize http response");
-    write_to_sink(result_sink, &bytes);
+    let (response_meta, response_body_bytes) = http::response_into_wire(response);
+    let bytes = bsatn::to_vec(&response_meta).expect("failed to serialize http response");
+    write_to_sink(response_sink, &bytes);
+    write_to_sink(response_body_sink, &response_body_bytes);
 
     0
 }

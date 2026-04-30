@@ -318,7 +318,7 @@ pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
 
 pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
 
-pub type HttpHandlerExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
+pub type HttpHandlerExecuteResult = ExecutionResult<(Bytes, Bytes), anyhow::Error>;
 
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
@@ -538,7 +538,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     pub async fn call_http_handler(
         &mut self,
         params: CallHttpHandlerParams,
-    ) -> Result<st_http::ResponseAndBody, HttpHandlerCallError> {
+    ) -> Result<(st_http::Response, Bytes), HttpHandlerCallError> {
         let (res, trapped) = self.common.call_http_handler(params, &mut self.instance).await;
         self.trapped = trapped;
         res
@@ -807,11 +807,12 @@ impl InstanceCommon {
         &mut self,
         params: CallHttpHandlerParams,
         inst: &mut I,
-    ) -> (Result<st_http::ResponseAndBody, HttpHandlerCallError>, bool) {
+    ) -> (Result<(st_http::Response, Bytes), HttpHandlerCallError>, bool) {
         let CallHttpHandlerParams {
             timestamp,
             handler_id,
             request,
+            request_body,
         } = params;
 
         let Some(handler_def) = self.info.module_def.get_http_handler_by_id(handler_id) else {
@@ -836,6 +837,7 @@ impl InstanceCommon {
             name: handler_name.clone(),
             timestamp,
             request_bytes,
+            request_body_bytes: request_body,
         };
 
         let energy_fingerprint = FunctionFingerprint {
@@ -875,7 +877,8 @@ impl InstanceCommon {
                     .inc();
                 Err(HttpHandlerCallError::InternalError(format!("{err}")))
             }
-            Ok(return_val) => bsatn::from_slice::<st_http::ResponseAndBody>(&return_val[..])
+            Ok((response_bytes, response_body)) => bsatn::from_slice::<st_http::Response>(&response_bytes[..])
+                .map(|response| (response, response_body))
                 .map_err(|err| HttpHandlerCallError::InternalError(format!("{err}"))),
         };
 
@@ -1841,6 +1844,7 @@ pub struct HttpHandlerOp {
     pub name: Identifier,
     pub timestamp: Timestamp,
     pub request_bytes: Bytes,
+    pub request_body_bytes: Bytes,
 }
 
 impl InstanceOp for HttpHandlerOp {

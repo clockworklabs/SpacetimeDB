@@ -118,6 +118,12 @@ pub(super) struct WasmInstanceEnv {
     /// The standard sink used for [`Self::bytes_sink_write`].
     standard_bytes_sink: Option<Vec<u8>>,
 
+    /// Additional sinks used by ABIs that need more than one writable byte channel.
+    bytes_sinks: IntMap<u32, Vec<u8>>,
+
+    /// Counter as a source of extra bytes sink IDs.
+    next_bytes_sink_id: NonZeroU32,
+
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
 
@@ -154,6 +160,8 @@ impl WasmInstanceEnv {
             bytes_sources: IntMap::default(),
             next_bytes_source_id: NonZeroU32::new(1).unwrap(),
             standard_bytes_sink: None,
+            bytes_sinks: IntMap::default(),
+            next_bytes_sink_id: NonZeroU32::new(STANDARD_BYTES_SINK + 1).unwrap(),
             iters: Default::default(),
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
@@ -193,6 +201,10 @@ impl WasmInstanceEnv {
             self.bytes_sources.insert(id, BytesSource { bytes });
             Ok(id)
         }
+    }
+
+    pub fn create_extra_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+        self.create_bytes_source(bytes)
     }
 
     fn free_bytes_source(&mut self, id: BytesSourceId) {
@@ -242,6 +254,20 @@ impl WasmInstanceEnv {
     /// and prevent further writes to it.
     pub fn take_standard_bytes_sink(&mut self) -> Vec<u8> {
         self.standard_bytes_sink.take().unwrap_or_default()
+    }
+
+    pub fn create_extra_bytes_sink(&mut self) -> u32 {
+        let id = self.next_bytes_sink_id.get();
+        self.next_bytes_sink_id = self
+            .next_bytes_sink_id
+            .checked_add(1)
+            .expect("allocating next `BytesSink` overflowed `u32`");
+        self.bytes_sinks.insert(id, Vec::new());
+        id
+    }
+
+    pub fn take_extra_bytes_sink(&mut self, sink: u32) -> Vec<u8> {
+        self.bytes_sinks.remove(&sink).unwrap_or_default()
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is beginning.
@@ -303,6 +329,8 @@ impl WasmInstanceEnv {
         // so that we don't leak either the IDs or the buffers themselves.
         self.bytes_sources = IntMap::default();
         self.next_bytes_source_id = NonZeroU32::new(1).unwrap();
+        self.bytes_sinks = IntMap::default();
+        self.next_bytes_sink_id = NonZeroU32::new(STANDARD_BYTES_SINK + 1).unwrap();
 
         (timings, self.take_standard_bytes_sink())
     }
@@ -1376,9 +1404,16 @@ impl WasmInstanceEnv {
         Self::cvt_custom(caller, AbiCall::BytesSinkWrite, |caller| {
             let (mem, env) = Self::mem_env(caller);
 
-            // Retrieve the reducer args if available and requested, or error.
-            let Some(sink) = env.standard_bytes_sink.as_mut().filter(|_| sink == STANDARD_BYTES_SINK) else {
-                return Ok(errno::NO_SUCH_BYTES.get().into());
+            let sink = if sink == STANDARD_BYTES_SINK {
+                let Some(sink) = env.standard_bytes_sink.as_mut() else {
+                    return Ok(errno::NO_SUCH_BYTES.get().into());
+                };
+                sink
+            } else {
+                let Some(sink) = env.bytes_sinks.get_mut(&sink) else {
+                    return Ok(errno::NO_SUCH_BYTES.get().into());
+                };
+                sink
             };
 
             // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.

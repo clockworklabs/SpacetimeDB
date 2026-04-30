@@ -542,8 +542,7 @@ fn convert_response(response: st_http::Response) -> http::Result<http::response:
     Ok(response)
 }
 
-pub(crate) fn request_from_wire(req: st_http::RequestAndBody) -> http::Request<Body> {
-    let st_http::RequestAndBody { request, body } = req;
+pub(crate) fn request_from_wire(request: st_http::Request, body: Bytes) -> http::Request<Body> {
     let st_http::Request {
         method,
         headers,
@@ -593,7 +592,7 @@ pub(crate) fn request_from_wire(req: st_http::RequestAndBody) -> http::Request<B
     http::Request::from_parts(parts, body)
 }
 
-pub(crate) fn response_into_wire(response: http::Response<Body>) -> st_http::ResponseAndBody {
+pub(crate) fn response_into_wire(response: http::Response<Body>) -> (st_http::Response, Bytes) {
     let (parts, body) = response.into_parts();
     let st_response = st_http::Response {
         headers: parts
@@ -612,10 +611,9 @@ pub(crate) fn response_into_wire(response: http::Response<Body>) -> st_http::Res
         code: parts.status.as_u16(),
     };
 
-    st_http::ResponseAndBody {
-        response: st_response,
-        body: body.into_bytes(),
-    }
+    // TODO(streaming-http): stop collecting the whole response body here once handler
+    // responses can write incrementally to a body sink.
+    (st_response, body.into_bytes())
 }
 
 /// Represents the body of an HTTP request or response.
@@ -747,5 +745,59 @@ impl From<http::Error> for Error {
         Error {
             message: err.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_from_wire_preserves_metadata_and_body() {
+        let request = st_http::Request {
+            method: st_http::Method::Post,
+            headers: vec![
+                (Some("content-type".into()), b"application/octet-stream".as_slice().into()),
+                (Some("x-echo".into()), b"value".as_slice().into()),
+            ]
+            .into_iter()
+            .collect(),
+            timeout: None,
+            uri: "https://example.invalid/upload?x=1".to_string(),
+            version: st_http::Version::Http2,
+        };
+
+        let request = request_from_wire(request, Bytes::from_static(b"payload"));
+
+        assert_eq!(request.method(), http::Method::POST);
+        assert_eq!(request.version(), http::Version::HTTP_2);
+        assert_eq!(request.uri(), &http::Uri::from_static("https://example.invalid/upload?x=1"));
+        assert_eq!(request.headers()["content-type"], "application/octet-stream");
+        assert_eq!(request.headers()["x-echo"], "value");
+        assert_eq!(request.into_body().into_bytes(), Bytes::from_static(b"payload"));
+    }
+
+    #[test]
+    fn response_into_wire_splits_metadata_and_body() {
+        let response = http::Response::builder()
+            .status(201)
+            .version(http::Version::HTTP_11)
+            .header("content-type", "text/plain")
+            .header("x-result", "ok")
+            .body(Body::from_bytes("created"))
+            .expect("response builder should not fail");
+
+        let (response_meta, response_body) = response_into_wire(response);
+
+        assert_eq!(response_meta.code, 201);
+        assert!(matches!(response_meta.version, st_http::Version::Http11));
+
+        let headers = response_meta.headers.into_iter().collect::<Vec<_>>();
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].0.as_ref(), "content-type");
+        assert_eq!(&headers[0].1[..], b"text/plain");
+        assert_eq!(headers[1].0.as_ref(), "x-result");
+        assert_eq!(&headers[1].1[..], b"ok");
+        assert_eq!(response_body, Bytes::from_static(b"created"));
     }
 }
