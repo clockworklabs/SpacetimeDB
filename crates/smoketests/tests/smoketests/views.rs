@@ -486,7 +486,7 @@ fn test_views_auto_migration() {
     test.use_precompiled_module("views-auto-migrate-updated");
     test.publish_module_clear(false).unwrap();
 
-    test.assert_sql(
+    test.assert_sql_eventually(
         "SELECT * FROM player",
         r#" id | level
 ----+-------

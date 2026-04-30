@@ -62,7 +62,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use which::which;
 
 /// Returns the remote server URL if running against a remote server.
@@ -1314,6 +1314,49 @@ log = "0.4"
             actual_normalized, expected_normalized,
             "SQL output mismatch for query: {}\n\nExpected:\n{}\n\nActual:\n{}",
             query, expected_normalized, actual_normalized
+        );
+    }
+
+    /// Asserts that a SQL query eventually produces the expected output.
+    ///
+    /// Use this only for read-only queries after operations that can briefly
+    /// leave the database worker unavailable, such as publishing an update.
+    pub fn assert_sql_eventually(&self, query: &str, expected: &str) {
+        let expected_normalized = normalize_whitespace(expected);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut last_actual = None;
+        let mut last_error = None;
+
+        while Instant::now() < deadline {
+            match self.sql(query) {
+                Ok(actual) => {
+                    let actual_normalized = normalize_whitespace(&actual);
+                    if actual_normalized == expected_normalized {
+                        return;
+                    }
+                    last_actual = Some(actual_normalized);
+                    last_error = None;
+                }
+                Err(err) => {
+                    last_error = Some(err.to_string());
+                }
+            }
+
+            std::thread::sleep(Duration::from_millis(200));
+        }
+
+        if let Some(actual_normalized) = last_actual {
+            assert_eq!(
+                actual_normalized, expected_normalized,
+                "SQL output mismatch for query after retry: {}\n\nExpected:\n{}\n\nActual:\n{}",
+                query, expected_normalized, actual_normalized
+            );
+        }
+
+        panic!(
+            "SQL query failed after retry: {}\n\nLast error:\n{}",
+            query,
+            last_error.unwrap_or_else(|| "no attempts completed".to_string())
         );
     }
 
