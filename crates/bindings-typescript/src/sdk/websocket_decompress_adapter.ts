@@ -58,6 +58,6 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
   static async openWebSocket(
     args: WebSocketArgs
   ): Promise<WebsocketDecompressAdapter> {
-    return new this(await openWebSocket(args));
+    return new WebsocketDecompressAdapter(await openWebSocket(args));
   }
 }
