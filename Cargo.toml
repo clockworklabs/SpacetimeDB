@@ -17,6 +17,10 @@ members = [
   "crates/execution",
   "crates/expr",
   "crates/guard",
+  "crates/language-test-support",
+  "crates/typescript-tests",
+  "crates/csharp-tests",
+  "crates/cpp-tests",
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
@@ -130,6 +134,7 @@ spacetimedb-durability = { path = "crates/durability", version = "=2.1.0" }
 spacetimedb-execution = { path = "crates/execution", version = "=2.1.0" }
 spacetimedb-expr = { path = "crates/expr", version = "=2.1.0" }
 spacetimedb-guard = { path = "crates/guard", version = "=2.1.0" }
+spacetimedb-language-test-support = { path = "crates/language-test-support", version = "=2.1.0" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.1.0" }
 spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.1.0", default-features = false }
 spacetimedb-metrics = { path = "crates/metrics", version = "=2.1.0" }

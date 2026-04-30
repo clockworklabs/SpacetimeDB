@@ -8137,6 +8137,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-cpp-tests"
+version = "2.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-language-test-support",
+]
+
+[[package]]
+name = "spacetimedb-csharp-tests"
+version = "2.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-language-test-support",
+]
+
+[[package]]
 name = "spacetimedb-data-structures"
 version = "2.1.0"
 dependencies = [
@@ -8294,6 +8310,17 @@ dependencies = [
  "spacetimedb-jsonwebtoken",
  "thiserror 1.0.69",
  "tokio",
+]
+
+[[package]]
+name = "spacetimedb-language-test-support"
+version = "2.1.0"
+dependencies = [
+ "anyhow",
+ "quick-xml 0.31.0",
+ "serde_json",
+ "spacetimedb-guard",
+ "tempfile",
 ]
 
 [[package]]
@@ -8782,6 +8809,14 @@ dependencies = [
  "tempfile",
  "tokio",
  "wasmbin",
+]
+
+[[package]]
+name = "spacetimedb-typescript-tests"
+version = "2.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-language-test-support",
 ]
 
 [[package]]

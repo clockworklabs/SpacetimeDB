@@ -123,7 +123,15 @@ impl SpacetimeDbGuard {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir_path = temp_dir.path().to_path_buf();
 
-        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir_path, Some(temp_dir))
+        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir_path, Some(temp_dir), "127.0.0.1:0")
+    }
+
+    /// Start `spacetimedb` in a temporary data directory on a specific listen address.
+    pub fn spawn_in_temp_data_dir_with_listen_addr(listen_addr: &str) -> Self {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let data_dir_path = temp_dir.path().to_path_buf();
+
+        Self::spawn_spacetime_start_with_data_dir(false, None, data_dir_path, Some(temp_dir), listen_addr)
     }
 
     /// Start `spacetimedb` in a temporary data directory via:
@@ -132,7 +140,7 @@ impl SpacetimeDbGuard {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir_path = temp_dir.path().to_path_buf();
 
-        Self::spawn_spacetime_start_with_data_dir(true, None, data_dir_path, Some(temp_dir))
+        Self::spawn_spacetime_start_with_data_dir(true, None, data_dir_path, Some(temp_dir), "127.0.0.1:0")
     }
 
     /// Start `spacetimedb` with an explicit data directory (for restart scenarios).
@@ -140,7 +148,7 @@ impl SpacetimeDbGuard {
     /// Unlike `spawn_in_temp_data_dir`, this method does not create a temporary directory.
     /// The caller is responsible for managing the data directory lifetime.
     pub fn spawn_with_data_dir(data_dir: PathBuf, pg_port: Option<u16>) -> Self {
-        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir, None)
+        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir, None, "127.0.0.1:0")
     }
 
     fn spawn_spacetime_start_with_data_dir(
@@ -148,10 +156,11 @@ impl SpacetimeDbGuard {
         pg_port: Option<u16>,
         data_dir: PathBuf,
         _data_dir_handle: Option<tempfile::TempDir>,
+        listen_addr: &str,
     ) -> Self {
         let spawn_id = next_spawn_id();
         let (child, logs, host_url, reader_threads) =
-            Self::spawn_server(&data_dir, pg_port, spawn_id, use_installed_cli);
+            Self::spawn_server(&data_dir, pg_port, spawn_id, use_installed_cli, listen_addr);
         SpacetimeDbGuard {
             child,
             host_url,
@@ -188,8 +197,13 @@ impl SpacetimeDbGuard {
         sleep(Duration::from_millis(100));
 
         eprintln!("[RESTART-{:03}] Spawning new server", spawn_id);
-        let (child, logs, host_url, reader_threads) =
-            Self::spawn_server(&self.data_dir, self.pg_port, spawn_id, self.use_installed_cli);
+        let (child, logs, host_url, reader_threads) = Self::spawn_server(
+            &self.data_dir,
+            self.pg_port,
+            spawn_id,
+            self.use_installed_cli,
+            "127.0.0.1:0",
+        );
         eprintln!(
             "[RESTART-{:03}] New server ready, pid={}, url={}",
             spawn_id,
@@ -252,6 +266,7 @@ impl SpacetimeDbGuard {
         pg_port: Option<u16>,
         spawn_id: u64,
         use_installed_cli: bool,
+        listen_addr: &str,
     ) -> (Child, Arc<Mutex<String>>, String, Vec<thread::JoinHandle<()>>) {
         let cmd = if use_installed_cli {
             eprintln!("[SPAWN-{:03}] START Using installed CLI", spawn_id);
@@ -269,8 +284,6 @@ impl SpacetimeDbGuard {
         let data_dir_str = data_dir.display().to_string();
         let pg_port_str = pg_port.map(|p| p.to_string());
 
-        let address = "127.0.0.1:0".to_string();
-
         let mut args = vec![
             "start",
             "--jwt-key-dir",
@@ -278,7 +291,7 @@ impl SpacetimeDbGuard {
             "--data-dir",
             &data_dir_str,
             "--listen-addr",
-            &address,
+            listen_addr,
         ];
         if let Some(ref port) = pg_port_str {
             args.extend(["--pg-port", port]);

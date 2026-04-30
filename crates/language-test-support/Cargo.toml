@@ -1,0 +1,15 @@
+[package]
+name = "spacetimedb-language-test-support"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+quick-xml.workspace = true
+serde_json.workspace = true
+spacetimedb-guard.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
