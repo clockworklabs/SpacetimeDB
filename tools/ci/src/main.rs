@@ -276,6 +276,8 @@ enum CiCmd {
     PublishChecks,
     /// Runs TypeScript workspace tests and template build checks.
     TypescriptTest,
+    /// Runs C# tests through the Cargo language-test harness.
+    CsharpTests,
     /// Builds the docs site.
     Docs,
 }
@@ -415,8 +417,15 @@ fn run_publish_checks() -> Result<()> {
 }
 
 fn run_typescript_tests() -> Result<()> {
-    cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
-    cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
+    cmd!(
+        "cargo",
+        "test",
+        "-p",
+        "spacetimedb-typescript-tests",
+        "--test",
+        "typescript"
+    )
+    .run()?;
     cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
     let diff_status = cmd!(
         "bash",
@@ -434,6 +443,41 @@ fn run_typescript_tests() -> Result<()> {
     cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
         .dir("crates/bindings-typescript")
         .run()?;
+    Ok(())
+}
+
+fn run_csharp_tests() -> Result<()> {
+    cmd!(
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "spacetimedb-cli",
+        "-p",
+        "spacetimedb-standalone",
+        "--features",
+        "spacetimedb-standalone/allow_loopback_http_for_tests"
+    )
+    .run()?;
+    cmd!("cargo", "test", "-p", "spacetimedb-csharp-tests", "--test", "csharp").run()?;
+    cmd!(
+        "dotnet",
+        "format",
+        "--no-restore",
+        "--verify-no-changes",
+        "SpacetimeDB.ClientSDK.sln"
+    )
+    .dir("sdks/csharp")
+    .run()?;
+    cmd!("bash", "tools~/gen-quickstart.sh").dir("sdks/csharp").run()?;
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "sdks/csharp/examples~/quickstart-chat").run()?;
+    if !diff_status.status.success() {
+        bail!("quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.");
+    }
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "sdks/csharp/examples~/regression-tests").run()?;
+    if !diff_status.status.success() {
+        bail!("Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.");
+    }
     Ok(())
 }
 
@@ -713,6 +757,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::TypescriptTest) => {
             run_typescript_tests()?;
+        }
+
+        Some(CiCmd::CsharpTests) => {
+            run_csharp_tests()?;
         }
 
         Some(CiCmd::Docs) => {
