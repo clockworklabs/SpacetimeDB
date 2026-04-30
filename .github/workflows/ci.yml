@@ -101,7 +101,7 @@ jobs:
         run: |
           wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-linux.tar.gz
           tar -xzf wasi-sdk-29.0-x86_64-linux.tar.gz
-          sudo mv wasi-sdk-29.0 /opt/wasi-sdk
+          sudo mv wasi-sdk-29.0-x86_64-linux /opt/wasi-sdk
           echo "WASI_SDK_PATH=/opt/wasi-sdk" >> "$GITHUB_ENV"
 
       - name: Install emscripten (Windows)
