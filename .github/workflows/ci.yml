@@ -94,6 +94,16 @@ jobs:
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
 
+      # Install WASI SDK for .NET 10 NativeAOT-LLVM compilation.
+      - name: Install WASI SDK (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-linux.tar.gz
+          tar -xzf wasi-sdk-29.0-x86_64-linux.tar.gz
+          sudo mv wasi-sdk-29.0 /opt/wasi-sdk
+          echo "WASI_SDK_PATH=/opt/wasi-sdk" >> "$GITHUB_ENV"
+
       - name: Install emscripten (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

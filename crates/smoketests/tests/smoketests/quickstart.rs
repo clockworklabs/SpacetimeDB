@@ -111,11 +111,17 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
         source_lines.push_str(&format!("    <add key=\"{}\" value=\"{}\" />\n", key, path.display()));
     }
 
+    let mut patterns_by_source: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for (key, pattern) in mappings {
-        mapping_lines.push_str(&format!(
-            "    <packageSource key=\"{}\">\n      <package pattern=\"{}\" />\n    </packageSource>\n",
-            key, pattern
-        ));
+        patterns_by_source.entry(key.clone()).or_default().push(pattern.clone());
+    }
+
+    for (key, patterns) in patterns_by_source {
+        mapping_lines.push_str(&format!("    <packageSource key=\"{}\">\n", key));
+        for pattern in patterns {
+            mapping_lines.push_str(&format!("      <package pattern=\"{}\" />\n", pattern));
+        }
+        mapping_lines.push_str("    </packageSource>\n");
     }
 
     format!(
