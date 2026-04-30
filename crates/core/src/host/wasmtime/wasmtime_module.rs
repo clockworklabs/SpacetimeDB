@@ -242,9 +242,9 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         }
 
         if let Ok(init) = instance.get_typed_func::<u32, i32>(&mut store, SETUP_DUNDER) {
-            let setup_error = store.data_mut().setup_standard_bytes_sink();
+            let setup_error = store.data_mut().create_bytes_sink();
             let res = call_sync_typed_func(&init, &mut store, setup_error);
-            let error = store.data_mut().take_standard_bytes_sink();
+            let error = store.data_mut().take_bytes_sink(setup_error);
 
             let res = res
                 .map_err(ExecutionError::Trap)
@@ -455,14 +455,14 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
             .map_err(DescribeError::Signature)?;
 
-        let sink = self.store.data_mut().setup_standard_bytes_sink();
+        let sink = self.store.data_mut().create_bytes_sink();
 
         run_describer(log_traceback, || {
             call_sync_typed_func(&describer, &mut self.store, sink)
         })?;
 
         // Fetch the bsatn returned by the describer call.
-        let bytes = self.store.data_mut().take_standard_bytes_sink();
+        let bytes = self.store.data_mut().take_bytes_sink(sink);
 
         let desc: RawModuleDef = bsatn::from_slice(&bytes).map_err(DescribeError::Decode)?;
 
@@ -517,7 +517,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             ),
         );
 
-        let (stats, error) = finish_opcall(store, budget);
+        let (stats, error) = finish_opcall(store, budget, errors_sink);
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
@@ -550,7 +550,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             errors_sink,
         );
 
-        let (stats, result_bytes) = finish_opcall(store, budget);
+        let (stats, result_bytes) = finish_opcall(store, budget, errors_sink);
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
@@ -586,7 +586,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             errors_sink,
         );
 
-        let (stats, result_bytes) = finish_opcall(store, budget);
+        let (stats, result_bytes) = finish_opcall(store, budget, errors_sink);
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
@@ -652,7 +652,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         store.data_mut().terminate_dangling_anon_tx();
 
         // Close the timing span for this procedure and get the BSATN bytes of its result.
-        let (stats, result_bytes) = finish_opcall(store, budget);
+        let (stats, result_bytes) = finish_opcall(store, budget, result_sink);
 
         let call_result = call_result.and_then(|code| {
             (code == 0).then_some(result_bytes.into()).ok_or_else(|| {
@@ -689,7 +689,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             .data_mut()
             .create_extra_bytes_source(op.request_body_bytes)
             .expect("failed to register http handler request body");
-        let response_body_sink = store.data_mut().create_extra_bytes_sink();
+        let response_body_sink = store.data_mut().create_bytes_sink();
 
         let Some(call_http_handler) = self.call_http_handler.as_ref() else {
             let res = module_host_actor::HttpHandlerExecuteResult {
@@ -719,7 +719,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         store.data_mut().terminate_dangling_anon_tx();
 
-        let (stats, result_bytes, response_body_bytes) = finish_http_handler_opcall(store, budget, response_body_sink);
+        let (stats, result_bytes, response_body_bytes) =
+            finish_http_handler_opcall(store, budget, response_sink, response_body_sink);
 
         let call_result = call_result.and_then(|code| {
             (code == 0)
@@ -786,11 +787,15 @@ fn prepare_connection_id_for_call(caller_connection_id: ConnectionId) -> [u64; 2
 }
 
 /// Finish the op call and calculate its [`ExecutionStats`].
-fn finish_opcall(store: &mut Store<WasmInstanceEnv>, initial_budget: FunctionBudget) -> (ExecutionStats, Vec<u8>) {
+fn finish_opcall(
+    store: &mut Store<WasmInstanceEnv>,
+    initial_budget: FunctionBudget,
+    result_sink: u32,
+) -> (ExecutionStats, Vec<u8>) {
     // Signal that this call is finished. This gets us the timings
     // associated with it, and clears all of the instance state
     // related to it.
-    let (timings, ret_bytes) = store.data_mut().finish_funcall();
+    let (timings, ret_bytes) = store.data_mut().finish_funcall(result_sink);
 
     let remaining_fuel = get_store_fuel(store);
     let remaining: FunctionBudget = remaining_fuel.into();
@@ -810,10 +815,11 @@ fn finish_opcall(store: &mut Store<WasmInstanceEnv>, initial_budget: FunctionBud
 fn finish_http_handler_opcall(
     store: &mut Store<WasmInstanceEnv>,
     initial_budget: FunctionBudget,
+    response_sink: u32,
     response_body_sink: u32,
 ) -> (ExecutionStats, Vec<u8>, Vec<u8>) {
-    let response_body_bytes = store.data_mut().take_extra_bytes_sink(response_body_sink);
-    let (stats, response_bytes) = finish_opcall(store, initial_budget);
+    let response_body_bytes = store.data_mut().take_bytes_sink(response_body_sink);
+    let (stats, response_bytes) = finish_opcall(store, initial_budget, response_sink);
     (stats, response_bytes, response_body_bytes)
 }
 
