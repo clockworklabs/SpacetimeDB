@@ -143,4 +143,36 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_context_can_insert_and_read_chat_rows() {
+        let ctx = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let sender = Identity::ZERO;
+
+        ctx.db.user().insert(User {
+            identity: sender,
+            name: Some("Alice".to_string()),
+            online: true,
+        });
+        ctx.db.message().insert(Message {
+            sender,
+            sent: Timestamp::UNIX_EPOCH,
+            text: "Hello, SpacetimeDB!".to_string(),
+        });
+
+        assert_eq!(ctx.db.user().count(), 1);
+        assert_eq!(ctx.db.message().count(), 1);
+
+        let users = ctx.db.user().iter().collect::<Vec<_>>();
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].identity, sender);
+        assert_eq!(users[0].name.as_deref(), Some("Alice"));
+        assert!(users[0].online);
+
+        let messages = ctx.db.message().iter().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].sender, sender);
+        assert_eq!(messages[0].sent, Timestamp::UNIX_EPOCH);
+        assert_eq!(messages[0].text, "Hello, SpacetimeDB!");
+    }
 }

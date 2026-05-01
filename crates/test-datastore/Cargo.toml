@@ -1,0 +1,26 @@
+[package]
+name = "spacetimedb-test-datastore"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "In-memory datastore support for SpacetimeDB module unit tests."
+rust-version.workspace = true
+
+[lib]
+name = "spacetimedb_test_datastore"
+path = "src/lib.rs"
+bench = false
+
+[dependencies]
+spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.1.0", features = ["test"] }
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-schema.workspace = true
+
+thiserror.workspace = true
+
+[dev-dependencies]
+spacetimedb-lib = { workspace = true, features = ["test"] }
+
+[lints]
+workspace = true

@@ -15,6 +15,38 @@ use std::sync::Mutex;
 
 use spacetimedb_lib::RawModuleDef;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use spacetimedb_test_datastore::{TestDatastore, TestDatastoreError};
+
+/// A native unit-test context with an in-memory module datastore.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct TestContext {
+    pub db: crate::Local,
+    datastore: std::sync::Arc<TestDatastore>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TestContext {
+    /// Create a test context from the module definition registered in this test binary.
+    pub fn new() -> Result<Self, TestDatastoreError> {
+        Self::from_module_def(module_def())
+    }
+
+    /// Create a test context from `raw`.
+    pub fn from_module_def(raw: RawModuleDef) -> Result<Self, TestDatastoreError> {
+        let datastore = std::sync::Arc::new(TestDatastore::from_module_def(raw)?);
+        Ok(Self {
+            db: crate::Local::__test(datastore.clone()),
+            datastore,
+        })
+    }
+
+    /// The underlying in-memory datastore.
+    pub fn datastore(&self) -> &std::sync::Arc<TestDatastore> {
+        &self.datastore
+    }
+}
+
 static TABLE_NAMES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
 
 /// Returns the name of every table defined in this binary via the `#[table]`

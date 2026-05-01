@@ -1110,7 +1110,7 @@ extern "C" fn __call_reducer__(
 
     // Assemble the `ReducerContext`.
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
-    let ctx = ReducerContext::new(crate::Local {}, sender, conn_id, timestamp);
+    let ctx = ReducerContext::new(crate::Local::__host(), sender, conn_id, timestamp);
 
     // Fetch reducer function.
     let reducers = REDUCERS.get().unwrap();

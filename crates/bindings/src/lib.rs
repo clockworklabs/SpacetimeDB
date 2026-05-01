@@ -925,7 +925,7 @@ pub struct AnonymousViewContext {
 impl Default for AnonymousViewContext {
     fn default() -> Self {
         Self {
-            db: LocalReadOnly {},
+            db: LocalReadOnly::__host(),
             from: QueryBuilder {},
         }
     }
@@ -943,7 +943,7 @@ impl ViewContext {
     pub fn new(sender: Identity) -> Self {
         Self {
             sender,
-            db: LocalReadOnly {},
+            db: LocalReadOnly::__host(),
             from: QueryBuilder {},
         }
     }
@@ -1037,7 +1037,7 @@ impl ReducerContext {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
-            db: Local {},
+            db: Local::__host(),
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
@@ -1362,7 +1362,7 @@ impl ProcedureContext {
             let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
             // We've resumed, so let's do the work, but first prepare the context.
-            let tx = ReducerContext::new(Local {}, self.sender, self.connection_id, timestamp);
+            let tx = ReducerContext::new(Local::__host(), self.sender, self.connection_id, timestamp);
             let tx = TxContext(tx);
 
             // Guard the execution of `body` with a scope-guard that `abort`s on panic.
@@ -1508,7 +1508,30 @@ impl DbContext for ViewContext {
 /// The `#[table]` macro uses the trait system to add table accessors to this type.
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
-pub struct Local {}
+pub struct Local {
+    backend: table::LocalBackend,
+}
+
+impl Local {
+    #[doc(hidden)]
+    pub fn __host() -> Self {
+        Self {
+            backend: table::LocalBackend::Host,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __table_backend(&self) -> table::TableHandleBackend {
+        self.backend.as_table_handle_backend()
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test(datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>) -> Self {
+        Self {
+            backend: table::LocalBackend::Test(datastore),
+        }
+    }
+}
 
 /// The [JWT] of an [`AuthCtx`].
 ///
@@ -1647,7 +1670,23 @@ impl JwtClaims {
 }
 /// The read-only version of [`Local`]
 #[non_exhaustive]
-pub struct LocalReadOnly {}
+pub struct LocalReadOnly {
+    backend: table::LocalBackend,
+}
+
+impl LocalReadOnly {
+    #[doc(hidden)]
+    pub fn __host() -> Self {
+        Self {
+            backend: table::LocalBackend::Host,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __table_backend(&self) -> table::TableHandleBackend {
+        self.backend.as_table_handle_backend()
+    }
+}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]

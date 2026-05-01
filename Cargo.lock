@@ -7691,6 +7691,7 @@ dependencies = [
  "spacetimedb-lib 2.1.0",
  "spacetimedb-primitives 2.1.0",
  "spacetimedb-query-builder",
+ "spacetimedb-test-datastore",
  "trybuild",
 ]
 
@@ -8750,6 +8751,17 @@ dependencies = [
  "spacetimedb-memory-usage",
  "spacetimedb-primitives 2.1.0",
  "spacetimedb-sats 2.1.0",
+ "spacetimedb-schema",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-test-datastore"
+version = "2.1.0"
+dependencies = [
+ "spacetimedb-core",
+ "spacetimedb-lib 2.1.0",
+ "spacetimedb-primitives 2.1.0",
  "spacetimedb-schema",
  "thiserror 1.0.69",
 ]
