@@ -719,7 +719,6 @@ fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::energy::EnergyQuanta;
 
     #[test]
     fn test_fuel() {
@@ -730,8 +729,8 @@ mod tests {
         let budget = FunctionBudget::DEFAULT_BUDGET;
         set_store_fuel(&mut store, budget.into());
         store.set_fuel(store.get_fuel().unwrap() - 10).unwrap();
-        let remaining: EnergyQuanta = get_store_fuel(&store).into();
-        let used = EnergyQuanta::from(budget) - remaining;
-        assert_eq!(used, EnergyQuanta::new(10));
+        let remaining: FunctionBudget = get_store_fuel(&store).into();
+        let used = budget - remaining;
+        assert_eq!(used, FunctionBudget::new(10));
     }
 }

@@ -33,7 +33,6 @@ use core::future::Future;
 use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
@@ -632,7 +631,7 @@ impl InstanceCommon {
                 log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
 
                 let succeed = |info: Arc<ModuleInfo>,
-                               energy_quanta_used: EnergyQuanta,
+                               execution_energy_used: FunctionBudget,
                                host_execution_duration: Duration,
                                tx: MutTxId|
                  -> TransactionOffset {
@@ -643,7 +642,7 @@ impl InstanceCommon {
                         function_call: ModuleFunctionCall::update(),
                         status: EventStatus::Committed(DatabaseUpdate::default()),
                         reducer_return_value: None,
-                        energy_quanta_used,
+                        execution_energy_used,
                         host_execution_duration,
                         request_id: None,
                         timer: None,
@@ -657,7 +656,7 @@ impl InstanceCommon {
 
                 let res: UpdateDatabaseResult = match res {
                     crate::db::update::UpdateResult::Success => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
                         UpdateDatabaseResult::UpdatePerformed {
                             tx_offset,
                             durable_offset,
@@ -679,7 +678,7 @@ impl InstanceCommon {
                             stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                             UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
                         } else {
-                            let tx_offset = succeed(self.info.clone(), out.energy_used.into(), out.total_duration, tx);
+                            let tx_offset = succeed(self.info.clone(), out.energy_used, out.total_duration, tx);
                             UpdateDatabaseResult::UpdatePerformed {
                                 tx_offset,
                                 durable_offset,
@@ -687,7 +686,7 @@ impl InstanceCommon {
                         }
                     }
                     crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
                         UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
                             tx_offset,
                             durable_offset,
@@ -947,7 +946,7 @@ impl InstanceCommon {
             reducer_return_value = None;
         }
 
-        let energy_quanta_used = result.stats.energy_used().into();
+        let execution_energy_used = result.stats.energy_used();
         let total_duration = result.stats.total_duration();
 
         let event = ModuleEvent {
@@ -961,7 +960,7 @@ impl InstanceCommon {
             },
             status,
             reducer_return_value,
-            energy_quanta_used,
+            execution_energy_used,
             host_execution_duration: total_duration,
             request_id,
             timer,
@@ -970,7 +969,7 @@ impl InstanceCommon {
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
-            energy_used: energy_quanta_used,
+            energy_used: execution_energy_used,
             execution_duration: total_duration,
         };
 
@@ -1014,12 +1013,11 @@ impl InstanceCommon {
 
         let stats: &ExecutionStats = result.as_ref();
         let energy_used = stats.energy.used();
-        let energy_quanta_used = energy_used.into();
         let timings = &stats.timings;
         let memory_allocation = stats.memory_allocation;
 
         self.energy_monitor
-            .record_reducer(&energy_fingerprint, energy_quanta_used, timings.total_duration);
+            .record_reducer(&energy_fingerprint, energy_used, timings.total_duration);
         if self.allocated_memory != memory_allocation {
             self.metric_wasm_memory_bytes.set(memory_allocation as i64);
             self.allocated_memory = memory_allocation;

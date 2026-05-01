@@ -16,10 +16,6 @@ pub struct EnergyQuanta {
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta { quanta: 0 };
 
-    // per the comment on [`FunctionBudget::DEFAULT_BUDGET`]: 1 second of wasm runtime is roughtly 2 TeV
-    pub const PER_EXECUTION_SEC: Self = Self::new(2_000_000_000_000);
-    pub const PER_EXECUTION_NANOSEC: Self = Self::new(Self::PER_EXECUTION_SEC.get() / 1_000_000_000);
-
     #[inline]
     pub const fn new(quanta: u128) -> Self {
         Self { quanta }
@@ -125,46 +121,34 @@ impl fmt::Debug for EnergyBalance {
     }
 }
 
-/// A measure of energy representing the energy budget for a reducer or any callable function.
+/// A measure of the energy budget for a reducer or any callable function.
 ///
-/// In contrast to [`EnergyQuanta`], this is represented by a 64-bit integer. This makes energy handling
-/// for reducers easier, while still providing a unlikely-to-ever-be-reached maximum value (e.g. for wasmtime:
-/// `(u64::MAX eV / 1000 eV/instruction) * 3 ns/instruction = 640 days`)
-#[derive(Copy, Clone, From, Add, Sub, AddAssign, SubAssign)]
+/// This unit is not directly convertible to `EnergyQuanta`. It is currently
+/// 1:1 to wasmtime fuel, and we intend to treat it as representing a CPU
+/// instruction.
+#[derive(Copy, Clone, From, Add, Sub, AddAssign, SubAssign, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FunctionBudget(u64);
 
 impl FunctionBudget {
-    // 1 second of wasm runtime is roughly 2 TeV, so this is
-    // roughly 1 minute of wasm runtime
-    pub const DEFAULT_BUDGET: Self = FunctionBudget(120_000_000_000_000);
+    /// We've generally assumed that 1 second of wasm runtime uses 2_000_000_000 fuel.
+    /// Currently, 1 wasmtime fuel unit is equivalent to 1 wasm instructions. Assuming
+    /// 1 wasm instruction compiles to 1 CPU instruction (which it doesn't), this implies
+    /// a 1 instruction-per-cycle abstract machine with a CPU frequency of 2GHz.
+    pub const PER_EXECUTION_SEC: Self = FunctionBudget(2_000_000_000);
+
+    pub const PER_EXECUTION_NANOSEC: Self = Self(Self::PER_EXECUTION_SEC.0 / 1_000_000_000);
+
+    /// Roughly 1 minute of runtime.
+    pub const DEFAULT_BUDGET: Self = FunctionBudget(Self::PER_EXECUTION_SEC.0 * 60);
 
     pub const ZERO: Self = FunctionBudget(0);
     pub const MAX: Self = FunctionBudget(u64::MAX);
 
-    pub fn new(v: u64) -> Self {
+    pub const fn new(v: u64) -> Self {
         Self(v)
     }
 
-    pub fn get(&self) -> u64 {
+    pub const fn get(&self) -> u64 {
         self.0
-    }
-
-    /// Convert from [`EnergyQuanta`]. Returns `None` if `energy` is too large to be represented.
-    pub fn from_energy(energy: EnergyQuanta) -> Option<Self> {
-        energy.get().try_into().ok().map(Self)
-    }
-}
-
-impl From<FunctionBudget> for EnergyQuanta {
-    fn from(value: FunctionBudget) -> Self {
-        EnergyQuanta::new(value.0.into())
-    }
-}
-
-impl fmt::Debug for FunctionBudget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ReducerBudget")
-            .field(&EnergyQuanta::from(*self))
-            .finish()
     }
 }

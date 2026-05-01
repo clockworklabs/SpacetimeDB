@@ -10,7 +10,7 @@ use anyhow::anyhow;
 use core::time::Duration;
 use futures::{FutureExt, StreamExt};
 use rustc_hash::FxHashMap;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
@@ -585,7 +585,7 @@ fn refresh_views_then_commit_and_broadcast(
         status,
         reducer_return_value: None,
         //Keeping them 0 as it is internal transaction, not by reducer
-        energy_quanta_used: EnergyQuanta { quanta: 0 },
+        execution_energy_used: FunctionBudget::ZERO,
         host_execution_duration: Duration::from_millis(0),
         request_id: None,
         timer: None,

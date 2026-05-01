@@ -6,7 +6,6 @@ use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::RelationalDB;
-use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
@@ -208,7 +207,7 @@ pub struct ModuleEvent {
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub reducer_return_value: Option<Bytes>,
-    pub energy_quanta_used: EnergyQuanta,
+    pub execution_energy_used: FunctionBudget,
     pub host_execution_duration: Duration,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,

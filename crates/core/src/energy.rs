@@ -17,7 +17,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
     fn record_reducer(
         &self,
         fingerprint: &FunctionFingerprint<'_>,
-        energy_used: EnergyQuanta,
+        energy_used: FunctionBudget,
         execution_duration: Duration,
     );
     fn record_disk_usage(&self, database: &Database, replica_id: u64, disk_usage: u64, period: Duration);
@@ -36,7 +36,7 @@ impl EnergyMonitor for NullEnergyMonitor {
     fn record_reducer(
         &self,
         _fingerprint: &FunctionFingerprint<'_>,
-        _energy_used: EnergyQuanta,
+        _energy_used: FunctionBudget,
         _execution_duration: Duration,
     ) {
     }

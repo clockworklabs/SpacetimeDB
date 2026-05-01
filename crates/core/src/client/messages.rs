@@ -7,6 +7,7 @@ use crate::subscription::websocket_building::{brotli_compress, decide_compressio
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_client_api_messages::websocket::common::{self as ws_common, RowListLen as _};
 use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
@@ -408,7 +409,12 @@ impl ToProtocol for TransactionUpdateMessage {
                     args,
                     request_id,
                 },
-                energy_quanta_used: event.energy_quanta_used,
+                // This conversion is lying. We used to tell the client how much eV a transaction
+                // used, but now the database just tracks cpu usage, and it's converted to energy
+                // elsewhere. So, we just pretend that this is `EnergyQuanta` when it's actually
+                // a different unit, and it doesn't really matter to the client anyway.
+                // TODO(noa): maybe we could just have this be zero, unconditionally?
+                energy_quanta_used: EnergyQuanta::new(event.execution_energy_used.get().into()),
                 total_host_execution_duration: event.host_execution_duration.into(),
                 caller_connection_id: event.caller_connection_id.unwrap_or(ConnectionId::ZERO),
             };

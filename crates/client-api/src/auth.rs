@@ -12,7 +12,7 @@ use spacetimedb::auth::token_validation::{
     new_validator, DefaultValidator, TokenSigner, TokenValidationError, TokenValidator,
 };
 use spacetimedb::auth::JwtKeys;
-use spacetimedb::energy::EnergyQuanta;
+use spacetimedb::energy::FunctionBudget;
 use spacetimedb::identity::Identity;
 use spacetimedb_data_structures::map::HashMap;
 use std::time::{Duration, SystemTime};
@@ -503,7 +503,7 @@ impl headers::Header for SpacetimeIdentityToken {
     }
 }
 
-pub struct SpacetimeEnergyUsed(pub EnergyQuanta);
+pub struct SpacetimeEnergyUsed(pub FunctionBudget);
 impl headers::Header for SpacetimeEnergyUsed {
     fn name() -> &'static http::HeaderName {
         static NAME: http::HeaderName = http::HeaderName::from_static("spacetime-energy-used");
@@ -515,9 +515,7 @@ impl headers::Header for SpacetimeEnergyUsed {
     }
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-        let mut buf = itoa::Buffer::new();
-        let value = buf.format(self.0.get());
-        values.extend([value.try_into().unwrap()]);
+        values.extend([self.0.get().into()]);
     }
 }
 

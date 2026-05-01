@@ -1,6 +1,6 @@
 use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage, MessageHandleError, Protocol};
-use crate::energy::EnergyQuanta;
+use crate::energy::FunctionBudget;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{FunctionArgs, ReducerId};
 use crate::identity::Identity;
@@ -179,7 +179,7 @@ impl MessageExecutionError {
             },
             status: EventStatus::FailedInternal(format!("{:#}", err)),
             reducer_return_value: None,
-            energy_quanta_used: EnergyQuanta::ZERO,
+            execution_energy_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::ZERO,
             request_id: Some(RequestId::default()),
             timer: None,

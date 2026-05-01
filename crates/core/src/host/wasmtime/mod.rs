@@ -1,7 +1,7 @@
 use self::wasm_instance_env::WasmInstanceEnv;
 use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostActor, WasmModuleInstance};
 use super::wasm_common::{abi, ModuleCreationError};
-use crate::energy::{EnergyQuanta, FunctionBudget};
+use crate::energy::FunctionBudget;
 use crate::error::NodesError;
 use crate::module_host_context::ModuleCreationContext;
 use crate::util::jobs::AllocatedJobCore;
@@ -153,7 +153,7 @@ impl WasmtimeFuel {}
 
 impl From<FunctionBudget> for WasmtimeFuel {
     fn from(v: FunctionBudget) -> Self {
-        // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
+        // FunctionBudget being u64 is load-bearing here - if it was u128 and v was FunctionBudget::MAX,
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
         // would be u64::MAX even if it did nothing. ask how I know.
@@ -164,12 +164,6 @@ impl From<FunctionBudget> for WasmtimeFuel {
 impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
         FunctionBudget::new(v.0)
-    }
-}
-
-impl From<WasmtimeFuel> for EnergyQuanta {
-    fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0))
     }
 }
 
