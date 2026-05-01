@@ -335,6 +335,7 @@ fn run_dlls() -> Result<()> {
                 <clear />
                 <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
                 <add key="Local SpacetimeDB.Runtime" value="{}" />
+                <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
                 <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
               </packageSources>
               <packageSourceMapping>
@@ -343,6 +344,10 @@ fn run_dlls() -> Result<()> {
                 </packageSource>
                 <packageSource key="Local SpacetimeDB.Runtime">
                   <package pattern="SpacetimeDB.Runtime" />
+                </packageSource>
+                <packageSource key="dotnet-experimental">
+                  <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
+                  <package pattern="runtime.*" />
                 </packageSource>
                 <packageSource key="nuget.org">
                   <package pattern="*" />

@@ -98,15 +98,34 @@ fn init_template(test: &Smoketest, template_id: &str) -> Result<(TempDir, PathBu
     let project_name = format!("test-{}", template_id);
     let project_path = tmpdir.path().join(&project_name);
 
-    test.spacetime(&[
-        "init",
-        "--template",
-        template_id,
-        "--project-path",
-        project_path.to_str().unwrap(),
-        "--non-interactive",
-        &project_name,
-    ])
+    // For C# templates, force .NET 8 to match template TFM and avoid
+    // CLI auto-detecting .NET 10 in CI environments.
+    let is_csharp = template_id.ends_with("-cs");
+    let init_args: Vec<&str> = if is_csharp {
+        vec![
+            "init",
+            "--template",
+            template_id,
+            "--project-path",
+            project_path.to_str().unwrap(),
+            "--non-interactive",
+            "--dotnet-version",
+            "8",
+            &project_name,
+        ]
+    } else {
+        vec![
+            "init",
+            "--template",
+            template_id,
+            "--project-path",
+            project_path.to_str().unwrap(),
+            "--non-interactive",
+            &project_name,
+        ]
+    };
+
+    test.spacetime(&init_args)
     .with_context(|| format!("spacetime init --template {} failed", template_id))?;
 
     if !project_path.exists() {
@@ -747,6 +766,8 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
         "--yes",
         "--module-path",
         server_path.to_str().unwrap(),
+        "--dotnet-version",
+        "8", // Force .NET 8 JIT path to match template TFM
         &domain,
     ])
     .with_context(|| format!("spacetime publish failed for C# server in template {}", template.id))?;

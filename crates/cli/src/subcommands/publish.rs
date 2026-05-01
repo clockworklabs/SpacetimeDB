@@ -34,6 +34,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("parent"))
         .key(Key::new("organization"))
         .key(Key::new("native_aot").module_specific())
+        .key(Key::new("dotnet_version").module_specific())
         .exclude("clear-database")
         .exclude("force")
         .exclude("no_config")
@@ -240,6 +241,12 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .long("native-aot")
                 .action(SetTrue)
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
+        )
+        .arg(
+            Arg::new("dotnet_version")
+                .long("dotnet-version")
+                .value_name("VERSION")
+                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
@@ -449,6 +456,7 @@ async fn execute_publish_configs<'a>(
         let org_opt = command_config.get_one::<String>("organization")?;
         let org = org_opt.as_deref();
         let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
+        let dotnet_version = command_config.get_one::<String>("dotnet_version");
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
@@ -484,6 +492,14 @@ async fn execute_publish_configs<'a>(
                 // this environment variable concurrently.
                 unsafe {
                     env::set_var("EXPERIMENTAL_WASM_AOT", "1");
+                }
+            }
+            // Pass explicit dotnet version to C# build system if specified
+            if let Ok(Some(version)) = dotnet_version.as_ref() {
+                // SAFETY: We are single-threaded at this point and no other code is reading
+                // this environment variable concurrently.
+                unsafe {
+                    env::set_var("SPACETIMEDB_DOTNET_VERSION", version);
                 }
             }
             build::exec_with_argstring(

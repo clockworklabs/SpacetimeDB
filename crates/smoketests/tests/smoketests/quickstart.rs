@@ -111,12 +111,19 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
         source_lines.push_str(&format!("    <add key=\"{}\" value=\"{}\" />\n", key, path.display()));
     }
 
-    let mut patterns_by_source: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    // Group patterns by source while preserving source order (first seen first)
+    let mut patterns_by_source: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    let mut source_order: Vec<String> = Vec::new();
     for (key, pattern) in mappings {
+        if !patterns_by_source.contains_key(key) {
+            source_order.push(key.clone());
+        }
         patterns_by_source.entry(key.clone()).or_default().push(pattern.clone());
     }
 
-    for (key, patterns) in patterns_by_source {
+    // Write mappings in insertion order (ensures nuget.org with * comes last)
+    for key in source_order {
+        let patterns = patterns_by_source.get(&key).unwrap();
         mapping_lines.push_str(&format!("    <packageSource key=\"{}\">\n", key));
         for pattern in patterns {
             mapping_lines.push_str(&format!("      <package pattern=\"{}\" />\n", pattern));
@@ -224,6 +231,21 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
         mappings.push(("dotnet-experimental".to_string(), "runtime.*".to_string()));
     }
 
+    // Add package source mappings for SpacetimeDB packages to local sources
+    // This must come BEFORE the nuget.org wildcard mapping to ensure local packages are used
+    let local_runtime_source = sources
+        .iter()
+        .find(|(k, _)| k.contains("runtime") || k.contains("Runtime"))
+        .map(|(k, _)| k.clone());
+    if let Some(source_key) = local_runtime_source {
+        if !mappings.iter().any(|(k, p)| k == &source_key && p == "SpacetimeDB.Runtime") {
+            mappings.push((source_key.clone(), "SpacetimeDB.Runtime".to_string()));
+        }
+        if !mappings.iter().any(|(k, p)| k == &source_key && p == "SpacetimeDB.BSATN.Runtime") {
+            mappings.push((source_key, "SpacetimeDB.BSATN.Runtime".to_string()));
+        }
+    }
+
     // Ensure nuget.org fallback exists
     if !sources.iter().any(|(k, _)| k == "nuget.org") {
         sources.push((
@@ -237,6 +259,7 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
 
     // Write config
     let config = create_nuget_config(&sources, &mappings);
+    eprintln!("Generated nuget.config at {:?}:\n{}", nuget_config_path, config);
     fs::write(&nuget_config_path, config)?;
 
     let _ = Command::new("dotnet")
@@ -260,9 +283,18 @@ fn parse_nuget_config(content: &str) -> (Vec<(String, PathBuf)>, Vec<(String, St
         sources.push((cap[1].to_string(), PathBuf::from(&cap[2])));
     }
 
-    let mapping_re = regex::Regex::new(r#"<packageSource key="([^"]+)">\s*<package pattern="([^"]+)""#).unwrap();
-    for cap in mapping_re.captures_iter(content) {
-        mappings.push((cap[1].to_string(), cap[2].to_string()));
+    // Parse packageSourceMapping sections - need to find all patterns for each source
+    let section_re = regex::Regex::new(
+        r#"<packageSource key="([^"]+)">(.*?)<\/packageSource>"#,
+    ).unwrap();
+    let pattern_re = regex::Regex::new(r#"<package pattern="([^"]+)""#).unwrap();
+
+    for cap in section_re.captures_iter(content) {
+        let source_key = cap[1].to_string();
+        let section_content = &cap[2];
+        for pattern_cap in pattern_re.captures_iter(section_content) {
+            mappings.push((source_key.clone(), pattern_cap[1].to_string()));
+        }
     }
 
     (sources, mappings)

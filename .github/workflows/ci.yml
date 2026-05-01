@@ -122,7 +122,7 @@ jobs:
           $wasiDir = "$env:USERPROFILE\.wasi-sdk"
           Invoke-WebRequest -Uri "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-windows.tar.gz" -OutFile "$env:TEMP\wasi-sdk.tar.gz"
           New-Item -ItemType Directory -Force -Path $wasiDir | Out-Null
-          tar -xzf "$env:TEMP\wasi-sdk.tar.gz" -C $wasiDir --strip-components=1
+          & "$env:SystemRoot\System32\tar.exe" -xzf "$env:TEMP\wasi-sdk.tar.gz" -C $wasiDir --strip-components=1
           echo "WASI_SDK_PATH=$wasiDir" >> $env:GITHUB_ENV
 
       - name: Install psql (Windows)

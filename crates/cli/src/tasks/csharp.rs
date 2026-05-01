@@ -29,6 +29,10 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
 
     let native_aot_flag = std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1");
 
+    // Check for explicit dotnet version override from CLI (--dotnet-version flag)
+    // This takes precedence over auto-detection.
+    let dotnet_version_override = std::env::var("SPACETIMEDB_DOTNET_VERSION").ok();
+
     // Detect the .NET SDK version available at the project path (respects global.json).
     let dotnet_version_str = match dotnet!("--version").read() {
         Ok(v) => v,
@@ -37,7 +41,12 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         }
         Err(error) => anyhow::bail!("{error}"),
     };
-    let dotnet_major = parse_major_version(&dotnet_version_str);
+
+    // Use explicit version if provided, otherwise auto-detect from dotnet --version
+    let dotnet_major = dotnet_version_override
+        .as_deref()
+        .and_then(|v| v.parse().ok())
+        .or_else(|| parse_major_version(&dotnet_version_str));
 
     // Determine the build path based on SDK version and --native-aot flag.
     let build_path = match (dotnet_major, native_aot_flag) {
@@ -57,7 +66,8 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
             anyhow::bail!(
                 "Unsupported .NET SDK version: {dotnet_version_str}. SpacetimeDB requires .NET SDK 8.0 or 10.0.\n\
                  If you have multiple versions installed, configure your project using \
-                 https://learn.microsoft.com/en-us/dotnet/core/tools/global-json."
+                 https://learn.microsoft.com/en-us/dotnet/core/tools/global-json, \
+                 or use --dotnet-version to specify the target version explicitly."
             );
         }
     };
@@ -142,18 +152,36 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         ));
     }
     let possible_output_paths = [
+        // Standard publish output paths (JIT and some AOT builds)
         project_path.join(format!(
             "bin/{config_name}/{target_framework}/wasi-wasm/{subdir}/StdbModule.wasm"
         )),
         project_path.join(format!(
             "bin~/{config_name}/{target_framework}/wasi-wasm/{subdir}/StdbModule.wasm"
         )),
+        // NativeAOT-LLVM outputs to 'native' subdirectory instead of 'publish'
+        project_path.join(format!(
+            "bin/{config_name}/{target_framework}/wasi-wasm/native/StdbModule.wasm"
+        )),
+        project_path.join(format!(
+            "bin~/{config_name}/{target_framework}/wasi-wasm/native/StdbModule.wasm"
+        )),
+        // Also check for raw wasm output without wasi-wasm RID folder (NativeAOT-LLVM sometimes does this)
+        project_path.join(format!("bin/{config_name}/{target_framework}/native/StdbModule.wasm")),
+        project_path.join(format!("bin~/{config_name}/{target_framework}/native/StdbModule.wasm")),
     ];
-    if possible_output_paths.iter().all(|p| p.exists()) {
-        anyhow::bail!(concat!(
-            "For some reason, your project has both a `bin` and a `bin~` folder.\n",
-            "I don't know which to use, so please delete both and rerun this command so that we can see which is up-to-date."
-        ));
+    // Check if both bin and bin~ variants exist for the same output path (indicates a conflict)
+    for i in (0..possible_output_paths.len()).step_by(2) {
+        if i + 1 < possible_output_paths.len() {
+            let bin_path = &possible_output_paths[i];
+            let bin_tilde_path = &possible_output_paths[i + 1];
+            if bin_path.exists() && bin_tilde_path.exists() {
+                anyhow::bail!(concat!(
+                    "For some reason, your project has both a `bin` and a `bin~` folder.\n",
+                    "I don't know which to use, so please delete both and rerun this command so that we can see which is up-to-date."
+                ));
+            }
+        }
     }
     for output_path in possible_output_paths {
         if output_path.exists() {
