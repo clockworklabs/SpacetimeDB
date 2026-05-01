@@ -12,6 +12,8 @@ harness = false
 
 [dev-dependencies]
 anyhow.workspace = true
+clap.workspace = true
+quick-xml.workspace = true
 spacetimedb-language-test-support.workspace = true
 
 [lints]

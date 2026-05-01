@@ -1,12 +1,54 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Context, Result};
-use spacetimedb_language_test_support::{
-    parse_trx, print_results, run_command, run_command_env, run_command_forward, target_dir, HarnessArgs,
-    SpacetimeDbGuard,
-};
+use clap::Parser;
+use quick_xml::events::Event;
+use quick_xml::Reader;
+use spacetimedb_language_test_support::{print_results, target_dir, Outcome, SpacetimeDbGuard, TestCaseResult};
+use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+
+#[derive(Clone, Debug, Default, Parser)]
+#[command(disable_help_flag = true)]
+struct Args {
+    #[arg(long)]
+    filter: Option<String>,
+
+    #[arg(long, alias = "list-tests")]
+    list: bool,
+
+    #[arg(skip)]
+    passthrough: Vec<String>,
+
+    #[arg()]
+    positional: Vec<String>,
+}
+
+impl Args {
+    fn parse() -> Self {
+        let mut args = env::args().collect::<Vec<_>>();
+        let passthrough = args
+            .iter()
+            .position(|arg| arg == "--")
+            .map(|index| args.split_off(index + 1))
+            .unwrap_or_default();
+        if args.last().is_some_and(|arg| arg == "--") {
+            args.pop();
+        }
+
+        let mut parsed = <Args as Parser>::parse_from(args);
+        parsed.passthrough = passthrough;
+        if parsed.filter.is_none()
+            && let Some(filter) = parsed.positional.first()
+        {
+            parsed.filter = Some(filter.clone());
+        }
+        parsed
+    }
+}
 
 fn main() {
     if let Err(err) = run() {
@@ -16,7 +58,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let args = HarnessArgs::parse();
+    let args = Args::parse();
 
     let workspace = spacetimedb_language_test_support::workspace_root();
     let out_dir = target_dir().join("csharp-tests");
@@ -30,7 +72,7 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn run_sdk_tests(workspace: &Path, out_dir: &Path, args: &HarnessArgs) -> Result<()> {
+fn run_sdk_tests(workspace: &Path, out_dir: &Path, args: &Args) -> Result<()> {
     prepare_csharp_sdk_solution(workspace)?;
     let cwd = workspace.join("sdks/csharp");
     run_dotnet_test(
@@ -49,7 +91,7 @@ fn run_dotnet_test(
     cwd: &Path,
     out_dir: &Path,
     report_name: &str,
-    args: &HarnessArgs,
+    args: &Args,
     extra_args: &[String],
 ) -> Result<()> {
     let report = out_dir.join(report_name);
@@ -132,9 +174,7 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
 }
 
 fn run_regression_tests(workspace: &Path) -> Result<()> {
-    // The regression module itself still performs an HTTP egress call to
-    // localhost:3000, so this specific suite needs the fixed listen address.
-    let guard = SpacetimeDbGuard::spawn_in_temp_data_dir_with_listen_addr("127.0.0.1:3000");
+    let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
     run_command_env(
         "bash",
         &["tools~/run-regression-tests.sh".to_string()],
@@ -142,4 +182,109 @@ fn run_regression_tests(workspace: &Path) -> Result<()> {
         &[("SPACETIMEDB_SERVER_URL", guard.host_url.clone())],
     )?;
     Ok(())
+}
+
+fn run_command(program: &str, args: &[String], cwd: &Path) -> Result<Output> {
+    run_command_inner(program, args, cwd, &[])
+}
+
+fn run_command_env(program: &str, args: &[String], cwd: &Path, envs: &[(&str, String)]) -> Result<Output> {
+    run_command_inner(program, args, cwd, envs)
+}
+
+fn run_command_inner(program: &str, args: &[String], cwd: &Path, envs: &[(&str, String)]) -> Result<Output> {
+    let output = Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .envs(envs.iter().map(|(k, v)| (OsStr::new(k), OsStr::new(v))))
+        .output()
+        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
+    ensure_success(cwd, program, args, &output)?;
+    Ok(output)
+}
+
+fn run_command_forward(program: &str, args: &[String], cwd: &Path) -> Result<()> {
+    let status = Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
+    ensure_success(
+        cwd,
+        program,
+        args,
+        &Output {
+            status,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        },
+    )
+}
+
+fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -> Result<()> {
+    if output.status.success() {
+        return Ok(());
+    }
+
+    bail!(
+        "command failed in {}:\n  {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
+        cwd.display(),
+        shell_line(program, args),
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn shell_line(program: &str, args: &[String]) -> String {
+    std::iter::once(program.to_string())
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn parse_trx(path: &Path) -> Result<Vec<TestCaseResult>> {
+    let mut reader = Reader::from_file(path).with_context(|| format!("failed to read {}", path.display()))?;
+    reader.trim_text(true);
+
+    let mut buf = Vec::new();
+    let mut results = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(e)) | Ok(Event::Start(e)) if e.name().as_ref() == b"UnitTestResult" => {
+                let name = attr(&e, b"testName")?.unwrap_or_else(|| "<unknown>".to_string());
+                let outcome = match attr(&e, b"outcome")?.as_deref() {
+                    Some("Passed") => Outcome::Passed,
+                    Some("NotExecuted") => Outcome::Skipped,
+                    Some("Failed") => Outcome::Failed,
+                    _ => Outcome::Failed,
+                };
+                results.push(TestCaseResult {
+                    name,
+                    outcome,
+                    message: None,
+                });
+            }
+            Ok(Event::Eof) => break,
+            Err(err) => bail!("failed to parse {}: {err}", path.display()),
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(results)
+}
+
+fn attr(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Result<Option<String>> {
+    for attr in e.attributes() {
+        let attr = attr?;
+        if attr.key.as_ref() == key {
+            return Ok(Some(String::from_utf8_lossy(attr.value.as_ref()).to_string()));
+        }
+    }
+    Ok(None)
 }

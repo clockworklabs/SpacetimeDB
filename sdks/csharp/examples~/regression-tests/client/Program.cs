@@ -1244,6 +1244,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling ReadMySchemaViaHttp");
     waiting++;
     context.Procedures.ReadMySchemaViaHttp(
+        HOST,
         (IProcedureEventContext ctx, ProcedureCallbackResult<string> result) =>
         {
             try
