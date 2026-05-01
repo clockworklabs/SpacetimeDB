@@ -1,3 +1,13 @@
+import {
+  HttpHeaderPair,
+  HttpHeaders,
+  HttpMethod,
+  HttpRequest,
+  HttpResponse,
+  HttpVersion,
+  MethodOrAny,
+} from './autogen/types';
+
 export {
   HttpHeaderPair,
   HttpHeaders,
@@ -5,4 +15,5 @@ export {
   HttpRequest,
   HttpResponse,
   HttpVersion,
-} from './autogen/types';
+  MethodOrAny,
+};

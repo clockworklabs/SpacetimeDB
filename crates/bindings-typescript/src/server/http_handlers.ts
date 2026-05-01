@@ -1,192 +1,107 @@
-import {
-  HttpRequest,
-  HttpResponse,
-  type MethodOrAny,
-  type HttpMethod,
-} from '../lib/autogen/types';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
-import { bsatnBaseSize } from '../lib/util';
-import {
-  Headers,
-  SyncResponse,
-  deserializeHeaders,
-  serializeHeaders,
-} from './http_internal';
+import type { Identity } from '../lib/identity';
+import type { UntypedSchemaDef } from '../lib/schema';
+import type { Timestamp } from '../lib/timestamp';
+import type { Uuid } from '../lib/uuid';
+import type { TransactionCtx } from './procedures';
+import type { HttpClient } from './http_internal';
+import type { Random } from './rng';
 import {
   exportContext,
   registerExport,
   type ModuleExport,
   type SchemaInner,
 } from './schema';
+import type { Request, Response } from './http_api';
+import type { Router } from './http_router';
 
-export interface Request {
-  readonly method: string;
-  readonly url: string;
-  readonly headers: Headers;
-  readonly body: Uint8Array;
+export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
+  readonly timestamp: Timestamp;
+  readonly http: HttpClient;
+  readonly identity: Identity;
+  readonly random: Random;
+  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  newUuidV4(): Uuid;
+  newUuidV7(): Uuid;
 }
 
-export type HttpHandler = (request: Request) => SyncResponse;
-export type HttpHandlerExport = HttpHandler & ModuleExport;
+export type HandlerFn<S extends UntypedSchemaDef = UntypedSchemaDef> = (
+  ctx: HandlerContext<S>,
+  req: Request
+) => Response;
 
-type HttpMethodName = 'GET' | 'POST';
+export const httpHandlerFn = Symbol('SpacetimeDB.httpHandlerFn');
 
-type Route = {
-  method: HttpMethodName;
-  path: string;
-  handler: HttpHandlerExport;
-};
-
-export type HttpHandlers = HttpHandler[];
-
-const responseBaseSize = bsatnBaseSize(
-  { types: [] },
-  HttpResponse.algebraicType
-);
-
-const routesSymbol = Symbol('SpacetimeDB.http.routes');
-const httpHandlerSymbol = Symbol('SpacetimeDB.http.handler');
-
-type RouterWithRoutes = Router & {
-  [routesSymbol]: Route[];
-};
-
-const METHODS: Record<HttpMethodName, MethodOrAny> = {
-  GET: { tag: 'Method', value: { tag: 'Get' } },
-  POST: { tag: 'Method', value: { tag: 'Post' } },
-};
-
-function methodToString(method: HttpMethod): string {
-  switch (method.tag) {
-    case 'Get':
-      return 'GET';
-    case 'Head':
-      return 'HEAD';
-    case 'Post':
-      return 'POST';
-    case 'Put':
-      return 'PUT';
-    case 'Delete':
-      return 'DELETE';
-    case 'Connect':
-      return 'CONNECT';
-    case 'Options':
-      return 'OPTIONS';
-    case 'Trace':
-      return 'TRACE';
-    case 'Patch':
-      return 'PATCH';
-    case 'Extension':
-      return method.value;
-  }
+export interface HttpHandlerExport<
+  S extends UntypedSchemaDef = UntypedSchemaDef,
+> extends ModuleExport {
+  [httpHandlerFn]: HandlerFn<S>;
 }
 
-export class Router {
-  [routesSymbol]: Route[] = [];
+const exportedHttpHandlerObjects = new WeakSet<object>();
 
-  get(path: string, handler: HttpHandlerExport): this {
-    // TODO(v8-http-handlers): Validate route path and duplicate registrations.
-    this[routesSymbol].push({ method: 'GET', path, handler });
-    return this;
-  }
-
-  post(path: string, handler: HttpHandlerExport): this {
-    // TODO(v8-http-handlers): Validate route path and duplicate registrations.
-    this[routesSymbol].push({ method: 'POST', path, handler });
-    return this;
-  }
+export interface HttpHandlerOpts {
+  name: string;
 }
 
-function registerHttpHandler(
+export function makeHttpHandlerExport<S extends UntypedSchemaDef>(
   ctx: SchemaInner,
-  exportName: string,
-  fn: HttpHandler
-): void {
-  ctx.defineFunction(exportName);
-  ctx.moduleDef.httpHandlers.push({ sourceName: exportName });
-  ctx.httpHandlers.push(fn);
+  opts: HttpHandlerOpts | undefined,
+  fn: HandlerFn<S>
+): HttpHandlerExport<S> {
+  const handlerExport = {
+    [httpHandlerFn]: fn,
+    [exportContext]: ctx,
+    [registerExport](ctx: SchemaInner, exportName: string) {
+      if (exportedHttpHandlerObjects.has(handlerExport)) {
+        throw new TypeError(
+          `HTTP handler '${exportName}' was exported more than once`
+        );
+      }
+      exportedHttpHandlerObjects.add(handlerExport);
+      registerHttpHandler(ctx, exportName, fn, opts);
+      ctx.httpHandlerExports.set(
+        handlerExport as HttpHandlerExport<UntypedSchemaDef>,
+        exportName
+      );
+    },
+  };
+  return handlerExport as HttpHandlerExport<S>;
 }
 
-function makeHttpHandlerExport(
+export function makeHttpRouterExport(
   ctx: SchemaInner,
-  fn: HttpHandler
-): HttpHandlerExport {
-  const handlerExport = fn as HttpHandlerExport & {
-    [httpHandlerSymbol]?: true;
-  };
-
-  handlerExport[exportContext] = ctx;
-  handlerExport[httpHandlerSymbol] = true;
-  handlerExport[registerExport] = (ctx, exportName) => {
-    // TODO(v8-http-handlers): Reject duplicate registration of the same function object.
-    registerHttpHandler(ctx, exportName, fn);
-    ctx.functionExports.set(handlerExport, exportName);
-  };
-
-  return handlerExport;
-}
-
-function makeHttpRouterExport(ctx: SchemaInner, router: Router): ModuleExport {
+  router: Router
+): ModuleExport {
   return {
     [exportContext]: ctx,
-    [registerExport](ctx, _exportName) {
-      for (const route of (router as RouterWithRoutes)[routesSymbol]) {
-        // TODO(v8-http-handlers): Verify that handlers referenced by routers come from the same schema.
-        const handlerName = ctx.functionExports.get(route.handler);
-        if (handlerName === undefined) {
-          throw new TypeError(
-            'HTTP router references a handler that was not exported as an HTTP handler'
-          );
-        }
-        ctx.moduleDef.httpRoutes.push({
-          handlerFunction: handlerName,
-          method: METHODS[route.method],
-          path: route.path,
-        });
-      }
+    [registerExport](ctx: SchemaInner) {
+      ctx.pendingHttpRoutes.push(...router.intoRoutes());
     },
   };
 }
 
-export function makeHttpNamespace(ctx: SchemaInner) {
-  return Object.freeze({
-    Router,
-    handler(fn: HttpHandler): HttpHandlerExport {
-      return makeHttpHandlerExport(ctx, fn);
-    },
-    router(router: Router): ModuleExport {
-      if (!(router instanceof Router)) {
-        throw new TypeError('spacetime.http.router expects a Router instance');
-      }
-      return makeHttpRouterExport(ctx, router);
-    },
-  });
-}
+function registerHttpHandler<S extends UntypedSchemaDef>(
+  ctx: SchemaInner,
+  exportName: string,
+  fn: HandlerFn<S>,
+  opts?: HttpHandlerOpts
+) {
+  ctx.defineHttpHandler(exportName);
+  ctx.moduleDef.httpHandlers.push({ sourceName: exportName });
 
-export function deserializeHttpHandlerRequest(
-  requestBuf: Uint8Array,
-  requestBody: Uint8Array
-): Request {
-  const request = HttpRequest.deserialize(new BinaryReader(requestBuf));
-  return Object.freeze({
-    method: methodToString(request.method),
-    url: request.uri,
-    headers: deserializeHeaders(request.headers),
-    body: requestBody,
-  });
-}
+  if (opts?.name != null) {
+    ctx.moduleDef.explicitNames.entries.push({
+      tag: 'Function',
+      value: {
+        sourceName: exportName,
+        canonicalName: opts.name,
+      },
+    });
+  }
 
-export function serializeHttpHandlerResponse(
-  response: SyncResponse
-): [Uint8Array, Uint8Array] {
-  const responseWire: HttpResponse = {
-    code: response.status,
-    headers: serializeHeaders(response.headers),
-    version: { tag: 'Http11' },
-  };
+  if (!fn.name) {
+    Object.defineProperty(fn, 'name', { value: exportName, writable: false });
+  }
 
-  const responseBuf = new BinaryWriter(responseBaseSize);
-  HttpResponse.serialize(responseBuf, responseWire);
-  return [responseBuf.getBuffer(), response.bytes()];
+  ctx.httpHandlers.push(fn as HandlerFn<UntypedSchemaDef>);
 }

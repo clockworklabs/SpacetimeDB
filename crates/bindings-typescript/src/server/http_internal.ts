@@ -27,22 +27,13 @@ export interface ResponseInit {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8' /* { fatal: true } */);
 
-export function deserializeHeaders(headers: HttpHeaders): Headers {
+function deserializeHeaders(headers: HttpHeaders): Headers {
   return new Headers(
     headers.entries.map(({ name, value }): [string, string] => [
       name,
       textDecoder.decode(value),
     ])
   );
-}
-
-export function serializeHeaders(headers: Headers): HttpHeaders {
-  return {
-    // anys because the typings are wonky - see comment in SyncResponse.constructor
-    entries: headersToList(headers as any)
-      .flatMap(([k, v]) => (Array.isArray(v) ? v.map(v => [k, v]) : [[k, v]]))
-      .map(([name, value]) => ({ name, value: textEncoder.encode(value) })),
-  };
 }
 
 const makeResponse = Symbol('makeResponse');
@@ -67,6 +58,9 @@ export class SyncResponse {
     } else if (typeof body === 'string') {
       this.#body = body;
     } else {
+      // TODO(http): This currently drops byteOffset/byteLength for
+      // ArrayBufferView inputs and can widen a sliced view to its full backing
+      // buffer. Keep this aligned with the matching note in http_api.ts.
       // this call is fine, the typings are just weird
       this.#body = new Uint8Array<ArrayBuffer>(body as any).buffer;
     }
@@ -173,7 +167,12 @@ function fetch(url: URL | string, init: RequestOptions = {}) {
     tag: 'Extension',
     value: init.method!,
   };
-  const headers = serializeHeaders(new Headers(init.headers as any));
+  const headers: HttpHeaders = {
+    // anys because the typings are wonky - see comment in SyncResponse.constructor
+    entries: headersToList(new Headers(init.headers as any) as any)
+      .flatMap(([k, v]) => (Array.isArray(v) ? v.map(v => [k, v]) : [[k, v]]))
+      .map(([name, value]) => ({ name, value: textEncoder.encode(value) })),
+  };
   const uri = '' + url;
   const request: HttpRequest = freeze({
     method,
@@ -189,7 +188,11 @@ function fetch(url: URL | string, init: RequestOptions = {}) {
       ? new Uint8Array()
       : typeof init.body === 'string'
         ? init.body
-        : new Uint8Array<ArrayBuffer>(init.body as any);
+        : // TODO(http): This preserves the current behavior for now, but for
+          // ArrayBufferView inputs it can send the full backing buffer rather
+          // than the intended slice. Fix together with the shared body handling
+          // in http_api.ts.
+          new Uint8Array<ArrayBuffer>(init.body as any);
   const [responseBuf, responseBody] = sys.procedure_http_request(
     requestBuf.getBuffer(),
     body

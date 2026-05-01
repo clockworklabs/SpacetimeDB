@@ -189,14 +189,14 @@ export class ModuleContext {
     typespace: { types: [] },
     tables: [],
     reducers: [],
-    httpHandlers: [],
-    httpRoutes: [],
     types: [],
     rowLevelSecurity: [],
     schedules: [],
     procedures: [],
     views: [],
     lifeCycleReducers: [],
+    httpHandlers: [],
+    httpRoutes: [],
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
@@ -221,6 +221,14 @@ export class ModuleContext {
     push(module.tables && { tag: 'Tables', value: module.tables });
     push(module.reducers && { tag: 'Reducers', value: module.reducers });
     push(module.procedures && { tag: 'Procedures', value: module.procedures });
+    push(module.views && { tag: 'Views', value: module.views });
+    push(module.schedules && { tag: 'Schedules', value: module.schedules });
+    push(
+      module.lifeCycleReducers && {
+        tag: 'LifeCycleReducers',
+        value: module.lifeCycleReducers,
+      }
+    );
     push(
       module.httpHandlers && {
         tag: 'HttpHandlers',
@@ -231,14 +239,6 @@ export class ModuleContext {
       module.httpRoutes && {
         tag: 'HttpRoutes',
         value: module.httpRoutes,
-      }
-    );
-    push(module.views && { tag: 'Views', value: module.views });
-    push(module.schedules && { tag: 'Schedules', value: module.schedules });
-    push(
-      module.lifeCycleReducers && {
-        tag: 'LifeCycleReducers',
-        value: module.lifeCycleReducers,
       }
     );
     push(
