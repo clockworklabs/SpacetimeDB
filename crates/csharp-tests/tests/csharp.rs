@@ -2,7 +2,7 @@
 
 use anyhow::{bail, Context, Result};
 use spacetimedb_language_test_support::{
-    parse_trx, print_results, require_tool, run_command, run_command_env, run_command_forward, target_dir, HarnessArgs,
+    parse_trx, print_results, run_command, run_command_env, run_command_forward, target_dir, HarnessArgs,
     SpacetimeDbGuard,
 };
 use std::fs;
@@ -17,10 +17,9 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = HarnessArgs::parse();
-    require_tool("dotnet")?;
 
     let workspace = spacetimedb_language_test_support::workspace_root();
-    let out_dir = target_dir().join("language-tests").join("csharp");
+    let out_dir = target_dir().join("csharp-tests");
     fs::create_dir_all(&out_dir).with_context(|| format!("failed to create {}", out_dir.display()))?;
 
     run_sdk_tests(&workspace, &out_dir, &args)?;
@@ -133,7 +132,6 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
 }
 
 fn run_regression_tests(workspace: &Path) -> Result<()> {
-    require_tool("bash")?;
     // The regression module itself still performs an HTTP egress call to
     // localhost:3000, so this specific suite needs the fixed listen address.
     let guard = SpacetimeDbGuard::spawn_in_temp_data_dir_with_listen_addr("127.0.0.1:3000");

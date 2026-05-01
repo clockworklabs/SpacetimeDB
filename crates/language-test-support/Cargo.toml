@@ -9,7 +9,6 @@ anyhow.workspace = true
 clap.workspace = true
 quick-xml.workspace = true
 spacetimedb-guard.workspace = true
-which = "8.0.0"
 
 [lints]
 workspace = true

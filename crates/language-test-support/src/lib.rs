@@ -81,14 +81,6 @@ pub fn target_dir() -> PathBuf {
         .unwrap_or_else(|| workspace_root().join("target"))
 }
 
-pub fn require_tool(tool: &str) -> Result<()> {
-    if which::which(tool).is_ok() {
-        Ok(())
-    } else {
-        bail!("required tool `{tool}` was not found on PATH")
-    }
-}
-
 pub fn run_command(program: &str, args: &[String], cwd: &Path) -> Result<Output> {
     run_command_inner(program, args, cwd, &[])
 }
