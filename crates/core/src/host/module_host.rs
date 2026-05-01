@@ -1332,16 +1332,30 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.with_main_instance("reducer", label, arg, wasm, async move |arg, lane| {
+        self.with_main_instance("main-instance operation", label, arg, wasm, async move |arg, lane| {
             super::v8::assert_not_on_js_module_thread(label);
             js(arg, lane).await
         })
         .await
     }
 
+    async fn call_pooled<A, R>(
+        &self,
+        label: &str,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        js: impl AsyncFnOnce(A, &JsInstance) -> R,
+    ) -> Result<R, NoSuchModule>
+    where
+        R: Send + 'static,
+        A: Send + 'static,
+    {
+        self.with_procedure_instance("pooled operation", label, arg, wasm, js)
+            .await
+    }
+
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.with_main_instance(
-            "view operation",
+        self.call(
             label,
             cmd,
             async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
@@ -1935,8 +1949,7 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.with_procedure_instance(
-            "pooled operation",
+        self.call_pooled(
             name,
             params,
             async move |params, inst| inst.call_procedure(params).await,
@@ -1949,8 +1962,7 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.with_main_instance(
-            "scheduled operation",
+        self.call(
             "scheduled reducer",
             params,
             async |params, inst| Ok(inst.call_scheduled_function(params).await),
@@ -1963,8 +1975,7 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.with_procedure_instance(
-            "scheduled operation",
+        self.call_pooled(
             "scheduled procedure",
             params,
             async |params, inst| Ok(inst.call_scheduled_function(params).await),
