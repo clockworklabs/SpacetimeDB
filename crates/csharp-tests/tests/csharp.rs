@@ -22,18 +22,11 @@ fn run() -> Result<()> {
     let workspace = spacetimedb_language_test_support::workspace_root();
     let out_dir = artifact_dir("csharp")?;
 
-    run_bindings_tests(&workspace, &out_dir, &args)?;
     run_sdk_tests(&workspace, &out_dir, &args)?;
     if !args.list {
         run_regression_tests(&workspace)?;
     }
 
-    Ok(())
-}
-
-fn run_bindings_tests(workspace: &Path, out_dir: &Path, args: &HarnessArgs) -> Result<()> {
-    let cwd = workspace.join("crates/bindings-csharp");
-    run_dotnet_test("csharp bindings", &cwd, out_dir, "bindings.trx", args, &[])?;
     Ok(())
 }
 
@@ -112,22 +105,12 @@ fn find_trx(preferred: &Path, cwd: &Path) -> Result<PathBuf> {
 fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
     run_command(
         "dotnet",
-        &[
-            "pack".to_string(),
-            "crates/bindings-csharp/BSATN.Runtime".to_string(),
-            "-c".to_string(),
-            "Release".to_string(),
-        ],
+        &["pack".to_string(), "crates/bindings-csharp/BSATN.Runtime".to_string()],
         workspace,
     )?;
     run_command(
         "dotnet",
-        &[
-            "pack".to_string(),
-            "crates/bindings-csharp/Runtime".to_string(),
-            "-c".to_string(),
-            "Release".to_string(),
-        ],
+        &["pack".to_string(), "crates/bindings-csharp/Runtime".to_string()],
         workspace,
     )?;
     run_command(

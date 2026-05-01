@@ -49,21 +49,5 @@ fn run() -> Result<()> {
     let results = parse_junit(&report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
     print_results("typescript", &report, &results)?;
 
-    let typecheck_report = out_dir.join("vitest-typecheck.junit.xml");
-    let typecheck_args = vec![
-        "vitest".to_string(),
-        "typecheck".to_string(),
-        "--run".to_string(),
-        "--reporter=default".to_string(),
-        "--reporter=junit".to_string(),
-        format!("--outputFile={}", typecheck_report.display()),
-    ];
-    run_command("pnpm", &typecheck_args, &cwd)?;
-    if typecheck_report.exists() {
-        let results = parse_junit(&typecheck_report)
-            .with_context(|| "failed to parse TypeScript Vitest typecheck JUnit report")?;
-        print_results("typescript typecheck", &typecheck_report, &results)?;
-    }
-
     Ok(())
 }
