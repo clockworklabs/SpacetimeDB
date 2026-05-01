@@ -1,5 +1,6 @@
 use spacetimedb::spacetimedb_lib::RawModuleDef;
-use spacetimedb::{reducer, table, ReducerContext, Table};
+use spacetimedb::test_utils::TestAuth;
+use spacetimedb::{reducer, table, ReducerContext, Table, Timestamp};
 
 #[table(accessor = test_utils_user, public)]
 #[derive(Debug, PartialEq, Eq)]
@@ -67,6 +68,115 @@ fn test_context_supports_basic_table_insert_and_iter() {
         vec![TestUtilsUser {
             id: 1,
             name: "Ada".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn reducer_context_uses_test_clock_and_internal_auth() {
+    let mut test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.identity = spacetimedb::Identity::from_claims("module-issuer", "module-subject");
+    let timestamp = Timestamp::from_micros_since_unix_epoch(42);
+    test.clock.set(timestamp);
+
+    let ctx = test.reducer_context(TestAuth::internal());
+
+    assert_eq!(ctx.timestamp, timestamp);
+    assert_eq!(ctx.identity(), test.identity);
+    assert_eq!(ctx.sender(), test.identity);
+    assert_eq!(ctx.connection_id(), None);
+    assert!(ctx.sender_auth().is_internal());
+}
+
+#[test]
+fn reducer_context_derives_sender_from_jwt_auth() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let payload = r#"{"iss":"issuer","sub":"subject","iat":0}"#;
+    let expected_sender = spacetimedb::Identity::from_claims("issuer", "subject");
+    let connection_id = spacetimedb::ConnectionId::from_u128(7);
+
+    let ctx = test.reducer_context(
+        TestAuth::from_jwt_payload(payload, connection_id).expect("JWT payload should be valid for tests"),
+    );
+
+    assert_eq!(ctx.sender(), expected_sender);
+    assert_eq!(ctx.identity(), test.identity);
+    assert_eq!(ctx.connection_id(), Some(connection_id));
+    assert!(!ctx.sender_auth().is_internal());
+    assert_eq!(ctx.sender_auth().jwt().unwrap().identity(), expected_sender);
+}
+
+#[test]
+fn test_auth_rejects_invalid_jwt_payload() {
+    let connection_id = spacetimedb::ConnectionId::from_u128(7);
+
+    assert!(TestAuth::from_jwt_payload(r#"{"iss":"issuer","sub":"subject"}"#, connection_id).is_err());
+    assert!(TestAuth::from_jwt_payload(r#"{"iss":"","sub":"subject","iat":0}"#, connection_id).is_err());
+
+    let mismatched_identity = spacetimedb::Identity::ONE;
+    let payload = format!(r#"{{"hex_identity":"{mismatched_identity}","iss":"issuer","sub":"subject","iat":0}}"#);
+    assert!(TestAuth::from_jwt_payload(payload, connection_id).is_err());
+}
+
+#[cfg(feature = "rand08")]
+#[test]
+fn reducer_context_clones_test_rng_seed() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.rng.set_seed(123);
+
+    let first = test.reducer_context(TestAuth::internal());
+    test.clock.set(Timestamp::from_micros_since_unix_epoch(999));
+    let second = test.reducer_context(TestAuth::internal());
+
+    assert_eq!(first.random::<u64>(), second.random::<u64>());
+    assert_eq!(first.random::<u64>(), second.random::<u64>());
+
+    test.rng.set_seed(456);
+    let third = test.reducer_context(TestAuth::internal());
+
+    assert_ne!(first.random::<u64>(), third.random::<u64>());
+}
+
+#[cfg(feature = "rand08")]
+#[test]
+fn reducer_context_rng_defaults_to_timestamp_seed() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.clock.set(Timestamp::from_micros_since_unix_epoch(123));
+    let first = test.reducer_context(TestAuth::internal());
+    let second = test.reducer_context(TestAuth::internal());
+
+    assert_eq!(first.random::<u64>(), second.random::<u64>());
+
+    test.clock.set(Timestamp::from_micros_since_unix_epoch(456));
+    let third = test.reducer_context(TestAuth::internal());
+
+    assert_ne!(first.random::<u64>(), third.random::<u64>());
+
+    test.rng.set_seed(789);
+    let seeded = test.reducer_context(TestAuth::internal());
+    test.rng.clear_seed();
+    test.clock.set(Timestamp::from_micros_since_unix_epoch(789));
+    let timestamp_seeded = test.reducer_context(TestAuth::internal());
+
+    assert_eq!(seeded.random::<u64>(), timestamp_seeded.random::<u64>());
+}
+
+#[test]
+fn reducer_context_uses_test_backed_db() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let ctx = test.reducer_context(TestAuth::internal());
+
+    ctx.db.test_utils_user().insert(TestUtilsUser {
+        id: 10,
+        name: "Grace".to_owned(),
+    });
+
+    assert_eq!(test.db.test_utils_user().count(), 1);
+    assert_eq!(
+        test.db.test_utils_user().iter().collect::<Vec<_>>(),
+        vec![TestUtilsUser {
+            id: 10,
+            name: "Grace".to_owned(),
         }]
     );
 }

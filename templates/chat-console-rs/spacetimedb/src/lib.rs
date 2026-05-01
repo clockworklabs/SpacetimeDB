@@ -175,4 +175,59 @@ mod tests {
         assert_eq!(messages[0].sent, Timestamp::UNIX_EPOCH);
         assert_eq!(messages[0].text, "Hello, SpacetimeDB!");
     }
+
+    #[test]
+    fn test_context_can_make_two_independent_dbs() {
+        let ctx1 = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let ctx2 = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let sender = Identity::ZERO;
+
+        ctx1.db.user().insert(User {
+            identity: sender,
+            name: Some("Alice".to_string()),
+            online: true,
+        });
+        ctx2.db.message().insert(Message {
+            sender,
+            sent: Timestamp::UNIX_EPOCH,
+            text: "Hello, SpacetimeDB!".to_string(),
+        });
+
+        assert_eq!(ctx1.db.user().count(), 1);
+        assert_eq!(ctx2.db.user().count(), 0);
+        assert_eq!(ctx1.db.message().count(), 0);
+        assert_eq!(ctx2.db.message().count(), 1);
+
+        let users = ctx1.db.user().iter().collect::<Vec<_>>();
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].identity, sender);
+        assert_eq!(users[0].name.as_deref(), Some("Alice"));
+        assert!(users[0].online);
+
+        let messages = ctx2.db.message().iter().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].sender, sender);
+        assert_eq!(messages[0].sent, Timestamp::UNIX_EPOCH);
+        assert_eq!(messages[0].text, "Hello, SpacetimeDB!");
+
+        assert_eq!(ctx2.db.user().iter().count(), 0);
+        assert_eq!(ctx1.db.message().iter().count(), 0);
+    }
+
+    #[test]
+    fn test_context_can_call_reducer_with_clock_timestamp() {
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let timestamp = Timestamp::from_micros_since_unix_epoch(123);
+        test.clock.set(timestamp);
+
+        // spacetimedb::test_utils::TestAuth::from_jwt_payload(jwt_payload, connection_id)
+        let ctx = test.reducer_context(spacetimedb::test_utils::TestAuth::internal());
+        send_message(&ctx, "Hello from a reducer".to_string()).expect("send_message should succeed");
+
+        let messages = test.db.message().iter().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].sender, Identity::ZERO);
+        assert_eq!(messages[0].sent, timestamp);
+        assert_eq!(messages[0].text, "Hello from a reducer");
+    }
 }

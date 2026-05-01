@@ -7686,6 +7686,7 @@ dependencies = [
  "rand 0.8.5",
  "scoped-tls",
  "serde_json",
+ "spacetimedb-auth",
  "spacetimedb-bindings-macro 2.1.0",
  "spacetimedb-bindings-sys 2.1.0",
  "spacetimedb-lib 2.1.0",

@@ -1,7 +1,9 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
-use core::cell::{Cell, LazyCell, OnceCell, RefCell};
+#[cfg(feature = "rand")]
+use core::cell::Cell;
+use core::cell::{LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
 use std::rc::Rc;
@@ -987,6 +989,9 @@ pub struct ReducerContext {
 
     sender_auth: AuthCtx,
 
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    module_identity: Identity,
+
     /// Allows accessing the local database attached to a module.
     ///
     /// This slightly strange type appears to have no methods, but that is misleading.
@@ -1042,6 +1047,8 @@ impl ReducerContext {
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
             sender_auth: AuthCtx::internal(),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            module_identity: Identity::ZERO,
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand")]
@@ -1057,8 +1064,35 @@ impl ReducerContext {
             timestamp,
             connection_id,
             sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            module_identity: Identity::ZERO,
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub fn __test(
+        db: Local,
+        sender: Identity,
+        sender_auth: AuthCtx,
+        connection_id: Option<ConnectionId>,
+        timestamp: Timestamp,
+        module_identity: Identity,
+        #[cfg(feature = "rand08")] rng_seed: Option<u64>,
+    ) -> Self {
+        Self {
+            db,
+            sender,
+            timestamp,
+            connection_id,
+            sender_auth,
+            module_identity,
+            #[cfg(feature = "rand08")]
+            rng: StdbRng::seeded_cell(rng_seed),
             #[cfg(feature = "rand")]
             counter_uuid: Cell::new(0),
         }
@@ -1084,15 +1118,28 @@ impl ReducerContext {
 
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
-        // Hypothetically, we *could* read the module identity out of the system tables.
-        // However, this would be:
-        // - Onerous, because we have no tooling to inspect the system tables from module code.
-        // - Slow (at least relatively),
-        //   because it would involve multiple host calls which hit the datastore,
-        //   as compared to a single host call which does not.
-        // As such, we've just defined a host call
-        // which reads the module identity out of the `InstanceEnv`.
-        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        {
+            self.module_identity
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Hypothetically, we *could* read the module identity out of the system tables.
+            // However, this would be:
+            // - Onerous, because we have no tooling to inspect the system tables from module code.
+            // - Slow (at least relatively),
+            //   because it would involve multiple host calls which hit the datastore,
+            //   as compared to a single host call which does not.
+            // As such, we've just defined a host call
+            // which reads the module identity out of the `InstanceEnv`.
+            Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        }
+
+        #[cfg(all(not(feature = "test-utils"), not(target_arch = "wasm32")))]
+        {
+            panic!("ReducerContext::identity() is only available in wasm or native test-utils contexts")
+        }
     }
 
     /// Create an anonymous (no sender) read-only view context
@@ -1574,8 +1621,12 @@ impl AuthCtx {
         Self::new(true, || None)
     }
 
-    /// Creates an [`AuthCtx`] using the json claims from a [JWT].
-    /// This can be used to write unit tests.
+    /// Creates an [`AuthCtx`] using already-validated JSON claims from a [JWT].
+    ///
+    /// This is infallible because host reducer calls receive claims only after
+    /// the server has validated them. Native unit tests should use
+    /// [`test_utils::TestAuth::from_jwt_payload`](crate::test_utils::TestAuth::from_jwt_payload)
+    /// so invalid test payloads are rejected before constructing a reducer context.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {

@@ -124,6 +124,25 @@ pub struct StdbRng {
 }
 
 impl StdbRng {
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub(crate) fn seeded_cell(seed: Option<u64>) -> std::cell::OnceCell<Self> {
+        let cell = std::cell::OnceCell::new();
+        if let Some(seed) = seed {
+            cell.set(Self::seed_from_u64(seed))
+                .ok()
+                .expect("new OnceCell should accept seeded test rng");
+        }
+        cell
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn seed_from_u64(seed: u64) -> Self {
+        Self {
+            rng: StdRng::seed_from_u64(seed).into(),
+            _marker: PhantomData,
+        }
+    }
+
     /// Seeds a [`StdbRng`] from a timestamp.
     fn seed_from_ts(timestamp: Timestamp) -> Self {
         Self {

@@ -18,10 +18,173 @@ use spacetimedb_lib::RawModuleDef;
 #[cfg(not(target_arch = "wasm32"))]
 pub use spacetimedb_test_datastore::{TestDatastore, TestDatastoreError};
 
+/// A deterministic clock for module unit tests.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct TestClock {
+    now: std::cell::Cell<crate::Timestamp>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TestClock {
+    /// Create a clock initialized to `timestamp`.
+    pub fn new(timestamp: crate::Timestamp) -> Self {
+        Self {
+            now: std::cell::Cell::new(timestamp),
+        }
+    }
+
+    /// Return the current test timestamp.
+    pub fn now(&self) -> crate::Timestamp {
+        self.now.get()
+    }
+
+    /// Set the current test timestamp.
+    pub fn set(&self, timestamp: crate::Timestamp) {
+        self.now.set(timestamp);
+    }
+
+    /// Advance the current test timestamp by `duration`.
+    pub fn advance(&self, duration: crate::TimeDuration) {
+        self.set(
+            self.now()
+                .checked_add(duration)
+                .expect("advancing test clock overflowed Timestamp"),
+        );
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Default for TestClock {
+    fn default() -> Self {
+        Self::new(crate::Timestamp::UNIX_EPOCH)
+    }
+}
+
+/// A deterministic RNG seed source for module unit tests.
+#[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
+pub struct TestRng {
+    seed: std::cell::Cell<Option<u64>>,
+}
+
+#[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
+impl TestRng {
+    /// Create a test RNG seed source initialized to `seed`.
+    pub fn new(seed: u64) -> Self {
+        Self {
+            seed: std::cell::Cell::new(Some(seed)),
+        }
+    }
+
+    /// Return the optional seed used to initialize each new reducer context RNG.
+    pub fn seed(&self) -> Option<u64> {
+        self.seed.get()
+    }
+
+    /// Set the seed used to initialize future reducer context RNGs.
+    pub fn set_seed(&self, seed: u64) {
+        self.seed.set(Some(seed));
+    }
+
+    /// Clear the test seed, causing future reducer contexts to seed RNG from timestamp.
+    pub fn clear_seed(&self) {
+        self.seed.set(None);
+    }
+}
+
+#[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
+impl Default for TestRng {
+    fn default() -> Self {
+        Self {
+            seed: std::cell::Cell::new(None),
+        }
+    }
+}
+
+/// Authentication mode for a test reducer call.
+#[cfg(not(target_arch = "wasm32"))]
+pub enum TestAuth {
+    /// An internal reducer call with no connection and no JWT.
+    Internal,
+    /// An authenticated client reducer call with a validated JWT payload.
+    Authenticated {
+        jwt_payload: String,
+        connection_id: crate::ConnectionId,
+        sender: crate::Identity,
+    },
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TestAuth {
+    /// Create auth for an internal reducer call.
+    pub fn internal() -> Self {
+        Self::Internal
+    }
+
+    /// Create auth for an authenticated reducer call from a validated JWT payload.
+    pub fn from_jwt_payload(
+        jwt_payload: impl Into<String>,
+        connection_id: crate::ConnectionId,
+    ) -> Result<Self, TestAuthError> {
+        let jwt_payload = jwt_payload.into();
+        let claims: spacetimedb_auth::identity::IncomingClaims =
+            serde_json::from_str(&jwt_payload).map_err(TestAuthError::InvalidPayload)?;
+        let claims: spacetimedb_auth::identity::SpacetimeIdentityClaims =
+            claims.try_into().map_err(TestAuthError::InvalidClaims)?;
+        Ok(Self::Authenticated {
+            jwt_payload,
+            connection_id,
+            sender: claims.identity,
+        })
+    }
+
+    fn into_parts(
+        self,
+        internal_identity: crate::Identity,
+    ) -> (crate::AuthCtx, Option<crate::ConnectionId>, crate::Identity) {
+        match self {
+            Self::Internal => (crate::AuthCtx::internal(), None, internal_identity),
+            Self::Authenticated {
+                jwt_payload,
+                connection_id,
+                sender,
+            } => (
+                crate::AuthCtx::from_jwt_payload(jwt_payload),
+                Some(connection_id),
+                sender,
+            ),
+        }
+    }
+}
+
+/// Errors returned when constructing test reducer authentication.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+pub enum TestAuthError {
+    InvalidPayload(serde_json::Error),
+    InvalidClaims(anyhow::Error),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::fmt::Display for TestAuthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPayload(error) => write!(f, "invalid JWT payload JSON: {error}"),
+            Self::InvalidClaims(error) => write!(f, "invalid JWT claims: {error}"),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::error::Error for TestAuthError {}
+
 /// A native unit-test context with an in-memory module datastore.
 #[cfg(not(target_arch = "wasm32"))]
 pub struct TestContext {
     pub db: crate::Local,
+    pub clock: TestClock,
+    #[cfg(feature = "rand08")]
+    pub rng: TestRng,
+    pub identity: crate::Identity,
     datastore: std::sync::Arc<TestDatastore>,
 }
 
@@ -37,6 +200,10 @@ impl TestContext {
         let datastore = std::sync::Arc::new(TestDatastore::from_module_def(raw)?);
         Ok(Self {
             db: crate::Local::__test(datastore.clone()),
+            clock: TestClock::default(),
+            #[cfg(feature = "rand08")]
+            rng: TestRng::default(),
+            identity: crate::Identity::ZERO,
             datastore,
         })
     }
@@ -44,6 +211,21 @@ impl TestContext {
     /// The underlying in-memory datastore.
     pub fn datastore(&self) -> &std::sync::Arc<TestDatastore> {
         &self.datastore
+    }
+
+    /// Create a reducer context backed by this test context's datastore.
+    pub fn reducer_context(&self, auth: TestAuth) -> crate::ReducerContext {
+        let (auth, connection_id, sender) = auth.into_parts(self.identity);
+        crate::ReducerContext::__test(
+            crate::Local::__test(self.datastore.clone()),
+            sender,
+            auth,
+            connection_id,
+            self.clock.now(),
+            self.identity,
+            #[cfg(feature = "rand08")]
+            self.rng.seed(),
+        )
     }
 }
 
