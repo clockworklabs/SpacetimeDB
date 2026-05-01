@@ -354,17 +354,25 @@ enum ModuleHostInner {
 
 /// Wasm has two instance managers: one for procedures and one for reducers/views.
 ///
+/// Both managers need to be able to create fresh instances from the same compiled module,
+/// so they share the module via `Arc`.
+///
 /// Reducers are executed serially by the `SingleCoreExecutor`, so the instance pool
 /// contains only a single instance.
 ///
 /// This is not the case for procedures which can be executed concurrently.
 ///
-/// Both managers need to be able to create fresh instances from the same compiled module,
-/// so they share the module via `Arc`.
+/// Note, for reducers it is important that we check out the instance **after** enqueuing
+/// the job onto the `SingleCoreExecutor`, otherwise concurrent callers would contend on
+/// the instance manager, potentially checking out multiple instances before their
+/// execution was serialized.
+///
+/// TODO: We should bound the instance pool for reducers so that attempting to checkout
+/// more than one instance results in an error.
 struct WasmtimeModuleHost {
     executor: SingleCoreExecutor,
-    main_instance: ModuleInstanceManager<Arc<super::wasmtime::Module>>,
-    procedure_instances: ModuleInstanceManager<Arc<super::wasmtime::Module>>,
+    main_instance: Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>>,
+    procedure_instances: Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -374,10 +382,26 @@ enum InstanceKind {
 }
 
 macro_rules! with_instance_impl {
-    ($self:expr, $kind:expr, $label:expr, $instance_kind:expr, $arg:ident, $wasm:expr, |$host:ident, $timer_guard:ident, $arg_js:ident| $js_body:expr) => {{
+    (
+        $self:expr,
+        $kind:expr,
+        $label:expr,
+        $instance_kind:expr,
+        $arg:ident,
+        $wasm:expr,
+        |$host:ident, $timer_guard:ident, $arg_js:ident| $js_body:expr
+    ) => {{
         $self.guard_closed()?;
         let $timer_guard = $self.start_call_timer($label);
 
+        // Operations on module instances (e.g. calling reducers) is blocking,
+        // partially because the computation can potentially take a long time
+        // and partially because interacting with the database requires taking
+        // a blocking lock. So, we run `f` on a dedicated thread with `self.executor`.
+        // This will bubble up any panic that may occur.
+
+        // If a function call panics, we **must** ensure to call `self.on_panic`
+        // so that the module is discarded by the host controller.
         scopeguard::defer_on_unwind!({
             log::warn!("{} {} panicked", $kind, $label);
             ($self.on_panic)();
@@ -385,13 +409,16 @@ macro_rules! with_instance_impl {
 
         Ok(match &*$self.inner {
             ModuleHostInner::Wasm(host) => {
-                Self::wasm_instance_manager(host, $instance_kind)
-                    .with_instance(async |mut inst| {
-                        host.executor
-                            .run_job(async move || {
-                                drop($timer_guard);
-                                (($wasm)($arg, &mut inst).await, inst)
-                            })
+                let executor = host.executor.clone();
+                let instance_manager = Self::wasm_instance_manager(host, $instance_kind);
+                executor
+                    .run_job(async move || {
+                        // Queue first, then check out the instance from inside the queued job.
+                        // This is required for both the serialized main lane and the procedure
+                        // pool so that executor scheduling happens before instance allocation.
+                        drop($timer_guard);
+                        instance_manager
+                            .with_instance(async move |mut inst| (($wasm)($arg, &mut inst).await, inst))
                             .await
                     })
                     .await
@@ -1114,10 +1141,10 @@ impl ModuleHost {
     fn wasm_instance_manager(
         host: &WasmtimeModuleHost,
         kind: InstanceKind,
-    ) -> &ModuleInstanceManager<Arc<super::wasmtime::Module>> {
+    ) -> Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>> {
         match kind {
-            InstanceKind::Main => &host.main_instance,
-            InstanceKind::Procedure => &host.procedure_instances,
+            InstanceKind::Main => host.main_instance.clone(),
+            InstanceKind::Procedure => host.procedure_instances.clone(),
         }
     }
 
@@ -1136,8 +1163,12 @@ impl ModuleHost {
                 info = module.info();
                 let module = Arc::new(module);
                 let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
-                let instance_manager = ModuleInstanceManager::new(module.clone(), Some(init_inst), metrics.clone());
-                let procedure_instances = ModuleInstanceManager::new(module, None, metrics);
+                let instance_manager = Arc::new(ModuleInstanceManager::new(
+                    module.clone(),
+                    Some(init_inst),
+                    metrics.clone(),
+                ));
+                let procedure_instances = Arc::new(ModuleInstanceManager::new(module, None, metrics));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     executor,
                     main_instance: instance_manager,
