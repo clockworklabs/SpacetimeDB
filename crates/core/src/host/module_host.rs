@@ -1229,15 +1229,13 @@ impl ModuleHost {
         })
     }
 
-    async fn with_instance<A, R>(
+    async fn with_main_instance<A, R>(
         &self,
         kind: &str,
         label: &str,
-        instance_kind: InstanceKind,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js_main: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
-        js_procedure: impl AsyncFnOnce(A, &JsInstance) -> R,
+        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
@@ -1253,7 +1251,7 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                Self::wasm_instance_manager(host, instance_kind)
+                Self::wasm_instance_manager(host, InstanceKind::Main)
                     .with_instance(async |mut inst| {
                         host.executor
                             .run_job(async move || {
@@ -1264,21 +1262,55 @@ impl ModuleHost {
                     })
                     .await
             }
-            ModuleHostInner::Js(host) => match instance_kind {
-                InstanceKind::Main => {
-                    drop(timer_guard);
-                    js_main(arg, &host.instance_lane).await
-                }
-                InstanceKind::Procedure => {
-                    host.procedure_instances
-                        .with_instance(async |inst| {
-                            drop(timer_guard);
-                            let res = js_procedure(arg, &inst).await;
-                            (res, inst)
-                        })
-                        .await
-                }
-            },
+            ModuleHostInner::Js(host) => {
+                drop(timer_guard);
+                js(arg, &host.instance_lane).await
+            }
+        })
+    }
+
+    async fn with_procedure_instance<A, R>(
+        &self,
+        kind: &str,
+        label: &str,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        js: impl AsyncFnOnce(A, &JsInstance) -> R,
+    ) -> Result<R, NoSuchModule>
+    where
+        R: Send + 'static,
+        A: Send + 'static,
+    {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("{kind} {label} panicked");
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                Self::wasm_instance_manager(host, InstanceKind::Procedure)
+                    .with_instance(async |mut inst| {
+                        host.executor
+                            .run_job(async move || {
+                                drop(timer_guard);
+                                (wasm(arg, &mut inst).await, inst)
+                            })
+                            .await
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                host.procedure_instances
+                    .with_instance(async |inst| {
+                        drop(timer_guard);
+                        let res = js(arg, &inst).await;
+                        (res, inst)
+                    })
+                    .await
+            }
         })
     }
 
@@ -1297,30 +1329,20 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.with_instance(
-            "reducer",
-            label,
-            InstanceKind::Main,
-            arg,
-            wasm,
-            async move |arg, lane| {
-                super::v8::assert_not_on_js_module_thread(label);
-                js(arg, lane).await
-            },
-            async move |_arg, _inst| unreachable!("main-instance call should not use pooled JS instances"),
-        )
+        self.with_main_instance("reducer", label, arg, wasm, async move |arg, lane| {
+            super::v8::assert_not_on_js_module_thread(label);
+            js(arg, lane).await
+        })
         .await
     }
 
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.with_instance(
+        self.with_main_instance(
             "view operation",
             label,
-            InstanceKind::Main,
             cmd,
             async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
             async |cmd, lane| lane.call_view(cmd).await,
-            async |_cmd, _inst| unreachable!("main-instance view call should not use pooled JS instances"),
         )
         .await?
     }
@@ -1910,13 +1932,11 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.with_instance(
+        self.with_procedure_instance(
             "pooled operation",
             name,
-            InstanceKind::Procedure,
             params,
             async move |params, inst| inst.call_procedure(params).await,
-            async move |_params, _lane| unreachable!("procedure call should not use the serialized JS lane"),
             async move |params, inst| inst.call_procedure(params).await,
         )
         .await
@@ -1926,14 +1946,12 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.with_instance(
+        self.with_main_instance(
             "scheduled operation",
             "scheduled reducer",
-            InstanceKind::Main,
             params,
             async |params, inst| Ok(inst.call_scheduled_function(params).await),
             async |params, lane| Ok(lane.call_scheduled_function(params).await),
-            async |_params, _inst| unreachable!("scheduled reducer should not use pooled JS instances"),
         )
         .await?
     }
@@ -1942,13 +1960,11 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.with_instance(
+        self.with_procedure_instance(
             "scheduled operation",
             "scheduled procedure",
-            InstanceKind::Procedure,
             params,
             async |params, inst| Ok(inst.call_scheduled_function(params).await),
-            async |_params, _lane| unreachable!("scheduled procedure should not use the serialized JS lane"),
             async |params, inst| Ok(inst.call_scheduled_function(params).await),
         )
         .await?
