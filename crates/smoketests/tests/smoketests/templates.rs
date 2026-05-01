@@ -126,7 +126,7 @@ fn init_template(test: &Smoketest, template_id: &str) -> Result<(TempDir, PathBu
     };
 
     test.spacetime(&init_args)
-    .with_context(|| format!("spacetime init --template {} failed", template_id))?;
+        .with_context(|| format!("spacetime init --template {} failed", template_id))?;
 
     if !project_path.exists() {
         bail!("Project directory not created for template {}", template_id);

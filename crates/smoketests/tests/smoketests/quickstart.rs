@@ -238,10 +238,16 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
         .find(|(k, _)| k.contains("runtime") || k.contains("Runtime"))
         .map(|(k, _)| k.clone());
     if let Some(source_key) = local_runtime_source {
-        if !mappings.iter().any(|(k, p)| k == &source_key && p == "SpacetimeDB.Runtime") {
+        if !mappings
+            .iter()
+            .any(|(k, p)| k == &source_key && p == "SpacetimeDB.Runtime")
+        {
             mappings.push((source_key.clone(), "SpacetimeDB.Runtime".to_string()));
         }
-        if !mappings.iter().any(|(k, p)| k == &source_key && p == "SpacetimeDB.BSATN.Runtime") {
+        if !mappings
+            .iter()
+            .any(|(k, p)| k == &source_key && p == "SpacetimeDB.BSATN.Runtime")
+        {
             mappings.push((source_key, "SpacetimeDB.BSATN.Runtime".to_string()));
         }
     }
@@ -284,9 +290,7 @@ fn parse_nuget_config(content: &str) -> (Vec<(String, PathBuf)>, Vec<(String, St
     }
 
     // Parse packageSourceMapping sections - need to find all patterns for each source
-    let section_re = regex::Regex::new(
-        r#"<packageSource key="([^"]+)">(.*?)<\/packageSource>"#,
-    ).unwrap();
+    let section_re = regex::Regex::new(r#"<packageSource key="([^"]+)">(.*?)<\/packageSource>"#).unwrap();
     let pattern_re = regex::Regex::new(r#"<package pattern="([^"]+)""#).unwrap();
 
     for cap in section_re.captures_iter(content) {

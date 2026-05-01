@@ -1875,7 +1875,7 @@ pub fn init_csharp_project(project_path: &Path, dotnet_major: Option<u8>) -> any
 
     let global_json = match dotnet_major {
         Some(10) => {
-            println!("Configuring for .NET 10 (NativeAOT-LLVM).", "ℹ".blue(),);
+            println!("Configuring for .NET 10 (NativeAOT-LLVM).");
             "{\n  \"sdk\": {\n    \"version\": \"10.0.100\",\n    \"rollForward\": \"latestMinor\"\n  }\n}\n"
         }
         _ => {
