@@ -162,6 +162,8 @@ mod utils;
 
 #[doc(hidden)]
 pub use serde as __serde;
+#[doc(hidden)]
+pub use tempfile as __tempfile;
 
 /// Implemented for path types. Use `from_path_unchecked()` to construct a strongly-typed
 /// path directly from a `PathBuf`.
