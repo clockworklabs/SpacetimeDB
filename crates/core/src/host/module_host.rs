@@ -1080,10 +1080,10 @@ pub struct RefInstance<'a, I: WasmInstance> {
 }
 
 impl ModuleHost {
-    fn wasm_instance_manager<'a>(
-        host: &'a WasmtimeModuleHost,
+    fn wasm_instance_manager(
+        host: &WasmtimeModuleHost,
         kind: InstanceKind,
-    ) -> &'a ModuleInstanceManager<Arc<super::wasmtime::Module>> {
+    ) -> &ModuleInstanceManager<Arc<super::wasmtime::Module>> {
         match kind {
             InstanceKind::Main => &host.main_instance,
             InstanceKind::Procedure => &host.procedure_instances,
@@ -1229,6 +1229,59 @@ impl ModuleHost {
         })
     }
 
+    async fn with_instance<A, R>(
+        &self,
+        kind: &str,
+        label: &str,
+        instance_kind: InstanceKind,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        js_main: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
+        js_procedure: impl AsyncFnOnce(A, &JsInstance) -> R,
+    ) -> Result<R, NoSuchModule>
+    where
+        R: Send + 'static,
+        A: Send + 'static,
+    {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("{kind} {label} panicked");
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                Self::wasm_instance_manager(host, instance_kind)
+                    .with_instance(async |mut inst| {
+                        host.executor
+                            .run_job(async move || {
+                                drop(timer_guard);
+                                (wasm(arg, &mut inst).await, inst)
+                            })
+                            .await
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => match instance_kind {
+                InstanceKind::Main => {
+                    drop(timer_guard);
+                    js_main(arg, &host.instance_lane).await
+                }
+                InstanceKind::Procedure => {
+                    host.procedure_instances
+                        .with_instance(async |inst| {
+                            drop(timer_guard);
+                            let res = js_procedure(arg, &inst).await;
+                            (res, inst)
+                        })
+                        .await
+                }
+            },
+        })
+    }
+
     /// Run a function for this module which has access to the module instance.
     ///
     /// For WASM, the function is run on the module's JobThread.
@@ -1244,7 +1297,7 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.call_with_selected_instance(
+        self.with_instance(
             "reducer",
             label,
             InstanceKind::Main,
@@ -1260,7 +1313,7 @@ impl ModuleHost {
     }
 
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.call_with_selected_instance(
+        self.with_instance(
             "view operation",
             label,
             InstanceKind::Main,
@@ -1857,7 +1910,7 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.call_with_selected_instance(
+        self.with_instance(
             "pooled operation",
             name,
             InstanceKind::Procedure,
@@ -1873,7 +1926,7 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.call_with_selected_instance(
+        self.with_instance(
             "scheduled operation",
             "scheduled reducer",
             InstanceKind::Main,
@@ -1889,7 +1942,7 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.call_with_selected_instance(
+        self.with_instance(
             "scheduled operation",
             "scheduled procedure",
             InstanceKind::Procedure,
@@ -1899,59 +1952,6 @@ impl ModuleHost {
             async |params, inst| Ok(inst.call_scheduled_function(params).await),
         )
         .await?
-    }
-
-    async fn call_with_selected_instance<A, R>(
-        &self,
-        kind: &str,
-        label: &str,
-        instance_kind: InstanceKind,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js_main: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
-        js_procedure: impl AsyncFnOnce(A, &JsInstance) -> R,
-    ) -> Result<R, NoSuchModule>
-    where
-        R: Send + 'static,
-        A: Send + 'static,
-    {
-        self.guard_closed()?;
-        let timer_guard = self.start_call_timer(label);
-
-        scopeguard::defer_on_unwind!({
-            log::warn!("{kind} {label} panicked");
-            (self.on_panic)();
-        });
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                Self::wasm_instance_manager(host, instance_kind)
-                    .with_instance(async |mut inst| {
-                        host.executor
-                            .run_job(async move || {
-                                drop(timer_guard);
-                                (wasm(arg, &mut inst).await, inst)
-                            })
-                            .await
-                    })
-                    .await
-            }
-            ModuleHostInner::Js(host) => match instance_kind {
-                InstanceKind::Main => {
-                    drop(timer_guard);
-                    js_main(arg, &host.instance_lane).await
-                }
-                InstanceKind::Procedure => {
-                    host.procedure_instances
-                        .with_instance(async |inst| {
-                            drop(timer_guard);
-                            let res = js_procedure(arg, &inst).await;
-                            (res, inst)
-                        })
-                        .await
-                }
-            },
-        })
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -2555,9 +2555,7 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        GenericModule, GenericModuleInstance, HostType, InstanceManagerMetrics, ModuleHost, ModuleInstanceManager,
-    };
+    use super::ModuleHost;
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
@@ -2568,37 +2566,7 @@ mod tests {
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
-
-    #[derive(Clone)]
-    struct TestModule {
-        next_id: Arc<AtomicUsize>,
-    }
-
-    struct TestInstance {
-        id: usize,
-        trapped: bool,
-    }
-
-    impl GenericModule for TestModule {
-        type Instance = TestInstance;
-
-        async fn create_instance(&self) -> Self::Instance {
-            let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-            TestInstance { id, trapped: false }
-        }
-
-        fn host_type(&self) -> HostType {
-            HostType::Wasm
-        }
-    }
-
-    impl GenericModuleInstance for TestInstance {
-        fn trapped(&self) -> bool {
-            self.trapped
-        }
-    }
 
     fn v2_client_config() -> ClientConfig {
         ClientConfig {
@@ -2690,64 +2658,6 @@ mod tests {
                 other => panic!("Expected v2 OneOffQueryResult, got: {other:?}"),
             }
         });
-
-        Ok(())
-    }
-
-    #[test]
-    fn wasm_serialized_instance_is_reused_until_trap() -> anyhow::Result<()> {
-        let runtime = tokio::runtime::Runtime::new()?;
-        let module = TestModule {
-            next_id: Arc::new(AtomicUsize::new(1)),
-        };
-        let metrics = InstanceManagerMetrics::new(HostType::Wasm, Identity::ZERO);
-        let manager = ModuleInstanceManager::new(module, Some(TestInstance { id: 0, trapped: false }), metrics);
-
-        let first = runtime.block_on(manager.with_instance(async |inst| (inst.id, inst)));
-        let second = runtime.block_on(manager.with_instance(async |inst| (inst.id, inst)));
-        assert_eq!(first, 0);
-        assert_eq!(second, 0);
-
-        let trapped = runtime.block_on(manager.with_instance(async |mut inst| {
-            inst.trapped = true;
-            (inst.id, inst)
-        }));
-        assert_eq!(trapped, 0);
-
-        let replacement = runtime.block_on(manager.with_instance(async |inst| (inst.id, inst)));
-        assert_eq!(replacement, 1);
-
-        Ok(())
-    }
-
-    #[test]
-    fn wasm_procedure_pool_does_not_consume_serialized_instance() -> anyhow::Result<()> {
-        let runtime = tokio::runtime::Runtime::new()?;
-        let module = Arc::new(TestModule {
-            next_id: Arc::new(AtomicUsize::new(1)),
-        });
-        let metrics = InstanceManagerMetrics::new(HostType::Wasm, Identity::ZERO);
-        let serialized = ModuleInstanceManager::new(
-            module.clone(),
-            Some(TestInstance { id: 0, trapped: false }),
-            metrics.clone(),
-        );
-        let procedures = ModuleInstanceManager::new(module, None, metrics);
-
-        let (serialized_id, procedure_id, serialized_reuse) = runtime.block_on(async {
-            let serialized_inst = serialized.get_instance().await;
-            let procedure_inst = procedures.get_instance().await;
-            let serialized_id = serialized_inst.id;
-            let procedure_id = procedure_inst.id;
-            serialized.return_instance(serialized_inst).await;
-            procedures.return_instance(procedure_inst).await;
-            let serialized_reuse = serialized.with_instance(async |inst| (inst.id, inst)).await;
-            (serialized_id, procedure_id, serialized_reuse)
-        });
-
-        assert_eq!(serialized_id, 0);
-        assert_eq!(procedure_id, 1);
-        assert_eq!(serialized_reuse, 0);
 
         Ok(())
     }

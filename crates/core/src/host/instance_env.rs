@@ -401,6 +401,12 @@ impl InstanceEnv {
         table_id: TableId,
         row_ptr: RowPointer,
     ) -> Result<(), NodesError> {
+        let table = stdb.schema_for_table_mut(tx, table_id)?;
+        let schedule = table
+            .schedule
+            .as_ref()
+            .expect("schedule_row should only be called when we know its a scheduler table");
+        let function_name: Box<str> = (&schedule.function_name[..]).into();
         let (id_column, at_column) = stdb
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
@@ -414,6 +420,7 @@ impl InstanceEnv {
             .schedule(
                 table_id,
                 schedule_id,
+                function_name,
                 schedule_at,
                 id_column,
                 at_column,
