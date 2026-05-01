@@ -373,6 +373,37 @@ enum InstanceKind {
     Procedure,
 }
 
+macro_rules! with_instance_impl {
+    ($self:expr, $kind:expr, $label:expr, $instance_kind:expr, $arg:ident, $wasm:expr, |$host:ident, $timer_guard:ident, $arg_js:ident| $js_body:expr) => {{
+        $self.guard_closed()?;
+        let $timer_guard = $self.start_call_timer($label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("{} {} panicked", $kind, $label);
+            ($self.on_panic)();
+        });
+
+        Ok(match &*$self.inner {
+            ModuleHostInner::Wasm(host) => {
+                Self::wasm_instance_manager(host, $instance_kind)
+                    .with_instance(async |mut inst| {
+                        host.executor
+                            .run_job(async move || {
+                                drop($timer_guard);
+                                (($wasm)($arg, &mut inst).await, inst)
+                            })
+                            .await
+                    })
+                    .await
+            }
+            ModuleHostInner::Js($host) => {
+                let $arg_js = $arg;
+                $js_body
+            }
+        })
+    }};
+}
+
 struct V8ModuleHost {
     module: super::v8::JsModule,
     instance_lane: super::v8::JsInstanceLane,
@@ -1241,32 +1272,18 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.guard_closed()?;
-        let timer_guard = self.start_call_timer(label);
-
-        scopeguard::defer_on_unwind!({
-            log::warn!("{kind} {label} panicked");
-            (self.on_panic)();
-        });
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                Self::wasm_instance_manager(host, InstanceKind::Main)
-                    .with_instance(async |mut inst| {
-                        host.executor
-                            .run_job(async move || {
-                                drop(timer_guard);
-                                (wasm(arg, &mut inst).await, inst)
-                            })
-                            .await
-                    })
-                    .await
-            }
-            ModuleHostInner::Js(host) => {
+        with_instance_impl!(
+            self,
+            kind,
+            label,
+            InstanceKind::Main,
+            arg,
+            wasm,
+            |host, timer_guard, arg| {
                 drop(timer_guard);
                 js(arg, &host.instance_lane).await
             }
-        })
+        )
     }
 
     async fn with_procedure_instance<A, R>(
@@ -1281,28 +1298,14 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.guard_closed()?;
-        let timer_guard = self.start_call_timer(label);
-
-        scopeguard::defer_on_unwind!({
-            log::warn!("{kind} {label} panicked");
-            (self.on_panic)();
-        });
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                Self::wasm_instance_manager(host, InstanceKind::Procedure)
-                    .with_instance(async |mut inst| {
-                        host.executor
-                            .run_job(async move || {
-                                drop(timer_guard);
-                                (wasm(arg, &mut inst).await, inst)
-                            })
-                            .await
-                    })
-                    .await
-            }
-            ModuleHostInner::Js(host) => {
+        with_instance_impl!(
+            self,
+            kind,
+            label,
+            InstanceKind::Procedure,
+            arg,
+            wasm,
+            |host, timer_guard, arg| {
                 host.procedure_instances
                     .with_instance(async |inst| {
                         drop(timer_guard);
@@ -1311,7 +1314,7 @@ impl ModuleHost {
                     })
                     .await
             }
-        })
+        )
     }
 
     /// Run a function for this module which has access to the module instance.
