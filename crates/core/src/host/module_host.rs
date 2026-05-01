@@ -1967,8 +1967,7 @@ impl ModuleHost {
             "http handler",
             params,
             async move |params, inst| inst.call_http_handler(params).await,
-            // TODO(v8-http-handlers): Do something useful here.
-            async move |_params, _inst| Err(HttpHandlerCallError::UnsupportedHostType),
+            async move |params, inst| inst.call_http_handler(params).await,
         )
         .await
         .map_err(HttpHandlerCallError::from)?

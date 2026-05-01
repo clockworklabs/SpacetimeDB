@@ -27,13 +27,22 @@ export interface ResponseInit {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8' /* { fatal: true } */);
 
-function deserializeHeaders(headers: HttpHeaders): Headers {
+export function deserializeHeaders(headers: HttpHeaders): Headers {
   return new Headers(
     headers.entries.map(({ name, value }): [string, string] => [
       name,
       textDecoder.decode(value),
     ])
   );
+}
+
+export function serializeHeaders(headers: Headers): HttpHeaders {
+  return {
+    // anys because the typings are wonky - see comment in SyncResponse.constructor
+    entries: headersToList(headers as any)
+      .flatMap(([k, v]) => (Array.isArray(v) ? v.map(v => [k, v]) : [[k, v]]))
+      .map(([name, value]) => ({ name, value: textEncoder.encode(value) })),
+  };
 }
 
 const makeResponse = Symbol('makeResponse');
@@ -164,12 +173,7 @@ function fetch(url: URL | string, init: RequestOptions = {}) {
     tag: 'Extension',
     value: init.method!,
   };
-  const headers: HttpHeaders = {
-    // anys because the typings are wonky - see comment in SyncResponse.constructor
-    entries: headersToList(new Headers(init.headers as any) as any)
-      .flatMap(([k, v]) => (Array.isArray(v) ? v.map(v => [k, v]) : [[k, v]]))
-      .map(([name, value]) => ({ name, value: textEncoder.encode(value) })),
-  };
+  const headers = serializeHeaders(new Headers(init.headers as any));
   const uri = '' + url;
   const request: HttpRequest = freeze({
     method,

@@ -27,6 +27,11 @@ import {
   type ReducerOpts,
   type Reducers,
 } from './reducers';
+import {
+  makeHttpNamespace,
+  type HttpHandlerExport,
+  type HttpHandlers,
+} from './http_handlers';
 import { makeHooks } from './runtime';
 
 import {
@@ -48,6 +53,7 @@ export class SchemaInner<
   schemaType: S;
   existingFunctions = new Set<string>();
   reducers: Reducers = [];
+  httpHandlers: HttpHandlers = [];
   procedures: Procedures = [];
   views: Views = [];
   anonViews: AnonViews = [];
@@ -57,6 +63,7 @@ export class SchemaInner<
    */
   functionExports: Map<
     | ReducerExport<UntypedSchemaDef, any>
+    | HttpHandlerExport
     | ProcedureExport<UntypedSchemaDef, any, any>,
     string
   > = new Map();
@@ -131,10 +138,12 @@ type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
 // be the type of the user table.
 export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   #ctx: SchemaInner<S>;
+  readonly http;
 
   constructor(ctx: SchemaInner<S>) {
     // TODO: TableSchema and TableDef should really be unified
     this.#ctx = ctx;
+    this.http = makeHttpNamespace(this.#ctx);
   }
 
   [moduleHooks](exports: object) {

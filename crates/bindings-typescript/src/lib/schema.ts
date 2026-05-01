@@ -189,6 +189,8 @@ export class ModuleContext {
     typespace: { types: [] },
     tables: [],
     reducers: [],
+    httpHandlers: [],
+    httpRoutes: [],
     types: [],
     rowLevelSecurity: [],
     schedules: [],
@@ -219,6 +221,18 @@ export class ModuleContext {
     push(module.tables && { tag: 'Tables', value: module.tables });
     push(module.reducers && { tag: 'Reducers', value: module.reducers });
     push(module.procedures && { tag: 'Procedures', value: module.procedures });
+    push(
+      module.httpHandlers && {
+        tag: 'HttpHandlers',
+        value: module.httpHandlers,
+      }
+    );
+    push(
+      module.httpRoutes && {
+        tag: 'HttpRoutes',
+        value: module.httpRoutes,
+      }
+    );
     push(module.views && { tag: 'Views', value: module.views });
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
     push(

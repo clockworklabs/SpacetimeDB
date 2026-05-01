@@ -1,5 +1,5 @@
 use regex::Regex;
-use spacetimedb_smoketests::{workspace_root, Smoketest};
+use spacetimedb_smoketests::{require_pnpm, workspace_root, Smoketest};
 use std::{fs, path::Path};
 
 const MODULE_CODE: &str = r#"
@@ -228,6 +228,34 @@ fn router() -> Router {
         .post("/reverse-bytes", reverse_bytes)
         .post("/reverse-words", reverse_words)
 }
+"#;
+
+const TS_HTTP_ROUTES_MODULE: &str = r#"import { schema, SyncResponse } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+
+export default spacetimedb;
+
+export const get_echo = spacetimedb.http.handler(
+  req =>
+    new SyncResponse(req.headers.get("x-echo") ?? "", {
+      headers: { "x-method": "GET" },
+    })
+);
+
+export const post_echo = spacetimedb.http.handler(
+  req =>
+    new SyncResponse(req.body, {
+      status: 201,
+      headers: { "x-method": "POST" },
+    })
+);
+
+export const router = spacetimedb.http.router(
+  new spacetimedb.http.Router()
+    .get("/echo", get_echo)
+    .post("/echo", post_echo)
+);
 "#;
 
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
@@ -499,6 +527,57 @@ fn handle_request_body() {
     assert_eq!(
         resp.text().expect("reverse-words non-palindrome body"),
         "blue green red"
+    );
+}
+
+#[test]
+fn typescript_http_routes_end_to_end() {
+    require_pnpm!();
+
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let identity = test
+        .publish_typescript_module_source(
+            "http-routes-typescript",
+            "http-routes-typescript",
+            TS_HTTP_ROUTES_MODULE,
+        )
+        .unwrap();
+
+    let base = format!("{}/v1/database/{identity}/route", test.server_url);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client
+        .get(format!("{base}/echo"))
+        .header("x-echo", "hello")
+        .send()
+        .expect("typescript get echo failed");
+    let get_status = resp.status();
+    let get_headers = resp.headers().clone();
+    let get_body = resp.text().expect("typescript get echo body");
+    assert!(
+        get_status.is_success(),
+        "typescript GET /echo failed: status={get_status} headers={get_headers:?} body={get_body:?}"
+    );
+    assert_eq!(
+        get_headers.get("x-method").and_then(|value| value.to_str().ok()),
+        Some("GET")
+    );
+    assert_eq!(get_body, "hello");
+
+    let payload = vec![0xFF, 0x00, 0xFE, 0x7F];
+    let resp = client
+        .post(format!("{base}/echo"))
+        .body(payload.clone())
+        .send()
+        .expect("typescript post echo failed");
+    assert_eq!(resp.status().as_u16(), 201);
+    assert_eq!(
+        resp.headers().get("x-method").and_then(|value| value.to_str().ok()),
+        Some("POST")
+    );
+    assert_eq!(
+        resp.bytes().expect("typescript post echo body").as_ref(),
+        payload.as_slice()
     );
 }
 
