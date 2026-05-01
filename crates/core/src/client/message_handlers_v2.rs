@@ -32,27 +32,17 @@ pub(super) async fn handle_decoded_message(
     let mod_info = module.info();
     let mod_metrics = &mod_info.metrics;
     let database_identity = mod_info.database_identity;
-    let db = module.relational_db();
-    let record_metrics = |wl| {
-        move |metrics| {
-            if let Some(metrics) = metrics {
-                db.exec_counters_for(wl).record(&metrics);
-            }
-        }
-    };
-    let sub_metrics = record_metrics(WorkloadType::Subscribe);
-    let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
     type HandleResult<'a> = Result<(), (Option<&'a RawIdentifier>, Option<ReducerId>, anyhow::Error)>;
     let res: HandleResult<'_> = match message {
         ws_v2::ClientMessage::Subscribe(subscribe) => {
-            let res = client.subscribe_v2(subscribe, timer).await.map(sub_metrics);
+            let res = client.subscribe_v2(subscribe, timer).await;
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
         ws_v2::ClientMessage::Unsubscribe(unsubscribe) => {
-            let res = client.unsubscribe_v2(unsubscribe, timer).await.map(unsub_metrics);
+            let res = client.unsubscribe_v2(unsubscribe, timer).await;
             mod_metrics
                 .request_round_trip_unsubscribe
                 .observe(timer.elapsed().as_secs_f64());
@@ -80,7 +70,7 @@ pub(super) async fn handle_decoded_message(
                 .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
                 .observe(timer.elapsed().as_secs_f64());
             match res {
-                Ok(_) => {
+                Ok(()) => {
                     // If this was not a success, we would have already sent an error message.
                     Ok(())
                 }

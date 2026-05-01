@@ -40,17 +40,6 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let mod_info = module.info();
     let mod_metrics = &mod_info.metrics;
     let database_identity = mod_info.database_identity;
-    let db = module.relational_db();
-    let record_metrics = |wl| {
-        move |metrics| {
-            if let Some(metrics) = metrics {
-                db.exec_counters_for(wl).record(&metrics);
-            }
-        }
-    };
-    let sub_metrics = record_metrics(WorkloadType::Subscribe);
-    let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
-
     type HandleResult<'a> = Result<(), (Option<&'a RawIdentifier>, Option<ReducerId>, anyhow::Error)>;
     let res: HandleResult<'_> = match message {
         ws_v1::ClientMessage::CallReducer(ws_v1::CallReducer {
@@ -59,49 +48,52 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             request_id,
             flags,
         }) => {
-            let res = client.call_reducer(reducer, args, request_id, timer, flags).await;
+            let res = client
+                .call_reducer(reducer, args, request_id, timer, flags)
+                .await
+                .map_err(|e| {
+                    (
+                        Some(reducer),
+                        mod_info.module_def.reducer_full(&**reducer).map(|(id, _)| id),
+                        e.into(),
+                    )
+                });
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
                 .observe(timer.elapsed().as_secs_f64());
-            res.map(drop).map_err(|e| {
-                (
-                    Some(reducer),
-                    mod_info.module_def.reducer_full(&**reducer).map(|(id, _)| id),
-                    e.into(),
-                )
-            })
+            res
         }
         ws_v1::ClientMessage::SubscribeMulti(subscription) => {
-            let res = client.subscribe_multi(subscription, timer).await.map(sub_metrics);
+            let res = client.subscribe_multi(subscription, timer).await;
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
         ws_v1::ClientMessage::UnsubscribeMulti(request) => {
-            let res = client.unsubscribe_multi(request, timer).await.map(unsub_metrics);
+            let res = client.unsubscribe_multi(request, timer).await;
             mod_metrics
                 .request_round_trip_unsubscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
         ws_v1::ClientMessage::SubscribeSingle(subscription) => {
-            let res = client.subscribe_single(subscription, timer).await.map(sub_metrics);
+            let res = client.subscribe_single(subscription, timer).await;
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
         ws_v1::ClientMessage::Unsubscribe(request) => {
-            let res = client.unsubscribe(request, timer).await.map(unsub_metrics);
+            let res = client.unsubscribe(request, timer).await;
             mod_metrics
                 .request_round_trip_unsubscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
         ws_v1::ClientMessage::Subscribe(subscription) => {
-            let res = client.subscribe(subscription, timer).await.map(Some).map(sub_metrics);
+            let res = client.subscribe(subscription, timer).await;
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
@@ -134,7 +126,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             if let Err(e) = res {
                 log::warn!("Procedure call failed: {e:#}");
             }
-            // `ClientConnection::call_procedure` handles sending the error message to the client if the call fails,
+            // `ClientConnection::call_procedure` handles sending the procedure result message itself,
             // so we don't need to return an `Err` here.
             Ok(())
         }

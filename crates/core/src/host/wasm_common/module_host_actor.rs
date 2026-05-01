@@ -1056,6 +1056,21 @@ impl InstanceCommon {
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
+            ViewCommand::RemoveSingleSubscription {
+                sender,
+                auth,
+                request,
+                timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .remove_single_subscription(sender, auth, request, timer);
+
+                match res {
+                    Ok(metrics) => (ViewCommandResult::Subscription { result: Ok(metrics) }, false),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
             ViewCommand::AddLegacySubscription {
                 sender,
                 auth,
@@ -1118,6 +1133,21 @@ impl InstanceCommon {
 
                 match res {
                     Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::RemoveMultiSubscription {
+                sender,
+                auth,
+                request,
+                timer,
+            } => {
+                let res = info
+                    .subscriptions
+                    .remove_multi_subscription(sender, auth, request, timer);
+
+                match res {
+                    Ok(metrics) => (ViewCommandResult::Subscription { result: Ok(metrics) }, false),
                     Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
                 }
             }
