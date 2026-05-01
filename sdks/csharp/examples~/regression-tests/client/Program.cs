@@ -12,7 +12,7 @@ using RegressionTests.Shared;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
-const string HOST = "http://localhost:3000";
+string HOST = Environment.GetEnvironmentVariable("SPACETIMEDB_SERVER_URL") ?? "http://localhost:3000";
 const string DBNAME = "btree-repro";
 const string THROW_ERROR_MESSAGE = "this is an error";
 const uint UPDATED_WHERE_TEST_VALUE = 42;
