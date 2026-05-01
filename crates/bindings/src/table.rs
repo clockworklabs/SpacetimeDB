@@ -57,6 +57,24 @@ impl TableHandleBackend {
         }
     }
 
+    pub fn index_id(&self, index_name: &str) -> Result<IndexId, sys::Errno> {
+        match self {
+            Self::Host => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    sys::index_id_from_name(index_name)
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = index_name;
+                    Err(sys::Errno::HOST_CALL_FAILURE)
+                }
+            }
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::Test(datastore) => datastore.index_id(index_name).map_err(|_| sys::Errno::NO_SUCH_INDEX),
+        }
+    }
+
     fn insert_bsatn(&self, table_id: TableId, row: &mut [u8]) -> Result<Vec<u8>, sys::Errno> {
         match self {
             Self::Host => {
@@ -117,6 +135,123 @@ impl TableHandleBackend {
             Self::Test(datastore) => datastore
                 .table_row_count(table_id)
                 .map_err(|_| sys::Errno::NO_SUCH_TABLE),
+        }
+    }
+
+    fn index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<TableIterInner, sys::Errno> {
+        match self {
+            Self::Host => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    sys::datastore_index_scan_point_bsatn(index_id, point).map(TableIterInner::Host)
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = (index_id, point);
+                    Err(sys::Errno::HOST_CALL_FAILURE)
+                }
+            }
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::Test(datastore) => datastore
+                .index_scan_point_bsatn(index_id, point)
+                .map(|rows| TableIterInner::Test(rows.into_iter()))
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+        }
+    }
+
+    fn index_scan_range_bsatn(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<TableIterInner, sys::Errno> {
+        match self {
+            Self::Host => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                        .map(TableIterInner::Host)
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = (index_id, prefix, prefix_elems, rstart, rend);
+                    Err(sys::Errno::HOST_CALL_FAILURE)
+                }
+            }
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::Test(datastore) => datastore
+                .index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                .map(|rows| TableIterInner::Test(rows.into_iter()))
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+        }
+    }
+
+    fn delete_by_index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<u32, sys::Errno> {
+        match self {
+            Self::Host => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    sys::datastore_delete_by_index_scan_point_bsatn(index_id, point)
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = (index_id, point);
+                    Err(sys::Errno::HOST_CALL_FAILURE)
+                }
+            }
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::Test(datastore) => datastore
+                .delete_by_index_scan_point_bsatn(index_id, point)
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+        }
+    }
+
+    fn delete_by_index_scan_range_bsatn(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<u32, sys::Errno> {
+        match self {
+            Self::Host => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = (index_id, prefix, prefix_elems, rstart, rend);
+                    Err(sys::Errno::HOST_CALL_FAILURE)
+                }
+            }
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::Test(datastore) => datastore
+                .delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+        }
+    }
+
+    fn update_bsatn(&self, table_id: TableId, index_id: IndexId, row: &mut [u8]) -> Result<Vec<u8>, sys::Errno> {
+        match self {
+            Self::Host => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    sys::datastore_update_bsatn(table_id, index_id, row).map(<[u8]>::to_vec)
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = (table_id, index_id, row);
+                    Err(sys::Errno::HOST_CALL_FAILURE)
+                }
+            }
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::Test(datastore) => datastore
+                .update_bsatn_generated_cols(table_id, index_id, row)
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
         }
     }
 }
@@ -457,12 +592,18 @@ pub trait PrimaryKey {}
 ///
 /// <!-- TODO: do we need integer type suffixes on literal arguments, like for RangedIndex? -->
 pub struct UniqueColumn<Tbl, ColType, Col> {
+    backend: TableHandleBackend,
     _marker: PhantomData<(Tbl, ColType, Col)>,
 }
 
 impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColType, Col> {
     #[doc(hidden)]
-    pub const __NEW: Self = Self { _marker: PhantomData };
+    pub fn __new(backend: TableHandleBackend) -> Self {
+        Self {
+            backend,
+            _marker: PhantomData,
+        }
+    }
 
     /// Finds and returns the row where the value in the unique column matches the supplied `col_val`,
     /// or `None` if no such row is present in the database state.
@@ -477,7 +618,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     where
         for<'a> &'a Col::ColType: FilterableValue,
     {
-        find::<Tbl, Col>(col_val.borrow())
+        find::<Tbl, Col>(&self.backend, col_val.borrow())
     }
 
     /// Deletes the row where the value in the unique column matches the supplied `col_val`,
@@ -491,11 +632,17 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     }
 
     fn _delete(&self, col_val: &Col::ColType) -> (bool, IterBuf) {
-        let index_id = Col::index_id();
+        let index_id = self
+            .backend
+            .index_id(Col::INDEX_NAME)
+            .expect("index_id_from_name() call failed");
         let point = IterBuf::serialize(col_val).unwrap();
-        let n_del = sys::datastore_delete_by_index_scan_point_bsatn(index_id, &point).unwrap_or_else(|e| {
-            panic!("unique: unexpected error from datastore_delete_by_index_scan_point_bsatn: {e}")
-        });
+        let n_del = self
+            .backend
+            .delete_by_index_scan_point_bsatn(index_id, &point)
+            .unwrap_or_else(|e| {
+                panic!("unique: unexpected error from datastore_delete_by_index_scan_point_bsatn: {e}")
+            });
 
         (n_del > 0, point)
     }
@@ -519,7 +666,11 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         Col: PrimaryKey,
     {
         let buf = IterBuf::take();
-        update::<Tbl>(Col::index_id(), new_row, buf)
+        let index_id = self
+            .backend
+            .index_id(Col::INDEX_NAME)
+            .expect("index_id_from_name() call failed");
+        update::<Tbl>(&self.backend, index_id, new_row, buf)
     }
 
     /// Inserts `new_row` into the table, first checking for an existing
@@ -556,13 +707,18 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 }
 
 #[inline]
-fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) -> Option<Tbl::Row> {
+fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(
+    backend: &TableHandleBackend,
+    col_val: &Col::ColType,
+) -> Option<Tbl::Row> {
     // Find the row with a match.
-    let index_id = Col::index_id();
+    let index_id = backend
+        .index_id(Col::INDEX_NAME)
+        .expect("index_id_from_name() call failed");
     let point = IterBuf::serialize(col_val).unwrap();
 
-    let iter = datastore_index_scan_point_bsatn(index_id, &point);
-    let mut iter = TableIter::new_with_buf(table_iter_inner_host(iter), point);
+    let iter = datastore_index_scan_point_bsatn(backend, index_id, &point);
+    let mut iter = TableIter::new_with_buf(iter, point);
 
     // We will always find either 0 or 1 rows here due to the unique constraint.
     let row = iter.next();
@@ -575,8 +731,9 @@ fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) ->
 
 /// See `sys::datastore_index_scan_point_bsatn`.
 /// Panics when the aforementioned errors.
-fn datastore_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> sys::RowIter {
-    sys::datastore_index_scan_point_bsatn(index_id, point)
+fn datastore_index_scan_point_bsatn(backend: &TableHandleBackend, index_id: IndexId, point: &[u8]) -> TableIterInner {
+    backend
+        .index_scan_point_bsatn(index_id, point)
         .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
 }
 
@@ -591,25 +748,34 @@ fn datastore_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> sys::Row
 /// This is because read-only indexes still need [`Table`] metadata.
 /// The view handle itself deliberately does not implement `Table`.
 pub struct UniqueColumnReadOnly<Tbl, ColType, Col> {
+    backend: TableHandleBackend,
     _marker: PhantomData<(Tbl, ColType, Col)>,
 }
 
 impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumnReadOnly<Tbl, Col::ColType, Col> {
     #[doc(hidden)]
-    pub const __NEW: Self = Self { _marker: PhantomData };
+    pub fn __new(backend: TableHandleBackend) -> Self {
+        Self {
+            backend,
+            _marker: PhantomData,
+        }
+    }
 
     #[inline]
     pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row>
     where
         for<'a> &'a Col::ColType: FilterableValue,
     {
-        find::<Tbl, Col>(col_val.borrow())
+        find::<Tbl, Col>(&self.backend, col_val.borrow())
     }
 }
 
 /// Information about the `index_id` of an index
 /// and the number of columns the index indexes.
 pub trait Index {
+    /// The generated runtime name of this index.
+    const INDEX_NAME: &'static str;
+
     /// The number of columns the index indexes.
     ///
     /// Used to determine whether a scan for e.g., `(a, b)`,
@@ -679,12 +845,18 @@ pub trait IndexIsPointed: Index {}
 /// ```
 ///
 pub struct PointIndex<Tbl: Table, IndexType, Idx: Index> {
+    backend: TableHandleBackend,
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
 impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
-    pub const __NEW: Self = Self { _marker: PhantomData };
+    pub fn __new(backend: TableHandleBackend) -> Self {
+        Self {
+            backend,
+            _marker: PhantomData,
+        }
+    }
 
     /// Returns an iterator over all rows in the database state
     /// where the indexed column(s) equal `point`.
@@ -725,7 +897,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
-        filter_point::<Tbl, Idx, K>(point)
+        filter_point::<Tbl, Idx, P, K>(&self.backend, point)
     }
 
     /// Deletes all rows in the database state
@@ -766,9 +938,13 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
-        let index_id = Idx::index_id();
+        let index_id = self
+            .backend
+            .index_id(Idx::INDEX_NAME)
+            .expect("index_id_from_name() call failed");
         point.with_point_arg(|point| {
-            sys::datastore_delete_by_index_scan_point_bsatn(index_id, point)
+            self.backend
+                .delete_by_index_scan_point_bsatn(index_id, point)
                 .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_point_bsatn`: {e}"))
                 .into()
         })
@@ -779,14 +955,20 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
 ///
 /// The type parameter `K` is either `()` or [`SingleBound`]
 /// and is used to workaround the orphan rule.
-fn filter_point<Tbl, Idx, K>(point: impl WithPointArg<K>) -> impl Iterator<Item = Tbl::Row>
+fn filter_point<Tbl, Idx, P, K>(
+    backend: &TableHandleBackend,
+    point: P,
+) -> impl Iterator<Item = Tbl::Row> + use<Tbl, Idx, P, K>
 where
     Tbl: Table,
     Idx: IndexIsPointed,
+    P: WithPointArg<K>,
 {
-    let index_id = Idx::index_id();
-    let iter = point.with_point_arg(|point| datastore_index_scan_point_bsatn(index_id, point));
-    TableIter::new(table_iter_inner_host(iter))
+    let index_id = backend
+        .index_id(Idx::INDEX_NAME)
+        .expect("index_id_from_name() call failed");
+    let iter = point.with_point_arg(|point| datastore_index_scan_point_bsatn(backend, index_id, point));
+    TableIter::new(iter)
 }
 
 /// A read-only handle to a Hash index.
@@ -799,18 +981,24 @@ where
 /// This is because read-only indexes still need [`Table`] metadata.
 /// The view handle itself deliberately does not implement `Table`.
 pub struct PointIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+    backend: TableHandleBackend,
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
 impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndexReadOnly<Tbl, IndexType, Idx> {
     #[doc(hidden)]
-    pub const __NEW: Self = Self { _marker: PhantomData };
+    pub fn __new(backend: TableHandleBackend) -> Self {
+        Self {
+            backend,
+            _marker: PhantomData,
+        }
+    }
 
     pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row> + use<P, K, Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
-        filter_point::<Tbl, Idx, K>(point)
+        filter_point::<Tbl, Idx, P, K>(&self.backend, point)
     }
 }
 
@@ -916,12 +1104,18 @@ pub trait IndexIsRanged: Index {}
 /// ```
 ///
 pub struct RangedIndex<Tbl: Table, IndexType, Idx: IndexIsRanged> {
+    backend: TableHandleBackend,
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
 impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
-    pub const __NEW: Self = Self { _marker: PhantomData };
+    pub fn __new(backend: TableHandleBackend) -> Self {
+        Self {
+            backend,
+            _marker: PhantomData,
+        }
+    }
 
     /// Returns an iterator over all rows in the database state where the indexed column(s) match the bounds `b`.
     ///
@@ -1002,7 +1196,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
-        filter::<Tbl, Idx, IndexType, B, K>(b)
+        filter::<Tbl, Idx, IndexType, B, K>(&self.backend, b)
     }
 
     /// Deletes all rows in the database state where the indexed column(s) match the bounds `b`.
@@ -1076,10 +1270,14 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
-        let index_id = Idx::index_id();
+        let index_id = self
+            .backend
+            .index_id(Idx::INDEX_NAME)
+            .expect("index_id_from_name() call failed");
         if const { is_point_scan::<Idx, B, _, _>() } {
             b.with_point_arg(|point| {
-                sys::datastore_delete_by_index_scan_point_bsatn(index_id, point)
+                self.backend
+                    .delete_by_index_scan_point_bsatn(index_id, point)
                     .unwrap_or_else(|e| {
                         panic!("unexpected error from `datastore_delete_by_index_scan_point_bsatn`: {e}")
                     })
@@ -1088,7 +1286,8 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
         } else {
             let args = b.get_range_args();
             let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-            sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            self.backend
+                .delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
                 .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
                 .into()
         }
@@ -1099,24 +1298,30 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
 ///
 /// The type parameter `K` is either `()` or [`SingleBound`]
 /// and is used to workaround the orphan rule.
-fn filter<Tbl, Idx, IndexType, B, K>(b: B) -> impl Iterator<Item = Tbl::Row>
+fn filter<Tbl, Idx, IndexType, B, K>(
+    backend: &TableHandleBackend,
+    b: B,
+) -> impl Iterator<Item = Tbl::Row> + use<Tbl, Idx, IndexType, B, K>
 where
     Tbl: Table,
     Idx: Index,
     B: IndexScanRangeBounds<IndexType, K>,
 {
-    let index_id = Idx::index_id();
+    let index_id = backend
+        .index_id(Idx::INDEX_NAME)
+        .expect("index_id_from_name() call failed");
 
     let iter = if const { is_point_scan::<Idx, B, _, _>() } {
-        b.with_point_arg(|point| datastore_index_scan_point_bsatn(index_id, point))
+        b.with_point_arg(|point| datastore_index_scan_point_bsatn(backend, index_id, point))
     } else {
         let args = b.get_range_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+        backend
+            .index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
             .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"))
     };
 
-    TableIter::new(table_iter_inner_host(iter))
+    TableIter::new(iter)
 }
 
 /// A read-only handle to a B-tree or Direct index.
@@ -1129,18 +1334,24 @@ where
 /// This is because read-only indexes still need [`Table`] metadata.
 /// The view handle itself deliberately does not implement `Table`.
 pub struct RangedIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+    backend: TableHandleBackend,
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
 impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx> {
     #[doc(hidden)]
-    pub const __NEW: Self = Self { _marker: PhantomData };
+    pub fn __new(backend: TableHandleBackend) -> Self {
+        Self {
+            backend,
+            _marker: PhantomData,
+        }
+    }
 
     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
-        filter::<Tbl, Idx, IndexType, B, K>(b)
+        filter::<Tbl, Idx, IndexType, B, K>(&self.backend, b)
     }
 }
 
@@ -1502,17 +1713,19 @@ fn insert<T: Table>(table: &T, mut row: T::Row, mut buf: IterBuf) -> Result<T::R
 
 /// Update a row of type `T` to `row` using the index identified by `index_id`.
 #[track_caller]
-fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> T::Row {
-    let table_id = T::table_id();
+fn update<T: Table>(backend: &TableHandleBackend, index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> T::Row {
+    let table_id = backend
+        .table_id(T::TABLE_NAME)
+        .expect("table_id_from_name() call failed");
     // Encode the row as bsatn into the buffer `buf`.
     buf.clear();
     buf.serialize_into(&row).unwrap();
 
     // Insert row into table.
     // When table has an auto-incrementing column, we must re-decode the changed `buf`.
-    let res = sys::datastore_update_bsatn(table_id, index_id, &mut buf).map(|gen_cols| {
+    let res = backend.update_bsatn(table_id, index_id, &mut buf).map(|gen_cols| {
         // Let the caller handle any generated columns written back by `sys::datastore_update_bsatn` to `buf`.
-        T::integrate_generated_columns(&mut row, gen_cols);
+        T::integrate_generated_columns(&mut row, &gen_cols);
         row
     });
 
@@ -1525,21 +1738,10 @@ enum TableIterInner {
     #[cfg(target_arch = "wasm32")]
     Host(sys::RowIter),
     #[cfg(not(target_arch = "wasm32"))]
+    #[allow(dead_code)]
     Host,
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     Test(std::vec::IntoIter<Vec<u8>>),
-}
-
-fn table_iter_inner_host(iter: sys::RowIter) -> TableIterInner {
-    #[cfg(target_arch = "wasm32")]
-    {
-        TableIterInner::Host(iter)
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = iter;
-        TableIterInner::Host
-    }
 }
 
 impl TableIterInner {

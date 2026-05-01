@@ -230,4 +230,54 @@ mod tests {
         assert_eq!(messages[0].sent, timestamp);
         assert_eq!(messages[0].text, "Hello from a reducer");
     }
+
+    #[test]
+    fn test_reducer_with_jwt() {
+        // These are minimal claims to construct a valid JWT payload for tests.
+        let payload = r#"{"iss":"issuer","sub":"subject","iat":0}"#;
+        let expected_sender = spacetimedb::Identity::from_claims("issuer", "subject");
+        let connection_id = spacetimedb::ConnectionId::from_u128(7);
+
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let timestamp = Timestamp::from_micros_since_unix_epoch(123);
+        test.clock.set(timestamp);
+
+        // spacetimedb::test_utils::TestAuth::from_jwt_payload(jwt_payload, connection_id)
+        let ctx = test.reducer_context(
+            spacetimedb::test_utils::TestAuth::from_jwt_payload(payload, connection_id)
+                .expect("JWT payload should be valid for tests"),
+        );
+        send_message(&ctx, "Hello from a reducer".to_string()).expect("send_message should succeed");
+
+        let messages = test.db.message().iter().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].sender, expected_sender);
+        assert_eq!(messages[0].sent, timestamp);
+        assert_eq!(messages[0].text, "Hello from a reducer");
+    }
+
+    #[test]
+    fn test_update() {
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+
+        let sender = Identity::ZERO;
+
+        test.db.user().insert(User {
+            identity: sender,
+            name: Some("Alice".to_string()),
+            online: true,
+        });
+        assert_eq!(test.db.user().iter().count(), 1);
+
+        test.db.user().identity().update(User {
+            identity: sender,
+            name: Some("Alice2".to_string()),
+            online: true,
+        });
+        assert_eq!(test.db.user().iter().count(), 1);
+        let user = test.db.user().identity().find(sender).expect("user should exist");
+        assert_eq!(user.identity, sender);
+        assert_eq!(user.name.as_deref(), Some("Alice2"));
+        assert!(user.online);
+    }
 }

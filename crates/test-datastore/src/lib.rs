@@ -7,10 +7,11 @@ use std::sync::Arc;
 
 use spacetimedb_core::db::relational_db::{MutTx, RelationalDB, Tx};
 use spacetimedb_core::error::{DBError, DatastoreError, IndexError, SequenceError};
+use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::{ProductValue, RawModuleDef};
-use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -124,6 +125,85 @@ impl TestDatastore {
                 .map(|row_ref| row_ref.to_bsatn_vec())
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
+        })
+    }
+
+    /// Collect rows matching a point index scan as BSATN-encoded row bytes.
+    pub fn index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
+        self.with_auto_commit(|tx| {
+            let (_, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
+            iter.map(|row_ref| row_ref.to_bsatn_vec())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(TestDatastoreError::from)
+        })
+    }
+
+    /// Collect rows matching a range index scan as BSATN-encoded row bytes.
+    pub fn index_scan_range_bsatn(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
+        self.with_auto_commit(|tx| {
+            let (_, iter) = self
+                .db
+                .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+            match iter {
+                IndexScanPointOrRange::Point(_, iter) => iter
+                    .map(|row_ref| row_ref.to_bsatn_vec())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(TestDatastoreError::from),
+                IndexScanPointOrRange::Range(iter) => iter
+                    .map(|row_ref| row_ref.to_bsatn_vec())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(TestDatastoreError::from),
+            }
+        })
+    }
+
+    /// Delete rows matching a point index scan.
+    pub fn delete_by_index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<u32, TestDatastoreError> {
+        self.with_auto_commit(|tx| {
+            let (table_id, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
+            let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
+            Ok(self.db.delete(tx, table_id, rows_to_delete))
+        })
+    }
+
+    /// Delete rows matching a range index scan.
+    pub fn delete_by_index_scan_range_bsatn(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<u32, TestDatastoreError> {
+        self.with_auto_commit(|tx| {
+            let (table_id, iter) = self
+                .db
+                .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+            let rows_to_delete = match iter {
+                IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
+                IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
+            };
+            Ok(self.db.delete(tx, table_id, rows_to_delete))
+        })
+    }
+
+    /// Update a BSATN-encoded row by matching the existing row through `index_id`.
+    pub fn update_bsatn_generated_cols(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<Vec<u8>, TestDatastoreError> {
+        self.with_auto_commit(|tx| {
+            let (generated_cols, row_ref, _) = self.db.update(tx, table_id, index_id, row)?;
+            Ok(row_ref.project_product(&generated_cols)?.to_bsatn_vec()?)
         })
     }
 }

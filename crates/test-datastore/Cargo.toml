@@ -13,6 +13,7 @@ bench = false
 
 [dependencies]
 spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.1.0", features = ["test"] }
+spacetimedb-datastore.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-schema.workspace = true

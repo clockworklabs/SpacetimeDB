@@ -8761,6 +8761,7 @@ name = "spacetimedb-test-datastore"
 version = "2.1.0"
 dependencies = [
  "spacetimedb-core",
+ "spacetimedb-datastore",
  "spacetimedb-lib 2.1.0",
  "spacetimedb-primitives 2.1.0",
  "spacetimedb-schema",

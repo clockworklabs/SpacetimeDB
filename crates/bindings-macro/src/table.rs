@@ -589,7 +589,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #column_ident(&self) -> #unique_ty<#tbl_token, #col_ty, __indices::#index_ident> {
-                #unique_ty::__NEW
+                #unique_ty::__new(self.__backend.clone())
             }
         }
     }
@@ -630,7 +630,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #index_ident(&self) -> #handle_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
-                #handle_ty::__NEW
+                #handle_ty::__new(self.__backend.clone())
             }
         }
     }
@@ -677,6 +677,7 @@ impl ValidatedIndex<'_> {
             #vis struct #index_ident;
             impl spacetimedb::table::#index_kind_trait for #index_ident {}
             impl spacetimedb::table::Index for #index_ident {
+                const INDEX_NAME: &'static str = #index_name;
                 const NUM_COLS_INDEXED: usize = #num_cols;
                 fn index_id() -> spacetimedb::table::IndexId {
                     static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();

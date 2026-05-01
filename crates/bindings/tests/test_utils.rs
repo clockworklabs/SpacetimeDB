@@ -15,6 +15,8 @@ pub fn add_test_utils_user(_ctx: &ReducerContext, id: u64, name: String) {
     let _ = (id, name);
 }
 
+// You can run these with `cargo test -p spacetimedb --features test-utils --test test_utils`
+
 #[test]
 fn module_def_includes_native_test_registrations() {
     let mut table_names = spacetimedb::test_utils::all_table_names();
@@ -179,4 +181,44 @@ fn reducer_context_uses_test_backed_db() {
             name: "Grace".to_owned(),
         }]
     );
+}
+
+#[test]
+fn test_context_supports_unique_index_find_update_and_delete() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 11,
+        name: "Alice".to_owned(),
+    });
+
+    assert_eq!(
+        test.db.test_utils_user().id().find(11),
+        Some(TestUtilsUser {
+            id: 11,
+            name: "Alice".to_owned(),
+        })
+    );
+
+    assert_eq!(
+        test.db.test_utils_user().id().update(TestUtilsUser {
+            id: 11,
+            name: "Alice2".to_owned(),
+        }),
+        TestUtilsUser {
+            id: 11,
+            name: "Alice2".to_owned(),
+        }
+    );
+
+    assert_eq!(
+        test.db.test_utils_user().iter().collect::<Vec<_>>(),
+        vec![TestUtilsUser {
+            id: 11,
+            name: "Alice2".to_owned(),
+        }]
+    );
+
+    assert!(test.db.test_utils_user().id().delete(11));
+    assert_eq!(test.db.test_utils_user().count(), 0);
 }
