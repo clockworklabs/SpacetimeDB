@@ -1,13 +1,13 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Context, Result};
+use clap::Parser;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::env;
 use std::ffi::OsStr;
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 pub use spacetimedb_guard::SpacetimeDbGuard;
 
@@ -25,45 +25,42 @@ pub struct TestCaseResult {
     pub message: Option<String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Parser)]
+#[command(disable_help_flag = true, about = "Runs a wrapped non-Rust language test suite")]
 pub struct HarnessArgs {
+    /// Filter native tests by name.
+    #[arg(long)]
     pub filter: Option<String>,
+
+    /// List native tests instead of running them.
+    #[arg(long, alias = "list-tests")]
     pub list: bool,
+
+    #[arg(skip)]
     pub passthrough: Vec<String>,
+
+    #[arg()]
+    positional: Vec<String>,
 }
 
 impl HarnessArgs {
     pub fn parse() -> Self {
-        let mut args = env::args().skip(1).peekable();
-        let mut parsed = HarnessArgs::default();
+        let mut args = env::args().collect::<Vec<_>>();
+        let passthrough = args
+            .iter()
+            .position(|arg| arg == "--")
+            .map(|index| args.split_off(index + 1))
+            .unwrap_or_default();
+        if args.last().is_some_and(|arg| arg == "--") {
+            args.pop();
+        }
 
-        while let Some(arg) = args.next() {
-            match arg.as_str() {
-                "--filter" => {
-                    parsed.filter = args.next();
-                }
-                "--list" | "--list-tests" => {
-                    parsed.list = true;
-                }
-                "--" => {
-                    parsed.passthrough.extend(args);
-                    break;
-                }
-                other if other.starts_with("--filter=") => {
-                    parsed.filter = Some(other.trim_start_matches("--filter=").to_string());
-                }
-                other if other.starts_with("--") => {
-                    parsed.passthrough.push(other.to_string());
-                }
-                other => {
-                    // Match libtest's common shorthand: `cargo test foo`.
-                    if parsed.filter.is_none() {
-                        parsed.filter = Some(other.to_string());
-                    } else {
-                        parsed.passthrough.push(other.to_string());
-                    }
-                }
-            }
+        let mut parsed = <HarnessArgs as Parser>::parse_from(args);
+        parsed.passthrough = passthrough;
+        if parsed.filter.is_none()
+            && let Some(filter) = parsed.positional.first()
+        {
+            parsed.filter = Some(filter.clone());
         }
 
         parsed
@@ -84,78 +81,45 @@ pub fn target_dir() -> PathBuf {
         .unwrap_or_else(|| workspace_root().join("target"))
 }
 
-pub fn artifact_dir(suite: &str) -> Result<PathBuf> {
-    let dir = target_dir().join("language-tests").join(suite);
-    fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
-    Ok(dir)
-}
-
 pub fn require_tool(tool: &str) -> Result<()> {
-    if find_on_path(tool).is_some() {
+    if which::which(tool).is_ok() {
         Ok(())
     } else {
         bail!("required tool `{tool}` was not found on PATH")
     }
 }
 
-fn find_on_path(tool: &str) -> Option<PathBuf> {
-    let path = env::var_os("PATH")?;
-    let candidates = env::split_paths(&path).flat_map(|dir| executable_candidates(&dir, tool));
-    candidates.into_iter().find(|candidate| candidate.is_file())
-}
-
-fn executable_candidates(dir: &Path, tool: &str) -> Vec<PathBuf> {
-    #[cfg(windows)]
-    {
-        let mut candidates = vec![dir.join(tool)];
-        if Path::new(tool).extension().is_none() {
-            let pathext = env::var_os("PATHEXT")
-                .map(|v| {
-                    env::split_paths(&v)
-                        .filter_map(|p| p.as_os_str().to_str().map(ToOwned::to_owned))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_else(|| vec![".exe".to_string(), ".bat".to_string(), ".cmd".to_string()]);
-            candidates.extend(pathext.into_iter().map(|ext| dir.join(format!("{tool}{ext}"))));
-        }
-        candidates
-    }
-
-    #[cfg(not(windows))]
-    {
-        vec![dir.join(tool)]
-    }
-}
-
 pub fn run_command(program: &str, args: &[String], cwd: &Path) -> Result<Output> {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
-
-    if !output.status.success() {
-        bail!(
-            "command failed in {}:\n  {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
-            cwd.display(),
-            shell_line(program, args),
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    Ok(output)
+    run_command_inner(program, args, cwd, &[])
 }
 
 pub fn run_command_forward(program: &str, args: &[String], cwd: &Path) -> Result<()> {
-    let output = run_command(program, args, cwd)?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    let status = Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
+    ensure_success(
+        cwd,
+        program,
+        args,
+        &Output {
+            status,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        },
+    )?;
     Ok(())
 }
 
 pub fn run_command_env(program: &str, args: &[String], cwd: &Path, envs: &[(&str, String)]) -> Result<Output> {
+    run_command_inner(program, args, cwd, envs)
+}
+
+fn run_command_inner(program: &str, args: &[String], cwd: &Path, envs: &[(&str, String)]) -> Result<Output> {
     let output = Command::new(program)
         .args(args)
         .current_dir(cwd)
@@ -163,18 +127,24 @@ pub fn run_command_env(program: &str, args: &[String], cwd: &Path, envs: &[(&str
         .output()
         .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
 
-    if !output.status.success() {
-        bail!(
-            "command failed in {}:\n  {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
-            cwd.display(),
-            shell_line(program, args),
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    ensure_success(cwd, program, args, &output)?;
 
     Ok(output)
+}
+
+fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -> Result<()> {
+    if output.status.success() {
+        return Ok(());
+    }
+
+    bail!(
+        "command failed in {}:\n  {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
+        cwd.display(),
+        shell_line(program, args),
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 pub fn shell_line(program: &str, args: &[String]) -> String {
@@ -192,12 +162,13 @@ pub fn parse_junit(path: &Path) -> Result<Vec<TestCaseResult>> {
     parse_xml_results(path, XmlKind::Junit)
 }
 
-enum XmlKind {
+#[derive(Clone, Copy, Debug)]
+pub enum XmlKind {
     Trx,
     Junit,
 }
 
-fn parse_xml_results(path: &Path, kind: XmlKind) -> Result<Vec<TestCaseResult>> {
+pub fn parse_xml_results(path: &Path, kind: XmlKind) -> Result<Vec<TestCaseResult>> {
     let mut reader = Reader::from_file(path).with_context(|| format!("failed to read {}", path.display()))?;
     reader.trim_text(true);
 

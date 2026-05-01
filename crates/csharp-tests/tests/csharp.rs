@@ -2,8 +2,8 @@
 
 use anyhow::{bail, Context, Result};
 use spacetimedb_language_test_support::{
-    artifact_dir, parse_trx, print_results, require_tool, run_command, run_command_env, run_command_forward,
-    HarnessArgs, SpacetimeDbGuard,
+    parse_trx, print_results, require_tool, run_command, run_command_env, run_command_forward, target_dir, HarnessArgs,
+    SpacetimeDbGuard,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,7 +20,8 @@ fn run() -> Result<()> {
     require_tool("dotnet")?;
 
     let workspace = spacetimedb_language_test_support::workspace_root();
-    let out_dir = artifact_dir("csharp")?;
+    let out_dir = target_dir().join("language-tests").join("csharp");
+    fs::create_dir_all(&out_dir).with_context(|| format!("failed to create {}", out_dir.display()))?;
 
     run_sdk_tests(&workspace, &out_dir, &args)?;
     if !args.list {

@@ -8309,10 +8309,10 @@ name = "spacetimedb-language-test-support"
 version = "2.2.0"
 dependencies = [
  "anyhow",
+ "clap 4.5.50",
  "quick-xml 0.31.0",
- "serde_json",
  "spacetimedb-guard",
- "tempfile",
+ "which 8.0.0",
 ]
 
 [[package]]

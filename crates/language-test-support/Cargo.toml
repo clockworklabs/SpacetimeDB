@@ -6,10 +6,10 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 quick-xml.workspace = true
-serde_json.workspace = true
 spacetimedb-guard.workspace = true
-tempfile.workspace = true
+which = "8.0.0"
 
 [lints]
 workspace = true
