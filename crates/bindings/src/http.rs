@@ -24,7 +24,56 @@ pub type Request<T = Body> = http::Request<T>;
 
 pub type Response<T = Body> = http::Response<T>;
 
-pub use spacetimedb_bindings_macro::{http_handler as handler, http_router as router};
+/// Define an HTTP handler, a special database function which handles HTTP requests.
+///
+/// HTTP handlers must be functions of two arguments, [`&mut HandlerContext`](HandlerContext) and [`Request`],
+/// and must return [`Response`].
+///
+/// ```no_run
+/// # use spacetimedb::http::{handler, Request, Response, Body, HandlerContext};
+/// #[handler]
+/// fn hello_world(_ctx: &mut HandlerContext, _req: Request) -> Response {
+///     Response::new(Body::from_bytes("Hello, world!"))
+/// }
+/// ```
+///
+/// In order to be reachable, a handler must be registered in the database's [macro@router].
+///
+/// This macro will clobber the original function definition, making it no longer callable by name.
+///
+/// ```compile_fail
+/// # use spacetimedb::http::{handler, Request, Response, Body, HandlerContext};
+/// # #[handler]
+/// # fn hello_world(_ctx: &mut HandlerContext, _req: Request) -> Response {
+/// #     Response::new(Body::from_bytes("Hello, world!"))
+/// # }
+/// # fn foo() {
+/// # let ctx: HandlerContext = todo!();
+/// # let ctx: &mut HandlerContext = &mut ctx;
+/// # let req: Request = todo!();
+/// hello_world(ctx, req); // Won't compile, as our handler `hello_world`'s function was clobbered.
+/// # }
+/// ```
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::http_handler as handler;
+
+/// Register a [`Router`](struct@Router) to route HTTP requests to handlers.
+///
+/// This should annotate a function of no arguments which returns a [`Router`](struct@router).
+///
+/// ```no_run
+/// # use spacetimedb::http::{handler, router, Request, Response, Body, HandlerContext, Router};
+/// # #[handler]
+/// # fn hello_world(_ctx: &mut HandlerContext, _req: Request) -> Response {
+/// #     Response::new(Body::from_bytes("Hello, world!"))
+/// # }
+/// #[router]
+/// fn my_router() -> Router {
+///     Router::new().get("/hello-world", hello_world)
+/// }
+/// ```
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::http_router as router;
 
 /// The context that any HTTP handler is provided with.
 ///
@@ -191,6 +240,10 @@ impl Handler {
 ///
 /// SpacetimeDB uses strict routing, meaning that trailing slashes `/` in paths are significant.
 /// `/foo` and `/foo/` are distinct paths.
+///
+/// ## Registering
+///
+/// Register a `Handler` as the root handler of your database with the [`handler` macro](macro@handler).
 #[derive(Clone, Default)]
 pub struct Router {
     routes: Vec<RouteSpec>,
