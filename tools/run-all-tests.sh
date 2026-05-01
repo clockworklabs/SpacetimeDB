@@ -12,7 +12,6 @@ cd "$stdb_root"
 tools/clippy.sh
 
 cargo test --all \
-    --exclude spacetimedb-language-test-support \
     --exclude spacetimedb-typescript-tests \
     --exclude spacetimedb-csharp-tests
 
