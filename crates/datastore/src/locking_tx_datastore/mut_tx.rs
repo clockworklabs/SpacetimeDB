@@ -10,7 +10,6 @@ use super::{
 };
 use crate::{
     error::ViewError,
-    locking_tx_datastore::state_view::EqOnColumn,
     system_tables::{
         system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
         StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
@@ -20,44 +19,46 @@ use crate::{
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
-        with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields,
-        StConstraintRow, StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable,
-        ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ID,
+        with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
+        StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StIndexAccessorFields,
+        StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
+        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
+        StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
+        ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
+        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
 use crate::{execution_context::Workload, system_tables::StViewRow};
 use crate::{
-    locking_tx_datastore::state_view::{ApplyFilter, RangeOnColumn, ScanOrIndex},
+    locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
-use core::ops::RangeBounds;
-use core::{cell::RefCell, mem};
-use core::{iter, ops::Bound};
+use core::{cell::RefCell, iter, mem, ops::RangeBounds};
+use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
-use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
+    db::raw_def::v9::RawSql,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
-    ConnectionId, Identity,
+    metrics::ExecutionMetrics,
+    ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
     col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
 };
 use spacetimedb_sats::{
-    bsatn::{self, to_writer, DecodeError, Deserializer},
-    de::{DeserializeSeed, WithBound},
-    memory_usage::MemoryUsage,
-    ser::Serialize,
-    AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
+    bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
+    ProductType, ProductValue,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
+    identifier::Identifier,
+    reducer_name::ReducerName,
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
+    table_name::TableName,
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -67,14 +68,13 @@ use spacetimedb_table::{
         BlobNumBytes, DuplicateError, IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table,
         TableAndIndex, UniqueConstraintViolation,
     },
-    table_index::TableIndex,
+    table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, PointOrRange, TableIndex},
 };
 use std::{
+    marker::PhantomData,
     sync::Arc,
     time::{Duration, Instant},
 };
-
-type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
@@ -97,8 +97,13 @@ impl MemoryUsage for ViewReadSets {
 }
 
 impl ViewReadSets {
+    /// Returns whether there are no read sets recorded.
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
+    }
+
     /// Returns the views that perform a full scan of this table
-    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> + use<'_> {
         self.tables
             .get(table_id)
             .into_iter()
@@ -136,7 +141,7 @@ impl ViewReadSets {
         &'a self,
         table_id: &TableId,
         row_ptr: RowRef<'a>,
-    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+    ) -> impl Iterator<Item = &'a ViewCallInfo> + use<'a> {
         self.tables
             .get(table_id)
             .into_iter()
@@ -246,6 +251,8 @@ pub struct MutTxId {
     pub timer: Instant,
     pub ctx: ExecutionContext,
     pub metrics: ExecutionMetrics,
+    // Marks `MutTxId` as `!Send` by embedding a non-`Send` type.
+    pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
 static_assert_size!(MutTxId, 432);
@@ -265,11 +272,13 @@ impl MutTxId {
         op: &FuncCallType,
         table_id: TableId,
         index_id: IndexId,
-        lower: Bound<AlgebraicValue>,
-        upper: Bound<AlgebraicValue>,
+        // The point that was scanned, if any.
+        // Otherwise this was a range scan
+        // and we'll conservatively record this as a full table scan.
+        point: Option<IndexKey<'_>>,
     ) {
         if let FuncCallType::View(view) = op {
-            self.record_index_scan_range_inner(view, table_id, index_id, lower, upper);
+            self.record_index_scan_range_inner(view, table_id, index_id, point);
         };
     }
 
@@ -282,19 +291,15 @@ impl MutTxId {
         view: &ViewCallInfo,
         table_id: TableId,
         index_id: IndexId,
-        lower: Bound<AlgebraicValue>,
-        upper: Bound<AlgebraicValue>,
+        point: Option<IndexKey<'_>>,
     ) {
-        // Check for precise index seek.
-        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper) {
-            if low_val == up_val {
-                self.record_index_scan_point_inner(view, table_id, index_id, low_val.clone());
-                return;
-            }
+        if let Some(point) = point {
+            // We got a precise index seek.
+            self.record_index_scan_point_inner(view, table_id, index_id, point);
+        } else {
+            // Everything else is treated as a table scan.
+            self.read_sets.insert_full_table_scan(table_id, view.clone());
         }
-
-        // Everything else is treated as a table scan.
-        self.read_sets.insert_full_table_scan(table_id, view.clone());
     }
 
     /// Record that a view performs a point index scan in this transaction's read set.
@@ -304,10 +309,10 @@ impl MutTxId {
         op: &FuncCallType,
         table_id: TableId,
         index_id: IndexId,
-        val: AlgebraicValue,
+        point: IndexKey<'_>,
     ) {
         if let FuncCallType::View(view) = op {
-            self.record_index_scan_point_inner(view, table_id, index_id, val);
+            self.record_index_scan_point_inner(view, table_id, index_id, point);
         };
     }
 
@@ -319,19 +324,27 @@ impl MutTxId {
         view: &ViewCallInfo,
         table_id: TableId,
         index_id: IndexId,
-        val: AlgebraicValue,
+        point: IndexKey<'_>,
     ) {
         // Fetch index metadata
         let Some((_, idx, _)) = self.get_table_and_index(index_id) else {
             return;
         };
 
-        let cols = idx.index().indexed_columns.clone();
-        self.read_sets.insert_index_scan(table_id, cols, val, view.clone());
+        let idx = idx.index();
+        let cols = idx.indexed_columns().clone();
+        let point = idx.key_into_algebraic_value(point);
+        self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
 
     /// Returns the views whose read sets overlaps with this transaction's write set
-    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+    pub fn views_for_refresh(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+        // Return early if there are no views.
+        // This is profitable as the method is also called for reducers.
+        if self.committed_state_write_lock.has_no_views_for_table_scans() {
+            return Either::Left(iter::empty());
+        }
+
         let mut res = self
             .tx_state
             .insert_tables
@@ -379,7 +392,7 @@ impl MutTxId {
                 process_views(table_id, row_ref);
             }
         }
-        res.into_iter()
+        Either::Right(res.into_iter())
     }
     /// Removes keys for `view_id` from the committed read set.
     /// Used for dropping views in an auto-migration.
@@ -429,7 +442,8 @@ impl Datastore for MutTxId {
             .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
 
-        Ok(self.index_scan_range_inner(table_id, tx_index, commit_index, range))
+        Self::index_scan_range_via_algebraic_value(&self.tx_state, table_id, tx_index, commit_index, range)
+            .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id).into())
     }
 
     fn index_scan_point<'a>(
@@ -443,7 +457,14 @@ impl Datastore for MutTxId {
             .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
 
-        Ok(self.index_scan_point_inner(table_id, tx_index, commit_index, point))
+        let point = commit_index.index().key_from_algebraic_value(point);
+        Ok(Self::index_scan_point_inner(
+            &self.tx_state,
+            table_id,
+            tx_index,
+            commit_index,
+            &point,
+        ))
     }
 }
 
@@ -552,7 +573,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name: Box<str> = name.clone().into();
+        let view_name: RawIdentifier = name.clone().into();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -626,6 +647,7 @@ impl MutTxId {
             .read_col(StTableFields::TableId)?;
 
         table_schema.update_table_id(table_id);
+        self.insert_st_table_accessor(&table_name, table_schema.alias.as_ref())?;
 
         if let Some(info) = table_schema.view_info.as_mut() {
             info.view_id = self.insert_into_st_view(table_name.clone(), table_id, true, info.is_anonymous)?;
@@ -634,9 +656,10 @@ impl MutTxId {
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
 
         // Insert the columns into `st_column`.
-        self.insert_st_column(table_schema.columns())?;
+        self.insert_st_column(&table_name, table_schema.columns())?;
 
         let schedule = table_schema.schedule.clone();
+        let is_event = table_schema.is_event;
         let mut schema_internal = table_schema;
         // Extract all indexes, constraints, and sequences from the schema.
         // We will add them back later with correct ids.
@@ -666,6 +689,12 @@ impl MutTxId {
             table.with_mut_schema(|s| s.schedule.as_mut().unwrap().schedule_id = id);
         }
 
+        // Insert into st_event_table if this is an event table.
+        if is_event {
+            let row = StEventTableRow { table_id };
+            self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
+        }
+
         // Create the indexes for the table.
         for index in indices {
             let col_set = ColSet::from(index.index_algorithm.columns());
@@ -688,13 +717,59 @@ impl MutTxId {
         Ok(table_id)
     }
 
-    /// Insert `columns` into `st_column`.
-    fn insert_st_column(&mut self, columns: &[ColumnSchema]) -> Result<()> {
+    /// Insert `columns` into `st_column`, and their accessors into `st_column_accessor`.
+    fn insert_st_column(&mut self, table_name: &TableName, columns: &[ColumnSchema]) -> Result<()> {
         columns.iter().try_for_each(|col| {
             let row: StColumnRow = col.clone().into();
             self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
+            self.insert_st_column_accessor(table_name, &col.col_name, col.alias.as_ref())?;
             Ok(())
         })
+    }
+
+    /// Insert a row into `st_table_accessor` for `table_name`, if an alias is present.
+    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&Identifier>) -> Result<()> {
+        let Some(accessor_name) = alias.cloned() else {
+            return Ok(());
+        };
+        let row = StTableAccessorRow {
+            table_name: table_name.clone(),
+            accessor_name,
+        };
+        self.insert_via_serialize_bsatn(ST_TABLE_ACCESSOR_ID, &row)?;
+        Ok(())
+    }
+
+    /// Insert a row into `st_column_accessor` for `(table_name, col_name)`, if an alias is present.
+    fn insert_st_column_accessor(
+        &mut self,
+        table_name: &TableName,
+        col_name: &Identifier,
+        alias: Option<&Identifier>,
+    ) -> Result<()> {
+        let Some(accessor_name) = alias.cloned() else {
+            return Ok(());
+        };
+        let row = StColumnAccessorRow {
+            table_name: table_name.clone(),
+            col_name: col_name.clone(),
+            accessor_name,
+        };
+        self.insert_via_serialize_bsatn(ST_COLUMN_ACCESSOR_ID, &row)?;
+        Ok(())
+    }
+
+    /// Insert a row into `st_index_accessor` for `index_name`, if an alias is present.
+    fn insert_st_index_accessor(&mut self, index_name: &RawIdentifier, alias: Option<&RawIdentifier>) -> Result<()> {
+        let Some(accessor_name) = alias.cloned() else {
+            return Ok(());
+        };
+        let row = StIndexAccessorRow {
+            index_name: index_name.clone(),
+            accessor_name,
+        };
+        self.insert_via_serialize_bsatn(ST_INDEX_ACCESSOR_ID, &row)?;
+        Ok(())
     }
 
     pub fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
@@ -725,7 +800,7 @@ impl MutTxId {
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
     fn insert_into_st_view(
         &mut self,
-        view_name: Box<str>,
+        view_name: TableName,
         table_id: TableId,
         is_public: bool,
         is_anonymous: bool,
@@ -771,7 +846,7 @@ impl MutTxId {
                 &StViewColumnRow {
                     view_id,
                     col_pos: def.col_id,
-                    col_name: def.name.clone().into(),
+                    col_name: def.name.clone(),
                     col_type: def.ty.clone().into(),
                 },
             )?;
@@ -824,9 +899,31 @@ impl MutTxId {
         self.delete_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())
     }
 
+    /// Drops rows in `st_column_accessor` for this canonical `table_name`.
+    fn drop_st_column_accessor(&mut self, table_name: &TableName) -> Result<()> {
+        let value = table_name.as_ref().into();
+        self.delete_col_eq(
+            ST_COLUMN_ACCESSOR_ID,
+            StColumnAccessorFields::TableName.col_id(),
+            &value,
+        )
+    }
+
     /// Drops the row in `st_table` for this `table_id`
     fn drop_st_table(&mut self, table_id: TableId) -> Result<()> {
         self.delete_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())
+    }
+
+    /// Drops rows in `st_table_accessor` for this canonical `table_name`.
+    fn drop_st_table_accessor(&mut self, table_name: &TableName) -> Result<()> {
+        let value = table_name.as_ref().into();
+        self.delete_col_eq(ST_TABLE_ACCESSOR_ID, StTableAccessorFields::TableName.col_id(), &value)
+    }
+
+    /// Drops rows in `st_index_accessor` for this canonical `index_name`.
+    fn drop_st_index_accessor(&mut self, index_name: &RawIdentifier) -> Result<()> {
+        let value = index_name.as_ref().into();
+        self.delete_col_eq(ST_INDEX_ACCESSOR_ID, StIndexAccessorFields::IndexName.col_id(), &value)
     }
 
     /// Drops the row in `st_view` for this `view_id`
@@ -867,6 +964,8 @@ impl MutTxId {
         }
 
         // Drop the table and their columns
+        self.drop_st_table_accessor(&schema.table_name)?;
+        self.drop_st_column_accessor(&schema.table_name)?;
         self.drop_st_table(table_id)?;
         self.drop_st_column(table_id)?;
 
@@ -894,9 +993,9 @@ impl MutTxId {
     }
 
     // TODO(centril): remove this. It doesn't seem to be used by anything.
-    pub fn rename_table(&mut self, table_id: TableId, new_name: &str) -> Result<()> {
+    pub fn rename_table(&mut self, table_id: TableId, new_name: TableName) -> Result<()> {
         // Update the table's name in st_tables.
-        self.update_st_table_row(table_id, |st| st.table_name = new_name.into())
+        self.update_st_table_row(table_id, |st| st.table_name = new_name)
     }
 
     fn update_st_table_row<R>(&mut self, table_id: TableId, updater: impl FnOnce(&mut StTableRow) -> R) -> Result<R> {
@@ -912,6 +1011,27 @@ impl MutTxId {
         self.delete(ST_TABLE_ID, ptr)?;
         let ret = updater(&mut row);
         self.insert_via_serialize_bsatn(ST_TABLE_ID, &row)?;
+
+        Ok(ret)
+    }
+
+    fn update_st_sequence_row<R>(
+        &mut self,
+        sequence_id: SequenceId,
+        updater: impl FnOnce(&mut StSequenceRow) -> R,
+    ) -> Result<R> {
+        // Fetch the row.
+        let st_sequence_ref = self
+            .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &sequence_id.into())?
+            .last()
+            .ok_or(SequenceError::NotFound(sequence_id))?;
+        let ptr = st_sequence_ref.pointer();
+        let mut row = StSequenceRow::try_from(st_sequence_ref)?;
+
+        // Delete the row, run updates, and insert again.
+        self.delete(ST_SEQUENCE_ID, ptr)?;
+        let ret = updater(&mut row);
+        self.insert_via_serialize_bsatn(ST_SEQUENCE_ID, &row)?;
 
         Ok(ret)
     }
@@ -983,6 +1103,26 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Change the primary key of the table identified by `table_id`.
+    ///
+    /// Updates both the in-memory schema and the `st_table` system table.
+    /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
+    pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
+
+        // Update system tables.
+        let new_pk_col_list = new_primary_key.map(|col| col.into());
+        let old_pk =
+            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,
@@ -1019,8 +1159,10 @@ impl MutTxId {
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.
         // The datastore takes care of not persisting any no-op delete/inserts to the commitlog.
+        let table_name = self.find_st_table_row(table_id)?.table_name;
         self.drop_st_column(table_id)?;
-        self.insert_st_column(&column_schemas)?;
+        self.drop_st_column_accessor(&table_name)?;
+        self.insert_st_column(&table_name, &column_schemas)?;
 
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
@@ -1086,19 +1228,20 @@ impl MutTxId {
         // Store sequence values to restore them later with new table.
         // Using a map from name to value as the new sequence ids will be different.
         // and I am not sure if we should rely on the order of sequences in the table schema.
-        let seq_values: HashMap<Box<str>, i128> = original_table_schema
-            .sequences
-            .iter()
-            .map(|s| {
-                (
-                    s.sequence_name.clone(),
-                    self.sequence_state_lock
-                        .get_sequence_mut(s.sequence_id)
-                        .expect("sequence exists in original schema and should in sequence state.")
-                        .get_value(),
-                )
-            })
-            .collect();
+        let mut seq_values: HashMap<_, (i128, i128)> = HashMap::default();
+        for seq in &original_table_schema.sequences {
+            let value = self
+                .sequence_state_lock
+                .get_sequence_mut(seq.sequence_id)
+                .expect("sequence exists in original schema and should in sequence state.")
+                .get_value();
+            let allocated = self
+                .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &seq.sequence_id.into())?
+                .last()
+                .ok_or(SequenceError::NotFound(seq.sequence_id))?
+                .read_col(StSequenceFields::Allocated)?;
+            seq_values.insert(seq.sequence_name.clone(), (value, allocated));
+        }
 
         // Drop existing table first due to unique constraints on table name in `st_table`
         self.drop_table(table_id)?;
@@ -1128,23 +1271,40 @@ impl MutTxId {
         Ok(new_table_id)
     }
 
+    /// Recreate a table and restore sequence runtime state after a destructive
+    /// schema change (for example `add_columns_to_table`).
+    ///
+    /// `create_table(...)` generates fresh table/sequence IDs and inserts fresh
+    /// rows into `st_sequence`. We then restore preserved `(value, allocated)`
+    /// by sequence name:
+    /// - update in-memory sequence state (`SequencesState`) so this process keeps
+    ///   allocating from the same point;
+    /// - patch the newly created `st_sequence` row so reopen/replay restores the
+    ///   same allocation cursor instead of sequence start.
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<Box<str>, i128>,
+        seq_values: HashMap<RawIdentifier, (i128, i128)>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
 
         for seq in table_schema.sequences.iter() {
-            let new_seq = self
-                .sequence_state_lock
-                .get_sequence_mut(seq.sequence_id)
-                .expect("sequence just created");
-            let value = *seq_values
+            let (value, allocated) = *seq_values
                 .get(&seq.sequence_name)
                 .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
-            new_seq.update_value(value);
+            {
+                let new_seq = self
+                    .sequence_state_lock
+                    .get_sequence_mut(seq.sequence_id)
+                    .expect("sequence just created");
+                new_seq.update_value(value);
+                new_seq.update_allocation(allocated);
+            }
+
+            // This updates the new `st_sequence` row created by `create_table(...)`
+            // above (old table rows are already dropped).
+            self.update_st_sequence_row(seq.sequence_id, |st| st.allocated = allocated)?;
         }
 
         Ok(table_id)
@@ -1188,6 +1348,7 @@ impl MutTxId {
             .collapse()
             .read_col(StIndexFields::IndexId)?;
         index_schema.index_id = index_id;
+        self.insert_st_index_accessor(&index_schema.index_name, index_schema.alias.as_ref())?;
 
         // Add the index to the transaction's insert table.
         let ((table, blob_store, delete_table), (commit_table, commit_blob_store, idx_map)) =
@@ -1197,10 +1358,8 @@ impl MutTxId {
         let map_violation = |violation, index: &TableIndex, table: &Table, bs: &dyn BlobStore| {
             let violation = table
                 .get_row_ref(bs, violation)
-                .expect("row came from scanning the table")
-                .project(&index.indexed_columns)
-                .expect("`cols` should consist of valid columns for this table");
-
+                .expect("row came from scanning the table");
+            let violation = index.project_row(violation);
             let schema = table.get_schema();
             let violation = UniqueConstraintViolation::build_with_index_schema(schema, index, &index_schema, violation);
             IndexError::from(violation).into()
@@ -1259,6 +1418,7 @@ impl MutTxId {
 
         // Remove the index from st_indexes.
         self.delete(ST_INDEX_ID, st_index_ptr)?;
+        self.drop_st_index_accessor(&st_index_row.index_name)?;
 
         // Remove the index in the transaction's insert table and the commit table.
         let ((tx_table, tx_bs, _), (commit_table, commit_bs, idx_map)) =
@@ -1293,50 +1453,51 @@ impl MutTxId {
         Ok(row.map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
 
+    /// Looks up a index id by the index's canonical name or its accessor/alias name.
+    pub fn index_id_from_name_or_alias(&self, index_name_or_alias: &str) -> Result<Option<IndexId>> {
+        if let Some(index_id) = self.index_id_from_name(index_name_or_alias)? {
+            return Ok(Some(index_id));
+        }
+        let Some(row) = self.find_st_index_accessor_row(index_name_or_alias)? else {
+            return Ok(None);
+        };
+        self.index_id_from_name(&row.index_name)
+    }
+
     /// Returns an iterator yielding rows by performing a point index scan
     /// on the index identified by `index_id`.
-    pub fn index_scan_point<'a>(
+    pub fn index_scan_point<'a, 'p>(
         &'a self,
         index_id: IndexId,
-        mut point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, IndexScanPoint<'a>)> {
+        point: &'p [u8],
+    ) -> Result<(TableId, IndexKey<'p>, IndexScanPoint<'a>)> {
         // Extract the table id, and commit/tx indices.
         let (table_id, commit_index, tx_index) = self
             .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
-        // Extract the index type.
-        let index_ty = &commit_index.index().key_type;
 
-        // We have the index key type, so we can decode the key.
-        let index_ty = WithTypespace::empty(index_ty);
-        let point = index_ty
-            .deserialize(Deserializer::new(&mut point))
-            .map_err(IndexError::Decode)?;
+        // Decode the key.
+        let point = commit_index.index().key_from_bsatn(point).map_err(IndexError::Decode)?;
 
-        // Get an index seek iterator for the tx and committed state.
-        let tx_iter = tx_index.map(|i| i.seek_point(&point));
-        let commit_iter = commit_index.seek_point(&point);
-
-        let dt = self.tx_state.get_delete_table(table_id);
-        let iter = ScanMutTx::combine(dt, tx_iter, commit_iter);
-
+        // Get index seek iterators for the tx and committed state.
+        let iter = Self::index_scan_point_inner(&self.tx_state, table_id, tx_index, commit_index, &point);
         Ok((table_id, point, iter))
     }
 
     /// See [`MutTxId::index_scan_point`].
     fn index_scan_point_inner<'a>(
-        &'a self,
+        tx_state: &'a TxState,
         table_id: TableId,
         tx_index: Option<TableAndIndex<'a>>,
         commit_index: TableAndIndex<'a>,
-        point: &AlgebraicValue,
+        point: &IndexKey<'_>,
     ) -> IndexScanPoint<'a> {
         // Get an index seek iterator for the tx and committed state.
         let tx_iter = tx_index.map(|i| i.seek_point(point));
         let commit_iter = commit_index.seek_point(point);
 
         // Combine it all.
-        let dt = self.tx_state.get_delete_table(table_id);
+        let dt = tx_state.get_delete_table(table_id);
         ScanMutTx::combine(dt, tx_iter, commit_iter)
     }
 
@@ -1346,54 +1507,81 @@ impl MutTxId {
     /// The `prefix` is equated to the first `prefix_elems` values of the index key
     /// and then `prefix_elem`th value is bounded to the left bys `rstart`
     /// and to the right by `rend`.
-    pub fn index_scan_range<'a>(
+    pub fn index_scan_range<'de, 'a>(
         &'a self,
         index_id: IndexId,
-        prefix: &[u8],
+        prefix: &'de [u8],
         prefix_elems: ColId,
-        rstart: &[u8],
-        rend: &[u8],
-    ) -> Result<(
-        TableId,
-        Bound<AlgebraicValue>,
-        Bound<AlgebraicValue>,
-        IndexScanRanged<'a>,
-    )> {
+        rstart: &'de [u8],
+        rend: &'de [u8],
+    ) -> Result<(TableId, IndexScanPointOrRange<'de, 'a>)> {
         // Extract the table id, and commit/tx indices.
         let (table_id, commit_index, tx_index) = self
             .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
-        // Extract the index type.
-        let index_ty = &commit_index.index().key_type;
 
-        // TODO(centril): Once we have more index types than range-compatible ones,
-        // we'll need to enforce that `index_id` refers to a range-compatible index.
+        // Decode the bounds.
+        let bounds = commit_index
+            .index()
+            .bounds_from_bsatn(prefix, prefix_elems, rstart, rend)
+            .map_err(IndexError::Decode)?;
 
-        // We have the index key type, so we can decode everything.
-        let bounds =
-            Self::range_scan_decode_bounds(index_ty, prefix, prefix_elems, rstart, rend).map_err(IndexError::Decode)?;
-
-        let iter = self.index_scan_range_inner(table_id, tx_index, commit_index, &bounds);
-
-        let (lower, upper) = bounds;
-        Ok((table_id, lower, upper, iter))
+        // Depending on whether this is a point or range bound,
+        // we'll either do an index point or range scan.
+        let iter = match bounds {
+            PointOrRange::Point(point) => {
+                let iter = Self::index_scan_point_inner(&self.tx_state, table_id, tx_index, commit_index, &point);
+                IndexScanPointOrRange::Point(point, iter)
+            }
+            PointOrRange::Range(start, end) => {
+                let bounds = (start.as_ref(), end.as_ref());
+                let iter = Self::index_scan_range_inner(&self.tx_state, table_id, tx_index, commit_index, &bounds)
+                    .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id))?;
+                IndexScanPointOrRange::Range(iter)
+            }
+            PointOrRange::Unsupported => return Err(IndexError::IndexCannotSeekRange(index_id).into()),
+        };
+        Ok((table_id, iter))
     }
 
     /// See [`MutTxId::index_scan_range`].
-    fn index_scan_range_inner<'a>(
-        &'a self,
+    #[inline(always)]
+    fn index_scan_range_via_algebraic_value<'a>(
+        tx_state: &'a TxState,
         table_id: TableId,
         tx_index: Option<TableAndIndex<'a>>,
         commit_index: TableAndIndex<'a>,
         bounds: &impl RangeBounds<AlgebraicValue>,
-    ) -> IndexScanRanged<'a> {
+    ) -> IndexSeekRangeResult<IndexScanRanged<'a>> {
+        let index = commit_index.index();
+        let start = bounds.start_bound().map(|v| index.key_from_algebraic_value(v));
+        let end = bounds.end_bound().map(|v| index.key_from_algebraic_value(v));
+        let bounds = &(start, end);
+        Self::index_scan_range_inner(tx_state, table_id, tx_index, commit_index, bounds)
+    }
+
+    /// See [`MutTxId::index_scan_range`].
+    #[inline(always)]
+    fn index_scan_range_inner<'a, 'b>(
+        tx_state: &'a TxState,
+        table_id: TableId,
+        tx_index: Option<TableAndIndex<'a>>,
+        commit_index: TableAndIndex<'a>,
+        bounds: &impl RangeBounds<IndexKey<'b>>,
+    ) -> IndexSeekRangeResult<IndexScanRanged<'a>> {
         // Get an index seek iterator for the tx and committed state.
-        let tx_iter = tx_index.map(|i| i.seek_range(bounds));
+        let tx_iter = tx_index.map(|i| i.seek_range(bounds)).transpose();
         let commit_iter = commit_index.seek_range(bounds);
 
+        // If we don't have a range-capable index, return an error.
+        let (tx_iter, commit_iter) = match (tx_iter, commit_iter) {
+            (Ok(t), Ok(c)) => (t, c),
+            (Err(e), _) | (_, Err(e)) => return Err(e),
+        };
+
         // Combine it all.
-        let dt = self.tx_state.get_delete_table(table_id);
-        ScanMutTx::combine(dt, tx_iter, commit_iter)
+        let dt = tx_state.get_delete_table(table_id);
+        Ok(ScanMutTx::combine(dt, tx_iter, commit_iter))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
@@ -1416,104 +1604,6 @@ impl MutTxId {
         Some((table_id, commit_index, tx_index))
     }
 
-    /// Decode the bounds for a ranged index scan for an index typed at `key_type`.
-    fn range_scan_decode_bounds(
-        key_type: &AlgebraicType,
-        mut prefix: &[u8],
-        prefix_elems: ColId,
-        rstart: &[u8],
-        rend: &[u8],
-    ) -> DecodeResult<(Bound<AlgebraicValue>, Bound<AlgebraicValue>)> {
-        match key_type {
-            // Multi-column index case.
-            AlgebraicType::Product(key_types) => {
-                let key_types = &key_types.elements;
-                // Split into types for the prefix and for the rest.
-                let (prefix_types, rest_types) = key_types
-                    .split_at_checked(prefix_elems.idx())
-                    .ok_or_else(|| DecodeError::Other("index key type has too few fields compared to prefix".into()))?;
-
-                // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
-                // Extract that type and determine the length of the suffix.
-                let Some((range_type, suffix_types)) = rest_types.split_first() else {
-                    return Err(DecodeError::Other(
-                        "prefix length leaves no room for a range in ranged index scan".into(),
-                    ));
-                };
-                let suffix_len = suffix_types.len();
-
-                // We now have the types,
-                // so proceed to decoding the prefix, and the start/end bounds.
-                // Finally combine all of these to a single bound pair.
-                let prefix = bsatn::decode(prefix_types, &mut prefix)?;
-                let (start, end) = Self::range_scan_decode_start_end(&range_type.algebraic_type, rstart, rend)?;
-                Ok(Self::range_scan_combine_prefix_and_bounds(
-                    prefix, start, end, suffix_len,
-                ))
-            }
-            // Single-column index case. We implicitly have a PT of len 1.
-            _ if !prefix.is_empty() && prefix_elems.idx() != 0 => Err(DecodeError::Other(
-                "a single-column index cannot be prefix scanned".into(),
-            )),
-            ty => Self::range_scan_decode_start_end(ty, rstart, rend),
-        }
-    }
-
-    /// Decode `rstart` and `rend` as `Bound<ty>`.
-    fn range_scan_decode_start_end(
-        ty: &AlgebraicType,
-        mut rstart: &[u8],
-        mut rend: &[u8],
-    ) -> DecodeResult<(Bound<AlgebraicValue>, Bound<AlgebraicValue>)> {
-        let range_type = WithBound(WithTypespace::empty(ty));
-        let range_start = range_type.deserialize(Deserializer::new(&mut rstart))?;
-        let range_end = range_type.deserialize(Deserializer::new(&mut rend))?;
-        Ok((range_start, range_end))
-    }
-
-    /// Combines `prefix` equality constraints with `start` and `end` bounds
-    /// filling with `suffix_len` to ensure that the number of fields matches
-    /// that of the index type.
-    fn range_scan_combine_prefix_and_bounds(
-        prefix: ProductValue,
-        start: Bound<AlgebraicValue>,
-        end: Bound<AlgebraicValue>,
-        suffix_len: usize,
-    ) -> (Bound<AlgebraicValue>, Bound<AlgebraicValue>) {
-        let prefix_is_empty = prefix.elements.is_empty();
-        // Concatenate prefix, value, and the most permissive value for the suffix.
-        let concat = |prefix: ProductValue, val, fill| {
-            let mut vals: Vec<_> = prefix.elements.into();
-            vals.reserve(1 + suffix_len);
-            vals.push(val);
-            vals.extend(iter::repeat_n(fill, suffix_len));
-            AlgebraicValue::product(vals)
-        };
-        // The start endpoint needs `Min` as the suffix-filling element,
-        // as it imposes the least and acts like `Unbounded`.
-        let concat_start = |val| concat(prefix.clone(), val, AlgebraicValue::Min);
-        let range_start = match start {
-            Bound::Included(r) => Bound::Included(concat_start(r)),
-            Bound::Excluded(r) => Bound::Excluded(concat_start(r)),
-            // Prefix is empty, and suffix will be `Min`,
-            // so simplify `(Min, Min, ...)` to `Unbounded`.
-            Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
-            Bound::Unbounded => Bound::Included(concat_start(AlgebraicValue::Min)),
-        };
-        // The end endpoint needs `Max` as the suffix-filling element,
-        // as it imposes the least and acts like `Unbounded`.
-        let concat_end = |val| concat(prefix, val, AlgebraicValue::Max);
-        let range_end = match end {
-            Bound::Included(r) => Bound::Included(concat_end(r)),
-            Bound::Excluded(r) => Bound::Excluded(concat_end(r)),
-            // Prefix is empty, and suffix will be `Max`,
-            // so simplify `(Max, Max, ...)` to `Unbounded`.
-            Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
-            Bound::Unbounded => Bound::Included(concat_end(AlgebraicValue::Max)),
-        };
-        (range_start, range_end)
-    }
-
     pub fn get_next_sequence_value(&mut self, seq_id: SequenceId) -> Result<i128> {
         get_next_sequence_value(
             &mut self.tx_state,
@@ -1522,6 +1612,16 @@ impl MutTxId {
             seq_id,
         )
     }
+}
+
+/// Either a point or range index scan iterator.
+/// Produced by [`MutTxId::index_scan_range`].
+pub enum IndexScanPointOrRange<'de, 'a> {
+    /// A point scan iterator,
+    /// with the key included as it's needed by views (read sets).
+    Point(IndexKey<'de>, IndexScanPoint<'a>),
+    /// A range scan iterator.
+    Range(IndexScanRanged<'a>),
 }
 
 fn get_sequence_mut(seq_state: &mut SequencesState, seq_id: SequenceId) -> Result<&mut Sequence> {
@@ -1911,7 +2011,17 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+    pub(super) fn commit(self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
+        let (tx_offset, tx_data, tx_metrics, reducer) = self.commit_and_then(|_| {});
+        let tx_data =
+            Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
+        (tx_offset, tx_data, tx_metrics, reducer)
+    }
+
+    pub(super) fn commit_and_then(
+        mut self,
+        before_release: impl FnOnce(&Arc<TxData>),
+    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -1945,6 +2055,9 @@ impl MutTxId {
             tx_offset
         };
 
+        let tx_data = Arc::new(tx_data);
+        before_release(&tx_data);
+
         (tx_offset, tx_data, tx_metrics, reducer)
     }
 
@@ -1961,7 +2074,18 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
-    pub(super) fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+    pub(super) fn commit_downgrade(self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        let (tx_data, tx_metrics, tx) = self.commit_downgrade_and_then(workload, |_| {});
+        let tx_data =
+            Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
+        (tx_data, tx_metrics, tx)
+    }
+
+    pub(super) fn commit_downgrade_and_then(
+        mut self,
+        workload: Workload,
+        before_downgrade: impl FnOnce(&Arc<TxData>),
+    ) -> (Arc<TxData>, TxMetrics, TxId) {
         let tx_data = self
             .committed_state_write_lock
             .merge(self.tx_state, self.read_sets, &self.ctx);
@@ -1980,6 +2104,9 @@ impl MutTxId {
             &self.committed_state_write_lock,
         );
 
+        let tx_data = Arc::new(tx_data);
+        before_downgrade(&tx_data);
+
         // Update the workload type of the execution context
         self.ctx.workload = workload.workload_type();
         let tx = TxId {
@@ -1996,8 +2123,8 @@ impl MutTxId {
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
-    /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn rollback(mut self) -> (TxOffset, TxMetrics, String) {
+    /// - `ReducerName`, the name of the reducer which ran during this transaction.
+    pub fn rollback(mut self) -> (TxOffset, TxMetrics, Option<ReducerName>) {
         let offset = self
             .committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);
@@ -2162,18 +2289,36 @@ impl MutTxId {
         Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
     }
 
+    /// Does any `st_view_sub` row exist for this anonymous view?
+    pub fn is_anonymous_view_materialized(&self, view_id: ViewId) -> Result<bool> {
+        let cols = StViewSubFields::ViewId;
+        let value = view_id.into();
+        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    }
+
     /// Updates the `last_called` timestamp in `st_view_sub`.
     /// Inserts a row into `st_view_sub` with no subscribers if the row does not exist.
     ///
     /// This is invoked when calling a view, but not subscribing to it.
     /// Such is the case for the sql http api.
     pub fn update_view_timestamp(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        self.update_view_timestamp_at(view_id, arg_id, sender, Timestamp::now())
+    }
+
+    /// Updates the `last_called` timestamp in `st_view_sub` to an explicit value.
+    pub fn update_view_timestamp_at(
+        &mut self,
+        view_id: ViewId,
+        arg_id: ArgId,
+        sender: Identity,
+        last_called: Timestamp,
+    ) -> Result<()> {
         use StViewSubFields::*;
 
         let identity = IdentityViaU256(sender);
         let cols = col_list![ViewId, ArgId, Identity];
         let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = Timestamp::now().into();
+        let last_called = last_called.into();
 
         // Update `last_called` of `st_view_sub` row
         if let Some((row, ptr)) = self
@@ -2253,18 +2398,18 @@ impl MutTxId {
     /// - `has_subscribers == false`, `num_subscribers == 0`.
     /// - `last_called` is older than `expiration_duration`.
     ///
-    /// For each such expired view:
-    /// 1. It clears the backing table,
-    /// 2. Removes the view from the committed read set, and
-    /// 3. Deletes the subscription row.
+    /// For each such expired row:
+    /// 1. It deletes the expired `st_view_sub` row.
+    /// 2. If that row was the last remaining materialization entry for the view,
+    ///    it clears the backing table and removes the view from the committed read set.
     ///
     /// The cleanup is bounded by a total `max_duration`. The function stops when either:
     /// - all expired views have been processed, or
     /// - the `max_duration` budget is reached.
     ///
     /// Returns a tuple `(cleaned, total_expired)`:
-    /// - `cleaned`: Number of views actually cleaned (deleted) in this run.
-    /// - `total_expired`: Total number of expired views found (even if not all were cleaned due to time budget).
+    /// - `cleaned`: Number of expired `st_view_sub` rows deleted in this run.
+    /// - `total_expired`: Total number of expired rows found (even if not all were cleaned due to time budget).
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
@@ -2295,7 +2440,8 @@ impl MutTxId {
 
         let total_expired = expired_items.len();
 
-        // For each expired view subscription, clear the backing table and delete the subscription
+        // For each expired subscription row, clear the backing table only if that row
+        // was the last remaining entry for the shared materialization.
         for (view_id, sender, sub_row_ptr) in expired_items {
             // Check if we've exceeded our time budget
             if start.elapsed() >= max_duration {
@@ -2308,8 +2454,10 @@ impl MutTxId {
             let table_id = table_id.expect("views have backing table");
 
             if is_anonymous {
-                self.clear_table(table_id)?;
-                self.drop_view_from_committed_read_set(view_id);
+                if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
+                    self.clear_table(table_id)?;
+                    self.drop_view_from_committed_read_set(view_id);
+                }
             } else {
                 let rows_to_delete = self
                     .iter_by_col_eq(table_id, 0, &sender.into())?
@@ -2427,6 +2575,16 @@ impl MutTxId {
             .collect::<Result<Vec<_>>>()
     }
 
+    /// Does this `view_id` have other entries in `st_view_sub` besides `current_ptr`?
+    /// Can be true for anonymous views with multiple subscribers.
+    fn has_other_st_view_sub_entries(&self, view_id: ViewId, current_ptr: RowPointer) -> Result<bool> {
+        let cols = StViewSubFields::ViewId;
+        let value = view_id.into();
+        Ok(self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .any(|row_ref| row_ref.pointer() != current_ptr))
+    }
+
     /// Lookup a row in `st_view` by its primary key
     fn st_view_row(&self, view_id: ViewId) -> Result<Option<StViewRow>> {
         self.iter_by_col_eq(ST_VIEW_ID, col_list![StViewFields::ViewId], &view_id.into())?
@@ -2483,7 +2641,9 @@ impl MutTxId {
         ) {
             // This is possible on restart if the database was previously running a version
             // before this system table was added.
-            log::error!("[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}");
+            log::error!(
+                "[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}"
+            );
         }
         Ok(())
     }
@@ -2498,7 +2658,7 @@ impl MutTxId {
             identity: identity.into(),
             connection_id: connection_id.into(),
         };
-        if let Some(ptr) = self
+        match self
             .iter_by_col_eq(
                 ST_CLIENT_ID,
                 // TODO(perf, minor, centril): consider a `const_col_list([x, ..])`
@@ -2509,9 +2669,12 @@ impl MutTxId {
             .next()
             .map(|row| row.pointer())
         {
-            self.delete(ST_CLIENT_ID, ptr).map(drop)?
-        } else {
-            log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
+            Some(ptr) => self.delete(ST_CLIENT_ID, ptr).map(drop)?,
+            _ => {
+                log::error!(
+                    "[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident"
+                );
+            }
         }
         self.delete_st_client_credentials(database_identity, connection_id)
     }
@@ -2861,10 +3024,12 @@ impl MutTxId {
                 throw!(IndexError::NotUnique(index_id));
             }
 
-            // Project the row to the index's type.
+            // Derive the key of `tx_row_ref` for `commit_index`.
             // SAFETY: `tx_row_ref`'s table is derived from `commit_index`'s table,
-            // so all `index.indexed_columns` will be in-bounds of the row layout.
-            let index_key = unsafe { tx_row_ref.project_unchecked(&commit_index.indexed_columns) };
+            // so the row layouts match and thus,
+            // `commit_index`'s key type is the same as the type of `row_ref`
+            // projected to `commit_index.indexed_columns`.
+            let index_key = unsafe { commit_index.key_from_row(tx_row_ref) };
 
             // Try to find the old row first in the committed state using the `index_key`.
             let mut old_commit_del_ptr = None;
@@ -2886,7 +3051,7 @@ impl MutTxId {
                 commit_table.check_unique_constraints(
                     tx_row_ref,
                     // Don't check this index since we'll do a 1-1 old/new replacement.
-                    |ixs| ixs.filter(|(&id, _)| id != index_id),
+                    |ixs| ixs.filter(|&(&id, _)| id != index_id),
                     is_deleted,
                 )
             } {
@@ -2974,6 +3139,7 @@ impl MutTxId {
 
                 tx_row_ptr
             } else {
+                let index_key = commit_index.project_row(tx_row_ref);
                 throw!(IndexError::KeyNotFound(index_id, index_key));
             };
 
@@ -3001,11 +3167,11 @@ impl MutTxId {
     }
 
     // Clears the table for `table_id`, removing all rows.
-    pub fn clear_table(&mut self, table_id: TableId) -> Result<usize> {
+    pub fn clear_table(&mut self, table_id: TableId) -> Result<u64> {
         // Get the commit table.
         let (commit_table, commit_bs, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
 
-        // Get the insert table and delete all rows from it.
+        // Get the insert table and delete all rows from it.s
         let (tx_table, tx_blob_store, delete_table) = self
             .tx_state
             .get_table_and_blob_store_or_create_from(table_id, commit_table);
@@ -3173,21 +3339,23 @@ fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
     cols: ColList,
     range: R,
 ) -> Result<IterByColRangeMutTx<'a, R>> {
-    // If there's an index, use that.
+    // If there's an index that is compatible with a range scan, use that.
     // It's sufficient to check that the committed state has an index
     // as index schema changes are applied immediately.
-    if let Some(commit_iter) = committed_state.index_seek_range(table_id, &cols, &range) {
-        let tx_iter = tx_state.index_seek_range_by_cols(table_id, &cols, &range);
-        let delete_table = tx_state.get_delete_table(table_id);
-        let iter = ScanMutTx::combine(delete_table, tx_iter, commit_iter);
-        Ok(ScanOrIndex::Index(iter))
-    } else {
-        unindexed_iter_by_col_range_warn(tx_state, committed_state, table_id, &cols);
-        let iter = iter(tx_state, committed_state, table_id)?;
-        let filter = RangeOnColumn { cols, range };
-        let iter = ApplyFilter::new(filter, iter);
-        Ok(ScanOrIndex::Scan(iter))
+    if let Some(commit_index) = committed_state.get_index_by_cols(table_id, &cols) {
+        let tx_index = tx_state.get_index_by_cols(table_id, &cols);
+        if let Ok(iter) =
+            MutTxId::index_scan_range_via_algebraic_value(tx_state, table_id, tx_index, commit_index, &range)
+        {
+            return Ok(ScanOrIndex::Index(iter));
+        }
     }
+
+    // No index found or it wasn't compatible with a range scan,
+    // so do a full scan and filter.
+    unindexed_iter_by_col_range_warn(tx_state, committed_state, table_id, &cols);
+    let iter = iter(tx_state, committed_state, table_id)?;
+    Ok(ScanOrIndex::scan_range(cols, range, iter))
 }
 
 #[cfg(not(feature = "unindexed_iter_by_col_range_warn"))]
@@ -3220,17 +3388,15 @@ fn iter_by_col_eq<'a, 'r>(
     // It's sufficient to check that the committed state has an index
     // as index schema changes are applied immediately.
     let cols = cols.into();
-    if let Some(commit_iter) = committed_state.index_seek_point(table_id, &cols, val) {
-        let tx_iter = tx_state.index_seek_point_by_cols(table_id, &cols, val);
-        let delete_table = tx_state.get_delete_table(table_id);
-        let iter = ScanMutTx::combine(delete_table, tx_iter, commit_iter);
+    if let Some(commit_index) = committed_state.get_index_by_cols(table_id, &cols) {
+        let tx_index = tx_state.get_index_by_cols(table_id, &cols);
+        let key = commit_index.index().key_from_algebraic_value(val);
+        let iter = MutTxId::index_scan_point_inner(tx_state, table_id, tx_index, commit_index, &key);
         Ok(ScanOrIndex::Index(iter))
     } else {
         unindexed_iter_by_col_eq_warn(tx_state, committed_state, table_id, &cols);
         let iter = iter(tx_state, committed_state, table_id)?;
-        let filter = EqOnColumn { cols, val };
-        let iter = ApplyFilter::new(filter, iter);
-        Ok(ScanOrIndex::Scan(iter))
+        Ok(ScanOrIndex::scan_eq(cols, val, iter))
     }
 }
 

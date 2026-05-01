@@ -3,7 +3,7 @@ pub mod config;
 pub mod model_routes;
 pub mod prompt;
 pub mod provider;
-mod segmentation;
+pub mod segmentation;
 pub mod types;
 
 pub use config::make_provider_from_env;

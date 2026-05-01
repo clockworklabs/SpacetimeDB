@@ -13,7 +13,7 @@ use core::ptr;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use core::{ffi::c_void, sync::atomic::AtomicBool};
-use spacetimedb_client_api_messages::energy::FunctionBudget;
+use spacetimedb_client_api_messages::energy::{EnergyQuanta, FunctionBudget};
 use std::sync::Arc;
 use v8::{Isolate, IsolateHandle};
 
@@ -42,32 +42,34 @@ pub(super) fn with_timeout_and_cb_every<R>(
 }
 
 /// A callback passed to [`IsolateHandle::request_interrupt`].
-pub(super) type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
+pub(super) type InterruptCallback = extern "C" fn(v8::UnsafeRawIsolatePtr, *mut c_void);
 
 /// An [`InterruptCallback`] used by `call_reducer`,
 /// and called by a thread separate to V8 execution
 /// every [`EPOCH_TICKS_PER_SECOND`] ticks (~every 1 second)
 /// to log that the reducer is still running.
-pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_void) {
+pub(super) extern "C" fn cb_log_long_running(mut isolate: v8::UnsafeRawIsolatePtr, _: *mut c_void) {
+    let isolate = unsafe { Isolate::ref_from_raw_isolate_ptr_mut_unchecked(&mut isolate) };
     let Some(env) = env_on_isolate(isolate) else {
         // All we can do is log something.
         tracing::error!("`JsInstanceEnv` not set");
         return;
     };
     let database = env.instance_env.replica_ctx.database_identity;
-    let reducer = env.funcall_name();
+    let reducer = env.instance_env.log_record_function().unwrap_or_default();
     let dur = env.reducer_start().elapsed();
     tracing::warn!(reducer, ?database, "JavaScript has been running for {dur:?}");
 }
 
 /// An [`InterruptCallback`] that does nothing.
-pub(super) extern "C" fn cb_noop(_: &mut Isolate, _: *mut c_void) {}
+pub(super) extern "C" fn cb_noop(_: v8::UnsafeRawIsolatePtr, _: *mut c_void) {}
 
 /// Spawns a thread that will terminate execution
 /// when `budget` has been used up.
 ///
 /// Every `callback_every` ticks, `callback` is called.
 fn run_timeout_and_cb_every(
+    // TODO: use RemoteTerminator here once we actually call this function, and make RemoteTerminator thread-safe.
     handle: IsolateHandle,
     callback_every: u64,
     callback: InterruptCallback,
@@ -116,7 +118,12 @@ fn budget_to_duration(_budget: FunctionBudget) -> Duration {
 /// Returns [`EnergyStats`] for a reducer given its `budget`
 /// and the `duration` it took to execute.
 pub(super) fn energy_from_elapsed(budget: FunctionBudget, duration: Duration) -> EnergyStats {
-    let used = duration_to_budget(duration);
+    let used = duration.as_nanos() * EnergyQuanta::PER_EXECUTION_NANOSEC.get();
+    // in order for duration_nanos * ev_per_ns >= u64::MAX:
+    //              duration_nanos >= u64::MAX / ev_per_ns
+    //              duration_nanos >= (9223372036854775 ns = 106.75 days)
+    // so it's unlikely we'll have to worry about it
+    let used = FunctionBudget::new(u64::try_from(used).unwrap_or(u64::MAX));
     let remaining = budget - used;
     EnergyStats { budget, remaining }
 }

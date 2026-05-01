@@ -304,25 +304,25 @@ To generate UnrealCPP bindings for your SpacetimeDB module, use the SpacetimeDB 
 ### Basic Command
 
 ```bash
-cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir <uproject_directory> --project-path <module_path> --module-name <ModuleName>
+cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir <uproject_directory> --module-path <module_path> --unreal-module-name <ModuleName>
 ```
 
 ### Example
 
 ```bash
-cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crates/sdk-unreal/examples/QuickstartChat --project-path modules/quickstart-chat --module-name QuickstartChat
+cargo run --bin spacetimedb-cli -- generate --lang unrealcpp --uproject-dir crates/sdk-unreal/examples/QuickstartChat --module-path modules/quickstart-chat --unreal-module-name QuickstartChat
 ```
 
 ### Parameters
 
 - `--lang unrealcpp`: Specifies the UnrealCPP code generator
-- `--uproject-dir`: Directory containing Unreal's .uproject or .uplugin file
-- `--project-path`: Path to your SpacetimeDB module source code
-- `--module-name`: **Required** - Name used for generated classes, API prefix and putting generated module bindings in the correct Module's Source
+- `--uproject-dir`: Directory containing your Unreal project's `.uproject` file
+- `--module-path`: Path to your SpacetimeDB module source code
+- `--unreal-module-name`: **Required** - Name used for generated classes, API prefix and putting generated module bindings in the correct Module's Source
 
 ### Why Module Name is Required
 
-The `--module-name` parameter is **mandatory** for UnrealCPP generation because:
+The `--unreal-module-name` parameter is **mandatory** for UnrealCPP generation because:
 
 1. **Unreal Engine API Macro**: Generated classes use `MODULENAME_API` macros (e.g., `QUICKSTARTCHAT_API`) for proper DLL export/import in Unreal Engine
 2. **Class Prefixing**: All the optional generated classes are prefixed with the module name to avoid naming conflicts (e.g., `FQuickstartChatOptionalString`)
@@ -330,6 +330,15 @@ The `--module-name` parameter is **mandatory** for UnrealCPP generation because:
 4. **Generated Module Bindings**: Put generated bindings in correct module's source
 
 **⚠️ IMPORTANT:** Without the module name, the generated code would not compile in Unreal Engine due to missing API macros and naming conflicts.
+
+### Project Setup Behavior
+
+When generating into an Unreal project, the code generator also:
+
+1. Ensures the named module exists in the project's `Modules` array in the `.uproject` file.
+2. Creates missing `Source/<Module>/<Module>.Build.cs`, `Source/<Module>/<Module>.cpp`, and `Source/<Module>/<Module>.h` files.
+
+If the `.uproject` file is missing, unreadable, malformed, or has an invalid `Modules` field, generation fails immediately.
 
 ## Implementation Details
 

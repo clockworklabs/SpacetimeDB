@@ -11,10 +11,12 @@ use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::layout::{row_size_for_bytes, row_size_for_type, Size};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::page_pool::PagePool;
@@ -67,7 +69,7 @@ unsafe trait Row {
         // so that its accepted when used in a `ModuleDef` as a row type.
         for (idx, elem) in ty.elements.iter_mut().enumerate() {
             if elem.name.is_none() {
-                elem.name = Some(format!("col_{idx}").into());
+                elem.name = Some(RawIdentifier::new(format!("col_{idx}")));
             }
         }
         ty
@@ -460,7 +462,7 @@ fn copy_filter_fixed_len(c: &mut Criterion) {
             group.bench_function(keep_ratio.to_string(), |b| {
                 b.iter_with_large_drop(|| unsafe {
                     let mut keep_iter = keep_seq.iter().copied();
-                    black_box(&pages).copy_filter(visitor, row_size, &mut NullBlobStore, |_, _| {
+                    black_box(&pages).copy_filter(visitor, row_size, None::<&mut Box<dyn FnMut(_)>>, |_, _| {
                         black_box(keep_iter.next().unwrap_or_default())
                     })
                 });
@@ -490,7 +492,7 @@ criterion_group!(
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
     let mut result = TableSchema::from_product_type(ty);
-    result.table_name = name.into();
+    result.table_name = TableName::for_test(name);
     result
 }
 
@@ -704,7 +706,7 @@ trait IndexedRow: Row + Sized {
     }
     /// Don't call this in a loop, it runs validation code.
     fn make_schema() -> TableSchema {
-        let name = Self::table_name();
+        let name = RawIdentifier::new(Self::table_name());
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(name.clone(), Self::row_type_for_schema(), true)
@@ -715,7 +717,7 @@ trait IndexedRow: Row + Sized {
                 "accessor_name_doesnt_matter",
             );
         let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
-        def.table_schema(&name[..], TableId::SENTINEL).unwrap()
+        def.table_schema(&*name, TableId::SENTINEL).unwrap()
     }
     fn throughput() -> Throughput {
         Throughput::Bytes(mem::size_of::<Self>() as u64)
@@ -761,7 +763,7 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
     let algo = BTreeAlgorithm { columns: cols }.into();
     let idx = tbl.new_index(&algo, unique).unwrap();
     // SAFETY: index was derived from the table.
-    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) };
+    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) }.unwrap();
 
     (tbl, index_id)
 }
@@ -796,11 +798,10 @@ fn insert_num_same<R: IndexedRow>(
 }
 
 fn clear_all_same<R: IndexedRow>(tbl: &mut Table, index_id: IndexId, val_same: u64) {
-    let ptrs = tbl
-        .get_index_by_id(index_id)
-        .unwrap()
-        .seek_point(&R::column_value_from_u64(val_same))
-        .collect::<Vec<_>>();
+    let index = tbl.get_index_by_id(index_id).unwrap();
+    let key = R::column_value_from_u64(val_same);
+    let key = index.key_from_algebraic_value(&key);
+    let ptrs = index.seek_point(&key).collect::<Vec<_>>();
     for ptr in ptrs {
         tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
     }
@@ -917,7 +918,7 @@ fn index_seek(c: &mut Criterion) {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
                         let (row, none) = time(&mut elapsed, || {
-                            let mut iter = index.seek_range(&col_to_seek);
+                            let mut iter = index.seek_point_via_algebraic_value(&col_to_seek);
                             (iter.next(), iter.next())
                         });
                         assert!(

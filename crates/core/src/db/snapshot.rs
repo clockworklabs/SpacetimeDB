@@ -144,6 +144,7 @@ impl SnapshotWorker {
 struct SnapshotMetrics {
     snapshot_timing_total: Histogram,
     snapshot_timing_inner: Histogram,
+    snapshot_timing_fsync: Histogram,
 }
 
 impl SnapshotMetrics {
@@ -151,6 +152,7 @@ impl SnapshotMetrics {
         Self {
             snapshot_timing_total: WORKER_METRICS.snapshot_creation_time_total.with_label_values(&db),
             snapshot_timing_inner: WORKER_METRICS.snapshot_creation_time_inner.with_label_values(&db),
+            snapshot_timing_fsync: WORKER_METRICS.snapshot_creation_time_fsync.with_label_values(&db),
         }
     }
 }
@@ -186,6 +188,7 @@ impl SnapshotWorkerActor {
     /// message is received, unless a new snapshot request is already being
     /// processed.
     async fn run(mut self) {
+        let database_identity = self.snapshot_repo.database_identity();
         let mut database_state: Option<WeakDatabaseState> = None;
         while let Some(req) = self.snapshot_requests.next().await {
             match req {
@@ -193,7 +196,7 @@ impl SnapshotWorkerActor {
                     let res = self
                         .maybe_take_snapshot(database_state.as_ref())
                         .await
-                        .inspect_err(|e| warn!("SnapshotWorker: {e:#}"));
+                        .inspect_err(|e| warn!("database={database_identity} SnapshotWorker: {e:#}"));
                     if let Ok(snapshot_offset) = res {
                         self.maybe_compress_snapshots(snapshot_offset).await;
                         self.snapshot_created.send_replace(snapshot_offset);
@@ -220,27 +223,29 @@ impl SnapshotWorkerActor {
 
         let database_identity = self.snapshot_repo.database_identity();
 
-        let maybe_offset = asyncify(move || {
+        let maybe_snapshot = asyncify(move || {
             let _timer = inner_timer.start_timer();
             Locking::take_snapshot_internal(&state, &snapshot_repo)
         })
         .await
         .with_context(|| format!("error capturing snapshot of database {}", database_identity))?;
-        maybe_offset
-            .map(|(offset, _path)| offset)
-            .inspect(|snapshot_offset| {
-                let elapsed = Duration::from_secs_f64(timer.stop_and_record());
-                info!(
-                    "Captured snapshot of database {} at TX offset {} in {:?}",
-                    database_identity, snapshot_offset, elapsed,
-                );
-            })
-            .with_context(|| {
-                format!(
-                    "refusing to take snapshot of database {} at TX offset -1",
-                    database_identity
-                )
-            })
+        let (snapshot_offset, unflushed_snapshot) = maybe_snapshot.with_context(|| {
+            format!(
+                "refusing to take snapshot of database {} at TX offset -1",
+                database_identity
+            )
+        })?;
+        self.metrics
+            .snapshot_timing_fsync
+            .observe_closure_duration(|| unflushed_snapshot.sync_all())?;
+
+        let elapsed = Duration::from_secs_f64(timer.stop_and_record());
+        info!(
+            "Captured snapshot of database {} at TX offset {} in {:?}",
+            database_identity, snapshot_offset, elapsed,
+        );
+
+        Ok(snapshot_offset)
     }
 
     async fn maybe_compress_snapshots(&mut self, latest_snapshot: TxOffset) {

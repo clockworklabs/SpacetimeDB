@@ -14,7 +14,7 @@ struct TESTPROCCLIENT_API FReturnEnumAArgs
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 A;
+    uint32 A = 0;
 
     FReturnEnumAArgs() = default;
 

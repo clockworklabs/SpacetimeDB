@@ -127,9 +127,12 @@ pub struct EveryVecStruct {
 ///     e.g. insert_or_panic insert_my_table
 ///   - update_by reducer_name = update_method(field_name)
 ///     Defines a reducer which takes an argument for each of the table's columns,
-///     and calls the update_method with the value of field_name as a first argument
-///     to update an existing row.
+///     and calls the update method on the primary key column to update an existing row.
 ///     e.g. update_by update_my_table = update_by_name(name)
+///   - update_non_pk_by reducer_name = update_method(field_name)
+///     Like update_by, but for non-primary-key unique columns. Since `update()` is only
+///     available on primary key columns, this uses `delete()` + `insert()` instead.
+///     e.g. update_non_pk_by update_my_table = update_by_name(name)
 ///   - delete_by reducer_name = delete_method(field_name: field_type)
 ///     Defines a reducer which takes a single argument, and passes it to the delete_method
 ///     to delete a row.
@@ -202,8 +205,23 @@ macro_rules! define_tables {
         define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
     };
 
-    // Define a reducer for tables with a unique field,
-    // which uses `$update_method` to update by that unique field.
+    // Define a reducer for tables which deletes a row by equality on all columns.
+    (@impl_ops $name:ident
+     { delete_all $delete:ident
+       $(, $($ops:tt)* )? }
+     $($field_name:ident $ty:ty),* $(,)*) => {
+        paste::paste! {
+            #[spacetimedb::reducer]
+            pub fn $delete (ctx: &ReducerContext, $($field_name : $ty,)*) {
+                ctx.db.[<$name:snake>]().delete($name { $($field_name,)* });
+            }
+        }
+
+        define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
+    };
+
+    // Define a reducer for tables with a primary key field,
+    // which uses `update` to update by that primary key field.
     (@impl_ops $name:ident
      { update_by $update:ident = $update_method:ident($unique_field:ident)
        $(, $($ops:tt)* )? }
@@ -212,6 +230,23 @@ macro_rules! define_tables {
             #[spacetimedb::reducer]
             pub fn $update (ctx: &ReducerContext, $($field_name : $ty,)*) {
                 ctx.db.[<$name:snake>]().$unique_field().update($name { $($field_name,)* });
+            }
+        }
+
+        define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
+    };
+
+    // Define a reducer for tables with a non-pk unique field,
+    // which uses delete + insert to simulate an update by that unique field.
+    (@impl_ops $name:ident
+     { update_non_pk_by $update:ident = $update_method:ident($unique_field:ident)
+       $(, $($ops:tt)* )? }
+     $($field_name:ident $ty:ty),* $(,)*) => {
+        paste::paste! {
+            #[spacetimedb::reducer]
+            pub fn $update (ctx: &ReducerContext, $($field_name : $ty,)*) {
+                ctx.db.[<$name:snake>]().$unique_field().delete(&$unique_field);
+                ctx.db.[<$name:snake>]().insert($name { $($field_name,)* });
             }
         }
 
@@ -237,7 +272,7 @@ macro_rules! define_tables {
     // Define a table.
     (@one $name:ident { $($ops:tt)* } $($(#[$attr:meta])* $field_name:ident $ty:ty),* $(,)*) => {
         paste::paste! {
-            #[spacetimedb::table(name = [<$name:snake>], public)]
+            #[spacetimedb::table(accessor = [<$name:snake>], public)]
             pub struct $name {
                 $($(#[$attr])* pub $field_name : $ty,)*
             }
@@ -256,89 +291,89 @@ macro_rules! define_tables {
 
 // Tables holding a single value.
 define_tables! {
-    OneU8 { insert insert_one_u8 } n u8;
-    OneU16 { insert insert_one_u16 } n u16;
-    OneU32 { insert insert_one_u32 } n u32;
-    OneU64 { insert insert_one_u64 } n u64;
-    OneU128 { insert insert_one_u128 } n u128;
-    OneU256 { insert insert_one_u256 } n u256;
+    OneU8 { insert insert_one_u8, delete_all delete_all_one_u8 } n u8;
+    OneU16 { insert insert_one_u16, delete_all delete_all_one_u16 } n u16;
+    OneU32 { insert insert_one_u32, delete_all delete_all_one_u32 } n u32;
+    OneU64 { insert insert_one_u64, delete_all delete_all_one_u64 } n u64;
+    OneU128 { insert insert_one_u128, delete_all delete_all_one_u128 } n u128;
+    OneU256 { insert insert_one_u256, delete_all delete_all_one_u256 } n u256;
 
-    OneI8 { insert insert_one_i8 } n i8;
-    OneI16 { insert insert_one_i16 } n i16;
-    OneI32 { insert insert_one_i32 } n i32;
-    OneI64 { insert insert_one_i64 } n i64;
-    OneI128 { insert insert_one_i128 } n i128;
-    OneI256 { insert insert_one_i256 } n i256;
+    OneI8 { insert insert_one_i8, delete_all delete_all_one_i8 } n i8;
+    OneI16 { insert insert_one_i16, delete_all delete_all_one_i16 } n i16;
+    OneI32 { insert insert_one_i32, delete_all delete_all_one_i32 } n i32;
+    OneI64 { insert insert_one_i64, delete_all delete_all_one_i64 } n i64;
+    OneI128 { insert insert_one_i128, delete_all delete_all_one_i128 } n i128;
+    OneI256 { insert insert_one_i256, delete_all delete_all_one_i256 } n i256;
 
-    OneBool { insert insert_one_bool } b bool;
+    OneBool { insert insert_one_bool, delete_all delete_all_one_bool } b bool;
 
-    OneF32 { insert insert_one_f32 } f f32;
-    OneF64 { insert insert_one_f64 } f f64;
+    OneF32 { insert insert_one_f32, delete_all delete_all_one_f32 } f f32;
+    OneF64 { insert insert_one_f64, delete_all delete_all_one_f64 } f f64;
 
-    OneString { insert insert_one_string } s String;
+    OneString { insert insert_one_string, delete_all delete_all_one_string } s String;
 
-    OneIdentity { insert insert_one_identity } i Identity;
+    OneIdentity { insert insert_one_identity, delete_all delete_all_one_identity } i Identity;
     OneConnectionId { insert insert_one_connection_id} a ConnectionId;
-    OneUuid { insert insert_one_uuid } u Uuid;
+    OneUuid { insert insert_one_uuid, delete_all delete_all_one_uuid } u Uuid;
 
-    OneTimestamp { insert insert_one_timestamp } t Timestamp;
+    OneTimestamp { insert insert_one_timestamp, delete_all delete_all_one_timestamp } t Timestamp;
 
-    OneSimpleEnum { insert insert_one_simple_enum } e SimpleEnum;
-    OneEnumWithPayload { insert insert_one_enum_with_payload } e EnumWithPayload;
+    OneSimpleEnum { insert insert_one_simple_enum, delete_all delete_all_one_simple_enum } e SimpleEnum;
+    OneEnumWithPayload { insert insert_one_enum_with_payload, delete_all delete_all_one_enum_with_payload } e EnumWithPayload;
 
-    OneUnitStruct { insert insert_one_unit_struct } s UnitStruct;
-    OneByteStruct { insert insert_one_byte_struct } s ByteStruct;
-    OneEveryPrimitiveStruct { insert insert_one_every_primitive_struct } s EveryPrimitiveStruct;
-    OneEveryVecStruct { insert insert_one_every_vec_struct } s EveryVecStruct;
+    OneUnitStruct { insert insert_one_unit_struct, delete_all delete_all_one_unit_struct } s UnitStruct;
+    OneByteStruct { insert insert_one_byte_struct, delete_all delete_all_one_byte_struct } s ByteStruct;
+    OneEveryPrimitiveStruct { insert insert_one_every_primitive_struct, delete_all delete_all_one_every_primitive_struct } s EveryPrimitiveStruct;
+    OneEveryVecStruct { insert insert_one_every_vec_struct, delete_all delete_all_one_every_vec_struct } s EveryVecStruct;
 }
 
 // Tables holding a Vec of various types.
 define_tables! {
-    VecU8 { insert insert_vec_u8 } n Vec<u8>;
-    VecU16 { insert insert_vec_u16 } n Vec<u16>;
-    VecU32 { insert insert_vec_u32 } n Vec<u32>;
-    VecU64 { insert insert_vec_u64 } n Vec<u64>;
-    VecU128 { insert insert_vec_u128 } n Vec<u128>;
-    VecU256 { insert insert_vec_u256 } n Vec<u256>;
+    VecU8 { insert insert_vec_u8, delete_all delete_all_vec_u8 } n Vec<u8>;
+    VecU16 { insert insert_vec_u16, delete_all delete_all_vec_u16 } n Vec<u16>;
+    VecU32 { insert insert_vec_u32, delete_all delete_all_vec_u32 } n Vec<u32>;
+    VecU64 { insert insert_vec_u64, delete_all delete_all_vec_u64 } n Vec<u64>;
+    VecU128 { insert insert_vec_u128, delete_all delete_all_vec_u128 } n Vec<u128>;
+    VecU256 { insert insert_vec_u256, delete_all delete_all_vec_u256 } n Vec<u256>;
 
-    VecI8 { insert insert_vec_i8 } n Vec<i8>;
-    VecI16 { insert insert_vec_i16 } n Vec<i16>;
-    VecI32 { insert insert_vec_i32 } n Vec<i32>;
-    VecI64 { insert insert_vec_i64 } n Vec<i64>;
-    VecI128 { insert insert_vec_i128 } n Vec<i128>;
-    VecI256 { insert insert_vec_i256 } n Vec<i256>;
+    VecI8 { insert insert_vec_i8, delete_all delete_all_vec_i8 } n Vec<i8>;
+    VecI16 { insert insert_vec_i16, delete_all delete_all_vec_i16 } n Vec<i16>;
+    VecI32 { insert insert_vec_i32, delete_all delete_all_vec_i32 } n Vec<i32>;
+    VecI64 { insert insert_vec_i64, delete_all delete_all_vec_i64 } n Vec<i64>;
+    VecI128 { insert insert_vec_i128, delete_all delete_all_vec_i128 } n Vec<i128>;
+    VecI256 { insert insert_vec_i256, delete_all delete_all_vec_i256 } n Vec<i256>;
 
-    VecBool { insert insert_vec_bool } b Vec<bool>;
+    VecBool { insert insert_vec_bool, delete_all delete_all_vec_bool } b Vec<bool>;
 
-    VecF32 { insert insert_vec_f32 } f Vec<f32>;
-    VecF64 { insert insert_vec_f64 } f Vec<f64>;
+    VecF32 { insert insert_vec_f32, delete_all delete_all_vec_f32 } f Vec<f32>;
+    VecF64 { insert insert_vec_f64, delete_all delete_all_vec_f64 } f Vec<f64>;
 
-    VecString { insert insert_vec_string } s Vec<String>;
+    VecString { insert insert_vec_string, delete_all delete_all_vec_string } s Vec<String>;
 
-    VecIdentity { insert insert_vec_identity } i Vec<Identity>;
+    VecIdentity { insert insert_vec_identity, delete_all delete_all_vec_identity } i Vec<Identity>;
     VecConnectionId { insert insert_vec_connection_id} a Vec<ConnectionId>;
-    VecUuid { insert insert_vec_uuid } u Vec<Uuid>;
+    VecUuid { insert insert_vec_uuid, delete_all delete_all_vec_uuid } u Vec<Uuid>;
 
-    VecTimestamp { insert insert_vec_timestamp } t Vec<Timestamp>;
+    VecTimestamp { insert insert_vec_timestamp, delete_all delete_all_vec_timestamp } t Vec<Timestamp>;
 
-    VecSimpleEnum { insert insert_vec_simple_enum } e Vec<SimpleEnum>;
-    VecEnumWithPayload { insert insert_vec_enum_with_payload } e Vec<EnumWithPayload>;
+    VecSimpleEnum { insert insert_vec_simple_enum, delete_all delete_all_vec_simple_enum } e Vec<SimpleEnum>;
+    VecEnumWithPayload { insert insert_vec_enum_with_payload, delete_all delete_all_vec_enum_with_payload } e Vec<EnumWithPayload>;
 
-    VecUnitStruct { insert insert_vec_unit_struct } s Vec<UnitStruct>;
-    VecByteStruct { insert insert_vec_byte_struct } s Vec<ByteStruct>;
-    VecEveryPrimitiveStruct { insert insert_vec_every_primitive_struct } s Vec<EveryPrimitiveStruct>;
-    VecEveryVecStruct { insert insert_vec_every_vec_struct } s Vec<EveryVecStruct>;
+    VecUnitStruct { insert insert_vec_unit_struct, delete_all delete_all_vec_unit_struct } s Vec<UnitStruct>;
+    VecByteStruct { insert insert_vec_byte_struct, delete_all delete_all_vec_byte_struct } s Vec<ByteStruct>;
+    VecEveryPrimitiveStruct { insert insert_vec_every_primitive_struct, delete_all delete_all_vec_every_primitive_struct } s Vec<EveryPrimitiveStruct>;
+    VecEveryVecStruct { insert insert_vec_every_vec_struct, delete_all delete_all_vec_every_vec_struct } s Vec<EveryVecStruct>;
 }
 
 // Tables holding an Option of various types.
 define_tables! {
-    OptionI32 { insert insert_option_i32 } n Option<i32>;
-    OptionString { insert insert_option_string } s Option<String>;
-    OptionIdentity { insert insert_option_identity } i Option<Identity>;
-    OptionUuid { insert insert_option_uuid } u Option<Uuid>;
-    OptionSimpleEnum { insert insert_option_simple_enum } e Option<SimpleEnum>;
-    OptionEveryPrimitiveStruct { insert insert_option_every_primitive_struct } s Option<EveryPrimitiveStruct>;
-    OptionVecOptionI32 { insert insert_option_vec_option_i32 } v Option<Vec<Option<i32>>>;
+    OptionI32 { insert insert_option_i32, delete_all delete_all_option_i32 } n Option<i32>;
+    OptionString { insert insert_option_string, delete_all delete_all_option_string } s Option<String>;
+    OptionIdentity { insert insert_option_identity, delete_all delete_all_option_identity } i Option<Identity>;
+    OptionUuid { insert insert_option_uuid, delete_all delete_all_option_uuid } u Option<Uuid>;
+    OptionSimpleEnum { insert insert_option_simple_enum, delete_all delete_all_option_simple_enum } e Option<SimpleEnum>;
+    OptionEveryPrimitiveStruct { insert insert_option_every_primitive_struct, delete_all delete_all_option_every_primitive_struct } s Option<EveryPrimitiveStruct>;
+    OptionVecOptionI32 { insert insert_option_vec_option_i32, delete_all delete_all_option_vec_option_i32 } v Option<Vec<Option<i32>>>;
 }
 
 // Tables holding a Result of various types.
@@ -355,107 +390,107 @@ define_tables! {
 // This allows us to test delete events, and the semantically correct absence of update events.
 define_tables! {
     UniqueU8 {
-        insert_or_panic insert_unique_u8,
-        update_by update_unique_u8 = update_by_n(n),
+        insert_or_panic insert_unique_u8, delete_all delete_all_unique_u8,
+        update_non_pk_by update_unique_u8 = update_by_n(n),
         delete_by delete_unique_u8 = delete_by_n(n: u8),
     } #[unique] n u8, data i32;
 
     UniqueU16 {
-        insert_or_panic insert_unique_u16,
-        update_by update_unique_u16 = update_by_n(n),
+        insert_or_panic insert_unique_u16, delete_all delete_all_unique_u16,
+        update_non_pk_by update_unique_u16 = update_by_n(n),
         delete_by delete_unique_u16 = delete_by_n(n: u16),
     } #[unique] n u16, data i32;
 
     UniqueU32 {
-        insert_or_panic insert_unique_u32,
-        update_by update_unique_u32 = update_by_n(n),
+        insert_or_panic insert_unique_u32, delete_all delete_all_unique_u32,
+        update_non_pk_by update_unique_u32 = update_by_n(n),
         delete_by delete_unique_u32 = delete_by_n(n: u32),
     } #[unique] n u32, data i32;
 
     UniqueU64 {
-        insert_or_panic insert_unique_u64,
-        update_by update_unique_u64 = update_by_n(n),
+        insert_or_panic insert_unique_u64, delete_all delete_all_unique_u64,
+        update_non_pk_by update_unique_u64 = update_by_n(n),
         delete_by delete_unique_u64 = delete_by_n(n: u64),
     } #[unique] n u64, data i32;
 
     UniqueU128 {
-        insert_or_panic insert_unique_u128,
-        update_by update_unique_u128 = update_by_n(n),
+        insert_or_panic insert_unique_u128, delete_all delete_all_unique_u128,
+        update_non_pk_by update_unique_u128 = update_by_n(n),
         delete_by delete_unique_u128 = delete_by_n(n: u128),
     } #[unique] n u128, data i32;
 
     UniqueU256 {
-        insert_or_panic insert_unique_u256,
-        update_by update_unique_u256 = update_by_n(n),
+        insert_or_panic insert_unique_u256, delete_all delete_all_unique_u256,
+        update_non_pk_by update_unique_u256 = update_by_n(n),
         delete_by delete_unique_u256 = delete_by_n(n: u256),
     } #[unique] n u256, data i32;
 
 
     UniqueI8 {
-        insert_or_panic insert_unique_i8,
-        update_by update_unique_i8 = update_by_n(n),
+        insert_or_panic insert_unique_i8, delete_all delete_all_unique_i8,
+        update_non_pk_by update_unique_i8 = update_by_n(n),
         delete_by delete_unique_i8 = delete_by_n(n: i8),
     } #[unique] n i8, data i32;
 
 
     UniqueI16 {
-        insert_or_panic insert_unique_i16,
-        update_by update_unique_i16 = update_by_n(n),
+        insert_or_panic insert_unique_i16, delete_all delete_all_unique_i16,
+        update_non_pk_by update_unique_i16 = update_by_n(n),
         delete_by delete_unique_i16 = delete_by_n(n: i16),
     } #[unique] n i16, data i32;
 
     UniqueI32 {
-        insert_or_panic insert_unique_i32,
-        update_by update_unique_i32 = update_by_n(n),
+        insert_or_panic insert_unique_i32, delete_all delete_all_unique_i32,
+        update_non_pk_by update_unique_i32 = update_by_n(n),
         delete_by delete_unique_i32 = delete_by_n(n: i32),
     } #[unique] n i32, data i32;
 
     UniqueI64 {
-        insert_or_panic insert_unique_i64,
-        update_by update_unique_i64 = update_by_n(n),
+        insert_or_panic insert_unique_i64, delete_all delete_all_unique_i64,
+        update_non_pk_by update_unique_i64 = update_by_n(n),
         delete_by delete_unique_i64 = delete_by_n(n: i64),
     } #[unique] n i64, data i32;
 
     UniqueI128 {
-        insert_or_panic insert_unique_i128,
-        update_by update_unique_i128 = update_by_n(n),
+        insert_or_panic insert_unique_i128, delete_all delete_all_unique_i128,
+        update_non_pk_by update_unique_i128 = update_by_n(n),
         delete_by delete_unique_i128 = delete_by_n(n: i128),
     } #[unique] n i128, data i32;
 
     UniqueI256 {
-        insert_or_panic insert_unique_i256,
-        update_by update_unique_i256 = update_by_n(n),
+        insert_or_panic insert_unique_i256, delete_all delete_all_unique_i256,
+        update_non_pk_by update_unique_i256 = update_by_n(n),
         delete_by delete_unique_i256 = delete_by_n(n: i256),
     } #[unique] n i256, data i32;
 
 
     UniqueBool {
-        insert_or_panic insert_unique_bool,
-        update_by update_unique_bool = update_by_b(b),
+        insert_or_panic insert_unique_bool, delete_all delete_all_unique_bool,
+        update_non_pk_by update_unique_bool = update_by_b(b),
         delete_by delete_unique_bool = delete_by_b(b: bool),
     } #[unique] b bool, data i32;
 
     UniqueString {
-        insert_or_panic insert_unique_string,
-        update_by update_unique_string = update_by_s(s),
+        insert_or_panic insert_unique_string, delete_all delete_all_unique_string,
+        update_non_pk_by update_unique_string = update_by_s(s),
         delete_by delete_unique_string = delete_by_s(s: String),
     } #[unique] s String, data i32;
 
     UniqueIdentity {
-        insert_or_panic insert_unique_identity,
-        update_by update_unique_identity = update_by_i(i),
+        insert_or_panic insert_unique_identity, delete_all delete_all_unique_identity,
+        update_non_pk_by update_unique_identity = update_by_i(i),
         delete_by delete_unique_identity = delete_by_i(i: Identity),
     } #[unique] i Identity, data i32;
 
     UniqueConnectionId {
-        insert_or_panic insert_unique_connection_id,
-        update_by update_unique_connection_id = update_by_a(a),
+        insert_or_panic insert_unique_connection_id, delete_all delete_all_unique_connection_id,
+        update_non_pk_by update_unique_connection_id = update_by_a(a),
         delete_by delete_unique_connection_id = delete_by_a(a: ConnectionId),
     } #[unique] a ConnectionId, data i32;
 
     UniqueUuid {
-        insert_or_panic insert_unique_uuid,
-        update_by update_unique_uuid = update_by_u(u),
+        insert_or_panic insert_unique_uuid, delete_all delete_all_unique_uuid,
+        update_non_pk_by update_unique_uuid = update_by_u(u),
         delete_by delete_unique_uuid = delete_by_u(u: Uuid),
     } #[unique] u Uuid, data i32;
 }
@@ -464,109 +499,109 @@ define_tables! {
 // This allows us to test update and delete events.
 define_tables! {
     PkU8 {
-        insert_or_panic insert_pk_u8,
+        insert_or_panic insert_pk_u8, delete_all delete_all_pk_u8,
         update_by update_pk_u8 = update_by_n(n),
         delete_by delete_pk_u8 = delete_by_n(n: u8),
     } #[primary_key] n u8, data i32;
 
     PkU16 {
-        insert_or_panic insert_pk_u16,
+        insert_or_panic insert_pk_u16, delete_all delete_all_pk_u16,
         update_by update_pk_u16 = update_by_n(n),
         delete_by delete_pk_u16 = delete_by_n(n: u16),
     } #[primary_key] n u16, data i32;
 
     PkU32 {
-        insert_or_panic insert_pk_u32,
+        insert_or_panic insert_pk_u32, delete_all delete_all_pk_u32,
         update_by update_pk_u32 = update_by_n(n),
         delete_by delete_pk_u32 = delete_by_n(n: u32),
     } #[primary_key] n u32, data i32;
 
     PkU32Two {
-        insert_or_panic insert_pk_u32_two,
+        insert_or_panic insert_pk_u32_two, delete_all delete_all_pk_u32_two,
         update_by update_pk_u32_two = update_by_n(n),
         delete_by delete_pk_u32_two = delete_by_n(n: u32),
     } #[primary_key] n u32, data i32;
 
     PkU64 {
-        insert_or_panic insert_pk_u64,
+        insert_or_panic insert_pk_u64, delete_all delete_all_pk_u64,
         update_by update_pk_u64 = update_by_n(n),
         delete_by delete_pk_u64 = delete_by_n(n: u64),
     } #[primary_key] n u64, data i32;
 
     PkU128 {
-        insert_or_panic insert_pk_u128,
+        insert_or_panic insert_pk_u128, delete_all delete_all_pk_u128,
         update_by update_pk_u128 = update_by_n(n),
         delete_by delete_pk_u128 = delete_by_n(n: u128),
     } #[primary_key] n u128, data i32;
 
     PkU256 {
-        insert_or_panic insert_pk_u256,
+        insert_or_panic insert_pk_u256, delete_all delete_all_pk_u256,
         update_by update_pk_u256 = update_by_n(n),
         delete_by delete_pk_u256 = delete_by_n(n: u256),
     } #[primary_key] n u256, data i32;
 
     PkI8 {
-        insert_or_panic insert_pk_i8,
+        insert_or_panic insert_pk_i8, delete_all delete_all_pk_i8,
         update_by update_pk_i8 = update_by_n(n),
         delete_by delete_pk_i8 = delete_by_n(n: i8),
     } #[primary_key] n i8, data i32;
 
     PkI16 {
-        insert_or_panic insert_pk_i16,
+        insert_or_panic insert_pk_i16, delete_all delete_all_pk_i16,
         update_by update_pk_i16 = update_by_n(n),
         delete_by delete_pk_i16 = delete_by_n(n: i16),
     } #[primary_key] n i16, data i32;
 
     PkI32 {
-        insert_or_panic insert_pk_i32,
+        insert_or_panic insert_pk_i32, delete_all delete_all_pk_i32,
         update_by update_pk_i32 = update_by_n(n),
         delete_by delete_pk_i32 = delete_by_n(n: i32),
     } #[primary_key] n i32, data i32;
 
     PkI64 {
-        insert_or_panic insert_pk_i64,
+        insert_or_panic insert_pk_i64, delete_all delete_all_pk_i64,
         update_by update_pk_i64 = update_by_n(n),
         delete_by delete_pk_i64 = delete_by_n(n: i64),
     } #[primary_key] n i64, data i32;
 
     PkI128 {
-        insert_or_panic insert_pk_i128,
+        insert_or_panic insert_pk_i128, delete_all delete_all_pk_i128,
         update_by update_pk_i128 = update_by_n(n),
         delete_by delete_pk_i128 = delete_by_n(n: i128),
     } #[primary_key] n i128, data i32;
 
     PkI256 {
-        insert_or_panic insert_pk_i256,
+        insert_or_panic insert_pk_i256, delete_all delete_all_pk_i256,
         update_by update_pk_i256 = update_by_n(n),
         delete_by delete_pk_i256 = delete_by_n(n: i256),
     } #[primary_key] n i256, data i32;
 
     PkBool {
-        insert_or_panic insert_pk_bool,
+        insert_or_panic insert_pk_bool, delete_all delete_all_pk_bool,
         update_by update_pk_bool = update_by_b(b),
         delete_by delete_pk_bool = delete_by_b(b: bool),
     } #[primary_key] b bool, data i32;
 
     PkString {
-        insert_or_panic insert_pk_string,
+        insert_or_panic insert_pk_string, delete_all delete_all_pk_string,
         update_by update_pk_string = update_by_s(s),
         delete_by delete_pk_string = delete_by_s(s: String),
     } #[primary_key] s String, data i32;
 
     PkIdentity {
-        insert_or_panic insert_pk_identity,
+        insert_or_panic insert_pk_identity, delete_all delete_all_pk_identity,
         update_by update_pk_identity = update_by_i(i),
         delete_by delete_pk_identity = delete_by_i(i: Identity),
     } #[primary_key] i Identity, data i32;
 
     PkConnectionId {
-        insert_or_panic insert_pk_connection_id,
+        insert_or_panic insert_pk_connection_id, delete_all delete_all_pk_connection_id,
         update_by update_pk_connection_id = update_by_a(a),
         delete_by delete_pk_connection_id = delete_by_a(a: ConnectionId),
     } #[primary_key] a ConnectionId, data i32;
 
     PkUuid {
-        insert_or_panic insert_pk_uuid,
+        insert_or_panic insert_pk_uuid, delete_all delete_all_pk_uuid,
         update_by update_pk_uuid = update_by_u(u),
         delete_by delete_pk_uuid = delete_by_u(u: Uuid),
     } #[primary_key] u Uuid, data i32;
@@ -637,32 +672,34 @@ fn delete_pk_u32_insert_pk_u32_two(ctx: &ReducerContext, n: u32, data: i32) -> a
 
 #[spacetimedb::reducer]
 fn insert_caller_one_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender });
+    ctx.db.one_identity().insert(OneIdentity { i: ctx.sender() });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_vec_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender] });
+    ctx.db.vec_identity().insert(VecIdentity { i: vec![ctx.sender()] });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_unique_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.unique_identity().insert(UniqueIdentity { i: ctx.sender, data });
+    ctx.db
+        .unique_identity()
+        .insert(UniqueIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_pk_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender, data });
+    ctx.db.pk_identity().insert(PkIdentity { i: ctx.sender(), data });
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.one_connection_id().insert(OneConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
     });
     Ok(())
 }
@@ -670,7 +707,7 @@ fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.vec_connection_id().insert(VecConnectionId {
-        a: vec![ctx.connection_id.context("No connection id in reducer context")?],
+        a: vec![ctx.connection_id().context("No connection id in reducer context")?],
     });
     Ok(())
 }
@@ -678,7 +715,7 @@ fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
 #[spacetimedb::reducer]
 fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.unique_connection_id().insert(UniqueConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
@@ -687,7 +724,7 @@ fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow
 #[spacetimedb::reducer]
 fn insert_caller_pk_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
     ctx.db.pk_connection_id().insert(PkConnectionId {
-        a: ctx.connection_id.context("No connection id in reducer context")?,
+        a: ctx.connection_id().context("No connection id in reducer context")?,
         data,
     });
     Ok(())
@@ -786,9 +823,9 @@ define_tables! {
 fn no_op_succeeds(_ctx: &ReducerContext) {}
 
 #[spacetimedb::client_visibility_filter]
-const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
+const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u_8");
 
-#[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
+#[spacetimedb::table(accessor = scheduled_table, scheduled(send_scheduled_message), public)]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
@@ -804,19 +841,19 @@ fn send_scheduled_message(_ctx: &ReducerContext, arg: ScheduledTable) {
     let _ = arg.scheduled_id;
 }
 
-#[spacetimedb::table(name = indexed_table)]
+#[spacetimedb::table(accessor = indexed_table)]
 struct IndexedTable {
     #[index(btree)]
     player_id: u32,
 }
 
-#[spacetimedb::table(name = indexed_table_2, index(name=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
+#[spacetimedb::table(accessor = indexed_table_2, index(accessor=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
 struct IndexedTable2 {
     player_id: u32,
     player_snazz: f32,
 }
 
-#[spacetimedb::table(name = btree_u32, public)]
+#[spacetimedb::table(accessor = btree_u32, public)]
 struct BTreeU32 {
     #[index(btree)]
     n: u32,
@@ -826,7 +863,7 @@ struct BTreeU32 {
 #[spacetimedb::client_visibility_filter]
 const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM users WHERE identity = :sender");
 
-#[spacetimedb::table(name = users, public)]
+#[spacetimedb::table(accessor = users, public)]
 struct Users {
     #[primary_key]
     identity: Identity,
@@ -839,7 +876,7 @@ fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow
     Ok(())
 }
 
-#[spacetimedb::table(name = indexed_simple_enum, public)]
+#[spacetimedb::table(accessor = indexed_simple_enum, public)]
 struct IndexedSimpleEnum {
     #[index(btree)]
     n: SimpleEnum,
@@ -870,10 +907,10 @@ fn sorted_uuids_insert(ctx: &ReducerContext) -> anyhow::Result<()> {
     // Verify UUIDs are sorted
     let mut last_uuid = None;
     for row in ctx.db.pk_uuid().iter() {
-        if let Some(last) = last_uuid {
-            if last >= row.u {
-                return Err(anyhow!("UUIDs are not sorted correctly"));
-            }
+        if let Some(last) = last_uuid
+            && last >= row.u
+        {
+            return Err(anyhow!("UUIDs are not sorted correctly"));
         }
         last_uuid = Some(row.u);
     }

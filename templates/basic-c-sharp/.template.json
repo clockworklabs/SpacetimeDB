@@ -1,5 +1,0 @@
-{
-  "description": "A basic C# client and server template with only stubs for code",
-  "client_lang": "csharp",
-  "server_lang": "csharp"
-}

@@ -167,6 +167,7 @@ impl ControlDb {
         let identity_bytes = database_identity.to_byte_array();
         let tree = self.db.open_tree("dns")?;
         tree.insert(domain.to_lowercase(), &identity_bytes)?;
+        tree.flush()?;
 
         let tree = self.db.open_tree("reverse_dns")?;
         match tree.get(identity_bytes)? {
@@ -179,6 +180,7 @@ impl ControlDb {
                 tree.insert(identity_bytes, serde_json::to_string(&vec![&domain])?.as_bytes())?;
             }
         }
+        tree.flush()?;
 
         Ok(InsertDomainResult::Success {
             domain,
@@ -246,12 +248,12 @@ impl ControlDb {
                 // Remove all existing names.
                 if let Some(value) = rev_tx.get(database_identity_bytes)? {
                     for domain in decode_domain_names(&value)? {
-                        if let Some(ref owner) = domain_owner(tld_tx, &domain)? {
-                            if owner != owner_identity {
-                                transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                    domain: domain.clone(),
-                                }))?;
-                            }
+                        if let Some(ref owner) = domain_owner(tld_tx, &domain)?
+                            && owner != owner_identity
+                        {
+                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                                domain: domain.clone(),
+                            }))?;
                         }
                         dns_tx.remove(domain.to_lowercase().as_bytes())?;
                     }
@@ -260,17 +262,21 @@ impl ControlDb {
 
                 // Insert the new names.
                 for domain in domain_names {
-                    if let Some(ref owner) = domain_owner(tld_tx, domain)? {
-                        if owner != owner_identity {
-                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
-                                domain: domain.clone(),
-                            }))?;
-                        }
+                    if let Some(ref owner) = domain_owner(tld_tx, domain)?
+                        && owner != owner_identity
+                    {
+                        transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                            domain: domain.clone(),
+                        }))?;
                     }
                     tld_tx.insert(domain.tld().to_lowercase().as_bytes(), &owner_identity.to_byte_array())?;
                     dns_tx.insert(domain.to_lowercase().as_bytes(), &database_identity_bytes)?;
                 }
                 rev_tx.insert(&database_identity_bytes, serde_json::to_vec(domain_names).unwrap())?;
+
+                dns_tx.flush();
+                tld_tx.flush();
+                rev_tx.flush();
 
                 Ok::<_, ConflictableTransactionError<AbortWith>>(())
             });
@@ -309,6 +315,7 @@ impl ControlDb {
             }
             None => {
                 tree.insert(key, &owner_identity.to_byte_array())?;
+                tree.flush()?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -372,9 +379,11 @@ impl ControlDb {
         let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
 
         tree.insert(key, buf.clone())?;
+        tree.flush()?;
 
         let tree = self.db.open_tree("database")?;
         tree.insert(id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
         Ok(id)
     }
@@ -387,9 +396,11 @@ impl ControlDb {
         let tree = self.db.open_tree("database_by_identity")?;
         let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
         tree.insert(stored_database.database_identity.to_be_byte_array(), buf.clone())?;
+        tree.flush()?;
 
         let tree = self.db.open_tree("database")?;
         tree.insert(stored_database.id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
         Ok(())
     }
@@ -404,6 +415,7 @@ impl ControlDb {
 
             tree_by_identity.remove(&key[..])?;
             tree.remove(id.to_be_bytes())?;
+            tree.flush()?;
             return Ok(Some(id));
         }
 
@@ -466,6 +478,7 @@ impl ControlDb {
         let buf = bsatn::to_vec(&replica).unwrap();
 
         tree.insert(id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
         Ok(id)
     }
@@ -473,6 +486,7 @@ impl ControlDb {
     pub fn delete_replica(&self, id: u64) -> Result<()> {
         let tree = self.db.open_tree("replica")?;
         tree.remove(id.to_be_bytes())?;
+        tree.flush()?;
         Ok(())
     }
 
@@ -509,6 +523,7 @@ impl ControlDb {
         let buf = bsatn::to_vec(&node).unwrap();
 
         tree.insert(id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
         Ok(id)
     }
@@ -519,12 +534,14 @@ impl ControlDb {
         let buf = bsatn::to_vec(&node)?;
 
         tree.insert(node.id.to_be_bytes(), buf)?;
+        tree.flush()?;
         Ok(())
     }
 
     pub fn _delete_node(&self, id: u64) -> Result<()> {
         let tree = self.db.open_tree("node")?;
         tree.remove(id.to_be_bytes())?;
+        tree.flush()?;
         Ok(())
     }
 
@@ -580,6 +597,7 @@ impl ControlDb {
     pub fn set_energy_balance(&self, identity: Identity, energy_balance: energy::EnergyBalance) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         tree.insert(identity.to_byte_array(), &energy_balance.get().to_be_bytes())?;
+        tree.flush()?;
 
         Ok(())
     }

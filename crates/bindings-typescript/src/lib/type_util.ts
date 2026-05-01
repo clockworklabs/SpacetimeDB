@@ -83,3 +83,42 @@ type PascalCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
  * - Normalizes the *first* character to uppercase (e.g. "user_name" -> "UserName")
  */
 export type PascalCase<S extends string> = PascalCaseImpl<S>;
+
+/**
+ * Check if a metadata type has fields that are incompatible with default values.
+ * Default values cannot be combined with isPrimaryKey, isUnique, or isAutoIncrement.
+ */
+export type HasDefaultIncompatibleFields<M> = M extends {
+  isPrimaryKey: true;
+}
+  ? true
+  : M extends { isUnique: true }
+    ? true
+    : M extends { isAutoIncrement: true }
+      ? true
+      : false;
+
+/**
+ * Check if a metadata type has a default value set.
+ */
+export type HasDefaultValue<M> = M extends { defaultValue: any } ? true : false;
+
+/**
+ * Validate that a column's metadata doesn't have invalid combinations.
+ * Returns the metadata type if valid, or an error type if invalid.
+ */
+export type ValidateColumnMetadata<M> =
+  HasDefaultValue<M> extends true
+    ? HasDefaultIncompatibleFields<M> extends true
+      ? InvalidColumnMetadata<'default() cannot be combined with primaryKey(), unique(), or autoInc()'>
+      : M
+    : M;
+
+/**
+ * Error type for invalid column metadata combinations.
+ * This type is designed to cause a compile-time error with a descriptive message.
+ */
+export type InvalidColumnMetadata<Message extends string> = {
+  __error: Message;
+  __brand: 'InvalidColumnMetadata';
+};

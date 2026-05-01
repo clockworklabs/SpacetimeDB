@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates sum types (enums) used in tables.
+
+TYPES
+- Rect
+  - width: number (i32)
+  - height: number (i32)
+- Shape (sum type / enum)
+  - circle: number (i32 radius)
+  - rectangle: Rect
+
+TABLE
+- result
+  - Fields:
+    - id: number (i32, primary key)
+    - value: Shape
+
+REDUCERS
+- setCircle: given id:number, radius:number, insert row with value=Shape.circle(radius)

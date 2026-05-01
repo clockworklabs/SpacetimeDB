@@ -12,6 +12,7 @@ bigdecimal.workspace = true
 derive_more.workspace = true
 ethnum.workspace = true
 thiserror.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true

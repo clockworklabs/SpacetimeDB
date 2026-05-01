@@ -12,5 +12,5 @@ import {
 
 export default __t.row({
   identity: __t.identity().primaryKey(),
-  hasIncrementedCount: __t.u32(),
+  hasIncrementedCount: __t.u32().name('has_incremented_count'),
 });

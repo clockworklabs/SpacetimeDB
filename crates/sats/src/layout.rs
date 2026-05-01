@@ -12,6 +12,7 @@ use crate::{
         SumAccess, SumVisitor, VariantAccess as _, VariantVisitor,
     },
     i256, impl_deserialize, impl_serialize,
+    raw_identifier::RawIdentifier,
     sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
     u256, AlgebraicType, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, ProductValue, SumType,
     SumTypeVariant, SumValue, WithTypespace,
@@ -449,7 +450,7 @@ pub struct ProductTypeElementLayout {
     ///
     /// This allows us to convert back to `ProductTypeElement`,
     /// which we do when reporting type errors.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 }
 
 #[cfg(feature = "memory-usage")]
@@ -500,7 +501,7 @@ pub struct SumTypeVariantLayout {
     ///
     /// This allows us to convert back to `SumTypeVariant`,
     /// which we do when reporting type errors.
-    pub name: Option<Box<str>>,
+    pub name: Option<RawIdentifier>,
 }
 
 #[cfg(feature = "memory-usage")]
@@ -958,7 +959,20 @@ impl<'de> ProductVisitor<'de> for ProductTypeLayoutView<'_> {
         Ok(elems.into())
     }
 
+    fn validate_seq_product<A: SeqProductAccess<'de>>(self, mut tup: A) -> Result<(), A::Error> {
+        for (i, elem_ty) in self.elements.iter().enumerate() {
+            if tup.validate_next_element_seed(&elem_ty.ty)?.is_none() {
+                return Err(A::Error::invalid_product_length(i, &self));
+            }
+        }
+        Ok(())
+    }
+
     fn visit_named_product<A: NamedProductAccess<'de>>(self, _: A) -> Result<Self::Output, A::Error> {
+        unreachable!()
+    }
+
+    fn validate_named_product<A: NamedProductAccess<'de>>(self, _: A) -> Result<(), A::Error> {
         unreachable!()
     }
 }
@@ -996,8 +1010,16 @@ impl<'de> SumVisitor<'de> for &SumTypeLayout {
         // Find the variant type by `tag`.
         let variant_ty = &self.variants[tag as usize].ty;
 
-        let value = Box::new(data.deserialize_seed(variant_ty)?);
-        Ok(SumValue { tag, value })
+        let value = data.deserialize_seed(variant_ty)?;
+        Ok(SumValue::new(tag, value))
+    }
+
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error> {
+        let (tag, data) = data.variant(self)?;
+        // Find the variant type by `tag`.
+        let variant_ty = &self.variants[tag as usize].ty;
+
+        data.validate_seed(variant_ty)
     }
 }
 

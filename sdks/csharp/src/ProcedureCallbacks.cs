@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 
@@ -26,28 +27,60 @@ namespace SpacetimeDB
 
     internal sealed class ProcedureCallbacks
     {
+        private readonly object callbacksLock = new();
         private readonly Dictionary<uint, IProcedureCallbackWrapper> callbacks = new();
 
         public void RegisterCallback<T>(uint requestId, ProcedureCallback<T> callback)
             where T : IStructuralReadWrite, new()
         {
-            callbacks[requestId] = new ProcedureCallbackWrapper<T>(callback);
+            lock (callbacksLock)
+            {
+                callbacks[requestId] = new ProcedureCallbackWrapper<T>(callback);
+            }
         }
 
         public bool TryResolveCallback(IProcedureEventContext ctx, uint requestId, ProcedureResult result)
         {
-            if (callbacks.Remove(requestId, out var wrapper))
+            IProcedureCallbackWrapper? wrapper;
+            lock (callbacksLock)
             {
-                wrapper.Invoke(ctx, result);
-                return true;
+                if (!callbacks.Remove(requestId, out wrapper))
+                {
+                    return false;
+                }
             }
-            return false;
+            wrapper.Invoke(ctx, result);
+            return true;
+        }
+
+        public void FailAll(IProcedureEventContext ctx, Exception error)
+        {
+            IProcedureCallbackWrapper[] wrappers;
+            lock (callbacksLock)
+            {
+                wrappers = callbacks.Values.ToArray();
+                callbacks.Clear();
+            }
+
+            foreach (var wrapper in wrappers)
+            {
+                wrapper.InvokeFailure(ctx, error);
+            }
+        }
+
+        public void Clear()
+        {
+            lock (callbacksLock)
+            {
+                callbacks.Clear();
+            }
         }
     }
 
     internal interface IProcedureCallbackWrapper
     {
         void Invoke(IProcedureEventContext ctx, ProcedureResult result);
+        void InvokeFailure(IProcedureEventContext ctx, Exception error);
     }
 
     internal sealed class ProcedureCallbackWrapper<T> : IProcedureCallbackWrapper
@@ -68,12 +101,15 @@ namespace SpacetimeDB
                     ProcedureCallbackResult<T>.Success(BSATNHelpers.Decode<T>(bytes.ToArray())),
                 ProcedureStatus.InternalError(var error) =>
                     ProcedureCallbackResult<T>.Failure(new Exception($"Procedure failed: {error}")),
-                ProcedureStatus.OutOfEnergy =>
-                    ProcedureCallbackResult<T>.Failure(new Exception("Procedure execution aborted due to insufficient energy")),
                 _ => ProcedureCallbackResult<T>.Failure(new Exception("Unknown procedure status"))
             };
 
             callback(ctx, callbackResult);
+        }
+
+        public void InvokeFailure(IProcedureEventContext ctx, Exception error)
+        {
+            callback(ctx, ProcedureCallbackResult<T>.Failure(error));
         }
     }
 }

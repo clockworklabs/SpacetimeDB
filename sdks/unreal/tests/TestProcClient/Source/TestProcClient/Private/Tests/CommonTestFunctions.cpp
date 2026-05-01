@@ -117,7 +117,7 @@ UDbConnection* ConnectWithThen(TSharedPtr<FTestCounter> Counter,
 
 	UDbConnectionBuilder* Builder = UDbConnection::Builder()
 		->WithUri(TEXT("localhost:3000"))
-		->WithModuleName(DbName)
+		->WithDatabaseName(DbName)
 		->OnConnect(ConnectDelegate)
 		->OnDisconnect(DisconnectDelegate)
 		->OnConnectError(ErrorDelegate);

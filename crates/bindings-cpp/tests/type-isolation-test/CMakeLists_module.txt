@@ -1,0 +1,64 @@
+cmake_minimum_required(VERSION 3.16)
+project(module)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Module source file
+if(NOT DEFINED MODULE_SOURCE)
+    message(FATAL_ERROR "MODULE_SOURCE must be defined")
+endif()
+
+# Output name
+if(NOT DEFINED OUTPUT_NAME)
+    set(OUTPUT_NAME "module")
+endif()
+
+# Library directory must be provided
+if(NOT DEFINED SPACETIMEDB_LIBRARY_DIR)
+    message(FATAL_ERROR "SPACETIMEDB_LIBRARY_DIR must be defined")
+endif()
+
+if(NOT DEFINED SPACETIMEDB_INCLUDE_DIR)
+    message(FATAL_ERROR "SPACETIMEDB_INCLUDE_DIR must be defined")
+endif()
+
+# Create the module executable
+add_executable(${OUTPUT_NAME} ${MODULE_SOURCE})
+
+# Include directories
+target_include_directories(${OUTPUT_NAME} PRIVATE ${SPACETIMEDB_INCLUDE_DIR})
+
+# Link the pre-built library
+target_link_directories(${OUTPUT_NAME} PRIVATE ${SPACETIMEDB_LIBRARY_DIR})
+target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
+
+# Emscripten specific settings
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  # Export list as a single variable (no extra quoting per-platform)
+  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__']")
+
+  # Produce a standalone .wasm (no JS harness) with no entry point
+  target_link_options(lib PRIVATE
+    "SHELL:-sSTANDALONE_WASM=1"
+    "SHELL:-sWASM=1"
+    "SHELL:--no-entry"
+    # Exports
+    "SHELL:-sEXPORTED_FUNCTIONS=${EXPORTED_FUNCS}"
+    # Keep this ON for correctness; you can flip to 0 temporarily to probe
+    "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
+    # Trim runtime
+    "SHELL:-sFILESYSTEM=0"
+    "SHELL:-sDISABLE_EXCEPTION_CATCHING=1"
+    "SHELL:-sALLOW_MEMORY_GROWTH=0"
+    "SHELL:-sINITIAL_MEMORY=16MB"
+    "SHELL:-sSUPPORT_LONGJMP=0"
+    "SHELL:-sSUPPORT_ERRNO=0"
+    # C++20 and O2 at link step (Emscripten accepts them here too)
+    "SHELL:-std=c++20"
+    "SHELL:-O2"
+  )
+
+  # Name the output lib.wasm
+  set_target_properties(lib PROPERTIES OUTPUT_NAME "lib" SUFFIX ".wasm")
+endif()

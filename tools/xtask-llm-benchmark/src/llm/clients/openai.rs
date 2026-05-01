@@ -48,6 +48,9 @@ impl OpenAiClient {
         };
 
         // Build input (system + trimmed prefix + untouched segments)
+        // Note: OpenAI's Responses API automatically caches repeated prefixes for
+        // gpt-4o, gpt-4.1, gpt-5, and similar models. No explicit cache_control needed.
+        // The static_prefix (docs) is placed first to maximize cache hits across tasks.
         let input = build_openai_responses_input(system.as_deref(), static_opt, &segs);
 
         if debug_llm_verbose() {
@@ -142,34 +145,34 @@ impl OpenAiClient {
 
         let parsed: ResponsesPayload = serde_json::from_str(&body).context("parse OpenAI response")?;
 
-        if let Some(t) = parsed.output_text.as_ref() {
-            if !t.is_empty() {
-                return Ok(t.clone());
-            }
+        if let Some(t) = parsed.output_text.as_ref()
+            && !t.is_empty()
+        {
+            return Ok(t.clone());
         }
         if let Some(items) = parsed.output.as_ref() {
             for it in items {
-                if it.r#type.as_deref() == Some("message") {
-                    if let Some(content) = &it.content {
-                        for c in content {
-                            if let Some(txt) = &c.text {
-                                if !txt.is_empty() {
-                                    return Ok(txt.clone());
-                                }
-                            }
+                if it.r#type.as_deref() == Some("message")
+                    && let Some(content) = &it.content
+                {
+                    for c in content {
+                        if let Some(txt) = &c.text
+                            && !txt.is_empty()
+                        {
+                            return Ok(txt.clone());
                         }
                     }
                 }
             }
             for it in items {
-                if it.r#type.as_deref() == Some("reasoning") {
-                    if let Some(summary) = &it.summary {
-                        for c in summary {
-                            if let Some(txt) = &c.text {
-                                if !txt.is_empty() {
-                                    return Ok(txt.clone());
-                                }
-                            }
+                if it.r#type.as_deref() == Some("reasoning")
+                    && let Some(summary) = &it.summary
+                {
+                    for c in summary {
+                        if let Some(txt) = &c.text
+                            && !txt.is_empty()
+                        {
+                            return Ok(txt.clone());
                         }
                     }
                 }

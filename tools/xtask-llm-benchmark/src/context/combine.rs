@@ -1,24 +1,116 @@
-use crate::context::paths::resolve_mode_paths;
-use anyhow::{anyhow, Context, Result};
+use crate::context::constants::docs_dir;
+use crate::context::paths::{gather_cursor_rules_files, resolve_mode_paths};
+use crate::eval::lang::Lang;
+use anyhow::{anyhow, bail, Context, Result};
+use regex::Regex;
 use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
-pub fn build_context(mode: &str) -> Result<String> {
+/// Get the base directory for a given mode (used for stripping prefixes to get relative paths).
+fn base_for_mode(mode: &str) -> Result<PathBuf> {
+    Ok(match mode {
+        "docs" | "llms.md" | "cursor_rules" | "none" => docs_dir(),
+        // rustdoc_json is handled separately in build_context_from_rustdoc_json
+        _ => bail!("unknown mode `{mode}` for base_for_mode"),
+    })
+}
+
+/// Produce a consistent, forward-slash relative path for inclusion in context.
+/// This strips the base directory prefix so paths are stable across different machines/environments.
+fn stable_rel_path(base: &Path, p: &Path) -> String {
+    let rel = p.strip_prefix(base).unwrap_or(p);
+    let s = rel.to_string_lossy();
+    if cfg!(windows) {
+        s.replace('\\', "/")
+    } else {
+        s.into_owned()
+    }
+}
+
+/// Build context for the given mode, optionally filtering tabs for a specific language.
+pub fn build_context(mode: &str, lang: Option<Lang>) -> Result<String> {
+    if mode == "none" {
+        return Ok(String::new());
+    }
     if mode == "rustdoc_json" {
         return build_context_from_rustdoc_json();
     }
 
-    let files = resolve_mode_paths(mode)?;
+    let base = base_for_mode(mode)?;
+    let files = if mode == "cursor_rules" {
+        gather_cursor_rules_files(base.join("static/ai-rules"), lang)?
+    } else {
+        resolve_mode_paths(mode)?
+    };
     let mut out = String::with_capacity(1024 * 1024);
     for p in files {
-        let rel = rel_display(&p);
+        let rel = stable_rel_path(&base, &p);
         let contents = fs::read_to_string(&p).with_context(|| format!("read {}", rel))?;
+
+        // For cursor_rules we don't filter tabs; for other modes filter by lang if specified
+        let contents = if mode == "cursor_rules" {
+            contents
+        } else if let Some(lang) = lang {
+            filter_tabs_for_lang(&contents, lang)
+        } else {
+            contents
+        };
+
+        // When building for a specific language, skip files that have no content for it
+        // (e.g. Rust-only pages with no TypeScript tab). Not used for cursor_rules.
+        if mode != "cursor_rules" && lang.is_some() && contents.trim().is_empty() {
+            continue;
+        }
+
         out.push_str("\n\n---\n");
         out.push_str(&format!("// file: {}\n\n", rel));
         out.push_str(&contents);
     }
     Ok(out)
+}
+
+/// Filter `<Tabs>` blocks to only include the tab matching the target language.
+/// This removes noise from other languages and helps the LLM focus on relevant examples.
+/// Filters both `server-language` and `client-language` tabs.
+fn filter_tabs_for_lang(content: &str, lang: Lang) -> String {
+    // Map Lang to the tab value used in docs for server and client tabs
+    let tab_value = match lang {
+        Lang::CSharp => "csharp",
+        Lang::Rust => "rust",
+        Lang::TypeScript => "typescript",
+    };
+
+    // Regex to match <Tabs groupId="server-language" or "client-language">...</Tabs> blocks
+    static LANG_TABS_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?s)<Tabs\s+groupId="(?:server-language|client-language)"[^>]*>(.+?)</Tabs>"#).unwrap()
+    });
+
+    // Regex to extract individual <TabItem> blocks
+    static TAB_ITEM_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?s)<TabItem\s+value="([^"]+)"[^>]*>(.+?)</TabItem>"#).unwrap());
+
+    LANG_TABS_RE
+        .replace_all(content, |caps: &regex::Captures| {
+            let tabs_inner = &caps[1];
+
+            // Find the TabItem matching our target language
+            for tab_cap in TAB_ITEM_RE.captures_iter(tabs_inner) {
+                let value = &tab_cap[1];
+                let tab_content = &tab_cap[2];
+
+                if value == tab_value {
+                    // Return just the content, stripping the TabItem wrapper
+                    return tab_content.trim().to_string();
+                }
+            }
+
+            // If no matching tab found, remove the entire tabs block
+            // (e.g., client-language tabs with only cpp/blueprint for Unreal)
+            String::new()
+        })
+        .into_owned()
 }
 
 fn build_context_from_rustdoc_json() -> Result<String> {
@@ -106,10 +198,10 @@ struct Row {
 }
 
 fn belongs_to_crate(paths: &serde_json::Map<String, Value>, id: &str, crate_name: &str) -> bool {
-    if let Some(p) = paths.get(id).and_then(Value::as_object) {
-        if let Some(arr) = p.get("path").and_then(Value::as_array) {
-            return arr.first().and_then(Value::as_str) == Some(crate_name);
-        }
+    if let Some(p) = paths.get(id).and_then(Value::as_object)
+        && let Some(arr) = p.get("path").and_then(Value::as_array)
+    {
+        return arr.first().and_then(Value::as_str) == Some(crate_name);
     }
     false
 }
@@ -120,14 +212,14 @@ fn full_path(
     id: &str,
     crate_name: &str,
 ) -> String {
-    if let Some(p) = paths.get(id).and_then(Value::as_object) {
-        if let Some(arr) = p.get("path").and_then(Value::as_array) {
-            let mut segs: Vec<String> = arr.iter().filter_map(Value::as_str).map(|s| s.to_string()).collect();
-            if let Some(name) = index.get(id).and_then(|it| it.get("name")).and_then(Value::as_str) {
-                segs.push(name.to_string());
-            }
-            return segs.join("::");
+    if let Some(p) = paths.get(id).and_then(Value::as_object)
+        && let Some(arr) = p.get("path").and_then(Value::as_array)
+    {
+        let mut segs: Vec<String> = arr.iter().filter_map(Value::as_str).map(|s| s.to_string()).collect();
+        if let Some(name) = index.get(id).and_then(|it| it.get("name")).and_then(Value::as_str) {
+            segs.push(name.to_string());
         }
+        return segs.join("::");
     }
     let nm = index
         .get(id)
@@ -141,10 +233,10 @@ fn item_kind(item: &Value) -> String {
     if let Some(k) = item.get("kind").and_then(Value::as_str) {
         return k.to_string();
     }
-    if let Some(inner) = item.get("inner").and_then(Value::as_object) {
-        if let Some((k, _)) = inner.iter().next() {
-            return k.to_string();
-        }
+    if let Some(inner) = item.get("inner").and_then(Value::as_object)
+        && let Some((k, _)) = inner.iter().next()
+    {
+        return k.to_string();
     }
     "unknown".to_string()
 }
@@ -155,10 +247,10 @@ fn item_docs(item: &Value) -> String {
     }
     if let Some(inner) = item.get("inner").and_then(Value::as_object) {
         for (_k, v) in inner {
-            if let Some(m) = v.as_object() {
-                if let Some(d) = m.get("docs").and_then(Value::as_str) {
-                    return d.to_string();
-                }
+            if let Some(m) = v.as_object()
+                && let Some(d) = m.get("docs").and_then(Value::as_str)
+            {
+                return d.to_string();
             }
         }
     }

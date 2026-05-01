@@ -18,7 +18,7 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
         .steps;
 
     // In any migration plan, all `RowLevelSecurityDef`s are ALWAYS removed and
-    // re-added to ensure the core engine reinintializes the policies.
+    // re-added to ensure the core engine reinitializes the policies.
     // This is slightly silly (and arguably should be hidden inside `core`),
     // but for now, we just ignore these steps and manually compare the `RowLevelSecurityDef`s.
     diff.retain(|step| {
@@ -90,4 +90,10 @@ declare_tests! {
 #[serial]
 fn ensure_same_schema_rust_csharp_benchmarks() {
     assert_identical_modules("benchmarks", "C#", "cs");
+}
+
+#[test]
+#[serial]
+fn esure_same_schema_case_conversion() {
+    assert_identical_modules("sdk-test-case-conversion", "", "ts");
 }

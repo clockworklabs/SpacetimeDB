@@ -104,7 +104,7 @@ fn test_json_mappings() {
     de_json_snapshot!(schema, data);
 }
 
-fn tuple<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> ProductType {
+fn tuple(elems: impl IntoIterator<Item = (&'static str, AlgebraicType)>) -> ProductType {
     ProductType {
         elements: elems
             .into_iter()
@@ -112,7 +112,7 @@ fn tuple<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> Produ
             .collect(),
     }
 }
-fn enumm<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> SumType {
+fn enumm(elems: impl IntoIterator<Item = (&'static str, AlgebraicType)>) -> SumType {
     SumType {
         variants: elems
             .into_iter()

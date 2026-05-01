@@ -3,7 +3,6 @@ title: Self-hosting
 slug: /how-to/deploy/self-hosting
 ---
 
-# Self-hosting SpacetimeDB
 
 This tutorial will guide you through setting up SpacetimeDB on an Ubuntu 24.04 server, securing it with HTTPS using Nginx and Let's Encrypt, and configuring a systemd service to keep it running.
 
@@ -214,7 +213,7 @@ On your local machine, add this new server to your CLI config. Make sure to repl
 spacetime server add self-hosted --url https://example.com
 ```
 
-If you have uncommented the `/v1/publish` restriction in Step 3 then you won't be able to publish to this instance unless you copy your module to the host first and then publish. We recommend something like this:
+If you have `/` restriction uncommented in Step 3 then you won't be able to publish to this instance unless you copy your module to the host first and then publish. We recommend something like this:
 
 ```bash
 spacetime build

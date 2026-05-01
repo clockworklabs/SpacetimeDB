@@ -16,7 +16,8 @@ use spacetimedb_data_structures::{
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
 use spacetimedb_sats::{
-    layout::PrimitiveType, typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace,
+    layout::PrimitiveType, raw_identifier::RawIdentifier, typespace::TypeRefError, AlgebraicTypeRef, ArrayType,
+    SumTypeVariant, Typespace,
 };
 use std::{cell::RefCell, ops::Index, sync::Arc};
 
@@ -520,7 +521,7 @@ impl TypespaceForGenerateBuilder<'_> {
             .get(ref_)
             .ok_or_else(|| ErrorStream::from(ClientCodegenError::TypeRefError(TypeRefError::InvalidTypeRef(ref_))))?;
 
-        let result = match def {
+        match def {
             AlgebraicType::Product(product) => product
                 .elements
                 .iter()
@@ -564,9 +565,7 @@ impl TypespaceForGenerateBuilder<'_> {
                 ty: PrettyAlgebraicType(def.clone()),
             }
             .into()),
-        };
-
-        result
+        }
     }
 
     /// Process an element/variant of a product/sum type.
@@ -576,7 +575,7 @@ impl TypespaceForGenerateBuilder<'_> {
     fn process_element(
         &mut self,
         def: &AlgebraicType,
-        element_name: &Option<Box<str>>,
+        element_name: &Option<RawIdentifier>,
         element_type: &AlgebraicType,
     ) -> Result<(Identifier, AlgebraicTypeUse)> {
         let element_name = element_name

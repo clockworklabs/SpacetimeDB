@@ -203,6 +203,12 @@ public readonly struct RefOption<Inner, InnerRW> : IReadWrite<Inner?>
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         AlgebraicType.MakeOption(innerRW.GetAlgebraicType(registrar));
+
+    // Return a List BSATN serializer that can serialize this option as an array
+    public static List<Inner, InnerRW> GetListSerializer()
+    {
+        return new List<Inner, InnerRW>();
+    }
 }
 
 // This implementation is nearly identical to RefOption. The only difference is the constraint on T.

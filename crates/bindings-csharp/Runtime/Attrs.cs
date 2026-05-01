@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB
+namespace SpacetimeDB
 {
     namespace Internal
     {
@@ -41,6 +41,9 @@
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class ClientVisibilityFilterAttribute : Attribute { }
 
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class SettingsAttribute : Attribute { }
+
     /// <summary>
     /// Registers a type as the row structure of a SpacetimeDB table, enabling codegen for it.
     ///
@@ -58,6 +61,8 @@
         ///
         /// <para>Defaults to the <c>nameof</c> of the target type.</para>
         /// </summary>
+        public string? Accessor { get; init; }
+
         public string? Name { get; init; }
 
         /// <summary>
@@ -66,6 +71,8 @@
         /// <para>Defaults to the table only being visible to its owner.</para>
         /// </summary>
         public bool Public { get; init; } = false;
+
+        public bool Event { get; init; } = false;
 
         /// <summary>
         /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
@@ -90,6 +97,8 @@
         /// <summary>
         /// Views must have an explicit name.
         /// </summary>
+        public string? Accessor { get; init; }
+
         public string? Name { get; init; }
 
         /// <summary>
@@ -105,6 +114,8 @@
     public abstract class Index : Attribute
     {
         public string? Table { get; init; }
+
+        public string? Accessor { get; init; }
 
         public string? Name { get; init; }
 
@@ -183,8 +194,13 @@
     public sealed class ReducerAttribute(ReducerKind kind = ReducerKind.UserDefined) : Attribute
     {
         public ReducerKind Kind => kind;
+
+        public string? Name { get; init; }
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
-    public sealed class ProcedureAttribute() : Attribute { }
+    public sealed class ProcedureAttribute() : Attribute
+    {
+        public string? Name { get; init; }
+    }
 }

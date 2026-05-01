@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use spacetimedb_client_api_messages::websocket::{BsatnFormat, ClientMessage, ServerMessage};
+use spacetimedb_client_api_messages::websocket::v1::{BsatnFormat, ClientMessage, ServerMessage};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 

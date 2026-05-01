@@ -82,6 +82,17 @@ impl Sequence {
         self.value = new_value;
     }
 
+    /// Update the persisted allocation cursor for the sequence.
+    pub(super) fn update_allocation(&mut self, new_allocated: i128) {
+        if !(self.schema.min_value..=self.schema.max_value).contains(&new_allocated) {
+            panic!(
+                "Invalid sequence allocation update: new allocated {} is out of bounds for sequence with min_value {} and max_value {}",
+                new_allocated, self.schema.min_value, self.schema.max_value
+            );
+        }
+        self.allocated = new_allocated;
+    }
+
     pub(super) fn get_value(&self) -> i128 {
         self.value
     }
@@ -245,7 +256,7 @@ mod tests {
             start: params.start,
             col_pos: ColId(1),
             table_id: TableId(1),
-            sequence_name: "test_sequence".to_owned().into_boxed_str(),
+            sequence_name: "test_sequence".into(),
         };
         Sequence::new(schema, params.previous_allocation)
     }

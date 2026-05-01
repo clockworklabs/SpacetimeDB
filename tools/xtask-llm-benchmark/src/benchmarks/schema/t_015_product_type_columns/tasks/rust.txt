@@ -11,7 +11,7 @@ TYPES
     - y: i32
 
 TABLE
-- profiles
+- profile
   - Struct: Profile
   - Fields:
     - id: i32 (primary key)
@@ -20,5 +20,5 @@ TABLE
     - pos: Position
 
 REDUCERS
-- seed: insert exactly one row into profiles
+- seed: insert exactly one row into profile
   - (id=1, home=Address{street:"1 Main", zip:11111}, work=Address{street:"2 Broad", zip:22222}, pos=Position{x:7, y:9})

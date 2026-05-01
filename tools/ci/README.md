@@ -44,7 +44,7 @@ Usage: test
 
 Lints the codebase
 
-Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no warnings.
 
 **Usage:**
 ```bash
@@ -70,6 +70,21 @@ Usage: wasm-bindings
 
 - `--help`: Print help (see a summary with '-h')
 
+### `dlls`
+
+Builds and packs C# DLLs and NuGet packages for local Unity workflows
+
+Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`. Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored versioned package directory, so Unity can associate stable meta files with the most recently built package.
+
+**Usage:**
+```bash
+Usage: dlls
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
+
 ### `smoketests`
 
 Runs smoketests
@@ -78,13 +93,55 @@ Executes the smoketests suite with some default exclusions.
 
 **Usage:**
 ```bash
-Usage: smoketests [ARGS]...
+Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 ```
 
 **Options:**
 
-- `args`: Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`
+- `--server`: Run tests against a remote server instead of spawning local servers.
+
+When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
+
+- `--dotnet`: 
+- `args`: Additional arguments to pass to the test runner
 - `--help`: Print help (see a summary with '-h')
+
+#### `prepare`
+
+Only build binaries without running tests
+
+Use this before running `cargo test --all` to ensure binaries are built.
+
+**Usage:**
+```bash
+Usage: prepare
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
+
+#### `check-mod-list`
+
+**Usage:**
+```bash
+Usage: check-mod-list
+```
+
+**Options:**
+
+- `--help`: Print help
+
+#### `help`
+
+**Usage:**
+```bash
+Usage: help [COMMAND]...
+```
+
+**Options:**
+
+- `subcommand`: Print help for the subcommand(s)
 
 ### `update-flow`
 
@@ -127,6 +184,50 @@ Usage: self-docs [OPTIONS]
 - `--check`: Only check for changes, do not generate the docs
 - `--help`: Print help (see a summary with '-h')
 
+### `global-json-policy`
+
+**Usage:**
+```bash
+Usage: global-json-policy
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `publish-checks`
+
+**Usage:**
+```bash
+Usage: publish-checks
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `typescript-test`
+
+**Usage:**
+```bash
+Usage: typescript-test
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `docs`
+
+**Usage:**
+```bash
+Usage: docs
+```
+
+**Options:**
+
+- `--help`: Print help
+
 ### `help`
 
 **Usage:**
@@ -136,7 +237,7 @@ Usage: help [COMMAND]...
 
 **Options:**
 
-- `subcommand`: 
+- `subcommand`: Print help for the subcommand(s)
 
 
 ---

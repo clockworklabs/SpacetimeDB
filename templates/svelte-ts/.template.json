@@ -1,0 +1,14 @@
+{
+  "description": "Svelte web app with TypeScript server",
+  "client_framework": "Svelte",
+  "client_lang": "typescript",
+  "server_lang": "typescript",
+  "builtWith": [
+    "sveltejs",
+    "svelte",
+    "svelte-check",
+    "typescript",
+    "vite",
+    "spacetimedb"
+  ]
+}

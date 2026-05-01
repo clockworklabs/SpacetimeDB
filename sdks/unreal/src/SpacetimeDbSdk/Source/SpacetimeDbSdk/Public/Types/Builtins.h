@@ -8,7 +8,14 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Builtins.generated.h"
 
-
+// macOS/Objective-C++ defines Nil as a macro (#define Nil nullptr in objc/objc.h).
+// Unreal Engine compiles as Objective-C++ on Apple platforms, causing FSpacetimeDBUuid::Nil()
+// to fail with "expected member name or ';' after declaration specifiers".
+#ifdef Nil
+#define SPACETIMEDB_NIL_MACRO_SAVED
+#pragma push_macro("Nil")
+#undef Nil
+#endif
 
 /**Compression algorithms supported by SpacetimeDB for data storage and transmission. */
 UENUM(BlueprintType)
@@ -189,7 +196,7 @@ struct FSpacetimeDBUuid
     GENERATED_BODY()
 
     /** The 128-bit value of the UUID. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBUInt128 Value;
 
     /** Default constructor initializes to zero (nil UUID). */
@@ -1082,3 +1089,9 @@ public:
         return FSpacetimeDBUuid(Guid);
     }
 };
+
+// Restore macOS/Objective-C++ Nil macro
+#ifdef SPACETIMEDB_NIL_MACRO_SAVED
+#pragma pop_macro("Nil")
+#undef SPACETIMEDB_NIL_MACRO_SAVED
+#endif

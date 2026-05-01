@@ -1,0 +1,23 @@
+{
+  "name": "case-conversion-test-client",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "dev": "esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --format=esm && node dist/index.js",
+    "start": "node dist/index.js",
+    "build": "esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --format=esm",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud",
+    "generate": "npm run spacetime:generate && prettier --write src/module_bindings"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "esbuild": "^0.24.0",
+    "@types/node": "^20.0.0"
+  }
+}
