@@ -163,6 +163,34 @@ impl Handler {
     }
 }
 
+/// A collection of routes bound to HTTP handlers.
+///
+/// Define HTTP handlers with the [`handler`] macro.
+///
+/// Bind handlers to paths with:
+/// - [`Self::get`]
+/// - [`Self::head`]
+/// - [`Self::put`]
+/// - [`Self::options`]
+/// - [`Self::put`]
+/// - [`Self::delete`]
+/// - [`Self::post`]
+/// - [`Self::patch`]
+/// - [`Self::any`]
+///
+/// ## Paths
+///
+/// Each route binds a handler to an HTTP method at a path.
+///
+/// The empty string `""` is a valid path, which refers to the root route.
+///
+/// All other paths must start with a slash `/`.
+///
+/// Only characters described by [`spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION`]
+/// are valid for use in paths. This set may be expanded in the future.
+///
+/// SpacetimeDB uses strict routing, meaning that trailing slashes `/` in paths are significant.
+/// `/foo` and `/foo/` are distinct paths.
 #[derive(Clone, Default)]
 pub struct Router {
     routes: Vec<RouteSpec>,
@@ -187,7 +215,7 @@ impl Router {
     /// including one registered with [`Self::any`],
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn get(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Method(st_http::Method::Get), path, handler)
     }
@@ -198,7 +226,7 @@ impl Router {
     /// including one registered with [`Self::any`],
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn head(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Method(st_http::Method::Head), path, handler)
     }
@@ -209,7 +237,7 @@ impl Router {
     /// including one registered with [`Self::any`],
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn options(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Method(st_http::Method::Options), path, handler)
     }
@@ -220,7 +248,7 @@ impl Router {
     /// including one registered with [`Self::any`],
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn put(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Method(st_http::Method::Put), path, handler)
     }
@@ -231,7 +259,7 @@ impl Router {
     /// including one registered with [`Self::any`],
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn delete(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Method(st_http::Method::Delete), path, handler)
     }
@@ -242,7 +270,7 @@ impl Router {
     /// including one registered with [`Self::any`],
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn post(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Method(st_http::Method::Post), path, handler)
     }
@@ -253,7 +281,7 @@ impl Router {
     /// including one registered with [`Self::any`],
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn patch(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Method(st_http::Method::Patch), path, handler)
     }
@@ -263,7 +291,7 @@ impl Router {
     /// Panics if `self` already has a handler on at least one method at this path,
     /// or if this path overlaps with a nested router registered by [`Self::nest`].
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn any(self, path: impl Into<String>, handler: Handler) -> Self {
         self.add_route(MethodOrAny::Any, path, handler)
     }
@@ -274,7 +302,7 @@ impl Router {
     ///
     /// Panics if `self` already has any handlers registered on paths which start with `path`.
     ///
-    /// Panics if the `path` does not begin with `/`, or if it contains any characters which are not URL-safe.
+    /// Panics if the `path` is [invalid](Self#paths).
     pub fn nest(self, path: impl Into<String>, sub_router: Self) -> Self {
         let path = path.into();
         assert_valid_path(&path);
