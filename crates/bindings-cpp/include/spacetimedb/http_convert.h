@@ -268,6 +268,26 @@ inline HttpResponse from_wire(const wire::HttpResponse& response) {
     return result;
 }
 
+inline wire::RequestAndBody to_wire_with_body(const HttpRequest& request) {
+    return wire::RequestAndBody{to_wire(request), request.body.bytes};
+}
+
+inline HttpRequest from_wire(const wire::RequestAndBody& request) {
+    HttpRequest result = from_wire(request.request);
+    result.body.bytes = request.body;
+    return result;
+}
+
+inline wire::ResponseAndBody to_wire_with_body(const HttpResponse& response) {
+    return wire::ResponseAndBody{to_wire(response), response.body.bytes};
+}
+
+inline HttpResponse from_wire(const wire::ResponseAndBody& response) {
+    HttpResponse result = from_wire(response.response);
+    result.body.bytes = response.body;
+    return result;
+}
+
 } // namespace convert
 } // namespace SpacetimeDB
 

@@ -75,6 +75,13 @@ public:
         BytesSource args_source,
         BytesSink result_sink
     );
+
+    static int16_t __call_http_handler__(
+        uint32_t id,
+        uint64_t timestamp_microseconds,
+        BytesSource request_source,
+        BytesSink result_sink
+    );
     
     // Internal registration methods (inline to avoid linking issues)
     template<typename T>

@@ -99,4 +99,19 @@ extern "C" {
         );
     }
 
+    STDB_EXPORT(__call_http_handler__)
+    int16_t __call_http_handler__(
+        uint32_t id,
+        uint64_t timestamp_microseconds,
+        SpacetimeDB::BytesSource request_source,
+        SpacetimeDB::BytesSink result_sink
+    ) {
+        return SpacetimeDB::Internal::Module::__call_http_handler__(
+            id,
+            timestamp_microseconds,
+            request_source,
+            result_sink
+        );
+    }
+
 } // extern "C"

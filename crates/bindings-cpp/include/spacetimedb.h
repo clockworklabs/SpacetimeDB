@@ -126,6 +126,9 @@
 
 // Procedure context and macros
 #include "spacetimedb/procedure_macros.h"
+#include "spacetimedb/handler_context.h"
+#include "spacetimedb/router.h"
+#include "spacetimedb/http_handler_macros.h"
 
 // =============================================================================
 // VIEW SYSTEM

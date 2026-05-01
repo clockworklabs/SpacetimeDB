@@ -16,6 +16,11 @@
 #include "spacetimedb/reducer_error.h"
 #include "spacetimedb/view_context.h"
 #include "spacetimedb/procedure_context.h"
+#include "spacetimedb/handler_context.h"
+#include "spacetimedb/http_convert.h"
+#include "spacetimedb/http_wire.h"
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include <functional>
@@ -55,6 +60,13 @@ namespace Internal {
         std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler;
     };
     static std::vector<ProcedureHandler> g_procedure_handlers;
+
+    struct HttpHandler {
+        std::string name;
+        const void* symbol;
+        std::function<HttpResponse(HandlerContext&, HttpRequest)> handler;
+    };
+    static std::vector<HttpHandler> g_http_handlers;
     
     /**
      * @brief View result header for serializing view return values
@@ -116,6 +128,23 @@ namespace Internal {
                                   std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler) {
         g_procedure_handlers.push_back({name, handler});
     }
+
+    void RegisterHttpHandlerHandler(const std::string& name,
+                                    const void* handler_symbol,
+                                    std::function<HttpResponse(HandlerContext&, HttpRequest)> handler) {
+        g_http_handlers.push_back({name, handler_symbol, handler});
+    }
+
+    std::string LookupHttpHandlerName(const void* handler_symbol) {
+        auto it = std::find_if(g_http_handlers.begin(), g_http_handlers.end(), [&](const auto& existing) {
+            return existing.symbol == handler_symbol;
+        });
+        if (it == g_http_handlers.end()) {
+            fprintf(stderr, "ERROR: HTTP handler must be registered before it is referenced by a router\n");
+            std::abort();
+        }
+        return it->name;
+    }
     
     // Get the number of registered view handlers
     size_t GetViewHandlerCount() {
@@ -129,6 +158,10 @@ namespace Internal {
     // Get the number of registered procedure handlers
     size_t GetProcedureHandlerCount() {
         return g_procedure_handlers.size();
+    }
+
+    size_t GetHttpHandlerCount() {
+        return g_http_handlers.size();
     }
     
     void SetTableIsEventFlag(const std::string& table_name, bool is_event) {
@@ -146,6 +179,7 @@ namespace Internal {
         g_view_handlers.clear();  // Clear view handlers
         g_view_anon_handlers.clear();  // Clear anonymous view handlers
         g_procedure_handlers.clear();  // Clear procedure handlers
+        g_http_handlers.clear();  // Clear http handlers
         g_multiple_primary_key_error = false;  // Reset error flag
         g_multiple_primary_key_table_name = "";  // Reset error table name
         g_constraint_registration_error = false;
@@ -628,6 +662,38 @@ int16_t Module::__call_procedure__(
     WriteBytes(result_sink, result_data);
     
     return 0;  // Success (StatusCode::OK)
+}
+
+int16_t Module::__call_http_handler__(
+    uint32_t id,
+    uint64_t timestamp_microseconds,
+    BytesSource request_source,
+    BytesSink result_sink
+) {
+    if (id >= g_http_handlers.size()) {
+        fprintf(stderr, "ERROR: Invalid http handler ID %u (have %zu handlers)\n",
+                id, g_http_handlers.size());
+        return -1;
+    }
+
+    Timestamp timestamp = Timestamp::from_micros_since_epoch(static_cast<int64_t>(timestamp_microseconds));
+    HandlerContext ctx(timestamp);
+
+    std::vector<uint8_t> request_bytes = ConsumeBytes(request_source);
+    bsatn::Reader request_reader(request_bytes.data(), request_bytes.size());
+    wire::RequestAndBody wire_request = bsatn::deserialize<wire::RequestAndBody>(request_reader);
+    HttpRequest request = convert::from_wire(wire_request);
+
+    HttpResponse response = g_http_handlers[id].handler(ctx, std::move(request));
+    wire::ResponseAndBody wire_response = convert::to_wire_with_body(response);
+
+    std::vector<uint8_t> result_data;
+    {
+        bsatn::Writer writer(result_data);
+        bsatn::serialize(writer, wire_response);
+    }
+    WriteBytes(result_sink, result_data);
+    return 0;
 }
 
 void Module::SetCaseConversionPolicy(CaseConversionPolicy policy) {

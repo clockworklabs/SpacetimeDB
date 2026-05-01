@@ -7,7 +7,7 @@
 #include "spacetimedb/http_convert.h"
 #include "spacetimedb/abi/abi.h"
 #include "spacetimedb/bsatn/bsatn.h"
-#include "spacetimedb/internal/Module.h"
+#include "spacetimedb/internal/runtime_registration.h"
 
 namespace SpacetimeDB {
 
