@@ -99,10 +99,20 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-linux.tar.gz
-          tar -xzf wasi-sdk-29.0-x86_64-linux.tar.gz
-          sudo mv wasi-sdk-29.0-x86_64-linux /opt/wasi-sdk
-          echo "WASI_SDK_PATH=/opt/wasi-sdk" >> "$GITHUB_ENV"
+          WASI_SDK_VERSION="25"
+          WASI_SDK_PATH="/opt/wasi-sdk"
+          if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
+            echo "WASI SDK already installed at $WASI_SDK_PATH"
+          else
+            echo "Installing WASI SDK version $WASI_SDK_VERSION..."
+            wget -q "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            tar -xzf "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            sudo mv "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" "$WASI_SDK_PATH"
+            rm -f "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            echo "WASI SDK installed successfully"
+          fi
+          echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
+          echo "Using WASI SDK at: $WASI_SDK_PATH"
 
       - name: Install emscripten (Windows)
         if: runner.os == 'Windows'
@@ -119,11 +129,22 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $wasiSdkVersion = "25"
           $wasiDir = "$env:USERPROFILE\.wasi-sdk"
-          Invoke-WebRequest -Uri "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-windows.tar.gz" -OutFile "$env:TEMP\wasi-sdk.tar.gz"
-          New-Item -ItemType Directory -Force -Path $wasiDir | Out-Null
-          & "$env:SystemRoot\System32\tar.exe" -xzf "$env:TEMP\wasi-sdk.tar.gz" -C $wasiDir --strip-components=1
+          $clangPath = Join-Path $wasiDir "bin\clang.exe"
+          if (Test-Path $clangPath) {
+            Write-Host "WASI SDK already installed at $wasiDir"
+          } else {
+            Write-Host "Installing WASI SDK version $wasiSdkVersion..."
+            $wasiUrl = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${wasiSdkVersion}/wasi-sdk-${wasiSdkVersion}.0-x86_64-windows.tar.gz"
+            Invoke-WebRequest -Uri $wasiUrl -OutFile "$env:TEMP\wasi-sdk.tar.gz"
+            New-Item -ItemType Directory -Force -Path $wasiDir | Out-Null
+            & "$env:SystemRoot\System32\tar.exe" -xzf "$env:TEMP\wasi-sdk.tar.gz" -C $wasiDir --strip-components=1
+            Remove-Item "$env:TEMP\wasi-sdk.tar.gz" -Force -ErrorAction SilentlyContinue
+            Write-Host "WASI SDK installed successfully"
+          }
           echo "WASI_SDK_PATH=$wasiDir" >> $env:GITHUB_ENV
+          Write-Host "Using WASI SDK at: $wasiDir"
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
@@ -256,6 +277,25 @@ jobs:
           cd ~/emsdk
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
+
+      # Install WASI SDK for .NET 10 NativeAOT-LLVM compilation (idempotent - checks if already exists).
+      - name: Install WASI SDK
+        shell: bash
+        run: |
+          WASI_SDK_VERSION="25"
+          WASI_SDK_PATH="/opt/wasi-sdk"
+          if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
+            echo "WASI SDK already installed at $WASI_SDK_PATH"
+          else
+            echo "Installing WASI SDK version $WASI_SDK_VERSION..."
+            wget -q "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            tar -xzf "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            sudo mv "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" "$WASI_SDK_PATH"
+            rm -f "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            echo "WASI SDK installed successfully"
+          fi
+          echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
+          echo "Using WASI SDK at: $WASI_SDK_PATH"
 
       - name: Install wasm-bindgen CLI
         run: |
