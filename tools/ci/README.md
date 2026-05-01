@@ -217,6 +217,17 @@ Usage: typescript-test
 
 - `--help`: Print help
 
+### `csharp-tests`
+
+**Usage:**
+```bash
+Usage: csharp-tests
+```
+
+**Options:**
+
+- `--help`: Print help
+
 ### `docs`
 
 **Usage:**
