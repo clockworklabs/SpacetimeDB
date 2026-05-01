@@ -757,7 +757,10 @@ mod tests {
         let request = st_http::Request {
             method: st_http::Method::Post,
             headers: vec![
-                (Some("content-type".into()), b"application/octet-stream".as_slice().into()),
+                (
+                    Some("content-type".into()),
+                    b"application/octet-stream".as_slice().into(),
+                ),
                 (Some("x-echo".into()), b"value".as_slice().into()),
             ]
             .into_iter()
@@ -771,7 +774,10 @@ mod tests {
 
         assert_eq!(request.method(), http::Method::POST);
         assert_eq!(request.version(), http::Version::HTTP_2);
-        assert_eq!(request.uri(), &http::Uri::from_static("https://example.invalid/upload?x=1"));
+        assert_eq!(
+            request.uri(),
+            &http::Uri::from_static("https://example.invalid/upload?x=1")
+        );
         assert_eq!(request.headers()["content-type"], "application/octet-stream");
         assert_eq!(request.headers()["x-echo"], "value");
         assert_eq!(request.into_body().into_bytes(), Bytes::from_static(b"payload"));

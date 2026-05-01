@@ -400,10 +400,7 @@ fn headers_to_st(headers: http::HeaderMap) -> st_http::Headers {
         .collect()
 }
 
-fn response_from_st(
-    response: st_http::Response,
-    body: Bytes,
-) -> axum::response::Result<http::Response<Body>> {
+fn response_from_st(response: st_http::Response, body: Bytes) -> axum::response::Result<http::Response<Body>> {
     let st_http::Response { headers, version, code } = response;
 
     // TODO(streaming-http): stop materializing the whole response body before building the Axum
