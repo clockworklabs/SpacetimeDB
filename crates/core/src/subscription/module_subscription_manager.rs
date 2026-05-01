@@ -2211,7 +2211,7 @@ mod tests {
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
-        energy::EnergyQuanta,
+        energy::FunctionBudget,
         host::{
             module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
             ArgsTuple,
@@ -3183,7 +3183,7 @@ mod tests {
             },
             status: EventStatus::Committed(DatabaseUpdate::default()),
             reducer_return_value: None,
-            energy_quanta_used: EnergyQuanta::ZERO,
+            execution_energy_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::default(),
             request_id: None,
             timer: None,
