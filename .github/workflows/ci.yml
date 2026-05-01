@@ -280,9 +280,24 @@ jobs:
 
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
+        env:
+          CARGO_LOG: cargo::core::compiler::fingerprint=info
         run: |
           source ~/emsdk/emsdk_env.sh
+          if command -v sccache >/dev/null 2>&1; then
+            echo "::group::sccache stats (before)"
+            sccache --show-stats || true
+            sccache --zero-stats || true
+            echo "::endgroup::"
+          fi
           cargo ci test
+          rc=$?
+          if command -v sccache >/dev/null 2>&1; then
+            echo "::group::sccache stats (after)"
+            sccache --show-stats || true
+            echo "::endgroup::"
+          fi
+          exit $rc
 
   lints:
     name: Lints
