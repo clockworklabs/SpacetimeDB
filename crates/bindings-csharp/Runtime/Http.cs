@@ -418,13 +418,52 @@ public sealed class HttpClient
     private static HttpHeaderPairWire ToWireHeader(HttpHeader header) =>
         new() { Name = header.Name, Value = header.Value };
 
-    private static (
-        ushort statusCode,
-        HttpVersion version,
-        List<HttpHeader> headers
-    ) FromWireResponse(HttpResponseWire responseWire)
+    internal static HttpRequest FromWire(HttpRequestAndBodyWire requestAndBodyWire)
     {
-        var version = responseWire.Version switch
+        var requestWire = requestAndBodyWire.Request;
+        return new HttpRequest
+        {
+            Uri = requestWire.Uri,
+            Method = FromWireMethod(requestWire.Method),
+            Headers = requestWire.Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false)).ToList(),
+            Body = new HttpBody(requestAndBodyWire.Body),
+            Version = FromWireVersion(requestWire.Version),
+        };
+    }
+
+    internal static HttpResponseAndBodyWire ToWire(HttpResponse response) =>
+        new()
+        {
+            Response = new HttpResponseWire
+            {
+                Headers = new HttpHeadersWire
+                {
+                    Entries = response.Headers.Select(ToWireHeader).ToArray(),
+                },
+                Version = ToWireVersion(response.Version),
+                Code = response.StatusCode,
+            },
+            Body = response.Body.ToBytes(),
+        };
+
+    private static HttpMethod FromWireMethod(HttpMethodWire methodWire) =>
+        methodWire switch
+        {
+            HttpMethodWire.Get => HttpMethod.Get,
+            HttpMethodWire.Head => HttpMethod.Head,
+            HttpMethodWire.Post => HttpMethod.Post,
+            HttpMethodWire.Put => HttpMethod.Put,
+            HttpMethodWire.Delete => HttpMethod.Delete,
+            HttpMethodWire.Connect => HttpMethod.Connect,
+            HttpMethodWire.Options => HttpMethod.Options,
+            HttpMethodWire.Trace => HttpMethod.Trace,
+            HttpMethodWire.Patch => HttpMethod.Patch,
+            HttpMethodWire.Extension(var extension) => new HttpMethod(extension),
+            _ => throw new InvalidOperationException("Invalid HTTP method returned from host"),
+        };
+
+    private static HttpVersion FromWireVersion(HttpVersionWire versionWire) =>
+        versionWire switch
         {
             HttpVersionWire.Http09 => HttpVersion.Http09,
             HttpVersionWire.Http10 => HttpVersion.Http10,
@@ -433,6 +472,14 @@ public sealed class HttpClient
             HttpVersionWire.Http3 => HttpVersion.Http3,
             _ => throw new InvalidOperationException("Invalid HTTP version returned from host"),
         };
+
+    private static (
+        ushort statusCode,
+        HttpVersion version,
+        List<HttpHeader> headers
+    ) FromWireResponse(HttpResponseWire responseWire)
+    {
+        var version = FromWireVersion(responseWire.Version);
 
         var headers = responseWire
             .Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false))

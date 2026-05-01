@@ -203,4 +203,13 @@ namespace SpacetimeDB
     {
         public string? Name { get; init; }
     }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class HttpHandlerAttribute() : Attribute
+    {
+        public string? Name { get; init; }
+    }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class HttpRouterAttribute() : Attribute { }
 }
