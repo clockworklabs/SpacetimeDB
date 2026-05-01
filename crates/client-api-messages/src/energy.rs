@@ -151,4 +151,22 @@ impl FunctionBudget {
     pub const fn get(&self) -> u64 {
         self.0
     }
+
+    /// Convert `FunctionBudget` to `Duration` using the conversion factor
+    /// [`FunctionBudget::PER_EXECUTION_SEC`].
+    pub fn to_duration(self) -> Duration {
+        Duration::from_nanos(self.0 / Self::PER_EXECUTION_NANOSEC.0)
+    }
+
+    /// Convert `Duration` to `FunctionBudget` using the conversion factor
+    /// [`FunctionBudget::PER_EXECUTION_SEC`].
+    ///
+    /// Returns `None` on overflow, which means that dur > 106.75 days.
+    // in order for duration_nanos * budget_per_ns >= u64::MAX:
+    //              duration_nanos >= u64::MAX / budget_per_ns
+    //              duration_nanos >= (9223372036854775 ns = 106.75 days)
+    pub fn from_duration(dur: Duration) -> Option<Self> {
+        let duration_nanos = u64::try_from(dur.as_nanos()).ok()?;
+        duration_nanos.checked_mul(Self::PER_EXECUTION_NANOSEC.get()).map(Self)
+    }
 }
