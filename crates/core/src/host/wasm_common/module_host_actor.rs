@@ -110,9 +110,15 @@ impl EnergyStats {
         remaining: FunctionBudget::ZERO,
     };
 
+    pub fn from_used(budget: FunctionBudget, used: FunctionBudget) -> Self {
+        // TODO: should this be a saturating_sub?
+        let remaining = budget - used;
+        Self { budget, remaining }
+    }
+
     /// Returns the used energy amount.
     fn used(&self) -> FunctionBudget {
-        (self.budget.get() - self.remaining.get()).into()
+        self.budget - self.remaining
     }
 }
 

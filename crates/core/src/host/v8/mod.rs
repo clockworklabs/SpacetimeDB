@@ -1,4 +1,3 @@
-use self::budget::energy_from_elapsed;
 use self::error::{
     catch_exception, exception_already_thrown, log_traceback, ErrorOrException, ExcResult, ExceptionThrown,
     PinTryCatch, Throwable,
@@ -22,9 +21,9 @@ use crate::host::module_host::{
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
-    InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
-    WasmInstance,
+    AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
+    InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp,
+    ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
@@ -1874,7 +1873,12 @@ where
         let timings = env.finish_funcall();
 
         // Derive energy stats.
-        let energy = energy_from_elapsed(budget, timings.total_duration);
+        let energy_used = FunctionBudget::from_duration(timings.total_duration)
+            // The magnitude that `total_duration` would have to have to cause an overflow here is
+            // large enough that we don't really have to worry about it (see `from_duration` docs).
+            // Still, better to saturate than wrap.
+            .unwrap_or(FunctionBudget::MAX);
+        let energy = EnergyStats::from_used(budget, energy_used);
 
         // Reuse the last periodic heap sample instead of querying V8 on every call.
         // We use this statistic for energy tracking, so eventual consistency is fine.
