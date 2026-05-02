@@ -7,10 +7,9 @@ use quick_xml::Reader;
 use spacetimedb_language_test_support::{print_results, target_dir, Outcome, TestCaseResult};
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, ExitStatus, Output};
 
 #[derive(Clone, Debug, Default, Parser)]
-#[command(disable_help_flag = true)]
 struct Args {
     #[arg(long)]
     filter: Option<String>,
@@ -18,26 +17,8 @@ struct Args {
     #[arg(long, alias = "list-tests")]
     list: bool,
 
-    #[arg(skip)]
+    #[arg(last = true)]
     passthrough: Vec<String>,
-}
-
-impl Args {
-    fn parse() -> Self {
-        let mut args = std::env::args().collect::<Vec<_>>();
-        let passthrough = args
-            .iter()
-            .position(|arg| arg == "--")
-            .map(|index| args.split_off(index + 1))
-            .unwrap_or_default();
-        if args.last().is_some_and(|arg| arg == "--") {
-            args.pop();
-        }
-
-        let mut parsed = <Args as Parser>::parse_from(args);
-        parsed.passthrough = passthrough;
-        parsed
-    }
 }
 
 fn main() {
@@ -57,35 +38,30 @@ fn run() -> Result<()> {
     let report = out_dir.join("vitest.junit.xml");
 
     if args.list {
-        let mut cmd = vec!["vitest".to_string(), "list".to_string()];
-        if let Some(filter) = args.filter {
-            cmd.push(filter);
-        }
-        let status = Command::new("pnpm")
-            .args(&cmd)
-            .current_dir(&cwd)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .with_context(|| format!("failed to spawn `{}` in {}", shell_line("pnpm", &cmd), cwd.display()))?;
-        ensure_success(
-            &cwd,
-            "pnpm",
-            &cmd,
-            &Output {
-                status,
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-            },
-        )?;
-        return Ok(());
+        return list_tests(&cwd, args.filter);
     }
 
+    run_tests(&cwd, &report, args)
+}
+
+fn list_tests(cwd: &Path, filter: Option<String>) -> Result<()> {
+    let mut cmd = vec!["vitest".to_string(), "list".to_string()];
+    if let Some(filter) = filter {
+        cmd.push(filter);
+    }
+    let status = Command::new("pnpm")
+        .args(&cmd)
+        .current_dir(cwd)
+        .status()
+        .with_context(|| format!("failed to spawn `{}` in {}", shell_line("pnpm", &cmd), cwd.display()))?;
+    ensure_status_success(cwd, "pnpm", &cmd, status)
+}
+
+fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
     let build_args = ["build".to_string()];
     let output = Command::new("pnpm")
         .args(&build_args)
-        .current_dir(&cwd)
+        .current_dir(cwd)
         .output()
         .with_context(|| {
             format!(
@@ -94,7 +70,7 @@ fn run() -> Result<()> {
                 cwd.display()
             )
         })?;
-    ensure_success(&cwd, "pnpm", &build_args, &output)?;
+    ensure_success(cwd, "pnpm", &build_args, &output)?;
 
     let mut test_args = vec![
         "test".to_string(),
@@ -110,7 +86,7 @@ fn run() -> Result<()> {
     test_args.extend(args.passthrough);
     let output = Command::new("pnpm")
         .args(&test_args)
-        .current_dir(&cwd)
+        .current_dir(cwd)
         .output()
         .with_context(|| {
             format!(
@@ -119,12 +95,25 @@ fn run() -> Result<()> {
                 cwd.display()
             )
         })?;
-    ensure_success(&cwd, "pnpm", &test_args, &output)?;
+    ensure_success(cwd, "pnpm", &test_args, &output)?;
 
     let results = parse_junit(&report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
     print_results("typescript", &report, &results)?;
 
     Ok(())
+}
+
+fn ensure_status_success(cwd: &Path, program: &str, args: &[String], status: ExitStatus) -> Result<()> {
+    if status.success() {
+        return Ok(());
+    }
+
+    bail!(
+        "command failed in {}:\n  {}\nstatus: {}",
+        cwd.display(),
+        shell_line(program, args),
+        status,
+    );
 }
 
 fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -> Result<()> {

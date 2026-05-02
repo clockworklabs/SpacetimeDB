@@ -7,10 +7,9 @@ use quick_xml::Reader;
 use spacetimedb_language_test_support::{print_results, target_dir, Outcome, SpacetimeDbGuard, TestCaseResult};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, ExitStatus, Output};
 
 #[derive(Clone, Debug, Default, Parser)]
-#[command(disable_help_flag = true)]
 struct Args {
     #[arg(long)]
     filter: Option<String>,
@@ -18,26 +17,8 @@ struct Args {
     #[arg(long, alias = "list-tests")]
     list: bool,
 
-    #[arg(skip)]
+    #[arg(last = true)]
     passthrough: Vec<String>,
-}
-
-impl Args {
-    fn parse() -> Self {
-        let mut args = std::env::args().collect::<Vec<_>>();
-        let passthrough = args
-            .iter()
-            .position(|arg| arg == "--")
-            .map(|index| args.split_off(index + 1))
-            .unwrap_or_default();
-        if args.last().is_some_and(|arg| arg == "--") {
-            args.pop();
-        }
-
-        let mut parsed = <Args as Parser>::parse_from(args);
-        parsed.passthrough = passthrough;
-        parsed
-    }
 }
 
 fn main() {
@@ -92,9 +73,6 @@ fn run_dotnet_test(
         let status = Command::new("dotnet")
             .args(&list_args)
             .current_dir(cwd)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
             .status()
             .with_context(|| {
                 format!(
@@ -103,16 +81,7 @@ fn run_dotnet_test(
                     cwd.display()
                 )
             })?;
-        ensure_success(
-            cwd,
-            "dotnet",
-            &list_args,
-            &Output {
-                status,
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-            },
-        )?;
+        ensure_status_success(cwd, "dotnet", &list_args, status)?;
         return Ok(());
     }
 
@@ -233,6 +202,19 @@ fn run_regression_tests(workspace: &Path) -> Result<()> {
         .with_context(|| format!("failed to spawn `{}` in {}", shell_line("bash", &args), cwd.display()))?;
     ensure_success(&cwd, "bash", &args, &output)?;
     Ok(())
+}
+
+fn ensure_status_success(cwd: &Path, program: &str, args: &[String], status: ExitStatus) -> Result<()> {
+    if status.success() {
+        return Ok(());
+    }
+
+    bail!(
+        "command failed in {}:\n  {}\nstatus: {}",
+        cwd.display(),
+        shell_line(program, args),
+        status,
+    );
 }
 
 fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -> Result<()> {
