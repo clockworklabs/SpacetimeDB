@@ -576,10 +576,10 @@ impl ModuleSubscriptions {
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         match host {
-            Some(host) => {
-                host.call_view_add_single_subscription(sender, auth, request, timer)
-                    .await
-            }
+            Some(host) => host
+                .call_view_add_single_subscription(sender, auth, request, timer)
+                .await
+                .map(|()| None),
             None => self
                 .add_single_subscription_inner::<host::wasmtime::WasmtimeInstance>(
                     None, sender, auth, request, timer, _assert,
@@ -880,10 +880,10 @@ impl ModuleSubscriptions {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         match host {
-            Some(host) => {
-                host.call_view_remove_v2_subscription(sender, auth, request, timer)
-                    .await
-            }
+            Some(host) => host
+                .call_view_remove_v2_subscription(sender, auth, request, timer)
+                .await
+                .map(|()| None),
             None => self
                 .remove_v2_subscription_inner::<host::wasmtime::WasmtimeInstance>(
                     None, sender, auth, request, timer, None,
@@ -1144,7 +1144,10 @@ impl ModuleSubscriptions {
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         match host {
-            Some(host) => host.call_view_add_v2_subscription(sender, auth, request, timer).await,
+            Some(host) => host
+                .call_view_add_v2_subscription(sender, auth, request, timer)
+                .await
+                .map(|()| None),
             None => panic!("v2 subscriptions without a module host are not supported yet"),
         }
     }
@@ -1162,10 +1165,10 @@ impl ModuleSubscriptions {
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         match host {
-            Some(host) => {
-                host.call_view_add_multi_subscription(sender, auth, request, timer)
-                    .await
-            }
+            Some(host) => host
+                .call_view_add_multi_subscription(sender, auth, request, timer)
+                .await
+                .map(|()| None),
             None => self
                 .add_multi_subscription_inner::<host::wasmtime::WasmtimeInstance>(
                     None, sender, auth, request, timer, _assert,
@@ -1429,7 +1432,7 @@ impl ModuleSubscriptions {
             Some(host) => host
                 .call_view_add_legacy_subscription(sender, auth, subscription, timer)
                 .await
-                .map(|metrics| metrics.unwrap_or_default()),
+                .map(|()| ExecutionMetrics::default()),
             None => self
                 .add_legacy_subscriber_inner::<host::wasmtime::WasmtimeInstance>(
                     None,
