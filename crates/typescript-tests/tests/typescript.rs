@@ -61,11 +61,40 @@ fn run() -> Result<()> {
         if let Some(filter) = args.filter {
             cmd.push(filter);
         }
-        run_command_forward("pnpm", &cmd, &cwd)?;
+        let status = Command::new("pnpm")
+            .args(&cmd)
+            .current_dir(&cwd)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .with_context(|| format!("failed to spawn `{}` in {}", shell_line("pnpm", &cmd), cwd.display()))?;
+        ensure_success(
+            &cwd,
+            "pnpm",
+            &cmd,
+            &Output {
+                status,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        )?;
         return Ok(());
     }
 
-    run_command("pnpm", &["build".to_string()], &cwd)?;
+    let build_args = ["build".to_string()];
+    let output = Command::new("pnpm")
+        .args(&build_args)
+        .current_dir(&cwd)
+        .output()
+        .with_context(|| {
+            format!(
+                "failed to spawn `{}` in {}",
+                shell_line("pnpm", &build_args),
+                cwd.display()
+            )
+        })?;
+    ensure_success(&cwd, "pnpm", &build_args, &output)?;
 
     let mut test_args = vec![
         "test".to_string(),
@@ -79,43 +108,23 @@ fn run() -> Result<()> {
         test_args.push(filter);
     }
     test_args.extend(args.passthrough);
-    run_command("pnpm", &test_args, &cwd)?;
+    let output = Command::new("pnpm")
+        .args(&test_args)
+        .current_dir(&cwd)
+        .output()
+        .with_context(|| {
+            format!(
+                "failed to spawn `{}` in {}",
+                shell_line("pnpm", &test_args),
+                cwd.display()
+            )
+        })?;
+    ensure_success(&cwd, "pnpm", &test_args, &output)?;
 
     let results = parse_junit(&report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
     print_results("typescript", &report, &results)?;
 
     Ok(())
-}
-
-fn run_command(program: &str, args: &[String], cwd: &Path) -> Result<Output> {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
-    ensure_success(cwd, program, args, &output)?;
-    Ok(output)
-}
-
-fn run_command_forward(program: &str, args: &[String], cwd: &Path) -> Result<()> {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
-    ensure_success(
-        cwd,
-        program,
-        args,
-        &Output {
-            status,
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-        },
-    )
 }
 
 fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -> Result<()> {
