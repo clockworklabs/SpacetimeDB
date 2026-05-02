@@ -921,42 +921,42 @@ impl ClientConnection {
 
     pub async fn subscribe_single(&self, subscription: ws_v1::SubscribeSingle, timer: Instant) -> Result<(), DBError> {
         self.module()
-            .call_view_add_single_subscription_ws(self.sender(), self.auth.clone(), subscription, timer)
+            .call_view_add_single_subscription(self.sender(), self.auth.clone(), subscription, timer)
             .await
     }
 
     pub async fn unsubscribe(&self, request: ws_v1::Unsubscribe, timer: Instant) -> Result<(), DBError> {
         self.module()
-            .call_view_remove_single_subscription_ws(self.sender(), self.auth.clone(), request, timer)
+            .call_view_remove_single_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
 
     pub async fn subscribe_v2(&self, request: ws_v2::Subscribe, timer: Instant) -> Result<(), DBError> {
         self.module()
-            .call_view_add_v2_subscription_ws(self.sender(), self.auth.clone(), request, timer)
+            .call_view_add_v2_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
     pub async fn subscribe_multi(&self, request: ws_v1::SubscribeMulti, timer: Instant) -> Result<(), DBError> {
         self.module()
-            .call_view_add_multi_subscription_ws(self.sender(), self.auth.clone(), request, timer)
+            .call_view_add_multi_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
 
     pub async fn unsubscribe_multi(&self, request: ws_v1::UnsubscribeMulti, timer: Instant) -> Result<(), DBError> {
         self.module()
-            .call_view_remove_multi_subscription_ws(self.sender(), self.auth.clone(), request, timer)
+            .call_view_remove_multi_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
 
     pub async fn unsubscribe_v2(&self, request: ws_v2::Unsubscribe, timer: Instant) -> Result<(), DBError> {
         self.module()
-            .call_view_remove_v2_subscription_ws(self.sender(), self.auth.clone(), request, timer)
+            .call_view_remove_v2_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
 
     pub async fn subscribe(&self, subscription: ws_v1::Subscribe, timer: Instant) -> Result<(), DBError> {
         self.module()
-            .call_view_add_legacy_subscription_ws(self.sender(), self.auth.clone(), subscription, timer)
+            .call_view_add_legacy_subscription(self.sender(), self.auth.clone(), subscription, timer)
             .await
     }
 
@@ -967,7 +967,7 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
         self.module()
-            .one_off_query_ws::<ws_v1::JsonFormat>(
+            .one_off_query::<ws_v1::JsonFormat>(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
@@ -987,7 +987,7 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
         self.module()
-            .one_off_query_ws::<ws_v1::BsatnFormat>(
+            .one_off_query::<ws_v1::BsatnFormat>(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
@@ -1002,7 +1002,7 @@ impl ClientConnection {
     pub async fn one_off_query_v2(&self, query: &str, request_id: u32, timer: Instant) -> Result<(), anyhow::Error> {
         let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
         self.module()
-            .one_off_query_v2_ws(
+            .one_off_query_v2(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),

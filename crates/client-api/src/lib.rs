@@ -137,7 +137,7 @@ impl Host {
     pub async fn exec_sql(
         &self,
         auth: AuthCtx,
-        database: Database,
+        _database: Database,
         confirmed_read: bool,
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
@@ -146,51 +146,49 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        let (tx_offset, durable_offset, json) = self
-            .host_controller
-            .using_database(database, self.replica_id, move |db| async move {
-                tracing::info!(sql = body);
-                let mut header = vec![];
-                let sql_start = std::time::Instant::now();
-                let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
-                let _guard = sql_span.enter();
+        let db = module_host.relational_db().clone();
+        let (tx_offset, durable_offset, json) = async move {
+            tracing::info!(sql = body);
+            let mut header = vec![];
+            let sql_start = std::time::Instant::now();
+            let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
+            let _guard = sql_span.enter();
 
-                let result = sql::execute::run(
-                    db.clone(),
-                    body,
-                    auth,
-                    Some(module_host.info.subscriptions.clone()),
-                    Some(module_host),
-                    &mut header,
-                )
-                .await
-                .map_err(|e| {
-                    log::warn!("{e}");
-                    (StatusCode::BAD_REQUEST, e.to_string())
-                })?;
-
-                let total_duration = sql_start.elapsed();
-                drop(_guard);
-                sql_span.record("total_duration", tracing::field::debug(total_duration));
-
-                let schema = header
-                    .into_iter()
-                    .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
-                    .collect();
-
-                Ok::<_, (StatusCode, String)>((
-                    result.tx_offset,
-                    db.durable_tx_offset(),
-                    vec![SqlStmtResult {
-                        schema,
-                        rows: result.rows,
-                        total_duration_micros: total_duration.as_micros() as u64,
-                        stats: SqlStmtStats::from_metrics(&result.metrics),
-                    }],
-                ))
-            })
+            let result = sql::execute::run(
+                db.clone(),
+                body,
+                auth,
+                Some(module_host.info.subscriptions.clone()),
+                Some(module_host),
+                &mut header,
+            )
             .await
-            .map_err(log_and_500)??;
+            .map_err(|e| {
+                log::warn!("{e}");
+                (StatusCode::BAD_REQUEST, e.to_string())
+            })?;
+
+            let total_duration = sql_start.elapsed();
+            drop(_guard);
+            sql_span.record("total_duration", tracing::field::debug(total_duration));
+
+            let schema = header
+                .into_iter()
+                .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
+                .collect();
+
+            Ok::<_, (StatusCode, String)>((
+                result.tx_offset,
+                db.durable_tx_offset(),
+                vec![SqlStmtResult {
+                    schema,
+                    rows: result.rows,
+                    total_duration_micros: total_duration.as_micros() as u64,
+                    stats: SqlStmtStats::from_metrics(&result.metrics),
+                }],
+            ))
+        }
+        .await?;
 
         if confirmed_read && let Some(mut durable_offset) = durable_offset {
             let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;

@@ -35,7 +35,7 @@ use derive_more::From;
 use futures::lock::Mutex;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use prometheus::{Histogram, IntGauge};
+use prometheus::{Histogram, HistogramTimer, IntGauge};
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
@@ -381,60 +381,10 @@ enum InstanceKind {
     Procedure,
 }
 
-macro_rules! with_instance_impl {
-    (
-        $self:expr,
-        $kind:expr,
-        $label:expr,
-        $instance_kind:expr,
-        $arg:ident,
-        $wasm:expr,
-        |$host:ident, $timer_guard:ident, $arg_js:ident| $js_body:expr
-    ) => {{
-        $self.guard_closed()?;
-        let $timer_guard = $self.start_call_timer($label);
-
-        // Operations on module instances (e.g. calling reducers) is blocking,
-        // partially because the computation can potentially take a long time
-        // and partially because interacting with the database requires taking
-        // a blocking lock. So, we run `f` on a dedicated thread with `self.executor`.
-        // This will bubble up any panic that may occur.
-
-        // If a function call panics, we **must** ensure to call `self.on_panic`
-        // so that the module is discarded by the host controller.
-        scopeguard::defer_on_unwind!({
-            log::warn!("{} {} panicked", $kind, $label);
-            ($self.on_panic)();
-        });
-
-        Ok(match &*$self.inner {
-            ModuleHostInner::Wasm(host) => {
-                let executor = host.executor.clone();
-                let instance_manager = Self::wasm_instance_manager(host, $instance_kind);
-                executor
-                    .run_job(async move || {
-                        // Queue first, then check out the instance from inside the queued job.
-                        // This is required for both the serialized main lane and the procedure
-                        // pool so that executor scheduling happens before instance allocation.
-                        drop($timer_guard);
-                        instance_manager
-                            .with_instance(async move |mut inst| (($wasm)($arg, &mut inst).await, inst))
-                            .await
-                    })
-                    .await
-            }
-            ModuleHostInner::Js($host) => {
-                let $arg_js = $arg;
-                $js_body
-            }
-        })
-    }};
-}
-
 struct V8ModuleHost {
     module: super::v8::JsModule,
     instance_lane: super::v8::JsInstanceLane,
-    procedure_instances: ModuleInstanceManager<super::v8::JsModule>,
+    procedure_instances: Arc<ModuleInstanceManager<super::v8::JsModule>>,
 }
 
 /// A module; used as a bound on `InstanceManager`.
@@ -840,6 +790,16 @@ impl CallProcedureParams {
     }
 }
 
+struct PreparedReducerCall {
+    label: String,
+    params: CallReducerParams,
+}
+
+struct PreparedProcedureCall {
+    label: String,
+    params: CallProcedureParams,
+}
+
 /// Holds a [`Module`] and a set of [`Instance`]s from it,
 /// and allocates the [`Instance`]s to be used for function calls.
 ///
@@ -988,6 +948,20 @@ pub struct WeakModuleHost {
     inner: Weak<ModuleHostInner>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
     closed: Weak<AtomicBool>,
+}
+
+pub(super) struct CallTimerGuard {
+    queue_length_gauge: IntGauge,
+    queue_timer: Option<HistogramTimer>,
+}
+
+impl Drop for CallTimerGuard {
+    fn drop(&mut self) {
+        self.queue_length_gauge.dec();
+        if let Some(queue_timer) = self.queue_timer.take() {
+            queue_timer.stop_and_record();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1160,11 +1134,176 @@ impl ModuleHost {
         }
     }
 
+    async fn run_on_executor<A, R>(
+        &self,
+        host: &WasmtimeModuleHost,
+        kind: InstanceKind,
+        timer_guard: CallTimerGuard,
+        arg: A,
+        f: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+    ) -> R
+    where
+        A: Send + 'static,
+        R: Send + 'static,
+    {
+        let executor = host.executor.clone();
+        let instance_manager = Self::wasm_instance_manager(host, kind);
+        executor
+            .run_job(async move || {
+                drop(timer_guard);
+                instance_manager
+                    .with_instance(async move |mut inst| ((f)(arg, &mut inst).await, inst))
+                    .await
+            })
+            .await
+    }
+
+    fn enqueue_on_executor<A>(
+        &self,
+        host: &WasmtimeModuleHost,
+        kind: InstanceKind,
+        timer_guard: CallTimerGuard,
+        arg: A,
+        f: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) where
+        A: Send + 'static,
+    {
+        let executor = host.executor.clone();
+        let instance_manager = Self::wasm_instance_manager(host, kind);
+        let on_panic = self.on_panic.clone();
+        executor.enqueue_job(async move || {
+            scopeguard::defer_on_unwind!({
+                log::warn!("executor operation panicked");
+                on_panic();
+            });
+
+            drop(timer_guard);
+            instance_manager
+                .with_instance(async move |mut inst| {
+                    f(arg, &mut inst).await;
+                    ((), inst)
+                })
+                .await;
+        });
+    }
+
+    async fn run_on_thread<A, R>(
+        &self,
+        host: &V8ModuleHost,
+        timer_guard: CallTimerGuard,
+        arg: A,
+        start: impl AsyncFnOnce(A, JsInstance) -> Result<tokio::sync::oneshot::Receiver<R>, super::v8::WorkerDisconnected>
+            + Send
+            + 'static,
+    ) -> R
+    where
+        A: Send + 'static,
+        R: Send + 'static,
+    {
+        let procedure_instances = host.procedure_instances.clone();
+        let (inst, reply_rx) = host
+            .instance_lane
+            .run_on_thread(async move || {
+                drop(timer_guard);
+
+                let inst = procedure_instances.get_instance().await;
+                match start(arg, inst.clone()).await {
+                    Ok(reply_rx) => Ok((inst, reply_rx)),
+                    Err(_) => {
+                        procedure_instances.return_instance(inst).await;
+                        Err(())
+                    }
+                }
+            })
+            .await
+            .unwrap_or_else(|_| {
+                (self.on_panic)();
+                panic!("instance lane worker exited while handling a pooled operation");
+            })
+            .unwrap_or_else(|_| {
+                (self.on_panic)();
+                panic!("procedure worker exited while starting a pooled operation");
+            });
+
+        let result = reply_rx.await;
+        host.procedure_instances.return_instance(inst).await;
+        result.unwrap_or_else(|_| {
+            (self.on_panic)();
+            panic!("procedure worker exited while finishing a pooled operation");
+        })
+    }
+
+    async fn enqueue_on_thread<F>(
+        &self,
+        host: &V8ModuleHost,
+        timer_guard: CallTimerGuard,
+        params: CallProcedureParams,
+        send_result: F,
+    ) -> Result<(), BroadcastError>
+    where
+        F: Fn(CallProcedureReturn) -> Result<(), BroadcastError> + Clone + Send + 'static,
+    {
+        let call_return_err = |err| CallProcedureReturn {
+            result: Err(err),
+            tx_offset: None,
+        };
+
+        let procedure_instances = host.procedure_instances.clone();
+        let send_result_in_job = send_result.clone();
+        let on_panic = self.on_panic.clone();
+        let enqueue_res = host
+            .instance_lane
+            .enqueue_on_thread(async move || {
+                drop(timer_guard);
+
+                let inst = procedure_instances.get_instance().await;
+                let inst_for_completion = inst.clone();
+                let procedure_instances_for_completion = procedure_instances.clone();
+                let send_result_on_completion = send_result_in_job.clone();
+                match inst
+                    .enqueue_procedure(params, async move |ret| {
+                        if let Err(err) = send_result_on_completion(ret) {
+                            log::warn!("Procedure call failed: {err:#}");
+                        }
+
+                        procedure_instances_for_completion
+                            .return_instance(inst_for_completion)
+                            .await;
+                    })
+                    .await
+                {
+                    Ok(()) => {}
+                    Err(_) => {
+                        procedure_instances.return_instance(inst).await;
+                        let ret = call_return_err(ProcedureCallError::InternalError(
+                            "procedure worker exited while starting a pooled operation".to_string(),
+                        ));
+                        if let Err(err) = send_result_in_job(ret) {
+                            log::warn!("Procedure call failed: {err:#}");
+                        }
+                        on_panic();
+                    }
+                }
+            })
+            .await;
+
+        match enqueue_res {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                (self.on_panic)();
+                send_result(call_return_err(ProcedureCallError::InternalError(
+                    "instance lane worker exited while handling a pooled operation".to_string(),
+                )))
+            }
+        }
+    }
+
     pub(super) fn new(
         module: ModuleWithInstance,
         on_panic: impl Fn() + Send + Sync + 'static,
         database_identity: Identity,
     ) -> Self {
+        let on_panic = Arc::new(on_panic);
         let info;
         let inner = match module {
             ModuleWithInstance::Wasm {
@@ -1189,9 +1328,10 @@ impl ModuleHost {
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
-                let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
+                module.set_on_fatal(on_panic.clone());
+                let instance_lane = super::v8::JsInstanceLane::new(init_inst);
                 let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
-                let procedure_instances = ModuleInstanceManager::new(module.clone(), None, metrics);
+                let procedure_instances = Arc::new(ModuleInstanceManager::new(module.clone(), None, metrics));
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module,
                     instance_lane,
@@ -1199,7 +1339,6 @@ impl ModuleHost {
                 })))
             }
         };
-        let on_panic = Arc::new(on_panic);
 
         ModuleHost {
             info,
@@ -1233,51 +1372,7 @@ impl ModuleHost {
         }
     }
 
-    /// Run a function on the JobThread for this module.
-    /// This would deadlock if it is called within another call to `on_module_thread`.
-    /// Since this is async, and `f` is sync, deadlocking shouldn't be a problem.
-    pub async fn on_module_thread<F, R>(&self, label: &str, f: F) -> Result<R, anyhow::Error>
-    where
-        F: FnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.on_module_thread_async(label, async move || f()).await
-    }
-
-    /// Run an async function on the JobThread for this module.
-    /// Similar to `on_module_thread`, but for async functions.
-    pub async fn on_module_thread_async<F, R>(&self, label: &str, f: F) -> Result<R, anyhow::Error>
-    where
-        F: AsyncFnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.guard_closed()?;
-
-        let timer_guard = self.start_call_timer(label);
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => {
-                let executor = &wasm.executor;
-                executor
-                    .run_job(async move || {
-                        drop(timer_guard);
-                        f().await
-                    })
-                    .await
-            }
-            ModuleHostInner::Js(js) => {
-                let instance_lane = &js.instance_lane;
-                instance_lane
-                    .run_on_thread(async move || {
-                        drop(timer_guard);
-                        f().await
-                    })
-                    .await?
-            }
-        })
-    }
-
-    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(()) + use<>> {
+    fn start_call_timer(&self, label: &str) -> CallTimerGuard {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -1294,217 +1389,173 @@ impl ModuleHost {
                 .with_label_values(&self.info.database_identity)
                 .observe(queue_length as f64);
         }
-        // Ensure that we always decrement the gauge.
-        scopeguard::guard((), move |_| {
-            // Decrement the queue length gauge when we're done.
-            // This is done in a defer so that it happens even if the reducer call panics.
-            queue_length_gauge.dec();
-            queue_timer.stop_and_record();
-        })
+        CallTimerGuard {
+            queue_length_gauge,
+            queue_timer: Some(queue_timer),
+        }
     }
 
-    fn enqueue_wasm_job<F>(&self, kind: &str, label: &str, f: F) -> Result<(), NoSuchModule>
+    async fn run_main_wait<A, R>(
+        &self,
+        label: &str,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane, CallTimerGuard) -> R,
+    ) -> Result<R, NoSuchModule>
     where
-        F: AsyncFnOnce() + Send + 'static,
+        R: Send + 'static,
+        A: Send + 'static,
     {
         self.guard_closed()?;
-
         let timer_guard = self.start_call_timer(label);
-        let kind = kind.to_owned();
-        let label = label.to_owned();
-        let on_panic = self.on_panic.clone();
 
-        match &*self.inner {
+        scopeguard::defer_on_unwind!({
+            log::warn!("main-instance operation {} panicked", label);
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let executor = host.executor.clone();
-                executor.enqueue_job(async move || {
-                    scopeguard::defer_on_unwind!({
-                        log::warn!("{} {} panicked", kind, label);
-                        on_panic();
-                    });
-
-                    drop(timer_guard);
-                    f().await;
-                });
-                Ok(())
-            }
-            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_job should only be used for wasm"),
-        }
-    }
-
-    fn enqueue_wasm_instance<A>(
-        &self,
-        kind: &str,
-        label: &str,
-        instance_kind: InstanceKind,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
-    ) -> Result<(), NoSuchModule>
-    where
-        A: Send + 'static,
-    {
-        match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                let instance_manager = Self::wasm_instance_manager(host, instance_kind);
-                self.enqueue_wasm_job(kind, label, async move || {
-                    instance_manager
-                        .with_instance(async move |mut inst| {
-                            wasm(arg, &mut inst).await;
-                            ((), inst)
-                        })
-                        .await;
-                })
-            }
-            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_instance should only be used for wasm"),
-        }
-    }
-
-    async fn with_main_instance<A, R>(
-        &self,
-        kind: &str,
-        label: &str,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
-    ) -> Result<R, NoSuchModule>
-    where
-        R: Send + 'static,
-        A: Send + 'static,
-    {
-        with_instance_impl!(
-            self,
-            kind,
-            label,
-            InstanceKind::Main,
-            arg,
-            wasm,
-            |host, timer_guard, arg| {
-                drop(timer_guard);
-                js(arg, &host.instance_lane).await
-            }
-        )
-    }
-
-    async fn with_procedure_instance<A, R>(
-        &self,
-        kind: &str,
-        label: &str,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &JsInstance) -> R,
-    ) -> Result<R, NoSuchModule>
-    where
-        R: Send + 'static,
-        A: Send + 'static,
-    {
-        with_instance_impl!(
-            self,
-            kind,
-            label,
-            InstanceKind::Procedure,
-            arg,
-            wasm,
-            |host, timer_guard, arg| {
-                host.procedure_instances
-                    .with_instance(async |inst| {
-                        drop(timer_guard);
-                        let res = js(arg, &inst).await;
-                        (res, inst)
-                    })
+                self.run_on_executor(host, InstanceKind::Main, timer_guard, arg, wasm)
                     .await
             }
-        )
-    }
-
-    /// Run a function for this module which has access to the module instance.
-    ///
-    /// For WASM, the function is run on the module's JobThread.
-    /// For V8/JS, the function is run in the current task.
-    async fn call<A, R>(
-        &self,
-        label: &str,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
-    ) -> Result<R, NoSuchModule>
-    where
-        R: Send + 'static,
-        A: Send + 'static,
-    {
-        self.with_main_instance("main-instance operation", label, arg, wasm, async move |arg, lane| {
-            super::v8::assert_not_on_js_module_thread(label);
-            js(arg, lane).await
+            ModuleHostInner::Js(host) => {
+                super::v8::assert_not_on_js_module_thread(label);
+                js(arg, &host.instance_lane, timer_guard).await
+            }
         })
-        .await
     }
 
-    async fn call_pooled<A, R>(
+    async fn run_main_enqueue<A, E>(
+        &self,
+        label: &str,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane, CallTimerGuard) -> Result<(), E>,
+    ) -> Result<(), E>
+    where
+        E: From<NoSuchModule>,
+        A: Send + 'static,
+    {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                self.enqueue_on_executor(host, InstanceKind::Main, timer_guard, arg, wasm);
+                Ok(())
+            }
+            ModuleHostInner::Js(host) => {
+                super::v8::assert_not_on_js_module_thread(label);
+                js(arg, &host.instance_lane, timer_guard).await
+            }
+        }
+    }
+
+    async fn run_procedure_wait<A, R>(
         &self,
         label: &str,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &JsInstance) -> R,
+        js: impl AsyncFnOnce(A, JsInstance) -> Result<tokio::sync::oneshot::Receiver<R>, super::v8::WorkerDisconnected>
+            + Send
+            + 'static,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.with_procedure_instance("pooled operation", label, arg, wasm, js)
-            .await
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("pooled operation {} panicked", label);
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                self.run_on_executor(host, InstanceKind::Procedure, timer_guard, arg, wasm)
+                    .await
+            }
+            ModuleHostInner::Js(host) => self.run_on_thread(host, timer_guard, arg, js).await,
+        })
+    }
+
+    async fn run_procedure_enqueue<F>(
+        &self,
+        label: &str,
+        params: CallProcedureParams,
+        send_result: F,
+    ) -> Result<(), BroadcastError>
+    where
+        F: Fn(CallProcedureReturn) -> Result<(), BroadcastError> + Clone + Send + 'static,
+    {
+        let call_return_err = |err| CallProcedureReturn {
+            result: Err(err),
+            tx_offset: None,
+        };
+
+        if let Err(err) = self.guard_closed() {
+            return send_result(call_return_err(err.into()));
+        }
+
+        let timer_guard = self.start_call_timer(label);
+
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                self.enqueue_on_executor(
+                    host,
+                    InstanceKind::Procedure,
+                    timer_guard,
+                    params,
+                    async move |params, inst| {
+                        let ret = inst.call_procedure(params).await;
+                        if let Err(err) = send_result(ret) {
+                            log::warn!("Procedure call failed: {err:#}");
+                        }
+                    },
+                );
+                Ok(())
+            }
+            ModuleHostInner::Js(host) => self.enqueue_on_thread(host, timer_guard, params, send_result).await,
+        }
     }
 
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.call(
+        self.run_main_wait(
             label,
             cmd,
             async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
-            async |cmd, lane| lane.call_view(cmd).await,
+            async |cmd, lane, timer_guard| {
+                drop(timer_guard);
+                lane.call_view(cmd).await
+            },
         )
         .await?
     }
 
-    async fn call_view_command_ws(&self, label: &str, cmd: ViewCommand) -> Result<(), ViewCallError> {
-        match &*self.inner {
-            ModuleHostInner::Wasm(_) => {
-                match self.enqueue_wasm_instance(
-                    "main-instance operation",
-                    label,
-                    InstanceKind::Main,
-                    cmd,
-                    async |cmd, inst| {
-                        let _ = inst.call_view(cmd);
-                    },
-                ) {
-                    Ok(()) => Ok(()),
-                    Err(err) => Err(err.into()),
-                }
-            }
-            ModuleHostInner::Js(_) => self.call_view_command(label, cmd).await.map(drop),
-        }
+    async fn enqueue_view_command(&self, label: &str, cmd: ViewCommand) -> Result<(), ViewCallError> {
+        let disconnect_label = label.to_owned();
+        self.run_main_enqueue(
+            label,
+            cmd,
+            async |cmd, inst| {
+                let _ = inst.call_view(cmd);
+            },
+            async move |cmd, lane, timer_guard| {
+                lane.enqueue_call_view(cmd, timer_guard).await.map_err(|_| {
+                    ViewCallError::InternalError(format!(
+                        "instance lane worker exited while handling {disconnect_label}"
+                    ))
+                })
+            },
+        )
+        .await
     }
 
-    fn unwrap_subscription_command_result(
-        label: &str,
-        res: Result<ViewCommandResult, ViewCallError>,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        match res.map_err(|e| DBError::Other(anyhow::anyhow!(e)))? {
-            ViewCommandResult::Subscription { result } => result,
-            ViewCommandResult::Sql { .. } => {
-                unreachable!("unexpected SQL result in {label}")
-            }
-        }
-    }
-
-    async fn call_subscription_command(
-        &self,
-        label: &str,
-        cmd: ViewCommand,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        Self::unwrap_subscription_command_result(label, self.call_view_command(label, cmd).await)
-    }
-
-    async fn call_subscription_command_ws(&self, label: &str, cmd: ViewCommand) -> Result<(), DBError> {
-        self.call_view_command_ws(label, cmd)
+    async fn enqueue_subscription_command(&self, label: &str, cmd: ViewCommand) -> Result<(), DBError> {
+        self.enqueue_view_command(label, cmd)
             .await
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))
     }
@@ -1512,11 +1563,14 @@ impl ModuleHost {
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         log::trace!("disconnecting client {client_id}");
         if let Err(e) = self
-            .call(
+            .run_main_wait(
                 "disconnect_client",
                 client_id,
                 async |client_id, inst| inst.disconnect_client(client_id),
-                async |client_id, inst| inst.disconnect_client(client_id).await,
+                async |client_id, lane, timer_guard| {
+                    drop(timer_guard);
+                    lane.disconnect_client(client_id).await
+                },
             )
             .await
         {
@@ -1560,11 +1614,14 @@ impl ModuleHost {
         caller_auth: ConnectionAuthCtx,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
-        self.call(
+        self.run_main_wait(
             "call_identity_connected",
             (caller_auth, caller_connection_id),
             async |(a, b), inst| inst.call_identity_connected(a, b),
-            async |(a, b), inst| inst.call_identity_connected(a, b).await,
+            async |(a, b), inst, timer_guard| {
+                drop(timer_guard);
+                inst.call_identity_connected(a, b).await
+            },
         )
         .await
         .map_err(ReducerCallError::from)?
@@ -1703,22 +1760,28 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ReducerCallError> {
-        self.call(
+        self.run_main_wait(
             "call_identity_disconnected",
             (caller_identity, caller_connection_id),
             async |(a, b), inst| inst.call_identity_disconnected(a, b),
-            async |(a, b), inst| inst.call_identity_disconnected(a, b).await,
+            async |(a, b), inst, timer_guard| {
+                drop(timer_guard);
+                inst.call_identity_disconnected(a, b).await
+            },
         )
         .await?
     }
 
     /// Empty the system tables tracking clients without running any lifecycle reducers.
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
-        self.call(
+        self.run_main_wait(
             "clear_all_clients",
             (),
             async |_, inst| inst.clear_all_clients(),
-            async |_, inst| inst.clear_all_clients().await,
+            async |_, inst, timer_guard| {
+                drop(timer_guard);
+                inst.clear_all_clients().await
+            },
         )
         .await?
     }
@@ -1750,6 +1813,45 @@ impl ModuleHost {
         })
     }
 
+    fn prepare_reducer_call(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<PreparedReducerCall, ReducerCallError> {
+        let (reducer_id, reducer_def) = self
+            .info
+            .module_def
+            .reducer_full(reducer_name)
+            .ok_or(ReducerCallError::NoSuchReducer)?;
+        if let Some(lifecycle) = reducer_def.lifecycle {
+            return Err(ReducerCallError::LifecycleReducer(lifecycle));
+        }
+
+        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
+
+        Ok(PreparedReducerCall {
+            label: reducer_def.name.to_string(),
+            params: Self::call_reducer_params(
+                &self.info,
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                reducer_def,
+                args,
+            )?,
+        })
+    }
+
     fn call_procedure_params(
         module: &ModuleInfo,
         caller_identity: Identity,
@@ -1774,39 +1876,36 @@ impl ModuleHost {
         })
     }
 
-    async fn call_reducer_inner(
+    fn prepare_procedure_call(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
-        client: Option<Arc<ClientConnectionSender>>,
-        request_id: Option<RequestId>,
         timer: Option<Instant>,
-        reducer_id: ReducerId,
-        reducer_def: &ReducerDef,
+        procedure_name: &str,
         args: FunctionArgs,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
-        let args = args
-            .into_tuple_for_def(&self.info.module_def, reducer_def)
-            .map_err(InvalidReducerArguments)?;
-        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-        let call_reducer_params = CallReducerParams {
-            timestamp: Timestamp::now(),
-            caller_identity,
-            caller_connection_id,
-            client,
-            request_id,
-            timer,
-            reducer_id,
-            args,
-        };
+    ) -> Result<PreparedProcedureCall, ProcedureCallError> {
+        let (procedure_id, procedure_def) = self
+            .info
+            .module_def
+            .procedure_full(procedure_name)
+            .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
-        self.call(
-            &reducer_def.name,
-            call_reducer_params,
-            async |p, inst| Ok(inst.call_reducer(p)),
-            async |p, inst| inst.call_reducer(p).await,
-        )
-        .await?
+        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+            return Err(ProcedureCallError::NoSuchProcedure);
+        }
+
+        Ok(PreparedProcedureCall {
+            label: procedure_def.name.to_string(),
+            params: Self::call_procedure_params(
+                &self.info,
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_id,
+                procedure_def,
+                args,
+            )?,
+        })
     }
 
     pub async fn call_reducer(
@@ -1820,30 +1919,26 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
-            let (reducer_id, reducer_def) = self
-                .info
-                .module_def
-                .reducer_full(reducer_name)
-                .ok_or(ReducerCallError::NoSuchReducer)?;
-            if let Some(lifecycle) = reducer_def.lifecycle {
-                return Err(ReducerCallError::LifecycleReducer(lifecycle));
-            }
-
-            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-                return Err(ReducerCallError::NoSuchReducer);
-            }
-
-            self.call_reducer_inner(
+            let prepared = self.prepare_reducer_call(
                 caller_identity,
                 caller_connection_id,
                 client,
                 request_id,
                 timer,
-                reducer_id,
-                reducer_def,
+                reducer_name,
                 args,
+            )?;
+
+            self.run_main_wait(
+                &prepared.label,
+                prepared.params,
+                async |params, inst| Ok(inst.call_reducer(params)),
+                async |params, lane, timer_guard| {
+                    drop(timer_guard);
+                    lane.call_reducer(params).await
+                },
             )
-            .await
+            .await?
         }
         .await;
 
@@ -1869,90 +1964,49 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(), ReducerCallError> {
-        match &*self.inner {
-            ModuleHostInner::Js(_) => self
-                .call_reducer(
-                    caller_identity,
-                    caller_connection_id,
-                    client,
-                    request_id,
-                    timer,
-                    reducer_name,
-                    args,
-                )
-                .await
-                .map(drop),
-            ModuleHostInner::Wasm(_) => {
-                let res = (|| {
-                    let (reducer_id, reducer_def) = self
-                        .info
-                        .module_def
-                        .reducer_full(reducer_name)
-                        .ok_or(ReducerCallError::NoSuchReducer)?;
-                    if let Some(lifecycle) = reducer_def.lifecycle {
-                        return Err(ReducerCallError::LifecycleReducer(lifecycle));
-                    }
+        let res = async {
+            let prepared = self.prepare_reducer_call(
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_name,
+                args,
+            )?;
+            let disconnect_label = prepared.label.clone();
 
-                    if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-                        return Err(ReducerCallError::NoSuchReducer);
-                    }
-
-                    let params = Self::call_reducer_params(
-                        &self.info,
-                        caller_identity,
-                        caller_connection_id,
-                        client,
-                        request_id,
-                        timer,
-                        reducer_id,
-                        reducer_def,
-                        args,
-                    )?;
-
-                    self.enqueue_wasm_instance(
-                        "main-instance operation",
-                        &reducer_def.name,
-                        InstanceKind::Main,
-                        params,
-                        async |params, inst| {
-                            let _ = inst.call_reducer(params);
-                        },
-                    )?;
-                    Ok(())
-                })();
-
-                let log_message = match &res {
-                    Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
-                    Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
-                    _ => None,
-                };
-                if let Some(log_message) = log_message {
-                    self.inject_logs(LogLevel::Error, reducer_name, &log_message)
-                }
-
-                res
-            }
+            self.run_main_enqueue(
+                &prepared.label,
+                prepared.params,
+                async |params, inst| {
+                    let _ = inst.call_reducer(params);
+                },
+                async move |params, lane, timer_guard| {
+                    lane.enqueue_call_reducer(params, timer_guard).await.map_err(|_| {
+                        ReducerCallError::WorkerError(format!(
+                            "instance lane worker exited while handling {disconnect_label}"
+                        ))
+                    })
+                },
+            )
+            .await
         }
+        .await;
+
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
+
+        res
     }
 
     pub async fn call_view_add_single_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::SubscribeSingle,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddSingleSubscription {
-            sender,
-            auth,
-            request,
-            _timer: timer,
-        };
-        self.call_subscription_command("call_view_add_single_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_add_single_subscription_ws(
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
@@ -1965,7 +2019,7 @@ impl ModuleHost {
             request,
             _timer: timer,
         };
-        self.call_subscription_command_ws("call_view_add_single_subscription", cmd)
+        self.enqueue_subscription_command("call_view_add_single_subscription", cmd)
             .await
     }
 
@@ -1975,23 +2029,6 @@ impl ModuleHost {
         auth: AuthCtx,
         request: ws_v2::Subscribe,
         timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddSubscriptionV2 {
-            sender,
-            auth,
-            request,
-            _timer: timer,
-        };
-        self.call_subscription_command("call_view_add_multi_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_add_v2_subscription_ws(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v2::Subscribe,
-        timer: Instant,
     ) -> Result<(), DBError> {
         let cmd = ViewCommand::AddSubscriptionV2 {
             sender,
@@ -1999,7 +2036,7 @@ impl ModuleHost {
             request,
             _timer: timer,
         };
-        self.call_subscription_command_ws("call_view_add_multi_subscription", cmd)
+        self.enqueue_subscription_command("call_view_add_multi_subscription", cmd)
             .await
     }
 
@@ -2009,23 +2046,6 @@ impl ModuleHost {
         auth: AuthCtx,
         request: ws_v2::Unsubscribe,
         timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::RemoveSubscriptionV2 {
-            sender,
-            auth,
-            request,
-            timer,
-        };
-        self.call_subscription_command("call_view_remove_v2_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_remove_v2_subscription_ws(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v2::Unsubscribe,
-        timer: Instant,
     ) -> Result<(), DBError> {
         let cmd = ViewCommand::RemoveSubscriptionV2 {
             sender,
@@ -2033,24 +2053,7 @@ impl ModuleHost {
             request,
             timer,
         };
-        self.call_subscription_command_ws("call_view_remove_v2_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_add_multi_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::SubscribeMulti,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddMultiSubscription {
-            sender,
-            auth,
-            request,
-            _timer: timer,
-        };
-        self.call_subscription_command("call_view_add_multi_subscription", cmd)
+        self.enqueue_subscription_command("call_view_remove_v2_subscription", cmd)
             .await
     }
 
@@ -2060,23 +2063,6 @@ impl ModuleHost {
         auth: AuthCtx,
         request: ws_v1::Unsubscribe,
         timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::RemoveSingleSubscription {
-            sender,
-            auth,
-            request,
-            timer,
-        };
-        self.call_subscription_command("call_view_remove_single_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_remove_single_subscription_ws(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::Unsubscribe,
-        timer: Instant,
     ) -> Result<(), DBError> {
         let cmd = ViewCommand::RemoveSingleSubscription {
             sender,
@@ -2084,11 +2070,11 @@ impl ModuleHost {
             request,
             timer,
         };
-        self.call_subscription_command_ws("call_view_remove_single_subscription", cmd)
+        self.enqueue_subscription_command("call_view_remove_single_subscription", cmd)
             .await
     }
 
-    pub async fn call_view_add_multi_subscription_ws(
+    pub async fn call_view_add_multi_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
@@ -2101,24 +2087,7 @@ impl ModuleHost {
             request,
             _timer: timer,
         };
-        self.call_subscription_command_ws("call_view_add_multi_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_add_legacy_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        subscribe: ws_v1::Subscribe,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddLegacySubscription {
-            sender,
-            auth,
-            subscribe,
-            _timer: timer,
-        };
-        self.call_subscription_command("call_view_add_legacy_subscription", cmd)
+        self.enqueue_subscription_command("call_view_add_multi_subscription", cmd)
             .await
     }
 
@@ -2128,23 +2097,6 @@ impl ModuleHost {
         auth: AuthCtx,
         request: ws_v1::UnsubscribeMulti,
         timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::RemoveMultiSubscription {
-            sender,
-            auth,
-            request,
-            timer,
-        };
-        self.call_subscription_command("call_view_remove_multi_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_remove_multi_subscription_ws(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::UnsubscribeMulti,
-        timer: Instant,
     ) -> Result<(), DBError> {
         let cmd = ViewCommand::RemoveMultiSubscription {
             sender,
@@ -2152,11 +2104,11 @@ impl ModuleHost {
             request,
             timer,
         };
-        self.call_subscription_command_ws("call_view_remove_multi_subscription", cmd)
+        self.enqueue_subscription_command("call_view_remove_multi_subscription", cmd)
             .await
     }
 
-    pub async fn call_view_add_legacy_subscription_ws(
+    pub async fn call_view_add_legacy_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
@@ -2169,7 +2121,7 @@ impl ModuleHost {
             subscribe,
             _timer: timer,
         };
-        self.call_subscription_command_ws("call_view_add_legacy_subscription", cmd)
+        self.enqueue_subscription_command("call_view_add_legacy_subscription", cmd)
             .await
     }
 
@@ -2214,25 +2166,17 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> CallProcedureReturn {
         let res = async {
-            let (procedure_id, procedure_def) = self
-                .info
-                .module_def
-                .procedure_full(procedure_name)
-                .ok_or(ProcedureCallError::NoSuchProcedure)?;
+            let prepared =
+                self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)?;
 
-            if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-                return Err(ProcedureCallError::NoSuchProcedure);
-            }
-
-            self.call_procedure_inner(
-                caller_identity,
-                caller_connection_id,
-                timer,
-                procedure_id,
-                procedure_def,
-                args,
-            )
-            .await
+            Ok(self
+                .run_procedure_wait(
+                    &prepared.label,
+                    prepared.params,
+                    async move |params, inst| inst.call_procedure(params).await,
+                    async move |params, inst| inst.start_procedure(params).await,
+                )
+                .await?)
         }
         .await;
 
@@ -2268,13 +2212,14 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<(), BroadcastError> {
         let sender = sender.clone();
+        let subscriptions = self.subscriptions().clone();
         self.call_procedure_ws_impl(
             caller_identity,
             caller_connection_id,
             timer,
             procedure_name,
             args,
-            move |subscriptions, ret| {
+            move |ret| {
                 let message = ProcedureResultMessage::from_result(&ret.result, request_id);
                 subscriptions.send_procedure_message(sender.clone(), message, ret.tx_offset)
             },
@@ -2293,13 +2238,14 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<(), BroadcastError> {
         let sender = sender.clone();
+        let subscriptions = self.subscriptions().clone();
         self.call_procedure_ws_impl(
             caller_identity,
             caller_connection_id,
             timer,
             procedure_name,
             args,
-            move |subscriptions, ret| {
+            move |ret| {
                 let message = Self::procedure_result_message_v2(ret.result, request_id);
                 subscriptions.send_procedure_message_v2(sender.clone(), message, ret.tx_offset)
             },
@@ -2317,113 +2263,24 @@ impl ModuleHost {
         send_result: F,
     ) -> Result<(), BroadcastError>
     where
-        F: Fn(ModuleSubscriptions, CallProcedureReturn) -> Result<(), BroadcastError> + Clone + Send + 'static,
+        F: Fn(CallProcedureReturn) -> Result<(), BroadcastError> + Clone + Send + 'static,
     {
         let call_return_err = |err| CallProcedureReturn {
             result: Err(err),
             tx_offset: None,
         };
 
-        if let ModuleHostInner::Js(_) = &*self.inner {
-            let ret = self
-                .call_procedure(caller_identity, caller_connection_id, timer, procedure_name, args)
-                .await;
-            return send_result(self.subscriptions().clone(), ret);
-        }
-
-        if let Err(err) = self.guard_closed() {
-            let ret = call_return_err(err.into());
-            let subscriptions = self.subscriptions().clone();
-            return send_result(subscriptions, ret);
-        }
-
-        let (procedure_id, procedure_def) = match self.info.module_def.procedure_full(procedure_name) {
-            Some(procedure) => procedure,
-            None => {
-                let ret = call_return_err(ProcedureCallError::NoSuchProcedure);
-                let subscriptions = self.subscriptions().clone();
-                return send_result(subscriptions, ret);
-            }
-        };
-
-        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-            let ret = call_return_err(ProcedureCallError::NoSuchProcedure);
-            let subscriptions = self.subscriptions().clone();
-            return send_result(subscriptions, ret);
-        }
-
-        let params = match Self::call_procedure_params(
-            &self.info,
-            caller_identity,
-            caller_connection_id,
-            timer,
-            procedure_id,
-            procedure_def,
-            args,
-        ) {
-            Ok(params) => params,
-            Err(err) => {
-                let ret = call_return_err(err.into());
-                let subscriptions = self.subscriptions().clone();
-                return send_result(subscriptions, ret);
-            }
-        };
-
-        match &*self.inner {
-            ModuleHostInner::Wasm(_) => {
-                let subscriptions = self.subscriptions().clone();
-                let procedure_label = procedure_def.name.to_string();
-                let send_result_in_job = send_result.clone();
-                let enqueue_res = self.enqueue_wasm_instance(
-                    "pooled operation",
-                    &procedure_label,
-                    InstanceKind::Procedure,
-                    (subscriptions, params),
-                    async move |(subscriptions, params), inst| {
-                        let ret = inst.call_procedure(params).await;
-                        if let Err(err) = send_result_in_job(subscriptions, ret) {
-                            log::warn!("Procedure call failed: {err:#}");
-                        }
-                    },
-                );
-
-                match enqueue_res {
-                    Ok(()) => Ok(()),
-                    Err(err) => {
-                        let ret = call_return_err(err.into());
-                        let subscriptions = self.subscriptions().clone();
-                        send_result(subscriptions, ret)
-                    }
+        let prepared =
+            match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args) {
+                Ok(prepared) => prepared,
+                Err(err) => {
+                    let ret = call_return_err(err);
+                    return send_result(ret);
                 }
-            }
-            ModuleHostInner::Js(_) => unreachable!("handled before wasm-specific procedure setup"),
-        }
-    }
+            };
 
-    async fn call_procedure_inner(
-        &self,
-        caller_identity: Identity,
-        caller_connection_id: Option<ConnectionId>,
-        timer: Option<Instant>,
-        procedure_id: ProcedureId,
-        procedure_def: &ProcedureDef,
-        args: FunctionArgs,
-    ) -> Result<CallProcedureReturn, ProcedureCallError> {
-        let args = args
-            .into_tuple_for_def(&self.info.module_def, procedure_def)
-            .map_err(InvalidProcedureArguments)?;
-        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-
-        let params = CallProcedureParams {
-            timestamp: Timestamp::now(),
-            caller_identity,
-            caller_connection_id,
-            timer,
-            procedure_id,
-            args,
-        };
-
-        Ok(self.call_procedure_with_params(&procedure_def.name, params).await?)
+        self.run_procedure_enqueue(&prepared.label, prepared.params, send_result)
+            .await
     }
 
     fn procedure_result_message_v2(
@@ -2469,11 +2326,11 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.call_pooled(
+        self.run_procedure_wait(
             name,
             params,
             async move |params, inst| inst.call_procedure(params).await,
-            async move |params, inst| inst.call_procedure(params).await,
+            async move |params, inst| inst.start_procedure(params).await,
         )
         .await
     }
@@ -2482,11 +2339,14 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.call(
+        self.run_main_wait(
             "scheduled reducer",
             params,
             async |params, inst| Ok(inst.call_scheduled_function(params).await),
-            async |params, lane| Ok(lane.call_scheduled_function(params).await),
+            async |params, lane, timer_guard| {
+                drop(timer_guard);
+                Ok(lane.call_scheduled_function(params).await)
+            },
         )
         .await?
     }
@@ -2495,13 +2355,14 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.call_pooled(
-            "scheduled procedure",
-            params,
-            async |params, inst| Ok(inst.call_scheduled_function(params).await),
-            async |params, inst| Ok(inst.call_scheduled_function(params).await),
-        )
-        .await?
+        Ok(self
+            .run_procedure_wait(
+                "scheduled procedure",
+                params,
+                async |params, inst| inst.call_scheduled_function(params).await,
+                async |params, inst| inst.start_scheduled_function(params).await,
+            )
+            .await?)
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -2716,11 +2577,14 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        self.call(
+        self.run_main_wait(
             "<init_database>",
             program,
             async |p, inst| inst.init_database(p),
-            async |p, inst| inst.init_database(p).await,
+            async |p, inst, timer_guard| {
+                drop(timer_guard);
+                inst.init_database(p).await
+            },
         )
         .await?
         .map_err(InitDatabaseError::Other)
@@ -2732,11 +2596,14 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call(
+        self.run_main_wait(
             "<update_database>",
             (program, old_module_info, policy),
             async |(a, b, c), inst| inst.update_database(a, b, c),
-            async |(a, b, c), inst| inst.update_database(a, b, c).await,
+            async |(a, b, c), inst, timer_guard| {
+                drop(timer_guard);
+                inst.update_database(a, b, c).await
+            },
         )
         .await?
     }
@@ -2763,10 +2630,6 @@ impl ModuleHost {
         )
     }
 
-    /// Execute a one-off query and send the results to the given client.
-    /// This only returns an error if there is a db-level problem.
-    /// An error with the query itself will be sent to the client.
-    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn one_off_query<F: BuildableWebsocketFormat>(
         &self,
         auth: AuthCtx,
@@ -2775,16 +2638,26 @@ impl ModuleHost {
         message_id: Vec<u8>,
         timer: Instant,
         rlb_pool: impl 'static + Send + RowListBuilderSource<F>,
-        // We take this because we only have a way to convert with the concrete types (Bsatn and Json)
         into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
     ) -> Result<(), anyhow::Error> {
-        let replica_ctx = self.replica_ctx();
         let db = self.relational_db().clone();
-        let subscriptions = replica_ctx.subscriptions.clone();
+        let subscriptions = self.replica_ctx().subscriptions.clone();
         log::debug!("One-off query: {query}");
-        let metrics = self
-            .on_module_thread("one_off_query", move || {
-                Self::one_off_query_inner(
+        self.run_main_enqueue(
+            "one_off_query",
+            (
+                db,
+                subscriptions,
+                auth,
+                query,
+                client,
+                message_id,
+                timer,
+                rlb_pool,
+                into_message,
+            ),
+            async |(db, subscriptions, auth, query, client, message_id, timer, rlb_pool, into_message), _inst| {
+                if let Err(err) = Self::one_off_query_inner(
                     db,
                     subscriptions,
                     auth,
@@ -2794,40 +2667,15 @@ impl ModuleHost {
                     timer,
                     rlb_pool,
                     into_message,
-                )
-            })
-            .await??;
-
-        if let Some(metrics) = metrics {
-            // Record the metrics for the one-off query
-            self.relational_db()
-                .exec_counters_for(WorkloadType::Sql)
-                .record(&metrics);
-        }
-
-        Ok(())
-    }
-
-    pub async fn one_off_query_ws<F: BuildableWebsocketFormat>(
-        &self,
-        auth: AuthCtx,
-        query: String,
-        client: Arc<ClientConnectionSender>,
-        message_id: Vec<u8>,
-        timer: Instant,
-        rlb_pool: impl 'static + Send + RowListBuilderSource<F>,
-        into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
-    ) -> Result<(), anyhow::Error> {
-        match &*self.inner {
-            ModuleHostInner::Js(_) => {
-                self.one_off_query(auth, query, client, message_id, timer, rlb_pool, into_message)
-                    .await
-            }
-            ModuleHostInner::Wasm(_) => {
-                let db = self.relational_db().clone();
-                let subscriptions = self.replica_ctx().subscriptions.clone();
-                log::debug!("One-off query: {query}");
-                match self.enqueue_wasm_job("module-thread operation", "one_off_query", async move || {
+                ) {
+                    log::warn!("One-off query failed: {err:#}");
+                }
+            },
+            async |(db, subscriptions, auth, query, client, message_id, timer, rlb_pool, into_message),
+                   lane,
+                   timer_guard| {
+                lane.enqueue_on_thread(async move || {
+                    drop(timer_guard);
                     if let Err(err) = Self::one_off_query_inner(
                         db,
                         subscriptions,
@@ -2841,19 +2689,14 @@ impl ModuleHost {
                     ) {
                         log::warn!("One-off query failed: {err:#}");
                     }
-                }) {
-                    Ok(()) => Ok(()),
-                    Err(err) => Err(err.into()),
-                }
-            }
-        }
+                })
+                .await
+                .map_err(|_| anyhow::anyhow!("instance lane worker exited while handling one_off_query"))
+            },
+        )
+        .await
     }
 
-    /// Execute a one-off query for v2 clients and send the results to the given client.
-    ///
-    /// This only returns an error if there is a db-level problem.
-    /// An error with the query itself will be sent to the client.
-    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn one_off_query_v2(
         &self,
         auth: AuthCtx,
@@ -2863,55 +2706,33 @@ impl ModuleHost {
         _timer: Instant,
         rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
     ) -> Result<(), anyhow::Error> {
-        let replica_ctx = self.replica_ctx();
         let db = self.relational_db().clone();
-        let subscriptions = replica_ctx.subscriptions.clone();
+        let subscriptions = self.replica_ctx().subscriptions.clone();
         log::debug!("One-off query: {query}");
-        let metrics = self
-            .on_module_thread("one_off_query_v2", move || {
-                Self::one_off_query_v2_inner(db, subscriptions, auth, query, client, request_id, rlb_pool)
-            })
-            .await??;
-
-        if let Some(metrics) = metrics {
-            self.relational_db()
-                .exec_counters_for(WorkloadType::Sql)
-                .record(&metrics);
-        }
-
-        Ok(())
-    }
-
-    pub async fn one_off_query_v2_ws(
-        &self,
-        auth: AuthCtx,
-        query: String,
-        client: Arc<ClientConnectionSender>,
-        request_id: u32,
-        timer: Instant,
-        rlb_pool: impl 'static + Send + RowListBuilderSource<ws_v1::BsatnFormat>,
-    ) -> Result<(), anyhow::Error> {
-        match &*self.inner {
-            ModuleHostInner::Js(_) => {
-                self.one_off_query_v2(auth, query, client, request_id, timer, rlb_pool)
-                    .await
-            }
-            ModuleHostInner::Wasm(_) => {
-                let db = self.relational_db().clone();
-                let subscriptions = self.replica_ctx().subscriptions.clone();
-                log::debug!("One-off query: {query}");
-                match self.enqueue_wasm_job("module-thread operation", "one_off_query_v2", async move || {
+        self.run_main_enqueue(
+            "one_off_query_v2",
+            (db, subscriptions, auth, query, client, request_id, rlb_pool),
+            async |(db, subscriptions, auth, query, client, request_id, rlb_pool), _inst| {
+                if let Err(err) =
+                    Self::one_off_query_v2_inner(db, subscriptions, auth, query, client, request_id, rlb_pool)
+                {
+                    log::warn!("One-off query failed: {err:#}");
+                }
+            },
+            async |(db, subscriptions, auth, query, client, request_id, rlb_pool), lane, timer_guard| {
+                lane.enqueue_on_thread(async move || {
+                    drop(timer_guard);
                     if let Err(err) =
                         Self::one_off_query_v2_inner(db, subscriptions, auth, query, client, request_id, rlb_pool)
                     {
                         log::warn!("One-off query failed: {err:#}");
                     }
-                }) {
-                    Ok(()) => Ok(()),
-                    Err(err) => Err(err.into()),
-                }
-            }
-        }
+                })
+                .await
+                .map_err(|_| anyhow::anyhow!("instance lane worker exited while handling one_off_query_v2"))
+            },
+        )
+        .await
     }
 
     fn one_off_query_inner<F: BuildableWebsocketFormat>(
