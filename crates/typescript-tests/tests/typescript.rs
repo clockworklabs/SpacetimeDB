@@ -5,7 +5,6 @@ use clap::Parser;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use spacetimedb_language_test_support::{print_results, target_dir, Outcome, TestCaseResult};
-use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -21,14 +20,11 @@ struct Args {
 
     #[arg(skip)]
     passthrough: Vec<String>,
-
-    #[arg()]
-    positional: Vec<String>,
 }
 
 impl Args {
     fn parse() -> Self {
-        let mut args = env::args().collect::<Vec<_>>();
+        let mut args = std::env::args().collect::<Vec<_>>();
         let passthrough = args
             .iter()
             .position(|arg| arg == "--")
@@ -40,11 +36,6 @@ impl Args {
 
         let mut parsed = <Args as Parser>::parse_from(args);
         parsed.passthrough = passthrough;
-        if parsed.filter.is_none()
-            && let Some(filter) = parsed.positional.first()
-        {
-            parsed.filter = Some(filter.clone());
-        }
         parsed
     }
 }

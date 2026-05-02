@@ -5,8 +5,6 @@ use clap::Parser;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use spacetimedb_language_test_support::{print_results, target_dir, Outcome, SpacetimeDbGuard, TestCaseResult};
-use std::env;
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -22,14 +20,11 @@ struct Args {
 
     #[arg(skip)]
     passthrough: Vec<String>,
-
-    #[arg()]
-    positional: Vec<String>,
 }
 
 impl Args {
     fn parse() -> Self {
-        let mut args = env::args().collect::<Vec<_>>();
+        let mut args = std::env::args().collect::<Vec<_>>();
         let passthrough = args
             .iter()
             .position(|arg| arg == "--")
@@ -41,11 +36,6 @@ impl Args {
 
         let mut parsed = <Args as Parser>::parse_from(args);
         parsed.passthrough = passthrough;
-        if parsed.filter.is_none()
-            && let Some(filter) = parsed.positional.first()
-        {
-            parsed.filter = Some(filter.clone());
-        }
         parsed
     }
 }
@@ -99,7 +89,30 @@ fn run_dotnet_test(
     if args.list {
         let mut list_args = vec!["test".to_string(), "--list-tests".to_string()];
         list_args.extend(extra_args.iter().cloned());
-        run_command_forward("dotnet", &list_args, cwd)?;
+        let status = Command::new("dotnet")
+            .args(&list_args)
+            .current_dir(cwd)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .with_context(|| {
+                format!(
+                    "failed to spawn `{}` in {}",
+                    shell_line("dotnet", &list_args),
+                    cwd.display()
+                )
+            })?;
+        ensure_success(
+            cwd,
+            "dotnet",
+            &list_args,
+            &Output {
+                status,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        )?;
         return Ok(());
     }
 
@@ -118,7 +131,18 @@ fn run_dotnet_test(
     }
     test_args.extend(args.passthrough.iter().cloned());
 
-    run_command("dotnet", &test_args, cwd)?;
+    let output = Command::new("dotnet")
+        .args(&test_args)
+        .current_dir(cwd)
+        .output()
+        .with_context(|| {
+            format!(
+                "failed to spawn `{}` in {}",
+                shell_line("dotnet", &test_args),
+                cwd.display()
+            )
+        })?;
+    ensure_success(cwd, "dotnet", &test_args, &output)?;
     let actual_report = find_trx(&report, cwd).with_context(|| format!("failed to locate TRX report for {suite}"))?;
     let results = parse_trx(&actual_report).with_context(|| format!("failed to parse {suite} TRX report"))?;
     print_results(suite, &actual_report, &results)?;
@@ -145,83 +169,70 @@ fn find_trx(preferred: &Path, cwd: &Path) -> Result<PathBuf> {
 }
 
 fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
-    run_command(
-        "dotnet",
-        &["pack".to_string(), "crates/bindings-csharp/BSATN.Runtime".to_string()],
-        workspace,
-    )?;
-    run_command(
-        "dotnet",
-        &["pack".to_string(), "crates/bindings-csharp/Runtime".to_string()],
-        workspace,
-    )?;
-    run_command(
-        "bash",
-        &["./tools~/write-nuget-config.sh".to_string(), "../..".to_string()],
-        &workspace.join("sdks/csharp"),
-    )?;
-    run_command(
-        "dotnet",
-        &[
-            "restore".to_string(),
-            "--configfile".to_string(),
-            "NuGet.Config".to_string(),
-            "SpacetimeDB.ClientSDK.sln".to_string(),
-        ],
-        &workspace.join("sdks/csharp"),
-    )?;
+    let args = ["pack".to_string(), "crates/bindings-csharp/BSATN.Runtime".to_string()];
+    let output = Command::new("dotnet")
+        .args(&args)
+        .current_dir(workspace)
+        .output()
+        .with_context(|| {
+            format!(
+                "failed to spawn `{}` in {}",
+                shell_line("dotnet", &args),
+                workspace.display()
+            )
+        })?;
+    ensure_success(workspace, "dotnet", &args, &output)?;
+
+    let args = ["pack".to_string(), "crates/bindings-csharp/Runtime".to_string()];
+    let output = Command::new("dotnet")
+        .args(&args)
+        .current_dir(workspace)
+        .output()
+        .with_context(|| {
+            format!(
+                "failed to spawn `{}` in {}",
+                shell_line("dotnet", &args),
+                workspace.display()
+            )
+        })?;
+    ensure_success(workspace, "dotnet", &args, &output)?;
+
+    let cwd = workspace.join("sdks/csharp");
+    let args = ["./tools~/write-nuget-config.sh".to_string(), "../..".to_string()];
+    let output = Command::new("bash")
+        .args(&args)
+        .current_dir(&cwd)
+        .output()
+        .with_context(|| format!("failed to spawn `{}` in {}", shell_line("bash", &args), cwd.display()))?;
+    ensure_success(&cwd, "bash", &args, &output)?;
+
+    let args = [
+        "restore".to_string(),
+        "--configfile".to_string(),
+        "NuGet.Config".to_string(),
+        "SpacetimeDB.ClientSDK.sln".to_string(),
+    ];
+    let output = Command::new("dotnet")
+        .args(&args)
+        .current_dir(&cwd)
+        .output()
+        .with_context(|| format!("failed to spawn `{}` in {}", shell_line("dotnet", &args), cwd.display()))?;
+    ensure_success(&cwd, "dotnet", &args, &output)?;
     Ok(())
 }
 
 fn run_regression_tests(workspace: &Path) -> Result<()> {
     let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
-    run_command_env(
-        "bash",
-        &["tools~/run-regression-tests.sh".to_string()],
-        &workspace.join("sdks/csharp"),
-        &[("SPACETIMEDB_SERVER_URL", guard.host_url.clone())],
-    )?;
-    Ok(())
-}
-
-fn run_command(program: &str, args: &[String], cwd: &Path) -> Result<Output> {
-    run_command_inner(program, args, cwd, &[])
-}
-
-fn run_command_env(program: &str, args: &[String], cwd: &Path, envs: &[(&str, String)]) -> Result<Output> {
-    run_command_inner(program, args, cwd, envs)
-}
-
-fn run_command_inner(program: &str, args: &[String], cwd: &Path, envs: &[(&str, String)]) -> Result<Output> {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .envs(envs.iter().map(|(k, v)| (OsStr::new(k), OsStr::new(v))))
+    let cwd = workspace.join("sdks/csharp");
+    let args = ["tools~/run-regression-tests.sh".to_string()];
+    let output = Command::new("bash")
+        .args(&args)
+        .current_dir(&cwd)
+        .env("SPACETIMEDB_SERVER_URL", &guard.host_url)
         .output()
-        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
-    ensure_success(cwd, program, args, &output)?;
-    Ok(output)
-}
-
-fn run_command_forward(program: &str, args: &[String], cwd: &Path) -> Result<()> {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("failed to spawn `{}` in {}", shell_line(program, args), cwd.display()))?;
-    ensure_success(
-        cwd,
-        program,
-        args,
-        &Output {
-            status,
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-        },
-    )
+        .with_context(|| format!("failed to spawn `{}` in {}", shell_line("bash", &args), cwd.display()))?;
+    ensure_success(&cwd, "bash", &args, &output)?;
+    Ok(())
 }
 
 fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -> Result<()> {
