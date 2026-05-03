@@ -152,7 +152,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                             inner.connection_lifecycle = ConnectionLifecycle::Connected;
                             inner.on_connect.take()
                         }
-                        ConnectionLifecycle::Connected | ConnectionLifecycle::Ended => return Ok(()),
+                        ConnectionLifecycle::Connected => None,
+                        ConnectionLifecycle::Ended => return Ok(()),
                     }
                 };
                 {
