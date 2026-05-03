@@ -132,7 +132,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`with_token`](#method-with_token) to authenticate the same user in future connections.
+Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your new `DbConnection` receives the server's initial connection message. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`with_token`](#method-with_token) to authenticate the same user in future connections.
 
 This interface may change in an upcoming release as we rework SpacetimeDB's authentication model.
 
@@ -147,9 +147,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_connect_error(callback)` to your builder to register a callback to run when your connection fails.
-
-A known bug in the SpacetimeDB Rust client SDK currently causes this callback never to be invoked. [`on_disconnect`](#callback-on_disconnect) callbacks are invoked instead.
+Chain a call to `.on_connect_error(callback)` to your builder to register a callback to run when a connection attempt fails after [`build`](#method-build) has created a connection object, but before the server sends the initial connection message. Errors which prevent `build` from creating the connection are returned by `build` instead.
 
 #### Callback `on_disconnect`
 
@@ -162,7 +160,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when an established `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error. Connection attempts which fail before the server sends the initial connection message invoke [`on_connect_error`](#callback-on_connect_error) instead.
 
 #### Method `with_token`
 

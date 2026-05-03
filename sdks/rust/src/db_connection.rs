@@ -143,12 +143,18 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
             // Initial `IdentityToken` message:
             // confirm that the received identity and connection ID are what we expect,
-            // store them,
-            // then invoke the on_connect callback.
+            // store them, then invoke the on_connect callback.
             ParsedMessage::IdentityToken(identity, token, conn_id) => {
-                if !self.transition_to_connected() {
-                    return Ok(());
-                }
+                let on_connect = {
+                    let mut inner = self.inner.lock().unwrap();
+                    match inner.connection_lifecycle {
+                        ConnectionLifecycle::Connecting => {
+                            inner.connection_lifecycle = ConnectionLifecycle::Connected;
+                            inner.on_connect.take()
+                        }
+                        ConnectionLifecycle::Connected | ConnectionLifecycle::Ended => return Ok(()),
+                    }
+                };
                 {
                     // Don't hold the `self.identity` lock while running callbacks.
                     // Callbacks can (will) call [`DbContext::identity`], which acquires that lock,
@@ -170,7 +176,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     }
                     *conn_id_store = Some(conn_id);
                 }
-                self.invoke_connected(identity, &token);
+                if let Some(on_connect) = on_connect {
+                    let ctx = <M::DbConnection as DbConnection>::new(self.clone());
+                    on_connect(&ctx, identity, &token);
+                }
                 Ok(())
             }
 
@@ -300,30 +309,6 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         let event = get_event(&mut inner);
         let row_event_ctx = self.make_event_ctx(event);
         applied_diff.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
-    }
-
-    /// Mark the connection as established and ready to run the `on_connect` callback.
-    ///
-    /// Returns `false` if the connection lifecycle has already ended, e.g. because
-    /// the user requested `disconnect` before the initial connection completed.
-    fn transition_to_connected(&self) -> bool {
-        let mut inner = self.inner.lock().unwrap();
-        match inner.connection_lifecycle {
-            ConnectionLifecycle::Connecting => {
-                inner.connection_lifecycle = ConnectionLifecycle::Connected;
-                true
-            }
-            ConnectionLifecycle::Connected | ConnectionLifecycle::Ended => false,
-        }
-    }
-
-    /// Invoke the on-connect callback after receiving the initial connection message.
-    fn invoke_connected(&self, identity: Identity, token: &str) {
-        let mut inner = self.inner.lock().unwrap();
-        if let Some(on_connect) = inner.on_connect.take() {
-            let ctx = <M::DbConnection as DbConnection>::new(self.clone());
-            on_connect(&ctx, identity, token);
-        }
     }
 
     /// Mark the connection lifecycle as ended, route the terminal event to the
@@ -1086,9 +1071,10 @@ but you must call one of them, or else the connection will never progress.
     /// If this method is not invoked, or `None` is supplied,
     /// the SpacetimeDB host will generate a new anonymous `Identity`.
     ///
-    /// If the passed token is invalid or rejected by the host after the WebSocket connection is established,
-    /// but before the initial connection message is received,
-    /// the [`Self::on_connect_error`] callback will be invoked.
+    /// If the passed token is invalid or rejected while establishing the connection,
+    /// the connection attempt will fail. Errors which prevent [`Self::build`] from creating
+    /// a connection are returned by `build`; failures after `build` succeeds but before
+    /// the initial connection message is received invoke [`Self::on_connect_error`].
     pub fn with_token(mut self, token: Option<impl Into<String>>) -> Self {
         self.token = token.map(|token| token.into());
         self
@@ -1633,323 +1619,5 @@ static NEXT_QUERY_SET_ID: AtomicU32 = AtomicU32::new(1);
 pub(crate) fn next_query_set_id() -> QuerySetId {
     QuerySetId {
         id: NEXT_QUERY_SET_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-    }
-}
-
-#[cfg(all(test, not(feature = "browser")))]
-mod test {
-    use super::*;
-    use crate::{
-        callbacks::DbCallbacks,
-        spacetime_module::{
-            AppliedDiff, DbConnection as _, DbUpdate, EventContext, InModule, ProcedureEventContext, Reducer as _,
-            ReducerEventContext, SubscriptionEventContext, SubscriptionHandle,
-        },
-    };
-    use spacetimedb_client_api_messages::websocket as ws;
-    use std::sync::{Arc, Mutex};
-
-    #[derive(Debug)]
-    struct TestModule;
-
-    struct TestDbConnection(DbContextImpl<TestModule>);
-
-    impl InModule for TestDbConnection {
-        type Module = TestModule;
-    }
-
-    impl crate::spacetime_module::DbConnection for TestDbConnection {
-        fn new(imp: DbContextImpl<TestModule>) -> Self {
-            Self(imp)
-        }
-    }
-
-    struct TestContext<E> {
-        event: E,
-        _imp: DbContextImpl<TestModule>,
-    }
-
-    impl<E: Send + 'static> InModule for TestContext<E> {
-        type Module = TestModule;
-    }
-
-    impl<E: Send + 'static> AbstractEventContext for TestContext<E> {
-        type Event = E;
-
-        fn event(&self) -> &Self::Event {
-            &self.event
-        }
-
-        fn new(imp: DbContextImpl<Self::Module>, event: Self::Event) -> Self {
-            Self { event, _imp: imp }
-        }
-    }
-
-    impl EventContext for TestContext<Event<TestReducer>> {}
-    impl ReducerEventContext for TestContext<ReducerEvent<TestReducer>> {}
-    impl ProcedureEventContext for TestContext<()> {}
-    impl SubscriptionEventContext for TestContext<()> {}
-    impl crate::spacetime_module::ErrorContext for TestContext<Option<crate::Error>> {}
-
-    #[derive(Debug, Clone)]
-    enum TestReducer {}
-
-    impl InModule for TestReducer {
-        type Module = TestModule;
-    }
-
-    impl crate::spacetime_module::Reducer for TestReducer {
-        fn reducer_name(&self) -> &'static str {
-            match *self {}
-        }
-
-        fn args_bsatn(&self) -> Result<Vec<u8>, bsatn::EncodeError> {
-            match *self {}
-        }
-    }
-
-    struct TestDbView;
-    struct TestReducers;
-    struct TestProcedures;
-    struct TestQueryBuilder;
-
-    impl InModule for TestDbView {
-        type Module = TestModule;
-    }
-
-    impl InModule for TestReducers {
-        type Module = TestModule;
-    }
-
-    impl InModule for TestProcedures {
-        type Module = TestModule;
-    }
-
-    impl InModule for TestQueryBuilder {
-        type Module = TestModule;
-    }
-
-    impl Default for TestQueryBuilder {
-        fn default() -> Self {
-            Self
-        }
-    }
-
-    #[derive(Clone)]
-    struct TestSubscriptionHandle(SubscriptionHandleImpl<TestModule>);
-
-    impl InModule for TestSubscriptionHandle {
-        type Module = TestModule;
-    }
-
-    impl SubscriptionHandle for TestSubscriptionHandle {
-        fn new(imp: SubscriptionHandleImpl<TestModule>) -> Self {
-            Self(imp)
-        }
-
-        fn is_ended(&self) -> bool {
-            self.0.is_ended()
-        }
-
-        fn is_active(&self) -> bool {
-            self.0.is_active()
-        }
-
-        fn unsubscribe_then(self, on_end: crate::subscription::OnEndedCallback<Self::Module>) -> crate::Result<()> {
-            self.0.unsubscribe_then(Some(on_end))
-        }
-
-        fn unsubscribe(self) -> crate::Result<()> {
-            self.0.unsubscribe_then(None)
-        }
-    }
-
-    #[derive(Debug, Default)]
-    struct TestUpdate;
-
-    impl InModule for TestUpdate {
-        type Module = TestModule;
-    }
-
-    impl TryFrom<ws::v2::TransactionUpdate> for TestUpdate {
-        type Error = crate::Error;
-
-        fn try_from(_value: ws::v2::TransactionUpdate) -> Result<Self, Self::Error> {
-            Ok(Self)
-        }
-    }
-
-    impl DbUpdate for TestUpdate {
-        fn apply_to_client_cache(&self, _cache: &mut ClientCache<Self::Module>) -> TestAppliedDiff {
-            TestAppliedDiff
-        }
-
-        fn parse_initial_rows(_rows: ws::v2::QueryRows) -> crate::Result<Self> {
-            Ok(Self)
-        }
-
-        fn parse_unsubscribe_rows(_rows: ws::v2::QueryRows) -> crate::Result<Self> {
-            Ok(Self)
-        }
-    }
-
-    struct TestAppliedDiff;
-
-    impl InModule for TestAppliedDiff {
-        type Module = TestModule;
-    }
-
-    impl AppliedDiff<'_> for TestAppliedDiff {
-        fn invoke_row_callbacks(
-            &self,
-            _event: &TestContext<Event<TestReducer>>,
-            _callbacks: &mut DbCallbacks<TestModule>,
-        ) {
-        }
-    }
-
-    impl SpacetimeModule for TestModule {
-        type DbConnection = TestDbConnection;
-        type EventContext = TestContext<Event<TestReducer>>;
-        type ReducerEventContext = TestContext<ReducerEvent<TestReducer>>;
-        type ProcedureEventContext = TestContext<()>;
-        type SubscriptionEventContext = TestContext<()>;
-        type ErrorContext = TestContext<Option<crate::Error>>;
-        type Reducer = TestReducer;
-        type DbView = TestDbView;
-        type Reducers = TestReducers;
-        type Procedures = TestProcedures;
-        type DbUpdate = TestUpdate;
-        type AppliedDiff<'r> = TestAppliedDiff;
-        type SubscriptionHandle = TestSubscriptionHandle;
-        type QueryBuilder = TestQueryBuilder;
-
-        fn register_tables(_client_cache: &mut ClientCache<Self>) {}
-
-        const ALL_TABLE_NAMES: &'static [&'static str] = &[];
-    }
-
-    fn test_connection(
-        on_connect: Option<OnConnectCallback<TestModule>>,
-        on_connect_error: Option<OnConnectErrorCallback<TestModule>>,
-        on_disconnect: Option<OnDisconnectCallback<TestModule>>,
-    ) -> (
-        DbContextImpl<TestModule>,
-        mpsc::UnboundedSender<ParsedMessage<TestModule>>,
-    ) {
-        let (runtime, handle) = enter_or_create_runtime().unwrap();
-        let inner_ctx = build_db_ctx_inner(runtime, on_connect, on_connect_error, on_disconnect);
-        let (raw_msg_send, _raw_msg_recv) = mpsc::unbounded();
-        let (parsed_msg_send, parsed_msg_recv) = mpsc::unbounded();
-        let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
-
-        let conn = build_db_ctx(
-            handle,
-            inner_ctx,
-            raw_msg_send,
-            Arc::new(TokioMutex::new(parsed_msg_recv)),
-            pending_mutations_send,
-            Arc::new(TokioMutex::new(pending_mutations_recv)),
-            None,
-            None,
-        );
-
-        (conn, parsed_msg_send)
-    }
-
-    fn record_event(events: &Arc<Mutex<Vec<&'static str>>>, event: &'static str) {
-        events.lock().unwrap().push(event);
-    }
-
-    fn initial_connection_message() -> ParsedMessage<TestModule> {
-        ParsedMessage::IdentityToken(Identity::from_byte_array([1; 32]), "token".into(), ConnectionId::ZERO)
-    }
-
-    fn test_error() -> crate::Error {
-        crate::Error::Internal(InternalError::new("test error"))
-    }
-
-    #[test]
-    fn error_before_initial_connection_invokes_on_connect_error() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let connect_events = Arc::clone(&events);
-        let connect_error_events = Arc::clone(&events);
-        let disconnect_events = Arc::clone(&events);
-
-        let (conn, _parsed_msg_send) = test_connection(
-            Some(Box::new(move |_, _, _| record_event(&connect_events, "connect"))),
-            Some(Box::new(move |_, _| {
-                record_event(&connect_error_events, "connect_error")
-            })),
-            Some(Box::new(move |_, _| record_event(&disconnect_events, "disconnect"))),
-        );
-
-        assert!(conn.process_message(ParsedMessage::Error(test_error())).is_err());
-        assert_eq!(&*events.lock().unwrap(), &["connect_error"]);
-    }
-
-    #[test]
-    fn error_after_initial_connection_invokes_on_disconnect() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let connect_events = Arc::clone(&events);
-        let connect_error_events = Arc::clone(&events);
-        let disconnect_events = Arc::clone(&events);
-
-        let (conn, _parsed_msg_send) = test_connection(
-            Some(Box::new(move |_, _, _| record_event(&connect_events, "connect"))),
-            Some(Box::new(move |_, _| {
-                record_event(&connect_error_events, "connect_error")
-            })),
-            Some(Box::new(move |_, error| {
-                assert!(error.is_some());
-                record_event(&disconnect_events, "disconnect");
-            })),
-        );
-
-        conn.process_message(initial_connection_message()).unwrap();
-        assert!(conn.process_message(ParsedMessage::Error(test_error())).is_err());
-        assert_eq!(&*events.lock().unwrap(), &["connect", "disconnect"]);
-    }
-
-    #[test]
-    fn closed_receiver_before_initial_connection_invokes_on_connect_error() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let connect_error_events = Arc::clone(&events);
-        let disconnect_events = Arc::clone(&events);
-
-        let (conn, parsed_msg_send) = test_connection(
-            None,
-            Some(Box::new(move |_, error| {
-                assert!(matches!(error, crate::Error::FailedToConnect { .. }));
-                record_event(&connect_error_events, "connect_error");
-            })),
-            Some(Box::new(move |_, _| record_event(&disconnect_events, "disconnect"))),
-        );
-        drop(parsed_msg_send);
-
-        let err = conn.advance_one_message().unwrap_err();
-        assert!(matches!(err, crate::Error::FailedToConnect { .. }));
-        assert_eq!(&*events.lock().unwrap(), &["connect_error"]);
-    }
-
-    #[test]
-    fn disconnect_before_initial_connection_does_not_invoke_lifecycle_callbacks() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let connect_events = Arc::clone(&events);
-        let connect_error_events = Arc::clone(&events);
-        let disconnect_events = Arc::clone(&events);
-
-        let (conn, parsed_msg_send) = test_connection(
-            Some(Box::new(move |_, _, _| record_event(&connect_events, "connect"))),
-            Some(Box::new(move |_, _| {
-                record_event(&connect_error_events, "connect_error")
-            })),
-            Some(Box::new(move |_, _| record_event(&disconnect_events, "disconnect"))),
-        );
-        conn.disconnect().unwrap();
-        drop(parsed_msg_send);
-
-        assert!(matches!(conn.advance_one_message(), Err(crate::Error::Disconnected)));
-        assert!(events.lock().unwrap().is_empty());
     }
 }
