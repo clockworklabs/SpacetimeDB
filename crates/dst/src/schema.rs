@@ -59,6 +59,10 @@ pub fn generate_supported_type(rng: &mut DstRng) -> AlgebraicType {
 }
 
 pub fn generate_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize) -> AlgebraicValue {
+    if rng.index(5) == 0 {
+        return edge_value_for_type(rng, ty, idx);
+    }
+
     match ty {
         AlgebraicType::Bool => AlgebraicValue::Bool(rng.index(2) == 0),
         AlgebraicType::I8 => AlgebraicValue::I8(((rng.next_u64() % 64) as i8) - 32),
@@ -78,6 +82,77 @@ pub fn generate_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize)
             AlgebraicValue::U128(v.into())
         }
         AlgebraicType::String => AlgebraicValue::String(format!("v{}_{}", idx, rng.next_u64() % 10_000).into()),
+        other => panic!("unsupported generated column type: {other:?}"),
+    }
+}
+
+pub fn default_value_for_type(ty: &AlgebraicType) -> AlgebraicValue {
+    match ty {
+        AlgebraicType::Bool => AlgebraicValue::Bool(false),
+        AlgebraicType::I8 => AlgebraicValue::I8(0),
+        AlgebraicType::U8 => AlgebraicValue::U8(0),
+        AlgebraicType::I16 => AlgebraicValue::I16(0),
+        AlgebraicType::U16 => AlgebraicValue::U16(0),
+        AlgebraicType::I32 => AlgebraicValue::I32(0),
+        AlgebraicType::U32 => AlgebraicValue::U32(0),
+        AlgebraicType::I64 => AlgebraicValue::I64(0),
+        AlgebraicType::U64 => AlgebraicValue::U64(0),
+        AlgebraicType::I128 => AlgebraicValue::I128(0.into()),
+        AlgebraicType::U128 => AlgebraicValue::U128(0.into()),
+        AlgebraicType::String => AlgebraicValue::String("".into()),
+        other => panic!("unsupported generated column type: {other:?}"),
+    }
+}
+
+pub fn distinct_value_for_type(ty: &AlgebraicType, current: &AlgebraicValue) -> AlgebraicValue {
+    let default = default_value_for_type(ty);
+    if &default != current {
+        return default;
+    }
+
+    match ty {
+        AlgebraicType::Bool => AlgebraicValue::Bool(true),
+        AlgebraicType::I8 => AlgebraicValue::I8(1),
+        AlgebraicType::U8 => AlgebraicValue::U8(1),
+        AlgebraicType::I16 => AlgebraicValue::I16(1),
+        AlgebraicType::U16 => AlgebraicValue::U16(1),
+        AlgebraicType::I32 => AlgebraicValue::I32(1),
+        AlgebraicType::U32 => AlgebraicValue::U32(1),
+        AlgebraicType::I64 => AlgebraicValue::I64(1),
+        AlgebraicType::U64 => AlgebraicValue::U64(1),
+        AlgebraicType::I128 => AlgebraicValue::I128(1.into()),
+        AlgebraicType::U128 => AlgebraicValue::U128(1.into()),
+        AlgebraicType::String => AlgebraicValue::String("dst_unique_conflict".into()),
+        other => panic!("unsupported generated column type: {other:?}"),
+    }
+}
+
+fn edge_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize) -> AlgebraicValue {
+    match ty {
+        AlgebraicType::Bool => AlgebraicValue::Bool(rng.index(2) == 0),
+        AlgebraicType::I8 => [i8::MIN, -1, 0, 1, i8::MAX][rng.index(5)].into(),
+        AlgebraicType::U8 => [0, 1, u8::MAX][rng.index(3)].into(),
+        AlgebraicType::I16 => [i16::MIN, -1, 0, 1, i16::MAX][rng.index(5)].into(),
+        AlgebraicType::U16 => [0, 1, u16::MAX][rng.index(3)].into(),
+        AlgebraicType::I32 => [i32::MIN, -1, 0, 1, i32::MAX][rng.index(5)].into(),
+        AlgebraicType::U32 => [0, 1, u32::MAX][rng.index(3)].into(),
+        AlgebraicType::I64 => [i64::MIN, -1, 0, 1, i64::MAX][rng.index(5)].into(),
+        AlgebraicType::U64 => [0, 1, u64::MAX.saturating_sub(idx as u64)][rng.index(3)].into(),
+        AlgebraicType::I128 => {
+            let value = [i128::MIN, -1, 0, 1, i128::MAX][rng.index(5)];
+            AlgebraicValue::I128(value.into())
+        }
+        AlgebraicType::U128 => {
+            let value = [0, 1, u128::MAX][rng.index(3)];
+            AlgebraicValue::U128(value.into())
+        }
+        AlgebraicType::String => match rng.index(5) {
+            0 => AlgebraicValue::String("".into()),
+            1 => AlgebraicValue::String("same".into()),
+            2 => AlgebraicValue::String("x".repeat(512).into()),
+            3 => AlgebraicValue::String(format!("edge_{}", char::from_u32(0x2603).expect("valid char")).into()),
+            _ => AlgebraicValue::String(format!("v{idx}_edge").into()),
+        },
         other => panic!("unsupported generated column type: {other:?}"),
     }
 }

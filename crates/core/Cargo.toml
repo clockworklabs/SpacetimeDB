@@ -28,6 +28,7 @@ spacetimedb-primitives.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-physical-plan.workspace = true
 spacetimedb-query.workspace = true
+spacetimedb-io.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true

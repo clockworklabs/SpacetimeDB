@@ -16,8 +16,8 @@ enum ActionKind {
     Reopen,
 }
 
-/// Deterministic stream generator for standalone-host interactions.
-pub(crate) struct NextInteractionGenerator {
+/// Deterministic source for standalone-host interactions.
+pub(crate) struct ModuleWorkloadSource {
     scenario: HostScenarioId,
     reducers: Vec<ModuleReducerSpec>,
     rng: DstRng,
@@ -25,7 +25,7 @@ pub(crate) struct NextInteractionGenerator {
     emitted: usize,
 }
 
-impl NextInteractionGenerator {
+impl ModuleWorkloadSource {
     pub fn new(
         seed: DstSeed,
         scenario: HostScenarioId,
@@ -109,7 +109,7 @@ fn supports_generation(ty: &spacetimedb_sats::AlgebraicType) -> bool {
     )
 }
 
-impl NextInteractionSource for NextInteractionGenerator {
+impl NextInteractionSource for ModuleWorkloadSource {
     type Interaction = ModuleInteraction;
 
     fn next_interaction(&mut self) -> Option<Self::Interaction> {

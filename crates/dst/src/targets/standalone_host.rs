@@ -8,9 +8,8 @@ use std::{
 
 use bytes::Bytes;
 use spacetimedb_client_api::{
-    auth::SpacetimeAuth,
-    routes::subscribe::{generate_random_connection_id, WebSocketOptions},
-    ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate,
+    auth::SpacetimeAuth, routes::subscribe::WebSocketOptions, ControlStateReadAccess, ControlStateWriteAccess,
+    NodeDelegate,
 };
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_core::{
@@ -21,7 +20,7 @@ use spacetimedb_core::{
     messages::control_db::HostType,
     util::jobs::JobCores,
 };
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::{auto_migrate::MigrationPolicy, def::FunctionVisibility};
@@ -30,10 +29,10 @@ use tracing::trace;
 
 use crate::{
     config::RunConfig,
-    core::NextInteractionSource,
+    core::{self, StreamingProperties, TargetEngine},
     seed::DstSeed,
     workload::module_ops::{
-        HostScenarioId, ModuleInteraction, ModuleReducerSpec, ModuleWorkloadOutcome, NextInteractionGenerator,
+        HostScenarioId, ModuleInteraction, ModuleReducerSpec, ModuleWorkloadOutcome, ModuleWorkloadSource,
     },
 };
 
@@ -49,53 +48,19 @@ pub async fn run_generated_with_config_and_scenario(
     scenario: HostScenarioId,
     config: RunConfig,
 ) -> anyhow::Result<StandaloneHostOutcome> {
-    let (outcome, _) = run_once_async(seed, scenario, config).await?;
-    Ok(outcome)
+    run_once_async(seed, scenario, config).await
 }
 
 async fn run_once_async(
     seed: DstSeed,
     scenario: HostScenarioId,
     config: RunConfig,
-) -> anyhow::Result<(StandaloneHostOutcome, Vec<ModuleInteraction>)> {
+) -> anyhow::Result<StandaloneHostOutcome> {
     let module = compiled_module()?;
     let reducers = extract_reducer_specs(module.clone()).await?;
-    let mut generator = NextInteractionGenerator::new(
-        seed,
-        scenario,
-        reducers.clone(),
-        config.max_interactions_or_default(usize::MAX),
-    );
-    let mut engine = StandaloneHostEngine::new(seed, module).await?;
-    let deadline = config.deadline();
-    let mut trace_log = Vec::new();
-
-    loop {
-        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            generator.request_finish();
-        }
-        let Some(interaction) = generator.next_interaction() else {
-            break;
-        };
-        trace!(?interaction, "standalone_host interaction");
-        engine
-            .execute(&interaction)
-            .await
-            .map_err(|e| anyhow::anyhow!("interaction failed: {e}"))?;
-        trace_log.push(interaction);
-    }
-
-    // Replay contract: same seed/scenario/config must produce same interaction sequence.
-    let mut replay =
-        NextInteractionGenerator::new(seed, scenario, reducers, config.max_interactions_or_default(usize::MAX));
-    let replayed = (0..trace_log.len())
-        .filter_map(|_| replay.next_interaction())
-        .collect::<Vec<_>>();
-    if replayed != trace_log {
-        anyhow::bail!("interaction sequence replay mismatch");
-    }
-
-    Ok((engine.finish(), trace_log))
+    let generator = ModuleWorkloadSource::new(seed, scenario, reducers, config.max_interactions_or_default(usize::MAX));
+    let engine = StandaloneHostEngine::new(seed, module).await?;
+    core::run_streaming(generator, engine, NoopHostProperties, config).await
 }
 
 #[derive(Clone)]
@@ -152,6 +117,8 @@ struct StandaloneHostEngine {
     root_dir: RootDir,
     session: Option<HostSession>,
     module: Arc<CompiledModuleInfo>,
+    seed: DstSeed,
+    session_generation: u64,
     step: usize,
     reducer_calls: usize,
     scheduler_waits: usize,
@@ -169,13 +136,15 @@ impl StandaloneHostEngine {
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
         )));
         let _ = std::fs::remove_dir_all(&root_dir);
-        let session = open_session(&root_dir, &module, None)
+        let session = open_session(&root_dir, &module, None, connection_id_for_session(seed, 0))
             .await
             .map_err(anyhow::Error::msg)?;
         Ok(Self {
             root_dir,
             session: Some(session),
             module,
+            seed,
+            session_generation: 1,
             step: 0,
             reducer_calls: 0,
             scheduler_waits: 0,
@@ -233,7 +202,10 @@ impl StandaloneHostEngine {
                     .db_identity;
                 let old = self.session.take();
                 drop(old);
-                self.session = Some(open_session(&self.root_dir, &self.module, Some(db_identity)).await?);
+                let connection_id = connection_id_for_session(self.seed, self.session_generation);
+                self.session_generation = self.session_generation.saturating_add(1);
+                self.session =
+                    Some(open_session(&self.root_dir, &self.module, Some(db_identity), connection_id).await?);
                 Ok(())
             }
             ModuleInteraction::NoOp => {
@@ -243,7 +215,7 @@ impl StandaloneHostEngine {
         }
     }
 
-    fn finish(self) -> StandaloneHostOutcome {
+    fn outcome(&self) -> StandaloneHostOutcome {
         StandaloneHostOutcome {
             steps_executed: self.step,
             reducer_calls: self.reducer_calls,
@@ -255,14 +227,63 @@ impl StandaloneHostEngine {
     }
 }
 
+impl TargetEngine<ModuleInteraction> for StandaloneHostEngine {
+    type Observation = ();
+    type Outcome = StandaloneHostOutcome;
+    type Error = String;
+
+    #[allow(clippy::manual_async_fn)]
+    fn execute_interaction<'a>(
+        &'a mut self,
+        interaction: &'a ModuleInteraction,
+    ) -> impl std::future::Future<Output = Result<Self::Observation, Self::Error>> + 'a {
+        async move {
+            trace!(?interaction, "standalone_host interaction");
+            self.execute(interaction).await
+        }
+    }
+
+    fn finish(&mut self) {}
+
+    #[allow(clippy::manual_async_fn)]
+    fn collect_outcome<'a>(&'a mut self) -> impl std::future::Future<Output = anyhow::Result<Self::Outcome>> + 'a {
+        async move { Ok(self.outcome()) }
+    }
+}
+
+struct NoopHostProperties;
+
+impl StreamingProperties<ModuleInteraction, (), StandaloneHostEngine> for NoopHostProperties {
+    fn observe(
+        &mut self,
+        _engine: &StandaloneHostEngine,
+        _interaction: &ModuleInteraction,
+        _observation: &(),
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn finish(&mut self, _engine: &StandaloneHostEngine, _outcome: &StandaloneHostOutcome) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 fn is_expected_error(_reducer: &str, msg: &str) -> bool {
     msg.contains("permission denied")
+}
+
+fn connection_id_for_session(seed: DstSeed, generation: u64) -> ConnectionId {
+    let high = seed.fork(1_000 + generation.saturating_mul(2)).0 as u128;
+    let low = seed.fork(1_001 + generation.saturating_mul(2)).0 as u128;
+    let id = (high << 64) | low;
+    ConnectionId::from_u128(id.max(1))
 }
 
 async fn open_session(
     root_dir: &RootDir,
     module: &CompiledModuleInfo,
     maybe_db_identity: Option<Identity>,
+    connection_id: ConnectionId,
 ) -> Result<HostSession, String> {
     let paths = SpacetimePaths::from_root_dir(root_dir);
     let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
@@ -335,7 +356,7 @@ async fn open_session(
         .map_err(|e| format!("module watcher failed: {e:#}"))?;
     let client_id = ClientActorId {
         identity: caller_identity,
-        connection_id: generate_random_connection_id(),
+        connection_id,
         name: env.client_actor_index().next_client_name(),
     };
     let client = ClientConnection::dummy(client_id, ClientConfig::for_test(), replica.id, module_rx);

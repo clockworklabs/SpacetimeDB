@@ -1,0 +1,13 @@
+[package]
+name = "spacetimedb-io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Filesystem and network IO facade for SpacetimeDB crates"
+
+[dependencies]
+tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
+
+[lints]
+workspace = true

@@ -3,7 +3,7 @@ use std::ops::Bound;
 use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
-    schema::{generate_value_for_type, SchemaPlan, SimRow},
+    schema::{distinct_value_for_type, generate_value_for_type, ColumnPlan, SchemaPlan, SimRow},
     seed::{DstRng, DstSeed},
 };
 
@@ -26,6 +26,7 @@ pub(crate) struct GenerationModel {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PendingConnection {
     pub(crate) in_tx: bool,
+    read_snapshot: Option<Vec<Vec<SimRow>>>,
     staged_inserts: Vec<(usize, SimRow)>,
     staged_deletes: Vec<(usize, SimRow)>,
 }
@@ -55,6 +56,9 @@ impl GenerationModel {
     }
 
     pub(crate) fn visible_rows(&self, conn: usize, table: usize) -> Vec<SimRow> {
+        if let Some(snapshot) = &self.connections[conn].read_snapshot {
+            return snapshot[table].clone();
+        }
         let mut rows = self.committed[table].clone();
         let pending = &self.connections[conn];
         for (pending_table, row) in &pending.staged_deletes {
@@ -78,14 +82,58 @@ impl GenerationModel {
         row
     }
 
+    pub(crate) fn unique_key_conflict_row(&self, rng: &mut DstRng, table: usize, source: &SimRow) -> Option<SimRow> {
+        let table_plan = &self.schema.tables[table];
+        let value_count = source.values.len().min(table_plan.columns.len());
+        if value_count <= 1 {
+            return None;
+        }
+
+        let col_idx = 1 + rng.index(value_count - 1);
+        let mut row = source.clone();
+        row.values[col_idx] = distinct_value_for_type(&table_plan.columns[col_idx].ty, &row.values[col_idx]);
+        Some(row)
+    }
+
     pub(crate) fn active_writer(&self) -> Option<usize> {
         self.active_writer
+    }
+
+    pub(crate) fn has_read_tx(&self, conn: usize) -> bool {
+        self.connections[conn].read_snapshot.is_some()
+    }
+
+    pub(crate) fn any_read_tx(&self) -> bool {
+        self.connections
+            .iter()
+            .any(|connection| connection.read_snapshot.is_some())
+    }
+
+    pub(crate) fn begin_read_tx(&mut self, conn: usize) {
+        let pending = &mut self.connections[conn];
+        assert!(!pending.in_tx, "connection already has write transaction");
+        assert!(
+            pending.read_snapshot.is_none(),
+            "connection already has read transaction"
+        );
+        pending.read_snapshot = Some(self.committed.clone());
+    }
+
+    pub(crate) fn release_read_tx(&mut self, conn: usize) {
+        assert!(
+            self.connections[conn].read_snapshot.take().is_some(),
+            "connection has no read transaction"
+        );
     }
 
     pub(crate) fn begin_tx(&mut self, conn: usize) {
         assert!(self.active_writer.is_none(), "single writer already active");
         let pending = &mut self.connections[conn];
         assert!(!pending.in_tx, "connection already in transaction");
+        assert!(
+            pending.read_snapshot.is_none(),
+            "connection already has read transaction"
+        );
         pending.in_tx = true;
         self.active_writer = Some(conn);
     }
@@ -145,6 +193,36 @@ impl GenerationModel {
         pending.in_tx = false;
         self.active_writer = None;
     }
+
+    pub(crate) fn add_column(&mut self, table: usize, column: ColumnPlan, default: AlgebraicValue) {
+        self.schema.tables[table].columns.push(column);
+        for row in &mut self.committed[table] {
+            row.values.push(default.clone());
+        }
+        for connection in &mut self.connections {
+            for (pending_table, row) in connection
+                .staged_inserts
+                .iter_mut()
+                .chain(connection.staged_deletes.iter_mut())
+            {
+                if *pending_table == table {
+                    row.values.push(default.clone());
+                }
+            }
+            if let Some(snapshot) = &mut connection.read_snapshot {
+                for row in &mut snapshot[table] {
+                    row.values.push(default.clone());
+                }
+            }
+        }
+    }
+
+    pub(crate) fn add_index(&mut self, table: usize, cols: Vec<u16>) {
+        let indexes = &mut self.schema.tables[table].extra_indexes;
+        if !indexes.contains(&cols) {
+            indexes.push(cols);
+        }
+    }
 }
 
 /// Replay model for the expected final committed state of a table workload.
@@ -162,6 +240,7 @@ pub struct ExpectedModel {
 #[derive(Clone, Debug, Default)]
 struct ExpectedConnection {
     in_tx: bool,
+    read_snapshot: Option<Vec<Vec<SimRow>>>,
     staged_inserts: Vec<(usize, SimRow)>,
     staged_deletes: Vec<(usize, SimRow)>,
 }
@@ -187,6 +266,18 @@ impl ExpectedModel {
                 );
                 self.connections[*conn].in_tx = true;
                 self.active_writer = Some(*conn);
+            }
+            TableOperation::BeginReadTx { conn } => {
+                let state = &mut self.connections[*conn];
+                assert!(!state.in_tx, "read tx started while write tx is open");
+                assert!(state.read_snapshot.is_none(), "nested read tx in expected model");
+                state.read_snapshot = Some(self.committed.clone());
+            }
+            TableOperation::ReleaseReadTx { conn } => {
+                assert!(
+                    self.connections[*conn].read_snapshot.take().is_some(),
+                    "release read tx without open read tx"
+                );
             }
             TableOperation::CommitTx { conn } => {
                 assert_eq!(self.active_writer, Some(*conn), "commit by non-owner in expected model");
@@ -232,8 +323,20 @@ impl ExpectedModel {
                 self.delete(*conn, *table, row.clone());
                 self.insert(*conn, *table, row.clone());
             }
-            TableOperation::DuplicateInsert { .. }
+            TableOperation::AddColumn {
+                table,
+                column: _,
+                default,
+                ..
+            } => {
+                self.add_column(*table, default.clone());
+            }
+            TableOperation::AddIndex { .. } => {}
+            TableOperation::ExactDuplicateInsert { .. }
+            | TableOperation::UniqueKeyConflictInsert { .. }
             | TableOperation::DeleteMissing { .. }
+            | TableOperation::BeginTxConflict { .. }
+            | TableOperation::WriteConflictInsert { .. }
             | TableOperation::PointLookup { .. }
             | TableOperation::PredicateCount { .. }
             | TableOperation::RangeScan { .. }
@@ -242,6 +345,9 @@ impl ExpectedModel {
     }
 
     pub fn visible_rows(&self, conn: usize, table: usize) -> Vec<SimRow> {
+        if let Some(snapshot) = &self.connections[conn].read_snapshot {
+            return snapshot[table].clone();
+        }
         let mut rows = self.committed[table].clone();
         let pending = &self.connections[conn];
         for (pending_table, row) in &pending.staged_deletes {
@@ -320,6 +426,28 @@ impl ExpectedModel {
             state.staged_deletes.push((table, row));
         } else {
             self.committed[table].retain(|candidate| *candidate != row);
+        }
+    }
+
+    fn add_column(&mut self, table: usize, default: AlgebraicValue) {
+        for row in &mut self.committed[table] {
+            row.values.push(default.clone());
+        }
+        for connection in &mut self.connections {
+            for (pending_table, row) in connection
+                .staged_inserts
+                .iter_mut()
+                .chain(connection.staged_deletes.iter_mut())
+            {
+                if *pending_table == table {
+                    row.values.push(default.clone());
+                }
+            }
+            if let Some(snapshot) = &mut connection.read_snapshot {
+                for row in &mut snapshot[table] {
+                    row.values.push(default.clone());
+                }
+            }
         }
     }
 }

@@ -3,7 +3,7 @@ use std::ops::Bound;
 use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
-    schema::{SchemaPlan, SimRow},
+    schema::{ColumnPlan, SchemaPlan, SimRow},
     seed::DstRng,
 };
 
@@ -30,61 +30,73 @@ pub type TableWorkloadInteraction = PlannedInteraction;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TableOperation {
-    BeginTx {
-        conn: usize,
-    },
-    CommitTx {
-        conn: usize,
-    },
-    RollbackTx {
-        conn: usize,
-    },
-    Insert {
-        conn: usize,
-        table: usize,
-        row: SimRow,
-    },
-    Delete {
-        conn: usize,
-        table: usize,
-        row: SimRow,
-    },
-    DuplicateInsert {
+    /// Start an explicit write transaction on a connection.
+    BeginTx { conn: usize },
+    /// Commit the connection's explicit write transaction.
+    CommitTx { conn: usize },
+    /// Roll back the connection's explicit write transaction.
+    RollbackTx { conn: usize },
+    /// Hold a read snapshot open while later reads observe stable state.
+    BeginReadTx { conn: usize },
+    /// Release a previously opened read snapshot.
+    ReleaseReadTx { conn: usize },
+    /// Attempt to start a second writer while another connection owns the write lock.
+    BeginTxConflict { owner: usize, conn: usize },
+    /// Attempt an auto-commit write while another connection owns the write lock.
+    WriteConflictInsert {
+        owner: usize,
         conn: usize,
         table: usize,
         row: SimRow,
     },
-    DeleteMissing {
-        conn: usize,
-        table: usize,
-        row: SimRow,
-    },
+    /// Insert a new row with a fresh primary id.
+    Insert { conn: usize, table: usize, row: SimRow },
+    /// Delete an existing visible row.
+    Delete { conn: usize, table: usize, row: SimRow },
+    /// Reinsert an exact row that is already visible.
+    ///
+    /// RelationalDB has set semantics for identical rows, so this should be an
+    /// idempotent no-op rather than a unique-key error.
+    ExactDuplicateInsert { conn: usize, table: usize, row: SimRow },
+    /// Insert a row with an existing primary id but different non-key payload.
+    ///
+    /// This is the operation that should fail with `UniqueConstraintViolation`.
+    UniqueKeyConflictInsert { conn: usize, table: usize, row: SimRow },
+    /// Delete a row that is absent from the visible state.
+    DeleteMissing { conn: usize, table: usize, row: SimRow },
+    /// Insert several fresh rows in one interaction.
     BatchInsert {
         conn: usize,
         table: usize,
         rows: Vec<SimRow>,
     },
+    /// Delete several visible rows in one interaction.
     BatchDelete {
         conn: usize,
         table: usize,
         rows: Vec<SimRow>,
     },
-    Reinsert {
+    /// Delete and insert the same row, stressing delete/insert ordering.
+    Reinsert { conn: usize, table: usize, row: SimRow },
+    /// Add a column to an existing table with a default for live rows.
+    AddColumn {
         conn: usize,
         table: usize,
-        row: SimRow,
+        column: ColumnPlan,
+        default: AlgebraicValue,
     },
-    PointLookup {
-        conn: usize,
-        table: usize,
-        id: u64,
-    },
+    /// Add a non-primary index after data exists.
+    AddIndex { conn: usize, table: usize, cols: Vec<u16> },
+    /// Query a row by primary id and compare against the model.
+    PointLookup { conn: usize, table: usize, id: u64 },
+    /// Count rows by equality on one column and compare against the model.
     PredicateCount {
         conn: usize,
         table: usize,
         col: u16,
         value: AlgebraicValue,
     },
+    /// Scan an indexed range and compare against model filtering.
     RangeScan {
         conn: usize,
         table: usize,
@@ -92,10 +104,8 @@ pub enum TableOperation {
         lower: Bound<AlgebraicValue>,
         upper: Bound<AlgebraicValue>,
     },
-    FullScan {
-        conn: usize,
-        table: usize,
-    },
+    /// Scan all visible rows and compare against the model.
+    FullScan { conn: usize, table: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,6 +118,7 @@ pub enum ExpectedResult {
 pub enum ExpectedErrorKind {
     UniqueConstraintViolation,
     MissingRow,
+    WriteConflict,
 }
 
 impl PlannedInteraction {
@@ -137,6 +148,33 @@ impl PlannedInteraction {
         Self::ok(TableOperation::RollbackTx { conn })
     }
 
+    pub fn begin_read_tx(conn: usize) -> Self {
+        Self::ok(TableOperation::BeginReadTx { conn })
+    }
+
+    pub fn release_read_tx(conn: usize) -> Self {
+        Self::ok(TableOperation::ReleaseReadTx { conn })
+    }
+
+    pub fn begin_tx_conflict(owner: usize, conn: usize) -> Self {
+        Self::expected_err(
+            TableOperation::BeginTxConflict { owner, conn },
+            ExpectedErrorKind::WriteConflict,
+        )
+    }
+
+    pub fn write_conflict_insert(owner: usize, conn: usize, table: usize, row: SimRow) -> Self {
+        Self::expected_err(
+            TableOperation::WriteConflictInsert {
+                owner,
+                conn,
+                table,
+                row,
+            },
+            ExpectedErrorKind::WriteConflict,
+        )
+    }
+
     pub fn insert(conn: usize, table: usize, row: SimRow) -> Self {
         Self::ok(TableOperation::Insert { conn, table, row })
     }
@@ -145,9 +183,13 @@ impl PlannedInteraction {
         Self::ok(TableOperation::Delete { conn, table, row })
     }
 
-    pub fn duplicate_insert(conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn exact_duplicate_insert(conn: usize, table: usize, row: SimRow) -> Self {
+        Self::ok(TableOperation::ExactDuplicateInsert { conn, table, row })
+    }
+
+    pub fn unique_key_conflict_insert(conn: usize, table: usize, row: SimRow) -> Self {
         Self::expected_err(
-            TableOperation::DuplicateInsert { conn, table, row },
+            TableOperation::UniqueKeyConflictInsert { conn, table, row },
             ExpectedErrorKind::UniqueConstraintViolation,
         )
     }
@@ -169,6 +211,19 @@ impl PlannedInteraction {
 
     pub fn reinsert(conn: usize, table: usize, row: SimRow) -> Self {
         Self::ok(TableOperation::Reinsert { conn, table, row })
+    }
+
+    pub fn add_column(conn: usize, table: usize, column: ColumnPlan, default: AlgebraicValue) -> Self {
+        Self::ok(TableOperation::AddColumn {
+            conn,
+            table,
+            column,
+            default,
+        })
+    }
+
+    pub fn add_index(conn: usize, table: usize, cols: Vec<u16>) -> Self {
+        Self::ok(TableOperation::AddIndex { conn, table, cols })
     }
 
     pub fn point_lookup(conn: usize, table: usize, id: u64) -> Self {

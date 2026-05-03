@@ -33,56 +33,96 @@ impl TargetDescriptor for RelationalDbCommitlogDescriptor {
             let outcome =
                 crate::targets::relational_db_commitlog::run_generated_with_config_and_scenario(seed, scenario, config)
                     .await?;
-            let alive_tasks = outcome
-                .runtime
-                .runtime_alive_tasks
-                .map(|count| count.to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-            Ok(format!(
-                "ok target={} seed={} steps={} schema_tables={} schema_columns={} schema_max_columns={} schema_indexes={} schema_extra_indexes={} durable_commits={} replay_tables={} table_ops={} creates={} drops={} migrates={} syncs={} reopens={} reopen_skipped={} skipped={} op_begin={} op_commit={} op_rollback={} op_insert={} op_delete={} op_dup_insert={} op_missing_delete={} op_batch_insert={} op_batch_delete={} op_reinsert={} op_point_lookup={} op_predicate_count={} op_range_scan={} op_full_scan={} tx_begin={} tx_commit={} tx_rollback={} auto_commit={} read_tx={} known_tasks={} durability_actors={} alive_tasks={}",
-                Self::NAME,
-                seed.0,
-                outcome.applied_steps,
-                outcome.schema.initial_tables,
-                outcome.schema.initial_columns,
-                outcome.schema.max_columns_per_table,
-                outcome.schema.initial_indexes,
-                outcome.schema.extra_indexes,
-                outcome.durable_commit_count,
-                outcome.replay_table_count,
-                outcome.interactions.table,
-                outcome.interactions.create_dynamic_table,
-                outcome.interactions.drop_dynamic_table,
-                outcome.interactions.migrate_dynamic_table,
-                outcome.interactions.chaos_sync,
-                outcome.interactions.close_reopen_applied,
-                outcome.interactions.close_reopen_skipped,
-                outcome.interactions.skipped,
-                outcome.table_ops.begin_tx,
-                outcome.table_ops.commit_tx,
-                outcome.table_ops.rollback_tx,
-                outcome.table_ops.insert,
-                outcome.table_ops.delete,
-                outcome.table_ops.duplicate_insert,
-                outcome.table_ops.delete_missing,
-                outcome.table_ops.batch_insert,
-                outcome.table_ops.batch_delete,
-                outcome.table_ops.reinsert,
-                outcome.table_ops.point_lookup,
-                outcome.table_ops.predicate_count,
-                outcome.table_ops.range_scan,
-                outcome.table_ops.full_scan,
-                outcome.transactions.explicit_begin,
-                outcome.transactions.explicit_commit,
-                outcome.transactions.explicit_rollback,
-                outcome.transactions.auto_commit,
-                outcome.transactions.read_tx,
-                outcome.runtime.known_tokio_tasks_scheduled,
-                outcome.runtime.durability_actors_started,
-                alive_tasks
-            ))
+            Ok(format_relational_db_commitlog_outcome(Self::NAME, seed, &outcome))
         })
     }
+}
+
+fn format_relational_db_commitlog_outcome(
+    target: &str,
+    seed: DstSeed,
+    outcome: &crate::targets::relational_db_commitlog::RelationalDbCommitlogOutcome,
+) -> String {
+    let alive_tasks = outcome
+        .runtime
+        .runtime_alive_tasks
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    format!(
+        concat!(
+            "ok target={} seed={} steps={}\n",
+            "\n",
+            "schema: tables={} columns={} max_columns={} indexes={} extra_indexes={}\n",
+            "durability: durable_commits={} replay_tables={}\n",
+            "interactions: table={} creates={} drops={} migrates={} syncs={} reopens={} reopen_skipped={} skipped={}\n",
+            "table_ops:\n",
+            "  tx_control: begin={} commit={} rollback={} begin_read={} release_read={} begin_conflict={} write_conflict={}\n",
+            "  writes: insert={} delete={} exact_dup={} unique_conflict={} missing_delete={} batch_insert={} batch_delete={} reinsert={}\n",
+            "  schema: add_column={} add_index={}\n",
+            "  reads: point_lookup={} predicate_count={} range_scan={} full_scan={}\n",
+            "transactions: begin={} commit={} rollback={} auto_commit={} read_tx={}\n",
+            "disk_faults: profile={} latency={} short_read={} short_write={} errors(read={} write={} flush={} fsync={} open={} metadata={})\n",
+            "runtime: known_tasks={} durability_actors={} alive_tasks={}"
+        ),
+        target,
+        seed.0,
+        outcome.applied_steps,
+        outcome.schema.initial_tables,
+        outcome.schema.initial_columns,
+        outcome.schema.max_columns_per_table,
+        outcome.schema.initial_indexes,
+        outcome.schema.extra_indexes,
+        outcome.durable_commit_count,
+        outcome.replay_table_count,
+        outcome.interactions.table,
+        outcome.interactions.create_dynamic_table,
+        outcome.interactions.drop_dynamic_table,
+        outcome.interactions.migrate_dynamic_table,
+        outcome.interactions.chaos_sync,
+        outcome.interactions.close_reopen_applied,
+        outcome.interactions.close_reopen_skipped,
+        outcome.interactions.skipped,
+        outcome.table_ops.begin_tx,
+        outcome.table_ops.commit_tx,
+        outcome.table_ops.rollback_tx,
+        outcome.table_ops.begin_read_tx,
+        outcome.table_ops.release_read_tx,
+        outcome.table_ops.begin_tx_conflict,
+        outcome.table_ops.write_conflict_insert,
+        outcome.table_ops.insert,
+        outcome.table_ops.delete,
+        outcome.table_ops.exact_duplicate_insert,
+        outcome.table_ops.unique_key_conflict_insert,
+        outcome.table_ops.delete_missing,
+        outcome.table_ops.batch_insert,
+        outcome.table_ops.batch_delete,
+        outcome.table_ops.reinsert,
+        outcome.table_ops.add_column,
+        outcome.table_ops.add_index,
+        outcome.table_ops.point_lookup,
+        outcome.table_ops.predicate_count,
+        outcome.table_ops.range_scan,
+        outcome.table_ops.full_scan,
+        outcome.transactions.explicit_begin,
+        outcome.transactions.explicit_commit,
+        outcome.transactions.explicit_rollback,
+        outcome.transactions.auto_commit,
+        outcome.transactions.read_tx,
+        outcome.disk_faults.profile,
+        outcome.disk_faults.latency,
+        outcome.disk_faults.short_read,
+        outcome.disk_faults.short_write,
+        outcome.disk_faults.read_error,
+        outcome.disk_faults.write_error,
+        outcome.disk_faults.flush_error,
+        outcome.disk_faults.fsync_error,
+        outcome.disk_faults.open_error,
+        outcome.disk_faults.metadata_error,
+        outcome.runtime.known_tokio_tasks_scheduled,
+        outcome.runtime.durability_actors_started,
+        alive_tasks
+    )
 }
 
 pub struct StandaloneHostDescriptor;

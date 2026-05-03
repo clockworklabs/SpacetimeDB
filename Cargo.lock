@@ -8193,6 +8193,7 @@ dependencies = [
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-fs-utils",
+ "spacetimedb-io",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib 2.1.0",
@@ -8290,12 +8291,10 @@ name = "spacetimedb-dst"
 version = "2.1.0"
 dependencies = [
  "anyhow",
- "axum",
  "bytes",
  "clap 4.5.50",
  "madsim",
  "madsim-tokio",
- "reqwest 0.12.24",
  "spacetimedb-cli",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
@@ -8393,6 +8392,13 @@ dependencies = [
  "portpicker",
  "reqwest 0.12.24",
  "tempfile",
+]
+
+[[package]]
+name = "spacetimedb-io"
+version = "2.1.0"
+dependencies = [
+ "madsim-tokio",
 ]
 
 [[package]]

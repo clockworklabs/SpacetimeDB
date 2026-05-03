@@ -11,7 +11,7 @@ use crate::{
     core::StreamingProperties,
     schema::{SchemaPlan, SimRow},
     workload::{
-        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
+        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
         table_ops::{
             ExpectedErrorKind, ExpectedModel, ExpectedResult, TableOperation, TableScenario, TableWorkloadInteraction,
             TableWorkloadOutcome,
@@ -45,6 +45,7 @@ pub(crate) enum PropertyKind {
     IndexRangeExcluded,
     BankingTablesMatch,
     DynamicMigrationAutoInc,
+    DurableReplayMatchesModel,
     ExpectedErrorMatches,
     PointLookupMatchesModel,
     PredicateCountMatchesModel,
@@ -112,6 +113,7 @@ pub(crate) enum CommitlogObservation {
     Applied,
     Skipped,
     DynamicMigrationProbe(DynamicMigrationProbe),
+    DurableReplay(DurableReplaySummary),
 }
 
 #[derive(Clone, Debug)]
@@ -176,6 +178,7 @@ pub(crate) enum PropertyEvent<'a> {
     },
     CommitOrRollback,
     DynamicMigrationProbe(&'a DynamicMigrationProbe),
+    DurableReplay(&'a DurableReplaySummary),
     TableWorkloadFinished(&'a TableWorkloadOutcome),
 }
 
@@ -252,6 +255,9 @@ impl PropertyRuntime {
                 PropertyKind::DynamicMigrationAutoInc => {
                     rules.push(RuleEntry::new(*kind, Box::<DynamicMigrationAutoIncRule>::default()))
                 }
+                PropertyKind::DurableReplayMatchesModel => {
+                    rules.push(RuleEntry::new(*kind, Box::<DurableReplayMatchesModelRule>::default()))
+                }
                 PropertyKind::ExpectedErrorMatches => {
                     rules.push(RuleEntry::new(*kind, Box::<ExpectedErrorMatchesRule>::default()))
                 }
@@ -279,8 +285,10 @@ impl PropertyRuntime {
     where
         S: TableScenario + 'static,
     {
-        let mut runtime = Self::default();
-        runtime.models = PropertyModels::new(schema.tables.len(), num_connections);
+        let mut runtime = Self {
+            models: PropertyModels::new(schema.tables.len(), num_connections),
+            ..Self::default()
+        };
         runtime
             .rules
             .push(RuleEntry::non_periodic(Box::new(ExpectedTableStateRule::new(
@@ -295,15 +303,22 @@ impl PropertyRuntime {
         interaction: &TableWorkloadInteraction,
     ) -> Result<(), String> {
         match &interaction.op {
-            TableOperation::BeginTx { .. } | TableOperation::CommitTx { .. } | TableOperation::RollbackTx { .. } => {
-                self.models.apply(interaction)
-            }
+            TableOperation::BeginTx { .. }
+            | TableOperation::CommitTx { .. }
+            | TableOperation::RollbackTx { .. }
+            | TableOperation::BeginReadTx { .. }
+            | TableOperation::ReleaseReadTx { .. } => self.models.apply(interaction),
             TableOperation::BatchInsert { .. }
             | TableOperation::BatchDelete { .. }
-            | TableOperation::Reinsert { .. } => self.models.apply(interaction),
+            | TableOperation::Reinsert { .. }
+            | TableOperation::AddColumn { .. }
+            | TableOperation::AddIndex { .. } => self.models.apply(interaction),
             TableOperation::Insert { .. }
             | TableOperation::Delete { .. }
-            | TableOperation::DuplicateInsert { .. }
+            | TableOperation::BeginTxConflict { .. }
+            | TableOperation::WriteConflictInsert { .. }
+            | TableOperation::ExactDuplicateInsert { .. }
+            | TableOperation::UniqueKeyConflictInsert { .. }
             | TableOperation::DeleteMissing { .. }
             | TableOperation::PointLookup { .. }
             | TableOperation::PredicateCount { .. }
@@ -456,6 +471,7 @@ impl PropertyRuntime {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn on_range_scan(
         &mut self,
         access: &dyn TargetPropertyAccess,
@@ -527,6 +543,21 @@ impl PropertyRuntime {
         };
         for entry in &mut self.rules {
             entry.rule.observe(&ctx, PropertyEvent::DynamicMigrationProbe(probe))?;
+        }
+        Ok(())
+    }
+
+    pub fn on_durable_replay(
+        &mut self,
+        access: &dyn TargetPropertyAccess,
+        replay: &DurableReplaySummary,
+    ) -> Result<(), String> {
+        let ctx = PropertyContext {
+            access,
+            models: &self.models,
+        };
+        for entry in &mut self.rules {
+            entry.rule.observe(&ctx, PropertyEvent::DurableReplay(replay))?;
         }
         Ok(())
     }
@@ -623,6 +654,7 @@ where
                 self.observe_table_observation(engine, table_interaction, table_observation)
             }
             (_, CommitlogObservation::DynamicMigrationProbe(probe)) => self.on_dynamic_migration_probe(engine, probe),
+            (_, CommitlogObservation::DurableReplay(replay)) => self.on_durable_replay(engine, replay),
             (_, CommitlogObservation::Applied | CommitlogObservation::Skipped) => Ok(()),
             (other, observation) => Err(format!(
                 "observation {observation:?} does not match interaction {other:?}"
@@ -631,6 +663,7 @@ where
     }
 
     fn finish(&mut self, engine: &E, outcome: &CommitlogWorkloadOutcome) -> Result<(), String> {
+        self.on_durable_replay(engine, &outcome.replay)?;
         self.on_table_workload_finish(engine, &outcome.table)
     }
 }
@@ -660,6 +693,7 @@ impl Default for PropertyRuntime {
             PropertyKind::IndexRangeExcluded,
             PropertyKind::BankingTablesMatch,
             PropertyKind::DynamicMigrationAutoInc,
+            PropertyKind::DurableReplayMatchesModel,
             PropertyKind::ExpectedErrorMatches,
             PropertyKind::PointLookupMatchesModel,
             PropertyKind::PredicateCountMatchesModel,
@@ -954,6 +988,25 @@ impl PropertyRule for DynamicMigrationAutoIncRule {
             return Err(format!(
                 "[DynamicMigrationAutoInc] non-advancing id for slot={}, from_version={}, to_version={}: inserted_id={}, max_existing_id={}",
                 probe.slot, probe.from_version, probe.to_version, inserted_id, max_existing_id
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct DurableReplayMatchesModelRule;
+
+impl PropertyRule for DurableReplayMatchesModelRule {
+    fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
+        let PropertyEvent::DurableReplay(replay) = event else {
+            return Ok(());
+        };
+        let expected_rows = ctx.models.table().committed_rows();
+        if replay.base_rows != expected_rows {
+            return Err(format!(
+                "[DurableReplayMatchesModel] replayed durable state mismatch at offset {:?}: expected={expected_rows:?} actual={:?}",
+                replay.durable_offset, replay.base_rows
             ));
         }
         Ok(())

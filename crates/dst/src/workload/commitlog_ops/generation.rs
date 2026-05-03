@@ -1,4 +1,4 @@
-//! Composite generator: reuse `table_ops` and interleave lifecycle + chaos ops.
+//! Commitlog workload source: table workload plus lifecycle and durability pressure.
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -9,13 +9,41 @@ use crate::{
     workload::strategy::{Index, Percent, Strategy},
     workload::{
         commitlog_ops::CommitlogInteraction,
-        table_ops::{strategies::ConnectionChoice, NextInteractionGenerator, TableScenario},
+        table_ops::{strategies::ConnectionChoice, TableScenario, TableWorkloadSource},
     },
 };
 
-/// Streaming composite interaction source for commitlog-oriented targets.
-pub(crate) struct NextInteractionGeneratorComposite<S> {
-    base: NextInteractionGenerator<S>,
+/// Generation profile for commitlog-specific interactions layered around table ops.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CommitlogWorkloadProfile {
+    pub(crate) chaos_sync_pct: usize,
+    pub(crate) close_reopen_pct: usize,
+    pub(crate) create_dynamic_table_pct: usize,
+    pub(crate) migrate_after_create_pct: usize,
+    pub(crate) migrate_dynamic_table_pct: usize,
+    pub(crate) drop_dynamic_table_pct: usize,
+}
+
+impl Default for CommitlogWorkloadProfile {
+    fn default() -> Self {
+        Self {
+            chaos_sync_pct: 18,
+            close_reopen_pct: 1,
+            create_dynamic_table_pct: 1,
+            migrate_after_create_pct: 55,
+            migrate_dynamic_table_pct: 6,
+            drop_dynamic_table_pct: 5,
+        }
+    }
+}
+
+/// Streaming source for commitlog-oriented targets.
+///
+/// This composes a base table workload with commitlog lifecycle interactions
+/// instead of defining an unrelated workload language.
+pub(crate) struct CommitlogWorkloadSource<S> {
+    base: TableWorkloadSource<S>,
+    profile: CommitlogWorkloadProfile,
     rng: DstRng,
     num_connections: usize,
     next_slot: u32,
@@ -23,7 +51,7 @@ pub(crate) struct NextInteractionGeneratorComposite<S> {
     pending: VecDeque<CommitlogInteraction>,
 }
 
-impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
+impl<S: TableScenario> CommitlogWorkloadSource<S> {
     pub fn new(
         seed: DstSeed,
         scenario: S,
@@ -31,8 +59,27 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
         num_connections: usize,
         target_interactions: usize,
     ) -> Self {
+        Self::with_profile(
+            seed,
+            scenario,
+            schema,
+            num_connections,
+            target_interactions,
+            CommitlogWorkloadProfile::default(),
+        )
+    }
+
+    pub fn with_profile(
+        seed: DstSeed,
+        scenario: S,
+        schema: SchemaPlan,
+        num_connections: usize,
+        target_interactions: usize,
+        profile: CommitlogWorkloadProfile,
+    ) -> Self {
         Self {
-            base: NextInteractionGenerator::new(seed.fork(123), scenario, schema, num_connections, target_interactions),
+            base: TableWorkloadSource::new(seed.fork(123), scenario, schema, num_connections, target_interactions),
+            profile,
             rng: seed.fork(124).rng(),
             num_connections,
             next_slot: 0,
@@ -51,14 +98,18 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
         };
         self.pending.push_back(CommitlogInteraction::Table(base_op));
 
-        if Percent::new(18).sample(&mut self.rng) {
+        if self.base.has_open_read_tx() {
+            return true;
+        }
+
+        if Percent::new(self.profile.chaos_sync_pct).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::ChaosSync);
         }
-        if Percent::new(1).sample(&mut self.rng) {
+        if Percent::new(self.profile.close_reopen_pct).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::CloseReopen);
         }
 
-        if Percent::new(1).sample(&mut self.rng) {
+        if Percent::new(self.profile.create_dynamic_table_pct).sample(&mut self.rng) {
             let conn = ConnectionChoice {
                 connection_count: self.num_connections,
             }
@@ -70,14 +121,14 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
                 .push_back(CommitlogInteraction::CreateDynamicTable { conn, slot });
             // Frequently follow a create with migration to stress add-column +
             // copy + subsequent auto-inc allocation paths.
-            if Percent::new(55).sample(&mut self.rng) {
+            if Percent::new(self.profile.migrate_after_create_pct).sample(&mut self.rng) {
                 self.pending
                     .push_back(CommitlogInteraction::MigrateDynamicTable { conn, slot });
             }
             return true;
         }
 
-        if !self.alive_slots.is_empty() && Percent::new(6).sample(&mut self.rng) {
+        if !self.alive_slots.is_empty() && Percent::new(self.profile.migrate_dynamic_table_pct).sample(&mut self.rng) {
             let conn = ConnectionChoice {
                 connection_count: self.num_connections,
             }
@@ -92,7 +143,7 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
                 .push_back(CommitlogInteraction::MigrateDynamicTable { conn, slot });
         }
 
-        if !self.alive_slots.is_empty() && Percent::new(5).sample(&mut self.rng) {
+        if !self.alive_slots.is_empty() && Percent::new(self.profile.drop_dynamic_table_pct).sample(&mut self.rng) {
             let conn = ConnectionChoice {
                 connection_count: self.num_connections,
             }
@@ -112,7 +163,7 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
     }
 }
 
-impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
+impl<S: TableScenario> CommitlogWorkloadSource<S> {
     pub fn pull_next_interaction(&mut self) -> Option<CommitlogInteraction> {
         loop {
             if let Some(next) = self.pending.pop_front() {
@@ -125,7 +176,7 @@ impl<S: TableScenario> NextInteractionGeneratorComposite<S> {
     }
 }
 
-impl<S: TableScenario> NextInteractionSource for NextInteractionGeneratorComposite<S> {
+impl<S: TableScenario> NextInteractionSource for CommitlogWorkloadSource<S> {
     type Interaction = CommitlogInteraction;
 
     fn next_interaction(&mut self) -> Option<Self::Interaction> {
@@ -137,7 +188,7 @@ impl<S: TableScenario> NextInteractionSource for NextInteractionGeneratorComposi
     }
 }
 
-impl<S: TableScenario> Iterator for NextInteractionGeneratorComposite<S> {
+impl<S: TableScenario> Iterator for CommitlogWorkloadSource<S> {
     type Item = CommitlogInteraction;
 
     fn next(&mut self) -> Option<Self::Item> {

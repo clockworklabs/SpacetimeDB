@@ -69,9 +69,8 @@ pub(crate) struct Percent {
 
 impl Percent {
     pub(crate) fn new(percent: usize) -> Self {
-        Self {
-            percent: percent.min(100),
-        }
+        assert!(percent <= 100, "percent must be in 0..=100, got {percent}");
+        Self { percent }
     }
 }
 
@@ -143,5 +142,11 @@ mod tests {
             let idx = Index::new(5).sample(&mut rng);
             assert!(idx < 5);
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "percent must be in 0..=100")]
+    fn percent_rejects_out_of_range_values() {
+        let _ = Percent::new(101);
     }
 }

@@ -6,7 +6,7 @@ mod scenarios;
 pub(crate) mod strategies;
 mod types;
 
-pub(crate) use generation::NextInteractionGenerator;
+pub(crate) use generation::TableWorkloadSource;
 pub(crate) use model::ExpectedModel;
 pub use scenarios::TableScenarioId;
 pub(crate) use types::{ConnectionWriteState, TableScenario};

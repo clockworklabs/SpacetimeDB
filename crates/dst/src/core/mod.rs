@@ -1,6 +1,8 @@
 //! Core abstractions for pluggable DST workloads, engines, and properties.
 
-use crate::{config::RunConfig, seed::DstSeed};
+use std::future::Future;
+
+use crate::config::RunConfig;
 
 /// Pull-based deterministic interaction source.
 pub trait NextInteractionSource {
@@ -10,25 +12,18 @@ pub trait NextInteractionSource {
     fn request_finish(&mut self);
 }
 
-/// A workload plan executed on-demand through `next_interaction`.
-pub trait WorkloadPlan {
-    type Interaction: Clone + Send + Sync + 'static;
-    fn next_interactions(
-        &self,
-        seed: DstSeed,
-        cfg: RunConfig,
-    ) -> Box<dyn NextInteractionSource<Interaction = Self::Interaction>>;
-}
-
 /// Target execution contract over a workload interaction stream.
 pub trait TargetEngine<I> {
     type Observation;
     type Outcome;
     type Error;
 
-    async fn execute_interaction(&mut self, interaction: &I) -> Result<Self::Observation, Self::Error>;
+    fn execute_interaction<'a>(
+        &'a mut self,
+        interaction: &'a I,
+    ) -> impl Future<Output = Result<Self::Observation, Self::Error>> + 'a;
     fn finish(&mut self);
-    fn collect_outcome(&mut self) -> anyhow::Result<Self::Outcome>;
+    fn collect_outcome<'a>(&'a mut self) -> impl Future<Output = anyhow::Result<Self::Outcome>> + 'a;
 }
 
 /// Property runtime contract for the shared streaming runner.
@@ -53,6 +48,9 @@ where
     E: TargetEngine<I, Error = String>,
     P: StreamingProperties<I, E::Observation, E>,
 {
+    // Duration is a harness-level wall-clock stop condition. The reproducible
+    // budget for exact replay is `RunConfig::max_interactions`, which the
+    // source uses when it is constructed.
     let deadline = cfg.deadline();
     let mut step = 0usize;
     loop {
@@ -72,7 +70,7 @@ where
         step = step.saturating_add(1);
     }
     engine.finish();
-    let outcome = engine.collect_outcome()?;
+    let outcome = engine.collect_outcome().await?;
     properties
         .finish(&engine, &outcome)
         .map_err(|e| anyhow::anyhow!("property violation at finish: {e}"))?;

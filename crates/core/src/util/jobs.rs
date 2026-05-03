@@ -7,9 +7,9 @@ use futures::FutureExt;
 use indexmap::IndexMap;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::HashMap;
-use tokio::sync::{mpsc, oneshot, watch};
 #[cfg(not(madsim))]
 use tokio::runtime;
+use tokio::sync::{mpsc, oneshot, watch};
 use tracing::Instrument;
 
 use crate::util::thread_scheduling::apply_compute_thread_hint;

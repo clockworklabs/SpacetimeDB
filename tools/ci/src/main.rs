@@ -278,6 +278,8 @@ enum CiCmd {
     TypescriptTest,
     /// Builds the docs site.
     Docs,
+    /// Checks that core database crates use SpacetimeDB fs/net IO boundaries.
+    IoBoundary,
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -304,6 +306,78 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
         .filter(|line| line.ends_with(".rs"))
         .map(PathBuf::from)
         .collect())
+}
+
+fn check_io_boundary() -> Result<()> {
+    ensure_repo_root()?;
+
+    let mut violations = Vec::new();
+    for root in ["crates/datastore", "crates/core"] {
+        for path in tracked_rs_files_under(root)? {
+            check_file_for_direct_tokio_fs_net(&path, &mut violations)?;
+        }
+    }
+
+    if violations.is_empty() {
+        return Ok(());
+    }
+
+    for violation in &violations {
+        eprintln!("{violation}");
+    }
+    bail!(
+        "direct tokio::fs/tokio::net usage is forbidden in crates/datastore and crates/core; use spacetimedb_io::{{fs, net}}"
+    );
+}
+
+fn check_file_for_direct_tokio_fs_net(path: &Path, violations: &mut Vec<String>) -> Result<()> {
+    let contents = fs::read_to_string(path)?;
+    let mut in_tokio_use_tree = false;
+
+    for (line_idx, line) in contents.lines().enumerate() {
+        let line_no = line_idx + 1;
+        let code = line.split("//").next().unwrap_or(line);
+
+        if code.contains("tokio::fs") || code.contains("tokio::net") {
+            violations.push(format!("{}:{line_no}: direct tokio fs/net path", path.display()));
+        }
+
+        if in_tokio_use_tree {
+            if tokio_use_tree_mentions_fs_or_net(code) {
+                violations.push(format!("{}:{line_no}: direct tokio fs/net import", path.display()));
+            }
+            if code.contains("};") {
+                in_tokio_use_tree = false;
+            }
+            continue;
+        }
+
+        if code.contains("use tokio::{") {
+            if tokio_use_tree_mentions_fs_or_net(code) {
+                violations.push(format!("{}:{line_no}: direct tokio fs/net import", path.display()));
+            }
+            if !code.contains("};") {
+                in_tokio_use_tree = true;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn tokio_use_tree_mentions_fs_or_net(code: &str) -> bool {
+    let mut token = String::new();
+    for ch in code.chars() {
+        if ch == '_' || ch.is_ascii_alphanumeric() {
+            token.push(ch);
+            continue;
+        }
+        if token == "fs" || token == "net" {
+            return true;
+        }
+        token.clear();
+    }
+    token == "fs" || token == "net"
 }
 
 fn run_dlls() -> Result<()> {
@@ -532,6 +606,7 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Lint) => {
             ensure_repo_root()?;
+            check_io_boundary()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.
@@ -713,6 +788,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Docs) => {
             run_docs_build()?;
+        }
+
+        Some(CiCmd::IoBoundary) => {
+            check_io_boundary()?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

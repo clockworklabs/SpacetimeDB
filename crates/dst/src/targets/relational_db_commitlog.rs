@@ -4,7 +4,7 @@ use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, pa
 
 use spacetimedb_commitlog::repo::{Memory as MemoryCommitlogRepo, SizeOnDisk};
 use spacetimedb_core::{
-    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB},
+    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB, Tx as RelTx},
     error::{DBError, DatastoreError, IndexError},
     messages::control_db::HostType,
 };
@@ -28,16 +28,16 @@ use spacetimedb_table::page_pool::PagePool;
 use tracing::{debug, info, trace};
 
 use crate::{
-    config::RunConfig,
+    config::{CommitlogFaultProfile, RunConfig},
     core::{self, TargetEngine},
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
-    targets::buggified_repo::BuggifiedRepo,
+    targets::buggified_repo::{is_injected_disk_error_text, BuggifiedRepo, CommitlogFaultConfig},
     targets::properties::{
         CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableObservation, TargetPropertyAccess,
     },
     workload::{
-        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome},
+        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
         commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
         table_ops::{
             ConnectionWriteState, ExpectedErrorKind, TableOperation, TableScenario, TableScenarioId,
@@ -47,7 +47,7 @@ use crate::{
 };
 
 pub type RelationalDbCommitlogOutcome = CommitlogWorkloadOutcome;
-type RelationalDbCommitlogSource = crate::workload::commitlog_ops::NextInteractionGeneratorComposite<TableScenarioId>;
+type RelationalDbCommitlogSource = crate::workload::commitlog_ops::CommitlogWorkloadSource<TableScenarioId>;
 type RelationalDbCommitlogProperties = PropertyRuntime;
 
 pub async fn run_generated_with_config_and_scenario(
@@ -79,14 +79,14 @@ fn build(
     let num_connections = connection_rng.index(3) + 1;
     let mut schema_rng = seed.fork(122).rng();
     let schema = scenario.generate_schema(&mut schema_rng);
-    let generator = crate::workload::commitlog_ops::NextInteractionGeneratorComposite::new(
+    let generator = crate::workload::commitlog_ops::CommitlogWorkloadSource::new(
         seed,
-        scenario.clone(),
+        scenario,
         schema.clone(),
         num_connections,
         config.max_interactions_or_default(usize::MAX),
     );
-    let engine = RelationalDbEngine::new(seed, &schema, num_connections)?;
+    let engine = RelationalDbEngine::new(seed, &schema, num_connections, config.commitlog_fault_profile)?;
     let properties = PropertyRuntime::for_table_workload(scenario, schema.clone(), num_connections);
     Ok((generator, engine, properties))
 }
@@ -139,7 +139,9 @@ impl RunStats {
         if matches!(interaction, CommitlogInteraction::CloseReopen) {
             match observation {
                 CommitlogObservation::Skipped => self.interactions.close_reopen_skipped += 1,
-                CommitlogObservation::Applied => self.interactions.close_reopen_applied += 1,
+                CommitlogObservation::Applied | CommitlogObservation::DurableReplay(_) => {
+                    self.interactions.close_reopen_applied += 1
+                }
                 _ => {}
             }
         }
@@ -150,13 +152,20 @@ impl RunStats {
             TableOperation::BeginTx { .. } => self.table_ops.begin_tx += 1,
             TableOperation::CommitTx { .. } => self.table_ops.commit_tx += 1,
             TableOperation::RollbackTx { .. } => self.table_ops.rollback_tx += 1,
+            TableOperation::BeginReadTx { .. } => self.table_ops.begin_read_tx += 1,
+            TableOperation::ReleaseReadTx { .. } => self.table_ops.release_read_tx += 1,
+            TableOperation::BeginTxConflict { .. } => self.table_ops.begin_tx_conflict += 1,
+            TableOperation::WriteConflictInsert { .. } => self.table_ops.write_conflict_insert += 1,
             TableOperation::Insert { .. } => self.table_ops.insert += 1,
             TableOperation::Delete { .. } => self.table_ops.delete += 1,
-            TableOperation::DuplicateInsert { .. } => self.table_ops.duplicate_insert += 1,
+            TableOperation::ExactDuplicateInsert { .. } => self.table_ops.exact_duplicate_insert += 1,
+            TableOperation::UniqueKeyConflictInsert { .. } => self.table_ops.unique_key_conflict_insert += 1,
             TableOperation::DeleteMissing { .. } => self.table_ops.delete_missing += 1,
             TableOperation::BatchInsert { .. } => self.table_ops.batch_insert += 1,
             TableOperation::BatchDelete { .. } => self.table_ops.batch_delete += 1,
             TableOperation::Reinsert { .. } => self.table_ops.reinsert += 1,
+            TableOperation::AddColumn { .. } => self.table_ops.add_column += 1,
+            TableOperation::AddIndex { .. } => self.table_ops.add_index += 1,
             TableOperation::PointLookup { .. } => self.table_ops.point_lookup += 1,
             TableOperation::PredicateCount { .. } => self.table_ops.predicate_count += 1,
             TableOperation::RangeScan { .. } => self.table_ops.range_scan += 1,
@@ -194,13 +203,13 @@ impl RunStats {
 struct RelationalDbEngine {
     db: Option<RelationalDB>,
     execution: ConnectionWriteState<RelMutTx>,
+    read_tx_by_connection: Vec<Option<RelTx>>,
     base_schema: SchemaPlan,
     base_table_ids: Vec<TableId>,
     dynamic_tables: BTreeMap<u32, DynamicTableState>,
     step: usize,
+    last_requested_durable_offset: Option<u64>,
     last_observed_durable_offset: Option<u64>,
-    last_durable_snapshot: DurableSnapshot,
-    pending_snapshot_capture: bool,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
     runtime_handle: tokio::runtime::Handle,
@@ -209,35 +218,39 @@ struct RelationalDbEngine {
     _runtime_guard: Option<tokio::runtime::Runtime>,
 }
 
-type DurableSnapshot = BTreeMap<String, Vec<SimRow>>;
-
 impl RelationalDbEngine {
-    fn new(seed: DstSeed, schema: &SchemaPlan, num_connections: usize) -> anyhow::Result<Self> {
-        let (db, runtime_handle, commitlog_repo, durability, durability_opts, runtime_guard) =
-            bootstrap_relational_db(seed.fork(700))?;
+    fn new(
+        seed: DstSeed,
+        schema: &SchemaPlan,
+        num_connections: usize,
+        fault_profile: CommitlogFaultProfile,
+    ) -> anyhow::Result<Self> {
+        let bootstrap = bootstrap_relational_db(seed.fork(700), fault_profile)?;
         let mut this = Self {
-            db: Some(db),
+            db: Some(bootstrap.db),
             execution: ConnectionWriteState::new(num_connections),
+            read_tx_by_connection: (0..num_connections).map(|_| None).collect(),
             base_schema: schema.clone(),
             base_table_ids: Vec::with_capacity(schema.tables.len()),
             dynamic_tables: BTreeMap::new(),
             step: 0,
+            last_requested_durable_offset: None,
             last_observed_durable_offset: None,
-            last_durable_snapshot: BTreeMap::new(),
-            pending_snapshot_capture: false,
-            durability,
-            durability_opts,
-            runtime_handle,
-            commitlog_repo,
+            durability: bootstrap.durability,
+            durability_opts: bootstrap.durability_opts,
+            runtime_handle: bootstrap.runtime_handle,
+            commitlog_repo: bootstrap.commitlog_repo,
             stats: RunStats {
                 runtime: RuntimeStats {
                     durability_actors_started: 1,
                 },
                 ..Default::default()
             },
-            _runtime_guard: runtime_guard,
+            _runtime_guard: bootstrap.runtime_guard,
         };
         this.install_base_schema().map_err(anyhow::Error::msg)?;
+        this.refresh_observed_durable_offset(true).map_err(anyhow::Error::msg)?;
+        this.commitlog_repo.enable_faults();
         Ok(this)
     }
 
@@ -290,37 +303,43 @@ impl RelationalDbEngine {
                 .map_err(|err| format!("create table '{}' failed: {err}", table.name))?;
             self.base_table_ids.push(table_id);
         }
-        self.db()?
+        let committed = self
+            .db()?
             .commit_tx(tx)
-            .map(|_| ())
-            .map_err(|err| format!("install base schema commit failed: {err}"))
+            .map_err(|err| format!("install base schema commit failed: {err}"))?;
+        self.record_committed_offset(committed.as_ref().map(|(tx_offset, ..)| *tx_offset));
+        Ok(())
     }
 
     async fn execute(&mut self, interaction: &CommitlogInteraction) -> Result<CommitlogObservation, String> {
         self.step = self.step.saturating_add(1);
         self.stats.record_interaction_requested(interaction);
+        let force_sync_after = matches!(interaction, CommitlogInteraction::ChaosSync);
         let observation = match interaction {
             CommitlogInteraction::Table(op) => self.execute_table_op(op).map(CommitlogObservation::Table),
             CommitlogInteraction::CreateDynamicTable { conn, slot } => self.create_dynamic_table(*conn, *slot),
             CommitlogInteraction::DropDynamicTable { conn, slot } => self.drop_dynamic_table(*conn, *slot),
             CommitlogInteraction::MigrateDynamicTable { conn, slot } => self.migrate_dynamic_table(*conn, *slot),
-            CommitlogInteraction::ChaosSync => {
-                self.sync_and_snapshot(true)?;
-                Ok(CommitlogObservation::Applied)
-            }
+            CommitlogInteraction::ChaosSync => Ok(CommitlogObservation::Applied),
             CommitlogInteraction::CloseReopen => self.close_and_reopen().await,
         }?;
+        if !matches!(interaction, CommitlogInteraction::CloseReopen) {
+            self.wait_for_requested_durability(force_sync_after).await?;
+        }
         self.stats.record_interaction_result(interaction, &observation);
         Ok(observation)
     }
 
     async fn close_and_reopen(&mut self) -> Result<CommitlogObservation, String> {
-        if self.execution.active_writer.is_some() || self.execution.tx_by_connection.iter().any(|tx| tx.is_some()) {
+        if self.execution.active_writer.is_some()
+            || self.execution.tx_by_connection.iter().any(|tx| tx.is_some())
+            || self.read_tx_by_connection.iter().any(|tx| tx.is_some())
+        {
             trace!("skip close/reopen while transaction is open");
             return Ok(CommitlogObservation::Skipped);
         }
 
-        self.sync_and_snapshot(true)?;
+        self.wait_for_requested_durability(true).await?;
         // Explicitly drop the current RelationalDB instance before attempting
         // to open a new durability+DB pair on the same replica directory.
         let old_db = self
@@ -331,6 +350,37 @@ impl RelationalDbEngine {
         drop(old_db);
         info!("starting in-memory durability");
 
+        let (durability, db) = self.reopen_from_history_with_fault_retry("close/reopen")?;
+
+        self.stats.runtime.durability_actors_started += 1;
+        self.durability = durability;
+        self.db = Some(db);
+        self.rebuild_table_handles_after_reopen()?;
+        self.last_observed_durable_offset = self.durability.durable_tx_offset().last_seen();
+        let replay = self.durable_replay_summary()?;
+        debug!(
+            base_tables = self.base_table_ids.len(),
+            dynamic_tables = self.dynamic_tables.len(),
+            "reopened relational db from durable history"
+        );
+        Ok(CommitlogObservation::DurableReplay(replay))
+    }
+
+    fn reopen_from_history_with_fault_retry(
+        &self,
+        context: &'static str,
+    ) -> Result<(Arc<InMemoryCommitlogDurability>, RelationalDB), String> {
+        match self.reopen_from_history() {
+            Ok(reopened) => Ok(reopened),
+            Err(err) if is_injected_disk_error_text(&err) => {
+                trace!(error = %err, "retrying {context} with injected disk faults suspended");
+                self.commitlog_repo.with_faults_suspended(|| self.reopen_from_history())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn reopen_from_history(&self) -> Result<(Arc<InMemoryCommitlogDurability>, RelationalDB), String> {
         let durability = Arc::new(
             InMemoryCommitlogDurability::open_with_repo(
                 self.commitlog_repo.clone(),
@@ -359,17 +409,7 @@ impl RelationalDbEngine {
                 "unexpected connected clients after reopen: {connected_clients:?}"
             ));
         }
-        self.stats.runtime.durability_actors_started += 1;
-        self.durability = durability;
-        self.db = Some(db);
-        self.rebuild_table_handles_after_reopen()?;
-        self.capture_pending_snapshot_if_idle()?;
-        debug!(
-            base_tables = self.base_table_ids.len(),
-            dynamic_tables = self.dynamic_tables.len(),
-            "reopened relational db from durable history"
-        );
-        Ok(CommitlogObservation::Applied)
+        Ok((durability, db))
     }
 
     fn rebuild_table_handles_after_reopen(&mut self) -> Result<(), String> {
@@ -426,6 +466,9 @@ impl RelationalDbEngine {
         match &interaction.op {
             TableOperation::BeginTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
+                if self.read_tx_by_connection[*conn].is_some() {
+                    return Err(format!("connection {conn} already has open read transaction"));
+                }
                 if self.execution.tx_by_connection[*conn].is_some() {
                     return Err(format!("connection {conn} already has open transaction"));
                 }
@@ -442,17 +485,66 @@ impl RelationalDbEngine {
                 self.stats.transactions.explicit_begin += 1;
                 Ok(TableObservation::Applied)
             }
+            TableOperation::BeginReadTx { conn } => {
+                self.execution.ensure_known_connection(*conn)?;
+                if self.execution.tx_by_connection[*conn].is_some() {
+                    return Err(format!("connection {conn} already has open write transaction"));
+                }
+                if self.read_tx_by_connection[*conn].is_some() {
+                    return Err(format!("connection {conn} already has open read transaction"));
+                }
+                let tx = self.db()?.begin_tx(Workload::ForTests);
+                self.read_tx_by_connection[*conn] = Some(tx);
+                self.stats.record_read_tx();
+                Ok(TableObservation::Applied)
+            }
+            TableOperation::ReleaseReadTx { conn } => {
+                self.execution.ensure_known_connection(*conn)?;
+                let tx = self.read_tx_by_connection[*conn]
+                    .take()
+                    .ok_or_else(|| format!("connection {conn} has no read transaction to release"))?;
+                let _ = self.db()?.release_tx(tx);
+                Ok(TableObservation::Applied)
+            }
+            TableOperation::BeginTxConflict { owner, conn } => {
+                self.expect_write_conflict(*owner, *conn)?;
+                Ok(TableObservation::ExpectedError(ExpectedErrorKind::WriteConflict))
+            }
+            TableOperation::WriteConflictInsert {
+                owner,
+                conn,
+                table,
+                row,
+            } => {
+                self.expect_write_conflict(*owner, *conn)?;
+                let err = self
+                    .with_mut_tx(*conn, |engine, tx| {
+                        let table_id = engine.table_id_for_index(*table)?;
+                        let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
+                        engine
+                            .db()?
+                            .insert(tx, table_id, &bsatn)
+                            .map_err(|err| format!("conflicting insert unexpectedly reached datastore: {err}"))?;
+                        Ok(())
+                    })
+                    .expect_err("active writer should reject conflicting auto-commit write");
+                if !err.contains("owns lock") {
+                    return Err(format!("write conflict returned wrong error: {err}"));
+                }
+                Ok(TableObservation::ExpectedError(ExpectedErrorKind::WriteConflict))
+            }
             TableOperation::CommitTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "commit")?;
                 let tx = self.execution.tx_by_connection[*conn]
                     .take()
                     .ok_or_else(|| format!("connection {conn} has no transaction to commit"))?;
-                self.db()?
+                let committed = self
+                    .db()?
                     .commit_tx(tx)
                     .map_err(|err| format!("commit interaction failed: {err}"))?;
+                self.record_committed_offset(committed.as_ref().map(|(tx_offset, ..)| *tx_offset));
                 self.execution.active_writer = None;
                 self.stats.transactions.explicit_commit += 1;
-                self.capture_pending_snapshot_if_idle()?;
                 Ok(TableObservation::CommitOrRollback)
             }
             TableOperation::RollbackTx { conn } => {
@@ -463,7 +555,6 @@ impl RelationalDbEngine {
                 let _ = self.db()?.rollback_mut_tx(tx);
                 self.execution.active_writer = None;
                 self.stats.transactions.explicit_rollback += 1;
-                self.capture_pending_snapshot_if_idle()?;
                 Ok(TableObservation::CommitOrRollback)
             }
             TableOperation::Insert { conn, table, row } => {
@@ -481,7 +572,7 @@ impl RelationalDbEngine {
                     Ok(SimRow::from_product_value(row_ref.to_product_value()))
                 })?;
                 if !in_tx {
-                    self.sync_and_snapshot(false)?;
+                    self.refresh_observed_durable_offset(false)?;
                 }
                 Ok(TableObservation::RowInserted {
                     conn: *conn,
@@ -504,7 +595,7 @@ impl RelationalDbEngine {
                     Ok(())
                 })?;
                 if !in_tx {
-                    self.sync_and_snapshot(false)?;
+                    self.refresh_observed_durable_offset(false)?;
                 }
                 Ok(TableObservation::RowDeleted {
                     conn: *conn,
@@ -513,7 +604,35 @@ impl RelationalDbEngine {
                     in_tx,
                 })
             }
-            TableOperation::DuplicateInsert { conn, table, row } => {
+            TableOperation::ExactDuplicateInsert { conn, table, row } => {
+                let in_tx = self.execution.tx_by_connection[*conn].is_some();
+                let before = self.collect_rows_in_connection(*conn, *table)?;
+                let inserted_row = self.with_mut_tx(*conn, |engine, tx| {
+                    let table_id = engine.table_id_for_index(*table)?;
+                    let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
+                    let (_, row_ref, _) = engine
+                        .db()?
+                        .insert(tx, table_id, &bsatn)
+                        .map_err(|err| format!("exact duplicate insert failed: {err}"))?;
+                    Ok(SimRow::from_product_value(row_ref.to_product_value()))
+                })?;
+                if !in_tx {
+                    self.refresh_observed_durable_offset(false)?;
+                }
+                let after = self.collect_rows_in_connection(*conn, *table)?;
+                if &inserted_row != row {
+                    return Err(format!(
+                        "[ExactDuplicateInsertNoOp] returned row mismatch: expected={row:?}, actual={inserted_row:?}; interaction={interaction:?}"
+                    ));
+                }
+                if after != before {
+                    return Err(format!(
+                        "[ExactDuplicateInsertNoOp] changed visible rows: before={before:?}, after={after:?}; interaction={interaction:?}"
+                    ));
+                }
+                Ok(TableObservation::Applied)
+            }
+            TableOperation::UniqueKeyConflictInsert { conn, table, row } => {
                 let outcome = self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = *engine
                         .base_table_ids
@@ -521,10 +640,10 @@ impl RelationalDbEngine {
                         .ok_or_else(|| format!("table {table} out of range"))?;
                     let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
                     match engine.db()?.insert(tx, table_id, &bsatn) {
-                        Ok(_) => Ok(Err("duplicate insert unexpectedly succeeded".to_string())),
+                        Ok(_) => Ok(Err("unique-key conflict insert unexpectedly succeeded".to_string())),
                         Err(err) if is_unique_constraint_violation(&err) => Ok(Ok(())),
                         Err(err) => Ok(Err(format!(
-                            "duplicate insert returned wrong error: expected={:?}, actual={err}",
+                            "unique-key conflict insert returned wrong error: expected={:?}, actual={err}",
                             ExpectedErrorKind::UniqueConstraintViolation
                         ))),
                     }
@@ -569,7 +688,7 @@ impl RelationalDbEngine {
                     Ok(())
                 })?;
                 if !in_tx {
-                    self.sync_and_snapshot(false)?;
+                    self.refresh_observed_durable_offset(false)?;
                 }
                 Ok(TableObservation::Applied)
             }
@@ -589,7 +708,7 @@ impl RelationalDbEngine {
                     Ok(())
                 })?;
                 if !in_tx {
-                    self.sync_and_snapshot(false)?;
+                    self.refresh_observed_durable_offset(false)?;
                 }
                 Ok(TableObservation::Applied)
             }
@@ -612,8 +731,59 @@ impl RelationalDbEngine {
                     Ok(())
                 })?;
                 if !in_tx {
-                    self.sync_and_snapshot(false)?;
+                    self.refresh_observed_durable_offset(false)?;
                 }
+                Ok(TableObservation::Applied)
+            }
+            TableOperation::AddColumn {
+                conn,
+                table,
+                column,
+                default,
+            } => {
+                let table_id = self.with_mut_tx(*conn, |engine, tx| {
+                    let table_id = engine.table_id_for_index(*table)?;
+                    let column_idx = engine.base_schema.tables[*table].columns.len() as u16;
+                    let mut columns = engine.base_schema.tables[*table]
+                        .columns
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, existing)| ColumnSchema::for_test(idx as u16, &existing.name, existing.ty.clone()))
+                        .collect::<Vec<_>>();
+                    columns.push(ColumnSchema::for_test(column_idx, &column.name, column.ty.clone()));
+                    let new_table_id = engine
+                        .db()?
+                        .add_columns_to_table(tx, table_id, columns, vec![default.clone()])
+                        .map_err(|err| format!("add column failed: {err}"))?;
+                    Ok(new_table_id)
+                })?;
+                self.base_table_ids[*table] = table_id;
+                self.base_schema.tables[*table].columns.push(column.clone());
+                self.refresh_observed_durable_offset(false)?;
+                Ok(TableObservation::Applied)
+            }
+            TableOperation::AddIndex { conn, table, cols } => {
+                self.with_mut_tx(*conn, |engine, tx| {
+                    let table_id = engine.table_id_for_index(*table)?;
+                    let mut schema = IndexSchema::for_test(
+                        format!(
+                            "{}_dst_added_{}_idx",
+                            engine.base_schema.tables[*table].name,
+                            engine.base_schema.tables[*table].extra_indexes.len()
+                        ),
+                        BTreeAlgorithm::from(cols.iter().copied().collect::<spacetimedb_primitives::ColList>()),
+                    );
+                    schema.table_id = table_id;
+                    engine
+                        .db()?
+                        .create_index(tx, schema, false)
+                        .map_err(|err| format!("add index failed: {err}"))?;
+                    Ok(())
+                })?;
+                if !self.base_schema.tables[*table].extra_indexes.contains(cols) {
+                    self.base_schema.tables[*table].extra_indexes.push(cols.clone());
+                }
+                self.refresh_observed_durable_offset(false)?;
                 Ok(TableObservation::Applied)
             }
             TableOperation::PointLookup { conn, table, id } => {
@@ -674,6 +844,9 @@ impl RelationalDbEngine {
         mut f: impl FnMut(&mut Self, &mut RelMutTx) -> Result<T, String>,
     ) -> Result<T, String> {
         self.execution.ensure_known_connection(conn)?;
+        if self.read_tx_by_connection[conn].is_some() {
+            return Err(format!("connection {conn} cannot write while read transaction is open"));
+        }
         if self.execution.tx_by_connection[conn].is_some() {
             let mut tx = self.execution.tx_by_connection[conn]
                 .take()
@@ -694,13 +867,34 @@ impl RelationalDbEngine {
             .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         self.execution.active_writer = Some(conn);
         let value = f(self, &mut tx)?;
-        self.db()?
+        let committed = self
+            .db()?
             .commit_tx(tx)
             .map_err(|err| format!("auto-commit write failed: {err}"))?;
+        self.record_committed_offset(committed.as_ref().map(|(tx_offset, ..)| *tx_offset));
         self.execution.active_writer = None;
         self.stats.transactions.auto_commit += 1;
-        self.capture_pending_snapshot_if_idle()?;
         Ok(value)
+    }
+
+    fn expect_write_conflict(&self, owner: usize, conn: usize) -> Result<(), String> {
+        self.execution.ensure_known_connection(owner)?;
+        self.execution.ensure_known_connection(conn)?;
+        if owner == conn {
+            return Err(format!("write conflict owner and contender are both connection {conn}"));
+        }
+        if self.execution.active_writer != Some(owner) {
+            return Err(format!(
+                "expected connection {owner} to own write lock, actual={:?}",
+                self.execution.active_writer
+            ));
+        }
+        if self.read_tx_by_connection[conn].is_some() {
+            return Err(format!(
+                "conflicting connection {conn} unexpectedly has a read transaction"
+            ));
+        }
+        Ok(())
     }
 
     fn create_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<CommitlogObservation, String> {
@@ -742,7 +936,7 @@ impl RelationalDbEngine {
             );
             Ok(())
         })?;
-        self.sync_and_snapshot(false)?;
+        self.refresh_observed_durable_offset(false)?;
         Ok(CommitlogObservation::Applied)
     }
 
@@ -769,7 +963,7 @@ impl RelationalDbEngine {
             }
             Ok(())
         })?;
-        self.sync_and_snapshot(false)?;
+        self.refresh_observed_durable_offset(false)?;
         Ok(CommitlogObservation::Applied)
     }
 
@@ -828,7 +1022,7 @@ impl RelationalDbEngine {
                 inserted_row: inserted,
             }))
         })?;
-        self.sync_and_snapshot(false)?;
+        self.refresh_observed_durable_offset(false)?;
         Ok(probe
             .map(CommitlogObservation::DynamicMigrationProbe)
             .unwrap_or(CommitlogObservation::Skipped))
@@ -838,22 +1032,34 @@ impl RelationalDbEngine {
         self.execution.active_writer.unwrap_or(conn)
     }
 
-    fn sync_and_snapshot(&mut self, forced: bool) -> Result<(), String> {
+    fn refresh_observed_durable_offset(&mut self, forced: bool) -> Result<(), String> {
         let durable_offset = self.durability.durable_tx_offset().last_seen();
         if forced || durable_offset != self.last_observed_durable_offset {
             self.last_observed_durable_offset = durable_offset;
-            self.pending_snapshot_capture = true;
-            self.capture_pending_snapshot_if_idle()?;
         }
         Ok(())
     }
 
-    fn capture_pending_snapshot_if_idle(&mut self) -> Result<(), String> {
-        if self.pending_snapshot_capture && self.execution.active_writer.is_none() {
-            self.last_durable_snapshot = self.snapshot_tracked_tables()?;
-            self.pending_snapshot_capture = false;
+    async fn wait_for_requested_durability(&mut self, forced: bool) -> Result<(), String> {
+        if let Some(target_offset) = self.last_requested_durable_offset {
+            let current = self.durability.durable_tx_offset().last_seen();
+            if current.is_none_or(|offset| offset < target_offset) {
+                self.durability
+                    .durable_tx_offset()
+                    .wait_for(target_offset)
+                    .await
+                    .map_err(|err| format!("durability wait for tx offset {target_offset} failed: {err}"))?;
+            }
+        } else if forced {
+            tokio::task::yield_now().await;
         }
-        Ok(())
+        self.refresh_observed_durable_offset(forced)
+    }
+
+    fn record_committed_offset(&mut self, offset: Option<u64>) {
+        if let Some(offset) = offset {
+            self.last_requested_durable_offset = Some(offset);
+        }
     }
 
     fn table_id_for_index(&self, table: usize) -> Result<TableId, String> {
@@ -870,6 +1076,13 @@ impl RelationalDbEngine {
                 .db()?
                 .iter_by_col_eq_mut(tx, table_id, 0u16, &AlgebraicValue::U64(id))
                 .map_err(|err| format!("in-tx lookup failed: {err}"))?
+                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+                .next())
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+            Ok(self
+                .db()?
+                .iter_by_col_eq(tx, table_id, 0u16, &AlgebraicValue::U64(id))
+                .map_err(|err| format!("read-tx lookup failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .next())
         } else {
@@ -898,6 +1111,15 @@ impl RelationalDbEngine {
                 .collect::<Vec<_>>();
             rows.sort_by_key(|row| row.id().unwrap_or_default());
             Ok(rows)
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+            let mut rows = self
+                .db()?
+                .iter(tx, table_id)
+                .map_err(|err| format!("read-tx scan failed: {err}"))?
+                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+                .collect::<Vec<_>>();
+            rows.sort_by_key(|row| row.id().unwrap_or_default());
+            Ok(rows)
         } else {
             self.collect_rows_by_id(table_id)
         }
@@ -916,6 +1138,12 @@ impl RelationalDbEngine {
                 .db()?
                 .iter_by_col_eq_mut(tx, table_id, col, value)
                 .map_err(|err| format!("in-tx predicate query failed: {err}"))?
+                .count())
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+            Ok(self
+                .db()?
+                .iter_by_col_eq(tx, table_id, col, value)
+                .map_err(|err| format!("read-tx predicate query failed: {err}"))?
                 .count())
         } else {
             self.count_by_col_eq_for_property(table, col, value)
@@ -936,6 +1164,12 @@ impl RelationalDbEngine {
             self.db()?
                 .iter_by_col_range_mut(tx, table_id, col_list, (lower, upper))
                 .map_err(|err| format!("in-tx range scan failed: {err}"))?
+                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+                .collect::<Vec<_>>()
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+            self.db()?
+                .iter_by_col_range(tx, table_id, col_list, (lower, upper))
+                .map_err(|err| format!("read-tx range scan failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .collect::<Vec<_>>()
         } else {
@@ -1020,44 +1254,61 @@ impl RelationalDbEngine {
         Ok(rows)
     }
 
-    fn snapshot_tracked_tables(&self) -> Result<DurableSnapshot, String> {
-        let mut snap = BTreeMap::new();
-        for (idx, table_id) in self.base_table_ids.iter().enumerate() {
-            let name = self
-                .base_schema
-                .tables
-                .get(idx)
-                .map(|t| t.name.clone())
-                .ok_or_else(|| format!("base table index {idx} missing schema"))?;
-            snap.insert(name, self.collect_rows_by_id(*table_id)?);
-        }
-        for state in self.dynamic_tables.values() {
-            let name = state.name.clone();
-            snap.insert(name, self.collect_rows_by_id(state.table_id)?);
-        }
-        Ok(snap)
+    fn durable_replay_summary(&self) -> Result<DurableReplaySummary, String> {
+        Ok(DurableReplaySummary {
+            durable_offset: self.last_observed_durable_offset,
+            base_rows: self.collect_base_rows()?,
+            dynamic_table_count: self.dynamic_tables.len(),
+        })
     }
 
-    fn collect_outcome(&mut self) -> Result<RelationalDbCommitlogOutcome, String> {
-        self.capture_pending_snapshot_if_idle()?;
-        self.sync_and_snapshot(true)?;
+    async fn reopen_for_final_replay_check(&mut self) -> Result<DurableReplaySummary, String> {
+        let old_db = self
+            .db
+            .take()
+            .ok_or_else(|| "final replay check failed: relational db not initialized".to_string())?;
+        old_db.shutdown().await;
+        drop(old_db);
+
+        let (durability, db) = self.reopen_from_history_with_fault_retry("final replay check")?;
+        self.stats.runtime.durability_actors_started += 1;
+        self.durability = durability;
+        self.db = Some(db);
+        self.rebuild_table_handles_after_reopen()?;
+        self.last_observed_durable_offset = self.durability.durable_tx_offset().last_seen();
+        self.durable_replay_summary()
+    }
+
+    async fn collect_outcome(&mut self) -> Result<RelationalDbCommitlogOutcome, String> {
+        self.wait_for_requested_durability(true).await?;
         let table = self.collect_table_outcome()?;
+        let replay = self.reopen_for_final_replay_check().await?;
         let durable_commit_count = self
             .last_observed_durable_offset
             .map(|offset| (offset as usize).saturating_add(1))
             .unwrap_or(0);
+        let replay_table_count = replay.base_rows.len() + replay.dynamic_table_count;
         debug!(durable_commits = durable_commit_count, "replayed durable prefix");
         Ok(RelationalDbCommitlogOutcome {
             applied_steps: self.step,
             durable_commit_count,
-            replay_table_count: self.last_durable_snapshot.len(),
+            replay_table_count,
             schema: schema_summary(&self.base_schema),
             interactions: self.stats.interactions.clone(),
             table_ops: self.stats.table_ops.clone(),
             transactions: self.stats.transaction_summary(durable_commit_count),
             runtime: self.stats.runtime_summary(),
+            disk_faults: self.commitlog_repo.fault_summary(),
+            replay,
             table,
         })
+    }
+
+    fn collect_base_rows(&self) -> Result<Vec<Vec<SimRow>>, String> {
+        self.base_table_ids
+            .iter()
+            .map(|&table_id| self.collect_rows_by_id(table_id))
+            .collect()
     }
 
     fn collect_table_outcome(&self) -> Result<TableWorkloadOutcome, String> {
@@ -1078,10 +1329,17 @@ impl RelationalDbEngine {
 
     fn finish(&mut self) {
         for tx in &mut self.execution.tx_by_connection {
-            if let Some(tx) = tx.take() {
-                if let Some(db) = &self.db {
-                    let _ = db.rollback_mut_tx(tx);
-                }
+            if let Some(tx) = tx.take()
+                && let Some(db) = &self.db
+            {
+                let _ = db.rollback_mut_tx(tx);
+            }
+        }
+        for tx in &mut self.read_tx_by_connection {
+            if let Some(tx) = tx.take()
+                && let Some(db) = &self.db
+            {
+                let _ = db.release_tx(tx);
             }
         }
         self.execution.active_writer = None;
@@ -1132,44 +1390,54 @@ impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
     type Outcome = RelationalDbCommitlogOutcome;
     type Error = String;
 
-    async fn execute_interaction(
-        &mut self,
-        interaction: &CommitlogInteraction,
-    ) -> Result<Self::Observation, Self::Error> {
-        self.execute(interaction).await
+    #[allow(clippy::manual_async_fn)]
+    fn execute_interaction<'a>(
+        &'a mut self,
+        interaction: &'a CommitlogInteraction,
+    ) -> impl std::future::Future<Output = Result<Self::Observation, Self::Error>> + 'a {
+        async move { self.execute(interaction).await }
     }
 
     fn finish(&mut self) {
         Self::finish(self);
     }
 
-    fn collect_outcome(&mut self) -> anyhow::Result<Self::Outcome> {
-        RelationalDbEngine::collect_outcome(self).map_err(anyhow::Error::msg)
+    #[allow(clippy::manual_async_fn)]
+    fn collect_outcome<'a>(&'a mut self) -> impl std::future::Future<Output = anyhow::Result<Self::Outcome>> + 'a {
+        async move {
+            RelationalDbEngine::collect_outcome(self)
+                .await
+                .map_err(anyhow::Error::msg)
+        }
     }
 }
 
 type StressCommitlogRepo = BuggifiedRepo<MemoryCommitlogRepo>;
 type InMemoryCommitlogDurability = Local<ProductValue, StressCommitlogRepo>;
 
+struct RelationalDbBootstrap {
+    db: RelationalDB,
+    runtime_handle: tokio::runtime::Handle,
+    commitlog_repo: StressCommitlogRepo,
+    durability: Arc<InMemoryCommitlogDurability>,
+    durability_opts: spacetimedb_durability::local::Options,
+    runtime_guard: Option<tokio::runtime::Runtime>,
+}
+
 fn bootstrap_relational_db(
     seed: DstSeed,
-) -> anyhow::Result<(
-    RelationalDB,
-    tokio::runtime::Handle,
-    StressCommitlogRepo,
-    Arc<InMemoryCommitlogDurability>,
-    spacetimedb_durability::local::Options,
-    Option<tokio::runtime::Runtime>,
-)> {
+    fault_profile: CommitlogFaultProfile,
+) -> anyhow::Result<RelationalDbBootstrap> {
     let (runtime_handle, runtime_guard) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
         (handle, None)
     } else {
         let runtime = tokio::runtime::Runtime::new()?;
         (runtime.handle().clone(), Some(runtime))
     };
-    enable_madsim_buggify();
+    let fault_config = CommitlogFaultConfig::for_profile(fault_profile);
+    configure_madsim_buggify(fault_config.enabled());
 
-    let commitlog_repo = BuggifiedRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024));
+    let commitlog_repo = BuggifiedRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config);
     let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
         InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), runtime_handle.clone(), durability_opts)
@@ -1193,28 +1461,36 @@ fn bootstrap_relational_db(
     db.with_auto_commit(Workload::Internal, |tx| {
         db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
     })?;
-    Ok((
+    Ok(RelationalDbBootstrap {
         db,
         runtime_handle,
         commitlog_repo,
         durability,
         durability_opts,
         runtime_guard,
-    ))
+    })
 }
 
 fn commitlog_stress_options(seed: DstSeed) -> spacetimedb_durability::local::Options {
     let mut opts = spacetimedb_durability::local::Options::default();
     opts.commitlog.max_segment_size = 2 * 1024;
     opts.commitlog.offset_index_interval_bytes = NonZeroU64::new(256).expect("256 > 0");
-    opts.commitlog.offset_index_require_segment_fsync = seed.0 % 2 == 0;
+    opts.commitlog.offset_index_require_segment_fsync = seed.0.is_multiple_of(2);
     opts.commitlog.write_buffer_size = 512;
     opts
 }
 
-fn enable_madsim_buggify() {
+fn configure_madsim_buggify(enabled: bool) {
     #[cfg(madsim)]
-    madsim::buggify::enable();
+    {
+        if enabled {
+            madsim::buggify::enable();
+        } else {
+            madsim::buggify::disable();
+        }
+    }
+    #[cfg(not(madsim))]
+    let _ = enabled;
 }
 
 fn runtime_alive_tasks() -> Option<usize> {

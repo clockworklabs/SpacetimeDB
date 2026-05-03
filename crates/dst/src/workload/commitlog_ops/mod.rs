@@ -3,8 +3,8 @@
 mod generation;
 mod types;
 
-pub(crate) use generation::NextInteractionGeneratorComposite;
+pub(crate) use generation::CommitlogWorkloadSource;
 pub use types::{
-    CommitlogInteraction, CommitlogWorkloadOutcome, InteractionSummary, RuntimeSummary, SchemaSummary,
-    TableOperationSummary, TransactionSummary,
+    CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary, InteractionSummary,
+    RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary,
 };

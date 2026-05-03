@@ -37,7 +37,3 @@ spacetimedb-table.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 madsim = { path = "../../../../madsim/madsim" }
-
-[dev-dependencies]
-axum.workspace = true
-reqwest.workspace = true

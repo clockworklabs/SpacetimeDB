@@ -3,5 +3,5 @@
 mod generation;
 mod types;
 
-pub(crate) use generation::NextInteractionGenerator;
+pub(crate) use generation::ModuleWorkloadSource;
 pub use types::{HostScenarioId, ModuleInteraction, ModuleReducerSpec, ModuleWorkloadOutcome};
