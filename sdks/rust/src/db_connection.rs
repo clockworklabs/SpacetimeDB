@@ -328,7 +328,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         match lifecycle {
             ConnectionLifecycle::Connecting => {
-                let error = error.unwrap_or_else(connection_closed_before_initial_connection_error);
+                let error = error.unwrap_or_else(|| crate::Error::FailedToConnect {
+                    source: InternalError::new("Connection closed before receiving the initial connection message"),
+                });
                 let ctx: M::ErrorContext = self.make_event_ctx(Some(error.clone()));
                 if let Some(connect_error_callback) = inner.on_connect_error.take() {
                     connect_error_callback(&ctx, error.clone());
@@ -1594,12 +1596,6 @@ impl<M: SpacetimeModule> std::fmt::Debug for PendingMutation<M> {
 enum Message<M: SpacetimeModule> {
     Ws(Option<ParsedMessage<M>>),
     Local(PendingMutation<M>),
-}
-
-fn connection_closed_before_initial_connection_error() -> crate::Error {
-    crate::Error::FailedToConnect {
-        source: InternalError::new("Connection closed before receiving the initial connection message"),
-    }
 }
 
 fn error_is_normal_disconnect(e: &crate::Error) -> bool {
