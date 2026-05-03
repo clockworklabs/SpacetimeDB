@@ -384,6 +384,8 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
             return Err(crate::Error::AlreadyUnsubscribed);
         }
 
+        // Send this even if the status is still pending so the manager can remove
+        // subscriptions that were cancelled before they were started.
         self.pending_mutation_sender
             .unbounded_send(PendingMutation::Unsubscribe {
                 query_set_id: self.query_set_id,
