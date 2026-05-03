@@ -139,7 +139,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         match msg {
             // Error: route as a connection error if we never finished connecting,
             // otherwise treat it as an erroneous disconnect.
-            ParsedMessage::Error(e) => Err(self.finish_connection(Some(e))),
+            ParsedMessage::Error(e) => Err(self.end_connection(Some(e))),
 
             // Initial `IdentityToken` message:
             // confirm that the received identity and connection ID are what we expect,
@@ -314,9 +314,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Mark the connection lifecycle as ended, route the terminal event to the
     /// appropriate connection callback, and mark [`Self::is_active`] false.
-    fn finish_connection(&self, error: Option<crate::Error>) -> crate::Error {
+    ///
+    /// Returns the terminal error that should be returned from `advance_*` methods.
+    fn end_connection(&self, callback_error: Option<crate::Error>) -> crate::Error {
         let mut inner = self.inner.lock().unwrap();
-        let return_error = error.clone().unwrap_or(crate::Error::Disconnected);
+        let return_error = callback_error.clone().unwrap_or(crate::Error::Disconnected);
 
         let lifecycle = inner.connection_lifecycle;
         if lifecycle == ConnectionLifecycle::Ended {
@@ -329,19 +331,19 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         match lifecycle {
             ConnectionLifecycle::Connecting => {
-                let error = error.unwrap_or_else(|| crate::Error::FailedToConnect {
+                let callback_error = callback_error.unwrap_or_else(|| crate::Error::FailedToConnect {
                     source: InternalError::new("Connection closed before receiving the initial connection message"),
                 });
-                let ctx: M::ErrorContext = self.make_event_ctx(Some(error.clone()));
+                let ctx: M::ErrorContext = self.make_event_ctx(Some(callback_error.clone()));
                 if let Some(connect_error_callback) = inner.on_connect_error.take() {
-                    connect_error_callback(&ctx, error.clone());
+                    connect_error_callback(&ctx, callback_error.clone());
                 }
-                error
+                callback_error
             }
             ConnectionLifecycle::Connected => {
-                let ctx: M::ErrorContext = self.make_event_ctx(error.clone());
+                let ctx: M::ErrorContext = self.make_event_ctx(callback_error.clone());
                 if let Some(disconnect_callback) = inner.on_disconnect.take() {
-                    disconnect_callback(&ctx, error.clone());
+                    disconnect_callback(&ctx, callback_error.clone());
                 }
 
                 // Call the `on_disconnect` method for all subscriptions.
@@ -577,7 +579,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // `Stream::poll_next`. No comment on whether this is a good mental
         // model or not.
         let res = match get_lock_sync(&self.recv).try_next() {
-            Ok(None) => Err(self.finish_connection(None)),
+            Ok(None) => Err(self.end_connection(None)),
             Err(_) => Ok(false),
             Ok(Some(msg)) => self.process_message(msg).map(|_| true),
         };
@@ -632,7 +634,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     pub fn advance_one_message_blocking(&self) -> crate::Result<()> {
         match self.runtime.block_on(self.get_message()) {
             Message::Local(pending) => self.apply_mutation(pending),
-            Message::Ws(None) => Err(self.finish_connection(None)),
+            Message::Ws(None) => Err(self.end_connection(None)),
             Message::Ws(Some(msg)) => self.process_message(msg),
         }
     }
@@ -643,7 +645,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     pub async fn advance_one_message_async(&self) -> crate::Result<()> {
         match self.get_message().await {
             Message::Local(pending) => self.apply_mutation(pending),
-            Message::Ws(None) => Err(self.finish_connection(None)),
+            Message::Ws(None) => Err(self.end_connection(None)),
             Message::Ws(Some(msg)) => self.process_message(msg),
         }
     }
