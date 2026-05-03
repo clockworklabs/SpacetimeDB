@@ -1073,10 +1073,7 @@ but you must call one of them, or else the connection will never progress.
     /// If this method is not invoked, or `None` is supplied,
     /// the SpacetimeDB host will generate a new anonymous `Identity`.
     ///
-    /// If the passed token is invalid or rejected while establishing the connection,
-    /// the connection attempt will fail. Errors which prevent [`Self::build`] from creating
-    /// a connection are returned by `build`; failures after `build` succeeds but before
-    /// the initial connection message is received invoke [`Self::on_connect_error`].
+    /// If the passed token is invalid or rejected, the connection attempt will fail.
     pub fn with_token(mut self, token: Option<impl Into<String>>) -> Self {
         self.token = token.map(|token| token.into());
         self
@@ -1152,9 +1149,7 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
 
     /// Register a callback to run when a connection attempt fails asynchronously.
     ///
-    /// This callback is invoked for failures after [`Self::build`] has successfully
-    /// created a connection object, but before the server sends the initial connection message.
-    /// Errors which prevent [`Self::build`] from creating the connection are returned by `build` instead.
+    /// Errors which prevent [`Self::build`] from creating a connection are returned by `build` instead.
     pub fn on_connect_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
@@ -1169,9 +1164,6 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
     }
 
     /// Register a callback to run when an established connection is closed.
-    ///
-    /// This callback is invoked only after the server has sent the initial connection message.
-    /// Connection attempts which fail before that point invoke [`Self::on_connect_error`] instead.
     pub fn on_disconnect(
         mut self,
         callback: impl FnOnce(&M::ErrorContext, Option<crate::Error>) + Send + 'static,
