@@ -42,12 +42,14 @@ fn test_build_csharp_module() {
     // Create temp directory for the project
     let tmpdir = tempfile::tempdir().expect("Failed to create temp directory");
 
-    // Initialize C# project
+    // Initialize C# project with explicit .NET 8 to test JIT path
     let output = Command::new(&cli_path)
         .args([
             "init",
             "--non-interactive",
             "--lang=csharp",
+            "--dotnet-version",
+            "8",
             "--project-path",
             tmpdir.path().to_str().unwrap(),
             "csharp-project",
