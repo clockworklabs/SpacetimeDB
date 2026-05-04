@@ -41,7 +41,7 @@ fn run() -> Result<()> {
         return list_tests(&cwd, args.filter);
     }
 
-    run_tests(&cwd, &report, args)
+    run_tests(&cwd, &report, args.filter, args.passthrough)
 }
 
 fn list_tests(cwd: &Path, filter: Option<String>) -> Result<()> {
@@ -59,7 +59,7 @@ fn list_tests(cwd: &Path, filter: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
+fn run_tests(cwd: &Path, report: &Path, filter: Option<String>, passthrough: Vec<String>) -> Result<()> {
     let build_args = ["build".to_string()];
     let command_line = shell_line("pnpm", &build_args);
     let status = Command::new("pnpm")
@@ -76,11 +76,11 @@ fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
         "--reporter=junit".to_string(),
         format!("--outputFile={}", report.display()),
     ];
-    if let Some(filter) = args.filter {
+    if let Some(filter) = filter {
         test_args.push("-t".to_string());
         test_args.push(filter);
     }
-    test_args.extend(args.passthrough);
+    test_args.extend(passthrough);
     let command_line = shell_line("pnpm", &test_args);
     let status = Command::new("pnpm")
         .args(&test_args)

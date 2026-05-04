@@ -41,7 +41,14 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    run_dotnet_test("csharp sdk", &workspace.join("sdks/csharp"), &out_dir, "sdk.trx", &args)?;
+    run_dotnet_test(
+        "csharp sdk",
+        &workspace.join("sdks/csharp"),
+        &out_dir,
+        "sdk.trx",
+        args.filter.as_deref(),
+        &args.passthrough,
+    )?;
     run_regression_tests(&workspace)?;
 
     Ok(())
@@ -63,7 +70,14 @@ fn list_dotnet_tests(cwd: &Path) -> Result<()> {
     ensure_success(cwd, &command_line, status)
 }
 
-fn run_dotnet_test(suite: &str, cwd: &Path, out_dir: &Path, report_name: &str, args: &Args) -> Result<()> {
+fn run_dotnet_test(
+    suite: &str,
+    cwd: &Path,
+    out_dir: &Path,
+    report_name: &str,
+    filter: Option<&str>,
+    passthrough: &[String],
+) -> Result<()> {
     let report = out_dir.join(report_name);
 
     let mut test_args = vec![
@@ -75,11 +89,11 @@ fn run_dotnet_test(suite: &str, cwd: &Path, out_dir: &Path, report_name: &str, a
         format!("trx;LogFileName={report_name}"),
         "--no-restore".to_string(),
     ];
-    if let Some(filter) = &args.filter {
+    if let Some(filter) = filter {
         test_args.push("--filter".to_string());
-        test_args.push(filter.clone());
+        test_args.push(filter.to_string());
     }
-    test_args.extend(args.passthrough.iter().cloned());
+    test_args.extend(passthrough.iter().cloned());
 
     let command_line = shell_line("dotnet", &test_args);
     let status = Command::new("dotnet")
