@@ -390,7 +390,7 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
                 query_set_id: self.query_set_id,
             })
             .map_err(|err| {
-                crate::Error::Internal(format!("failed to send unsubscribe mutation: {err}"))
+                crate::Error::AlreadyEnded
             })?;
 
         self.unsubscribe_called = true;
