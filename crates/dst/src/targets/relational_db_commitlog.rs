@@ -32,7 +32,8 @@ use crate::{
     config::{CommitlogFaultProfile, RunConfig},
     core::{self, TargetEngine},
     properties::{
-        CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableObservation, TargetPropertyAccess,
+        CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableMutation, TableObservation,
+        TargetPropertyAccess,
     },
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
@@ -41,7 +42,7 @@ use crate::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
         commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
         table_ops::{
-            ConnectionWriteState, ExpectedErrorKind, TableOperation, TableScenario, TableScenarioId,
+            ConnectionWriteState, TableErrorKind, TableInteractionCase, TableOperation, TableScenario, TableScenarioId,
             TableWorkloadInteraction, TableWorkloadOutcome,
         },
     },
@@ -128,7 +129,6 @@ impl RunStats {
             CommitlogInteraction::CreateDynamicTable { .. } => self.interactions.create_dynamic_table += 1,
             CommitlogInteraction::DropDynamicTable { .. } => self.interactions.drop_dynamic_table += 1,
             CommitlogInteraction::MigrateDynamicTable { .. } => self.interactions.migrate_dynamic_table += 1,
-            CommitlogInteraction::ChaosSync => self.interactions.chaos_sync += 1,
             CommitlogInteraction::CloseReopen => self.interactions.close_reopen_requested += 1,
         }
     }
@@ -148,29 +148,29 @@ impl RunStats {
         }
     }
 
-    fn record_table_operation(&mut self, op: &TableOperation) {
-        match op {
-            TableOperation::BeginTx { .. } => self.table_ops.begin_tx += 1,
-            TableOperation::CommitTx { .. } => self.table_ops.commit_tx += 1,
-            TableOperation::RollbackTx { .. } => self.table_ops.rollback_tx += 1,
-            TableOperation::BeginReadTx { .. } => self.table_ops.begin_read_tx += 1,
-            TableOperation::ReleaseReadTx { .. } => self.table_ops.release_read_tx += 1,
-            TableOperation::BeginTxConflict { .. } => self.table_ops.begin_tx_conflict += 1,
-            TableOperation::WriteConflictInsert { .. } => self.table_ops.write_conflict_insert += 1,
-            TableOperation::Insert { .. } => self.table_ops.insert += 1,
-            TableOperation::Delete { .. } => self.table_ops.delete += 1,
-            TableOperation::ExactDuplicateInsert { .. } => self.table_ops.exact_duplicate_insert += 1,
-            TableOperation::UniqueKeyConflictInsert { .. } => self.table_ops.unique_key_conflict_insert += 1,
-            TableOperation::DeleteMissing { .. } => self.table_ops.delete_missing += 1,
-            TableOperation::BatchInsert { .. } => self.table_ops.batch_insert += 1,
-            TableOperation::BatchDelete { .. } => self.table_ops.batch_delete += 1,
-            TableOperation::Reinsert { .. } => self.table_ops.reinsert += 1,
-            TableOperation::AddColumn { .. } => self.table_ops.add_column += 1,
-            TableOperation::AddIndex { .. } => self.table_ops.add_index += 1,
-            TableOperation::PointLookup { .. } => self.table_ops.point_lookup += 1,
-            TableOperation::PredicateCount { .. } => self.table_ops.predicate_count += 1,
-            TableOperation::RangeScan { .. } => self.table_ops.range_scan += 1,
-            TableOperation::FullScan { .. } => self.table_ops.full_scan += 1,
+    fn record_table_operation(&mut self, case: TableInteractionCase) {
+        match case {
+            TableInteractionCase::BeginTx => self.table_ops.begin_tx += 1,
+            TableInteractionCase::CommitTx => self.table_ops.commit_tx += 1,
+            TableInteractionCase::RollbackTx => self.table_ops.rollback_tx += 1,
+            TableInteractionCase::BeginReadTx => self.table_ops.begin_read_tx += 1,
+            TableInteractionCase::ReleaseReadTx => self.table_ops.release_read_tx += 1,
+            TableInteractionCase::BeginTxConflict => self.table_ops.begin_tx_conflict += 1,
+            TableInteractionCase::WriteConflictInsert => self.table_ops.write_conflict_insert += 1,
+            TableInteractionCase::Insert => self.table_ops.insert += 1,
+            TableInteractionCase::Delete => self.table_ops.delete += 1,
+            TableInteractionCase::ExactDuplicateInsert => self.table_ops.exact_duplicate_insert += 1,
+            TableInteractionCase::UniqueKeyConflictInsert => self.table_ops.unique_key_conflict_insert += 1,
+            TableInteractionCase::DeleteMissing => self.table_ops.delete_missing += 1,
+            TableInteractionCase::BatchInsert => self.table_ops.batch_insert += 1,
+            TableInteractionCase::BatchDelete => self.table_ops.batch_delete += 1,
+            TableInteractionCase::Reinsert => self.table_ops.reinsert += 1,
+            TableInteractionCase::AddColumn => self.table_ops.add_column += 1,
+            TableInteractionCase::AddIndex => self.table_ops.add_index += 1,
+            TableInteractionCase::PointLookup => self.table_ops.point_lookup += 1,
+            TableInteractionCase::PredicateCount => self.table_ops.predicate_count += 1,
+            TableInteractionCase::RangeScan => self.table_ops.range_scan += 1,
+            TableInteractionCase::FullScan => self.table_ops.full_scan += 1,
         }
     }
 
@@ -315,17 +315,15 @@ impl RelationalDbEngine {
     async fn execute(&mut self, interaction: &CommitlogInteraction) -> Result<CommitlogObservation, String> {
         self.step = self.step.saturating_add(1);
         self.stats.record_interaction_requested(interaction);
-        let force_sync_after = matches!(interaction, CommitlogInteraction::ChaosSync);
         let observation = match interaction {
             CommitlogInteraction::Table(op) => self.execute_table_op(op).map(CommitlogObservation::Table),
             CommitlogInteraction::CreateDynamicTable { conn, slot } => self.create_dynamic_table(*conn, *slot),
             CommitlogInteraction::DropDynamicTable { conn, slot } => self.drop_dynamic_table(*conn, *slot),
             CommitlogInteraction::MigrateDynamicTable { conn, slot } => self.migrate_dynamic_table(*conn, *slot),
-            CommitlogInteraction::ChaosSync => Ok(CommitlogObservation::Applied),
             CommitlogInteraction::CloseReopen => self.close_and_reopen().await,
         }?;
         if !matches!(interaction, CommitlogInteraction::CloseReopen) {
-            self.wait_for_requested_durability(force_sync_after).await?;
+            self.wait_for_requested_durability(false).await?;
         }
         self.stats.record_interaction_result(interaction, &observation);
         Ok(observation)
@@ -449,35 +447,15 @@ impl RelationalDbEngine {
     }
 
     fn execute_table_op(&mut self, interaction: &TableWorkloadInteraction) -> Result<TableObservation, String> {
-        let observation = self.execute_table_op_inner(interaction)?;
-        self.stats.record_table_operation(&interaction.op);
+        let observation = self.execute_table_op_inner(&interaction.op)?;
+        self.stats.record_table_operation(interaction.case);
         Ok(observation)
     }
 
-    fn execute_table_op_inner(&mut self, interaction: &TableWorkloadInteraction) -> Result<TableObservation, String> {
-        trace!(step = self.step, ?interaction, "table interaction");
-        match &interaction.op {
-            TableOperation::BeginTx { conn } => {
-                self.execution.ensure_known_connection(*conn)?;
-                if self.read_tx_by_connection[conn.as_index()].is_some() {
-                    return Err(format!("connection {conn} already has open read transaction"));
-                }
-                if self.execution.tx_by_connection[conn.as_index()].is_some() {
-                    return Err(format!("connection {conn} already has open transaction"));
-                }
-                if let Some(owner) = self.execution.active_writer {
-                    return Err(format!(
-                        "connection {conn} cannot begin write transaction while connection {owner} owns lock"
-                    ));
-                }
-                self.execution.tx_by_connection[conn.as_index()] = Some(
-                    self.db()?
-                        .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests),
-                );
-                self.execution.active_writer = Some(*conn);
-                self.stats.transactions.explicit_begin += 1;
-                Ok(TableObservation::Applied)
-            }
+    fn execute_table_op_inner(&mut self, op: &TableOperation) -> Result<TableObservation, String> {
+        trace!(step = self.step, ?op, "table interaction");
+        match op {
+            TableOperation::BeginTx { conn } => self.begin_write_tx(*conn),
             TableOperation::BeginReadTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
                 if self.execution.tx_by_connection[conn.as_index()].is_some() {
@@ -498,33 +476,6 @@ impl RelationalDbEngine {
                     .ok_or_else(|| format!("connection {conn} has no read transaction to release"))?;
                 let _ = self.db()?.release_tx(tx);
                 Ok(TableObservation::Applied)
-            }
-            TableOperation::BeginTxConflict { owner, conn } => {
-                self.expect_write_conflict(*owner, *conn)?;
-                Ok(TableObservation::ExpectedError(ExpectedErrorKind::WriteConflict))
-            }
-            TableOperation::WriteConflictInsert {
-                owner,
-                conn,
-                table,
-                row,
-            } => {
-                self.expect_write_conflict(*owner, *conn)?;
-                let err = self
-                    .with_mut_tx(*conn, |engine, tx| {
-                        let table_id = engine.table_id_for_index(*table)?;
-                        let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
-                        engine
-                            .db()?
-                            .insert(tx, table_id, &bsatn)
-                            .map_err(|err| format!("conflicting insert unexpectedly reached datastore: {err}"))?;
-                        Ok(())
-                    })
-                    .expect_err("active writer should reject conflicting auto-commit write");
-                if !err.contains("owns lock") {
-                    return Err(format!("write conflict returned wrong error: {err}"));
-                }
-                Ok(TableObservation::ExpectedError(ExpectedErrorKind::WriteConflict))
             }
             TableOperation::CommitTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "commit")?;
@@ -550,184 +501,8 @@ impl RelationalDbEngine {
                 self.stats.transactions.explicit_rollback += 1;
                 Ok(TableObservation::CommitOrRollback)
             }
-            TableOperation::Insert { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
-                let inserted_row = self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = *engine
-                        .base_table_ids
-                        .get(*table)
-                        .ok_or_else(|| format!("table {table} out of range"))?;
-                    let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
-                    let (_, row_ref, _) = engine
-                        .db()?
-                        .insert(tx, table_id, &bsatn)
-                        .map_err(|err| format!("insert failed: {err}"))?;
-                    Ok(SimRow::from_product_value(row_ref.to_product_value()))
-                })?;
-                if !in_tx {
-                    self.refresh_observed_durable_offset(false)?;
-                }
-                Ok(TableObservation::RowInserted {
-                    conn: *conn,
-                    table: *table,
-                    row: inserted_row,
-                    in_tx,
-                })
-            }
-            TableOperation::Delete { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
-                self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = *engine
-                        .base_table_ids
-                        .get(*table)
-                        .ok_or_else(|| format!("table {table} out of range"))?;
-                    let deleted = engine.db()?.delete_by_rel(tx, table_id, [row.to_product_value()]);
-                    if deleted != 1 {
-                        return Err(format!("delete expected 1 row, got {deleted}"));
-                    }
-                    Ok(())
-                })?;
-                if !in_tx {
-                    self.refresh_observed_durable_offset(false)?;
-                }
-                Ok(TableObservation::RowDeleted {
-                    conn: *conn,
-                    table: *table,
-                    row: row.clone(),
-                    in_tx,
-                })
-            }
-            TableOperation::ExactDuplicateInsert { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
-                let before = self.collect_rows_in_connection(*conn, *table)?;
-                let inserted_row = self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = engine.table_id_for_index(*table)?;
-                    let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
-                    let (_, row_ref, _) = engine
-                        .db()?
-                        .insert(tx, table_id, &bsatn)
-                        .map_err(|err| format!("exact duplicate insert failed: {err}"))?;
-                    Ok(SimRow::from_product_value(row_ref.to_product_value()))
-                })?;
-                if !in_tx {
-                    self.refresh_observed_durable_offset(false)?;
-                }
-                let after = self.collect_rows_in_connection(*conn, *table)?;
-                if &inserted_row != row {
-                    return Err(format!(
-                        "[ExactDuplicateInsertNoOp] returned row mismatch: expected={row:?}, actual={inserted_row:?}; interaction={interaction:?}"
-                    ));
-                }
-                if after != before {
-                    return Err(format!(
-                        "[ExactDuplicateInsertNoOp] changed visible rows: before={before:?}, after={after:?}; interaction={interaction:?}"
-                    ));
-                }
-                Ok(TableObservation::Applied)
-            }
-            TableOperation::UniqueKeyConflictInsert { conn, table, row } => {
-                let outcome = self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = *engine
-                        .base_table_ids
-                        .get(*table)
-                        .ok_or_else(|| format!("table {table} out of range"))?;
-                    let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
-                    match engine.db()?.insert(tx, table_id, &bsatn) {
-                        Ok(_) => Ok(Err("unique-key conflict insert unexpectedly succeeded".to_string())),
-                        Err(err) if is_unique_constraint_violation(&err) => Ok(Ok(())),
-                        Err(err) => Ok(Err(format!(
-                            "unique-key conflict insert returned wrong error: expected={:?}, actual={err}",
-                            ExpectedErrorKind::UniqueConstraintViolation
-                        ))),
-                    }
-                })?;
-                match outcome {
-                    Ok(()) => Ok(TableObservation::ExpectedError(
-                        ExpectedErrorKind::UniqueConstraintViolation,
-                    )),
-                    Err(err) => Err(format!("[ExpectedErrorMatches] {err}; interaction={interaction:?}")),
-                }
-            }
-            TableOperation::DeleteMissing { conn, table, row } => {
-                let deleted = self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = *engine
-                        .base_table_ids
-                        .get(*table)
-                        .ok_or_else(|| format!("table {table} out of range"))?;
-                    Ok(engine.db()?.delete_by_rel(tx, table_id, [row.to_product_value()]))
-                })?;
-                if deleted == 0 {
-                    Ok(TableObservation::ExpectedError(ExpectedErrorKind::MissingRow))
-                } else {
-                    Err(format!(
-                        "[ExpectedErrorDoesNotMutate] missing delete removed {deleted} rows; interaction={interaction:?}"
-                    ))
-                }
-            }
-            TableOperation::BatchInsert { conn, table, rows } => {
-                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
-                self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = *engine
-                        .base_table_ids
-                        .get(*table)
-                        .ok_or_else(|| format!("table {table} out of range"))?;
-                    for row in rows {
-                        let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
-                        engine
-                            .db()?
-                            .insert(tx, table_id, &bsatn)
-                            .map_err(|err| format!("batch insert failed: {err}"))?;
-                    }
-                    Ok(())
-                })?;
-                if !in_tx {
-                    self.refresh_observed_durable_offset(false)?;
-                }
-                Ok(TableObservation::Applied)
-            }
-            TableOperation::BatchDelete { conn, table, rows } => {
-                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
-                self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = *engine
-                        .base_table_ids
-                        .get(*table)
-                        .ok_or_else(|| format!("table {table} out of range"))?;
-                    for row in rows {
-                        let deleted = engine.db()?.delete_by_rel(tx, table_id, [row.to_product_value()]);
-                        if deleted != 1 {
-                            return Err(format!("batch delete expected 1 row, got {deleted} for row={row:?}"));
-                        }
-                    }
-                    Ok(())
-                })?;
-                if !in_tx {
-                    self.refresh_observed_durable_offset(false)?;
-                }
-                Ok(TableObservation::Applied)
-            }
-            TableOperation::Reinsert { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
-                self.with_mut_tx(*conn, |engine, tx| {
-                    let table_id = *engine
-                        .base_table_ids
-                        .get(*table)
-                        .ok_or_else(|| format!("table {table} out of range"))?;
-                    let deleted = engine.db()?.delete_by_rel(tx, table_id, [row.to_product_value()]);
-                    if deleted != 1 {
-                        return Err(format!("reinsert delete expected 1 row, got {deleted} for row={row:?}"));
-                    }
-                    let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
-                    engine
-                        .db()?
-                        .insert(tx, table_id, &bsatn)
-                        .map_err(|err| format!("reinsert insert failed: {err}"))?;
-                    Ok(())
-                })?;
-                if !in_tx {
-                    self.refresh_observed_durable_offset(false)?;
-                }
-                Ok(TableObservation::Applied)
-            }
+            TableOperation::InsertRows { conn, table, rows } => self.execute_insert_rows(*conn, *table, rows),
+            TableOperation::DeleteRows { conn, table, rows } => self.execute_delete_rows(*conn, *table, rows),
             TableOperation::AddColumn {
                 conn,
                 table,
@@ -831,6 +606,150 @@ impl RelationalDbEngine {
         }
     }
 
+    fn begin_write_tx(&mut self, conn: SessionId) -> Result<TableObservation, String> {
+        self.execution.ensure_known_connection(conn)?;
+        if self.read_tx_by_connection[conn.as_index()].is_some() {
+            return Err(format!("connection {conn} already has open read transaction"));
+        }
+        if self.execution.tx_by_connection[conn.as_index()].is_some() {
+            return Err(format!("connection {conn} already has open transaction"));
+        }
+        if self.execution.active_writer.is_some() {
+            return Ok(TableObservation::ObservedError(TableErrorKind::WriteConflict));
+        }
+        self.execution.tx_by_connection[conn.as_index()] = Some(
+            self.db()?
+                .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests),
+        );
+        self.execution.active_writer = Some(conn);
+        self.stats.transactions.explicit_begin += 1;
+        Ok(TableObservation::Applied)
+    }
+
+    fn execute_insert_rows(
+        &mut self,
+        conn: SessionId,
+        table: usize,
+        rows: &[SimRow],
+    ) -> Result<TableObservation, String> {
+        let in_tx = self.is_in_write_tx(conn);
+        let outcome = self.with_mut_tx_observed(conn, |engine, tx| {
+            let mut mutations = Vec::with_capacity(rows.len());
+            for row in rows {
+                match engine.try_insert_base_row(tx, table, row)? {
+                    Ok(returned) => mutations.push(TableMutation::Inserted {
+                        table,
+                        requested: row.clone(),
+                        returned,
+                    }),
+                    Err(err) if is_unique_constraint_violation(&err) => {
+                        return Ok(Err(TableErrorKind::UniqueConstraintViolation));
+                    }
+                    Err(err) => return Err(format!("insert failed: {err}")),
+                }
+            }
+            Ok(Ok(mutations))
+        });
+        self.mutation_observation(conn, in_tx, outcome)
+    }
+
+    fn execute_delete_rows(
+        &mut self,
+        conn: SessionId,
+        table: usize,
+        rows: &[SimRow],
+    ) -> Result<TableObservation, String> {
+        let in_tx = self.is_in_write_tx(conn);
+        let outcome = self.with_mut_tx_observed(conn, |engine, tx| {
+            let mut mutations = Vec::with_capacity(rows.len());
+            for row in rows {
+                match engine.delete_base_row_count(tx, table, row)? {
+                    0 => return Ok(Err(TableErrorKind::MissingRow)),
+                    1 => mutations.push(TableMutation::Deleted {
+                        table,
+                        row: row.clone(),
+                    }),
+                    deleted => {
+                        return Err(format!("delete for row={row:?} affected {deleted} rows"));
+                    }
+                }
+            }
+            Ok(Ok(mutations))
+        });
+        self.mutation_observation(conn, in_tx, outcome)
+    }
+
+    fn mutation_observation(
+        &mut self,
+        conn: SessionId,
+        in_tx: bool,
+        outcome: Result<Result<Vec<TableMutation>, TableErrorKind>, String>,
+    ) -> Result<TableObservation, String> {
+        match outcome {
+            Ok(Ok(mutations)) => {
+                self.refresh_if_auto_commit(in_tx)?;
+                Ok(TableObservation::Mutated { conn, mutations, in_tx })
+            }
+            Ok(Err(kind)) => Ok(TableObservation::ObservedError(kind)),
+            Err(err) if is_write_conflict_error(&err) => {
+                Ok(TableObservation::ObservedError(TableErrorKind::WriteConflict))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn with_mut_tx_observed<T>(
+        &mut self,
+        conn: SessionId,
+        mut f: impl FnMut(&mut Self, &mut RelMutTx) -> Result<Result<T, TableErrorKind>, String>,
+    ) -> Result<Result<T, TableErrorKind>, String> {
+        self.execution.ensure_known_connection(conn)?;
+        if self.read_tx_by_connection[conn.as_index()].is_some() {
+            return Err(format!("connection {conn} cannot write while read transaction is open"));
+        }
+        if self.execution.tx_by_connection[conn.as_index()].is_some() {
+            let mut tx = self.execution.tx_by_connection[conn.as_index()]
+                .take()
+                .ok_or_else(|| format!("connection {conn} missing transaction handle"))?;
+            let result = f(self, &mut tx);
+            self.execution.tx_by_connection[conn.as_index()] = Some(tx);
+            return result;
+        }
+
+        if self.execution.active_writer.is_some() {
+            return Ok(Err(TableErrorKind::WriteConflict));
+        }
+
+        let mut tx = self
+            .db()?
+            .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        self.execution.active_writer = Some(conn);
+        let value = match f(self, &mut tx) {
+            Ok(Ok(value)) => value,
+            Ok(Err(kind)) => {
+                let _ = self.db()?.rollback_mut_tx(tx);
+                self.execution.active_writer = None;
+                return Ok(Err(kind));
+            }
+            Err(err) => {
+                let _ = self.db()?.rollback_mut_tx(tx);
+                self.execution.active_writer = None;
+                return Err(err);
+            }
+        };
+        let committed = match self.db()?.commit_tx(tx) {
+            Ok(committed) => committed,
+            Err(err) => {
+                self.execution.active_writer = None;
+                return Err(format!("auto-commit write failed: {err}"));
+            }
+        };
+        self.record_committed_offset(committed.as_ref().map(|(tx_offset, ..)| *tx_offset));
+        self.execution.active_writer = None;
+        self.stats.transactions.auto_commit += 1;
+        Ok(Ok(value))
+    }
+
     fn with_mut_tx<T>(
         &mut self,
         conn: SessionId,
@@ -844,9 +763,9 @@ impl RelationalDbEngine {
             let mut tx = self.execution.tx_by_connection[conn.as_index()]
                 .take()
                 .ok_or_else(|| format!("connection {conn} missing transaction handle"))?;
-            let value = f(self, &mut tx)?;
+            let result = f(self, &mut tx);
             self.execution.tx_by_connection[conn.as_index()] = Some(tx);
-            return Ok(value);
+            return result;
         }
 
         if let Some(owner) = self.execution.active_writer {
@@ -859,35 +778,65 @@ impl RelationalDbEngine {
             .db()?
             .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         self.execution.active_writer = Some(conn);
-        let value = f(self, &mut tx)?;
-        let committed = self
-            .db()?
-            .commit_tx(tx)
-            .map_err(|err| format!("auto-commit write failed: {err}"))?;
+        let value = match f(self, &mut tx) {
+            Ok(value) => value,
+            Err(err) => {
+                let _ = self.db()?.rollback_mut_tx(tx);
+                self.execution.active_writer = None;
+                return Err(err);
+            }
+        };
+        let committed = match self.db()?.commit_tx(tx) {
+            Ok(committed) => committed,
+            Err(err) => {
+                self.execution.active_writer = None;
+                return Err(format!("auto-commit write failed: {err}"));
+            }
+        };
         self.record_committed_offset(committed.as_ref().map(|(tx_offset, ..)| *tx_offset));
         self.execution.active_writer = None;
         self.stats.transactions.auto_commit += 1;
         Ok(value)
     }
 
-    fn expect_write_conflict(&self, owner: SessionId, conn: SessionId) -> Result<(), String> {
-        self.execution.ensure_known_connection(owner)?;
-        self.execution.ensure_known_connection(conn)?;
-        if owner == conn {
-            return Err(format!("write conflict owner and contender are both connection {conn}"));
-        }
-        if self.execution.active_writer != Some(owner) {
-            return Err(format!(
-                "expected connection {owner} to own write lock, actual={:?}",
-                self.execution.active_writer
-            ));
-        }
-        if self.read_tx_by_connection[conn.as_index()].is_some() {
-            return Err(format!(
-                "conflicting connection {conn} unexpectedly has a read transaction"
-            ));
-        }
-        Ok(())
+    fn try_insert_base_row(
+        &self,
+        tx: &mut RelMutTx,
+        table: usize,
+        row: &SimRow,
+    ) -> Result<Result<SimRow, DBError>, String> {
+        let table_id = self.table_id_for_index(table)?;
+        self.try_insert_row(tx, table_id, row)
+    }
+
+    fn try_insert_row(
+        &self,
+        tx: &mut RelMutTx,
+        table_id: TableId,
+        row: &SimRow,
+    ) -> Result<Result<SimRow, DBError>, String> {
+        let bsatn = row.to_bsatn().map_err(|err| err.to_string())?;
+        Ok(match self.db()?.insert(tx, table_id, &bsatn) {
+            Ok((_, row_ref, _)) => Ok(SimRow::from_product_value(row_ref.to_product_value())),
+            Err(err) => Err(err),
+        })
+    }
+
+    fn insert_row(
+        &self,
+        tx: &mut RelMutTx,
+        table_id: TableId,
+        row: &SimRow,
+        context: impl Into<String>,
+    ) -> Result<SimRow, String> {
+        let context = context.into();
+        self.try_insert_row(tx, table_id, row)?
+            .map_err(|err| format!("{context}: {err}"))
+    }
+
+    fn delete_base_row_count(&self, tx: &mut RelMutTx, table: usize, row: &SimRow) -> Result<u32, String> {
+        let table_id = self.table_id_for_index(table)?;
+        Ok(self.db()?.delete_by_rel(tx, table_id, [row.to_product_value()]))
     }
 
     fn create_dynamic_table(&mut self, conn: SessionId, slot: u32) -> Result<CommitlogObservation, String> {
@@ -914,11 +863,12 @@ impl RelationalDbEngine {
             let seed_row = SimRow {
                 values: vec![AlgebraicValue::I64(0), AlgebraicValue::U64(slot as u64)],
             };
-            let bsatn = seed_row.to_bsatn().map_err(|err| err.to_string())?;
-            engine
-                .db()?
-                .insert(tx, table_id, &bsatn)
-                .map_err(|err| format!("seed dynamic table auto-inc insert failed for slot={slot}: {err}"))?;
+            engine.insert_row(
+                tx,
+                table_id,
+                &seed_row,
+                format!("seed dynamic table auto-inc insert failed for slot={slot}"),
+            )?;
             engine.dynamic_tables.insert(
                 slot,
                 DynamicTableState {
@@ -993,12 +943,12 @@ impl RelationalDbEngine {
                 .collect::<Vec<_>>();
 
             let probe_row = dynamic_probe_row(slot, to_version);
-            let bsatn = probe_row.to_bsatn().map_err(|err| err.to_string())?;
-            let (_, inserted_ref, _) = engine
-                .db()?
-                .insert(tx, new_table_id, &bsatn)
-                .map_err(|err| format!("migrate auto-inc probe failed for slot={slot}: {err}"))?;
-            let inserted = SimRow::from_product_value(inserted_ref.to_product_value());
+            let inserted = engine.insert_row(
+                tx,
+                new_table_id,
+                &probe_row,
+                format!("migrate auto-inc probe failed for slot={slot}"),
+            )?;
             engine.dynamic_tables.insert(
                 slot,
                 DynamicTableState {
@@ -1055,11 +1005,84 @@ impl RelationalDbEngine {
         }
     }
 
+    fn is_in_write_tx(&self, conn: SessionId) -> bool {
+        self.execution
+            .tx_by_connection
+            .get(conn.as_index())
+            .is_some_and(Option::is_some)
+    }
+
+    fn refresh_if_auto_commit(&mut self, in_tx: bool) -> Result<(), String> {
+        if !in_tx {
+            self.refresh_observed_durable_offset(false)?;
+        }
+        Ok(())
+    }
+
     fn table_id_for_index(&self, table: usize) -> Result<TableId, String> {
         self.base_table_ids
             .get(table)
             .copied()
             .ok_or_else(|| format!("table {table} out of range"))
+    }
+
+    fn with_fresh_read_tx<T>(&self, f: impl FnOnce(&RelationalDB, &RelTx) -> Result<T, String>) -> Result<T, String> {
+        let db = self.db()?;
+        let tx = db.begin_tx(Workload::ForTests);
+        self.stats.record_read_tx();
+        let result = f(db, &tx);
+        let _ = db.release_tx(tx);
+        result
+    }
+
+    fn collect_rows_in_fresh_tx(&self, table_id: TableId, context: &'static str) -> Result<Vec<SimRow>, String> {
+        self.with_fresh_read_tx(|db, tx| {
+            Ok(db
+                .iter(tx, table_id)
+                .map_err(|err| format!("{context}: {err}"))?
+                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+                .collect::<Vec<_>>())
+        })
+    }
+
+    fn count_rows_in_fresh_tx(&self, table_id: TableId, context: &'static str) -> Result<usize, String> {
+        self.with_fresh_read_tx(|db, tx| {
+            Ok(db
+                .iter(tx, table_id)
+                .map_err(|err| format!("{context}: {err}"))?
+                .count())
+        })
+    }
+
+    fn count_by_col_eq_in_fresh_tx(
+        &self,
+        table_id: TableId,
+        col: u16,
+        value: &AlgebraicValue,
+        context: &'static str,
+    ) -> Result<usize, String> {
+        self.with_fresh_read_tx(|db, tx| {
+            Ok(db
+                .iter_by_col_eq(tx, table_id, col, value)
+                .map_err(|err| format!("{context}: {err}"))?
+                .count())
+        })
+    }
+
+    fn range_scan_in_fresh_tx(
+        &self,
+        table_id: TableId,
+        cols: spacetimedb_primitives::ColList,
+        bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+        context: &'static str,
+    ) -> Result<Vec<SimRow>, String> {
+        self.with_fresh_read_tx(|db, tx| {
+            Ok(db
+                .iter_by_col_range(tx, table_id, cols, bounds)
+                .map_err(|err| format!("{context}: {err}"))?
+                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+                .collect::<Vec<_>>())
+        })
     }
 
     fn lookup_base_row(&self, conn: SessionId, table: usize, id: u64) -> Result<Option<SimRow>, String> {
@@ -1079,17 +1102,13 @@ impl RelationalDbEngine {
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .next())
         } else {
-            let db = self.db()?;
-            let tx = db.begin_tx(Workload::ForTests);
-            self.stats.record_read_tx();
-            let found = self
-                .db()?
-                .iter_by_col_eq(&tx, table_id, 0u16, &AlgebraicValue::U64(id))
-                .map_err(|err| format!("lookup failed: {err}"))?
-                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-                .next();
-            let _ = db.release_tx(tx);
-            Ok(found)
+            self.with_fresh_read_tx(|db, tx| {
+                Ok(db
+                    .iter_by_col_eq(tx, table_id, 0u16, &AlgebraicValue::U64(id))
+                    .map_err(|err| format!("lookup failed: {err}"))?
+                    .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
+                    .next())
+            })
         }
     }
 
@@ -1139,7 +1158,7 @@ impl RelationalDbEngine {
                 .map_err(|err| format!("read-tx predicate query failed: {err}"))?
                 .count())
         } else {
-            self.count_by_col_eq_for_property(table, col, value)
+            self.count_by_col_eq_in_fresh_tx(table_id, col, value, "predicate query failed")
         }
     }
 
@@ -1166,17 +1185,7 @@ impl RelationalDbEngine {
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .collect::<Vec<_>>()
         } else {
-            let db = self.db()?;
-            let tx = db.begin_tx(Workload::ForTests);
-            self.stats.record_read_tx();
-            let rows = self
-                .db()?
-                .iter_by_col_range(&tx, table_id, col_list, (lower, upper))
-                .map_err(|err| format!("range scan failed: {err}"))?
-                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-                .collect::<Vec<_>>();
-            let _ = db.release_tx(tx);
-            rows
+            self.range_scan_in_fresh_tx(table_id, col_list, (lower, upper), "range scan failed")?
         };
         rows.sort_by(|lhs, rhs| compare_rows_for_range(lhs, rhs, cols));
         Ok(rows)
@@ -1184,30 +1193,12 @@ impl RelationalDbEngine {
 
     fn count_rows_for_property(&self, table: usize) -> Result<usize, String> {
         let table_id = self.table_id_for_index(table)?;
-        let db = self.db()?;
-        let tx = db.begin_tx(Workload::ForTests);
-        self.stats.record_read_tx();
-        let total = self
-            .db()?
-            .iter(&tx, table_id)
-            .map_err(|err| format!("scan failed: {err}"))?
-            .count();
-        let _ = db.release_tx(tx);
-        Ok(total)
+        self.count_rows_in_fresh_tx(table_id, "scan failed")
     }
 
     fn count_by_col_eq_for_property(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String> {
         let table_id = self.table_id_for_index(table)?;
-        let db = self.db()?;
-        let tx = db.begin_tx(Workload::ForTests);
-        self.stats.record_read_tx();
-        let total = self
-            .db()?
-            .iter_by_col_eq(&tx, table_id, col, value)
-            .map_err(|err| format!("predicate query failed: {err}"))?
-            .count();
-        let _ = db.release_tx(tx);
-        Ok(total)
+        self.count_by_col_eq_in_fresh_tx(table_id, col, value, "predicate query failed")
     }
 
     fn range_scan_for_property(
@@ -1218,31 +1209,12 @@ impl RelationalDbEngine {
         upper: Bound<AlgebraicValue>,
     ) -> Result<Vec<SimRow>, String> {
         let table_id = self.table_id_for_index(table)?;
-        let db = self.db()?;
-        let tx = db.begin_tx(Workload::ForTests);
-        self.stats.record_read_tx();
         let cols = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
-        let rows = self
-            .db()?
-            .iter_by_col_range(&tx, table_id, cols, (lower, upper))
-            .map_err(|err| format!("range scan failed: {err}"))?
-            .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-            .collect::<Vec<_>>();
-        let _ = db.release_tx(tx);
-        Ok(rows)
+        self.range_scan_in_fresh_tx(table_id, cols, (lower, upper), "range scan failed")
     }
 
     fn collect_rows_by_id(&self, table_id: TableId) -> Result<Vec<SimRow>, String> {
-        let db = self.db()?;
-        let tx = db.begin_tx(Workload::ForTests);
-        self.stats.record_read_tx();
-        let mut rows = self
-            .db()?
-            .iter(&tx, table_id)
-            .map_err(|err| format!("scan failed: {err}"))?
-            .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-            .collect::<Vec<_>>();
-        let _ = db.release_tx(tx);
+        let mut rows = self.collect_rows_in_fresh_tx(table_id, "scan failed")?;
         rows.sort_by_key(|row| row.id().unwrap_or_default());
         Ok(rows)
     }
@@ -1352,6 +1324,10 @@ impl TargetPropertyAccess for RelationalDbEngine {
 
     fn lookup_in_connection(&self, conn: SessionId, table: usize, id: u64) -> Result<Option<SimRow>, String> {
         Self::lookup_base_row(self, conn, table, id)
+    }
+
+    fn collect_rows_in_connection(&self, conn: SessionId, table: usize) -> Result<Vec<SimRow>, String> {
+        Self::collect_rows_in_connection(self, conn, table)
     }
 
     fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String> {
@@ -1525,6 +1501,10 @@ fn is_unique_constraint_violation(err: &DBError) -> bool {
         err,
         DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))
     )
+}
+
+fn is_write_conflict_error(err: &str) -> bool {
+    err.contains("owns lock")
 }
 
 fn compare_rows_for_range(lhs: &SimRow, rhs: &SimRow, cols: &[u16]) -> std::cmp::Ordering {

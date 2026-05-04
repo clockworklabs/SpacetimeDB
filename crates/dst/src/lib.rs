@@ -45,7 +45,7 @@ pub mod client;
 pub mod config;
 /// Core traits/runners for pluggable workloads and targets.
 pub mod core;
-/// Reusable semantic properties and expected-model checks.
+/// Reusable semantic properties and oracle-model checks.
 pub(crate) mod properties;
 mod schema;
 /// Stable seed and RNG utilities used to make runs reproducible.

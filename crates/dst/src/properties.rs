@@ -3,21 +3,21 @@
 //! This module is the boundary between target execution and semantic checking.
 //! Targets emit observations and implement [`TargetPropertyAccess`]; property
 //! rules compare those observations against either the target's externally
-//! visible state, an expected model, or durable replay state.
+//! visible state, an oracle model, or durable replay state.
 //!
 //! ## Property Model
 //!
 //! A property is a named check over a run. It observes generated interactions,
-//! target observations, target-visible state, expected models, and final
+//! target observations, target-visible state, oracle models, and final
 //! outcomes. Failures should include a stable property name and enough context
 //! to replay the seed or trace.
 //!
 //! The current catalog is intentionally small and falls into the same groups
 //! used by the proposal:
 //!
-//! - Safety properties: `NotCrash`, `ExpectedErrorMatches`,
-//!   `DurableReplayMatchesModel`, `BankingTablesMatch`, and
-//!   `DynamicMigrationAutoInc`.
+//! - Safety properties: `NotCrash`, `ErrorMatchesOracle`,
+//!   `NoMutationMatchesModel`, `DurableReplayMatchesModel`,
+//!   `BankingTablesMatch`, and `DynamicMigrationAutoInc`.
 //! - Model/oracle properties: `PointLookupMatchesModel`,
 //!   `PredicateCountMatchesModel`, `RangeScanMatchesModel`,
 //!   `FullScanMatchesModel`, and the scenario-specific final table-state check.
@@ -39,7 +39,7 @@ use crate::{
     schema::{SchemaPlan, SimRow},
     workload::{
         commitlog_ops::DurableReplaySummary,
-        table_ops::{ExpectedErrorKind, TableWorkloadInteraction, TableWorkloadOutcome},
+        table_ops::{TableErrorKind, TableWorkloadInteraction, TableWorkloadOutcome},
     },
 };
 
@@ -49,6 +49,7 @@ pub(crate) use runtime::PropertyRuntime;
 pub(crate) trait TargetPropertyAccess {
     fn schema_plan(&self) -> &SchemaPlan;
     fn lookup_in_connection(&self, conn: SessionId, table: usize, id: u64) -> Result<Option<SimRow>, String>;
+    fn collect_rows_in_connection(&self, conn: SessionId, table: usize) -> Result<Vec<SimRow>, String>;
     fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String>;
     fn count_rows(&self, table: usize) -> Result<usize, String>;
     fn count_by_col_eq(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String>;
@@ -82,17 +83,19 @@ pub(crate) enum PropertyKind {
     BankingTablesMatch,
     /// Safety: auto-increment IDs continue advancing after dynamic table migration.
     DynamicMigrationAutoInc,
-    /// Safety: durable replay state equals the expected committed model.
+    /// Safety: durable replay state equals the oracle committed model.
     DurableReplayMatchesModel,
-    /// Safety: expected-error interactions fail with the expected error class.
-    ExpectedErrorMatches,
-    /// Model/oracle: point lookups match the expected session-visible model.
+    /// Safety: observed errors match the model-predicted error class.
+    ErrorMatchesOracle,
+    /// Safety: model-predicted no-op interactions do not mutate visible state.
+    NoMutationMatchesModel,
+    /// Model/oracle: point lookups match the oracle session-visible model.
     PointLookupMatchesModel,
-    /// Model/oracle: predicate counts match the expected session-visible model.
+    /// Model/oracle: predicate counts match the oracle session-visible model.
     PredicateCountMatchesModel,
-    /// Model/oracle: range scans match the expected session-visible model.
+    /// Model/oracle: range scans match the oracle session-visible model.
     RangeScanMatchesModel,
-    /// Model/oracle: full scans match the expected session-visible model.
+    /// Model/oracle: full scans match the oracle session-visible model.
     FullScanMatchesModel,
 }
 
@@ -106,21 +109,27 @@ pub(crate) struct DynamicMigrationProbe {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) enum TableMutation {
+    Inserted {
+        table: usize,
+        requested: SimRow,
+        returned: SimRow,
+    },
+    Deleted {
+        table: usize,
+        row: SimRow,
+    },
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum TableObservation {
     Applied,
-    RowInserted {
+    Mutated {
         conn: SessionId,
-        table: usize,
-        row: SimRow,
+        mutations: Vec<TableMutation>,
         in_tx: bool,
     },
-    RowDeleted {
-        conn: SessionId,
-        table: usize,
-        row: SimRow,
-        in_tx: bool,
-    },
-    ExpectedError(ExpectedErrorKind),
+    ObservedError(TableErrorKind),
     PointLookup {
         conn: SessionId,
         table: usize,
@@ -170,7 +179,7 @@ enum PropertyEvent<'a> {
     RowInserted {
         conn: SessionId,
         table: usize,
-        row: &'a SimRow,
+        returned: &'a SimRow,
         in_tx: bool,
     },
     RowDeleted {
@@ -179,9 +188,16 @@ enum PropertyEvent<'a> {
         row: &'a SimRow,
         in_tx: bool,
     },
-    ExpectedError {
-        kind: ExpectedErrorKind,
+    ObservedError {
+        observed: TableErrorKind,
+        predicted: TableErrorKind,
+        subject: Option<(SessionId, usize)>,
         interaction: &'a TableWorkloadInteraction,
+    },
+    NoMutation {
+        subject: Option<(SessionId, usize)>,
+        interaction: &'a TableWorkloadInteraction,
+        observation: &'a TableObservation,
     },
     PointLookup {
         conn: SessionId,

@@ -24,7 +24,12 @@ pub(crate) trait TableScenario: Clone {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlannedInteraction {
     pub op: TableOperation,
-    pub expected: ExpectedResult,
+    /// Generator-side coverage/debug label.
+    ///
+    /// Correctness must not depend on this field. Properties predict expected
+    /// behavior from the model and `op`; this label only preserves intent in
+    /// summaries and failure reports.
+    pub case: TableInteractionCase,
 }
 
 pub type TableWorkloadInteraction = PlannedInteraction;
@@ -41,44 +46,18 @@ pub enum TableOperation {
     BeginReadTx { conn: SessionId },
     /// Release a previously opened read snapshot.
     ReleaseReadTx { conn: SessionId },
-    /// Attempt to start a second writer while another connection owns the write lock.
-    BeginTxConflict { owner: SessionId, conn: SessionId },
-    /// Attempt an auto-commit write while another connection owns the write lock.
-    WriteConflictInsert {
-        owner: SessionId,
-        conn: SessionId,
-        table: usize,
-        row: SimRow,
-    },
-    /// Insert a new row with a fresh primary id.
-    Insert { conn: SessionId, table: usize, row: SimRow },
-    /// Delete an existing visible row.
-    Delete { conn: SessionId, table: usize, row: SimRow },
-    /// Reinsert an exact row that is already visible.
-    ///
-    /// RelationalDB has set semantics for identical rows, so this should be an
-    /// idempotent no-op rather than a unique-key error.
-    ExactDuplicateInsert { conn: SessionId, table: usize, row: SimRow },
-    /// Insert a row with an existing primary id but different non-key payload.
-    ///
-    /// This is the operation that should fail with `UniqueConstraintViolation`.
-    UniqueKeyConflictInsert { conn: SessionId, table: usize, row: SimRow },
-    /// Delete a row that is absent from the visible state.
-    DeleteMissing { conn: SessionId, table: usize, row: SimRow },
-    /// Insert several fresh rows in one interaction.
-    BatchInsert {
+    /// Insert one or more rows.
+    InsertRows {
         conn: SessionId,
         table: usize,
         rows: Vec<SimRow>,
     },
-    /// Delete several visible rows in one interaction.
-    BatchDelete {
+    /// Delete one or more rows.
+    DeleteRows {
         conn: SessionId,
         table: usize,
         rows: Vec<SimRow>,
     },
-    /// Delete and insert the same row, stressing delete/insert ordering.
-    Reinsert { conn: SessionId, table: usize, row: SimRow },
     /// Add a column to an existing table with a default for live rows.
     AddColumn {
         conn: SessionId,
@@ -114,134 +93,172 @@ pub enum TableOperation {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExpectedResult {
-    Ok,
-    Err(ExpectedErrorKind),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExpectedErrorKind {
+pub enum TableErrorKind {
     UniqueConstraintViolation,
     MissingRow,
     WriteConflict,
 }
 
-impl PlannedInteraction {
-    pub fn ok(op: TableOperation) -> Self {
-        Self {
-            op,
-            expected: ExpectedResult::Ok,
-        }
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TableInteractionCase {
+    BeginTx,
+    CommitTx,
+    RollbackTx,
+    BeginReadTx,
+    ReleaseReadTx,
+    BeginTxConflict,
+    WriteConflictInsert,
+    Insert,
+    Delete,
+    ExactDuplicateInsert,
+    UniqueKeyConflictInsert,
+    DeleteMissing,
+    BatchInsert,
+    BatchDelete,
+    Reinsert,
+    AddColumn,
+    AddIndex,
+    PointLookup,
+    PredicateCount,
+    RangeScan,
+    FullScan,
+}
 
-    pub fn expected_err(op: TableOperation, kind: ExpectedErrorKind) -> Self {
-        Self {
-            op,
-            expected: ExpectedResult::Err(kind),
-        }
+impl PlannedInteraction {
+    pub fn new(op: TableOperation, case: TableInteractionCase) -> Self {
+        Self { op, case }
     }
 
     pub fn begin_tx(conn: SessionId) -> Self {
-        Self::ok(TableOperation::BeginTx { conn })
+        Self::new(TableOperation::BeginTx { conn }, TableInteractionCase::BeginTx)
     }
 
     pub fn commit_tx(conn: SessionId) -> Self {
-        Self::ok(TableOperation::CommitTx { conn })
+        Self::new(TableOperation::CommitTx { conn }, TableInteractionCase::CommitTx)
     }
 
     pub fn rollback_tx(conn: SessionId) -> Self {
-        Self::ok(TableOperation::RollbackTx { conn })
+        Self::new(TableOperation::RollbackTx { conn }, TableInteractionCase::RollbackTx)
     }
 
     pub fn begin_read_tx(conn: SessionId) -> Self {
-        Self::ok(TableOperation::BeginReadTx { conn })
+        Self::new(TableOperation::BeginReadTx { conn }, TableInteractionCase::BeginReadTx)
     }
 
     pub fn release_read_tx(conn: SessionId) -> Self {
-        Self::ok(TableOperation::ReleaseReadTx { conn })
-    }
-
-    pub fn begin_tx_conflict(owner: SessionId, conn: SessionId) -> Self {
-        Self::expected_err(
-            TableOperation::BeginTxConflict { owner, conn },
-            ExpectedErrorKind::WriteConflict,
+        Self::new(
+            TableOperation::ReleaseReadTx { conn },
+            TableInteractionCase::ReleaseReadTx,
         )
     }
 
-    pub fn write_conflict_insert(owner: SessionId, conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::expected_err(
-            TableOperation::WriteConflictInsert {
-                owner,
+    pub fn begin_tx_conflict(_owner: SessionId, conn: SessionId) -> Self {
+        Self::new(TableOperation::BeginTx { conn }, TableInteractionCase::BeginTxConflict)
+    }
+
+    pub fn write_conflict_insert(_owner: SessionId, conn: SessionId, table: usize, row: SimRow) -> Self {
+        Self::new(
+            TableOperation::InsertRows {
                 conn,
                 table,
-                row,
+                rows: vec![row],
             },
-            ExpectedErrorKind::WriteConflict,
+            TableInteractionCase::WriteConflictInsert,
         )
     }
 
     pub fn insert(conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::ok(TableOperation::Insert { conn, table, row })
+        Self::insert_with_case(conn, table, row, TableInteractionCase::Insert)
+    }
+
+    pub fn insert_with_case(conn: SessionId, table: usize, row: SimRow, case: TableInteractionCase) -> Self {
+        Self::new(
+            TableOperation::InsertRows {
+                conn,
+                table,
+                rows: vec![row],
+            },
+            case,
+        )
     }
 
     pub fn delete(conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::ok(TableOperation::Delete { conn, table, row })
+        Self::delete_with_case(conn, table, row, TableInteractionCase::Delete)
+    }
+
+    pub fn delete_with_case(conn: SessionId, table: usize, row: SimRow, case: TableInteractionCase) -> Self {
+        Self::new(
+            TableOperation::DeleteRows {
+                conn,
+                table,
+                rows: vec![row],
+            },
+            case,
+        )
     }
 
     pub fn exact_duplicate_insert(conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::ok(TableOperation::ExactDuplicateInsert { conn, table, row })
+        Self::insert_with_case(conn, table, row, TableInteractionCase::ExactDuplicateInsert)
     }
 
     pub fn unique_key_conflict_insert(conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::expected_err(
-            TableOperation::UniqueKeyConflictInsert { conn, table, row },
-            ExpectedErrorKind::UniqueConstraintViolation,
-        )
+        Self::insert_with_case(conn, table, row, TableInteractionCase::UniqueKeyConflictInsert)
     }
 
     pub fn delete_missing(conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::expected_err(
-            TableOperation::DeleteMissing { conn, table, row },
-            ExpectedErrorKind::MissingRow,
-        )
+        Self::delete_with_case(conn, table, row, TableInteractionCase::DeleteMissing)
     }
 
     pub fn batch_insert(conn: SessionId, table: usize, rows: Vec<SimRow>) -> Self {
-        Self::ok(TableOperation::BatchInsert { conn, table, rows })
+        Self::new(
+            TableOperation::InsertRows { conn, table, rows },
+            TableInteractionCase::BatchInsert,
+        )
     }
 
     pub fn batch_delete(conn: SessionId, table: usize, rows: Vec<SimRow>) -> Self {
-        Self::ok(TableOperation::BatchDelete { conn, table, rows })
-    }
-
-    pub fn reinsert(conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::ok(TableOperation::Reinsert { conn, table, row })
+        Self::new(
+            TableOperation::DeleteRows { conn, table, rows },
+            TableInteractionCase::BatchDelete,
+        )
     }
 
     pub fn add_column(conn: SessionId, table: usize, column: ColumnPlan, default: AlgebraicValue) -> Self {
-        Self::ok(TableOperation::AddColumn {
-            conn,
-            table,
-            column,
-            default,
-        })
+        Self::new(
+            TableOperation::AddColumn {
+                conn,
+                table,
+                column,
+                default,
+            },
+            TableInteractionCase::AddColumn,
+        )
     }
 
     pub fn add_index(conn: SessionId, table: usize, cols: Vec<u16>) -> Self {
-        Self::ok(TableOperation::AddIndex { conn, table, cols })
+        Self::new(
+            TableOperation::AddIndex { conn, table, cols },
+            TableInteractionCase::AddIndex,
+        )
     }
 
     pub fn point_lookup(conn: SessionId, table: usize, id: u64) -> Self {
-        Self::ok(TableOperation::PointLookup { conn, table, id })
+        Self::new(
+            TableOperation::PointLookup { conn, table, id },
+            TableInteractionCase::PointLookup,
+        )
     }
 
     pub fn predicate_count(conn: SessionId, table: usize, col: u16, value: AlgebraicValue) -> Self {
-        Self::ok(TableOperation::PredicateCount {
-            conn,
-            table,
-            col,
-            value,
-        })
+        Self::new(
+            TableOperation::PredicateCount {
+                conn,
+                table,
+                col,
+                value,
+            },
+            TableInteractionCase::PredicateCount,
+        )
     }
 
     pub fn range_scan(
@@ -251,17 +268,20 @@ impl PlannedInteraction {
         lower: Bound<AlgebraicValue>,
         upper: Bound<AlgebraicValue>,
     ) -> Self {
-        Self::ok(TableOperation::RangeScan {
-            conn,
-            table,
-            cols,
-            lower,
-            upper,
-        })
+        Self::new(
+            TableOperation::RangeScan {
+                conn,
+                table,
+                cols,
+                lower,
+                upper,
+            },
+            TableInteractionCase::RangeScan,
+        )
     }
 
     pub fn full_scan(conn: SessionId, table: usize) -> Self {
-        Self::ok(TableOperation::FullScan { conn, table })
+        Self::new(TableOperation::FullScan { conn, table }, TableInteractionCase::FullScan)
     }
 }
 

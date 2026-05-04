@@ -9,7 +9,7 @@ use crate::{
     workload::strategy::{Index, Percent, Strategy},
 };
 
-use super::super::{generation::ScenarioPlanner, TableWorkloadInteraction, TableWorkloadOutcome};
+use super::super::{generation::ScenarioPlanner, TableInteractionCase, TableWorkloadInteraction, TableWorkloadOutcome};
 
 #[derive(Clone, Copy)]
 struct TableWorkloadProfile {
@@ -287,8 +287,15 @@ fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: SessionId,
     }
     if planner.roll_percent(6) {
         let row = visible_rows[planner.choose_index(visible_rows.len())].clone();
-        planner.reinsert(conn, table, row.clone());
-        planner.push_interaction(TableWorkloadInteraction::reinsert(conn, table, row));
+        planner.delete(conn, table, row.clone());
+        planner.push_interaction(TableWorkloadInteraction::delete_with_case(
+            conn,
+            table,
+            row.clone(),
+            TableInteractionCase::Reinsert,
+        ));
+        planner.insert(conn, table, row.clone());
+        planner.push_interaction(TableWorkloadInteraction::insert(conn, table, row));
         return;
     }
 

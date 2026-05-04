@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     client::SessionId,
-    core::NextInteractionSource,
+    core::WorkloadSource,
     schema::{ColumnPlan, SchemaPlan, TablePlan},
     seed::{DstRng, DstSeed},
     workload::strategy::{Index, Percent, Strategy},
@@ -25,7 +25,7 @@ pub struct TableWorkloadSource<S> {
     rng: DstRng,
     // Scenario-specific workload policy layered on top of the shared model.
     scenario: S,
-    // Generator-side expected state used to decide what interactions are legal.
+    // Generator-side model used to decide what interactions are legal.
     model: GenerationModel,
     num_connections: usize,
     // Soft budget for scenario-generated interactions. Finish mode may emit a
@@ -171,11 +171,6 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.batch_delete(conn, table, rows);
     }
 
-    pub fn reinsert(&mut self, conn: SessionId, table: usize, row: crate::schema::SimRow) {
-        self.model.delete(conn, table, row.clone());
-        self.model.insert(conn, table, row);
-    }
-
     pub fn add_column(&mut self, table: usize, column: ColumnPlan, default: spacetimedb_sats::AlgebraicValue) {
         self.model.add_column(table, column, default);
     }
@@ -300,7 +295,7 @@ impl<S: TableScenario> TableWorkloadSource<S> {
     }
 }
 
-impl<S: TableScenario> NextInteractionSource for TableWorkloadSource<S> {
+impl<S: TableScenario> WorkloadSource for TableWorkloadSource<S> {
     type Interaction = TableWorkloadInteraction;
 
     fn next_interaction(&mut self) -> Option<Self::Interaction> {

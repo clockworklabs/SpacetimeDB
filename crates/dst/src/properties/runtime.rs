@@ -9,16 +9,16 @@ use crate::{
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
         table_ops::{
-            ExpectedErrorKind, ExpectedModel, ExpectedResult, TableOperation, TableScenario, TableWorkloadInteraction,
+            PredictedOutcome, TableErrorKind, TableOracle, TableScenario, TableWorkloadInteraction,
             TableWorkloadOutcome,
         },
     },
 };
 
 use super::{
-    rules::{expected_table_state_rule, rule_for_kind, PropertyRule},
-    CommitlogObservation, DynamicMigrationProbe, PropertyContext, PropertyEvent, PropertyKind, TableObservation,
-    TargetPropertyAccess,
+    rules::{oracle_table_state_rule, rule_for_kind, PropertyRule},
+    CommitlogObservation, DynamicMigrationProbe, PropertyContext, PropertyEvent, PropertyKind, TableMutation,
+    TableObservation, TargetPropertyAccess,
 };
 
 #[derive(Clone, Debug)]
@@ -28,14 +28,14 @@ pub(super) struct PropertyModels {
 
 #[derive(Clone, Debug)]
 pub(super) struct TableModel {
-    expected: ExpectedModel,
+    oracle: TableOracle,
 }
 
 impl PropertyModels {
     pub(super) fn new(table_count: usize, num_connections: usize) -> Self {
         Self {
             table: TableModel {
-                expected: ExpectedModel::new(table_count, num_connections),
+                oracle: TableOracle::new(table_count, num_connections),
             },
         }
     }
@@ -44,22 +44,26 @@ impl PropertyModels {
         &self.table
     }
 
+    fn predict(&self, interaction: &TableWorkloadInteraction) -> Result<PredictedOutcome, String> {
+        self.table.oracle.predict(&interaction.op)
+    }
+
     fn apply(&mut self, interaction: &TableWorkloadInteraction) {
-        self.table.expected.apply(interaction);
+        self.table.oracle.apply(&interaction.op);
     }
 }
 
 impl TableModel {
     pub(super) fn committed_rows(&self) -> Vec<Vec<SimRow>> {
-        self.expected.clone().committed_rows()
+        self.oracle.clone().committed_rows()
     }
 
     pub(super) fn lookup_by_id(&self, conn: SessionId, table: usize, id: u64) -> Option<SimRow> {
-        self.expected.lookup_by_id(conn, table, id)
+        self.oracle.lookup_by_id(conn, table, id)
     }
 
     pub(super) fn predicate_count(&self, conn: SessionId, table: usize, col: u16, value: &AlgebraicValue) -> usize {
-        self.expected.predicate_count(conn, table, col, value)
+        self.oracle.predicate_count(conn, table, col, value)
     }
 
     pub(super) fn range_scan(
@@ -70,11 +74,17 @@ impl TableModel {
         lower: &Bound<AlgebraicValue>,
         upper: &Bound<AlgebraicValue>,
     ) -> Vec<SimRow> {
-        self.expected.range_scan(conn, table, cols, lower, upper)
+        self.oracle.range_scan(conn, table, cols, lower, upper)
     }
 
     pub(super) fn full_scan(&self, conn: SessionId, table: usize) -> Vec<SimRow> {
-        let mut rows = self.expected.visible_rows(conn, table);
+        let mut rows = self.oracle.visible_rows(conn, table);
+        rows.sort_by_key(|row| row.id().unwrap_or_default());
+        rows
+    }
+
+    pub(super) fn visible_rows(&self, conn: SessionId, table: usize) -> Vec<SimRow> {
+        let mut rows = self.oracle.visible_rows(conn, table);
         rows.sort_by_key(|row| row.id().unwrap_or_default());
         rows
     }
@@ -105,7 +115,7 @@ impl PropertyRuntime {
         };
         runtime
             .rules
-            .push(RuleEntry::new(expected_table_state_rule(scenario, schema)));
+            .push(RuleEntry::new(oracle_table_state_rule(scenario, schema)));
         runtime
     }
 
@@ -114,29 +124,7 @@ impl PropertyRuntime {
         access: &dyn TargetPropertyAccess,
         interaction: &TableWorkloadInteraction,
     ) -> Result<(), String> {
-        match &interaction.op {
-            TableOperation::BeginTx { .. }
-            | TableOperation::CommitTx { .. }
-            | TableOperation::RollbackTx { .. }
-            | TableOperation::BeginReadTx { .. }
-            | TableOperation::ReleaseReadTx { .. } => self.models.apply(interaction),
-            TableOperation::BatchInsert { .. }
-            | TableOperation::BatchDelete { .. }
-            | TableOperation::Reinsert { .. }
-            | TableOperation::AddColumn { .. }
-            | TableOperation::AddIndex { .. } => self.models.apply(interaction),
-            TableOperation::Insert { .. }
-            | TableOperation::Delete { .. }
-            | TableOperation::BeginTxConflict { .. }
-            | TableOperation::WriteConflictInsert { .. }
-            | TableOperation::ExactDuplicateInsert { .. }
-            | TableOperation::UniqueKeyConflictInsert { .. }
-            | TableOperation::DeleteMissing { .. }
-            | TableOperation::PointLookup { .. }
-            | TableOperation::PredicateCount { .. }
-            | TableOperation::RangeScan { .. }
-            | TableOperation::FullScan { .. } => {}
-        }
+        self.models.apply(interaction);
         let ctx = PropertyContext {
             access,
             models: &self.models,
@@ -147,84 +135,101 @@ impl PropertyRuntime {
         Ok(())
     }
 
-    pub fn on_insert(
+    pub fn on_mutations(
         &mut self,
         access: &dyn TargetPropertyAccess,
-        _step: u64,
         conn: SessionId,
-        table: usize,
-        row: &SimRow,
+        mutations: &[TableMutation],
         in_tx: bool,
     ) -> Result<(), String> {
-        self.models
-            .apply(&TableWorkloadInteraction::insert(conn, table, row.clone()));
         let ctx = PropertyContext {
             access,
             models: &self.models,
         };
-        for entry in &mut self.rules {
-            entry.rule.observe(
-                &ctx,
-                PropertyEvent::RowInserted {
-                    conn,
+
+        for mutation in mutations {
+            match mutation {
+                TableMutation::Inserted {
                     table,
-                    row,
-                    in_tx,
-                },
-            )?;
+                    requested: _,
+                    returned,
+                } => {
+                    for entry in &mut self.rules {
+                        entry.rule.observe(
+                            &ctx,
+                            PropertyEvent::RowInserted {
+                                conn,
+                                table: *table,
+                                returned,
+                                in_tx,
+                            },
+                        )?;
+                    }
+                }
+                TableMutation::Deleted { table, row } => {
+                    for entry in &mut self.rules {
+                        entry.rule.observe(
+                            &ctx,
+                            PropertyEvent::RowDeleted {
+                                conn,
+                                table: *table,
+                                row,
+                                in_tx,
+                            },
+                        )?;
+                    }
+                }
+            }
         }
         Ok(())
     }
 
-    pub fn on_delete(
+    pub fn on_observed_error(
         &mut self,
         access: &dyn TargetPropertyAccess,
-        _step: u64,
-        conn: SessionId,
-        table: usize,
-        row: &SimRow,
-        in_tx: bool,
-    ) -> Result<(), String> {
-        self.models
-            .apply(&TableWorkloadInteraction::delete(conn, table, row.clone()));
-        let ctx = PropertyContext {
-            access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(
-                &ctx,
-                PropertyEvent::RowDeleted {
-                    conn,
-                    table,
-                    row,
-                    in_tx,
-                },
-            )?;
-        }
-        Ok(())
-    }
-
-    pub fn on_expected_error(
-        &mut self,
-        access: &dyn TargetPropertyAccess,
-        kind: ExpectedErrorKind,
+        observed: TableErrorKind,
+        predicted: TableErrorKind,
+        subject: Option<(SessionId, usize)>,
         interaction: &TableWorkloadInteraction,
     ) -> Result<(), String> {
-        if interaction.expected != ExpectedResult::Err(kind) {
-            return Err(format!(
-                "[ExpectedErrorMatches] expected {:?}, observed {kind:?} for {interaction:?}",
-                interaction.expected
-            ));
-        }
         let ctx = PropertyContext {
             access,
             models: &self.models,
         };
         for entry in &mut self.rules {
-            entry
-                .rule
-                .observe(&ctx, PropertyEvent::ExpectedError { kind, interaction })?;
+            entry.rule.observe(
+                &ctx,
+                PropertyEvent::ObservedError {
+                    observed,
+                    predicted,
+                    subject,
+                    interaction,
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn on_no_mutation(
+        &mut self,
+        access: &dyn TargetPropertyAccess,
+        subject: Option<(SessionId, usize)>,
+        interaction: &TableWorkloadInteraction,
+        observation: &TableObservation,
+    ) -> Result<(), String> {
+        let ctx = PropertyContext {
+            access,
+            models: &self.models,
+        };
+        for entry in &mut self.rules {
+            entry.rule.observe(
+                &ctx,
+                PropertyEvent::NoMutation {
+                    subject,
+                    interaction,
+                    observation,
+                },
+            )?;
         }
         Ok(())
     }
@@ -397,21 +402,39 @@ impl PropertyRuntime {
         interaction: &TableWorkloadInteraction,
         observation: &TableObservation,
     ) -> Result<(), String> {
+        let prediction = self.models.predict(interaction)?;
+        match (&prediction, observed_error_kind(observation)) {
+            (PredictedOutcome::Error { kind, subject }, Some(observed)) => {
+                self.on_observed_error(access, observed, *kind, *subject, interaction)?;
+                return Ok(());
+            }
+            (PredictedOutcome::Error { kind, .. }, None) => {
+                return Err(format!(
+                    "[ErrorMatchesOracle] expected {kind:?}, observed successful result {observation:?} for {interaction:?}"
+                ));
+            }
+            (PredictedOutcome::Applied, Some(observed)) => {
+                return Err(format!(
+                    "[ErrorMatchesOracle] expected success, observed {observed:?} for {interaction:?}"
+                ));
+            }
+            (PredictedOutcome::Applied, None) => self.on_table_interaction(access, interaction)?,
+            (PredictedOutcome::NoMutation { subject: _ }, Some(observed)) => {
+                return Err(format!(
+                    "[NoMutationMatchesModel] expected no mutation, observed {observed:?} for {interaction:?}"
+                ));
+            }
+            (PredictedOutcome::NoMutation { subject }, None) => {
+                self.on_no_mutation(access, *subject, interaction, observation)?;
+            }
+        }
+
         match observation {
             TableObservation::Applied => {}
-            TableObservation::RowInserted {
-                conn,
-                table,
-                row,
-                in_tx,
-            } => self.on_insert(access, 0, *conn, *table, row, *in_tx)?,
-            TableObservation::RowDeleted {
-                conn,
-                table,
-                row,
-                in_tx,
-            } => self.on_delete(access, 0, *conn, *table, row, *in_tx)?,
-            TableObservation::ExpectedError(kind) => self.on_expected_error(access, *kind, interaction)?,
+            TableObservation::Mutated { conn, mutations, in_tx } => {
+                self.on_mutations(access, *conn, mutations, *in_tx)?
+            }
+            TableObservation::ObservedError(_) => {}
             TableObservation::PointLookup {
                 conn,
                 table,
@@ -436,8 +459,6 @@ impl PropertyRuntime {
             TableObservation::FullScan { conn, table, actual } => self.on_full_scan(access, *conn, *table, actual)?,
             TableObservation::CommitOrRollback => {}
         }
-
-        self.on_table_interaction(access, interaction)?;
 
         if matches!(observation, TableObservation::CommitOrRollback) {
             self.on_commit_or_rollback(access)?;
@@ -502,11 +523,25 @@ impl Default for PropertyRuntime {
             PropertyKind::BankingTablesMatch,
             PropertyKind::DynamicMigrationAutoInc,
             PropertyKind::DurableReplayMatchesModel,
-            PropertyKind::ExpectedErrorMatches,
+            PropertyKind::ErrorMatchesOracle,
+            PropertyKind::NoMutationMatchesModel,
             PropertyKind::PointLookupMatchesModel,
             PropertyKind::PredicateCountMatchesModel,
             PropertyKind::RangeScanMatchesModel,
             PropertyKind::FullScanMatchesModel,
         ])
+    }
+}
+
+fn observed_error_kind(observation: &TableObservation) -> Option<TableErrorKind> {
+    match observation {
+        TableObservation::ObservedError(kind) => Some(*kind),
+        TableObservation::Applied
+        | TableObservation::Mutated { .. }
+        | TableObservation::PointLookup { .. }
+        | TableObservation::PredicateCount { .. }
+        | TableObservation::RangeScan { .. }
+        | TableObservation::FullScan { .. }
+        | TableObservation::CommitOrRollback => None,
     }
 }

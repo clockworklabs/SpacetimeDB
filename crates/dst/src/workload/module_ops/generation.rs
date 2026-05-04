@@ -1,6 +1,6 @@
 use crate::{
     client::SessionId,
-    core::NextInteractionSource,
+    core::WorkloadSource,
     schema::generate_value_for_type,
     seed::{DstRng, DstSeed},
     workload::strategy::{Index, Strategy, Weighted},
@@ -111,7 +111,7 @@ fn supports_generation(ty: &spacetimedb_sats::AlgebraicType) -> bool {
     )
 }
 
-impl NextInteractionSource for ModuleWorkloadSource {
+impl WorkloadSource for ModuleWorkloadSource {
     type Interaction = ModuleInteraction;
 
     fn next_interaction(&mut self) -> Option<Self::Interaction> {

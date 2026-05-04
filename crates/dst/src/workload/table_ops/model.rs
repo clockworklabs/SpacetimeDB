@@ -8,7 +8,7 @@ use crate::{
     seed::{DstRng, DstSeed},
 };
 
-use super::{ExpectedResult, TableOperation, TableWorkloadInteraction};
+use super::{TableErrorKind, TableOperation};
 
 /// Generator-side model of committed rows plus per-connection pending writes.
 ///
@@ -227,16 +227,28 @@ impl GenerationModel {
     }
 }
 
-/// Replay model for the expected final committed state of a table workload.
+/// Replay model used as the oracle for table workload properties.
 ///
 /// Target property runtimes apply every table interaction here in parallel with
 /// real target execution, then compare the collected target outcome against this
 /// model at the end of the run.
 #[derive(Clone, Debug)]
-pub struct ExpectedModel {
+pub struct TableOracle {
     committed: Vec<Vec<SimRow>>,
     connections: Vec<ExpectedConnection>,
     active_writer: Option<SessionId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PredictedOutcome {
+    Applied,
+    NoMutation {
+        subject: Option<(SessionId, usize)>,
+    },
+    Error {
+        kind: TableErrorKind,
+        subject: Option<(SessionId, usize)>,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -247,7 +259,7 @@ struct ExpectedConnection {
     staged_deletes: Vec<(usize, SimRow)>,
 }
 
-impl ExpectedModel {
+impl TableOracle {
     pub fn new(table_count: usize, connection_count: usize) -> Self {
         Self {
             committed: vec![Vec::new(); table_count],
@@ -256,15 +268,62 @@ impl ExpectedModel {
         }
     }
 
-    pub fn apply(&mut self, interaction: &TableWorkloadInteraction) {
-        if !matches!(interaction.expected, ExpectedResult::Ok) {
-            return;
+    pub fn predict(&self, op: &TableOperation) -> Result<PredictedOutcome, String> {
+        match op {
+            TableOperation::BeginTx { conn } => {
+                self.ensure_connection(*conn)?;
+                if self.connections[conn.as_index()].read_snapshot.is_some() {
+                    return Err(format!("connection {conn} cannot begin write tx with open read tx"));
+                }
+                if self.connections[conn.as_index()].in_tx {
+                    return Err(format!("connection {conn} already has open write tx"));
+                }
+                if self.active_writer.is_some() {
+                    return Ok(PredictedOutcome::Error {
+                        kind: TableErrorKind::WriteConflict,
+                        subject: None,
+                    });
+                }
+                Ok(PredictedOutcome::Applied)
+            }
+            TableOperation::BeginReadTx { conn } => {
+                self.ensure_connection(*conn)?;
+                let state = &self.connections[conn.as_index()];
+                if state.in_tx || state.read_snapshot.is_some() {
+                    return Err(format!("connection {conn} cannot begin read tx in current state"));
+                }
+                Ok(PredictedOutcome::Applied)
+            }
+            TableOperation::ReleaseReadTx { conn } => {
+                self.ensure_connection(*conn)?;
+                if self.connections[conn.as_index()].read_snapshot.is_none() {
+                    return Err(format!("connection {conn} has no read tx to release"));
+                }
+                Ok(PredictedOutcome::Applied)
+            }
+            TableOperation::CommitTx { conn } | TableOperation::RollbackTx { conn } => {
+                self.ensure_connection(*conn)?;
+                if self.active_writer != Some(*conn) || !self.connections[conn.as_index()].in_tx {
+                    return Err(format!("connection {conn} does not own an open write tx"));
+                }
+                Ok(PredictedOutcome::Applied)
+            }
+            TableOperation::InsertRows { conn, table, rows } => self.predict_insert_rows(*conn, *table, rows),
+            TableOperation::DeleteRows { conn, table, rows } => self.predict_delete_rows(*conn, *table, rows),
+            TableOperation::AddColumn { .. } | TableOperation::AddIndex { .. } => Ok(PredictedOutcome::Applied),
+            TableOperation::PointLookup { .. }
+            | TableOperation::PredicateCount { .. }
+            | TableOperation::RangeScan { .. }
+            | TableOperation::FullScan { .. } => Ok(PredictedOutcome::NoMutation { subject: None }),
         }
-        match &interaction.op {
+    }
+
+    pub fn apply(&mut self, op: &TableOperation) {
+        match op {
             TableOperation::BeginTx { conn } => {
                 assert!(
                     self.active_writer.is_none(),
-                    "multiple concurrent writers in expected model"
+                    "multiple concurrent writers in table oracle"
                 );
                 self.connections[conn.as_index()].in_tx = true;
                 self.active_writer = Some(*conn);
@@ -272,7 +331,7 @@ impl ExpectedModel {
             TableOperation::BeginReadTx { conn } => {
                 let state = &mut self.connections[conn.as_index()];
                 assert!(!state.in_tx, "read tx started while write tx is open");
-                assert!(state.read_snapshot.is_none(), "nested read tx in expected model");
+                assert!(state.read_snapshot.is_none(), "nested read tx in table oracle");
                 state.read_snapshot = Some(self.committed.clone());
             }
             TableOperation::ReleaseReadTx { conn } => {
@@ -282,7 +341,7 @@ impl ExpectedModel {
                 );
             }
             TableOperation::CommitTx { conn } => {
-                assert_eq!(self.active_writer, Some(*conn), "commit by non-owner in expected model");
+                assert_eq!(self.active_writer, Some(*conn), "commit by non-owner in table oracle");
                 let state = &mut self.connections[conn.as_index()];
                 for (table, row) in state.staged_deletes.drain(..) {
                     self.committed[table].retain(|candidate| *candidate != row);
@@ -294,37 +353,15 @@ impl ExpectedModel {
                 self.active_writer = None;
             }
             TableOperation::RollbackTx { conn } => {
-                assert_eq!(
-                    self.active_writer,
-                    Some(*conn),
-                    "rollback by non-owner in expected model"
-                );
+                assert_eq!(self.active_writer, Some(*conn), "rollback by non-owner in table oracle");
                 let state = &mut self.connections[conn.as_index()];
                 state.staged_inserts.clear();
                 state.staged_deletes.clear();
                 state.in_tx = false;
                 self.active_writer = None;
             }
-            TableOperation::Insert { conn, table, row } => {
-                self.insert(*conn, *table, row.clone());
-            }
-            TableOperation::Delete { conn, table, row } => {
-                self.delete(*conn, *table, row.clone());
-            }
-            TableOperation::BatchInsert { conn, table, rows } => {
-                for row in rows {
-                    self.insert(*conn, *table, row.clone());
-                }
-            }
-            TableOperation::BatchDelete { conn, table, rows } => {
-                for row in rows {
-                    self.delete(*conn, *table, row.clone());
-                }
-            }
-            TableOperation::Reinsert { conn, table, row } => {
-                self.delete(*conn, *table, row.clone());
-                self.insert(*conn, *table, row.clone());
-            }
+            TableOperation::InsertRows { conn, table, rows } => self.insert_rows(*conn, *table, rows),
+            TableOperation::DeleteRows { conn, table, rows } => self.delete_rows(*conn, *table, rows),
             TableOperation::AddColumn {
                 table,
                 column: _,
@@ -334,16 +371,96 @@ impl ExpectedModel {
                 self.add_column(*table, default.clone());
             }
             TableOperation::AddIndex { .. } => {}
-            TableOperation::ExactDuplicateInsert { .. }
-            | TableOperation::UniqueKeyConflictInsert { .. }
-            | TableOperation::DeleteMissing { .. }
-            | TableOperation::BeginTxConflict { .. }
-            | TableOperation::WriteConflictInsert { .. }
-            | TableOperation::PointLookup { .. }
+            TableOperation::PointLookup { .. }
             | TableOperation::PredicateCount { .. }
             | TableOperation::RangeScan { .. }
             | TableOperation::FullScan { .. } => {}
         }
+    }
+
+    fn predict_insert_rows(&self, conn: SessionId, table: usize, rows: &[SimRow]) -> Result<PredictedOutcome, String> {
+        if let Some(outcome) = self.predict_write_access(conn, table)? {
+            return Ok(outcome);
+        }
+
+        let mut visible = self.visible_rows(conn, table);
+        let mut mutates = false;
+        for row in rows {
+            let Some(id) = row.id() else {
+                return Err(format!("insert row for table {table} is missing primary id: {row:?}"));
+            };
+            match visible.iter().find(|candidate| candidate.id() == Some(id)) {
+                Some(existing) if existing == row => {}
+                Some(_) => {
+                    return Ok(PredictedOutcome::Error {
+                        kind: TableErrorKind::UniqueConstraintViolation,
+                        subject: Some((conn, table)),
+                    });
+                }
+                None => {
+                    mutates = true;
+                    visible.push(row.clone());
+                }
+            }
+        }
+
+        if mutates {
+            Ok(PredictedOutcome::Applied)
+        } else {
+            Ok(PredictedOutcome::NoMutation {
+                subject: Some((conn, table)),
+            })
+        }
+    }
+
+    fn predict_delete_rows(&self, conn: SessionId, table: usize, rows: &[SimRow]) -> Result<PredictedOutcome, String> {
+        if let Some(outcome) = self.predict_write_access(conn, table)? {
+            return Ok(outcome);
+        }
+
+        let mut visible = self.visible_rows(conn, table);
+        for row in rows {
+            let Some(idx) = visible.iter().position(|candidate| candidate == row) else {
+                return Ok(PredictedOutcome::Error {
+                    kind: TableErrorKind::MissingRow,
+                    subject: Some((conn, table)),
+                });
+            };
+            visible.remove(idx);
+        }
+
+        Ok(PredictedOutcome::Applied)
+    }
+
+    fn predict_write_access(&self, conn: SessionId, table: usize) -> Result<Option<PredictedOutcome>, String> {
+        self.ensure_connection(conn)?;
+        self.ensure_table(table)?;
+        if self.connections[conn.as_index()].read_snapshot.is_some() {
+            return Err(format!("connection {conn} cannot write while read tx is open"));
+        }
+        if let Some(owner) = self.active_writer
+            && owner != conn
+        {
+            return Ok(Some(PredictedOutcome::Error {
+                kind: TableErrorKind::WriteConflict,
+                subject: Some((conn, table)),
+            }));
+        }
+        Ok(None)
+    }
+
+    fn ensure_connection(&self, conn: SessionId) -> Result<(), String> {
+        self.connections
+            .get(conn.as_index())
+            .map(|_| ())
+            .ok_or_else(|| format!("connection {conn} out of range"))
+    }
+
+    fn ensure_table(&self, table: usize) -> Result<(), String> {
+        self.committed
+            .get(table)
+            .map(|_| ())
+            .ok_or_else(|| format!("table {table} out of range"))
     }
 
     pub fn visible_rows(&self, conn: SessionId, table: usize) -> Vec<SimRow> {
@@ -420,6 +537,19 @@ impl ExpectedModel {
         }
     }
 
+    fn insert_rows(&mut self, conn: SessionId, table: usize, rows: &[SimRow]) {
+        for row in rows {
+            if self
+                .visible_rows(conn, table)
+                .into_iter()
+                .any(|candidate| candidate == *row)
+            {
+                continue;
+            }
+            self.insert(conn, table, row.clone());
+        }
+    }
+
     fn delete(&mut self, conn: SessionId, table: usize, row: SimRow) {
         let state = &mut self.connections[conn.as_index()];
         if state.in_tx {
@@ -429,6 +559,12 @@ impl ExpectedModel {
             state.staged_deletes.push((table, row));
         } else {
             self.committed[table].retain(|candidate| *candidate != row);
+        }
+    }
+
+    fn delete_rows(&mut self, conn: SessionId, table: usize, rows: &[SimRow]) {
+        for row in rows {
+            self.delete(conn, table, row.clone());
         }
     }
 

@@ -3,11 +3,12 @@ use std::ops::Bound;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 
 use crate::{
+    client::SessionId,
     schema::{SchemaPlan, SimRow},
-    workload::table_ops::{ExpectedResult, TableScenario},
+    workload::table_ops::{TableOperation, TableScenario},
 };
 
-use super::{PropertyContext, PropertyEvent, PropertyKind, TargetPropertyAccess};
+use super::{PropertyContext, PropertyEvent, PropertyKind, TableMutation, TableObservation, TargetPropertyAccess};
 
 pub(super) trait PropertyRule {
     fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
@@ -28,7 +29,8 @@ pub(super) fn rule_for_kind(kind: PropertyKind) -> Box<dyn PropertyRule> {
         PropertyKind::BankingTablesMatch => Box::<BankingMatchRule>::default(),
         PropertyKind::DynamicMigrationAutoInc => Box::<DynamicMigrationAutoIncRule>::default(),
         PropertyKind::DurableReplayMatchesModel => Box::<DurableReplayMatchesModelRule>::default(),
-        PropertyKind::ExpectedErrorMatches => Box::<ExpectedErrorMatchesRule>::default(),
+        PropertyKind::ErrorMatchesOracle => Box::<ErrorMatchesOracleRule>::default(),
+        PropertyKind::NoMutationMatchesModel => Box::<NoMutationMatchesModelRule>::default(),
         PropertyKind::PointLookupMatchesModel => Box::<PointLookupMatchesModelRule>::default(),
         PropertyKind::PredicateCountMatchesModel => Box::<PredicateCountMatchesModelRule>::default(),
         PropertyKind::RangeScanMatchesModel => Box::<RangeScanMatchesModelRule>::default(),
@@ -36,11 +38,11 @@ pub(super) fn rule_for_kind(kind: PropertyKind) -> Box<dyn PropertyRule> {
     }
 }
 
-pub(super) fn expected_table_state_rule<S>(scenario: S, schema: SchemaPlan) -> Box<dyn PropertyRule>
+pub(super) fn oracle_table_state_rule<S>(scenario: S, schema: SchemaPlan) -> Box<dyn PropertyRule>
 where
     S: TableScenario + 'static,
 {
-    Box::new(ExpectedTableStateRule::new(scenario, schema))
+    Box::new(OracleTableStateRule::new(scenario, schema))
 }
 
 #[derive(Default)]
@@ -48,31 +50,31 @@ struct NotCrashRule;
 
 impl PropertyRule for NotCrashRule {}
 
-struct ExpectedTableStateRule<S> {
+struct OracleTableStateRule<S> {
     scenario: S,
     schema: SchemaPlan,
 }
 
-impl<S: TableScenario> ExpectedTableStateRule<S> {
+impl<S: TableScenario> OracleTableStateRule<S> {
     fn new(scenario: S, schema: SchemaPlan) -> Self {
         Self { scenario, schema }
     }
 }
 
-impl<S: TableScenario> PropertyRule for ExpectedTableStateRule<S> {
+impl<S: TableScenario> PropertyRule for OracleTableStateRule<S> {
     fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
         match event {
             PropertyEvent::TableWorkloadFinished(outcome) => {
                 let expected_rows = ctx.models.table().committed_rows();
                 if outcome.final_rows != expected_rows {
                     return Err(format!(
-                        "[ExpectedTableState] final table state mismatch: expected={expected_rows:?} actual={:?}",
+                        "[OracleTableState] final table state mismatch: expected={expected_rows:?} actual={:?}",
                         outcome.final_rows
                     ));
                 }
                 self.scenario
                     .validate_outcome(&self.schema, outcome)
-                    .map_err(|err| format!("[ExpectedTableState] scenario invariant failed: {err}"))
+                    .map_err(|err| format!("[OracleTableState] scenario invariant failed: {err}"))
             }
             _ => Ok(()),
         }
@@ -84,14 +86,17 @@ struct InsertSelectRule;
 
 impl PropertyRule for InsertSelectRule {
     fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        let PropertyEvent::RowInserted { conn, table, row, .. } = event else {
+        let PropertyEvent::RowInserted {
+            conn, table, returned, ..
+        } = event
+        else {
             return Ok(());
         };
-        let id = row.id().ok_or_else(|| "row missing id column".to_string())?;
+        let id = returned.id().ok_or_else(|| "row missing id column".to_string())?;
         let found = ctx.access.lookup_in_connection(conn, table, id)?;
-        if found != Some(row.clone()) {
+        if found != Some(returned.clone()) {
             return Err(format!(
-                "[PQS::InsertSelect] row not visible after insert on conn={conn}, table={table}, expected={row:?}, actual={found:?}"
+                "[PQS::InsertSelect] row not visible after insert on conn={conn}, table={table}, expected={returned:?}, actual={found:?}"
             ));
         }
         Ok(())
@@ -351,22 +356,96 @@ impl PropertyRule for DurableReplayMatchesModelRule {
 }
 
 #[derive(Default)]
-struct ExpectedErrorMatchesRule;
+struct ErrorMatchesOracleRule;
 
-impl PropertyRule for ExpectedErrorMatchesRule {
-    fn observe(&mut self, _ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        let PropertyEvent::ExpectedError { kind, interaction } = event else {
+impl PropertyRule for ErrorMatchesOracleRule {
+    fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
+        let PropertyEvent::ObservedError {
+            observed,
+            predicted,
+            subject,
+            interaction,
+        } = event
+        else {
             return Ok(());
         };
-        if interaction.expected == ExpectedResult::Err(kind) {
-            Ok(())
-        } else {
-            Err(format!(
-                "[ExpectedErrorMatches] observed {kind:?}, but interaction expected {:?}: {interaction:?}",
-                interaction.expected
-            ))
+        if observed != predicted {
+            return Err(format!(
+                "[ErrorMatchesOracle] observed {observed:?}, but model predicted {predicted:?}: {interaction:?}",
+            ));
         }
+        if let Some((conn, table)) = subject {
+            assert_visible_rows_match_model(ctx, conn, table, "[ErrorDoesNotMutate]", interaction)?;
+        }
+        Ok(())
     }
+}
+
+#[derive(Default)]
+struct NoMutationMatchesModelRule;
+
+impl PropertyRule for NoMutationMatchesModelRule {
+    fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
+        let PropertyEvent::NoMutation {
+            interaction,
+            subject,
+            observation,
+        } = event
+        else {
+            return Ok(());
+        };
+        if let TableOperation::InsertRows { table, rows, .. } = &interaction.op
+            && let TableObservation::Mutated { mutations, .. } = observation
+        {
+            if mutations.len() != rows.len() {
+                return Err(format!(
+                    "[NoMutationMatchesModel] insert no-op returned wrong mutation count: expected={}, actual={}; interaction={interaction:?}",
+                    rows.len(),
+                    mutations.len()
+                ));
+            }
+            for (row, mutation) in rows.iter().zip(mutations) {
+                let TableMutation::Inserted {
+                    table: observed_table,
+                    requested,
+                    returned,
+                } = mutation
+                else {
+                    return Err(format!(
+                        "[NoMutationMatchesModel] insert no-op returned non-insert mutation: {mutation:?}; interaction={interaction:?}"
+                    ));
+                };
+                if observed_table != table || requested != row || returned != row {
+                    return Err(format!(
+                        "[NoMutationMatchesModel] no-op insert returned row mismatch: expected table={table}, row={row:?}; observed table={observed_table}, requested={requested:?}, returned={returned:?}; interaction={interaction:?}"
+                    ));
+                }
+            }
+        }
+
+        if let Some((conn, table)) = subject {
+            assert_visible_rows_match_model(ctx, conn, table, "[NoMutationMatchesModel]", interaction)?;
+        }
+        Ok(())
+    }
+}
+
+fn assert_visible_rows_match_model(
+    ctx: &PropertyContext<'_>,
+    conn: SessionId,
+    table: usize,
+    property: &str,
+    interaction: &crate::workload::table_ops::TableWorkloadInteraction,
+) -> Result<(), String> {
+    let mut actual = ctx.access.collect_rows_in_connection(conn, table)?;
+    actual.sort_by_key(|row| row.id().unwrap_or_default());
+    let expected = ctx.models.table().visible_rows(conn, table);
+    if actual != expected {
+        return Err(format!(
+            "{property} visible rows changed unexpectedly on conn={conn}, table={table}: expected={expected:?}, actual={actual:?}; interaction={interaction:?}"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Default)]

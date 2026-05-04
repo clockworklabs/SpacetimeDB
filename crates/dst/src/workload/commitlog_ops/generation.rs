@@ -3,7 +3,7 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use crate::{
-    core::NextInteractionSource,
+    core::WorkloadSource,
     schema::SchemaPlan,
     seed::{DstRng, DstSeed},
     workload::strategy::{Index, Percent, Strategy},
@@ -16,7 +16,6 @@ use crate::{
 /// Generation profile for commitlog-specific interactions layered around table ops.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CommitlogWorkloadProfile {
-    pub(crate) chaos_sync_pct: usize,
     pub(crate) close_reopen_pct: usize,
     pub(crate) create_dynamic_table_pct: usize,
     pub(crate) migrate_after_create_pct: usize,
@@ -27,7 +26,6 @@ pub(crate) struct CommitlogWorkloadProfile {
 impl Default for CommitlogWorkloadProfile {
     fn default() -> Self {
         Self {
-            chaos_sync_pct: 18,
             close_reopen_pct: 1,
             create_dynamic_table_pct: 1,
             migrate_after_create_pct: 55,
@@ -102,9 +100,6 @@ impl<S: TableScenario> CommitlogWorkloadSource<S> {
             return true;
         }
 
-        if Percent::new(self.profile.chaos_sync_pct).sample(&mut self.rng) {
-            self.pending.push_back(CommitlogInteraction::ChaosSync);
-        }
         if Percent::new(self.profile.close_reopen_pct).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::CloseReopen);
         }
@@ -176,7 +171,7 @@ impl<S: TableScenario> CommitlogWorkloadSource<S> {
     }
 }
 
-impl<S: TableScenario> NextInteractionSource for CommitlogWorkloadSource<S> {
+impl<S: TableScenario> WorkloadSource for CommitlogWorkloadSource<S> {
     type Interaction = CommitlogInteraction;
 
     fn next_interaction(&mut self) -> Option<Self::Interaction> {

@@ -7,7 +7,7 @@ pub(crate) mod strategies;
 mod types;
 
 pub(crate) use generation::TableWorkloadSource;
-pub(crate) use model::ExpectedModel;
+pub(crate) use model::{PredictedOutcome, TableOracle};
 pub use scenarios::TableScenarioId;
 pub(crate) use types::{ConnectionWriteState, TableScenario};
-pub use types::{ExpectedErrorKind, ExpectedResult, TableOperation, TableWorkloadInteraction, TableWorkloadOutcome};
+pub use types::{TableErrorKind, TableInteractionCase, TableOperation, TableWorkloadInteraction, TableWorkloadOutcome};

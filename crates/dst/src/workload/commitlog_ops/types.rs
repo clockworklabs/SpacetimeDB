@@ -18,8 +18,6 @@ pub enum CommitlogInteraction {
     DropDynamicTable { conn: SessionId, slot: u32 },
     /// Migrate dynamic table schema for a slot.
     MigrateDynamicTable { conn: SessionId, slot: u32 },
-    /// Ask the mock commitlog file layer to run a sync attempt.
-    ChaosSync,
     /// Close and restart the database from durable history.
     CloseReopen,
 }
@@ -63,7 +61,6 @@ pub struct InteractionSummary {
     pub create_dynamic_table: usize,
     pub drop_dynamic_table: usize,
     pub migrate_dynamic_table: usize,
-    pub chaos_sync: usize,
     pub close_reopen_requested: usize,
     pub close_reopen_applied: usize,
     pub close_reopen_skipped: usize,

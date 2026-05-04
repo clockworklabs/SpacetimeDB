@@ -32,13 +32,13 @@ runner pulls one interaction at a time from a source, sends it to the target,
 and asks the property runtime to observe the result.
 
 ```text
-CLI -> TargetDescriptor -> NextInteractionSource -> TargetEngine -> Observation
-                                             \-> StreamingProperties -> Outcome
+CLI -> TargetDescriptor -> WorkloadSource -> TargetEngine -> Observation
+                                      \-> StreamingProperties -> Outcome
 ```
 
 The core contracts are:
 
-- `NextInteractionSource`: deterministic pull-based interaction stream.
+- `WorkloadSource`: deterministic pull-based interaction stream.
 - `TargetEngine`: target-specific execution and outcome collection.
 - `StreamingProperties`: reusable property checks over observations and target
   accessors.
@@ -89,19 +89,27 @@ Use this rule of thumb:
 
 ## Table Operation Semantics
 
-The table workload intentionally distinguishes similar-looking operations:
+The table workload keeps the executable operation language small. Similar
+cases converge into physical operations such as `InsertRows`, `DeleteRows`, and
+`BeginTx`; the generated interaction also carries a case label for coverage and
+debug output.
 
-- `ExactDuplicateInsert`: reinserts a full row that is already visible. For
-  RelationalDB set semantics, this should be an idempotent no-op.
-- `UniqueKeyConflictInsert`: inserts a row with an existing primary id but a
-  different non-key payload. This should fail with `UniqueConstraintViolation`.
-- `DeleteMissing`: deleting an absent row should report no mutation.
-- `BeginTxConflict` / `WriteConflictInsert`: expected write-lock failures.
-- Query operations (`PointLookup`, `PredicateCount`, `RangeScan`, `FullScan`)
-  are metamorphic/model oracles, not mutations.
+Correctness does not come from that label. The property runtime asks its model
+what the physical operation should do:
 
-Keeping these cases separate matters: an exact duplicate and a unique-key
-conflict exercise different datastore semantics.
+- inserting fresh rows should mutate the table
+- inserting an exact visible row should be an idempotent no-op
+- inserting an existing primary id with a different payload should report a
+  unique-key error
+- deleting visible rows should mutate the table
+- deleting absent rows should report a missing-row error
+- beginning or writing behind another writer should report a write conflict
+- query operations (`PointLookup`, `PredicateCount`, `RangeScan`, `FullScan`)
+  should match the model-visible state
+
+The case label still matters for summaries. It lets a run report that it hit
+`ExactDuplicateInsert` or `UniqueKeyConflictInsert`, without teaching the target
+or properties to trust generator-provided expectations.
 
 ## Current Targets
 
@@ -123,14 +131,15 @@ storage internals.
 Current property families include:
 
 - insert/select and delete/select checks
-- expected error matching
-- point lookup, predicate count, range scan, and full scan vs `ExpectedModel`
+- observed error vs model-predicted error matching
+- model-predicted no-op checks
+- point lookup, predicate count, range scan, and full scan vs the table oracle
 - NoREC-style optimizer-vs-direct checks
 - TLP-style true/false/null partition checks
 - index range exclusion checks
 - banking mirror-table invariants
 - dynamic migration auto-increment checks
-- durable replay state vs the expected committed model
+- durable replay state vs the oracle committed model
 
 ## Fault Injection
 
@@ -203,7 +212,7 @@ Start here:
 - `src/workload/table_ops`: table interaction language, generation model, and
   scenarios.
 - `src/workload/commitlog_ops`: lifecycle layer over table workloads.
-- `src/properties.rs`: property catalog and expected model checks.
+- `src/properties.rs`: property catalog and oracle/model checks.
 - `src/targets/relational_db_commitlog.rs`: target adapter for RelationalDB,
   commitlog durability, fault injection, close/reopen, and replay.
 - `src/targets/buggified_repo.rs`: deterministic disk-like fault layer.
