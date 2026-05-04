@@ -8,8 +8,9 @@ using UnityEngine;
 
 public class GameManager : MonoBehaviour
 {
-    const string SERVER_URL = "http://127.0.0.1:3000";
+    const string DEFAULT_SERVER_URL = "http://127.0.0.1:3000";
     const string MODULE_NAME = "blackholio";
+    public static string ServerUrl => Environment.GetEnvironmentVariable("SPACETIMEDB_SERVER_URL") ?? DEFAULT_SERVER_URL;
 
     public static event Action OnConnected;
     public static event Action OnSubscriptionApplied;
@@ -44,7 +45,7 @@ public class GameManager : MonoBehaviour
             .OnConnect(HandleConnect)
             .OnConnectError(HandleConnectError)
             .OnDisconnect(HandleDisconnect)
-            .WithUri(SERVER_URL)
+            .WithUri(ServerUrl)
             .WithDatabaseName(MODULE_NAME);
 
         // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,

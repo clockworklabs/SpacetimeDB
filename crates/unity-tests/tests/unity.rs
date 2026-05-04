@@ -4,17 +4,17 @@ use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
-use std::time::{Duration, Instant};
+use std::process::{Command, ExitStatus};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use serde_json::Value;
-use spacetimedb_language_test_support::{print_results, target_dir, workspace_root, Outcome, TestCaseResult};
+use spacetimedb_language_test_support::{
+    print_results, target_dir, workspace_root, Outcome, SpacetimeDbGuard, TestCaseResult,
+};
 use tempfile::TempDir;
 
 const UNITY_VERSION: &str = "2022.3.32f1";
@@ -61,6 +61,7 @@ fn run() -> Result<()> {
         "bash",
         &["./generate.sh".into(), "-y".into()],
         Some(spacetime_bin.path_env()),
+        &[],
     )
     .context("failed to generate Blackholio Unity bindings")?;
 
@@ -72,23 +73,26 @@ fn run() -> Result<()> {
             "demo/Blackholio/client-unity/Assets/Scripts/autogen".into(),
         ],
         None,
+        &[],
     )
     .context("generated Blackholio Unity bindings differ from the checked-in files")?;
 
-    let _server = SpacetimeServer::start(&server_dir, spacetime_bin.path_env())?;
+    let server = SpacetimeDbGuard::spawn_in_temp_data_dir();
 
     run_command(
         &server_dir,
         "spacetime",
         &["logout".into()],
         Some(spacetime_bin.path_env()),
+        &[],
     )
     .context("failed to log out of local SpacetimeDB")?;
     run_command(
         &server_dir,
         "spacetime",
-        &["login".into(), "--server-issued-login".into(), "local".into()],
+        &["login".into(), "--server-issued-login".into(), server.host_url.clone()],
         Some(spacetime_bin.path_env()),
+        &[],
     )
     .context("failed to log in to local SpacetimeDB")?;
     run_command(
@@ -96,18 +100,26 @@ fn run() -> Result<()> {
         "bash",
         &["./publish.sh".into()],
         Some(spacetime_bin.path_env()),
+        &[("SPACETIMEDB_SERVER_URL", server.host_url.as_str())],
     )
     .context("failed to publish the Blackholio module")?;
 
     run_unity_tests(
         &unity_path,
         &unity_project_dir,
+        &server.host_url,
         args.filter.as_deref(),
         &args.passthrough,
     )
 }
 
-fn run_unity_tests(unity_path: &Path, project_dir: &Path, filter: Option<&str>, passthrough: &[String]) -> Result<()> {
+fn run_unity_tests(
+    unity_path: &Path,
+    project_dir: &Path,
+    server_url: &str,
+    filter: Option<&str>,
+    passthrough: &[String],
+) -> Result<()> {
     let out_dir = target_dir().join("unity-tests");
     fs::create_dir_all(&out_dir).with_context(|| format!("failed to create {}", out_dir.display()))?;
     let results_path = out_dir.join("results.xml");
@@ -135,6 +147,7 @@ fn run_unity_tests(unity_path: &Path, project_dir: &Path, filter: Option<&str>, 
 
     let status = Command::new(unity_path)
         .args(&args)
+        .env("SPACETIMEDB_SERVER_URL", server_url)
         .status()
         .with_context(|| format!("failed to run {}", unity_path.display()))?;
 
@@ -169,7 +182,7 @@ fn find_unity(explicit_path: Option<&Path>) -> Result<PathBuf> {
     }
 
     let version = env::var("UNITY_VERSION").unwrap_or_else(|_| UNITY_VERSION.to_string());
-    for path in [
+    let mut candidates = vec![
         PathBuf::from(format!("/opt/unity/editors/{version}/Editor/Unity")),
         PathBuf::from(format!("/opt/Unity/Hub/Editor/{version}/Editor/Unity")),
         PathBuf::from("/opt/unity/Editor/Unity"),
@@ -177,7 +190,12 @@ fn find_unity(explicit_path: Option<&Path>) -> Result<PathBuf> {
         PathBuf::from(format!(
             "/Applications/Unity/Hub/Editor/{version}/Unity.app/Contents/MacOS/Unity"
         )),
-    ] {
+    ];
+    if let Some(home) = env::var_os("HOME") {
+        candidates.push(PathBuf::from(home).join(format!("Unity/Hub/Editor/{version}/Editor/Unity")));
+    }
+
+    for path in candidates {
         if path.exists() {
             return Ok(path);
         }
@@ -256,43 +274,6 @@ fn link_or_copy(src: &Path, dst: &Path) -> io::Result<()> {
     fs::copy(src, dst).map(|_| ())
 }
 
-struct SpacetimeServer {
-    child: std::process::Child,
-}
-
-impl SpacetimeServer {
-    fn start(cwd: &Path, path_env: &OsString) -> Result<Self> {
-        let child = Command::new("spacetime")
-            .arg("start")
-            .current_dir(cwd)
-            .env("PATH", path_env)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .context("failed to start local SpacetimeDB server")?;
-        wait_for_port("127.0.0.1:3000".parse().unwrap(), Duration::from_secs(30))?;
-        Ok(Self { child })
-    }
-}
-
-impl Drop for SpacetimeServer {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-fn wait_for_port(addr: SocketAddr, timeout: Duration) -> Result<()> {
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    bail!("SpacetimeDB did not start listening on {addr} within {timeout:?}")
-}
-
 struct FileRestore {
     path: PathBuf,
     original: String,
@@ -352,11 +333,20 @@ fn patch_unity_package_manifest(path: &Path) -> Result<FileRestore> {
     })
 }
 
-fn run_command(cwd: &Path, program: &str, args: &[String], path_env: Option<&OsString>) -> Result<()> {
+fn run_command(
+    cwd: &Path,
+    program: &str,
+    args: &[String],
+    path_env: Option<&OsString>,
+    envs: &[(&str, &str)],
+) -> Result<()> {
     let mut command = Command::new(program);
     command.args(args).current_dir(cwd);
     if let Some(path_env) = path_env {
         command.env("PATH", path_env);
+    }
+    for (key, value) in envs {
+        command.env(key, value);
     }
     let status = command
         .status()

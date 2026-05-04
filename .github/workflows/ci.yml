@@ -659,7 +659,10 @@ jobs:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Run Unity tests
-        run: cargo ci unity-tests --skip-dlls
+        run: |
+          # `cargo ci dlls` above has already hydrated the local Unity SDK DLLs for the meta check.
+          # Avoid doing that same setup twice before running the Rust Unity harness.
+          cargo ci unity-tests --skip-dlls
         env:
           UNITY_VERSION: 2022.3.32f1
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
