@@ -7,7 +7,7 @@ use quick_xml::Reader;
 use spacetimedb_language_test_support::{print_results, target_dir, Outcome, TestCaseResult};
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, ExitStatus};
 
 #[derive(Clone, Debug, Default, Parser)]
 struct Args {
@@ -55,9 +55,9 @@ fn list_tests(cwd: &Path, filter: Option<String>) -> Result<()> {
         .current_dir(cwd)
         .output()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    ensure_success(cwd, &command_line, &output)?;
     print!("{}", String::from_utf8_lossy(&output.stdout));
     eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(cwd, &command_line, output.status)?;
     Ok(())
 }
 
@@ -69,7 +69,9 @@ fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
         .current_dir(cwd)
         .output()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    ensure_success(cwd, &command_line, &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(cwd, &command_line, output.status)?;
 
     let mut test_args = vec![
         "test".to_string(),
@@ -89,7 +91,9 @@ fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
         .current_dir(cwd)
         .output()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    ensure_success(cwd, &command_line, &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(cwd, &command_line, output.status)?;
 
     let results = parse_junit(&report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
     print_results("typescript", &report, &results)?;
@@ -97,18 +101,16 @@ fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
     Ok(())
 }
 
-fn ensure_success(cwd: &Path, command_line: &str, output: &Output) -> Result<()> {
-    if output.status.success() {
+fn ensure_success(cwd: &Path, command_line: &str, status: ExitStatus) -> Result<()> {
+    if status.success() {
         return Ok(());
     }
 
     bail!(
-        "command failed in {}:\n  {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
+        "command failed in {}:\n  {}\nstatus: {}",
         cwd.display(),
         command_line,
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        status
     );
 }
 

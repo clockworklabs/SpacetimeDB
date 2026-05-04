@@ -7,7 +7,7 @@ use quick_xml::Reader;
 use spacetimedb_language_test_support::{print_results, target_dir, Outcome, SpacetimeDbGuard, TestCaseResult};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, ExitStatus};
 
 #[derive(Clone, Debug, Default, Parser)]
 struct Args {
@@ -70,9 +70,9 @@ fn run_dotnet_test(
             .current_dir(cwd)
             .output()
             .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-        ensure_success(cwd, &command_line, &output)?;
         print!("{}", String::from_utf8_lossy(&output.stdout));
         eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        ensure_success(cwd, &command_line, output.status)?;
         return Ok(());
     }
 
@@ -97,7 +97,9 @@ fn run_dotnet_test(
         .current_dir(cwd)
         .output()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    ensure_success(cwd, &command_line, &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(cwd, &command_line, output.status)?;
     let actual_report = find_trx(&report, cwd).with_context(|| format!("failed to locate TRX report for {suite}"))?;
     let results = parse_trx(&actual_report).with_context(|| format!("failed to parse {suite} TRX report"))?;
     print_results(suite, &actual_report, &results)?;
@@ -134,7 +136,13 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
                 workspace.display()
             )
         })?;
-    ensure_success(workspace, "dotnet pack crates/bindings-csharp/BSATN.Runtime", &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(
+        workspace,
+        "dotnet pack crates/bindings-csharp/BSATN.Runtime",
+        output.status,
+    )?;
 
     let output = Command::new("dotnet")
         .args(["pack", "crates/bindings-csharp/Runtime"])
@@ -146,7 +154,9 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
                 workspace.display()
             )
         })?;
-    ensure_success(workspace, "dotnet pack crates/bindings-csharp/Runtime", &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(workspace, "dotnet pack crates/bindings-csharp/Runtime", output.status)?;
 
     let cwd = workspace.join("sdks/csharp");
     // Write out the NuGet config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
@@ -165,7 +175,9 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
                 cwd.display()
             )
         })?;
-    ensure_success(&cwd, "bash ./tools~/write-nuget-config.sh ../..", &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(&cwd, "bash ./tools~/write-nuget-config.sh ../..", output.status)?;
 
     let output = Command::new("dotnet")
         .args(["restore", "--configfile", "NuGet.Config", "SpacetimeDB.ClientSDK.sln"])
@@ -177,10 +189,12 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
                 cwd.display()
             )
         })?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
     ensure_success(
         &cwd,
         "dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln",
-        &output,
+        output.status,
     )?;
     Ok(())
 }
@@ -199,22 +213,22 @@ fn run_regression_tests(workspace: &Path) -> Result<()> {
                 cwd.display()
             )
         })?;
-    ensure_success(&cwd, "bash tools~/run-regression-tests.sh", &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    ensure_success(&cwd, "bash tools~/run-regression-tests.sh", output.status)?;
     Ok(())
 }
 
-fn ensure_success(cwd: &Path, command_line: &str, output: &Output) -> Result<()> {
-    if output.status.success() {
+fn ensure_success(cwd: &Path, command_line: &str, status: ExitStatus) -> Result<()> {
+    if status.success() {
         return Ok(());
     }
 
     bail!(
-        "command failed in {}:\n  {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
+        "command failed in {}:\n  {}\nstatus: {}",
         cwd.display(),
         command_line,
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        status
     );
 }
 
