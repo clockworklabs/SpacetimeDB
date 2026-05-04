@@ -35,6 +35,8 @@ const rowOptionOptional = {
 };
 type RowOptionOptional = InferTypeOfRow<typeof rowOptionOptional>;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _rowOptionOptionalOmitted: RowOptionOptional = {};
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _rowOptionOptionalNone: RowOptionOptional = {
   foo: undefined,
 };

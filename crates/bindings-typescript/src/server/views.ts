@@ -200,8 +200,11 @@ type ViewInfo<F> = {
   returnTypeBaseSize: number;
 };
 
-export type Views = ViewInfo<ViewFn<any, any, any>>[];
-export type AnonViews = ViewInfo<AnonymousViewFn<any, any, any>>[];
+type AnyViewFn = (ctx: ViewCtx<any>, params: any) => any;
+type AnyAnonymousViewFn = (ctx: AnonymousViewCtx<any>, params: any) => any;
+
+export type Views = ViewInfo<AnyViewFn>[];
+export type AnonViews = ViewInfo<AnyAnonymousViewFn>[];
 
 // A helper to get the product type out of a type builder.
 // This is only non-never if the type builder is an array.
