@@ -389,9 +389,7 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
             .unbounded_send(PendingMutation::Unsubscribe {
                 query_set_id: self.query_set_id,
             })
-            .map_err(|err| {
-                crate::Error::AlreadyEnded
-            })?;
+            .map_err(|_| crate::Error::AlreadyEnded)?
 
         self.unsubscribe_called = true;
         self.on_ended = on_end;
