@@ -12,7 +12,7 @@ use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
-use crate::host::v8::JsInstance;
+use crate::host::v8::{JsMainInstance, JsProcedureInstance};
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -345,7 +345,7 @@ pub enum ModuleWithInstance {
     },
     Js {
         module: super::v8::JsModule,
-        init_inst: super::v8::JsInstance,
+        init_inst: super::v8::JsMainInstance,
     },
 }
 
@@ -361,7 +361,7 @@ struct WasmtimeModuleHost {
 
 struct V8ModuleHost {
     module: super::v8::JsModule,
-    main_instance: SharedJsInstanceManager,
+    main_instance: SharedJsMainInstanceManager,
     procedure_instances: ModuleInstanceManager<super::v8::JsModule>,
 }
 
@@ -407,7 +407,7 @@ impl GenericModule for super::wasmtime::Module {
 }
 
 impl GenericModule for super::v8::JsModule {
-    type Instance = super::v8::JsInstance;
+    type Instance = super::v8::JsProcedureInstance;
     async fn create_instance(&self) -> Self::Instance {
         self.create_instance().await
     }
@@ -416,13 +416,9 @@ impl GenericModule for super::v8::JsModule {
     }
 }
 
-impl GenericModuleInstance for super::v8::JsInstance {
+impl GenericModuleInstance for super::v8::JsProcedureInstance {
     fn trapped(&self) -> bool {
         self.trapped()
-    }
-
-    fn needs_replacement(&self) -> bool {
-        self.needs_replacement()
     }
 }
 
@@ -763,9 +759,9 @@ impl CallProcedureParams {
 ///
 /// Capable of managing and allocating multiple instances of the same module,
 /// but this functionality is currently unused, as only one reducer runs at a time.
-/// When we introduce procedures, it will be necessary to have multiple instances,
-/// as each procedure invocation will have its own sandboxed instance,
-/// and multiple procedures can run concurrently with up to one reducer.
+/// Procedures need multiple instances, as each procedure invocation has its own
+/// sandboxed instance and multiple procedures can run concurrently with up to
+/// one reducer.
 struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
@@ -778,8 +774,8 @@ struct ModuleInstanceManager<M: GenericModule> {
 /// clone of the active instance handle immediately and enqueue work on its
 /// sender. Replacement is serialized only after that active instance traps or
 /// otherwise becomes unusable.
-struct SharedJsInstanceManager {
-    active: RwLock<JsInstance>,
+struct SharedJsMainInstanceManager {
+    active: RwLock<JsMainInstance>,
     module: super::v8::JsModule,
     metrics: InstanceManagerMetrics,
     replace_lock: AsyncMutex<()>,
@@ -960,8 +956,8 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
     }
 }
 
-impl SharedJsInstanceManager {
-    fn new(module: super::v8::JsModule, init_inst: JsInstance, metrics: InstanceManagerMetrics) -> Self {
+impl SharedJsMainInstanceManager {
+    fn new(module: super::v8::JsModule, init_inst: JsMainInstance, metrics: InstanceManagerMetrics) -> Self {
         metrics.track_initial_instance();
         Self {
             active: RwLock::new(init_inst),
@@ -971,7 +967,7 @@ impl SharedJsInstanceManager {
         }
     }
 
-    async fn with_instance<R>(&self, f: impl AsyncFnOnce(JsInstance) -> R) -> R {
+    async fn with_instance<R>(&self, f: impl AsyncFnOnce(JsMainInstance) -> R) -> R {
         let inst = self.get_instance().await;
         let observed = inst.clone();
         let res = f(inst).await;
@@ -979,7 +975,7 @@ impl SharedJsInstanceManager {
         res
     }
 
-    async fn get_instance(&self) -> JsInstance {
+    async fn get_instance(&self) -> JsMainInstance {
         let inst = self.active.read().clone();
         if !inst.needs_replacement() {
             return inst;
@@ -989,7 +985,7 @@ impl SharedJsInstanceManager {
         self.active.read().clone()
     }
 
-    async fn replace_if_needed(&self, observed: &JsInstance) {
+    async fn replace_if_needed(&self, observed: &JsMainInstance) {
         if !observed.needs_replacement() {
             return;
         }
@@ -1222,7 +1218,7 @@ impl ModuleHost {
                 info = module.info();
                 let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
                 let host_module = module.clone();
-                let main_instance = SharedJsInstanceManager::new(module.clone(), init_inst, metrics.clone());
+                let main_instance = SharedJsMainInstanceManager::new(module.clone(), init_inst, metrics.clone());
                 let procedure_instances = ModuleInstanceManager::new_with_metrics(module, None, metrics);
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module: host_module,
@@ -1345,7 +1341,7 @@ impl ModuleHost {
         arg: A,
         timer: impl FnOnce(&str) -> Guard,
         work_wasm: impl AsyncFnOnce(Guard, &SingleCoreExecutor, Box<ModuleInstance>, A) -> (R, Box<ModuleInstance>),
-        work_js: impl AsyncFnOnce(Guard, &JsInstance, A) -> R,
+        work_js: impl AsyncFnOnce(Guard, &JsMainInstance, A) -> R,
     ) -> Result<R, NoSuchModule> {
         self.guard_closed()?;
         let timer_guard = timer(label);
@@ -1388,7 +1384,7 @@ impl ModuleHost {
         label: &str,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &JsInstance) -> R,
+        js: impl AsyncFnOnce(A, &JsMainInstance) -> R,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
@@ -1431,7 +1427,7 @@ impl ModuleHost {
         label: &str,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &JsInstance) -> R,
+        js: impl AsyncFnOnce(A, &JsProcedureInstance) -> R,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
@@ -1471,7 +1467,7 @@ impl ModuleHost {
     }
 
     async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.call_pooled(
+        self.call(
             label,
             cmd,
             async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
