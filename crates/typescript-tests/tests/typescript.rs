@@ -7,7 +7,7 @@ use quick_xml::Reader;
 use spacetimedb_language_test_support::{print_results, target_dir, Outcome, TestCaseResult};
 use std::fs;
 use std::path::Path;
-use std::process::{Command, ExitStatus, Output};
+use std::process::{Command, Output};
 
 #[derive(Clone, Debug, Default, Parser)]
 struct Args {
@@ -49,28 +49,27 @@ fn list_tests(cwd: &Path, filter: Option<String>) -> Result<()> {
     if let Some(filter) = filter {
         cmd.push(filter);
     }
-    let status = Command::new("pnpm")
+    let command_line = shell_line("pnpm", &cmd);
+    let output = Command::new("pnpm")
         .args(&cmd)
         .current_dir(cwd)
-        .status()
-        .with_context(|| format!("failed to spawn `{}` in {}", shell_line("pnpm", &cmd), cwd.display()))?;
-    ensure_status_success(cwd, "pnpm", &cmd, status)
+        .output()
+        .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
+    ensure_success(cwd, &command_line, &output)?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    Ok(())
 }
 
 fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
     let build_args = ["build".to_string()];
+    let command_line = shell_line("pnpm", &build_args);
     let output = Command::new("pnpm")
         .args(&build_args)
         .current_dir(cwd)
         .output()
-        .with_context(|| {
-            format!(
-                "failed to spawn `{}` in {}",
-                shell_line("pnpm", &build_args),
-                cwd.display()
-            )
-        })?;
-    ensure_success(cwd, "pnpm", &build_args, &output)?;
+        .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
+    ensure_success(cwd, &command_line, &output)?;
 
     let mut test_args = vec![
         "test".to_string(),
@@ -84,18 +83,13 @@ fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
         test_args.push(filter);
     }
     test_args.extend(args.passthrough);
+    let command_line = shell_line("pnpm", &test_args);
     let output = Command::new("pnpm")
         .args(&test_args)
         .current_dir(cwd)
         .output()
-        .with_context(|| {
-            format!(
-                "failed to spawn `{}` in {}",
-                shell_line("pnpm", &test_args),
-                cwd.display()
-            )
-        })?;
-    ensure_success(cwd, "pnpm", &test_args, &output)?;
+        .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
+    ensure_success(cwd, &command_line, &output)?;
 
     let results = parse_junit(&report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
     print_results("typescript", &report, &results)?;
@@ -103,20 +97,7 @@ fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
     Ok(())
 }
 
-fn ensure_status_success(cwd: &Path, program: &str, args: &[String], status: ExitStatus) -> Result<()> {
-    if status.success() {
-        return Ok(());
-    }
-
-    bail!(
-        "command failed in {}:\n  {}\nstatus: {}",
-        cwd.display(),
-        shell_line(program, args),
-        status,
-    );
-}
-
-fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -> Result<()> {
+fn ensure_success(cwd: &Path, command_line: &str, output: &Output) -> Result<()> {
     if output.status.success() {
         return Ok(());
     }
@@ -124,7 +105,7 @@ fn ensure_success(cwd: &Path, program: &str, args: &[String], output: &Output) -
     bail!(
         "command failed in {}:\n  {}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
         cwd.display(),
-        shell_line(program, args),
+        command_line,
         output.status,
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
