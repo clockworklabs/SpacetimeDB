@@ -278,6 +278,12 @@ enum CiCmd {
     TypescriptTest,
     /// Runs C# tests through the Cargo language-test harness.
     CsharpTests,
+    /// Runs Unity playmode tests through the Cargo language-test harness.
+    UnityTests {
+        /// Skip hydrating Unity SDK DLLs before running the Unity harness.
+        #[arg(long)]
+        skip_dlls: bool,
+    },
     /// Builds the docs site.
     Docs,
 }
@@ -481,6 +487,26 @@ fn run_csharp_tests() -> Result<()> {
     Ok(())
 }
 
+fn run_unity_tests(skip_dlls: bool) -> Result<()> {
+    cmd!(
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "spacetimedb-cli",
+        "-p",
+        "spacetimedb-standalone",
+        "--features",
+        "spacetimedb-standalone/allow_loopback_http_for_tests"
+    )
+    .run()?;
+    if !skip_dlls {
+        run_dlls()?;
+    }
+    cmd!("cargo", "test", "-p", "spacetimedb-unity-tests", "--test", "unity").run()?;
+    Ok(())
+}
+
 fn run_docs_build() -> Result<()> {
     cmd!("pnpm", "install").dir("docs").run()?;
     cmd!("pnpm", "build").dir("docs").run()?;
@@ -512,6 +538,8 @@ fn main() -> Result<()> {
                 "spacetimedb-typescript-tests",
                 "--exclude",
                 "spacetimedb-csharp-tests",
+                "--exclude",
+                "spacetimedb-unity-tests",
                 "--",
                 "--test-threads=2",
                 "--skip",
@@ -761,6 +789,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::CsharpTests) => {
             run_csharp_tests()?;
+        }
+
+        Some(CiCmd::UnityTests { skip_dlls }) => {
+            run_unity_tests(skip_dlls)?;
         }
 
         Some(CiCmd::Docs) => {

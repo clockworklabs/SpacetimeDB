@@ -228,6 +228,18 @@ Usage: csharp-tests
 
 - `--help`: Print help
 
+### `unity-tests`
+
+**Usage:**
+```bash
+Usage: unity-tests [OPTIONS]
+```
+
+**Options:**
+
+- `--skip-dlls`: Skip hydrating Unity SDK DLLs before running the Unity harness
+- `--help`: Print help
+
 ### `docs`
 
 **Usage:**

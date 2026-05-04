@@ -8813,6 +8813,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-unity-tests"
+version = "2.2.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "quick-xml 0.31.0",
+ "serde_json",
+ "spacetimedb-language-test-support",
+ "tempfile",
+]
+
+[[package]]
 name = "spacetimedb-update"
 version = "2.2.0"
 dependencies = [
