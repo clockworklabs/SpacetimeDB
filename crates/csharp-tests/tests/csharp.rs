@@ -37,29 +37,23 @@ fn run() -> Result<()> {
 
     prepare_csharp_sdk_solution(&workspace)?;
     if args.list {
-        list_dotnet_tests(
-            &workspace.join("sdks/csharp"),
-            &["-warnaserror".to_string(), "--no-restore".to_string()],
-        )?;
+        list_dotnet_tests(&workspace.join("sdks/csharp"))?;
         return Ok(());
     }
 
-    run_dotnet_test(
-        "csharp sdk",
-        &workspace.join("sdks/csharp"),
-        &out_dir,
-        "sdk.trx",
-        &args,
-        &["-warnaserror".to_string(), "--no-restore".to_string()],
-    )?;
+    run_dotnet_test("csharp sdk", &workspace.join("sdks/csharp"), &out_dir, "sdk.trx", &args)?;
     run_regression_tests(&workspace)?;
 
     Ok(())
 }
 
-fn list_dotnet_tests(cwd: &Path, extra_args: &[String]) -> Result<()> {
-    let mut list_args = vec!["test".to_string(), "--list-tests".to_string()];
-    list_args.extend(extra_args.iter().cloned());
+fn list_dotnet_tests(cwd: &Path) -> Result<()> {
+    let list_args = [
+        "test".to_string(),
+        "--list-tests".to_string(),
+        "-warnaserror".to_string(),
+        "--no-restore".to_string(),
+    ];
     let command_line = shell_line("dotnet", &list_args);
     let status = Command::new("dotnet")
         .args(&list_args)
@@ -69,14 +63,7 @@ fn list_dotnet_tests(cwd: &Path, extra_args: &[String]) -> Result<()> {
     ensure_success(cwd, &command_line, status)
 }
 
-fn run_dotnet_test(
-    suite: &str,
-    cwd: &Path,
-    out_dir: &Path,
-    report_name: &str,
-    args: &Args,
-    extra_args: &[String],
-) -> Result<()> {
+fn run_dotnet_test(suite: &str, cwd: &Path, out_dir: &Path, report_name: &str, args: &Args) -> Result<()> {
     let report = out_dir.join(report_name);
 
     let mut test_args = vec![
@@ -86,8 +73,8 @@ fn run_dotnet_test(
         out_dir.display().to_string(),
         "--logger".to_string(),
         format!("trx;LogFileName={report_name}"),
+        "--no-restore".to_string(),
     ];
-    test_args.extend(extra_args.iter().filter(|arg| arg.as_str() != "-warnaserror").cloned());
     if let Some(filter) = &args.filter {
         test_args.push("--filter".to_string());
         test_args.push(filter.clone());
