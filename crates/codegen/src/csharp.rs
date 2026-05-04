@@ -1428,6 +1428,7 @@ fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDe
         }
         writeln!(output);
         writeln!(output, "public bool Equals({enum_type_name} other) => this == other;");
+    });
 
     output.into_inner()
 }
