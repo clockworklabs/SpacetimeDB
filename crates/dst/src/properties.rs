@@ -1,13 +1,40 @@
-//! Target-level property runtime shared by table-oriented targets.
+//! Reusable property runtime shared by DST targets.
 //!
-//! Properties are defined once here and plugged into any target that
-//! implements [`TargetPropertyAccess`].
+//! This module is the boundary between target execution and semantic checking.
+//! Targets emit observations and implement [`TargetPropertyAccess`]; property
+//! rules compare those observations against either the target's externally
+//! visible state, an expected model, or durable replay state.
+//!
+//! ## Property Catalog
+//!
+//! - `InsertSelect`: a row inserted by a session is immediately visible to that
+//!   same session.
+//! - `DeleteSelect`: a row deleted by a session is no longer visible to that
+//!   same session.
+//! - `SelectSelectOptimizer`: a NoREC-style check comparing indexed/filter
+//!   query results with a direct row projection.
+//! - `WhereTrueFalseNull`: a TLP-style partition check for boolean predicates.
+//! - `NotCrash`: target interactions, finish, and outcome collection must not
+//!   panic. This is enforced by the shared streaming runner.
+//! - `IndexRangeExcluded`: range scans over composite indexes obey excluded
+//!   upper bounds.
+//! - `BankingTablesMatch`: scenario-level shadow tables stay identical.
+//! - `DynamicMigrationAutoInc`: migrated dynamic tables keep advancing integer
+//!   IDs after schema changes.
+//! - `DurableReplayMatchesModel`: replayed durable state matches the expected
+//!   committed model.
+//! - `ExpectedErrorMatches`: generated expected failures are the failures the
+//!   target actually reports.
+//! - `PointLookupMatchesModel`, `PredicateCountMatchesModel`,
+//!   `RangeScanMatchesModel`, and `FullScanMatchesModel`: query observations
+//!   match the expected visibility model for the acting session.
 
 use std::ops::Bound;
 
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 
 use crate::{
+    client::SessionId,
     core::StreamingProperties,
     schema::{SchemaPlan, SimRow},
     workload::{
@@ -22,7 +49,7 @@ use crate::{
 /// Target adapter for property evaluation.
 pub(crate) trait TargetPropertyAccess {
     fn schema_plan(&self) -> &SchemaPlan;
-    fn lookup_in_connection(&self, conn: usize, table: usize, id: u64) -> Result<Option<SimRow>, String>;
+    fn lookup_in_connection(&self, conn: SessionId, table: usize, id: u64) -> Result<Option<SimRow>, String>;
     fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String>;
     fn count_rows(&self, table: usize) -> Result<usize, String>;
     fn count_by_col_eq(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String>;
@@ -38,18 +65,33 @@ pub(crate) trait TargetPropertyAccess {
 /// Canonical property IDs that can be selected by targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PropertyKind {
+    /// Target execution must not panic. Enforced by the shared streaming runner.
+    NotCrash,
+    /// Inserted rows are visible to the inserting session.
     InsertSelect,
+    /// Deleted rows disappear from the deleting session's view.
     DeleteSelect,
+    /// Optimized predicate counts agree with direct row projection.
     SelectSelectOptimizer,
+    /// Boolean partitions preserve total cardinality.
     WhereTrueFalseNull,
+    /// Composite index range scans implement excluded upper bounds correctly.
     IndexRangeExcluded,
+    /// Banking scenario debit and credit shadow tables remain identical.
     BankingTablesMatch,
+    /// Auto-increment IDs continue advancing after dynamic table migration.
     DynamicMigrationAutoInc,
+    /// Durable replay state equals the expected committed model.
     DurableReplayMatchesModel,
+    /// Expected-error interactions fail with the expected error class.
     ExpectedErrorMatches,
+    /// Point lookups match the expected session-visible model.
     PointLookupMatchesModel,
+    /// Predicate counts match the expected session-visible model.
     PredicateCountMatchesModel,
+    /// Range scans match the expected session-visible model.
     RangeScanMatchesModel,
+    /// Full scans match the expected session-visible model.
     FullScanMatchesModel,
 }
 
@@ -66,33 +108,33 @@ pub(crate) struct DynamicMigrationProbe {
 pub(crate) enum TableObservation {
     Applied,
     RowInserted {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         row: SimRow,
         in_tx: bool,
     },
     RowDeleted {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         row: SimRow,
         in_tx: bool,
     },
     ExpectedError(ExpectedErrorKind),
     PointLookup {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         id: u64,
         actual: Option<SimRow>,
     },
     PredicateCount {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         col: u16,
         value: AlgebraicValue,
         actual: usize,
     },
     RangeScan {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: Vec<u16>,
         lower: Bound<AlgebraicValue>,
@@ -100,7 +142,7 @@ pub(crate) enum TableObservation {
         actual: Vec<SimRow>,
     },
     FullScan {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         actual: Vec<SimRow>,
     },
@@ -135,13 +177,13 @@ pub(crate) struct PropertyContext<'a> {
 pub(crate) enum PropertyEvent<'a> {
     TableInteractionApplied,
     RowInserted {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         row: &'a SimRow,
         in_tx: bool,
     },
     RowDeleted {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         row: &'a SimRow,
         in_tx: bool,
@@ -151,20 +193,20 @@ pub(crate) enum PropertyEvent<'a> {
         interaction: &'a TableWorkloadInteraction,
     },
     PointLookup {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         id: u64,
         actual: &'a Option<SimRow>,
     },
     PredicateCount {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         col: u16,
         value: &'a AlgebraicValue,
         actual: usize,
     },
     RangeScan {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: &'a [u16],
         lower: &'a Bound<AlgebraicValue>,
@@ -172,7 +214,7 @@ pub(crate) enum PropertyEvent<'a> {
         actual: &'a [SimRow],
     },
     FullScan {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         actual: &'a [SimRow],
     },
@@ -205,17 +247,17 @@ impl TableModel {
         self.expected.clone().committed_rows()
     }
 
-    pub fn lookup_by_id(&self, conn: usize, table: usize, id: u64) -> Option<SimRow> {
+    pub fn lookup_by_id(&self, conn: SessionId, table: usize, id: u64) -> Option<SimRow> {
         self.expected.lookup_by_id(conn, table, id)
     }
 
-    pub fn predicate_count(&self, conn: usize, table: usize, col: u16, value: &AlgebraicValue) -> usize {
+    pub fn predicate_count(&self, conn: SessionId, table: usize, col: u16, value: &AlgebraicValue) -> usize {
         self.expected.predicate_count(conn, table, col, value)
     }
 
     pub fn range_scan(
         &self,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: &[u16],
         lower: &Bound<AlgebraicValue>,
@@ -224,7 +266,7 @@ impl TableModel {
         self.expected.range_scan(conn, table, cols, lower, upper)
     }
 
-    pub fn full_scan(&self, conn: usize, table: usize) -> Vec<SimRow> {
+    pub fn full_scan(&self, conn: SessionId, table: usize) -> Vec<SimRow> {
         let mut rows = self.expected.visible_rows(conn, table);
         rows.sort_by_key(|row| row.id().unwrap_or_default());
         rows
@@ -242,6 +284,7 @@ impl PropertyRuntime {
         let mut rules: Vec<RuleEntry> = Vec::with_capacity(kinds.len());
         for kind in kinds {
             match kind {
+                PropertyKind::NotCrash => rules.push(RuleEntry::new(*kind, Box::<NotCrashRule>::default())),
                 PropertyKind::InsertSelect => rules.push(RuleEntry::new(*kind, Box::<InsertSelectRule>::default())),
                 PropertyKind::DeleteSelect => rules.push(RuleEntry::new(*kind, Box::<DeleteSelectRule>::default())),
                 PropertyKind::SelectSelectOptimizer => rules.push(RuleEntry::new(*kind, Box::<NoRecRule>::default())),
@@ -339,7 +382,7 @@ impl PropertyRuntime {
         &mut self,
         access: &dyn TargetPropertyAccess,
         _step: u64,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         row: &SimRow,
         in_tx: bool,
@@ -368,7 +411,7 @@ impl PropertyRuntime {
         &mut self,
         access: &dyn TargetPropertyAccess,
         _step: u64,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         row: &SimRow,
         in_tx: bool,
@@ -420,7 +463,7 @@ impl PropertyRuntime {
     pub fn on_point_lookup(
         &mut self,
         access: &dyn TargetPropertyAccess,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         id: u64,
         actual: &Option<SimRow>,
@@ -446,7 +489,7 @@ impl PropertyRuntime {
     pub fn on_predicate_count(
         &mut self,
         access: &dyn TargetPropertyAccess,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         col: u16,
         value: &AlgebraicValue,
@@ -475,7 +518,7 @@ impl PropertyRuntime {
     pub fn on_range_scan(
         &mut self,
         access: &dyn TargetPropertyAccess,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: &[u16],
         lower: &Bound<AlgebraicValue>,
@@ -505,7 +548,7 @@ impl PropertyRuntime {
     pub fn on_full_scan(
         &mut self,
         access: &dyn TargetPropertyAccess,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         actual: &[SimRow],
     ) -> Result<(), String> {
@@ -686,6 +729,7 @@ impl RuleEntry {
 impl Default for PropertyRuntime {
     fn default() -> Self {
         Self::with_kinds(&[
+            PropertyKind::NotCrash,
             PropertyKind::InsertSelect,
             PropertyKind::DeleteSelect,
             PropertyKind::SelectSelectOptimizer,
@@ -710,6 +754,11 @@ trait PropertyRule {
         Ok(())
     }
 }
+
+#[derive(Default)]
+struct NotCrashRule;
+
+impl PropertyRule for NotCrashRule {}
 
 struct ExpectedTableStateRule<S> {
     scenario: S,

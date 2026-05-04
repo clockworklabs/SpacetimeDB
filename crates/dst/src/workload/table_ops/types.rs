@@ -3,6 +3,7 @@ use std::ops::Bound;
 use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
+    client::SessionId,
     schema::{ColumnPlan, SchemaPlan, SimRow},
     seed::DstRng,
 };
@@ -16,7 +17,7 @@ use super::generation::ScenarioPlanner;
 pub(crate) trait TableScenario: Clone {
     fn generate_schema(&self, rng: &mut DstRng) -> SchemaPlan;
     fn validate_outcome(&self, schema: &SchemaPlan, outcome: &TableWorkloadOutcome) -> anyhow::Result<()>;
-    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize);
+    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: SessionId);
 }
 
 /// One generated workload step.
@@ -31,81 +32,85 @@ pub type TableWorkloadInteraction = PlannedInteraction;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TableOperation {
     /// Start an explicit write transaction on a connection.
-    BeginTx { conn: usize },
+    BeginTx { conn: SessionId },
     /// Commit the connection's explicit write transaction.
-    CommitTx { conn: usize },
+    CommitTx { conn: SessionId },
     /// Roll back the connection's explicit write transaction.
-    RollbackTx { conn: usize },
+    RollbackTx { conn: SessionId },
     /// Hold a read snapshot open while later reads observe stable state.
-    BeginReadTx { conn: usize },
+    BeginReadTx { conn: SessionId },
     /// Release a previously opened read snapshot.
-    ReleaseReadTx { conn: usize },
+    ReleaseReadTx { conn: SessionId },
     /// Attempt to start a second writer while another connection owns the write lock.
-    BeginTxConflict { owner: usize, conn: usize },
+    BeginTxConflict { owner: SessionId, conn: SessionId },
     /// Attempt an auto-commit write while another connection owns the write lock.
     WriteConflictInsert {
-        owner: usize,
-        conn: usize,
+        owner: SessionId,
+        conn: SessionId,
         table: usize,
         row: SimRow,
     },
     /// Insert a new row with a fresh primary id.
-    Insert { conn: usize, table: usize, row: SimRow },
+    Insert { conn: SessionId, table: usize, row: SimRow },
     /// Delete an existing visible row.
-    Delete { conn: usize, table: usize, row: SimRow },
+    Delete { conn: SessionId, table: usize, row: SimRow },
     /// Reinsert an exact row that is already visible.
     ///
     /// RelationalDB has set semantics for identical rows, so this should be an
     /// idempotent no-op rather than a unique-key error.
-    ExactDuplicateInsert { conn: usize, table: usize, row: SimRow },
+    ExactDuplicateInsert { conn: SessionId, table: usize, row: SimRow },
     /// Insert a row with an existing primary id but different non-key payload.
     ///
     /// This is the operation that should fail with `UniqueConstraintViolation`.
-    UniqueKeyConflictInsert { conn: usize, table: usize, row: SimRow },
+    UniqueKeyConflictInsert { conn: SessionId, table: usize, row: SimRow },
     /// Delete a row that is absent from the visible state.
-    DeleteMissing { conn: usize, table: usize, row: SimRow },
+    DeleteMissing { conn: SessionId, table: usize, row: SimRow },
     /// Insert several fresh rows in one interaction.
     BatchInsert {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         rows: Vec<SimRow>,
     },
     /// Delete several visible rows in one interaction.
     BatchDelete {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         rows: Vec<SimRow>,
     },
     /// Delete and insert the same row, stressing delete/insert ordering.
-    Reinsert { conn: usize, table: usize, row: SimRow },
+    Reinsert { conn: SessionId, table: usize, row: SimRow },
     /// Add a column to an existing table with a default for live rows.
     AddColumn {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         column: ColumnPlan,
         default: AlgebraicValue,
     },
     /// Add a non-primary index after data exists.
-    AddIndex { conn: usize, table: usize, cols: Vec<u16> },
+    AddIndex {
+        conn: SessionId,
+        table: usize,
+        cols: Vec<u16>,
+    },
     /// Query a row by primary id and compare against the model.
-    PointLookup { conn: usize, table: usize, id: u64 },
+    PointLookup { conn: SessionId, table: usize, id: u64 },
     /// Count rows by equality on one column and compare against the model.
     PredicateCount {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         col: u16,
         value: AlgebraicValue,
     },
     /// Scan an indexed range and compare against model filtering.
     RangeScan {
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: Vec<u16>,
         lower: Bound<AlgebraicValue>,
         upper: Bound<AlgebraicValue>,
     },
     /// Scan all visible rows and compare against the model.
-    FullScan { conn: usize, table: usize },
+    FullScan { conn: SessionId, table: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,34 +141,34 @@ impl PlannedInteraction {
         }
     }
 
-    pub fn begin_tx(conn: usize) -> Self {
+    pub fn begin_tx(conn: SessionId) -> Self {
         Self::ok(TableOperation::BeginTx { conn })
     }
 
-    pub fn commit_tx(conn: usize) -> Self {
+    pub fn commit_tx(conn: SessionId) -> Self {
         Self::ok(TableOperation::CommitTx { conn })
     }
 
-    pub fn rollback_tx(conn: usize) -> Self {
+    pub fn rollback_tx(conn: SessionId) -> Self {
         Self::ok(TableOperation::RollbackTx { conn })
     }
 
-    pub fn begin_read_tx(conn: usize) -> Self {
+    pub fn begin_read_tx(conn: SessionId) -> Self {
         Self::ok(TableOperation::BeginReadTx { conn })
     }
 
-    pub fn release_read_tx(conn: usize) -> Self {
+    pub fn release_read_tx(conn: SessionId) -> Self {
         Self::ok(TableOperation::ReleaseReadTx { conn })
     }
 
-    pub fn begin_tx_conflict(owner: usize, conn: usize) -> Self {
+    pub fn begin_tx_conflict(owner: SessionId, conn: SessionId) -> Self {
         Self::expected_err(
             TableOperation::BeginTxConflict { owner, conn },
             ExpectedErrorKind::WriteConflict,
         )
     }
 
-    pub fn write_conflict_insert(owner: usize, conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn write_conflict_insert(owner: SessionId, conn: SessionId, table: usize, row: SimRow) -> Self {
         Self::expected_err(
             TableOperation::WriteConflictInsert {
                 owner,
@@ -175,45 +180,45 @@ impl PlannedInteraction {
         )
     }
 
-    pub fn insert(conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn insert(conn: SessionId, table: usize, row: SimRow) -> Self {
         Self::ok(TableOperation::Insert { conn, table, row })
     }
 
-    pub fn delete(conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn delete(conn: SessionId, table: usize, row: SimRow) -> Self {
         Self::ok(TableOperation::Delete { conn, table, row })
     }
 
-    pub fn exact_duplicate_insert(conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn exact_duplicate_insert(conn: SessionId, table: usize, row: SimRow) -> Self {
         Self::ok(TableOperation::ExactDuplicateInsert { conn, table, row })
     }
 
-    pub fn unique_key_conflict_insert(conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn unique_key_conflict_insert(conn: SessionId, table: usize, row: SimRow) -> Self {
         Self::expected_err(
             TableOperation::UniqueKeyConflictInsert { conn, table, row },
             ExpectedErrorKind::UniqueConstraintViolation,
         )
     }
 
-    pub fn delete_missing(conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn delete_missing(conn: SessionId, table: usize, row: SimRow) -> Self {
         Self::expected_err(
             TableOperation::DeleteMissing { conn, table, row },
             ExpectedErrorKind::MissingRow,
         )
     }
 
-    pub fn batch_insert(conn: usize, table: usize, rows: Vec<SimRow>) -> Self {
+    pub fn batch_insert(conn: SessionId, table: usize, rows: Vec<SimRow>) -> Self {
         Self::ok(TableOperation::BatchInsert { conn, table, rows })
     }
 
-    pub fn batch_delete(conn: usize, table: usize, rows: Vec<SimRow>) -> Self {
+    pub fn batch_delete(conn: SessionId, table: usize, rows: Vec<SimRow>) -> Self {
         Self::ok(TableOperation::BatchDelete { conn, table, rows })
     }
 
-    pub fn reinsert(conn: usize, table: usize, row: SimRow) -> Self {
+    pub fn reinsert(conn: SessionId, table: usize, row: SimRow) -> Self {
         Self::ok(TableOperation::Reinsert { conn, table, row })
     }
 
-    pub fn add_column(conn: usize, table: usize, column: ColumnPlan, default: AlgebraicValue) -> Self {
+    pub fn add_column(conn: SessionId, table: usize, column: ColumnPlan, default: AlgebraicValue) -> Self {
         Self::ok(TableOperation::AddColumn {
             conn,
             table,
@@ -222,15 +227,15 @@ impl PlannedInteraction {
         })
     }
 
-    pub fn add_index(conn: usize, table: usize, cols: Vec<u16>) -> Self {
+    pub fn add_index(conn: SessionId, table: usize, cols: Vec<u16>) -> Self {
         Self::ok(TableOperation::AddIndex { conn, table, cols })
     }
 
-    pub fn point_lookup(conn: usize, table: usize, id: u64) -> Self {
+    pub fn point_lookup(conn: SessionId, table: usize, id: u64) -> Self {
         Self::ok(TableOperation::PointLookup { conn, table, id })
     }
 
-    pub fn predicate_count(conn: usize, table: usize, col: u16, value: AlgebraicValue) -> Self {
+    pub fn predicate_count(conn: SessionId, table: usize, col: u16, value: AlgebraicValue) -> Self {
         Self::ok(TableOperation::PredicateCount {
             conn,
             table,
@@ -240,7 +245,7 @@ impl PlannedInteraction {
     }
 
     pub fn range_scan(
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: Vec<u16>,
         lower: Bound<AlgebraicValue>,
@@ -255,7 +260,7 @@ impl PlannedInteraction {
         })
     }
 
-    pub fn full_scan(conn: usize, table: usize) -> Self {
+    pub fn full_scan(conn: SessionId, table: usize) -> Self {
         Self::ok(TableOperation::FullScan { conn, table })
     }
 }
@@ -269,12 +274,12 @@ pub struct TableWorkloadOutcome {
     pub final_rows: Vec<Vec<SimRow>>,
 }
 
-/// Per-connection write transaction bookkeeping shared by locking targets.
+/// Per-session write transaction bookkeeping shared by locking targets.
 pub(crate) struct ConnectionWriteState<Tx> {
-    /// Open mutable transaction handle for each simulated connection.
+    /// Open mutable transaction handle for each simulated session.
     pub tx_by_connection: Vec<Option<Tx>>,
-    /// Connection that currently owns the single-writer lock, if any.
-    pub active_writer: Option<usize>,
+    /// Session that currently owns the single-writer lock, if any.
+    pub active_writer: Option<SessionId>,
 }
 
 impl<Tx> ConnectionWriteState<Tx> {
@@ -285,14 +290,14 @@ impl<Tx> ConnectionWriteState<Tx> {
         }
     }
 
-    pub fn ensure_known_connection(&self, conn: usize) -> Result<(), String> {
+    pub fn ensure_known_connection(&self, conn: SessionId) -> Result<(), String> {
         self.tx_by_connection
-            .get(conn)
+            .get(conn.as_index())
             .map(|_| ())
             .ok_or_else(|| format!("connection {conn} out of range"))
     }
 
-    pub fn ensure_writer_owner(&self, conn: usize, action: &str) -> Result<(), String> {
+    pub fn ensure_writer_owner(&self, conn: SessionId, action: &str) -> Result<(), String> {
         self.ensure_known_connection(conn)?;
         match self.active_writer {
             Some(owner) if owner == conn => Ok(()),

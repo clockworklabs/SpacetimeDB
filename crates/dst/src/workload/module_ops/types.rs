@@ -1,5 +1,7 @@
 use spacetimedb_sats::AlgebraicType;
 
+use crate::client::SessionId;
+
 /// Single v1 scenario for standalone host target.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum HostScenarioId {
@@ -18,6 +20,7 @@ pub struct ModuleReducerSpec {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModuleInteraction {
     CallReducer {
+        session: SessionId,
         reducer: String,
         args: Vec<spacetimedb_sats::AlgebraicValue>,
     },

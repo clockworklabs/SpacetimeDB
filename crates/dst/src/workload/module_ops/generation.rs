@@ -1,4 +1,5 @@
 use crate::{
+    client::SessionId,
     core::NextInteractionSource,
     schema::generate_value_for_type,
     seed::{DstRng, DstSeed},
@@ -70,6 +71,7 @@ impl ModuleWorkloadSource {
             args.push(generate_value_for_type(&mut self.rng, ty, arg_index));
         }
         Some(ModuleInteraction::CallReducer {
+            session: SessionId::ZERO,
             reducer: spec.name.clone(),
             args,
         })

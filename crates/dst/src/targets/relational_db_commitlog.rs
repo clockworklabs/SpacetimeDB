@@ -1,6 +1,6 @@
 //! RelationalDB DST target with mocked commitlog file chaos and replay checks.
 
-use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, panic::AssertUnwindSafe, sync::Arc};
+use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, sync::Arc};
 
 use spacetimedb_commitlog::repo::{Memory as MemoryCommitlogRepo, SizeOnDisk};
 use spacetimedb_core::{
@@ -28,14 +28,15 @@ use spacetimedb_table::page_pool::PagePool;
 use tracing::{debug, info, trace};
 
 use crate::{
+    client::SessionId,
     config::{CommitlogFaultProfile, RunConfig},
     core::{self, TargetEngine},
+    properties::{
+        CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableObservation, TargetPropertyAccess,
+    },
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
     targets::buggified_repo::{is_injected_disk_error_text, BuggifiedRepo, CommitlogFaultConfig},
-    targets::properties::{
-        CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableObservation, TargetPropertyAccess,
-    },
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
         commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
@@ -448,17 +449,9 @@ impl RelationalDbEngine {
     }
 
     fn execute_table_op(&mut self, interaction: &TableWorkloadInteraction) -> Result<TableObservation, String> {
-        match std::panic::catch_unwind(AssertUnwindSafe(|| self.execute_table_op_inner(interaction))) {
-            Ok(Ok(observation)) => {
-                self.stats.record_table_operation(&interaction.op);
-                Ok(observation)
-            }
-            Ok(Err(err)) => Err(err),
-            Err(payload) => Err(format!(
-                "[DatastoreNeverPanics] interaction panicked: interaction={interaction:?}, payload={}",
-                panic_payload_to_string(&payload)
-            )),
-        }
+        let observation = self.execute_table_op_inner(interaction)?;
+        self.stats.record_table_operation(&interaction.op);
+        Ok(observation)
     }
 
     fn execute_table_op_inner(&mut self, interaction: &TableWorkloadInteraction) -> Result<TableObservation, String> {
@@ -466,10 +459,10 @@ impl RelationalDbEngine {
         match &interaction.op {
             TableOperation::BeginTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
-                if self.read_tx_by_connection[*conn].is_some() {
+                if self.read_tx_by_connection[conn.as_index()].is_some() {
                     return Err(format!("connection {conn} already has open read transaction"));
                 }
-                if self.execution.tx_by_connection[*conn].is_some() {
+                if self.execution.tx_by_connection[conn.as_index()].is_some() {
                     return Err(format!("connection {conn} already has open transaction"));
                 }
                 if let Some(owner) = self.execution.active_writer {
@@ -477,7 +470,7 @@ impl RelationalDbEngine {
                         "connection {conn} cannot begin write transaction while connection {owner} owns lock"
                     ));
                 }
-                self.execution.tx_by_connection[*conn] = Some(
+                self.execution.tx_by_connection[conn.as_index()] = Some(
                     self.db()?
                         .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests),
                 );
@@ -487,20 +480,20 @@ impl RelationalDbEngine {
             }
             TableOperation::BeginReadTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
-                if self.execution.tx_by_connection[*conn].is_some() {
+                if self.execution.tx_by_connection[conn.as_index()].is_some() {
                     return Err(format!("connection {conn} already has open write transaction"));
                 }
-                if self.read_tx_by_connection[*conn].is_some() {
+                if self.read_tx_by_connection[conn.as_index()].is_some() {
                     return Err(format!("connection {conn} already has open read transaction"));
                 }
                 let tx = self.db()?.begin_tx(Workload::ForTests);
-                self.read_tx_by_connection[*conn] = Some(tx);
+                self.read_tx_by_connection[conn.as_index()] = Some(tx);
                 self.stats.record_read_tx();
                 Ok(TableObservation::Applied)
             }
             TableOperation::ReleaseReadTx { conn } => {
                 self.execution.ensure_known_connection(*conn)?;
-                let tx = self.read_tx_by_connection[*conn]
+                let tx = self.read_tx_by_connection[conn.as_index()]
                     .take()
                     .ok_or_else(|| format!("connection {conn} has no read transaction to release"))?;
                 let _ = self.db()?.release_tx(tx);
@@ -535,7 +528,7 @@ impl RelationalDbEngine {
             }
             TableOperation::CommitTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "commit")?;
-                let tx = self.execution.tx_by_connection[*conn]
+                let tx = self.execution.tx_by_connection[conn.as_index()]
                     .take()
                     .ok_or_else(|| format!("connection {conn} has no transaction to commit"))?;
                 let committed = self
@@ -549,7 +542,7 @@ impl RelationalDbEngine {
             }
             TableOperation::RollbackTx { conn } => {
                 self.execution.ensure_writer_owner(*conn, "rollback")?;
-                let tx = self.execution.tx_by_connection[*conn]
+                let tx = self.execution.tx_by_connection[conn.as_index()]
                     .take()
                     .ok_or_else(|| format!("connection {conn} has no transaction to rollback"))?;
                 let _ = self.db()?.rollback_mut_tx(tx);
@@ -558,7 +551,7 @@ impl RelationalDbEngine {
                 Ok(TableObservation::CommitOrRollback)
             }
             TableOperation::Insert { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[*conn].is_some();
+                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
                 let inserted_row = self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = *engine
                         .base_table_ids
@@ -582,7 +575,7 @@ impl RelationalDbEngine {
                 })
             }
             TableOperation::Delete { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[*conn].is_some();
+                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
                 self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = *engine
                         .base_table_ids
@@ -605,7 +598,7 @@ impl RelationalDbEngine {
                 })
             }
             TableOperation::ExactDuplicateInsert { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[*conn].is_some();
+                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
                 let before = self.collect_rows_in_connection(*conn, *table)?;
                 let inserted_row = self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = engine.table_id_for_index(*table)?;
@@ -672,7 +665,7 @@ impl RelationalDbEngine {
                 }
             }
             TableOperation::BatchInsert { conn, table, rows } => {
-                let in_tx = self.execution.tx_by_connection[*conn].is_some();
+                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
                 self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = *engine
                         .base_table_ids
@@ -693,7 +686,7 @@ impl RelationalDbEngine {
                 Ok(TableObservation::Applied)
             }
             TableOperation::BatchDelete { conn, table, rows } => {
-                let in_tx = self.execution.tx_by_connection[*conn].is_some();
+                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
                 self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = *engine
                         .base_table_ids
@@ -713,7 +706,7 @@ impl RelationalDbEngine {
                 Ok(TableObservation::Applied)
             }
             TableOperation::Reinsert { conn, table, row } => {
-                let in_tx = self.execution.tx_by_connection[*conn].is_some();
+                let in_tx = self.execution.tx_by_connection[conn.as_index()].is_some();
                 self.with_mut_tx(*conn, |engine, tx| {
                     let table_id = *engine
                         .base_table_ids
@@ -840,19 +833,19 @@ impl RelationalDbEngine {
 
     fn with_mut_tx<T>(
         &mut self,
-        conn: usize,
+        conn: SessionId,
         mut f: impl FnMut(&mut Self, &mut RelMutTx) -> Result<T, String>,
     ) -> Result<T, String> {
         self.execution.ensure_known_connection(conn)?;
-        if self.read_tx_by_connection[conn].is_some() {
+        if self.read_tx_by_connection[conn.as_index()].is_some() {
             return Err(format!("connection {conn} cannot write while read transaction is open"));
         }
-        if self.execution.tx_by_connection[conn].is_some() {
-            let mut tx = self.execution.tx_by_connection[conn]
+        if self.execution.tx_by_connection[conn.as_index()].is_some() {
+            let mut tx = self.execution.tx_by_connection[conn.as_index()]
                 .take()
                 .ok_or_else(|| format!("connection {conn} missing transaction handle"))?;
             let value = f(self, &mut tx)?;
-            self.execution.tx_by_connection[conn] = Some(tx);
+            self.execution.tx_by_connection[conn.as_index()] = Some(tx);
             return Ok(value);
         }
 
@@ -877,7 +870,7 @@ impl RelationalDbEngine {
         Ok(value)
     }
 
-    fn expect_write_conflict(&self, owner: usize, conn: usize) -> Result<(), String> {
+    fn expect_write_conflict(&self, owner: SessionId, conn: SessionId) -> Result<(), String> {
         self.execution.ensure_known_connection(owner)?;
         self.execution.ensure_known_connection(conn)?;
         if owner == conn {
@@ -889,7 +882,7 @@ impl RelationalDbEngine {
                 self.execution.active_writer
             ));
         }
-        if self.read_tx_by_connection[conn].is_some() {
+        if self.read_tx_by_connection[conn.as_index()].is_some() {
             return Err(format!(
                 "conflicting connection {conn} unexpectedly has a read transaction"
             ));
@@ -897,7 +890,7 @@ impl RelationalDbEngine {
         Ok(())
     }
 
-    fn create_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<CommitlogObservation, String> {
+    fn create_dynamic_table(&mut self, conn: SessionId, slot: u32) -> Result<CommitlogObservation, String> {
         if self.execution.active_writer.is_some() {
             trace!(
                 step = self.step,
@@ -907,7 +900,7 @@ impl RelationalDbEngine {
             return Ok(CommitlogObservation::Skipped);
         }
         let conn = self.normalize_conn(conn);
-        debug!(step = self.step, conn, slot, "create dynamic table");
+        debug!(step = self.step, conn = %conn, slot, "create dynamic table");
         self.with_mut_tx(conn, |engine, tx| {
             if engine.dynamic_tables.contains_key(&slot) {
                 return Ok(());
@@ -940,7 +933,7 @@ impl RelationalDbEngine {
         Ok(CommitlogObservation::Applied)
     }
 
-    fn drop_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<CommitlogObservation, String> {
+    fn drop_dynamic_table(&mut self, conn: SessionId, slot: u32) -> Result<CommitlogObservation, String> {
         if self.execution.active_writer.is_some() {
             trace!(
                 step = self.step,
@@ -950,7 +943,7 @@ impl RelationalDbEngine {
             return Ok(CommitlogObservation::Skipped);
         }
         let conn = self.normalize_conn(conn);
-        debug!(step = self.step, conn, slot, "drop dynamic table");
+        debug!(step = self.step, conn = %conn, slot, "drop dynamic table");
         self.with_mut_tx(conn, |engine, tx| {
             let Some(state) = engine.dynamic_tables.remove(&slot) else {
                 return Ok(());
@@ -967,7 +960,7 @@ impl RelationalDbEngine {
         Ok(CommitlogObservation::Applied)
     }
 
-    fn migrate_dynamic_table(&mut self, conn: usize, slot: u32) -> Result<CommitlogObservation, String> {
+    fn migrate_dynamic_table(&mut self, conn: SessionId, slot: u32) -> Result<CommitlogObservation, String> {
         if self.execution.active_writer.is_some() {
             trace!(
                 step = self.step,
@@ -977,7 +970,7 @@ impl RelationalDbEngine {
             return Ok(CommitlogObservation::Skipped);
         }
         let conn = self.normalize_conn(conn);
-        debug!(step = self.step, conn, slot, "migrate dynamic table");
+        debug!(step = self.step, conn = %conn, slot, "migrate dynamic table");
         let probe = self.with_mut_tx(conn, |engine, tx| {
             let Some(state) = engine.dynamic_tables.get(&slot).cloned() else {
                 return Ok(None);
@@ -1028,7 +1021,7 @@ impl RelationalDbEngine {
             .unwrap_or(CommitlogObservation::Skipped))
     }
 
-    fn normalize_conn(&self, conn: usize) -> usize {
+    fn normalize_conn(&self, conn: SessionId) -> SessionId {
         self.execution.active_writer.unwrap_or(conn)
     }
 
@@ -1069,16 +1062,16 @@ impl RelationalDbEngine {
             .ok_or_else(|| format!("table {table} out of range"))
     }
 
-    fn lookup_base_row(&self, conn: usize, table: usize, id: u64) -> Result<Option<SimRow>, String> {
+    fn lookup_base_row(&self, conn: SessionId, table: usize, id: u64) -> Result<Option<SimRow>, String> {
         let table_id = self.table_id_for_index(table)?;
-        if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn) {
+        if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn.as_index()) {
             Ok(self
                 .db()?
                 .iter_by_col_eq_mut(tx, table_id, 0u16, &AlgebraicValue::U64(id))
                 .map_err(|err| format!("in-tx lookup failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .next())
-        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn.as_index()) {
             Ok(self
                 .db()?
                 .iter_by_col_eq(tx, table_id, 0u16, &AlgebraicValue::U64(id))
@@ -1100,9 +1093,9 @@ impl RelationalDbEngine {
         }
     }
 
-    fn collect_rows_in_connection(&self, conn: usize, table: usize) -> Result<Vec<SimRow>, String> {
+    fn collect_rows_in_connection(&self, conn: SessionId, table: usize) -> Result<Vec<SimRow>, String> {
         let table_id = self.table_id_for_index(table)?;
-        if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn) {
+        if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn.as_index()) {
             let mut rows = self
                 .db()?
                 .iter_mut(tx, table_id)
@@ -1111,7 +1104,7 @@ impl RelationalDbEngine {
                 .collect::<Vec<_>>();
             rows.sort_by_key(|row| row.id().unwrap_or_default());
             Ok(rows)
-        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn.as_index()) {
             let mut rows = self
                 .db()?
                 .iter(tx, table_id)
@@ -1127,19 +1120,19 @@ impl RelationalDbEngine {
 
     fn count_by_col_eq_in_connection(
         &self,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         col: u16,
         value: &AlgebraicValue,
     ) -> Result<usize, String> {
         let table_id = self.table_id_for_index(table)?;
-        if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn) {
+        if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn.as_index()) {
             Ok(self
                 .db()?
                 .iter_by_col_eq_mut(tx, table_id, col, value)
                 .map_err(|err| format!("in-tx predicate query failed: {err}"))?
                 .count())
-        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn.as_index()) {
             Ok(self
                 .db()?
                 .iter_by_col_eq(tx, table_id, col, value)
@@ -1152,7 +1145,7 @@ impl RelationalDbEngine {
 
     fn range_scan_in_connection(
         &self,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: &[u16],
         lower: Bound<AlgebraicValue>,
@@ -1160,13 +1153,13 @@ impl RelationalDbEngine {
     ) -> Result<Vec<SimRow>, String> {
         let table_id = self.table_id_for_index(table)?;
         let col_list = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
-        let mut rows = if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn) {
+        let mut rows = if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn.as_index()) {
             self.db()?
                 .iter_by_col_range_mut(tx, table_id, col_list, (lower, upper))
                 .map_err(|err| format!("in-tx range scan failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .collect::<Vec<_>>()
-        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn) {
+        } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn.as_index()) {
             self.db()?
                 .iter_by_col_range(tx, table_id, col_list, (lower, upper))
                 .map_err(|err| format!("read-tx range scan failed: {err}"))?
@@ -1357,7 +1350,7 @@ impl TargetPropertyAccess for RelationalDbEngine {
         &self.base_schema
     }
 
-    fn lookup_in_connection(&self, conn: usize, table: usize, id: u64) -> Result<Option<SimRow>, String> {
+    fn lookup_in_connection(&self, conn: SessionId, table: usize, id: u64) -> Result<Option<SimRow>, String> {
         Self::lookup_base_row(self, conn, table, id)
     }
 
@@ -1532,16 +1525,6 @@ fn is_unique_constraint_violation(err: &DBError) -> bool {
         err,
         DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))
     )
-}
-
-fn panic_payload_to_string(payload: &Box<dyn std::any::Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else if let Some(message) = payload.downcast_ref::<&'static str>() {
-        (*message).to_string()
-    } else {
-        "<non-string panic payload>".to_string()
-    }
 }
 
 fn compare_rows_for_range(lhs: &SimRow, rhs: &SimRow, cols: &[u16]) -> std::cmp::Ordering {

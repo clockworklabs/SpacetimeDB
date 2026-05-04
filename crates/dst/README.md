@@ -43,6 +43,27 @@ The core contracts are:
 - `StreamingProperties`: reusable property checks over observations and target
   accessors.
 
+## Client Model
+
+DST workloads use shared logical client IDs rather than target-owned ad hoc
+connection numbers. A `ClientId` is a stable actor in the generated history; a
+`SessionId` is one live connection/session for that actor. A single client can
+own multiple active sessions, which matters for reconnect, multi-tab, and future
+replication traffic. Targets translate those IDs into their own handles:
+
+- `relational-db-commitlog` maps `SessionId` to direct write/read transaction
+  slots.
+- `standalone-host` currently maps `SessionId::ZERO` to its host
+  `ClientConnection`; reducer interactions already carry the logical session so
+  multi-session host workloads can be added without changing the interaction
+  shape again.
+- future replication targets can map `SessionId` plus endpoint/node IDs to a
+  client connection routed through the simulated network.
+
+Concrete handles stay target-owned. Shared workloads should carry logical
+identity and lifecycle intent, not `RelTx`, websocket handles, or target-specific
+connection objects.
+
 ## Workload Composition
 
 DST workloads use three building blocks:
@@ -94,7 +115,7 @@ Both targets reuse shared workload families and the same streaming runner.
 
 ## Properties
 
-Properties live in `targets/properties.rs` and are selected by target.
+Properties live in `src/properties.rs` and are selected by target.
 Table-oriented properties use `TargetPropertyAccess` so the property runtime can
 ask a target for rows, counts, lookups, and range scans without knowing target
 storage internals.
@@ -176,7 +197,7 @@ Start here:
 - `src/workload/table_ops`: table interaction language, generation model, and
   scenarios.
 - `src/workload/commitlog_ops`: lifecycle layer over table workloads.
-- `src/targets/properties.rs`: property catalog and expected model checks.
+- `src/properties.rs`: property catalog and expected model checks.
 - `src/targets/relational_db_commitlog.rs`: target adapter for RelationalDB,
   commitlog durability, fault injection, close/reopen, and replay.
 - `src/targets/buggified_repo.rs`: deterministic disk-like fault layer.

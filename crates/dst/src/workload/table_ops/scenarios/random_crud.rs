@@ -3,6 +3,7 @@ use std::ops::Bound;
 use spacetimedb_sats::AlgebraicType;
 
 use crate::{
+    client::SessionId,
     schema::{default_value_for_type, generate_supported_type, ColumnPlan, SchemaPlan, SimRow, TablePlan},
     seed::DstRng,
     workload::strategy::{Index, Percent, Strategy},
@@ -156,15 +157,15 @@ pub fn validate_outcome(_schema: &SchemaPlan, _outcome: &TableWorkloadOutcome) -
     Ok(())
 }
 
-pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: usize) {
+pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
     fill_pending_with_profile(planner, conn, RANDOM_CRUD_PROFILE);
 }
 
-pub fn fill_pending_indexed_ranges(planner: &mut ScenarioPlanner<'_>, conn: usize) {
+pub fn fill_pending_indexed_ranges(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
     fill_pending_with_profile(planner, conn, INDEXED_RANGES_PROFILE);
 }
 
-fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: usize, profile: TableWorkloadProfile) {
+fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: SessionId, profile: TableWorkloadProfile) {
     if planner.has_read_tx(conn) {
         let table = planner.choose_table();
         let visible_rows = planner.visible_rows(conn, table);
@@ -296,8 +297,9 @@ fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: usize, pro
     planner.push_interaction(TableWorkloadInteraction::delete(conn, table, row));
 }
 
-fn emit_write_conflict(planner: &mut ScenarioPlanner<'_>, owner: usize) -> bool {
+fn emit_write_conflict(planner: &mut ScenarioPlanner<'_>, owner: SessionId) -> bool {
     let candidates = (0..planner.connection_count())
+        .map(SessionId::from_index)
         .filter(|&conn| conn != owner && !planner.has_read_tx(conn))
         .collect::<Vec<_>>();
     if candidates.is_empty() {
@@ -315,7 +317,7 @@ fn emit_write_conflict(planner: &mut ScenarioPlanner<'_>, owner: usize) -> bool 
     true
 }
 
-fn emit_add_column(planner: &mut ScenarioPlanner<'_>, conn: usize, table: usize) -> bool {
+fn emit_add_column(planner: &mut ScenarioPlanner<'_>, conn: SessionId, table: usize) -> bool {
     const MAX_COLUMNS_PER_TABLE: usize = 12;
     let column_idx = planner.table_plan(table).columns.len();
     if column_idx >= MAX_COLUMNS_PER_TABLE {
@@ -337,7 +339,7 @@ fn emit_add_column(planner: &mut ScenarioPlanner<'_>, conn: usize, table: usize)
     true
 }
 
-fn emit_add_index(planner: &mut ScenarioPlanner<'_>, conn: usize, table: usize, visible_rows: &[SimRow]) -> bool {
+fn emit_add_index(planner: &mut ScenarioPlanner<'_>, conn: SessionId, table: usize, visible_rows: &[SimRow]) -> bool {
     let candidates = candidate_new_indexes(planner, table);
     if candidates.is_empty() {
         return false;
@@ -359,7 +361,7 @@ fn emit_add_index(planner: &mut ScenarioPlanner<'_>, conn: usize, table: usize, 
 
 fn emit_unique_key_conflict_insert(
     planner: &mut ScenarioPlanner<'_>,
-    conn: usize,
+    conn: SessionId,
     table: usize,
     visible_rows: &[SimRow],
 ) -> bool {
@@ -420,7 +422,7 @@ fn inclusive_bounds_for_rows(
 
 fn emit_query(
     planner: &mut ScenarioPlanner<'_>,
-    conn: usize,
+    conn: SessionId,
     table: usize,
     visible_rows: &[crate::schema::SimRow],
 ) -> bool {

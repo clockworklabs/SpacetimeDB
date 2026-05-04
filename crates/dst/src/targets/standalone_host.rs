@@ -28,6 +28,7 @@ use spacetimedb_standalone::{StandaloneEnv, StandaloneOptions};
 use tracing::trace;
 
 use crate::{
+    client::SessionId,
     config::RunConfig,
     core::{self, StreamingProperties, TargetEngine},
     seed::DstSeed,
@@ -136,9 +137,14 @@ impl StandaloneHostEngine {
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
         )));
         let _ = std::fs::remove_dir_all(&root_dir);
-        let session = open_session(&root_dir, &module, None, connection_id_for_session(seed, 0))
-            .await
-            .map_err(anyhow::Error::msg)?;
+        let session = open_session(
+            &root_dir,
+            &module,
+            None,
+            connection_id_for_session(seed, SessionId::ZERO, 0),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
         Ok(Self {
             root_dir,
             session: Some(session),
@@ -157,7 +163,10 @@ impl StandaloneHostEngine {
     async fn execute(&mut self, interaction: &ModuleInteraction) -> Result<(), String> {
         self.step = self.step.saturating_add(1);
         match interaction {
-            ModuleInteraction::CallReducer { reducer, args } => {
+            ModuleInteraction::CallReducer { session, reducer, args } => {
+                if *session != SessionId::ZERO {
+                    return Err(format!("standalone-host target has no session for {session}"));
+                }
                 self.reducer_calls = self.reducer_calls.saturating_add(1);
                 let request_id = (self.step as u32).saturating_sub(1);
                 let product = ProductValue::from_iter(args.iter().cloned());
@@ -202,7 +211,7 @@ impl StandaloneHostEngine {
                     .db_identity;
                 let old = self.session.take();
                 drop(old);
-                let connection_id = connection_id_for_session(self.seed, self.session_generation);
+                let connection_id = connection_id_for_session(self.seed, SessionId::ZERO, self.session_generation);
                 self.session_generation = self.session_generation.saturating_add(1);
                 self.session =
                     Some(open_session(&self.root_dir, &self.module, Some(db_identity), connection_id).await?);
@@ -272,9 +281,13 @@ fn is_expected_error(_reducer: &str, msg: &str) -> bool {
     msg.contains("permission denied")
 }
 
-fn connection_id_for_session(seed: DstSeed, generation: u64) -> ConnectionId {
-    let high = seed.fork(1_000 + generation.saturating_mul(2)).0 as u128;
-    let low = seed.fork(1_001 + generation.saturating_mul(2)).0 as u128;
+fn connection_id_for_session(seed: DstSeed, session: SessionId, handle_generation: u64) -> ConnectionId {
+    let base = 1_000u64
+        .saturating_add((session.client.as_u32() as u64).saturating_mul(1_000_000))
+        .saturating_add((session.generation as u64).saturating_mul(10_000))
+        .saturating_add(handle_generation.saturating_mul(2));
+    let high = seed.fork(base).0 as u128;
+    let low = seed.fork(base.saturating_add(1)).0 as u128;
     let id = (high << 64) | low;
     ConnectionId::from_u128(id.max(1))
 }

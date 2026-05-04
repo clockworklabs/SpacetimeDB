@@ -1,19 +1,20 @@
 //! Typed strategies specific to table-style workload generation.
 
 use crate::{
+    client::SessionId,
     seed::DstRng,
     workload::strategy::{Index, Strategy, Weighted},
 };
 
-/// Choose one connection uniformly.
+/// Choose one logical session uniformly from the current fixed-size session pool.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ConnectionChoice {
     pub(crate) connection_count: usize,
 }
 
-impl Strategy<usize> for ConnectionChoice {
-    fn sample(&self, rng: &mut DstRng) -> usize {
-        Index::new(self.connection_count).sample(rng)
+impl Strategy<SessionId> for ConnectionChoice {
+    fn sample(&self, rng: &mut DstRng) -> SessionId {
+        SessionId::from_index(Index::new(self.connection_count).sample(rng))
     }
 }
 

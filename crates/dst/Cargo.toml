@@ -17,6 +17,7 @@ bench = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+futures-util.workspace = true
 tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
 bytes.workspace = true
 spacetimedb-cli.workspace = true

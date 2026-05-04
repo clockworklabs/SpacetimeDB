@@ -2,7 +2,9 @@
 //!
 //! Public surface is intentionally narrow and centered on the CLI:
 //!
+//! - [`client`] for logical client/session identifiers,
 //! - [`config`] for run budgets,
+//! - [`properties`] for reusable semantic checks,
 //! - [`seed`] for deterministic seeds,
 //! - [`workload`] for scenario identifiers,
 //! - [`targets`] for executable relational-db / standalone-host adapters.
@@ -30,10 +32,14 @@
 //! 7. Shared randomness, weighting, and sampling helpers belong in the
 //!    workload strategy module, not in ad hoc target or scenario code.
 
+/// Logical client/session identifiers shared by workloads and targets.
+pub mod client;
 /// Shared run-budget configuration for DST targets.
 pub mod config;
 /// Core traits/runners for pluggable workloads and targets.
 pub mod core;
+/// Reusable semantic properties and expected-model checks.
+pub(crate) mod properties;
 mod schema;
 /// Stable seed and RNG utilities used to make runs reproducible.
 pub mod seed;

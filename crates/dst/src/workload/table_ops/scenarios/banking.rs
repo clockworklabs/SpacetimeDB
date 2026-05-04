@@ -1,6 +1,9 @@
 use spacetimedb_sats::AlgebraicType;
 
-use crate::schema::{ColumnPlan, SchemaPlan, TablePlan};
+use crate::{
+    client::SessionId,
+    schema::{ColumnPlan, SchemaPlan, TablePlan},
+};
 
 use super::super::{generation::ScenarioPlanner, TableWorkloadInteraction, TableWorkloadOutcome};
 
@@ -66,7 +69,7 @@ pub fn validate_outcome(schema: &SchemaPlan, outcome: &TableWorkloadOutcome) -> 
     Ok(())
 }
 
-pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: usize) {
+pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
     if planner.maybe_control_tx(conn, 25, 20, 10) {
         return;
     }

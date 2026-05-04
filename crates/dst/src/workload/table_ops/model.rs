@@ -3,6 +3,7 @@ use std::ops::Bound;
 use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
+    client::SessionId,
     schema::{distinct_value_for_type, generate_value_for_type, ColumnPlan, SchemaPlan, SimRow},
     seed::{DstRng, DstSeed},
 };
@@ -20,7 +21,7 @@ pub(crate) struct GenerationModel {
     pub(crate) connections: Vec<PendingConnection>,
     committed: Vec<Vec<SimRow>>,
     next_ids: Vec<u64>,
-    active_writer: Option<usize>,
+    active_writer: Option<SessionId>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -55,12 +56,13 @@ impl GenerationModel {
         SimRow { values }
     }
 
-    pub(crate) fn visible_rows(&self, conn: usize, table: usize) -> Vec<SimRow> {
-        if let Some(snapshot) = &self.connections[conn].read_snapshot {
+    pub(crate) fn visible_rows(&self, conn: SessionId, table: usize) -> Vec<SimRow> {
+        let conn_idx = conn.as_index();
+        if let Some(snapshot) = &self.connections[conn_idx].read_snapshot {
             return snapshot[table].clone();
         }
         let mut rows = self.committed[table].clone();
-        let pending = &self.connections[conn];
+        let pending = &self.connections[conn_idx];
         for (pending_table, row) in &pending.staged_deletes {
             if *pending_table == table {
                 rows.retain(|candidate| candidate != row);
@@ -74,7 +76,7 @@ impl GenerationModel {
         rows
     }
 
-    pub(crate) fn absent_row(&mut self, rng: &mut DstRng, conn: usize, table: usize) -> SimRow {
+    pub(crate) fn absent_row(&mut self, rng: &mut DstRng, conn: SessionId, table: usize) -> SimRow {
         let mut row = self.make_row(rng, table);
         while self.visible_rows(conn, table).iter().any(|candidate| candidate == &row) {
             row = self.make_row(rng, table);
@@ -95,12 +97,12 @@ impl GenerationModel {
         Some(row)
     }
 
-    pub(crate) fn active_writer(&self) -> Option<usize> {
+    pub(crate) fn active_writer(&self) -> Option<SessionId> {
         self.active_writer
     }
 
-    pub(crate) fn has_read_tx(&self, conn: usize) -> bool {
-        self.connections[conn].read_snapshot.is_some()
+    pub(crate) fn has_read_tx(&self, conn: SessionId) -> bool {
+        self.connections[conn.as_index()].read_snapshot.is_some()
     }
 
     pub(crate) fn any_read_tx(&self) -> bool {
@@ -109,8 +111,8 @@ impl GenerationModel {
             .any(|connection| connection.read_snapshot.is_some())
     }
 
-    pub(crate) fn begin_read_tx(&mut self, conn: usize) {
-        let pending = &mut self.connections[conn];
+    pub(crate) fn begin_read_tx(&mut self, conn: SessionId) {
+        let pending = &mut self.connections[conn.as_index()];
         assert!(!pending.in_tx, "connection already has write transaction");
         assert!(
             pending.read_snapshot.is_none(),
@@ -119,16 +121,16 @@ impl GenerationModel {
         pending.read_snapshot = Some(self.committed.clone());
     }
 
-    pub(crate) fn release_read_tx(&mut self, conn: usize) {
+    pub(crate) fn release_read_tx(&mut self, conn: SessionId) {
         assert!(
-            self.connections[conn].read_snapshot.take().is_some(),
+            self.connections[conn.as_index()].read_snapshot.take().is_some(),
             "connection has no read transaction"
         );
     }
 
-    pub(crate) fn begin_tx(&mut self, conn: usize) {
+    pub(crate) fn begin_tx(&mut self, conn: SessionId) {
         assert!(self.active_writer.is_none(), "single writer already active");
-        let pending = &mut self.connections[conn];
+        let pending = &mut self.connections[conn.as_index()];
         assert!(!pending.in_tx, "connection already in transaction");
         assert!(
             pending.read_snapshot.is_none(),
@@ -138,8 +140,8 @@ impl GenerationModel {
         self.active_writer = Some(conn);
     }
 
-    pub(crate) fn insert(&mut self, conn: usize, table: usize, row: SimRow) {
-        let pending = &mut self.connections[conn];
+    pub(crate) fn insert(&mut self, conn: SessionId, table: usize, row: SimRow) {
+        let pending = &mut self.connections[conn.as_index()];
         if pending.in_tx {
             pending.staged_inserts.push((table, row));
         } else {
@@ -147,14 +149,14 @@ impl GenerationModel {
         }
     }
 
-    pub(crate) fn batch_insert(&mut self, conn: usize, table: usize, rows: &[SimRow]) {
+    pub(crate) fn batch_insert(&mut self, conn: SessionId, table: usize, rows: &[SimRow]) {
         for row in rows {
             self.insert(conn, table, row.clone());
         }
     }
 
-    pub(crate) fn delete(&mut self, conn: usize, table: usize, row: SimRow) {
-        let pending = &mut self.connections[conn];
+    pub(crate) fn delete(&mut self, conn: SessionId, table: usize, row: SimRow) {
+        let pending = &mut self.connections[conn.as_index()];
         if pending.in_tx {
             pending
                 .staged_inserts
@@ -165,14 +167,14 @@ impl GenerationModel {
         }
     }
 
-    pub(crate) fn batch_delete(&mut self, conn: usize, table: usize, rows: &[SimRow]) {
+    pub(crate) fn batch_delete(&mut self, conn: SessionId, table: usize, rows: &[SimRow]) {
         for row in rows {
             self.delete(conn, table, row.clone());
         }
     }
 
-    pub(crate) fn commit(&mut self, conn: usize) {
-        let pending = &mut self.connections[conn];
+    pub(crate) fn commit(&mut self, conn: SessionId) {
+        let pending = &mut self.connections[conn.as_index()];
         let inserts = std::mem::take(&mut pending.staged_inserts);
         let deletes = std::mem::take(&mut pending.staged_deletes);
         pending.in_tx = false;
@@ -186,8 +188,8 @@ impl GenerationModel {
         }
     }
 
-    pub(crate) fn rollback(&mut self, conn: usize) {
-        let pending = &mut self.connections[conn];
+    pub(crate) fn rollback(&mut self, conn: SessionId) {
+        let pending = &mut self.connections[conn.as_index()];
         pending.staged_inserts.clear();
         pending.staged_deletes.clear();
         pending.in_tx = false;
@@ -234,7 +236,7 @@ impl GenerationModel {
 pub struct ExpectedModel {
     committed: Vec<Vec<SimRow>>,
     connections: Vec<ExpectedConnection>,
-    active_writer: Option<usize>,
+    active_writer: Option<SessionId>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -264,24 +266,24 @@ impl ExpectedModel {
                     self.active_writer.is_none(),
                     "multiple concurrent writers in expected model"
                 );
-                self.connections[*conn].in_tx = true;
+                self.connections[conn.as_index()].in_tx = true;
                 self.active_writer = Some(*conn);
             }
             TableOperation::BeginReadTx { conn } => {
-                let state = &mut self.connections[*conn];
+                let state = &mut self.connections[conn.as_index()];
                 assert!(!state.in_tx, "read tx started while write tx is open");
                 assert!(state.read_snapshot.is_none(), "nested read tx in expected model");
                 state.read_snapshot = Some(self.committed.clone());
             }
             TableOperation::ReleaseReadTx { conn } => {
                 assert!(
-                    self.connections[*conn].read_snapshot.take().is_some(),
+                    self.connections[conn.as_index()].read_snapshot.take().is_some(),
                     "release read tx without open read tx"
                 );
             }
             TableOperation::CommitTx { conn } => {
                 assert_eq!(self.active_writer, Some(*conn), "commit by non-owner in expected model");
-                let state = &mut self.connections[*conn];
+                let state = &mut self.connections[conn.as_index()];
                 for (table, row) in state.staged_deletes.drain(..) {
                     self.committed[table].retain(|candidate| *candidate != row);
                 }
@@ -297,7 +299,7 @@ impl ExpectedModel {
                     Some(*conn),
                     "rollback by non-owner in expected model"
                 );
-                let state = &mut self.connections[*conn];
+                let state = &mut self.connections[conn.as_index()];
                 state.staged_inserts.clear();
                 state.staged_deletes.clear();
                 state.in_tx = false;
@@ -344,12 +346,13 @@ impl ExpectedModel {
         }
     }
 
-    pub fn visible_rows(&self, conn: usize, table: usize) -> Vec<SimRow> {
-        if let Some(snapshot) = &self.connections[conn].read_snapshot {
+    pub fn visible_rows(&self, conn: SessionId, table: usize) -> Vec<SimRow> {
+        let conn_idx = conn.as_index();
+        if let Some(snapshot) = &self.connections[conn_idx].read_snapshot {
             return snapshot[table].clone();
         }
         let mut rows = self.committed[table].clone();
-        let pending = &self.connections[conn];
+        let pending = &self.connections[conn_idx];
         for (pending_table, row) in &pending.staged_deletes {
             if *pending_table == table {
                 rows.retain(|candidate| candidate != row);
@@ -363,13 +366,13 @@ impl ExpectedModel {
         rows
     }
 
-    pub fn lookup_by_id(&self, conn: usize, table: usize, id: u64) -> Option<SimRow> {
+    pub fn lookup_by_id(&self, conn: SessionId, table: usize, id: u64) -> Option<SimRow> {
         self.visible_rows(conn, table)
             .into_iter()
             .find(|row| row.id() == Some(id))
     }
 
-    pub fn predicate_count(&self, conn: usize, table: usize, col: u16, value: &AlgebraicValue) -> usize {
+    pub fn predicate_count(&self, conn: SessionId, table: usize, col: u16, value: &AlgebraicValue) -> usize {
         self.visible_rows(conn, table)
             .into_iter()
             .filter(|row| row.values.get(col as usize) == Some(value))
@@ -378,7 +381,7 @@ impl ExpectedModel {
 
     pub fn range_scan(
         &self,
-        conn: usize,
+        conn: SessionId,
         table: usize,
         cols: &[u16],
         lower: &Bound<AlgebraicValue>,
@@ -408,8 +411,8 @@ impl ExpectedModel {
         self.committed
     }
 
-    fn insert(&mut self, conn: usize, table: usize, row: SimRow) {
-        let state = &mut self.connections[conn];
+    fn insert(&mut self, conn: SessionId, table: usize, row: SimRow) {
+        let state = &mut self.connections[conn.as_index()];
         if state.in_tx {
             state.staged_inserts.push((table, row));
         } else {
@@ -417,8 +420,8 @@ impl ExpectedModel {
         }
     }
 
-    fn delete(&mut self, conn: usize, table: usize, row: SimRow) {
-        let state = &mut self.connections[conn];
+    fn delete(&mut self, conn: SessionId, table: usize, row: SimRow) {
+        let state = &mut self.connections[conn.as_index()];
         if state.in_tx {
             state
                 .staged_inserts

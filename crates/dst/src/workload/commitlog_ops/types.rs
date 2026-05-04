@@ -1,6 +1,7 @@
 //! Serializable interaction model for relational-db + commitlog DST.
 
 use crate::{
+    client::SessionId,
     config::CommitlogFaultProfile,
     schema::SimRow,
     workload::table_ops::{TableWorkloadInteraction, TableWorkloadOutcome},
@@ -12,11 +13,11 @@ pub enum CommitlogInteraction {
     /// Reused base workload interaction from `table_ops`.
     Table(TableWorkloadInteraction),
     /// Create a dynamic user table for a logical slot.
-    CreateDynamicTable { conn: usize, slot: u32 },
+    CreateDynamicTable { conn: SessionId, slot: u32 },
     /// Drop a previously created dynamic user table.
-    DropDynamicTable { conn: usize, slot: u32 },
+    DropDynamicTable { conn: SessionId, slot: u32 },
     /// Migrate dynamic table schema for a slot.
-    MigrateDynamicTable { conn: usize, slot: u32 },
+    MigrateDynamicTable { conn: SessionId, slot: u32 },
     /// Ask the mock commitlog file layer to run a sync attempt.
     ChaosSync,
     /// Close and restart the database from durable history.

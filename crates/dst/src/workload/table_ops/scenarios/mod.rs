@@ -1,7 +1,7 @@
 mod banking;
 mod random_crud;
 
-use crate::{schema::SchemaPlan, seed::DstRng};
+use crate::{client::SessionId, schema::SchemaPlan, seed::DstRng};
 
 use super::{generation::ScenarioPlanner, TableScenario, TableWorkloadOutcome};
 
@@ -31,7 +31,7 @@ impl TableScenario for RandomCrudScenario {
         random_crud::validate_outcome(schema, outcome)
     }
 
-    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize) {
+    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
         random_crud::fill_pending(planner, conn);
     }
 }
@@ -45,7 +45,7 @@ impl TableScenario for BankingScenario {
         banking::validate_outcome(schema, outcome)
     }
 
-    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize) {
+    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
         banking::fill_pending(planner, conn);
     }
 }
@@ -59,7 +59,7 @@ impl TableScenario for IndexedRangesScenario {
         random_crud::validate_outcome(schema, outcome)
     }
 
-    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize) {
+    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
         random_crud::fill_pending_indexed_ranges(planner, conn);
     }
 }
@@ -81,7 +81,7 @@ impl TableScenario for TableScenarioId {
         }
     }
 
-    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: usize) {
+    fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
         match self {
             Self::RandomCrud => RandomCrudScenario.fill_pending(planner, conn),
             Self::IndexedRanges => IndexedRangesScenario.fill_pending(planner, conn),

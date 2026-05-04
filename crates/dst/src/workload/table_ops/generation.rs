@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
+    client::SessionId,
     core::NextInteractionSource,
     schema::{ColumnPlan, SchemaPlan, TablePlan},
     seed::{DstRng, DstSeed},
@@ -69,11 +70,11 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.connections.len()
     }
 
-    pub fn active_writer(&self) -> Option<usize> {
+    pub fn active_writer(&self) -> Option<SessionId> {
         self.model.active_writer()
     }
 
-    pub fn has_read_tx(&self, conn: usize) -> bool {
+    pub fn has_read_tx(&self, conn: SessionId) -> bool {
         self.model.has_read_tx(conn)
     }
 
@@ -81,23 +82,23 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.any_read_tx()
     }
 
-    pub fn begin_read_tx(&mut self, conn: usize) {
+    pub fn begin_read_tx(&mut self, conn: SessionId) {
         self.model.begin_read_tx(conn);
     }
 
-    pub fn release_read_tx(&mut self, conn: usize) {
+    pub fn release_read_tx(&mut self, conn: SessionId) {
         self.model.release_read_tx(conn);
     }
 
-    pub fn begin_tx(&mut self, conn: usize) {
+    pub fn begin_tx(&mut self, conn: SessionId) {
         self.model.begin_tx(conn);
     }
 
-    pub fn commit_tx(&mut self, conn: usize) {
+    pub fn commit_tx(&mut self, conn: SessionId) {
         self.model.commit(conn);
     }
 
-    pub fn rollback_tx(&mut self, conn: usize) {
+    pub fn rollback_tx(&mut self, conn: SessionId) {
         self.model.rollback(conn);
     }
 
@@ -105,7 +106,13 @@ impl<'a> ScenarioPlanner<'a> {
     ///
     /// The shared generator owns transaction lifecycle so scenario code can
     /// focus on domain operations like inserts, deletes, and range checks.
-    pub fn maybe_control_tx(&mut self, conn: usize, begin_pct: usize, commit_pct: usize, rollback_pct: usize) -> bool {
+    pub fn maybe_control_tx(
+        &mut self,
+        conn: SessionId,
+        begin_pct: usize,
+        commit_pct: usize,
+        rollback_pct: usize,
+    ) -> bool {
         match (TxControlChoice {
             begin_pct,
             commit_pct,
@@ -114,7 +121,7 @@ impl<'a> ScenarioPlanner<'a> {
         .sample(self.rng)
         {
             TxControlAction::Begin
-                if !self.model.connections[conn].in_tx
+                if !self.model.connections[conn.as_index()].in_tx
                     && !self.model.has_read_tx(conn)
                     && self.model.active_writer().is_none() =>
             {
@@ -122,12 +129,12 @@ impl<'a> ScenarioPlanner<'a> {
                 self.pending.push_back(TableWorkloadInteraction::begin_tx(conn));
                 true
             }
-            TxControlAction::Commit if self.model.connections[conn].in_tx => {
+            TxControlAction::Commit if self.model.connections[conn.as_index()].in_tx => {
                 self.model.commit(conn);
                 self.pending.push_back(TableWorkloadInteraction::commit_tx(conn));
                 true
             }
-            TxControlAction::Rollback if self.model.connections[conn].in_tx => {
+            TxControlAction::Rollback if self.model.connections[conn.as_index()].in_tx => {
                 self.model.rollback(conn);
                 self.pending.push_back(TableWorkloadInteraction::rollback_tx(conn));
                 true
@@ -136,7 +143,7 @@ impl<'a> ScenarioPlanner<'a> {
         }
     }
 
-    pub fn visible_rows(&self, conn: usize, table: usize) -> Vec<crate::schema::SimRow> {
+    pub fn visible_rows(&self, conn: SessionId, table: usize) -> Vec<crate::schema::SimRow> {
         self.model.visible_rows(conn, table)
     }
 
@@ -148,23 +155,23 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.make_row(self.rng, table)
     }
 
-    pub fn insert(&mut self, conn: usize, table: usize, row: crate::schema::SimRow) {
+    pub fn insert(&mut self, conn: SessionId, table: usize, row: crate::schema::SimRow) {
         self.model.insert(conn, table, row);
     }
 
-    pub fn batch_insert(&mut self, conn: usize, table: usize, rows: &[crate::schema::SimRow]) {
+    pub fn batch_insert(&mut self, conn: SessionId, table: usize, rows: &[crate::schema::SimRow]) {
         self.model.batch_insert(conn, table, rows);
     }
 
-    pub fn delete(&mut self, conn: usize, table: usize, row: crate::schema::SimRow) {
+    pub fn delete(&mut self, conn: SessionId, table: usize, row: crate::schema::SimRow) {
         self.model.delete(conn, table, row);
     }
 
-    pub fn batch_delete(&mut self, conn: usize, table: usize, rows: &[crate::schema::SimRow]) {
+    pub fn batch_delete(&mut self, conn: SessionId, table: usize, rows: &[crate::schema::SimRow]) {
         self.model.batch_delete(conn, table, rows);
     }
 
-    pub fn reinsert(&mut self, conn: usize, table: usize, row: crate::schema::SimRow) {
+    pub fn reinsert(&mut self, conn: SessionId, table: usize, row: crate::schema::SimRow) {
         self.model.delete(conn, table, row.clone());
         self.model.insert(conn, table, row);
     }
@@ -177,7 +184,7 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.add_index(table, cols);
     }
 
-    pub fn absent_row(&mut self, conn: usize, table: usize) -> crate::schema::SimRow {
+    pub fn absent_row(&mut self, conn: SessionId, table: usize) -> crate::schema::SimRow {
         self.model.absent_row(self.rng, conn, table)
     }
 
@@ -228,9 +235,9 @@ impl<S: TableScenario> TableWorkloadSource<S> {
             // Once the workload budget is spent, stop asking the scenario for
             // more work and only flush any open transaction state.
             while self.finalize_conn < self.num_connections {
-                let conn = self.finalize_conn;
+                let conn = SessionId::from_index(self.finalize_conn);
                 self.finalize_conn += 1;
-                if self.model.connections[conn].in_tx {
+                if self.model.connections[conn.as_index()].in_tx {
                     self.model.commit(conn);
                     self.pending.push_back(TableWorkloadInteraction::commit_tx(conn));
                     return;
@@ -250,7 +257,10 @@ impl<S: TableScenario> TableWorkloadSource<S> {
         // rolls back. Otherwise pick a fresh connection uniformly.
         let conn = if let Some(active_writer) = self.model.active_writer() {
             active_writer
-        } else if let Some(read_conn) = (0..self.num_connections).find(|&conn| self.model.has_read_tx(conn)) {
+        } else if let Some(read_conn) = (0..self.num_connections)
+            .map(SessionId::from_index)
+            .find(|&conn| self.model.has_read_tx(conn))
+        {
             // The current RelationalDB target can block when a write transaction
             // starts behind an open read transaction. Keep driving the snapshot
             // holder until it releases; interleaved read/write snapshots should
