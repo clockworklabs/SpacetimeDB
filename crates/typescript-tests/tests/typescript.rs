@@ -89,8 +89,8 @@ fn run_tests(cwd: &Path, report: &Path, filter: Option<String>, passthrough: Vec
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
     ensure_success(cwd, &command_line, status)?;
 
-    let results = parse_junit(&report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
-    print_results("typescript", &report, &results)?;
+    let results = parse_junit(report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
+    print_results("typescript", report, &results)?;
 
     Ok(())
 }
