@@ -7,7 +7,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     typecheck: {
-      include: ['src/**/*.test-d.ts'],
+      include: ['tests/**/*.test.ts'],
       tsconfig: './tsconfig.typecheck.json',
     },
   },
