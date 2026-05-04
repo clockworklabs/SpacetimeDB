@@ -14,11 +14,13 @@ use super::module_host::{CallProcedureParams, CallReducerParams, ModuleInfo, Mod
 use super::UpdateDatabaseResult;
 use crate::client::ClientActorId;
 use crate::config::V8HeapPolicyConfig;
+use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, ClientConnectedError, ProcedureCallError, ViewCallError, ViewCommand,
-    ViewCommandResult,
+    call_identity_connected, init_database, ClientConnectedError, OneOffQueryBsatnParams, OneOffQueryJsonParams,
+    OneOffQueryResult, OneOffQueryV2Params, ProcedureCallError, SqlCommand, SqlCommandResult, ViewCallError,
+    ViewCommand, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -34,9 +36,7 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
 use crate::worker_metrics::WORKER_METRICS;
-use core::any::type_name;
 use core::str;
-use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
 use prometheus::{IntCounter, IntGauge};
@@ -51,12 +51,10 @@ use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
 use std::os::raw::c_void;
-use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
-use tracing::Instrument;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
     scope_with_context, ArrayBuffer, Context, Function, Global, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
@@ -117,42 +115,6 @@ const JS_MAIN_INSTANCE_QUEUE_CAPACITY: usize = 1024;
 const JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY: usize = 1;
 pub(crate) const V8_WORKER_KIND_MAIN: &str = "main";
 
-thread_local! {
-    // Note, `on_module_thread` runs host closures on a single JS module thread.
-    // Enqueuing more JS module-thread work from one of those closures waits on the
-    // same worker thread that is already busy running the current closure.
-    // And this deadlocks.
-    static ON_JS_MODULE_THREAD: Cell<bool> = const { Cell::new(false) };
-}
-
-struct EnteredJsModuleThread;
-
-impl EnteredJsModuleThread {
-    fn new() -> Self {
-        ON_JS_MODULE_THREAD.with(|entered| {
-            assert!(
-                !entered.get(),
-                "reentrancy into the JS module thread; this would deadlock. \
-                 Do not enqueue onto this worker from inside `on_module_thread` work."
-            );
-            entered.set(true);
-        });
-        Self
-    }
-}
-
-impl Drop for EnteredJsModuleThread {
-    fn drop(&mut self) {
-        ON_JS_MODULE_THREAD.with(|entered| {
-            debug_assert!(
-                entered.get(),
-                "JS module thread marker should only be cleared after entry"
-            );
-            entered.set(false);
-        });
-    }
-}
-
 #[derive(Copy, Clone)]
 enum JsWorkerKind {
     Main,
@@ -170,16 +132,6 @@ impl JsWorkerKind {
             Self::Procedure => JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY,
         }
     }
-}
-
-pub(crate) fn assert_not_on_js_module_thread(label: &str) {
-    ON_JS_MODULE_THREAD.with(|entered| {
-        assert!(
-            !entered.get(),
-            "{label} attempted to re-enter the JS module thread from code already \
-             running on that thread; this would deadlock"
-        );
-    });
 }
 
 /// The actual V8 runtime, with initialization of V8.
@@ -482,41 +434,6 @@ impl JsMainInstance {
         send_js_request(&self.tx, &self.trapped, request).await
     }
 
-    pub async fn run_on_thread<F, R>(&self, f: F) -> R
-    where
-        F: AsyncFnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        assert_not_on_js_module_thread("run_on_thread");
-        let span = tracing::Span::current();
-        let (tx, rx) = oneshot::channel();
-
-        self.tx
-            .send(JsMainWorkerRequest::RunFunction(Box::new(move || {
-                async move {
-                    let _on_js_module_thread = EnteredJsModuleThread::new();
-                    let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
-                    if let Err(Err(_panic)) = tx.send(result) {
-                        tracing::warn!("uncaught panic on `SingleCoreExecutor`")
-                    }
-                }
-                .boxed_local()
-            })))
-            .await
-            .unwrap_or_else(|_| {
-                self.trapped.store(true, Ordering::Relaxed);
-                panic!("worker should stay live while handling {}", type_name::<R>())
-            });
-
-        match rx.await.unwrap_or_else(|_| {
-            self.trapped.store(true, Ordering::Relaxed);
-            panic!("worker should stay live while handling {}", type_name::<R>())
-        }) {
-            Ok(r) => r,
-            Err(e) => std::panic::resume_unwind(e),
-        }
-    }
-
     pub async fn update_database(
         &self,
         program: Program,
@@ -594,6 +511,30 @@ impl JsMainInstance {
             .await
             .map_err(|_| ViewCallError::InternalError(js_worker_disconnected_error("call_view")))
     }
+
+    pub(in crate::host) async fn call_sql(&self, cmd: SqlCommand) -> Result<SqlCommandResult, DBError> {
+        self.send_request(|reply_tx| JsMainWorkerRequest::CallSql { reply_tx, cmd })
+            .await
+            .map_err(|_| DBError::Other(anyhow::anyhow!(js_worker_disconnected_error("call_sql"))))
+    }
+
+    pub(in crate::host) async fn one_off_query_json(&self, params: OneOffQueryJsonParams) -> OneOffQueryResult {
+        self.send_request(|reply_tx| JsMainWorkerRequest::OneOffQueryJson { reply_tx, params })
+            .await
+            .unwrap_or_else(|_| Err(anyhow::anyhow!(js_worker_disconnected_error("one_off_query_json"))))
+    }
+
+    pub(in crate::host) async fn one_off_query_bsatn(&self, params: OneOffQueryBsatnParams) -> OneOffQueryResult {
+        self.send_request(|reply_tx| JsMainWorkerRequest::OneOffQueryBsatn { reply_tx, params })
+            .await
+            .unwrap_or_else(|_| Err(anyhow::anyhow!(js_worker_disconnected_error("one_off_query_bsatn"))))
+    }
+
+    pub(in crate::host) async fn one_off_query_v2(&self, params: OneOffQueryV2Params) -> OneOffQueryResult {
+        self.send_request(|reply_tx| JsMainWorkerRequest::OneOffQueryV2 { reply_tx, params })
+            .await
+            .unwrap_or_else(|_| Err(anyhow::anyhow!(js_worker_disconnected_error("one_off_query_v2"))))
+    }
 }
 
 impl JsProcedureInstance {
@@ -663,10 +604,6 @@ type JsReplyTx<T> = oneshot::Sender<T>;
 /// executes the request there, and then has to send the typed result back to
 /// the async caller.
 enum JsMainWorkerRequest {
-    /// See [`JsMainInstance::run_on_thread`].
-    ///
-    /// This variant carries its own reply channel.
-    RunFunction(Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>),
     /// See [`JsMainInstance::update_database`].
     UpdateDatabase {
         reply_tx: JsReplyTx<anyhow::Result<UpdateDatabaseResult>>,
@@ -683,6 +620,26 @@ enum JsMainWorkerRequest {
     CallView {
         reply_tx: JsReplyTx<ViewCommandResult>,
         cmd: ViewCommand,
+    },
+    /// See [`JsMainInstance::call_sql`].
+    CallSql {
+        reply_tx: JsReplyTx<SqlCommandResult>,
+        cmd: SqlCommand,
+    },
+    /// See [`JsMainInstance::one_off_query_json`].
+    OneOffQueryJson {
+        reply_tx: JsReplyTx<OneOffQueryResult>,
+        params: OneOffQueryJsonParams,
+    },
+    /// See [`JsMainInstance::one_off_query_bsatn`].
+    OneOffQueryBsatn {
+        reply_tx: JsReplyTx<OneOffQueryResult>,
+        params: OneOffQueryBsatnParams,
+    },
+    /// See [`JsMainInstance::one_off_query_v2`].
+    OneOffQueryV2 {
+        reply_tx: JsReplyTx<OneOffQueryResult>,
+        params: OneOffQueryV2Params,
     },
     /// See [`JsMainInstance::clear_all_clients`].
     ClearAllClients(JsReplyTx<anyhow::Result<()>>),
@@ -1068,7 +1025,7 @@ impl JsWorkerSpec for ProcedureJsWorker {
 
 fn handle_main_worker_request(
     request: JsMainWorkerRequest,
-    rt: &tokio::runtime::Handle,
+    _rt: &tokio::runtime::Handle,
     instance_common: &mut InstanceCommon,
     inst: &mut V8Instance<'_, '_, '_>,
     module_common: &ModuleCommon,
@@ -1079,7 +1036,6 @@ fn handle_main_worker_request(
     let mut should_exit = false;
 
     match request {
-        JsMainWorkerRequest::RunFunction(f) => rt.block_on(f()),
         JsMainWorkerRequest::UpdateDatabase {
             reply_tx,
             program,
@@ -1098,6 +1054,23 @@ fn handle_main_worker_request(
             let (res, trapped) = instance_common.handle_cmd(cmd, inst);
             send_worker_reply("call_view", reply_tx, res);
             should_exit = trapped;
+        }
+        JsMainWorkerRequest::CallSql { reply_tx, cmd } => {
+            let (res, trapped) = instance_common.handle_sql_cmd(cmd, inst);
+            send_worker_reply("call_sql", reply_tx, res);
+            should_exit = trapped;
+        }
+        JsMainWorkerRequest::OneOffQueryJson { reply_tx, params } => {
+            let res = ModuleHost::one_off_query_json_inner(params);
+            send_worker_reply("one_off_query_json", reply_tx, res);
+        }
+        JsMainWorkerRequest::OneOffQueryBsatn { reply_tx, params } => {
+            let res = ModuleHost::one_off_query_bsatn_inner(params);
+            send_worker_reply("one_off_query_bsatn", reply_tx, res);
+        }
+        JsMainWorkerRequest::OneOffQueryV2 { reply_tx, params } => {
+            let res = ModuleHost::one_off_query_v2_inner(params);
+            send_worker_reply("one_off_query_v2", reply_tx, res);
         }
         JsMainWorkerRequest::ClearAllClients(reply_tx) => {
             let res = instance_common.clear_all_clients();
