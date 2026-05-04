@@ -51,7 +51,7 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let unity_path = find_unity(args.unity_path.as_deref())?;
+    let unity = find_unity(args.unity_path.as_deref())?;
     let spacetime_bin = SpacetimeBin::prepare()?;
     let _server_cargo_restore = patch_blackholio_server_manifest(&server_dir.join("Cargo.toml"))?;
     let _unity_manifest_restore = patch_unity_package_manifest(&unity_project_dir.join("Packages/manifest.json"))?;
@@ -105,7 +105,7 @@ fn run() -> Result<()> {
     .context("failed to publish the Blackholio module")?;
 
     run_unity_tests(
-        &unity_path,
+        &unity,
         &unity_project_dir,
         &server.host_url,
         args.filter.as_deref(),
@@ -114,7 +114,7 @@ fn run() -> Result<()> {
 }
 
 fn run_unity_tests(
-    unity_path: &Path,
+    unity: &UnityRunner,
     project_dir: &Path,
     server_url: &str,
     filter: Option<&str>,
@@ -145,11 +145,9 @@ fn run_unity_tests(
     }
     args.extend_from_slice(passthrough);
 
-    let status = Command::new(unity_path)
-        .args(&args)
-        .env("SPACETIMEDB_SERVER_URL", server_url)
-        .status()
-        .with_context(|| format!("failed to run {}", unity_path.display()))?;
+    let (status, command_line) = unity
+        .run(&args, server_url)
+        .context("failed to run Unity playmode tests")?;
 
     if results_path.exists() {
         let results = parse_unity_results(&results_path)?;
@@ -158,30 +156,115 @@ fn run_unity_tests(
         print_log_excerpt(&log_path)?;
     }
 
-    ensure_success(status, &shell_line(unity_path, &args))
+    ensure_success(status, &command_line)
 }
 
-fn find_unity(explicit_path: Option<&Path>) -> Result<PathBuf> {
+enum UnityRunner {
+    Native(PathBuf),
+    Docker { image: String },
+}
+
+impl UnityRunner {
+    fn run(&self, unity_args: &[String], server_url: &str) -> Result<(ExitStatus, String)> {
+        match self {
+            UnityRunner::Native(path) => {
+                let mut args = unity_args.to_vec();
+                add_unity_license_args(&mut args);
+                let status = Command::new(path)
+                    .args(&args)
+                    .env("SPACETIMEDB_SERVER_URL", server_url)
+                    .status()
+                    .with_context(|| format!("failed to run {}", path.display()))?;
+                Ok((status, shell_line(path, &redact_unity_args(&args))))
+            }
+            UnityRunner::Docker { image } => {
+                let workspace = workspace_root();
+                let mut docker_args = vec![
+                    "run".to_string(),
+                    "--rm".to_string(),
+                    "--network".to_string(),
+                    "host".to_string(),
+                    "-e".to_string(),
+                    format!("SPACETIMEDB_SERVER_URL={server_url}"),
+                ];
+                for var in ["UNITY_EMAIL", "UNITY_PASSWORD", "UNITY_SERIAL", "UNITY_LICENSE"] {
+                    if env::var_os(var).is_some() {
+                        docker_args.push("-e".to_string());
+                        docker_args.push(var.to_string());
+                    }
+                }
+                docker_args.extend([
+                    "-v".to_string(),
+                    format!("{}:{}", workspace.display(), workspace.display()),
+                    "-w".to_string(),
+                    workspace.display().to_string(),
+                    image.clone(),
+                    "/opt/unity/Editor/Unity".to_string(),
+                ]);
+
+                let mut args = unity_args.to_vec();
+                add_unity_license_args(&mut args);
+                docker_args.extend(args);
+
+                let status = Command::new("docker")
+                    .args(&docker_args)
+                    .status()
+                    .context("failed to run docker")?;
+                Ok((status, shell_line("docker", &redact_unity_args(&docker_args))))
+            }
+        }
+    }
+}
+
+fn add_unity_license_args(args: &mut Vec<String>) {
+    if let (Ok(email), Ok(password), Ok(serial)) = (
+        env::var("UNITY_EMAIL"),
+        env::var("UNITY_PASSWORD"),
+        env::var("UNITY_SERIAL"),
+    ) {
+        args.extend([
+            "-username".to_string(),
+            email,
+            "-password".to_string(),
+            password,
+            "-serial".to_string(),
+            serial,
+        ]);
+    }
+}
+
+fn redact_unity_args(args: &[String]) -> Vec<String> {
+    let mut redacted = args.to_vec();
+    for index in 1..redacted.len() {
+        if matches!(redacted[index - 1].as_str(), "-username" | "-password" | "-serial") {
+            redacted[index] = "<redacted>".to_string();
+        }
+    }
+    redacted
+}
+
+fn find_unity(explicit_path: Option<&Path>) -> Result<UnityRunner> {
+    let version = env::var("UNITY_VERSION").unwrap_or_else(|_| UNITY_VERSION.to_string());
+
     if let Some(path) = explicit_path {
         if path.exists() {
-            return Ok(path.to_path_buf());
+            return Ok(UnityRunner::Native(path.to_path_buf()));
         }
         bail!("Unity executable does not exist: {}", path.display());
     }
 
     for var in ["UNITY_PATH", "UNITY_EXECUTABLE"] {
         if let Some(path) = env::var_os(var).map(PathBuf::from).filter(|path| path.exists()) {
-            return Ok(path);
+            return Ok(UnityRunner::Native(path));
         }
     }
 
     for name in ["unity", "Unity", "unity-editor"] {
         if let Some(path) = find_on_path(name) {
-            return Ok(path);
+            return Ok(UnityRunner::Native(path));
         }
     }
 
-    let version = env::var("UNITY_VERSION").unwrap_or_else(|_| UNITY_VERSION.to_string());
     let mut candidates = vec![
         PathBuf::from(format!("/opt/unity/editors/{version}/Editor/Unity")),
         PathBuf::from(format!("/opt/Unity/Hub/Editor/{version}/Editor/Unity")),
@@ -197,13 +280,29 @@ fn find_unity(explicit_path: Option<&Path>) -> Result<PathBuf> {
 
     for path in candidates {
         if path.exists() {
-            return Ok(path);
+            return Ok(UnityRunner::Native(path));
         }
     }
 
+    if let Some(image) = unity_docker_image(&version) {
+        return Ok(UnityRunner::Docker { image });
+    }
+
     bail!(
-        "could not find Unity. Pass --unity-path, set UNITY_PATH or UNITY_EXECUTABLE, or install Unity {version} in a standard GitHub runner path"
+        "could not find Unity. Pass --unity-path, set UNITY_PATH or UNITY_EXECUTABLE, install Unity {version} in a standard GitHub runner path, or set UNITY_USE_DOCKER=1"
     )
+}
+
+fn unity_docker_image(version: &str) -> Option<String> {
+    if let Ok(image) = env::var("UNITY_DOCKER_IMAGE")
+        && !image.is_empty()
+    {
+        return Some(image);
+    }
+    if env::var_os("UNITY_USE_DOCKER").as_deref() == Some(std::ffi::OsStr::new("1")) {
+        return Some(format!("unityci/editor:ubuntu-{version}-base-3"));
+    }
+    None
 }
 
 fn find_on_path(name: &str) -> Option<PathBuf> {
