@@ -687,7 +687,7 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// #[reducer]
 /// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
-///     if ctx.sender() != ctx.identity() {
+///     if ctx.sender() != ctx.database_identity() {
 ///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.".into());
 ///     }
 ///     // Reducer body...
@@ -1081,7 +1081,7 @@ impl ReducerContext {
     }
 
     /// Read the current module's [`Identity`].
-    pub fn identity(&self) -> Identity {
+    pub fn database_identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
         // However, this would be:
         // - Onerous, because we have no tooling to inspect the system tables from module code.
@@ -1091,6 +1091,12 @@ impl ReducerContext {
         // As such, we've just defined a host call
         // which reads the module identity out of the `InstanceEnv`.
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Read the current module's [`Identity`].
+    #[deprecated(note = "Use `ReducerContext::database_identity` instead.")]
+    pub fn identity(&self) -> Identity {
+        self.database_identity()
     }
 
     /// Create an anonymous (no sender) read-only view context
