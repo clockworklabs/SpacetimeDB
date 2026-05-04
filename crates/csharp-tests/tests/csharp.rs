@@ -36,6 +36,14 @@ fn run() -> Result<()> {
     fs::create_dir_all(&out_dir).with_context(|| format!("failed to create {}", out_dir.display()))?;
 
     prepare_csharp_sdk_solution(&workspace)?;
+    if args.list {
+        list_dotnet_tests(
+            &workspace.join("sdks/csharp"),
+            &["-warnaserror".to_string(), "--no-restore".to_string()],
+        )?;
+        return Ok(());
+    }
+
     run_dotnet_test(
         "csharp sdk",
         &workspace.join("sdks/csharp"),
@@ -44,11 +52,21 @@ fn run() -> Result<()> {
         &args,
         &["-warnaserror".to_string(), "--no-restore".to_string()],
     )?;
-    if !args.list {
-        run_regression_tests(&workspace)?;
-    }
+    run_regression_tests(&workspace)?;
 
     Ok(())
+}
+
+fn list_dotnet_tests(cwd: &Path, extra_args: &[String]) -> Result<()> {
+    let mut list_args = vec!["test".to_string(), "--list-tests".to_string()];
+    list_args.extend(extra_args.iter().cloned());
+    let command_line = shell_line("dotnet", &list_args);
+    let status = Command::new("dotnet")
+        .args(&list_args)
+        .current_dir(cwd)
+        .status()
+        .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
+    ensure_success(cwd, &command_line, status)
 }
 
 fn run_dotnet_test(
@@ -60,19 +78,6 @@ fn run_dotnet_test(
     extra_args: &[String],
 ) -> Result<()> {
     let report = out_dir.join(report_name);
-
-    if args.list {
-        let mut list_args = vec!["test".to_string(), "--list-tests".to_string()];
-        list_args.extend(extra_args.iter().cloned());
-        let command_line = shell_line("dotnet", &list_args);
-        let status = Command::new("dotnet")
-            .args(&list_args)
-            .current_dir(cwd)
-            .status()
-            .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-        ensure_success(cwd, &command_line, status)?;
-        return Ok(());
-    }
 
     let mut test_args = vec![
         "test".to_string(),
