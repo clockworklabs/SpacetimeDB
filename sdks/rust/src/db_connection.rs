@@ -1155,7 +1155,9 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
 
     /// Register a callback to run when a connection attempt fails asynchronously.
     ///
-    /// Errors which prevent [`Self::build`] from creating a connection are returned by `build` instead.
+    /// Errors which prevent [`Self::build`] from creating a connection are returned
+    /// by [`Self::build`] instead. Errors reported after the WebSocket is established
+    /// but before the initial connection message invoke this callback.
     pub fn on_connect_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
