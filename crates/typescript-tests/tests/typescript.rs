@@ -50,28 +50,24 @@ fn list_tests(cwd: &Path, filter: Option<String>) -> Result<()> {
         cmd.push(filter);
     }
     let command_line = shell_line("pnpm", &cmd);
-    let output = Command::new("pnpm")
+    let status = Command::new("pnpm")
         .args(&cmd)
         .current_dir(cwd)
-        .output()
+        .status()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(cwd, &command_line, output.status)?;
+    ensure_success(cwd, &command_line, status)?;
     Ok(())
 }
 
 fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
     let build_args = ["build".to_string()];
     let command_line = shell_line("pnpm", &build_args);
-    let output = Command::new("pnpm")
+    let status = Command::new("pnpm")
         .args(&build_args)
         .current_dir(cwd)
-        .output()
+        .status()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(cwd, &command_line, output.status)?;
+    ensure_success(cwd, &command_line, status)?;
 
     let mut test_args = vec![
         "test".to_string(),
@@ -86,14 +82,12 @@ fn run_tests(cwd: &Path, report: &Path, args: Args) -> Result<()> {
     }
     test_args.extend(args.passthrough);
     let command_line = shell_line("pnpm", &test_args);
-    let output = Command::new("pnpm")
+    let status = Command::new("pnpm")
         .args(&test_args)
         .current_dir(cwd)
-        .output()
+        .status()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(cwd, &command_line, output.status)?;
+    ensure_success(cwd, &command_line, status)?;
 
     let results = parse_junit(&report).with_context(|| "failed to parse TypeScript Vitest JUnit report")?;
     print_results("typescript", &report, &results)?;

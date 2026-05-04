@@ -65,14 +65,12 @@ fn run_dotnet_test(
         let mut list_args = vec!["test".to_string(), "--list-tests".to_string()];
         list_args.extend(extra_args.iter().cloned());
         let command_line = shell_line("dotnet", &list_args);
-        let output = Command::new("dotnet")
+        let status = Command::new("dotnet")
             .args(&list_args)
             .current_dir(cwd)
-            .output()
+            .status()
             .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-        print!("{}", String::from_utf8_lossy(&output.stdout));
-        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-        ensure_success(cwd, &command_line, output.status)?;
+        ensure_success(cwd, &command_line, status)?;
         return Ok(());
     }
 
@@ -92,14 +90,12 @@ fn run_dotnet_test(
     test_args.extend(args.passthrough.iter().cloned());
 
     let command_line = shell_line("dotnet", &test_args);
-    let output = Command::new("dotnet")
+    let status = Command::new("dotnet")
         .args(&test_args)
         .current_dir(cwd)
-        .output()
+        .status()
         .with_context(|| format!("failed to spawn `{command_line}` in {}", cwd.display()))?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(cwd, &command_line, output.status)?;
+    ensure_success(cwd, &command_line, status)?;
     let actual_report = find_trx(&report, cwd).with_context(|| format!("failed to locate TRX report for {suite}"))?;
     let results = parse_trx(&actual_report).with_context(|| format!("failed to parse {suite} TRX report"))?;
     print_results(suite, &actual_report, &results)?;
@@ -126,37 +122,29 @@ fn find_trx(preferred: &Path, cwd: &Path) -> Result<PathBuf> {
 }
 
 fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
-    let output = Command::new("dotnet")
+    let status = Command::new("dotnet")
         .args(["pack", "crates/bindings-csharp/BSATN.Runtime"])
         .current_dir(workspace)
-        .output()
+        .status()
         .with_context(|| {
             format!(
                 "failed to spawn `dotnet pack crates/bindings-csharp/BSATN.Runtime` in {}",
                 workspace.display()
             )
         })?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(
-        workspace,
-        "dotnet pack crates/bindings-csharp/BSATN.Runtime",
-        output.status,
-    )?;
+    ensure_success(workspace, "dotnet pack crates/bindings-csharp/BSATN.Runtime", status)?;
 
-    let output = Command::new("dotnet")
+    let status = Command::new("dotnet")
         .args(["pack", "crates/bindings-csharp/Runtime"])
         .current_dir(workspace)
-        .output()
+        .status()
         .with_context(|| {
             format!(
                 "failed to spawn `dotnet pack crates/bindings-csharp/Runtime` in {}",
                 workspace.display()
             )
         })?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(workspace, "dotnet pack crates/bindings-csharp/Runtime", output.status)?;
+    ensure_success(workspace, "dotnet pack crates/bindings-csharp/Runtime", status)?;
 
     let cwd = workspace.join("sdks/csharp");
     // Write out the NuGet config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
@@ -165,36 +153,32 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
     // This means that (if version numbers match) we will test the local versions of the C# packages, even
     // if they're not pushed to NuGet.
     // See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-    let output = Command::new("bash")
+    let status = Command::new("bash")
         .args(["./tools~/write-nuget-config.sh", "../.."])
         .current_dir(&cwd)
-        .output()
+        .status()
         .with_context(|| {
             format!(
                 "failed to spawn `bash ./tools~/write-nuget-config.sh ../..` in {}",
                 cwd.display()
             )
         })?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(&cwd, "bash ./tools~/write-nuget-config.sh ../..", output.status)?;
+    ensure_success(&cwd, "bash ./tools~/write-nuget-config.sh ../..", status)?;
 
-    let output = Command::new("dotnet")
+    let status = Command::new("dotnet")
         .args(["restore", "--configfile", "NuGet.Config", "SpacetimeDB.ClientSDK.sln"])
         .current_dir(&cwd)
-        .output()
+        .status()
         .with_context(|| {
             format!(
                 "failed to spawn `dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln` in {}",
                 cwd.display()
             )
         })?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
     ensure_success(
         &cwd,
         "dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln",
-        output.status,
+        status,
     )?;
     Ok(())
 }
@@ -202,20 +186,18 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
 fn run_regression_tests(workspace: &Path) -> Result<()> {
     let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
     let cwd = workspace.join("sdks/csharp");
-    let output = Command::new("bash")
+    let status = Command::new("bash")
         .args(["tools~/run-regression-tests.sh"])
         .current_dir(&cwd)
         .env("SPACETIMEDB_SERVER_URL", &guard.host_url)
-        .output()
+        .status()
         .with_context(|| {
             format!(
                 "failed to spawn `bash tools~/run-regression-tests.sh` in {}",
                 cwd.display()
             )
         })?;
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    ensure_success(&cwd, "bash tools~/run-regression-tests.sh", output.status)?;
+    ensure_success(&cwd, "bash tools~/run-regression-tests.sh", status)?;
     Ok(())
 }
 
