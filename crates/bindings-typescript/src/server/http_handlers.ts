@@ -1,8 +1,18 @@
-import { HttpRequest, HttpResponse, type MethodOrAny, type HttpMethod } from '../lib/autogen/types';
+import {
+  HttpRequest,
+  HttpResponse,
+  type MethodOrAny,
+  type HttpMethod,
+} from '../lib/autogen/types';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import { bsatnBaseSize } from '../lib/util';
-import { Headers, SyncResponse, deserializeHeaders, serializeHeaders } from './http_internal';
+import {
+  Headers,
+  SyncResponse,
+  deserializeHeaders,
+  serializeHeaders,
+} from './http_internal';
 import {
   exportContext,
   registerExport,
@@ -30,7 +40,10 @@ type Route = {
 
 export type HttpHandlers = HttpHandler[];
 
-const responseBaseSize = bsatnBaseSize({ types: [] }, HttpResponse.algebraicType);
+const responseBaseSize = bsatnBaseSize(
+  { types: [] },
+  HttpResponse.algebraicType
+);
 
 const routesSymbol = Symbol('SpacetimeDB.http.routes');
 const httpHandlerSymbol = Symbol('SpacetimeDB.http.handler');
