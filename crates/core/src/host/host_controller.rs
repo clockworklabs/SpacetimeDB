@@ -1423,7 +1423,7 @@ where
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
     let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
-    let worker_kind = crate::host::v8::V8_WORKER_KIND_INSTANCE_LANE;
+    let worker_kind = crate::host::v8::V8_WORKER_KIND_MAIN;
     let _ = WORKER_METRICS
         .v8_total_heap_size_bytes
         .remove_label_values(db, worker_kind);

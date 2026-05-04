@@ -35,6 +35,7 @@ use derive_more::From;
 use futures::lock::Mutex;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use parking_lot::RwLock;
 use prometheus::{Histogram, IntGauge};
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
@@ -73,6 +74,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
+use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -359,7 +361,7 @@ struct WasmtimeModuleHost {
 
 struct V8ModuleHost {
     module: super::v8::JsModule,
-    instance_lane: super::v8::JsInstanceLane,
+    main_instance: SharedJsInstanceManager,
     procedure_instances: ModuleInstanceManager<super::v8::JsModule>,
 }
 
@@ -372,6 +374,10 @@ trait GenericModule {
 
 trait GenericModuleInstance {
     fn trapped(&self) -> bool;
+
+    fn needs_replacement(&self) -> bool {
+        self.trapped()
+    }
 }
 
 impl<T: WasmInstance> GenericModuleInstance for super::wasm_common::module_host_actor::WasmModuleInstance<T> {
@@ -383,6 +389,10 @@ impl<T: WasmInstance> GenericModuleInstance for super::wasm_common::module_host_
 impl<T: GenericModuleInstance + ?Sized> GenericModuleInstance for Box<T> {
     fn trapped(&self) -> bool {
         (**self).trapped()
+    }
+
+    fn needs_replacement(&self) -> bool {
+        (**self).needs_replacement()
     }
 }
 
@@ -409,6 +419,10 @@ impl GenericModule for super::v8::JsModule {
 impl GenericModuleInstance for super::v8::JsInstance {
     fn trapped(&self) -> bool {
         self.trapped()
+    }
+
+    fn needs_replacement(&self) -> bool {
+        self.needs_replacement()
     }
 }
 
@@ -755,13 +769,36 @@ impl CallProcedureParams {
 struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
-    module_instances_metric: ModuleInstancesMetric,
-    create_instance_time_metric: CreateInstanceTimeMetric,
+    metrics: InstanceManagerMetrics,
+}
+
+/// Holds the single shared instance used by the JS main execution path.
+///
+/// Unlike [`ModuleInstanceManager`], checkout is not exclusive: callers get a
+/// clone of the active instance handle immediately and enqueue work on its
+/// sender. Replacement is serialized only after that active instance traps or
+/// otherwise becomes unusable.
+struct SharedJsInstanceManager {
+    active: RwLock<JsInstance>,
+    module: super::v8::JsModule,
+    metrics: InstanceManagerMetrics,
+    replace_lock: AsyncMutex<()>,
+}
+
+#[derive(Clone)]
+struct InstanceManagerMetrics {
+    module_instances: ModuleInstancesMetric,
+    create_instance_time: CreateInstanceTimeMetric,
 }
 
 /// Handle on the `spacetime_module_create_instance_time_seconds` label for a particular database
 /// which calls `remove_label_values` to clean up on drop.
+#[derive(Clone)]
 struct CreateInstanceTimeMetric {
+    inner: Arc<CreateInstanceTimeMetricInner>,
+}
+
+struct CreateInstanceTimeMetricInner {
     metric: Histogram,
     host_type: HostType,
     database_identity: Identity,
@@ -769,14 +806,19 @@ struct CreateInstanceTimeMetric {
 
 /// Handle on the `spacetime_module_instances` label for a particular database
 /// which calls `remove_label_values` to clean up on drop.
+#[derive(Clone)]
 struct ModuleInstancesMetric {
+    inner: Arc<ModuleInstancesMetricInner>,
+}
+
+struct ModuleInstancesMetricInner {
     metric: IntGauge,
     host_type: HostType,
     database_identity: Identity,
     count: std::sync::Mutex<i64>,
 }
 
-impl Drop for CreateInstanceTimeMetric {
+impl Drop for CreateInstanceTimeMetricInner {
     fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_create_instance_time_seconds
@@ -784,7 +826,7 @@ impl Drop for CreateInstanceTimeMetric {
     }
 }
 
-impl Drop for ModuleInstancesMetric {
+impl Drop for ModuleInstancesMetricInner {
     fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_instances
@@ -792,57 +834,96 @@ impl Drop for ModuleInstancesMetric {
     }
 }
 
+impl InstanceManagerMetrics {
+    fn new(host_type: HostType, database_identity: Identity) -> Self {
+        Self {
+            module_instances: ModuleInstancesMetric::new(host_type, database_identity),
+            create_instance_time: CreateInstanceTimeMetric::new(host_type, database_identity),
+        }
+    }
+
+    fn observe_instance_created(&self, duration: std::time::Duration) {
+        self.create_instance_time.observe(duration);
+        self.module_instances.inc();
+    }
+
+    fn track_initial_instance(&self) {
+        self.module_instances.inc();
+    }
+
+    fn track_instance_removed(&self) {
+        self.module_instances.dec();
+    }
+}
+
 impl ModuleInstancesMetric {
+    fn new(host_type: HostType, database_identity: Identity) -> Self {
+        let metric = WORKER_METRICS
+            .module_instances
+            .with_label_values(&database_identity, &host_type);
+        metric.set(0);
+
+        Self {
+            inner: Arc::new(ModuleInstancesMetricInner {
+                metric,
+                host_type,
+                database_identity,
+                count: std::sync::Mutex::new(0),
+            }),
+        }
+    }
+
     fn inc(&self) {
-        let mut count = self.count.lock().unwrap();
+        let mut count = self.inner.count.lock().unwrap();
         *count += 1;
-        self.metric.set(*count);
+        self.inner.metric.set(*count);
     }
 
     fn dec(&self) {
-        let mut count = self.count.lock().unwrap();
+        let mut count = self.inner.count.lock().unwrap();
         if *count == 0 {
             return;
         }
         *count -= 1;
-        self.metric.set(*count);
+        self.inner.metric.set(*count);
     }
 }
 
 impl CreateInstanceTimeMetric {
+    fn new(host_type: HostType, database_identity: Identity) -> Self {
+        Self {
+            inner: Arc::new(CreateInstanceTimeMetricInner {
+                metric: WORKER_METRICS
+                    .module_create_instance_time_seconds
+                    .with_label_values(&database_identity, &host_type),
+                host_type,
+                database_identity,
+            }),
+        }
+    }
+
     fn observe(&self, duration: std::time::Duration) {
-        self.metric.observe(duration.as_secs_f64());
+        self.inner.metric.observe(duration.as_secs_f64());
     }
 }
 
 impl<M: GenericModule> ModuleInstanceManager<M> {
     fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
-        let host_type = module.host_type();
-        let module_instances_metric = ModuleInstancesMetric {
-            metric: WORKER_METRICS
-                .module_instances
-                .with_label_values(&database_identity, &host_type),
-            host_type,
-            database_identity,
-            count: std::sync::Mutex::new(1),
-        };
+        let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
+        Self::new_with_metrics(module, init_inst, metrics)
+    }
 
-        let create_instance_time_metric = CreateInstanceTimeMetric {
-            metric: WORKER_METRICS
-                .module_create_instance_time_seconds
-                .with_label_values(&database_identity, &host_type),
-            host_type,
-            database_identity,
-        };
-
+    fn new_with_metrics(module: M, init_inst: Option<M::Instance>, metrics: InstanceManagerMetrics) -> Self {
         let mut instances = VecDeque::new();
         instances.extend(init_inst);
+        for _ in 0..instances.len() {
+            metrics.track_initial_instance();
+        }
 
         Self {
             instances: Mutex::new(instances),
             module,
-            module_instances_metric,
-            create_instance_time_metric,
+            metrics,
         }
     }
 
@@ -861,22 +942,71 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             let start_time = std::time::Instant::now();
             let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
-            self.create_instance_time_metric.observe(elapsed_time);
-            self.module_instances_metric.inc();
+            self.metrics.observe_instance_created(elapsed_time);
             res
         }
     }
 
     async fn return_instance(&self, inst: M::Instance) {
-        if inst.trapped() {
+        if inst.needs_replacement() {
             // Don't return trapped instances;
             // they may have left internal data structures in the guest `Instance`
             // (WASM linear memory, V8 global scope) in a bad state.
-            self.module_instances_metric.dec();
+            self.metrics.track_instance_removed();
             return;
         }
 
         self.instances.lock().await.push_front(inst);
+    }
+}
+
+impl SharedJsInstanceManager {
+    fn new(module: super::v8::JsModule, init_inst: JsInstance, metrics: InstanceManagerMetrics) -> Self {
+        metrics.track_initial_instance();
+        Self {
+            active: RwLock::new(init_inst),
+            module,
+            metrics,
+            replace_lock: AsyncMutex::new(()),
+        }
+    }
+
+    async fn with_instance<R>(&self, f: impl AsyncFnOnce(JsInstance) -> R) -> R {
+        let inst = self.get_instance().await;
+        let observed = inst.clone();
+        let res = f(inst).await;
+        self.replace_if_needed(&observed).await;
+        res
+    }
+
+    async fn get_instance(&self) -> JsInstance {
+        let inst = self.active.read().clone();
+        if !inst.needs_replacement() {
+            return inst;
+        }
+
+        self.replace_if_needed(&inst).await;
+        self.active.read().clone()
+    }
+
+    async fn replace_if_needed(&self, observed: &JsInstance) {
+        if !observed.needs_replacement() {
+            return;
+        }
+
+        let _replace_guard = self.replace_lock.lock().await;
+        if !self.active.read().needs_replacement() {
+            return;
+        }
+
+        self.metrics.track_instance_removed();
+
+        let start_time = std::time::Instant::now();
+        let next = self.module.create_main_instance().await;
+        let elapsed_time = start_time.elapsed();
+        self.metrics.observe_instance_created(elapsed_time);
+
+        *self.active.write() = next;
     }
 }
 
@@ -1090,11 +1220,13 @@ impl ModuleHost {
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
-                let instance_lane = super::v8::JsInstanceLane::new(module.clone(), init_inst);
-                let procedure_instances = ModuleInstanceManager::new(module.clone(), None, database_identity);
+                let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
+                let host_module = module.clone();
+                let main_instance = SharedJsInstanceManager::new(module.clone(), init_inst, metrics.clone());
+                let procedure_instances = ModuleInstanceManager::new_with_metrics(module, None, metrics);
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
-                    module,
-                    instance_lane,
+                    module: host_module,
+                    main_instance,
                     procedure_instances,
                 })))
             }
@@ -1166,13 +1298,15 @@ impl ModuleHost {
                     .await
             }
             ModuleHostInner::Js(js) => {
-                let instance_lane = &js.instance_lane;
-                instance_lane
-                    .run_on_thread(async move || {
-                        drop(timer_guard);
-                        f().await
+                js.main_instance
+                    .with_instance(async |inst| {
+                        inst.run_on_thread(async move || {
+                            drop(timer_guard);
+                            f().await
+                        })
+                        .await
                     })
-                    .await?
+                    .await
             }
         })
     }
@@ -1211,7 +1345,7 @@ impl ModuleHost {
         arg: A,
         timer: impl FnOnce(&str) -> Guard,
         work_wasm: impl AsyncFnOnce(Guard, &SingleCoreExecutor, Box<ModuleInstance>, A) -> (R, Box<ModuleInstance>),
-        work_js: impl AsyncFnOnce(Guard, &super::v8::JsInstanceLane, A) -> R,
+        work_js: impl AsyncFnOnce(Guard, &JsInstance, A) -> R,
     ) -> Result<R, NoSuchModule> {
         self.guard_closed()?;
         let timer_guard = timer(label);
@@ -1237,7 +1371,11 @@ impl ModuleHost {
                     .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
                     .await
             }
-            ModuleHostInner::Js(js) => work_js(timer_guard, &js.instance_lane, arg).await,
+            ModuleHostInner::Js(js) => {
+                js.main_instance
+                    .with_instance(async |inst| work_js(timer_guard, &inst, arg).await)
+                    .await
+            }
         })
     }
 
@@ -1250,7 +1388,7 @@ impl ModuleHost {
         label: &str,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
-        js: impl AsyncFnOnce(A, &super::v8::JsInstanceLane) -> R,
+        js: impl AsyncFnOnce(A, &JsInstance) -> R,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
@@ -1287,7 +1425,7 @@ impl ModuleHost {
     ///
     /// For WASM, this is identical to [`Self::call`].
     /// For V8/JS, this uses the pooled procedure instances instead of the
-    /// single instance lane.
+    /// shared main instance.
     async fn call_pooled<A, R>(
         &self,
         label: &str,
@@ -1337,7 +1475,7 @@ impl ModuleHost {
             label,
             cmd,
             async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
-            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd).await),
+            async |cmd, inst| inst.call_view(cmd).await,
         )
         .await?
     }

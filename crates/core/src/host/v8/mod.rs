@@ -17,7 +17,8 @@ use crate::config::V8HeapPolicyConfig;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, ClientConnectedError, ViewCallError, ViewCommand, ViewCommandResult,
+    call_identity_connected, init_database, ClientConnectedError, ProcedureCallError, ViewCallError, ViewCommand,
+    ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -38,7 +39,6 @@ use core::str;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use itertools::Either;
-use parking_lot::RwLock;
 use prometheus::{IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
@@ -52,10 +52,10 @@ use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
 use std::os::raw::c_void;
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
-use tokio::sync::{oneshot, Mutex as AsyncMutex, Notify};
+use tokio::sync::{mpsc, oneshot};
 use tracing::Instrument;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
@@ -112,9 +112,10 @@ impl V8Runtime {
 }
 
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
-static NEXT_JS_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
-pub(crate) const V8_WORKER_KIND_INSTANCE_LANE: &str = "instance_lane";
+const JS_MAIN_INSTANCE_QUEUE_CAPACITY: usize = 1024;
+const JS_POOLED_INSTANCE_QUEUE_CAPACITY: usize = 1;
+pub(crate) const V8_WORKER_KIND_MAIN: &str = "main";
 
 thread_local! {
     // Note, `on_module_thread` runs host closures on a single JS module thread.
@@ -154,13 +155,20 @@ impl Drop for EnteredJsModuleThread {
 
 #[derive(Copy, Clone)]
 enum JsWorkerKind {
-    InstanceLane,
+    Main,
     Pooled,
 }
 
 impl JsWorkerKind {
     const fn checks_heap(self) -> bool {
-        matches!(self, Self::InstanceLane)
+        matches!(self, Self::Main)
+    }
+
+    const fn request_queue_capacity(self) -> usize {
+        match self {
+            Self::Main => JS_MAIN_INSTANCE_QUEUE_CAPACITY,
+            Self::Pooled => JS_POOLED_INSTANCE_QUEUE_CAPACITY,
+        }
     }
 }
 
@@ -225,12 +233,6 @@ impl V8RuntimeInner {
 
         // Convert program to a string.
         let program: Arc<str> = str::from_utf8(program_bytes)?.into();
-        let database_identity = mcc.replica_ctx.database_identity;
-        let lane_queue = JsWorkerQueue::unbounded_with_metric(
-            WORKER_METRICS
-                .v8_instance_lane_queue_length
-                .with_label_values(&database_identity),
-        );
 
         // Validate/create the module and spawn the first instance.
         let mcc = Either::Right(mcc);
@@ -242,8 +244,7 @@ impl V8RuntimeInner {
             load_balance_guard.clone(),
             core_pinner.clone(),
             heap_policy,
-            JsWorkerKind::InstanceLane,
-            lane_queue.clone(),
+            JsWorkerKind::Main,
         )
         .await?;
         let module = JsModule {
@@ -252,7 +253,6 @@ impl V8RuntimeInner {
             load_balance_guard,
             core_pinner,
             heap_policy,
-            lane_queue,
         };
 
         Ok(ModuleWithInstance::Js { module, init_inst })
@@ -266,7 +266,6 @@ pub struct JsModule {
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
-    lane_queue: Arc<JsWorkerQueue>,
 }
 
 impl JsModule {
@@ -282,7 +281,7 @@ impl JsModule {
         self.common.info().clone()
     }
 
-    async fn create_instance_with_queue(&self, request_queue: Arc<JsWorkerQueue>) -> JsInstance {
+    async fn create_instance_with_kind(&self, worker_kind: JsWorkerKind) -> JsInstance {
         let program = self.program.clone();
         let common = self.common.clone();
         let load_balance_guard = self.load_balance_guard.clone();
@@ -296,8 +295,7 @@ impl JsModule {
             load_balance_guard,
             core_pinner,
             heap_policy,
-            JsWorkerKind::Pooled,
-            request_queue,
+            worker_kind,
         )
         .await
         .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
@@ -305,14 +303,11 @@ impl JsModule {
     }
 
     pub async fn create_instance(&self) -> JsInstance {
-        // We use a rendezvous channel for pooled instances, because they are checked
-        // out one request at a time and subsequently returned to the pool, unlike the
-        // long lived instance used for executing reducers.
-        self.create_instance_with_queue(JsWorkerQueue::bounded(0)).await
+        self.create_instance_with_kind(JsWorkerKind::Pooled).await
     }
 
-    async fn create_lane_instance(&self) -> JsInstance {
-        self.create_instance_with_queue(self.lane_queue.clone()).await
+    pub(in crate::host) async fn create_main_instance(&self) -> JsInstance {
+        self.create_instance_with_kind(JsWorkerKind::Main).await
     }
 }
 
@@ -445,172 +440,32 @@ impl JsInstanceEnv {
 /// and friends.
 #[derive(Clone)]
 pub struct JsInstance {
-    /// Stable identifier for the underlying worker generation.
-    ///
-    /// All clones of the same handle share the same `id`. The instance lane uses
-    /// it to tell whether the currently active worker has already been replaced
-    /// after a trap or disconnect.
-    id: u64,
-    /// Shared across cloned handles and JS instances so callers keep inserting
-    /// into the same queue while recovery swaps in a replacement instance.
-    ///
-    /// The `Arc` is intentional here because `JsWorkerQueue` owns the `rx` handle
-    /// that gets cloned into each worker during replacement, and cloning that wrapper
-    /// by value would clone the `Receiver` too, which changes flume’s receiver count.
-    /// It would also run `JsWorkerQueue::drop` once per `JsInstance` clone, which
-    /// would over-adjust the queue-length metric. So the outer `Arc` is there to keep
-    /// one queue wrapper identity shared across all `JsInstance` clones, and to make
-    /// its `Drop` run exactly once.
-    request_queue: Arc<JsWorkerQueue>,
-    /// Lifecycle flags for this specific worker generation.
-    worker_state: Arc<JsWorkerState>,
-}
-
-/// Shared request queue for a JS instance lane.
-///
-/// Async callers enqueue [`JsWorkerRequest`] values here
-/// and wait on their per-request one-shot replies sent back via [`JsReplyTx`].
-/// The dedicated JS worker thread, spawned in [`spawn_instance_worker`]
-/// drains this queue and executes those requests on the isolate.
-///
-/// Note, this queue outlives any single JS worker or V8 isolate.
-/// When the active worker traps or is retired for heap growth,
-/// [`JsInstanceLane::replace_active_if_current`] waits for it to fully exit
-/// and spawns a fresh worker which then starts reading from the queue so that
-/// buffered requests are not dropped.
-struct JsWorkerQueue {
-    /// Sending side used by async callers to enqueue work for the active worker.
-    tx: flume::Sender<JsWorkerRequest>,
-    /// Receiving side kept outside of the worker thread so a replacement worker can
-    /// resume draining the exact same queue after trap recovery or heap retirement.
-    rx: flume::Receiver<JsWorkerRequest>,
-    /// Optional backlog gauge for the long-lived instance-lane queue.
-    metric: Option<IntGauge>,
-}
-
-impl JsWorkerQueue {
-    /// Builds a rendezvous queue for pooled instances, where the caller and worker
-    /// synchronize directly on each handoff instead of buffering backlog.
-    fn bounded(capacity: usize) -> Arc<Self> {
-        let (tx, rx) = flume::bounded(capacity);
-        Arc::new(Self { tx, rx, metric: None })
-    }
-
-    /// Builds the long-lived instance-lane queue and wires in backlog accounting.
-    fn unbounded_with_metric(metric: IntGauge) -> Arc<Self> {
-        let (tx, rx) = flume::unbounded();
-        Arc::new(Self {
-            tx,
-            rx,
-            metric: Some(metric),
-        })
-    }
-
-    /// Enqueues a request for the active worker and increments the backlog gauge
-    /// after the request is accepted by the channel.
-    async fn send_async(&self, request: JsWorkerRequest) -> Result<(), flume::SendError<JsWorkerRequest>> {
-        self.tx.send_async(request).await?;
-        if let Some(metric) = &self.metric {
-            metric.inc();
-        }
-        Ok(())
-    }
-
-    /// Clones the receiving handle so a newly spawned worker can
-    /// resume draining this same queue after the previous one exits.
-    fn receiver(&self) -> flume::Receiver<JsWorkerRequest> {
-        self.rx.clone()
-    }
-}
-
-impl Drop for JsWorkerQueue {
-    fn drop(&mut self) {
-        if let Some(metric) = &self.metric {
-            metric.sub(self.tx.len() as _);
-        }
-    }
-}
-
-/// Lifecycle state for a single JS worker.
-///
-/// The `trapped` bit tells the lane that this worker must not keep serving
-/// future work. The `exited` bit and [`Notify`] are what make the [JsWorkerQueue]
-/// remain single-consumer. Recovery waits on [`Self::wait_exited`] before spawning
-/// the replacement worker, so there is no overlap where two workers can both drain
-/// the queue.
-#[derive(Default)]
-struct JsWorkerState {
-    /// Set once this JS instance has trapped or been retired and must not
-    /// accept any further work from the instance lane.
-    trapped: AtomicBool,
-    /// Set once the worker thread has actually exited and stopped draining the queue.
-    exited: AtomicBool,
-    /// Wakes replacement logic waiting for this worker to finish exiting.
-    exited_notify: Notify,
-}
-
-impl JsWorkerState {
-    /// Returns whether this JS instance has been marked unusable.
-    fn trapped(&self) -> bool {
-        self.trapped.load(Ordering::Relaxed)
-    }
-
-    /// Returns whether the worker thread has fully exited.
-    fn exited(&self) -> bool {
-        self.exited.load(Ordering::Relaxed)
-    }
-
-    /// Returns whether the instance lane should replace this JS instance.
-    fn needs_recovery(&self) -> bool {
-        self.trapped() || self.exited()
-    }
-
-    /// Marks the JS instance as poisoned so no further requests should target it.
-    fn mark_trapped(&self) {
-        self.trapped.store(true, Ordering::Relaxed);
-    }
-
-    /// Marks the worker thread as exited and wakes any replacement task waiting on it.
-    fn mark_exited(&self) {
-        self.exited.store(true, Ordering::Relaxed);
-        self.exited_notify.notify_waiters();
-    }
-
-    /// Waits until the worker thread has fully exited before replacement proceeds.
-    async fn wait_exited(&self) {
-        while !self.exited() {
-            self.exited_notify.notified().await;
-        }
-    }
+    tx: mpsc::Sender<JsWorkerRequest>,
+    trapped: Arc<AtomicBool>,
 }
 
 impl JsInstance {
-    fn id(&self) -> u64 {
-        self.id
-    }
-
     pub fn trapped(&self) -> bool {
-        self.worker_state.trapped()
+        self.trapped.load(Ordering::Relaxed)
     }
 
-    fn needs_recovery(&self) -> bool {
-        self.worker_state.needs_recovery()
-    }
-
-    async fn wait_exited(&self) {
-        self.worker_state.wait_exited().await;
+    pub(in crate::host) fn needs_replacement(&self) -> bool {
+        self.trapped() || self.tx.is_closed()
     }
 
     async fn send_request<T>(
         &self,
         request: impl FnOnce(JsReplyTx<T>) -> JsWorkerRequest,
-    ) -> Result<T, WorkerDisconnected> {
+    ) -> Result<T, JsWorkerDisconnected> {
         let (reply_tx, reply_rx) = oneshot::channel();
-        self.request_queue
-            .send_async(request(reply_tx))
-            .await
-            .map_err(|_| WorkerDisconnected)?;
-        reply_rx.await.map_err(|_| WorkerDisconnected)
+        self.tx.send(request(reply_tx)).await.map_err(|_| {
+            self.trapped.store(true, Ordering::Relaxed);
+            JsWorkerDisconnected
+        })?;
+        reply_rx.await.map_err(|_| {
+            self.trapped.store(true, Ordering::Relaxed);
+            JsWorkerDisconnected
+        })
     }
 
     pub async fn run_on_thread<F, R>(&self, f: F) -> R
@@ -618,12 +473,14 @@ impl JsInstance {
         F: AsyncFnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
+        assert_not_on_js_module_thread("run_on_thread");
         let span = tracing::Span::current();
         let (tx, rx) = oneshot::channel();
 
-        self.request_queue
-            .send_async(JsWorkerRequest::RunFunction(Box::new(move || {
+        self.tx
+            .send(JsWorkerRequest::RunFunction(Box::new(move || {
                 async move {
+                    let _on_js_module_thread = EnteredJsModuleThread::new();
                     let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
                     if let Err(Err(_panic)) = tx.send(result) {
                         tracing::warn!("uncaught panic on `SingleCoreExecutor`")
@@ -632,12 +489,15 @@ impl JsInstance {
                 .boxed_local()
             })))
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while handling {}", type_name::<R>()));
+            .unwrap_or_else(|_| {
+                self.trapped.store(true, Ordering::Relaxed);
+                panic!("worker should stay live while handling {}", type_name::<R>())
+            });
 
-        match rx
-            .await
-            .unwrap_or_else(|_| panic!("worker should stay live while handling {}", type_name::<R>()))
-        {
+        match rx.await.unwrap_or_else(|_| {
+            self.trapped.store(true, Ordering::Relaxed);
+            panic!("worker should stay live while handling {}", type_name::<R>())
+        }) {
             Ok(r) => r,
             Err(e) => std::panic::resume_unwind(e),
         }
@@ -656,19 +516,19 @@ impl JsInstance {
             policy,
         })
         .await
-        .unwrap_or_else(|_| panic!("worker should stay live while updating the database"))
+        .map_err(|_| anyhow::anyhow!(js_worker_disconnected_error("update_database")))?
     }
 
-    pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
+    pub async fn call_reducer(&self, params: CallReducerParams) -> Result<ReducerCallResult, ReducerCallError> {
         self.send_request(|reply_tx| JsWorkerRequest::CallReducer { reply_tx, params })
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while calling a reducer"))
+            .map_err(|_| ReducerCallError::WorkerError(js_worker_disconnected_error("call_reducer")))
     }
 
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.send_request(JsWorkerRequest::ClearAllClients)
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while clearing clients"))
+            .map_err(|_| anyhow::anyhow!(js_worker_disconnected_error("clear_all_clients")))?
     }
 
     pub async fn call_identity_connected(
@@ -682,7 +542,11 @@ impl JsInstance {
             caller_connection_id,
         })
         .await
-        .unwrap_or_else(|_| panic!("worker should stay live while running client_connected"))
+        .map_err(|_| {
+            ClientConnectedError::from(ReducerCallError::WorkerError(js_worker_disconnected_error(
+                "call_identity_connected",
+            )))
+        })?
     }
 
     pub async fn call_identity_disconnected(
@@ -696,31 +560,36 @@ impl JsInstance {
             caller_connection_id,
         })
         .await
-        .unwrap_or_else(|_| panic!("worker should stay live while running client_disconnected"))
+        .map_err(|_| ReducerCallError::WorkerError(js_worker_disconnected_error("call_identity_disconnected")))?
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
         self.send_request(|reply_tx| JsWorkerRequest::DisconnectClient { reply_tx, client_id })
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while disconnecting a client"))
+            .map_err(|_| ReducerCallError::WorkerError(js_worker_disconnected_error("disconnect_client")))?
     }
 
     pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         self.send_request(|reply_tx| JsWorkerRequest::InitDatabase { reply_tx, program })
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while initializing the database"))
+            .map_err(|_| anyhow::anyhow!(js_worker_disconnected_error("init_database")))?
     }
 
     pub async fn call_procedure(&self, params: CallProcedureParams) -> CallProcedureReturn {
         self.send_request(|reply_tx| JsWorkerRequest::CallProcedure { reply_tx, params })
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while calling a procedure"))
+            .unwrap_or_else(|_| CallProcedureReturn {
+                result: Err(ProcedureCallError::InternalError(js_worker_disconnected_error(
+                    "call_procedure",
+                ))),
+                tx_offset: None,
+            })
     }
 
-    pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
+    pub async fn call_view(&self, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
         self.send_request(|reply_tx| JsWorkerRequest::CallView { reply_tx, cmd })
             .await
-            .unwrap_or_else(|_| panic!("worker should stay live while calling a view"))
+            .map_err(|_| ViewCallError::InternalError(js_worker_disconnected_error("call_view")))
     }
 
     pub(in crate::host) async fn call_scheduled_function(
@@ -734,10 +603,10 @@ impl JsInstance {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct WorkerDisconnected;
+struct JsWorkerDisconnected;
 
-fn instance_lane_worker_error(label: &'static str) -> String {
-    format!("instance lane worker exited while handling {label}")
+fn js_worker_disconnected_error(label: &'static str) -> String {
+    format!("JS worker exited while handling {label}")
 }
 
 type JsReplyTx<T> = oneshot::Sender<T>;
@@ -857,28 +726,28 @@ impl V8HeapMetrics {
         Self {
             total_heap_size_bytes: WORKER_METRICS
                 .v8_total_heap_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             total_physical_size_bytes: WORKER_METRICS
                 .v8_total_physical_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             used_global_handles_size_bytes: WORKER_METRICS
                 .v8_used_global_handles_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             used_heap_size_bytes: WORKER_METRICS
                 .v8_used_heap_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             heap_size_limit_bytes: WORKER_METRICS
                 .v8_heap_size_limit_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             external_memory_bytes: WORKER_METRICS
                 .v8_external_memory_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             native_contexts: WORKER_METRICS
                 .v8_native_contexts
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             detached_contexts: WORKER_METRICS
                 .v8_detached_contexts
-                .with_label_values(database_identity, V8_WORKER_KIND_INSTANCE_LANE),
+                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
             last_observed: V8HeapSnapshot::default(),
         }
     }
@@ -981,285 +850,6 @@ fn should_retire_worker_for_heap(
     }
 }
 
-struct JsInstanceLaneState {
-    // Instance-lane calls stay on one active worker for locality. The hot path clones
-    // this handle and feeds work straight into the worker-owned FIFO; trap
-    // recovery very rarely swaps it out for a fresh instance.
-    active: RwLock<JsInstance>,
-
-    // Replacement must be serialized because multiple callers can all observe
-    // the same worker becoming unusable and attempt recovery at once.
-    //
-    // This must be an async mutex rather than a blocking mutex because recovery
-    // may need to call `create_lane_instance().await`.
-    //
-    // This stays safe as long as these invariants hold:
-    // - `replace_lock` is only for trap/disconnect recovery, never the hot path.
-    // - no `parking_lot` guard is held across the `.await` in replacement.
-    // - `create_lane_instance()` must not call back into `JsInstanceLane` or try to
-    //   take `replace_lock`.
-    replace_lock: AsyncMutex<()>,
-}
-
-/// A single serialized execution lane for JS module work.
-///
-/// Callers share one active [`JsInstance`] so hot requests stay on the same
-/// worker thread for locality. The lane only steps in on the rare path, where
-/// a trap or disconnect forces that active worker to be replaced.
-#[derive(Clone)]
-pub struct JsInstanceLane {
-    module: JsModule,
-    state: Arc<JsInstanceLaneState>,
-}
-
-impl JsInstanceLane {
-    pub fn new(module: JsModule, init_inst: JsInstance) -> Self {
-        Self {
-            module,
-            state: Arc::new(JsInstanceLaneState {
-                active: RwLock::new(init_inst),
-                replace_lock: AsyncMutex::new(()),
-            }),
-        }
-    }
-
-    fn active_instance(&self) -> JsInstance {
-        self.state.active.read().clone()
-    }
-
-    async fn after_successful_call(&self, active: &JsInstance) {
-        if active.trapped() {
-            self.replace_active_if_current(active).await;
-        }
-    }
-
-    async fn replace_active_if_current(&self, stale: &JsInstance) {
-        // `replace_lock` intentionally serializes the rare recovery path. This
-        // prevents a trap observed by many callers from spawning many replacement
-        // workers and racing to install them.
-        let _replace_guard = self.state.replace_lock.lock().await;
-
-        // The same trapped instance can be observed by multiple callers at once.
-        // We only want the first one to do the swap; everybody else should notice
-        // that the active handle already changed and get out of the way.
-        if self.state.active.read().id() != stale.id() {
-            return;
-        }
-
-        // Wait for the stale worker generation to finish exiting before we
-        // install a replacement. That keeps the shared queue single-consumer.
-        if stale.needs_recovery() {
-            stale.wait_exited().await;
-        }
-
-        if self.state.active.read().id() != stale.id() {
-            return;
-        }
-
-        log::warn!("instance lane worker needs replacement; creating a fresh instance-lane worker");
-
-        // Keep the awaited instance creation outside of any `parking_lot` guard.
-        // The only lock held across this await is `replace_lock`, which is why it
-        // has to be async.
-        let next = self.module.create_lane_instance().await;
-        *self.state.active.write() = next;
-    }
-
-    /// Run an instance-lane operation exactly once.
-    ///
-    /// If the worker disappears before replying, we replace it for future
-    /// requests but surface the disconnect to the caller instead of retrying.
-    /// This keeps instance-lane semantics closer to the old pooled-instance
-    /// model while still preserving one-at-a-time execution on the worker.
-    async fn run_once<R>(
-        &self,
-        label: &'static str,
-        work: impl AsyncFnOnce(JsInstance) -> Result<R, WorkerDisconnected>,
-    ) -> Result<R, WorkerDisconnected> {
-        assert_not_on_js_module_thread(label);
-
-        let mut active = self.active_instance();
-        // Another caller may already have observed a trap or heap-triggered retirement
-        // and left the current active handle stale by the time we enter. Swap in the
-        // replacement before enqueueing more work.
-        if active.needs_recovery() {
-            self.replace_active_if_current(&active).await;
-            active = self.active_instance();
-        }
-        let result = work(active.clone()).await;
-        match result {
-            Ok(value) => {
-                self.after_successful_call(&active).await;
-                Ok(value)
-            }
-            Err(err) => {
-                self.replace_active_if_current(&active).await;
-                log::error!("instance-lane operation {label} lost its worker before replying");
-                Err(err)
-            }
-        }
-    }
-
-    /// Run an arbitrary closure on the instance-lane worker thread without replay.
-    ///
-    /// This is non-replayable because the closure is opaque host code, not a
-    /// cloneable request payload, and it may have already produced host-side
-    /// effects before a worker disconnect is observed.
-    pub async fn run_on_thread<F, R>(&self, f: F) -> anyhow::Result<R>
-    where
-        F: AsyncFnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        let span = tracing::Span::current();
-        self.run_once("run_on_thread", async move |inst| {
-            let (tx, rx) = oneshot::channel();
-
-            inst.request_queue
-                .send_async(JsWorkerRequest::RunFunction(Box::new(move || {
-                    async move {
-                        let _on_js_module_thread = EnteredJsModuleThread::new();
-                        let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
-                        if let Err(Err(_panic)) = tx.send(result) {
-                            tracing::warn!("uncaught panic on `SingleCoreExecutor`")
-                        }
-                    }
-                    .boxed_local()
-                })))
-                .await
-                .map_err(|_| WorkerDisconnected)?;
-
-            Ok(match rx.await.map_err(|_| WorkerDisconnected)? {
-                Ok(r) => r,
-                Err(e) => std::panic::resume_unwind(e),
-            })
-        })
-        .await
-        .map_err(|_| anyhow::anyhow!("instance lane worker exited while running a non-replayable module-thread task"))
-    }
-
-    /// Run a database update on the instance lane exactly once.
-    ///
-    /// If the worker disappears before replying, we replace it for future
-    /// requests and surface an internal host error to the caller.
-    pub async fn update_database(
-        &self,
-        program: Program,
-        old_module_info: Arc<ModuleInfo>,
-        policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.run_once("update_database", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::UpdateDatabase {
-                reply_tx,
-                program,
-                old_module_info,
-                policy,
-            })
-            .await
-        })
-        .await
-        .map_err(|_| anyhow::anyhow!(instance_lane_worker_error("update_database")))?
-    }
-
-    /// Run a reducer on the instance lane exactly once.
-    ///
-    /// A real reducer trap still returns the reducer's own outcome before the
-    /// worker is replaced. If the worker disappears before any reply, we surface
-    /// that as `ReducerCallError::WorkerError`.
-    pub async fn call_reducer(&self, params: CallReducerParams) -> Result<ReducerCallResult, ReducerCallError> {
-        self.run_once("call_reducer", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::CallReducer { reply_tx, params })
-                .await
-        })
-        .await
-        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_reducer")))
-    }
-
-    /// Clear all instance-lane client state exactly once.
-    pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
-        self.run_once("clear_all_clients", |inst: JsInstance| async move {
-            inst.send_request(JsWorkerRequest::ClearAllClients).await
-        })
-        .await
-        .map_err(|_| anyhow::anyhow!(instance_lane_worker_error("clear_all_clients")))?
-    }
-
-    /// Run the `client_connected` lifecycle reducer exactly once.
-    ///
-    /// If the worker disappears before replying, we replace it for future
-    /// requests and reject the connection with `ReducerCallError::WorkerError`.
-    pub async fn call_identity_connected(
-        &self,
-        caller_auth: ConnectionAuthCtx,
-        caller_connection_id: ConnectionId,
-    ) -> Result<(), ClientConnectedError> {
-        self.run_once("call_identity_connected", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::CallIdentityConnected {
-                reply_tx,
-                caller_auth,
-                caller_connection_id,
-            })
-            .await
-        })
-        .await
-        .map_err(|_| {
-            ClientConnectedError::from(ReducerCallError::WorkerError(instance_lane_worker_error(
-                "call_identity_connected",
-            )))
-        })?
-    }
-
-    /// Run the `client_disconnected` lifecycle reducer exactly once.
-    pub async fn call_identity_disconnected(
-        &self,
-        caller_identity: Identity,
-        caller_connection_id: ConnectionId,
-    ) -> Result<(), ReducerCallError> {
-        self.run_once("call_identity_disconnected", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::CallIdentityDisconnected {
-                reply_tx,
-                caller_identity,
-                caller_connection_id,
-            })
-            .await
-        })
-        .await
-        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("call_identity_disconnected")))?
-    }
-
-    /// Run disconnect cleanup on the instance lane exactly once.
-    pub async fn disconnect_client(&self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
-        self.run_once("disconnect_client", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::DisconnectClient { reply_tx, client_id })
-                .await
-        })
-        .await
-        .map_err(|_| ReducerCallError::WorkerError(instance_lane_worker_error("disconnect_client")))?
-    }
-
-    /// Run reducer-style database initialization exactly once.
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        self.run_once("init_database", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::InitDatabase { reply_tx, program })
-                .await
-        })
-        .await
-        .map_err(|_| anyhow::anyhow!(instance_lane_worker_error("init_database")))?
-    }
-
-    /// Run a view/subscription command on the instance lane exactly once.
-    ///
-    /// If the worker disappears before replying, we replace it for future
-    /// requests and surface a `ViewCallError::InternalError`.
-    pub async fn call_view(&self, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.run_once("call_view", |inst: JsInstance| async move {
-            inst.send_request(|reply_tx| JsWorkerRequest::CallView { reply_tx, cmd })
-                .await
-        })
-        .await
-        .map_err(|_| ViewCallError::InternalError(instance_lane_worker_error("call_view")))
-    }
-}
-
 /// Performs some of the startup work of [`spawn_instance_worker`].
 ///
 /// NOTE(centril): in its own function due to lack of `try` blocks.
@@ -1359,22 +949,16 @@ async fn spawn_instance_worker(
     mut core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
     worker_kind: JsWorkerKind,
-    request_queue: Arc<JsWorkerQueue>,
 ) -> anyhow::Result<(ModuleCommon, JsInstance)> {
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
-    let worker_state = Arc::<JsWorkerState>::default();
-    let worker_state_in_thread = worker_state.clone();
+    let (request_tx, mut request_rx) = mpsc::channel(worker_kind.request_queue_capacity());
+    let trapped = Arc::new(AtomicBool::new(false));
+    let trapped_in_thread = trapped.clone();
 
     let rt = tokio::runtime::Handle::current();
-    let request_rx = request_queue.receiver();
-    let worker_queue_metric = request_queue.metric.clone();
 
     std::thread::spawn(move || {
-        scopeguard::defer! {
-            worker_state_in_thread.mark_exited();
-        }
-
         let _guard = load_balance_guard;
         core_pinner.pin_now();
 
@@ -1459,10 +1043,7 @@ async fn spawn_instance_worker(
         // This will cause channels, scopes, and the isolate to be cleaned up.
         let mut requests_since_heap_check = 0u64;
         let mut last_heap_check_at = Instant::now();
-        for request in request_rx.iter() {
-            if let Some(metric) = &worker_queue_metric {
-                metric.dec();
-            }
+        while let Some(request) = request_rx.blocking_recv() {
             let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
             let mut should_exit = false;
 
@@ -1482,7 +1063,7 @@ async fn spawn_instance_worker(
                 JsWorkerRequest::CallReducer { reply_tx, params } => {
                     let (res, trapped) = call_reducer(None, params);
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("call_reducer", reply_tx, res);
                     should_exit = trapped;
@@ -1490,7 +1071,7 @@ async fn spawn_instance_worker(
                 JsWorkerRequest::CallView { reply_tx, cmd } => {
                     let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("call_view", reply_tx, res);
                     should_exit = trapped;
@@ -1501,7 +1082,7 @@ async fn spawn_instance_worker(
                         .now_or_never()
                         .expect("our call_procedure implementation is not actually async");
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("call_procedure", reply_tx, res);
                     should_exit = trapped;
@@ -1519,7 +1100,7 @@ async fn spawn_instance_worker(
                     let res =
                         call_identity_connected(caller_auth, caller_connection_id, info, call_reducer, &mut trapped);
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("call_identity_connected", reply_tx, res);
                     should_exit = trapped;
@@ -1538,7 +1119,7 @@ async fn spawn_instance_worker(
                         &mut trapped,
                     );
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("call_identity_disconnected", reply_tx, res);
                     should_exit = trapped;
@@ -1547,7 +1128,7 @@ async fn spawn_instance_worker(
                     let mut trapped = false;
                     let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("disconnect_client", reply_tx, res);
                     should_exit = trapped;
@@ -1556,7 +1137,7 @@ async fn spawn_instance_worker(
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("init_database", reply_tx, res);
                     should_exit = trapped;
@@ -1567,7 +1148,7 @@ async fn spawn_instance_worker(
                         .now_or_never()
                         .expect("our call_procedure implementation is not actually async");
                     if trapped {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                     }
                     send_worker_reply("call_scheduled_function", reply_tx, res);
                     should_exit = trapped;
@@ -1586,7 +1167,7 @@ async fn spawn_instance_worker(
                     requests_since_heap_check = 0;
                     last_heap_check_at = Instant::now();
                     if let Some((used, limit)) = should_retire_worker_for_heap(inst.scope, heap_metrics, heap_policy) {
-                        worker_state_in_thread.mark_trapped();
+                        trapped_in_thread.store(true, Ordering::Relaxed);
                         should_exit = true;
                         log::warn!(
                             "retiring JS worker after V8 heap stayed high post-GC: used={}MiB limit={}MiB",
@@ -1600,13 +1181,13 @@ async fn spawn_instance_worker(
             // Once a JS instance traps, we must not let later queued work execute
             // on that poisoned isolate. We reply to the trapping request first so
             // the caller can observe the actual reducer/procedure error, and then
-            // shut the worker down so the shared queue can continue on a fresh
-            // instance.
+            // shut the worker down. The instance manager will create a replacement
+            // for subsequent requests.
             //
             // We also retire workers when they stay near the V8 heap limit after
-            // a GC. The instance lane intentionally keeps a JS worker alive for
-            // a long time, so this gives it a bounded-memory replacement policy
-            // instead of letting one isolate absorb the entire module lifetime.
+            // a GC. The main JS worker intentionally lives for a long time, so
+            // this gives it a bounded-memory replacement policy instead of
+            // letting one isolate absorb the entire module lifetime.
             if should_exit {
                 break;
             }
@@ -1617,9 +1198,8 @@ async fn spawn_instance_worker(
     let res: Result<ModuleCommon, anyhow::Error> = result_rx.await.expect("should have a sender");
     res.map(|opt_mc| {
         let inst = JsInstance {
-            id: NEXT_JS_INSTANCE_ID.fetch_add(1, Ordering::Relaxed),
-            request_queue,
-            worker_state,
+            tx: request_tx,
+            trapped,
         };
         (opt_mc, inst)
     })
