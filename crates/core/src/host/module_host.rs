@@ -36,7 +36,6 @@ use derive_more::From;
 use futures::lock::Mutex;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use parking_lot::RwLock;
 use prometheus::{Histogram, IntGauge};
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
@@ -75,7 +74,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
-use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -419,7 +417,11 @@ impl GenericModule for super::v8::JsModule {
 
 impl GenericModuleInstance for super::v8::JsProcedureInstance {
     fn trapped(&self) -> bool {
-        self.trapped()
+        false
+    }
+
+    fn needs_replacement(&self) -> bool {
+        self.is_closed()
     }
 }
 
@@ -815,17 +817,15 @@ struct ModuleInstanceManager<M: GenericModule> {
 ///
 /// Unlike [`ModuleInstanceManager`], checkout is not exclusive: callers get a
 /// clone of the active instance handle immediately and enqueue work on its
-/// sender. Replacement is serialized only after that active instance traps or
-/// otherwise becomes unusable.
+/// sender. Trap and heap-limit recovery happens inside the worker thread, so
+/// the manager is only responsible for keeping the sender handle alive.
 struct SharedJsMainInstanceManager {
-    active: RwLock<JsMainInstance>,
-    module: super::v8::JsModule,
-    metrics: InstanceManagerMetrics,
-    replace_lock: AsyncMutex<()>,
+    active: JsMainInstance,
+    _metrics: InstanceManagerMetrics,
 }
 
 #[derive(Clone)]
-struct InstanceManagerMetrics {
+pub(in crate::host) struct InstanceManagerMetrics {
     module_instances: ModuleInstancesMetric,
     create_instance_time: CreateInstanceTimeMetric,
 }
@@ -874,14 +874,14 @@ impl Drop for ModuleInstancesMetricInner {
 }
 
 impl InstanceManagerMetrics {
-    fn new(host_type: HostType, database_identity: Identity) -> Self {
+    pub(in crate::host) fn new(host_type: HostType, database_identity: Identity) -> Self {
         Self {
             module_instances: ModuleInstancesMetric::new(host_type, database_identity),
             create_instance_time: CreateInstanceTimeMetric::new(host_type, database_identity),
         }
     }
 
-    fn observe_instance_created(&self, duration: std::time::Duration) {
+    pub(in crate::host) fn observe_instance_created(&self, duration: std::time::Duration) {
         self.create_instance_time.observe(duration);
         self.module_instances.inc();
     }
@@ -890,7 +890,7 @@ impl InstanceManagerMetrics {
         self.module_instances.inc();
     }
 
-    fn track_instance_removed(&self) {
+    pub(in crate::host) fn track_instance_removed(&self) {
         self.module_instances.dec();
     }
 }
@@ -988,9 +988,9 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
 
     async fn return_instance(&self, inst: M::Instance) {
         if inst.needs_replacement() {
-            // Don't return trapped instances;
-            // they may have left internal data structures in the guest `Instance`
-            // (WASM linear memory, V8 global scope) in a bad state.
+            // Don't return unusable instances; they may have left internal data
+            // structures in the guest `Instance` in a bad state, or the backing
+            // worker may have already exited.
             self.metrics.track_instance_removed();
             return;
         }
@@ -1000,52 +1000,16 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
 }
 
 impl SharedJsMainInstanceManager {
-    fn new(module: super::v8::JsModule, init_inst: JsMainInstance, metrics: InstanceManagerMetrics) -> Self {
+    fn new(init_inst: JsMainInstance, metrics: InstanceManagerMetrics) -> Self {
         metrics.track_initial_instance();
         Self {
-            active: RwLock::new(init_inst),
-            module,
-            metrics,
-            replace_lock: AsyncMutex::new(()),
+            active: init_inst,
+            _metrics: metrics,
         }
     }
 
     async fn with_instance<R>(&self, f: impl AsyncFnOnce(JsMainInstance) -> R) -> R {
-        let inst = self.get_instance().await;
-        let observed = inst.clone();
-        let res = f(inst).await;
-        self.replace_if_needed(&observed).await;
-        res
-    }
-
-    async fn get_instance(&self) -> JsMainInstance {
-        let inst = self.active.read().clone();
-        if !inst.needs_replacement() {
-            return inst;
-        }
-
-        self.replace_if_needed(&inst).await;
-        self.active.read().clone()
-    }
-
-    async fn replace_if_needed(&self, observed: &JsMainInstance) {
-        if !observed.needs_replacement() {
-            return;
-        }
-
-        let _replace_guard = self.replace_lock.lock().await;
-        if !self.active.read().needs_replacement() {
-            return;
-        }
-
-        self.metrics.track_instance_removed();
-
-        let start_time = std::time::Instant::now();
-        let next = self.module.create_main_instance().await;
-        let elapsed_time = start_time.elapsed();
-        self.metrics.observe_instance_created(elapsed_time);
-
-        *self.active.write() = next;
+        f(self.active.clone()).await
     }
 }
 
@@ -1259,9 +1223,9 @@ impl ModuleHost {
             }
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
-                let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
+                let metrics = module.metrics();
                 let host_module = module.clone();
-                let main_instance = SharedJsMainInstanceManager::new(module.clone(), init_inst, metrics.clone());
+                let main_instance = SharedJsMainInstanceManager::new(init_inst, metrics.clone());
                 let procedure_instances = ModuleInstanceManager::new_with_metrics(module, None, metrics);
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module: host_module,
@@ -1464,10 +1428,11 @@ impl ModuleHost {
         self.call(
             label,
             cmd,
-            async |cmd, inst| Ok::<_, ViewCallError>(inst.call_view(cmd)),
+            async |cmd, inst| inst.call_view(cmd),
             async |cmd, inst| inst.call_view(cmd).await,
         )
-        .await?
+        .await
+        .map_err(Into::into)
     }
 
     async fn call_sql_command(&self, cmd: SqlCommand) -> Result<SqlCommandResult, DBError> {
@@ -1478,7 +1443,7 @@ impl ModuleHost {
             async |cmd, inst| inst.call_sql(cmd).await,
         )
         .await
-        .map_err(|_| DBError::Other(anyhow::anyhow!("no such module")))?
+        .map_err(|_| DBError::Other(anyhow::anyhow!("no such module")))
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -1751,10 +1716,11 @@ impl ModuleHost {
         self.call(
             &reducer_def.name,
             call_reducer_params,
-            async |p, inst| Ok(inst.call_reducer(p)),
+            async |p, inst| inst.call_reducer(p),
             async |p, inst| inst.call_reducer(p).await,
         )
-        .await?
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn call_reducer(

@@ -552,10 +552,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(in crate::host) fn call_sql(&mut self, cmd: SqlCommand) -> Result<SqlCommandResult, DBError> {
+    pub(in crate::host) fn call_sql(&mut self, cmd: SqlCommand) -> SqlCommandResult {
         let (res, trapped) = self.common.handle_sql_cmd(cmd, &mut self.instance);
         self.trapped = trapped;
-        Ok(res)
+        res
     }
 }
 
