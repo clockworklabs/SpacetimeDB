@@ -1459,15 +1459,25 @@ pub trait DbContext {
     ///
     /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
     /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
-    /// Currently, being this generic is only meaningful in clients,
-    /// as `ReducerContext` is the only implementor of `DbContext` within modules.
     fn db(&self) -> &Self::DbView;
+
+    /// Get a read-only view into the tables.
+    ///
+    /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
+    /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly;
 }
 
 impl DbContext for AnonymousViewContext {
     type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
 }
@@ -1478,6 +1488,11 @@ impl DbContext for ReducerContext {
     fn db(&self) -> &Self::DbView {
         &self.db
     }
+
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly {
+        self.db.get_read_only()
+    }
 }
 
 #[cfg(feature = "unstable")]
@@ -1487,12 +1502,21 @@ impl DbContext for TxContext {
     fn db(&self) -> &Self::DbView {
         &self.db
     }
+
+    fn db_read_only(&self) -> &LocalReadOnly {
+        self.db.get_read_only()
+    }
 }
 
 impl DbContext for ViewContext {
     type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
 }
@@ -1507,6 +1531,13 @@ impl DbContext for ViewContext {
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
 pub struct Local {}
+
+impl Local {
+    #[cfg(feature = "unstable")]
+    fn get_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
 
 /// The [JWT] of an [`AuthCtx`].
 ///
