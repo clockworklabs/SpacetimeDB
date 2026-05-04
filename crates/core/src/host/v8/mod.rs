@@ -10,7 +10,9 @@ use self::syscall::{
     call_describe_module, get_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
-use super::module_host::{CallHttpHandlerParams, CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance};
+use super::module_host::{
+    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, ModuleInfo, ModuleWithInstance,
+};
 use super::UpdateDatabaseResult;
 use crate::client::ClientActorId;
 use crate::config::V8HeapPolicyConfig;
