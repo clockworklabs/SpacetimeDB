@@ -118,6 +118,11 @@ impl_filterable_value! {
     // &[u8] => Vec<u8>,
 }
 
+impl<T: FilterableValue> Private for Option<T> {}
+impl<T: FilterableValue> FilterableValue for Option<T> {
+    type Column = Option<T::Column>;
+}
+
 pub enum TermBound<T> {
     Single(ops::Bound<T>),
     Range(ops::Bound<T>, ops::Bound<T>),
