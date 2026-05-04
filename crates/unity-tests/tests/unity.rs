@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use std::env;
 use std::ffi::OsString;
 use std::fs;
