@@ -1531,6 +1531,7 @@ impl DbContext for ViewContext {
 pub struct Local {}
 
 impl Local {
+    #[cfg(feature = "unstable")]
     fn get_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
     }
