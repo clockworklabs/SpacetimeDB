@@ -290,8 +290,8 @@ jobs:
             sccache --zero-stats || true
             echo "::endgroup::"
           fi
-          cargo ci test
-          rc=$?
+          rc=0
+          cargo ci test || rc=$?
           if command -v sccache >/dev/null 2>&1; then
             echo "::group::sccache stats (after)"
             sccache --show-stats || true
