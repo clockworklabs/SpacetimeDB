@@ -1132,9 +1132,10 @@ but you must call one of them, or else the connection will never progress.
         self
     }
 
-    /// Register a callback to run when the connection is successfully initiated.
+    /// Register a callback to run when the connection is successfully established.
     ///
-    /// The callback will receive three arguments:
+    /// The connection is established after the initial connection message is
+    /// received from the host. The callback will receive three arguments:
     /// - The `DbConnection` which has successfully connected.
     /// - The `Identity` of the successful connection.
     /// - The private access token which can be used to later re-authenticate as the same `Identity`.
@@ -1155,9 +1156,9 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
 
     /// Register a callback to run when a connection attempt fails asynchronously.
     ///
-    /// Errors which prevent [`Self::build`] from creating a connection are returned
-    /// by [`Self::build`] instead. Errors reported after the WebSocket is established
-    /// but before the initial connection message invoke this callback.
+    /// This callback is invoked only before the initial connection message is
+    /// received from the host. Errors which prevent [`Self::build`] from creating
+    /// a connection are returned by [`Self::build`] instead.
     pub fn on_connect_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
@@ -1172,6 +1173,10 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
     }
 
     /// Register a callback to run when an established connection is closed.
+    ///
+    /// The connection is established after the initial connection message is
+    /// received from the host. Connection failures before that point invoke
+    /// [`Self::on_connect_error`] instead.
     pub fn on_disconnect(
         mut self,
         callback: impl FnOnce(&M::ErrorContext, Option<crate::Error>) + Send + 'static,
