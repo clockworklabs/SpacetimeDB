@@ -1076,7 +1076,10 @@ but you must call one of them, or else the connection will never progress.
     /// If this method is not invoked, or `None` is supplied,
     /// the SpacetimeDB host will generate a new anonymous `Identity`.
     ///
-    /// If the passed token is invalid or rejected, the connection attempt will fail.
+    /// If the token is rejected before a connection context is created, [`Self::build`]
+    /// returns an error. If the host reports the rejection after the WebSocket is
+    /// established but before the initial connection message, [`Self::on_connect_error`]
+    /// is invoked.
     pub fn with_token(mut self, token: Option<impl Into<String>>) -> Self {
         self.token = token.map(|token| token.into());
         self
