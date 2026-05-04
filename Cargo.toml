@@ -132,7 +132,7 @@ spacetimedb-durability = { path = "crates/durability", version = "=2.2.0" }
 spacetimedb-execution = { path = "crates/execution", version = "=2.2.0" }
 spacetimedb-expr = { path = "crates/expr", version = "=2.2.0" }
 spacetimedb-guard = { path = "crates/guard", version = "=2.2.0" }
-spacetimedb-io = { path = "crates/io", version = "=2.1.0" }
+spacetimedb-io = { path = "crates/io", version = "=2.2.0" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.2.0" }
 spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.2.0", default-features = false }
 spacetimedb-metrics = { path = "crates/metrics", version = "=2.2.0" }
@@ -392,7 +392,7 @@ features = [
 ]
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)', 'cfg(madsim)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)', 'cfg(madsim)', 'cfg(simulation)'] }
 
 [workspace.lints.clippy]
 # FIXME: we should work on this lint incrementally

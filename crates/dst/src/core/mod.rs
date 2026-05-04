@@ -11,7 +11,7 @@ use crate::config::RunConfig;
 use futures_util::FutureExt;
 
 /// Pull-based deterministic interaction source.
-pub trait NextInteractionSource {
+pub trait WorkloadSource {
     type Interaction;
 
     fn next_interaction(&mut self) -> Option<Self::Interaction>;
@@ -50,7 +50,7 @@ pub async fn run_streaming<I, S, E, P>(
 ) -> anyhow::Result<E::Outcome>
 where
     I: Clone + Debug,
-    S: NextInteractionSource<Interaction = I>,
+    S: WorkloadSource<Interaction = I>,
     E: TargetEngine<I, Error = String>,
     P: StreamingProperties<I, E::Observation, E>,
 {
@@ -151,7 +151,7 @@ mod tests {
         }
     }
 
-    impl NextInteractionSource for SingleStepSource {
+    impl WorkloadSource for SingleStepSource {
         type Interaction = TestInteraction;
 
         fn next_interaction(&mut self) -> Option<Self::Interaction> {

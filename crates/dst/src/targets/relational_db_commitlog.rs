@@ -1428,7 +1428,7 @@ fn bootstrap_relational_db(
         (runtime.handle().clone(), Some(runtime))
     };
     let fault_config = CommitlogFaultConfig::for_profile(fault_profile);
-    configure_madsim_buggify(fault_config.enabled());
+    configure_simulation_buggify(fault_config.enabled());
 
     let commitlog_repo = BuggifiedRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config);
     let durability_opts = commitlog_stress_options(seed.fork(701));
@@ -1473,8 +1473,8 @@ fn commitlog_stress_options(seed: DstSeed) -> spacetimedb_durability::local::Opt
     opts
 }
 
-fn configure_madsim_buggify(enabled: bool) {
-    #[cfg(madsim)]
+fn configure_simulation_buggify(enabled: bool) {
+    #[cfg(simulation)]
     {
         if enabled {
             madsim::buggify::enable();
@@ -1482,7 +1482,7 @@ fn configure_madsim_buggify(enabled: bool) {
             madsim::buggify::disable();
         }
     }
-    #[cfg(not(madsim))]
+    #[cfg(not(simulation))]
     let _ = enabled;
 }
 

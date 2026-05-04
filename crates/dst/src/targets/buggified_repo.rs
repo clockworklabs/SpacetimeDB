@@ -379,9 +379,9 @@ impl FaultController {
             } else {
                 Duration::from_millis(1)
             };
-            #[cfg(madsim)]
+            #[cfg(all(simulation, madsim))]
             madsim::time::advance(latency);
-            #[cfg(not(madsim))]
+            #[cfg(not(all(simulation, madsim)))]
             let _ = latency;
         }
     }
@@ -412,11 +412,11 @@ impl FaultController {
             return false;
         }
 
-        #[cfg(madsim)]
+        #[cfg(simulation)]
         {
             madsim::buggify::buggify_with_prob(probability)
         }
-        #[cfg(not(madsim))]
+        #[cfg(not(simulation))]
         {
             let _ = probability;
             false

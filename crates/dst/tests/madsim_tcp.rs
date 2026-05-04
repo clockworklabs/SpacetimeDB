@@ -1,4 +1,4 @@
-#![cfg(madsim)]
+#![cfg(all(simulation, madsim))]
 
 use std::{net::SocketAddr, sync::Arc};
 

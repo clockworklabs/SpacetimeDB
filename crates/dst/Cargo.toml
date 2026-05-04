@@ -24,9 +24,9 @@ spacetimedb-cli.workspace = true
 spacetimedb-client-api.workspace = true
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-datastore = { workspace = true, features = ["test"] }
-spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.1.0" }
+spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.2.0" }
 spacetimedb-commitlog = { workspace = true, features = ["test"] }
-spacetimedb_durability = { package = "spacetimedb-durability", path = "../durability", version = "=2.1.0" }
+spacetimedb_durability = { package = "spacetimedb-durability", path = "../durability", version = "=2.2.0" }
 spacetimedb-execution.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true

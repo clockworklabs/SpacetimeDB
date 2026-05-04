@@ -7,7 +7,7 @@ use futures::FutureExt;
 use indexmap::IndexMap;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::HashMap;
-#[cfg(not(madsim))]
+#[cfg(not(simulation))]
 use tokio::runtime;
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::Instrument;
@@ -290,14 +290,14 @@ pub struct SingleCoreExecutor {
 struct SingleCoreExecutorInner {
     /// The sending end of a channel over which we send jobs.
     job_tx: mpsc::UnboundedSender<Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>>,
-    #[cfg(madsim)]
+    #[cfg(simulation)]
     /// Retains the allocation guard for the lifetime of the simulated executor.
     _guard: LoadBalanceOnDropGuard,
 }
 
 impl SingleCoreExecutor {
     /// Spawn a `SingleCoreExecutor` on the given core.
-    #[cfg(not(madsim))]
+    #[cfg(not(simulation))]
     fn spawn(core: AllocatedJobCore) -> Self {
         let AllocatedJobCore { guard, mut pinner } = core;
 
@@ -337,7 +337,7 @@ impl SingleCoreExecutor {
     /// In simulation, job execution models the same logical single-core queue
     /// without creating an OS thread or re-entering a Tokio runtime with
     /// `Handle::block_on`.
-    #[cfg(madsim)]
+    #[cfg(simulation)]
     fn spawn(core: AllocatedJobCore) -> Self {
         let AllocatedJobCore { guard, pinner: _ } = core;
 

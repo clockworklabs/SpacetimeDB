@@ -2,8 +2,6 @@
 
 pub mod committed_state;
 pub mod datastore;
-#[cfg(any(test, feature = "test"))]
-pub mod lock_trace;
 mod mut_tx;
 pub use mut_tx::{FuncCallType, IndexScanPointOrRange, MutTxId, ViewCallInfo};
 mod sequence;

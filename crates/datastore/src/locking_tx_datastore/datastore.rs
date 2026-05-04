@@ -1,5 +1,3 @@
-#[cfg(any(test, feature = "test"))]
-use super::lock_trace::{self, LockEvent, LockEventKind};
 use super::{
     committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
     tx_state::TxState,
@@ -341,15 +339,7 @@ impl Tx for Locking {
         let ctx = ExecutionContext::with_workload(self.database_identity, workload);
 
         let timer = Instant::now();
-        #[cfg(any(test, feature = "test"))]
-        lock_trace::emit(LockEvent {
-            kind: LockEventKind::BeginReadRequested,
-        });
         let committed_state_shared_lock = self.committed_state.read_arc();
-        #[cfg(any(test, feature = "test"))]
-        lock_trace::emit(LockEvent {
-            kind: LockEventKind::BeginReadAcquired,
-        });
         let lock_wait_time = timer.elapsed();
 
         Self::Tx {
@@ -905,24 +895,8 @@ impl MutTx for Locking {
         let ctx = ExecutionContext::with_workload(self.database_identity, workload);
 
         let timer = Instant::now();
-        #[cfg(any(test, feature = "test"))]
-        lock_trace::emit(LockEvent {
-            kind: LockEventKind::BeginWriteRequested,
-        });
         let committed_state_write_lock = self.committed_state.write_arc();
-        #[cfg(any(test, feature = "test"))]
-        lock_trace::emit(LockEvent {
-            kind: LockEventKind::BeginWriteAcquired,
-        });
-        #[cfg(any(test, feature = "test"))]
-        lock_trace::emit(LockEvent {
-            kind: LockEventKind::SequenceMutexRequested,
-        });
         let sequence_state_lock = self.sequence_state.lock_arc();
-        #[cfg(any(test, feature = "test"))]
-        lock_trace::emit(LockEvent {
-            kind: LockEventKind::SequenceMutexAcquired,
-        });
         let lock_wait_time = timer.elapsed();
 
         MutTxId {

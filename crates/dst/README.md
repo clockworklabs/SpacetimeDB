@@ -135,8 +135,8 @@ Current property families include:
 ## Fault Injection
 
 `relational-db-commitlog` can wrap the in-memory commitlog repo in
-`BuggifiedRepo`. Fault decisions are deterministic under madsim and summarized
-in the final outcome.
+`BuggifiedRepo`. Fault decisions are deterministic in simulation runs and
+summarized in the final outcome.
 
 Profiles:
 
@@ -163,7 +163,7 @@ cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario 
 cargo run -p spacetimedb-dst -- run --target standalone-host --scenario host-smoke --max-interactions 100
 ```
 
-madsim run with commitlog faults:
+madsim-backed simulation run with commitlog faults:
 
 ```bash
 RUSTFLAGS='--cfg madsim' cargo run -p spacetimedb-dst -- run \
@@ -172,6 +172,12 @@ RUSTFLAGS='--cfg madsim' cargo run -p spacetimedb-dst -- run \
   --max-interactions 400 \
   --commitlog-fault-profile default
 ```
+
+`--cfg madsim` is still the switch that enables madsim-tokio. Do not pass
+`--cfg simulation` directly: that only enables SpacetimeDB's cfg gates and leaves
+the madsim dependency in its normal Tokio/std mode. The workspace crates derive
+`cfg(simulation)` from `cfg(madsim)` so SpacetimeDB source code does not need
+provider-specific cfg gates.
 
 Trace every interaction:
 
@@ -217,12 +223,12 @@ Start here:
 - No shrinker yet; seed replay is the current reproduction mechanism.
 - Sometimes-property reporting is still outcome-counter based, not a stable
   property-event catalog.
-- madsim is used for current deterministic runtime/fault hooks; deeper
+- madsim backs the current deterministic runtime/fault hooks; deeper
   host/network/filesystem simulation still needs explicit runtime and IO
   boundaries.
 - The current `RelationalDB` target drives open read snapshots to release before
   starting writes, because beginning a write behind an open read snapshot can
   block in this target shape. Interleaved read/write snapshot histories should
   come back once the target models that lock behavior explicitly.
-- Current madsim builds still expose runtime-boundary gaps, including
+- Current simulation builds still expose runtime-boundary gaps, including
   `spawn_blocking` call sites and randomized standard `HashMap` state warnings.

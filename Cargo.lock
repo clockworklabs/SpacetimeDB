@@ -8307,7 +8307,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-dst"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -8323,10 +8323,10 @@ dependencies = [
  "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-execution",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-standalone",
  "spacetimedb-table",
@@ -8416,7 +8416,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-io"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "madsim-tokio",
 ]

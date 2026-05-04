@@ -1,8 +1,8 @@
 //! Narrow facade for SpacetimeDB-owned async IO boundaries.
 //!
 //! Production builds use Tokio through the `madsim-tokio` compatibility crate.
-//! Builds compiled with `--cfg madsim` use the simulator implementations exposed
-//! by that same compatibility crate.
+//! Simulation builds use the simulator implementations exposed by that same
+//! compatibility crate.
 //!
 //! This crate is intentionally small. It is a migration point for filesystem and
 //! network APIs reached by deterministic simulation tests, not a general runtime
@@ -11,7 +11,7 @@
 pub mod fs {
     pub use tokio::fs::*;
 
-    #[cfg(madsim)]
+    #[cfg(simulation)]
     use std::{
         io::{self, Read as _},
         pin::Pin,
@@ -19,34 +19,35 @@ pub mod fs {
     };
 
     /// Async reader type returned by [`file_from_std`].
-    #[cfg(not(madsim))]
+    #[cfg(not(simulation))]
     pub type FileFromStd = tokio::fs::File;
 
     /// Async reader type returned by [`file_from_std`].
-    #[cfg(madsim)]
+    #[cfg(simulation)]
     pub type FileFromStd = StdFileAsyncReader;
 
     /// Convert a standard file handle into an async reader.
     ///
-    /// Tokio supports this directly. The madsim filesystem type does not wrap
-    /// existing OS files, so madsim builds use a small `AsyncRead` adapter for
-    /// call sites that only need to stream an already-opened std file.
-    #[cfg(not(madsim))]
+    /// Tokio supports this directly. The simulated filesystem type does not
+    /// wrap existing OS files, so simulation builds use a small `AsyncRead`
+    /// adapter for call sites that only need to stream an already-opened std
+    /// file.
+    #[cfg(not(simulation))]
     pub fn file_from_std(file: std::fs::File) -> FileFromStd {
         tokio::fs::File::from_std(file)
     }
 
     /// Convert a standard file handle into an async reader.
-    #[cfg(madsim)]
+    #[cfg(simulation)]
     pub fn file_from_std(file: std::fs::File) -> FileFromStd {
         StdFileAsyncReader(file)
     }
 
-    /// Async-read adapter for standard files in madsim builds.
-    #[cfg(madsim)]
+    /// Async-read adapter for standard files in simulation builds.
+    #[cfg(simulation)]
     pub struct StdFileAsyncReader(std::fs::File);
 
-    #[cfg(madsim)]
+    #[cfg(simulation)]
     impl tokio::io::AsyncRead for StdFileAsyncReader {
         fn poll_read(
             mut self: Pin<&mut Self>,

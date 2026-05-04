@@ -136,7 +136,7 @@ fn run_prepared_target<D: TargetDescriptor>(
     run_in_runtime(seed, run_target::<D>(seed, scenario, config))
 }
 
-#[cfg(madsim)]
+#[cfg(all(simulation, madsim))]
 fn run_in_runtime<F, T>(seed: DstSeed, future: F) -> anyhow::Result<T>
 where
     F: Future<Output = anyhow::Result<T>>,
@@ -146,7 +146,7 @@ where
     runtime.block_on(future)
 }
 
-#[cfg(not(madsim))]
+#[cfg(not(all(simulation, madsim)))]
 fn run_in_runtime<F, T>(_seed: DstSeed, future: F) -> anyhow::Result<T>
 where
     F: Future<Output = anyhow::Result<T>>,
