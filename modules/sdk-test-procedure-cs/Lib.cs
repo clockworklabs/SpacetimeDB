@@ -66,10 +66,10 @@ public static partial class Module
     /// Test HTTP GET request to the module's own schema endpoint
     /// </summary>
     [SpacetimeDB.Procedure]
-    public static string ReadMySchema(ProcedureContext ctx)
+    public static string ReadMySchema(ProcedureContext ctx, string serverUrl)
     {
         var moduleIdentity = ProcedureContextBase.Identity;
-        var result = ctx.Http.Get($"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=9");
+        var result = ctx.Http.Get($"{serverUrl}/v1/database/{moduleIdentity}/schema?version=9");
         return result.Match(
             response => response.Body.ToStringUtf8Lossy(),
             error => throw new Exception($"HTTP request failed: {error}")

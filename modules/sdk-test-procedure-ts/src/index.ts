@@ -90,13 +90,17 @@ export const will_panic = spacetimedb.procedure(t.unit(), _ctx => {
   throw new Error('This procedure is expected to panic');
 });
 
-export const read_my_schema = spacetimedb.procedure(t.string(), ctx => {
-  const module_identity = ctx.identity;
-  const response = ctx.http.fetch(
-    `http://localhost:3000/v1/database/${module_identity}/schema?version=9`
-  );
-  return response.text();
-});
+export const read_my_schema = spacetimedb.procedure(
+  { server_url: t.string() },
+  t.string(),
+  (ctx, { server_url }) => {
+    const module_identity = ctx.databaseIdentity;
+    const response = ctx.http.fetch(
+      `${server_url}/v1/database/${module_identity}/schema?version=9`
+    );
+    return response.text();
+  }
+);
 
 export const invalid_request = spacetimedb.procedure(t.string(), ctx => {
   try {
