@@ -1,5 +1,6 @@
 
 #include "Connection/Websocket.h"
+#include "Connection/DbConnectionBase.h"
 #include "WebSocketsModule.h" // Required for FWebSocketsModule
 #include "SpacetimeDbSdk/Public/BSATN/UESpacetimeDB.h"
 #include "ModuleBindings/Types/ServerMessageType.g.h"
@@ -21,6 +22,7 @@ void UWebsocketManager::BeginDestroy()
 	{
 		Disconnect();
 	}
+	NativeBinaryMessageTarget.Reset();
 	Super::BeginDestroy();
 }
 
@@ -133,6 +135,11 @@ bool UWebsocketManager::IsConnected() const
 	return WebSocket.IsValid() && WebSocket->IsConnected();
 }
 
+void UWebsocketManager::SetNativeBinaryMessageTarget(UDbConnectionBase* Target)
+{
+	NativeBinaryMessageTarget = Target;
+}
+
 void UWebsocketManager::SetInitToken(FString Token)
 {
 	InitToken = Token;
@@ -167,6 +174,14 @@ void UWebsocketManager::HandleBinaryMessageReceived(const void* Data, SIZE_T Siz
 	// Handle binary messages, which may be fragmented
 	const uint8* Bytes = static_cast<const uint8*>(Data);
 
+	if (!bAwaitingBinaryFragments && bIsLastFragment)
+	{
+		TArray<uint8> MessageBytes;
+		MessageBytes.Append(Bytes, Size);
+		DispatchCompleteBinaryMessage(MoveTemp(MessageBytes));
+		return;
+	}
+
 	// Append this fragment to our buffer
 	IncompleteMessage.Append(Bytes, Size);
 
@@ -174,18 +189,27 @@ void UWebsocketManager::HandleBinaryMessageReceived(const void* Data, SIZE_T Siz
 	if (bIsLastFragment)
 	{
 		// We have the complete message
-		TArray<uint8> MessageBytes = IncompleteMessage;
-		IncompleteMessage.Reset();
+		TArray<uint8> MessageBytes = MoveTemp(IncompleteMessage);
 		bAwaitingBinaryFragments = false;
 
-		// Forward the complete binary payload to listeners.
-		OnBinaryMessageReceived.Broadcast(MessageBytes);
+		DispatchCompleteBinaryMessage(MoveTemp(MessageBytes));
 	}
 	else
 	{
 		// More fragments are coming
 		bAwaitingBinaryFragments = true;
 	}
+}
+
+void UWebsocketManager::DispatchCompleteBinaryMessage(TArray<uint8>&& Message)
+{
+	if (UDbConnectionBase* Target = NativeBinaryMessageTarget.Get())
+	{
+		Target->HandleWSBinaryMessageOwned(MoveTemp(Message));
+		return;
+	}
+
+	OnBinaryMessageReceived.Broadcast(Message);
 }
 
 void UWebsocketManager::HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean)

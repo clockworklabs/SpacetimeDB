@@ -12,15 +12,13 @@
 template<typename RowType>
 struct FTableAppliedDiff
 {
-    // SerializedKey -> Row copy. Keeping the rows by value ensures
-    // the memory stays valid even if the underlying table reallocates
-    // or removes entries while this diff is alive.
-    TMap<TArray<uint8>, RowType> Deletes;
-    TMap<TArray<uint8>, RowType> Inserts;
+    TArray<TSharedPtr<RowType>> Deletes;
+    TArray<TSharedPtr<RowType>> Inserts;
 
-    // Parallel arrays for (old, new) row update pairs.
-    TArray<RowType> UpdateDeletes;
-    TArray<RowType> UpdateInserts;
+    TArray<TSharedPtr<RowType>> UpdateDeletes;
+    TArray<TSharedPtr<RowType>> UpdateInserts;
+
+    bool bPrimaryKeyUpdatesClassified = false;
 
     bool IsEmpty() const
     {
@@ -36,38 +34,79 @@ struct FTableAppliedDiff
     template<typename KeyType>
     void DeriveUpdatesByPrimaryKey(TFunctionRef<KeyType(const RowType&)> DerivePK)
     {
-        if (Deletes.IsEmpty()) return;
-
-        // Build PK->(key,row) map for deletes.
-        TMap<KeyType, TPair<TArray<uint8>, RowType>> DeletePK;
-        for (const auto& Pair : Deletes)
+        if (bPrimaryKeyUpdatesClassified)
         {
-            DeletePK.Add(DerivePK(Pair.Value), { Pair.Key, Pair.Value });
+            checkf(UpdateDeletes.Num() == UpdateInserts.Num(), TEXT("Pre-classified primary-key update diff arrays are mismatched."));
+            return;
+        }
+        if (Deletes.IsEmpty() || Inserts.IsEmpty()) return;
+
+        const int32 DeleteCount = Deletes.Num();
+        const int32 InsertCount = Inserts.Num();
+        TMap<KeyType, TArray<int32, TInlineAllocator<1>>> DeletePK;
+        DeletePK.Reserve(Deletes.Num());
+        for (int32 DeleteIndex = DeleteCount - 1; DeleteIndex >= 0; --DeleteIndex)
+        {
+            const TSharedPtr<RowType>& DeletedRow = Deletes[DeleteIndex];
+            checkf(DeletedRow.IsValid(), TEXT("Invalid deleted row while deriving SpacetimeDB table updates."));
+            const KeyType PK = DerivePK(*DeletedRow);
+            DeletePK.FindOrAdd(PK).Add(DeleteIndex);
         }
 
-        // Scan inserts for matching PKs.
-        TArray<TArray<uint8>> DeleteKeys;
-        TArray<TArray<uint8>> InsertKeys;
-        for (const auto& Pair : Inserts)
+        const int32 MaxUpdatePairs = FMath::Min(DeleteCount, InsertCount);
+        TArray<uint8> MatchedDeletes;
+        TArray<uint8> MatchedInserts;
+        MatchedDeletes.Init(0, DeleteCount);
+        MatchedInserts.Init(0, InsertCount);
+        UpdateDeletes.Reserve(UpdateDeletes.Num() + MaxUpdatePairs);
+        UpdateInserts.Reserve(UpdateInserts.Num() + MaxUpdatePairs);
+        int32 MatchedPairCount = 0;
+        for (int32 InsertIndex = 0; InsertIndex < InsertCount; ++InsertIndex)
         {
-            KeyType PK = DerivePK(Pair.Value);
-            if (const auto* Found = DeletePK.Find(PK))
+            const TSharedPtr<RowType>& InsertedRow = Inserts[InsertIndex];
+            checkf(InsertedRow.IsValid(), TEXT("Invalid inserted row while deriving SpacetimeDB table updates."));
+            KeyType PK = DerivePK(*InsertedRow);
+            if (TArray<int32, TInlineAllocator<1>>* DeleteIndices = DeletePK.Find(PK))
             {
-                UpdateDeletes.Add(Found->Value);
-                UpdateInserts.Add(Pair.Value);
-                DeleteKeys.Add(Found->Key);
-                InsertKeys.Add(Pair.Key);
+                checkf(!DeleteIndices->IsEmpty(), TEXT("Empty deleted row index list while deriving SpacetimeDB table updates."));
+                const int32 DeleteIndex = DeleteIndices->Pop(EAllowShrinking::No);
+                checkf(Deletes.IsValidIndex(DeleteIndex), TEXT("Invalid deleted row index while deriving SpacetimeDB table updates."));
+                UpdateDeletes.Add(Deletes[DeleteIndex]);
+                UpdateInserts.Add(InsertedRow);
+                MatchedDeletes[DeleteIndex] = 1;
+                MatchedInserts[InsertIndex] = 1;
+                if (DeleteIndices->IsEmpty())
+                {
+                    DeletePK.Remove(PK);
+                }
+                ++MatchedPairCount;
             }
         }
 
-        // Remove update pairs from base maps.
-        for (const auto& K : DeleteKeys)
+        if (MatchedPairCount == 0)
         {
-            Deletes.Remove(K);
+            return;
         }
-        for (const auto& K : InsertKeys)
+
+        TArray<TSharedPtr<RowType>> RemainingDeletes;
+        TArray<TSharedPtr<RowType>> RemainingInserts;
+        RemainingDeletes.Reserve(DeleteCount - MatchedPairCount);
+        RemainingInserts.Reserve(InsertCount - MatchedPairCount);
+        for (int32 DeleteIndex = 0; DeleteIndex < DeleteCount; ++DeleteIndex)
         {
-            Inserts.Remove(K);
+            if (MatchedDeletes[DeleteIndex] == 0)
+            {
+                RemainingDeletes.Add(MoveTemp(Deletes[DeleteIndex]));
+            }
         }
+        for (int32 InsertIndex = 0; InsertIndex < InsertCount; ++InsertIndex)
+        {
+            if (MatchedInserts[InsertIndex] == 0)
+            {
+                RemainingInserts.Add(MoveTemp(Inserts[InsertIndex]));
+            }
+        }
+        Deletes = MoveTemp(RemainingDeletes);
+        Inserts = MoveTemp(RemainingInserts);
     }
 };

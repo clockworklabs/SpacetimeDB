@@ -167,13 +167,32 @@ namespace UE::SpacetimeDB {
 	 * This class provides a UE-friendly interface for deserializing BSATN data,
 	 * handling conversions between standard C++ types and UE types.
 	 *
-	 * The reader stores a copy of the input data to prevent lifetime issues
-	 * that could occur if the original TArray is destroyed.
+	 * The TArray and std::vector constructors retain copy semantics for callers
+	 * that need owned reader storage. The pointer and array-view constructors are
+	 * caller-owned views intended for immediate, scoped parsing.
 	 */
 	class UEReader {
 	private:
-		std::vector<uint8_t> stored_data;           ///< Local copy of data to ensure lifetime
+		std::vector<uint8_t> stored_data;           ///< Local copy of data when ownership is requested
 		::SpacetimeDb::bsatn::Reader core_reader;   ///< Underlying BSATN reader
+
+		static const uint8_t* ValidateReaderData(const uint8_t* data, int32 size)
+		{
+			checkf(size >= 0, TEXT("UEReader cannot read a negative byte count: %d"), size);
+			checkf(data != nullptr || size == 0, TEXT("UEReader received null data for %d bytes"), size);
+			static constexpr uint8_t EmptyReaderByte = 0;
+			if (data == nullptr)
+			{
+				return &EmptyReaderByte;
+			}
+			return data;
+		}
+
+		static size_t ValidateReaderSize(int32 size)
+		{
+			checkf(size >= 0, TEXT("UEReader cannot read a negative byte count: %d"), size);
+			return static_cast<size_t>(size);
+		}
 
 	public:
 		/**
@@ -197,6 +216,12 @@ namespace UE::SpacetimeDB {
 		explicit UEReader(const std::vector<uint8_t>& data)
 			: stored_data(data),
 			core_reader(stored_data) {}
+
+		explicit UEReader(const uint8_t* data, int32 size)
+			: core_reader(ValidateReaderData(data, size), ValidateReaderSize(size)) {}
+
+		explicit UEReader(TConstArrayView<uint8> data)
+			: UEReader(data.GetData(), data.Num()) {}
 
 		// -------------------------------------------------------------------------
 		// Primitive Type Readers
@@ -894,6 +919,27 @@ namespace UE::SpacetimeDB {
 		}
 	}
 
+	template<typename T>
+	T DeserializeView(const uint8* data, int32 size) {
+
+		UEReader reader(data, size);
+
+		if constexpr (is_tarray_v<T>) {
+			return DeserializeHelper<T>::deserialize(reader);
+		}
+		else if constexpr (is_toptional_v<T>) {
+			return DeserializeHelper<T>::deserialize(reader);
+		}
+		else {
+			return deserialize<T>(reader);
+		}
+	}
+
+	template<typename T>
+	T DeserializeView(TConstArrayView<uint8> data) {
+		return DeserializeView<T>(data.GetData(), data.Num());
+	}
+
 	/** @} */ // end of HighLevelAPI group
 
 	// =============================================================================
@@ -932,7 +978,7 @@ namespace UE::SpacetimeDB {
 	   * @brief Helper macro to generate deserialize specialization for TOptional<T>
 	   *
 	   * Use this macro when you have structs with TOptional fields of custom types.
-	   * 
+	   *
 	   * @Note: We are not using TOptional directly becouse it is not compatable wiht blueprints.
 	   * This macro is kept for future compatibility if things change on the Engine side.
 	   *
@@ -1322,7 +1368,7 @@ namespace UE::SpacetimeDB {
 
 	UE_SPACETIMEDB_ENABLE_TARRAY(float)
 	UE_SPACETIMEDB_ENABLE_TARRAY(double)
-	
+
 	UE_SPACETIMEDB_ENABLE_TARRAY(bool)
 
 	// Large integer type containers
@@ -1330,7 +1376,7 @@ namespace UE::SpacetimeDB {
 	UE_SPACETIMEDB_ENABLE_TARRAY(FSpacetimeDBUInt256)
 	UE_SPACETIMEDB_ENABLE_TARRAY(FSpacetimeDBInt128)
 	UE_SPACETIMEDB_ENABLE_TARRAY(FSpacetimeDBInt256)
-	
+
 
 	/** @} */ // end of CommonSpecializations group
 
