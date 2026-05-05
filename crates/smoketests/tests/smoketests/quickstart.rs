@@ -602,6 +602,31 @@ log = "0.4"
                 let ts_bindings = workspace.join("crates/bindings-typescript");
                 pnpm(&["install", ts_bindings.to_str().unwrap()], server_path)?;
             }
+            "cpp" => {
+                // Use the workspace bindings directly so release CI doesn't depend
+                // on a Git tag that may not exist yet for the version under test.
+                let cmake_lists = server_path.join("CMakeLists.txt");
+                let bindings_path = workspace.join("crates/bindings-cpp");
+                let bindings_path_str = bindings_path.display().to_string().replace('\\', "/");
+
+                let content = fs::read_to_string(&cmake_lists)?;
+                let updated = content.replace(
+                    "set(SPACETIMEDB_CPP_DIR \"\" CACHE PATH \"Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)\")",
+                    &format!(
+                        "set(SPACETIMEDB_CPP_DIR \"{}\" CACHE PATH \"Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)\")",
+                        bindings_path_str
+                    ),
+                );
+
+                if content == updated {
+                    bail!(
+                        "Failed to configure C++ quickstart smoketest: could not find SPACETIMEDB_CPP_DIR in {}",
+                        cmake_lists.display()
+                    );
+                }
+
+                fs::write(cmake_lists, updated)?;
+            }
             _ => {}
         }
 

@@ -142,7 +142,7 @@ SPACETIMEDB_PROCEDURE(Unit, insert_with_tx_rollback, ProcedureContext ctx) {
 // Test HTTP GET request to the module's own schema endpoint
 SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx) {
     // Get the module identity (database address)
-    Identity module_identity = ctx.identity();
+    Identity module_identity = ctx.database_identity();
     std::string identity_hex = module_identity.to_hex_string();
     
     LOG_INFO("read_my_schema using identity: " + identity_hex);
