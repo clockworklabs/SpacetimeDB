@@ -14,7 +14,7 @@ use super::module_host::{
     CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo, ModuleWithInstance,
 };
 use super::UpdateDatabaseResult;
-use crate::client::ClientActorId;
+use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
 use crate::config::V8HeapPolicyConfig;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
@@ -112,7 +112,6 @@ impl V8Runtime {
 
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
 const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
-const JS_MAIN_INSTANCE_QUEUE_CAPACITY: usize = 1024;
 const JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY: usize = 1;
 pub(crate) const V8_WORKER_KIND_MAIN: &str = "main";
 
@@ -125,13 +124,6 @@ enum JsWorkerKind {
 impl JsWorkerKind {
     const fn checks_heap(self) -> bool {
         matches!(self, Self::Main)
-    }
-
-    const fn request_queue_capacity(self) -> usize {
-        match self {
-            Self::Main => JS_MAIN_INSTANCE_QUEUE_CAPACITY,
-            Self::Procedure => JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY,
-        }
     }
 }
 
@@ -397,7 +389,7 @@ impl JsInstanceEnv {
 /// and friends.
 #[derive(Clone)]
 pub struct JsMainInstance {
-    tx: mpsc::Sender<JsMainWorkerRequest>,
+    tx: MeteredUnboundedSender<JsMainWorkerRequest>,
 }
 
 /// A procedure instance for a [`JsModule`].
@@ -410,11 +402,11 @@ pub struct JsProcedureInstance {
 
 impl JsMainInstance {
     async fn request<R: JsMainRequest>(&self, request: R) -> R::Response {
-        send_js_request(R::CTX, &self.tx, |reply_tx| request.into_worker_request(reply_tx)).await
+        send_js_unbounded_request(R::CTX, &self.tx, |reply_tx| request.into_worker_request(reply_tx)).await
     }
 
     async fn send_detached_request(&self, ctx: &'static str, request: JsMainWorkerRequest) {
-        if self.tx.send(request).await.is_err() {
+        if self.tx.send(request).is_err() {
             panic!("JS worker exited before accepting `{ctx}`");
         }
     }
@@ -778,6 +770,22 @@ where
 {
     let (reply_tx, reply_rx) = oneshot::channel();
     if tx.send(request(reply_tx)).await.is_err() {
+        panic!("JS worker exited before accepting `{ctx}`");
+    }
+    match reply_rx.await {
+        Ok(Ok(value)) => value,
+        Ok(Err(panic)) => panic::resume_unwind(panic),
+        Err(_) => panic!("JS worker exited before replying to `{ctx}`"),
+    }
+}
+
+async fn send_js_unbounded_request<T>(
+    ctx: &'static str,
+    tx: &MeteredUnboundedSender<JsMainWorkerRequest>,
+    request: impl FnOnce(JsReplyTx<T>) -> JsMainWorkerRequest,
+) -> T {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    if tx.send(request(reply_tx)).is_err() {
         panic!("JS worker exited before accepting `{ctx}`");
     }
     match reply_rx.await {
@@ -1274,10 +1282,16 @@ struct ProcedureJsWorker;
 trait JsWorkerSpec {
     type Request: Send + 'static;
     type Instance;
+    type Sender: Send + 'static;
+    type Receiver: Send + 'static;
 
     const KIND: JsWorkerKind;
 
-    fn make_instance(tx: mpsc::Sender<Self::Request>) -> Self::Instance;
+    fn channel(database_identity: &Identity) -> (Self::Sender, Self::Receiver);
+
+    fn make_instance(tx: Self::Sender) -> Self::Instance;
+
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request>;
 
     fn handle_request(
         request: Self::Request,
@@ -1292,11 +1306,28 @@ trait JsWorkerSpec {
 impl JsWorkerSpec for MainJsWorker {
     type Request = JsMainWorkerRequest;
     type Instance = JsMainInstance;
+    type Sender = MeteredUnboundedSender<Self::Request>;
+    type Receiver = MeteredUnboundedReceiver<Self::Request>;
 
     const KIND: JsWorkerKind = JsWorkerKind::Main;
 
-    fn make_instance(tx: mpsc::Sender<Self::Request>) -> Self::Instance {
+    fn channel(database_identity: &Identity) -> (Self::Sender, Self::Receiver) {
+        let queue_length = WORKER_METRICS
+            .v8_request_queue_length
+            .with_label_values(database_identity);
+        let (tx, rx) = mpsc::unbounded_channel();
+        (
+            MeteredUnboundedSender::with_gauge(tx, queue_length.clone()),
+            MeteredUnboundedReceiver::with_gauge(rx, queue_length),
+        )
+    }
+
+    fn make_instance(tx: Self::Sender) -> Self::Instance {
         JsMainInstance { tx }
+    }
+
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request> {
+        rx.blocking_recv()
     }
 
     fn handle_request(
@@ -1314,11 +1345,21 @@ impl JsWorkerSpec for MainJsWorker {
 impl JsWorkerSpec for ProcedureJsWorker {
     type Request = JsProcedureWorkerRequest;
     type Instance = JsProcedureInstance;
+    type Sender = mpsc::Sender<Self::Request>;
+    type Receiver = mpsc::Receiver<Self::Request>;
 
     const KIND: JsWorkerKind = JsWorkerKind::Procedure;
 
-    fn make_instance(tx: mpsc::Sender<Self::Request>) -> Self::Instance {
+    fn channel(_database_identity: &Identity) -> (Self::Sender, Self::Receiver) {
+        mpsc::channel(JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY)
+    }
+
+    fn make_instance(tx: Self::Sender) -> Self::Instance {
         JsProcedureInstance { tx }
+    }
+
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request> {
+        rx.blocking_recv()
     }
 
     fn handle_request(
@@ -1525,7 +1566,11 @@ where
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
     let worker_kind = W::KIND;
-    let (request_tx, mut request_rx) = mpsc::channel(worker_kind.request_queue_capacity());
+    let database_identity = match &module_or_mcc {
+        Either::Left(module_common) => module_common.info().database_identity,
+        Either::Right(mcc) => mcc.replica_ctx.database_identity,
+    };
+    let (request_tx, mut request_rx) = W::channel(&database_identity);
 
     let rt = tokio::runtime::Handle::current();
 
@@ -1653,7 +1698,7 @@ where
                 // This will cause channels, scopes, and the isolate to be cleaned up.
                 let mut requests_since_heap_check = 0u64;
                 let mut last_heap_check_at = Instant::now();
-                while let Some(request) = request_rx.blocking_recv() {
+                while let Some(request) = W::blocking_recv(&mut request_rx) {
                     core_pinner.pin_if_changed();
 
                     let mut outcome = W::handle_request(

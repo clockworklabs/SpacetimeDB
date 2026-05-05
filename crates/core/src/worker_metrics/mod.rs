@@ -332,6 +332,11 @@ metrics_group!(
         #[labels(database_identity: Identity, worker_kind: str)]
         pub v8_detached_contexts: IntGaugeVec,
 
+        #[name = spacetime_worker_v8_request_queue_length]
+        #[help = "The number of requests waiting in a database's tracked JS worker request queue"]
+        #[labels(database_identity: Identity)]
+        pub v8_request_queue_length: IntGaugeVec,
+
         #[name = spacetime_active_queries]
         #[help = "The number of active subscription queries"]
         #[labels(database_identity: Identity)]

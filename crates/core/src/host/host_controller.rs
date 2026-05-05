@@ -1420,4 +1420,5 @@ where
         .remove_label_values(db, worker_kind);
     let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(db, worker_kind);
     let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
 }

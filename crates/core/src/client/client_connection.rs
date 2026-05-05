@@ -647,6 +647,110 @@ impl<T> MeteredSender<T> {
     }
 }
 
+/// Wraps the receiving end of an unbounded channel with a gauge for tracking the size of the channel.
+/// We subtract the size of the channel from the gauge on drop to avoid leaking the metric.
+pub struct MeteredUnboundedReceiver<T> {
+    inner: mpsc::UnboundedReceiver<T>,
+    gauge: Option<IntGauge>,
+}
+
+impl<T> MeteredUnboundedReceiver<T> {
+    pub fn new(inner: mpsc::UnboundedReceiver<T>) -> Self {
+        Self { inner, gauge: None }
+    }
+
+    pub fn with_gauge(inner: mpsc::UnboundedReceiver<T>, gauge: IntGauge) -> Self {
+        Self {
+            inner,
+            gauge: Some(gauge),
+        }
+    }
+
+    pub async fn recv(&mut self) -> Option<T> {
+        poll_fn(|cx| self.poll_recv(cx)).await
+    }
+
+    pub fn blocking_recv(&mut self) -> Option<T> {
+        self.inner.blocking_recv().inspect(|_| {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec();
+            }
+        })
+    }
+
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
+        self.inner.poll_recv(cx).map(|maybe_item| {
+            maybe_item.inspect(|_| {
+                if let Some(gauge) = &self.gauge {
+                    gauge.dec()
+                }
+            })
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub fn close(&mut self) {
+        self.inner.close();
+    }
+}
+
+impl<T> Drop for MeteredUnboundedReceiver<T> {
+    fn drop(&mut self) {
+        // Record the number of elements still in the channel on drop
+        if let Some(gauge) = &self.gauge {
+            gauge.sub(self.inner.len() as _);
+        }
+    }
+}
+
+/// Wraps the transmitting end of an unbounded channel with a gauge for tracking the size of the channel.
+pub struct MeteredUnboundedSender<T> {
+    inner: mpsc::UnboundedSender<T>,
+    gauge: Option<IntGauge>,
+}
+
+impl<T> Clone for MeteredUnboundedSender<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            gauge: self.gauge.clone(),
+        }
+    }
+}
+
+impl<T> MeteredUnboundedSender<T> {
+    pub fn new(inner: mpsc::UnboundedSender<T>) -> Self {
+        Self { inner, gauge: None }
+    }
+
+    pub fn with_gauge(inner: mpsc::UnboundedSender<T>, gauge: IntGauge) -> Self {
+        Self {
+            inner,
+            gauge: Some(gauge),
+        }
+    }
+
+    pub fn send(&self, value: T) -> Result<(), SendError<T>> {
+        if let Some(gauge) = &self.gauge {
+            gauge.inc();
+        }
+        if let Err(err) = self.inner.send(value) {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec();
+            }
+            return Err(err);
+        }
+        Ok(())
+    }
+}
+
 // if a client racks up this many messages in the queue without ACK'ing
 // anything, we boot 'em.
 const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
