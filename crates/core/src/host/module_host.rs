@@ -70,10 +70,11 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -811,6 +812,12 @@ struct ModuleInstanceManager<M: GenericModule> {
     instances: Mutex<VecDeque<M::Instance>>,
     module: M,
     metrics: InstanceManagerMetrics,
+    instance_slots: Option<Arc<Semaphore>>,
+}
+
+struct ModuleInstanceLease<I> {
+    instance: I,
+    slot: Option<OwnedSemaphorePermit>,
 }
 
 /// Holds the single shared instance used by the JS main execution path.
@@ -946,6 +953,11 @@ impl CreateInstanceTimeMetric {
     }
 }
 
+fn default_procedure_instance_limit() -> NonZeroUsize {
+    let num_cores = std::thread::available_parallelism().map(NonZeroUsize::get).unwrap_or(1);
+    NonZeroUsize::new(num_cores.saturating_mul(2)).expect("procedure instance limit should be non-zero")
+}
+
 impl<M: GenericModule> ModuleInstanceManager<M> {
     fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
         let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
@@ -953,8 +965,33 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
     }
 
     fn new_with_metrics(module: M, init_inst: Option<M::Instance>, metrics: InstanceManagerMetrics) -> Self {
+        Self::new_inner(module, init_inst, metrics, None)
+    }
+
+    fn new_bounded_with_metrics(
+        module: M,
+        init_inst: Option<M::Instance>,
+        metrics: InstanceManagerMetrics,
+        max_instances: NonZeroUsize,
+    ) -> Self {
+        Self::new_inner(module, init_inst, metrics, Some(max_instances))
+    }
+
+    fn new_inner(
+        module: M,
+        init_inst: Option<M::Instance>,
+        metrics: InstanceManagerMetrics,
+        max_instances: Option<NonZeroUsize>,
+    ) -> Self {
         let mut instances = VecDeque::new();
         instances.extend(init_inst);
+        let initial_instances = instances.len();
+        if let Some(max_instances) = max_instances {
+            assert!(
+                initial_instances <= max_instances.get(),
+                "initial module instance count exceeds bounded pool size"
+            );
+        }
         for _ in 0..instances.len() {
             metrics.track_initial_instance();
         }
@@ -963,31 +1000,47 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             instances: Mutex::new(instances),
             module,
             metrics,
+            instance_slots: max_instances.map(|max_instances| Arc::new(Semaphore::new(max_instances.get()))),
         }
     }
 
     async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
-        let inst = self.get_instance().await;
-        let (res, inst) = f(inst).await;
-        self.return_instance(inst).await;
+        let ModuleInstanceLease { instance, slot } = self.get_instance().await;
+        let (res, instance) = f(instance).await;
+        self.return_instance(ModuleInstanceLease { instance, slot }).await;
         res
     }
 
-    async fn get_instance(&self) -> M::Instance {
-        let inst = self.instances.lock().await.pop_back();
-        if let Some(inst) = inst {
-            inst
+    async fn get_instance(&self) -> ModuleInstanceLease<M::Instance> {
+        let slot = if let Some(instance_slots) = &self.instance_slots {
+            Some(
+                instance_slots
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .expect("module instance slot semaphore should not close"),
+            )
+        } else {
+            None
+        };
+
+        let instance = self.instances.lock().await.pop_back();
+        let instance = if let Some(instance) = instance {
+            instance
         } else {
             let start_time = std::time::Instant::now();
             let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.metrics.observe_instance_created(elapsed_time);
             res
-        }
+        };
+
+        ModuleInstanceLease { instance, slot }
     }
 
-    async fn return_instance(&self, inst: M::Instance) {
-        if inst.needs_replacement() {
+    async fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
+        let ModuleInstanceLease { instance, slot } = lease;
+        if instance.needs_replacement() {
             // Don't return unusable instances; they may have left internal data
             // structures in the guest `Instance` in a bad state, or the backing
             // worker may have already exited.
@@ -995,7 +1048,8 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             return;
         }
 
-        self.instances.lock().await.push_front(inst);
+        self.instances.lock().await.push_front(instance);
+        drop(slot);
     }
 }
 
@@ -1226,7 +1280,12 @@ impl ModuleHost {
                 let metrics = module.metrics();
                 let host_module = module.clone();
                 let main_instance = SharedJsMainInstanceManager::new(init_inst, metrics.clone());
-                let procedure_instances = ModuleInstanceManager::new_with_metrics(module, None, metrics);
+                let procedure_instances = ModuleInstanceManager::new_bounded_with_metrics(
+                    module,
+                    None,
+                    metrics,
+                    default_procedure_instance_limit(),
+                );
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module: host_module,
                     main_instance,
