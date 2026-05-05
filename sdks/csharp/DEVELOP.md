@@ -4,7 +4,7 @@ We are in the process of moving from the `com.clockworklabs.spacetimedbsdk` repo
 
 # Notes for maintainers
 
-First, see the [user-facing docs](https://spacetimedb.com/docs/sdks/c-sharp).
+First, see the [user-facing docs](https://spacetimedb.com/docs/clients/c-sharp).
 
 ## Developing against a local clone of SpacetimeDB
 When developing against a local clone of SpacetimeDB, you'll need to ensure that the packages here can find an up-to-date version of the BSATN.Codegen and BSATN.Runtime packages from SpacetimeDB.
