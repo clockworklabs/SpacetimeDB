@@ -64,7 +64,7 @@ Roughly speaking, code pertaining to specific tables should live in `Table.cs`, 
 
 ### Threading model
 
-The C# SDK, unlike the [Rust SDK](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/sdk), **assumes a DbConnection is only accessed from a single thread**. This thread is referred to as the "main thread". The "main thread" is:
+The C# SDK, unlike the [Rust SDK](https://github.com/clockworklabs/SpacetimeDB/tree/master/sdks/rust), **assumes a DbConnection is only accessed from a single thread**. This thread is referred to as the "main thread". The "main thread" is:
 - Whichever thread is repeatedly calling `DbConnection.FrameTick()` in a loop.
 It is **only safe to call `FrameTick()` from a single thread**. It is **only safe to access the DbConnection from this thread**. 
 (Note: we should write about this in the public docs!)
