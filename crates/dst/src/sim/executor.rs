@@ -17,7 +17,13 @@ use std::{
 
 use futures_util::FutureExt;
 
-use crate::{seed::DstSeed, sim::Rng};
+use crate::{
+    seed::DstSeed,
+    sim::rng::{enter_rng_context, DeterminismLog},
+    sim::system_thread::enter_simulation_thread,
+    sim::time::{enter_time_context, TimeHandle},
+    sim::Rng,
+};
 
 type Runnable = async_task::Runnable<NodeId>;
 
@@ -39,8 +45,7 @@ impl fmt::Display for NodeId {
 ///
 /// futures are scheduled as runnables, the ready queue
 /// is sampled by deterministic RNG, and pending execution without future events
-/// is considered a test hang unless external system threads are explicitly
-/// allowed for the current target.
+/// is considered a test hang.
 pub struct Runtime {
     executor: Arc<Executor>,
 }
@@ -56,12 +61,8 @@ impl Runtime {
         self.executor.block_on(future)
     }
 
-    /// Allow parking briefly for non-DST runtime threads to wake the root task.
-    ///
-    /// This is currently needed by the relational target while durability still
-    /// uses core's production runtime boundary.
-    pub fn set_allow_system_thread(&mut self, allowed: bool) {
-        self.executor.set_allow_system_thread(allowed);
+    pub fn elapsed(&self) -> Duration {
+        self.executor.elapsed()
     }
 
     pub fn handle(&self) -> Handle {
@@ -88,6 +89,51 @@ impl Runtime {
         F::Output: Send + 'static,
     {
         self.handle().spawn_on(node, future)
+    }
+
+    /// Run a future twice with the same seed and fail if simulator choices diverge.
+    pub fn check_determinism<F>(seed: DstSeed, make_future: fn() -> F) -> F::Output
+    where
+        F: Future + 'static,
+        F::Output: Send + 'static,
+    {
+        Self::check_determinism_with(seed, make_future)
+    }
+
+    /// Run a future twice with the same seed and fail if simulator choices diverge.
+    pub fn check_determinism_with<M, F>(seed: DstSeed, make_future: M) -> F::Output
+    where
+        M: Fn() -> F + Clone + Send + 'static,
+        F: Future + 'static,
+        F::Output: Send + 'static,
+    {
+        let first = make_future.clone();
+        let log = thread::spawn(move || {
+            let mut runtime = Runtime::new(seed).expect("failed to create DST runtime");
+            runtime.executor.enable_determinism_log();
+            runtime.block_on(first());
+            runtime
+                .executor
+                .take_determinism_log()
+                .expect("determinism log should be enabled")
+        })
+        .join()
+        .map_err(|payload| panic_with_seed(seed, payload))
+        .unwrap();
+
+        thread::spawn(move || {
+            let mut runtime = Runtime::new(seed).expect("failed to create DST runtime");
+            runtime.executor.enable_determinism_check(log);
+            let output = runtime.block_on(make_future());
+            runtime
+                .executor
+                .finish_determinism_check()
+                .unwrap_or_else(|err| panic!("{err}"));
+            output
+        })
+        .join()
+        .map_err(|payload| panic_with_seed(seed, payload))
+        .unwrap()
     }
 }
 
@@ -138,13 +184,18 @@ impl<T> Future for JoinHandle<T> {
     }
 }
 
+fn panic_with_seed(seed: DstSeed, payload: Box<dyn std::any::Any + Send>) -> ! {
+    eprintln!("note: run with --seed {} to reproduce this error", seed.0);
+    std::panic::resume_unwind(payload);
+}
+
 struct Executor {
     queue: Receiver,
     sender: Sender,
     nodes: Mutex<BTreeMap<NodeId, Arc<NodeState>>>,
     next_node: std::sync::atomic::AtomicU64,
-    rng: Mutex<Rng>,
-    allow_system_thread: AtomicBool,
+    rng: Arc<Mutex<Rng>>,
+    time: TimeHandle,
 }
 
 impl Executor {
@@ -157,13 +208,29 @@ impl Executor {
             sender: queue.sender(),
             nodes: Mutex::new(nodes),
             next_node: std::sync::atomic::AtomicU64::new(1),
-            rng: Mutex::new(Rng::new(seed)),
-            allow_system_thread: AtomicBool::new(false),
+            rng: Arc::new(Mutex::new(Rng::new(seed))),
+            time: TimeHandle::new(),
         }
     }
 
-    fn set_allow_system_thread(&self, allowed: bool) {
-        self.allow_system_thread.store(allowed, Ordering::Relaxed);
+    fn elapsed(&self) -> Duration {
+        self.time.now()
+    }
+
+    fn enable_determinism_log(&self) {
+        self.rng.lock().expect("sim rng poisoned").enable_determinism_log();
+    }
+
+    fn enable_determinism_check(&self, log: DeterminismLog) {
+        self.rng.lock().expect("sim rng poisoned").enable_determinism_check(log);
+    }
+
+    fn take_determinism_log(&self) -> Option<DeterminismLog> {
+        self.rng.lock().expect("sim rng poisoned").take_determinism_log()
+    }
+
+    fn finish_determinism_check(&self) -> Result<(), String> {
+        self.rng.lock().expect("sim rng poisoned").finish_determinism_check()
     }
 
     fn create_node(&self) -> NodeId {
@@ -207,6 +274,9 @@ impl Executor {
 
     #[track_caller]
     fn block_on<F: Future>(&self, future: F) -> F::Output {
+        let _system_thread_context = enter_simulation_thread();
+        let _rng_context = enter_rng_context(Arc::clone(&self.rng));
+        let _time_context = enter_time_context(self.time.clone());
         let _waiter = WaiterGuard::new(&self.queue, thread::current());
 
         let sender = self.sender.clone();
@@ -223,11 +293,11 @@ impl Executor {
                 return task.now_or_never().expect("finished task should resolve");
             }
 
-            if self.allow_system_thread.load(Ordering::Relaxed) {
-                thread::park_timeout(Duration::from_millis(1));
-            } else {
-                panic!("no runnable tasks; all simulated tasks are blocked");
+            if self.time.wake_next_timer() {
+                continue;
             }
+
+            panic!("no runnable tasks; all simulated tasks are blocked");
         }
     }
 
@@ -370,7 +440,7 @@ impl Receiver {
 #[cfg(test)]
 mod tests {
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     };
 
@@ -410,5 +480,33 @@ mod tests {
         });
 
         assert_eq!(value, 11);
+    }
+
+    #[test]
+    fn check_determinism_runs_future_twice() {
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        CALLS.store(0, Ordering::SeqCst);
+
+        let value = Runtime::check_determinism(DstSeed(3), || async {
+            CALLS.fetch_add(1, Ordering::SeqCst);
+            yield_now().await;
+            13
+        });
+
+        assert_eq!(value, 13);
+        assert_eq!(CALLS.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-determinism detected")]
+    fn check_determinism_rejects_different_scheduler_sequence() {
+        static FIRST_RUN: AtomicBool = AtomicBool::new(true);
+        FIRST_RUN.store(true, Ordering::SeqCst);
+
+        Runtime::check_determinism(DstSeed(4), || async {
+            if FIRST_RUN.swap(false, Ordering::SeqCst) {
+                yield_now().await;
+            }
+        });
     }
 }

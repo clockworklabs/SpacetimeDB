@@ -37,10 +37,12 @@ use crate::{
     },
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
-    sim,
-    targets::buggified_repo::{is_injected_disk_error_text, BuggifiedRepo, CommitlogFaultConfig},
+    sim::{
+        self,
+        commitlog::{is_injected_disk_error_text, CommitlogFaultConfig, CommitlogFaultSummary, FaultableRepo},
+    },
     workload::{
-        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
+        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary},
         commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
         table_ops::{
             ConnectionWriteState, TableErrorKind, TableInteractionCase, TableOperation, TableScenario, TableScenarioId,
@@ -1264,7 +1266,7 @@ impl RelationalDbEngine {
             table_ops: self.stats.table_ops.clone(),
             transactions: self.stats.transaction_summary(durable_commit_count),
             runtime: self.stats.runtime_summary(),
-            disk_faults: self.commitlog_repo.fault_summary(),
+            disk_faults: disk_fault_summary(self.commitlog_repo.fault_summary()),
             replay,
             table,
         })
@@ -1382,7 +1384,7 @@ impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
     }
 }
 
-type StressCommitlogRepo = BuggifiedRepo<MemoryCommitlogRepo>;
+type StressCommitlogRepo = FaultableRepo<MemoryCommitlogRepo>;
 type InMemoryCommitlogDurability = Local<ProductValue, StressCommitlogRepo>;
 
 struct RelationalDbBootstrap {
@@ -1401,7 +1403,7 @@ fn bootstrap_relational_db(
     let (runtime_handle, runtime_guard) = sim::current_handle_or_new_runtime()?;
     let fault_config = CommitlogFaultConfig::for_profile(fault_profile);
 
-    let commitlog_repo = BuggifiedRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config, seed.fork(702));
+    let commitlog_repo = FaultableRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config, seed.fork(702));
     let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
         InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), runtime_handle.clone(), durability_opts)
@@ -1470,6 +1472,21 @@ fn schema_summary(schema: &SchemaPlan) -> SchemaSummary {
         max_columns_per_table,
         initial_indexes: initial_tables + extra_indexes,
         extra_indexes,
+    }
+}
+
+fn disk_fault_summary(summary: CommitlogFaultSummary) -> DiskFaultSummary {
+    DiskFaultSummary {
+        profile: summary.profile,
+        latency: summary.latency,
+        short_read: summary.short_read,
+        short_write: summary.short_write,
+        read_error: summary.read_error,
+        write_error: summary.write_error,
+        flush_error: summary.flush_error,
+        fsync_error: summary.fsync_error,
+        open_error: summary.open_error,
+        metadata_error: summary.metadata_error,
     }
 }
 

@@ -8313,6 +8313,7 @@ dependencies = [
  "async-task",
  "clap 4.5.50",
  "futures-util",
+ "libc",
  "spacetimedb-commitlog",
  "spacetimedb-core",
  "spacetimedb-datastore",

@@ -4,8 +4,11 @@
 //! futures are scheduled as runnable tasks and the ready queue is sampled by a
 //! deterministic RNG instead of being driven by a package-level async runtime.
 
+pub(crate) mod commitlog;
 mod executor;
 mod rng;
+mod system_thread;
+pub mod time;
 
 use std::time::Duration;
 
@@ -23,9 +26,8 @@ pub(crate) fn current_handle_or_new_runtime() -> anyhow::Result<(RuntimeHandle, 
     spacetimedb_core::runtime::current_handle_or_new_runtime()
 }
 
-pub(crate) fn advance_time(_duration: Duration) {
-    // This is a hook, not wall-clock sleep. A future simulator layer can advance
-    // virtual time here while keeping targets on the same API.
+pub(crate) fn advance_time(duration: Duration) {
+    time::advance(duration);
 }
 
 pub(crate) fn decision_source(seed: DstSeed) -> DecisionSource {

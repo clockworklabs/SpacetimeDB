@@ -122,14 +122,18 @@ fn run_prepared_target<D: TargetDescriptor>(
     seed: DstSeed,
     scenario: D::Scenario,
     config: RunConfig,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    D: 'static,
+    D::Scenario: Send + 'static,
+{
     D::prepare(seed, &scenario, &config)?;
-    let mut runtime = spacetimedb_dst::sim::Runtime::new(seed)?;
-    // RelationalDB durability still runs on core's production runtime boundary.
-    // Let those external tasks wake the DST executor while this target is being
-    // migrated toward a fully local simulator.
-    runtime.set_allow_system_thread(true);
-    runtime.block_on(run_target::<D>(seed, scenario, config))
+    std::thread::spawn(move || {
+        let mut runtime = spacetimedb_dst::sim::Runtime::new(seed)?;
+        runtime.block_on(run_target::<D>(seed, scenario, config))
+    })
+    .join()
+    .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
 }
 
 fn map_table_scenario(scenario: ScenarioKind) -> anyhow::Result<TableScenarioId> {

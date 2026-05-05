@@ -19,6 +19,7 @@ anyhow.workspace = true
 async-task = "4.4"
 clap.workspace = true
 futures-util.workspace = true
+libc = "0.2"
 spacetimedb-datastore = { workspace = true, features = ["test"] }
 spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.2.0" }
 spacetimedb-commitlog = { workspace = true, features = ["test"] }

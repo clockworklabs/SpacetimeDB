@@ -1,3 +1,5 @@
+//! Commitlog storage fault-injection support for DST targets.
+
 use std::{
     fmt,
     io::{self, BufRead, Read, Seek, Write},
@@ -13,7 +15,7 @@ use spacetimedb_commitlog::{
     segment::FileLike,
 };
 
-use crate::{config::CommitlogFaultProfile, seed::DstSeed, sim, workload::commitlog_ops::DiskFaultSummary};
+use crate::{config::CommitlogFaultProfile, seed::DstSeed, sim};
 
 const INJECTED_DISK_ERROR_PREFIX: &str = "dst injected disk ";
 
@@ -110,6 +112,20 @@ impl CommitlogFaultConfig {
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CommitlogFaultSummary {
+    pub(crate) profile: CommitlogFaultProfile,
+    pub(crate) latency: usize,
+    pub(crate) short_read: usize,
+    pub(crate) short_write: usize,
+    pub(crate) read_error: usize,
+    pub(crate) write_error: usize,
+    pub(crate) flush_error: usize,
+    pub(crate) fsync_error: usize,
+    pub(crate) open_error: usize,
+    pub(crate) metadata_error: usize,
+}
+
 /// DST-only repo wrapper that makes the in-memory commitlog backend behave less like RAM.
 ///
 /// Faults stay within normal file API semantics: calls may take deterministic simulated time,
@@ -117,12 +133,12 @@ impl CommitlogFaultConfig {
 /// The wrapper deliberately avoids corruption or crash-style partial persistence; those need a
 /// stronger durability model before we enable them.
 #[derive(Clone, Debug)]
-pub(crate) struct BuggifiedRepo<R> {
+pub(crate) struct FaultableRepo<R> {
     inner: R,
     faults: FaultController,
 }
 
-impl<R> BuggifiedRepo<R> {
+impl<R> FaultableRepo<R> {
     pub(crate) fn new(inner: R, config: CommitlogFaultConfig, seed: DstSeed) -> Self {
         Self {
             inner,
@@ -134,7 +150,7 @@ impl<R> BuggifiedRepo<R> {
         self.faults.enable();
     }
 
-    pub(crate) fn fault_summary(&self) -> DiskFaultSummary {
+    pub(crate) fn fault_summary(&self) -> CommitlogFaultSummary {
         self.faults.summary()
     }
 
@@ -143,22 +159,22 @@ impl<R> BuggifiedRepo<R> {
     }
 }
 
-impl<R: fmt::Display> fmt::Display for BuggifiedRepo<R> {
+impl<R: fmt::Display> fmt::Display for FaultableRepo<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}+buggified({})", self.inner, self.faults.config.profile)
+        write!(f, "{}+faultable({})", self.inner, self.faults.config.profile)
     }
 }
 
-impl<R: Repo> Repo for BuggifiedRepo<R> {
-    type SegmentWriter = BuggifiedSegment<R::SegmentWriter>;
-    type SegmentReader = BuggifiedReader<R::SegmentReader>;
+impl<R: Repo> Repo for FaultableRepo<R> {
+    type SegmentWriter = FaultableSegment<R::SegmentWriter>;
+    type SegmentReader = FaultableReader<R::SegmentReader>;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Open)?;
         self.inner
             .create_segment(offset)
-            .map(|inner| BuggifiedSegment::new(inner, self.faults.clone()))
+            .map(|inner| FaultableSegment::new(inner, self.faults.clone()))
     }
 
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
@@ -166,7 +182,7 @@ impl<R: Repo> Repo for BuggifiedRepo<R> {
         self.faults.maybe_error(FaultKind::Open)?;
         self.inner
             .open_segment_reader(offset)
-            .map(|inner| BuggifiedReader::new(inner, self.faults.clone()))
+            .map(|inner| FaultableReader::new(inner, self.faults.clone()))
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
@@ -174,7 +190,7 @@ impl<R: Repo> Repo for BuggifiedRepo<R> {
         self.faults.maybe_error(FaultKind::Open)?;
         self.inner
             .open_segment_writer(offset)
-            .map(|inner| BuggifiedSegment::new(inner, self.faults.clone()))
+            .map(|inner| FaultableSegment::new(inner, self.faults.clone()))
     }
 
     fn segment_file_path(&self, offset: u64) -> Option<String> {
@@ -218,20 +234,20 @@ impl<R: Repo> Repo for BuggifiedRepo<R> {
     }
 }
 
-impl<R: RepoWithoutLockFile> RepoWithoutLockFile for BuggifiedRepo<R> {}
+impl<R: RepoWithoutLockFile> RepoWithoutLockFile for FaultableRepo<R> {}
 
-pub(crate) struct BuggifiedSegment<S> {
+pub(crate) struct FaultableSegment<S> {
     inner: S,
     faults: FaultController,
 }
 
-impl<S> BuggifiedSegment<S> {
+impl<S> FaultableSegment<S> {
     fn new(inner: S, faults: FaultController) -> Self {
         Self { inner, faults }
     }
 }
 
-impl<S: Read> Read for BuggifiedSegment<S> {
+impl<S: Read> Read for FaultableSegment<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Read)?;
@@ -240,7 +256,7 @@ impl<S: Read> Read for BuggifiedSegment<S> {
     }
 }
 
-impl<S: Write> Write for BuggifiedSegment<S> {
+impl<S: Write> Write for FaultableSegment<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Write)?;
@@ -255,14 +271,14 @@ impl<S: Write> Write for BuggifiedSegment<S> {
     }
 }
 
-impl<S: Seek> Seek for BuggifiedSegment<S> {
+impl<S: Seek> Seek for FaultableSegment<S> {
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         self.faults.maybe_disk_latency();
         self.inner.seek(pos)
     }
 }
 
-impl<S: SegmentLen> SegmentLen for BuggifiedSegment<S> {
+impl<S: SegmentLen> SegmentLen for FaultableSegment<S> {
     fn segment_len(&mut self) -> io::Result<u64> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Metadata)?;
@@ -270,7 +286,7 @@ impl<S: SegmentLen> SegmentLen for BuggifiedSegment<S> {
     }
 }
 
-impl<S: FileLike> FileLike for BuggifiedSegment<S> {
+impl<S: FileLike> FileLike for FaultableSegment<S> {
     fn fsync(&mut self) -> io::Result<()> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Fsync)?;
@@ -284,18 +300,18 @@ impl<S: FileLike> FileLike for BuggifiedSegment<S> {
     }
 }
 
-pub(crate) struct BuggifiedReader<S> {
+pub(crate) struct FaultableReader<S> {
     inner: S,
     faults: FaultController,
 }
 
-impl<S> BuggifiedReader<S> {
+impl<S> FaultableReader<S> {
     fn new(inner: S, faults: FaultController) -> Self {
         Self { inner, faults }
     }
 }
 
-impl<S: Read> Read for BuggifiedReader<S> {
+impl<S: Read> Read for FaultableReader<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Read)?;
@@ -304,7 +320,7 @@ impl<S: Read> Read for BuggifiedReader<S> {
     }
 }
 
-impl<S: BufRead> BufRead for BuggifiedReader<S> {
+impl<S: BufRead> BufRead for FaultableReader<S> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Read)?;
@@ -316,14 +332,14 @@ impl<S: BufRead> BufRead for BuggifiedReader<S> {
     }
 }
 
-impl<S: Seek> Seek for BuggifiedReader<S> {
+impl<S: Seek> Seek for FaultableReader<S> {
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         self.faults.maybe_disk_latency();
         self.inner.seek(pos)
     }
 }
 
-impl<S: SegmentLen> SegmentLen for BuggifiedReader<S> {
+impl<S: SegmentLen> SegmentLen for FaultableReader<S> {
     fn segment_len(&mut self) -> io::Result<u64> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Metadata)?;
@@ -331,7 +347,7 @@ impl<S: SegmentLen> SegmentLen for BuggifiedReader<S> {
     }
 }
 
-impl<S: SegmentReader> SegmentReader for BuggifiedReader<S> {
+impl<S: SegmentReader> SegmentReader for FaultableReader<S> {
     fn sealed(&self) -> bool {
         self.inner.sealed()
     }
@@ -342,6 +358,7 @@ struct FaultController {
     config: CommitlogFaultConfig,
     counters: Arc<FaultCounters>,
     decisions: Arc<sim::DecisionSource>,
+    time: Option<sim::time::TimeHandle>,
     armed: Arc<AtomicBool>,
     suspended: Arc<AtomicUsize>,
 }
@@ -352,6 +369,7 @@ impl FaultController {
             config,
             counters: Arc::default(),
             decisions: Arc::new(sim::decision_source(seed)),
+            time: sim::time::try_current_handle(),
             armed: Arc::new(AtomicBool::new(false)),
             suspended: Arc::default(),
         }
@@ -381,7 +399,11 @@ impl FaultController {
             } else {
                 Duration::from_millis(1)
             };
-            sim::advance_time(latency);
+            if let Some(time) = &self.time {
+                time.advance(latency);
+            } else {
+                sim::advance_time(latency);
+            }
         }
     }
 
@@ -414,8 +436,8 @@ impl FaultController {
         self.decisions.sample_probability(probability)
     }
 
-    fn summary(&self) -> DiskFaultSummary {
-        DiskFaultSummary {
+    fn summary(&self) -> CommitlogFaultSummary {
+        CommitlogFaultSummary {
             profile: self.config.profile,
             latency: self.counters.latency.load(Ordering::Relaxed) as usize,
             short_read: self.counters.short_read.load(Ordering::Relaxed) as usize,
