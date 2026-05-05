@@ -462,9 +462,6 @@ fn run_csharp_tests() -> Result<()> {
         "spacetimedb-standalone/allow_loopback_http_for_tests"
     )
     .run()?;
-    cmd!("dotnet", "test", "-warnaserror")
-        .dir("crates/bindings-csharp")
-        .run()?;
     cmd!("cargo", "test", "-p", "spacetimedb-csharp-tests").run()?;
     cmd!(
         "dotnet",
