@@ -4,5 +4,3 @@
 
 [node name="Main" type="Node2D" unique_id=1765328469]
 script = ExtResource("1_ig7tw")
-ServerUrl = "https://maincloud.spacetimedb.com"
-DatabaseName = "lis-blackholio-godot"

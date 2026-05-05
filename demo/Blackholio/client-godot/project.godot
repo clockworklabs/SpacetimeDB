@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="blackholio"
-run/main_scene="uid://cjb7808stemnn"
+run/main_scene="uid://bu0hxewrjspqk"
 config/features=PackedStringArray("4.6", "C#", "GL Compatibility")
 config/icon="res://icon.svg"
 
