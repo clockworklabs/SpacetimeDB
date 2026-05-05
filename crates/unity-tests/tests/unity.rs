@@ -136,7 +136,6 @@ fn run_unity_tests(
     let mut args = vec![
         "-batchmode".to_string(),
         "-nographics".to_string(),
-        "-quit".to_string(),
         "-projectPath".to_string(),
         project_dir.display().to_string(),
         "-runTests".to_string(),
