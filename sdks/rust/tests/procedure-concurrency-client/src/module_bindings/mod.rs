@@ -7,14 +7,22 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod insert_reducer_row_reducer;
+pub mod insert_scheduled_reducer_reducer;
 pub mod procedure_concurrency_row_table;
 pub mod procedure_concurrency_row_type;
+pub mod procedure_schedule_reducer_between_inserts_procedure;
 pub mod procedure_sleep_between_inserts_procedure;
+pub mod scheduled_reducer_row_table;
+pub mod scheduled_reducer_row_type;
 
 pub use insert_reducer_row_reducer::insert_reducer_row;
+pub use insert_scheduled_reducer_reducer::insert_scheduled_reducer;
 pub use procedure_concurrency_row_table::*;
 pub use procedure_concurrency_row_type::ProcedureConcurrencyRow;
+pub use procedure_schedule_reducer_between_inserts_procedure::procedure_schedule_reducer_between_inserts;
 pub use procedure_sleep_between_inserts_procedure::procedure_sleep_between_inserts;
+pub use scheduled_reducer_row_table::*;
+pub use scheduled_reducer_row_type::ScheduledReducerRow;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -25,6 +33,7 @@ pub use procedure_sleep_between_inserts_procedure::procedure_sleep_between_inser
 
 pub enum Reducer {
     InsertReducerRow,
+    InsertScheduledReducer { schedule: ScheduledReducerRow },
 }
 
 impl __sdk::InModule for Reducer {
@@ -35,6 +44,7 @@ impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
             Reducer::InsertReducerRow => "insert_reducer_row",
+            Reducer::InsertScheduledReducer { .. } => "insert_scheduled_reducer",
             _ => unreachable!(),
         }
     }
@@ -42,6 +52,11 @@ impl __sdk::Reducer for Reducer {
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
             Reducer::InsertReducerRow => __sats::bsatn::to_vec(&insert_reducer_row_reducer::InsertReducerRowArgs {}),
+            Reducer::InsertScheduledReducer { schedule } => {
+                __sats::bsatn::to_vec(&insert_scheduled_reducer_reducer::InsertScheduledReducerArgs {
+                    schedule: schedule.clone(),
+                })
+            }
             _ => unreachable!(),
         }
     }
@@ -52,6 +67,7 @@ impl __sdk::Reducer for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     procedure_concurrency_row: __sdk::TableUpdate<ProcedureConcurrencyRow>,
+    scheduled_reducer_row: __sdk::TableUpdate<ScheduledReducerRow>,
 }
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
@@ -63,6 +79,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "procedure_concurrency_row" => db_update
                     .procedure_concurrency_row
                     .append(procedure_concurrency_row_table::parse_table_update(table_update)?),
+                "scheduled_reducer_row" => db_update
+                    .scheduled_reducer_row
+                    .append(scheduled_reducer_row_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
@@ -85,6 +104,9 @@ impl __sdk::DbUpdate for DbUpdate {
             "procedure_concurrency_row",
             &self.procedure_concurrency_row,
         );
+        diff.scheduled_reducer_row = cache
+            .apply_diff_to_table::<ScheduledReducerRow>("scheduled_reducer_row", &self.scheduled_reducer_row)
+            .with_updates_by_pk(|row| &row.scheduled_id);
 
         diff
     }
@@ -94,6 +116,9 @@ impl __sdk::DbUpdate for DbUpdate {
             match &table_rows.table[..] {
                 "procedure_concurrency_row" => db_update
                     .procedure_concurrency_row
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "scheduled_reducer_row" => db_update
+                    .scheduled_reducer_row
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
@@ -109,6 +134,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "procedure_concurrency_row" => db_update
                     .procedure_concurrency_row
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "scheduled_reducer_row" => db_update
+                    .scheduled_reducer_row
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
                 }
@@ -123,6 +151,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     procedure_concurrency_row: __sdk::TableAppliedDiff<'r, ProcedureConcurrencyRow>,
+    scheduled_reducer_row: __sdk::TableAppliedDiff<'r, ScheduledReducerRow>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -135,6 +164,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<ProcedureConcurrencyRow>(
             "procedure_concurrency_row",
             &self.procedure_concurrency_row,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ScheduledReducerRow>(
+            "scheduled_reducer_row",
+            &self.scheduled_reducer_row,
             event,
         );
     }
@@ -795,6 +829,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         procedure_concurrency_row_table::register_table(client_cache);
+        scheduled_reducer_row_table::register_table(client_cache);
     }
-    const ALL_TABLE_NAMES: &'static [&'static str] = &["procedure_concurrency_row"];
+    const ALL_TABLE_NAMES: &'static [&'static str] = &["procedure_concurrency_row", "scheduled_reducer_row"];
 }

@@ -543,6 +543,11 @@ mod rust_procedure_concurrency {
     fn procedure_reducer_same_client_not_interleaved() {
         make_test("procedure-reducer-same-client-not-interleaved").run()
     }
+
+    #[test]
+    fn procedure_concurrent_with_scheduled_reducer() {
+        make_test("procedure-concurrent-with-scheduled-reducer").run()
+    }
 }
 
 macro_rules! view_tests {
