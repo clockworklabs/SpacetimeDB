@@ -112,7 +112,7 @@ public partial class GameManager : Node
 		// Get the world size from the config table and set up the arena
 		var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
 		SetupArena(worldSize);
-        
+		
 		ctx.Reducers.EnterGame(DefaultPlayerName);
 	}
 	
@@ -130,7 +130,8 @@ public partial class GameManager : Node
 			Name = "Background",
 			Color = BackgroundColor,
 			Position = Vector2.Zero,
-			Polygon = polygon
+			Polygon = polygon,
+			ZIndex = -1000
 		};
 		background.AddChild(new Polygon2D
 		{
@@ -141,7 +142,7 @@ public partial class GameManager : Node
 			InvertBorder = BorderThickness,
 			Polygon = polygon
 		});
-		AddChild(background, @internal: InternalMode.Front);
+		AddChild(background);
 
 		AddChild(new CameraController(worldSize));
 	}
