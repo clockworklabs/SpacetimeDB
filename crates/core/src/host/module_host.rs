@@ -2,17 +2,17 @@ use super::{
     ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler,
 };
-use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
+use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
-use crate::host::host_controller::CallProcedureReturn;
+use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
-use crate::host::v8::{JsMainInstance, JsProcedureInstance};
+use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -23,6 +23,7 @@ use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::SqlResult;
 use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_manager::BroadcastError;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::tx::DeltaTx;
@@ -57,7 +58,7 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{ConnectionId, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -710,6 +711,32 @@ pub enum ViewCommand {
 
 pub type ViewCommandResult = Result<Option<ExecutionMetrics>, DBError>;
 
+#[derive(Clone, Copy)]
+pub(in crate::host) struct ViewCommandMetric {
+    workload: WorkloadType,
+    timer: Instant,
+}
+
+impl ViewCommand {
+    pub(in crate::host) fn metric(&self) -> ViewCommandMetric {
+        match self {
+            Self::AddSingleSubscription { _timer, .. }
+            | Self::AddMultiSubscription { _timer, .. }
+            | Self::AddLegacySubscription { _timer, .. }
+            | Self::AddSubscriptionV2 { _timer, .. } => ViewCommandMetric {
+                workload: WorkloadType::Subscribe,
+                timer: *_timer,
+            },
+            Self::RemoveSingleSubscription { timer, .. }
+            | Self::RemoveMultiSubscription { timer, .. }
+            | Self::RemoveSubscriptionV2 { timer, .. } => ViewCommandMetric {
+                workload: WorkloadType::Unsubscribe,
+                timer: *timer,
+            },
+        }
+    }
+}
+
 pub(in crate::host) struct SqlCommand {
     pub(in crate::host) db: Arc<RelationalDB>,
     pub(in crate::host) sql_text: String,
@@ -734,6 +761,12 @@ pub(in crate::host) struct OneOffQueryJsonParams {
     timer: Instant,
 }
 
+impl OneOffQueryJsonParams {
+    pub(in crate::host) fn timer(&self) -> Instant {
+        self.timer
+    }
+}
+
 pub(in crate::host) struct OneOffQueryBsatnParams {
     db: Arc<RelationalDB>,
     subscriptions: ModuleSubscriptions,
@@ -745,6 +778,12 @@ pub(in crate::host) struct OneOffQueryBsatnParams {
     rlb_pool: BsatnRowListBuilderPool,
 }
 
+impl OneOffQueryBsatnParams {
+    pub(in crate::host) fn timer(&self) -> Instant {
+        self.timer
+    }
+}
+
 pub(in crate::host) struct OneOffQueryV2Params {
     db: Arc<RelationalDB>,
     subscriptions: ModuleSubscriptions,
@@ -752,7 +791,25 @@ pub(in crate::host) struct OneOffQueryV2Params {
     query: String,
     client: Arc<ClientConnectionSender>,
     request_id: u32,
+    timer: Instant,
     rlb_pool: BsatnRowListBuilderPool,
+}
+
+impl OneOffQueryV2Params {
+    pub(in crate::host) fn timer(&self) -> Instant {
+        self.timer
+    }
+}
+
+pub(crate) struct ProcedureResultTarget {
+    sender: Arc<ClientConnectionSender>,
+    request_id: RequestId,
+}
+
+impl ProcedureResultTarget {
+    pub(crate) fn new(sender: Arc<ClientConnectionSender>, request_id: RequestId) -> Self {
+        Self { sender, request_id }
+    }
 }
 
 pub struct CallViewParams {
@@ -1313,6 +1370,11 @@ impl ModuleHost {
         &self.info.subscriptions
     }
 
+    #[inline]
+    pub fn is_js(&self) -> bool {
+        matches!(&*self.inner, ModuleHostInner::Js(_))
+    }
+
     fn is_marked_closed(&self) -> bool {
         // `self.closed` isn't used for any synchronization, it's just a shared flag,
         // so `Ordering::Relaxed` is sufficient.
@@ -1492,6 +1554,62 @@ impl ModuleHost {
         )
         .await
         .map_err(Into::into)
+    }
+
+    async fn call_view_command_for_websocket(
+        &self,
+        label: &'static str,
+        cmd: ViewCommand,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let metric = cmd.metric();
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("websocket view operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        match &*self.inner {
+            ModuleHostInner::Js(js) => {
+                self.guard_closed()
+                    .map_err(|err| DBError::Other(anyhow::anyhow!(err)))?;
+                let on_panic = self.on_panic.clone();
+                js.main_instance
+                    .with_instance(async |inst| inst.enqueue_call_view(cmd, metric, on_panic).await)
+                    .await;
+                Ok(None)
+            }
+            ModuleHostInner::Wasm(_) => {
+                let result = self
+                    .call_view_command(label, cmd)
+                    .await
+                    .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+                Self::record_view_command_metrics_for_result(&self.info, self.relational_db(), metric, &result);
+                result
+            }
+        }
+    }
+
+    pub(in crate::host) fn record_view_command_metrics_for_result(
+        info: &ModuleInfo,
+        db: &RelationalDB,
+        metric: ViewCommandMetric,
+        result: &ViewCommandResult,
+    ) {
+        if let Ok(Some(metrics)) = result {
+            db.exec_counters_for(metric.workload).record(metrics);
+        }
+
+        match metric.workload {
+            WorkloadType::Subscribe => info
+                .metrics
+                .request_round_trip_subscribe
+                .observe(metric.timer.elapsed().as_secs_f64()),
+            WorkloadType::Unsubscribe => info
+                .metrics
+                .request_round_trip_unsubscribe
+                .observe(metric.timer.elapsed().as_secs_f64()),
+            _ => {}
+        }
     }
 
     async fn call_sql_command(&self, cmd: SqlCommand) -> Result<SqlCommandResult, DBError> {
@@ -1746,40 +1864,70 @@ impl ModuleHost {
         })
     }
 
-    async fn call_reducer_inner(
-        &self,
+    fn reducer_call_params<'a>(
+        &'a self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
-        reducer_id: ReducerId,
-        reducer_def: &ReducerDef,
+        reducer_name: &str,
         args: FunctionArgs,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
-        let args = args
-            .into_tuple_for_def(&self.info.module_def, reducer_def)
-            .map_err(InvalidReducerArguments)?;
-        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-        let call_reducer_params = CallReducerParams {
-            timestamp: Timestamp::now(),
-            caller_identity,
-            caller_connection_id,
-            client,
-            request_id,
-            timer,
-            reducer_id,
-            args,
-        };
+    ) -> Result<(&'a ReducerDef, CallReducerParams), ReducerCallError> {
+        let (reducer_id, reducer_def) = self
+            .info
+            .module_def
+            .reducer_full(reducer_name)
+            .ok_or(ReducerCallError::NoSuchReducer)?;
+        if let Some(lifecycle) = reducer_def.lifecycle {
+            return Err(ReducerCallError::LifecycleReducer(lifecycle));
+        }
 
+        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
+
+        Ok((
+            reducer_def,
+            Self::call_reducer_params(
+                &self.info,
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                reducer_def,
+                args,
+            )?,
+        ))
+    }
+
+    async fn call_reducer_with_params(
+        &self,
+        reducer_def: &ReducerDef,
+        params: CallReducerParams,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         self.call(
             &reducer_def.name,
-            call_reducer_params,
+            params,
             async |p, inst| inst.call_reducer(p),
             async |p, inst| inst.call_reducer(p).await,
         )
         .await
         .map_err(Into::into)
+    }
+
+    fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
+        let log_message = match err {
+            ReducerCallError::NoSuchReducer => Some(no_such_function_log_message("reducer", reducer_name)),
+            ReducerCallError::Args(_) => Some(args_error_log_message("reducer", reducer_name)),
+            _ => None,
+        };
+
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        }
     }
 
     pub async fn call_reducer(
@@ -1793,40 +1941,68 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
-            let (reducer_id, reducer_def) = self
-                .info
-                .module_def
-                .reducer_full(reducer_name)
-                .ok_or(ReducerCallError::NoSuchReducer)?;
-            if let Some(lifecycle) = reducer_def.lifecycle {
-                return Err(ReducerCallError::LifecycleReducer(lifecycle));
-            }
-
-            if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-                return Err(ReducerCallError::NoSuchReducer);
-            }
-
-            self.call_reducer_inner(
+            let (reducer_def, params) = self.reducer_call_params(
                 caller_identity,
                 caller_connection_id,
                 client,
                 request_id,
                 timer,
-                reducer_id,
-                reducer_def,
+                reducer_name,
                 args,
-            )
-            .await
+            )?;
+            self.call_reducer_with_params(reducer_def, params).await
         }
         .await;
 
-        let log_message = match &res {
-            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
-            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
-            _ => None,
-        };
-        if let Some(log_message) = log_message {
-            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
+        if let Err(err) = &res {
+            self.log_reducer_submit_error(reducer_name, err);
+        }
+
+        res
+    }
+
+    pub async fn enqueue_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<(), ReducerCallError> {
+        let res = async {
+            let (reducer_def, params) = self.reducer_call_params(
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_name,
+                args,
+            )?;
+
+            scopeguard::defer_on_unwind!({
+                log::warn!("websocket reducer operation {reducer_name} panicked");
+                (self.on_panic)();
+            });
+
+            match &*self.inner {
+                ModuleHostInner::Js(js) => {
+                    self.guard_closed()?;
+                    let on_panic = self.on_panic.clone();
+                    js.main_instance
+                        .with_instance(async |inst| inst.enqueue_reducer(params, on_panic).await)
+                        .await;
+                    Ok(())
+                }
+                ModuleHostInner::Wasm(_) => self.call_reducer_with_params(reducer_def, params).await.map(drop),
+            }
+        }
+        .await;
+
+        if let Err(err) = &res {
+            self.log_reducer_submit_error(reducer_name, err);
         }
 
         res
@@ -1846,10 +2022,8 @@ impl ModuleHost {
             _timer: timer,
         };
 
-        self.call_view_command("call_view_add_single_subscription", cmd)
+        self.call_view_command_for_websocket("call_view_add_single_subscription", cmd)
             .await
-            //TODO: handle error better
-            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?
     }
 
     pub async fn call_view_add_v2_subscription(
@@ -1866,10 +2040,8 @@ impl ModuleHost {
             _timer: timer,
         };
 
-        self.call_view_command("call_view_add_multi_subscription", cmd)
+        self.call_view_command_for_websocket("call_view_add_multi_subscription", cmd)
             .await
-            //TODO: handle error better
-            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?
     }
 
     pub async fn call_view_remove_single_subscription(
@@ -1886,9 +2058,8 @@ impl ModuleHost {
             timer,
         };
 
-        self.call_view_command("call_view_remove_single_subscription", cmd)
+        self.call_view_command_for_websocket("call_view_remove_single_subscription", cmd)
             .await
-            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?
     }
 
     pub async fn call_view_remove_v2_subscription(
@@ -1905,9 +2076,8 @@ impl ModuleHost {
             timer,
         };
 
-        self.call_view_command("call_view_remove_v2_subscription", cmd)
+        self.call_view_command_for_websocket("call_view_remove_v2_subscription", cmd)
             .await
-            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?
     }
 
     pub async fn call_view_remove_multi_subscription(
@@ -1924,9 +2094,8 @@ impl ModuleHost {
             timer,
         };
 
-        self.call_view_command("call_view_remove_multi_subscription", cmd)
+        self.call_view_command_for_websocket("call_view_remove_multi_subscription", cmd)
             .await
-            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?
     }
 
     pub async fn call_view_add_multi_subscription(
@@ -1943,10 +2112,8 @@ impl ModuleHost {
             _timer: timer,
         };
 
-        self.call_view_command("call_view_add_multi_subscription", cmd)
+        self.call_view_command_for_websocket("call_view_add_multi_subscription", cmd)
             .await
-            //TODO: handle error better
-            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?
     }
 
     pub async fn call_view_add_legacy_subscription(
@@ -1963,10 +2130,8 @@ impl ModuleHost {
             _timer: timer,
         };
 
-        self.call_view_command("call_view_add_legacy_subscription", cmd)
+        self.call_view_command_for_websocket("call_view_add_legacy_subscription", cmd)
             .await
-            //TODO: handle error better
-            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?
     }
 
     pub async fn call_sql(
@@ -1999,25 +2164,11 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> CallProcedureReturn {
         let res = async {
-            let (procedure_id, procedure_def) = self
-                .info
-                .module_def
-                .procedure_full(procedure_name)
-                .ok_or(ProcedureCallError::NoSuchProcedure)?;
-
-            if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
-                return Err(ProcedureCallError::NoSuchProcedure);
-            }
-
-            self.call_procedure_inner(
-                caller_identity,
-                caller_connection_id,
-                timer,
-                procedure_id,
-                procedure_def,
-                args,
-            )
-            .await
+            let (procedure_def, params) =
+                self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            self.call_procedure_with_params(&procedure_def.name, params)
+                .await
+                .map_err(Into::into)
         }
         .await;
 
@@ -2029,6 +2180,98 @@ impl ModuleHost {
             },
         };
 
+        self.log_procedure_validation_result(procedure_name, &ret);
+
+        ret
+    }
+
+    pub(crate) async fn enqueue_procedure(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        procedure_name: &str,
+        args: FunctionArgs,
+        target: ProcedureResultTarget,
+    ) -> Result<(), BroadcastError> {
+        let res = async {
+            let (procedure_def, params) =
+                self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            Ok((procedure_def.name.to_string(), params))
+        }
+        .await;
+
+        let (procedure_name, params) = match res {
+            Ok(value) => value,
+            Err(err) => {
+                let ret = CallProcedureReturn {
+                    result: Err(err),
+                    tx_offset: None,
+                };
+                self.log_procedure_validation_result(procedure_name, &ret);
+                return self.send_procedure_result(procedure_name, timer, target, ret);
+            }
+        };
+
+        let guard_procedure_name = procedure_name.clone();
+        scopeguard::defer_on_unwind!({
+            log::warn!("websocket procedure operation {guard_procedure_name} panicked");
+            (self.on_panic)();
+        });
+
+        if let Err(err) = self.guard_closed() {
+            let ret = CallProcedureReturn {
+                result: Err(err.into()),
+                tx_offset: None,
+            };
+            self.log_procedure_validation_result(&procedure_name, &ret);
+            return self.send_procedure_result(&procedure_name, timer, target, ret);
+        }
+
+        match &*self.inner {
+            ModuleHostInner::Js(host) => {
+                let lease = host.procedure_instances.get_instance().await;
+                let call = lease.instance.enqueue_procedure(params).await;
+                let module = self.clone();
+                tokio::spawn(async move {
+                    match call.receive().await {
+                        JsProcedureCallCompletion::Completed(ret) => {
+                            module.log_procedure_validation_result(&procedure_name, &ret);
+                            if let Err(err) = module.send_procedure_result(&procedure_name, timer, target, ret) {
+                                log::warn!("failed to send procedure result: {err:#}");
+                            }
+                        }
+                        JsProcedureCallCompletion::Panicked | JsProcedureCallCompletion::WorkerExited => {
+                            log::warn!("detached JS procedure worker failed before returning a result");
+                            (module.on_panic)();
+                        }
+                    }
+                    module.return_js_procedure_instance(lease).await;
+                });
+                Ok(())
+            }
+            ModuleHostInner::Wasm(_) => {
+                let ret = match self.call_procedure_with_params(&procedure_name, params).await {
+                    Ok(ret) => ret,
+                    Err(err) => CallProcedureReturn {
+                        result: Err(err.into()),
+                        tx_offset: None,
+                    },
+                };
+                self.log_procedure_validation_result(&procedure_name, &ret);
+                self.send_procedure_result(&procedure_name, timer, target, ret)
+            }
+        }
+    }
+
+    async fn return_js_procedure_instance(&self, lease: ModuleInstanceLease<JsProcedureInstance>) {
+        let ModuleHostInner::Js(host) = &*self.inner else {
+            return;
+        };
+        host.procedure_instances.return_instance(lease).await;
+    }
+
+    fn log_procedure_validation_result(&self, procedure_name: &str, ret: &CallProcedureReturn) {
         let log_message = match &ret.result {
             Err(ProcedureCallError::NoSuchProcedure) => Some(no_such_function_log_message("procedure", procedure_name)),
             Err(ProcedureCallError::Args(_)) => Some(args_error_log_message("procedure", procedure_name)),
@@ -2038,34 +2281,98 @@ impl ModuleHost {
         if let Some(log_message) = log_message {
             self.inject_logs(LogLevel::Error, procedure_name, &log_message)
         }
-
-        ret
     }
 
-    async fn call_procedure_inner(
+    fn send_procedure_result(
         &self,
+        procedure_name: &str,
+        timer: Option<Instant>,
+        target: ProcedureResultTarget,
+        ret: CallProcedureReturn,
+    ) -> Result<(), BroadcastError> {
+        if let Some(timer) = timer {
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Procedure, &self.info.database_identity, procedure_name)
+                .observe(timer.elapsed().as_secs_f64());
+        }
+
+        let ProcedureResultTarget { sender, request_id } = target;
+        let CallProcedureReturn { result, tx_offset } = ret;
+        match sender.config.version {
+            WsVersion::V1 => {
+                let message = ProcedureResultMessage::from_result(&result, request_id);
+                self.subscriptions().send_procedure_message(sender, message, tx_offset)
+            }
+            WsVersion::V2 | WsVersion::V3 => {
+                let (status, timestamp, execution_duration) = match result {
+                    Ok(ProcedureCallResult {
+                        return_val,
+                        execution_duration,
+                        start_timestamp,
+                    }) => (
+                        ws_v2::ProcedureStatus::Returned(
+                            bsatn::to_vec(&return_val)
+                                .expect("Procedure return value failed to serialize to BSATN")
+                                .into(),
+                        ),
+                        start_timestamp,
+                        TimeDuration::from(execution_duration),
+                    ),
+                    Err(err) => (
+                        ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
+                        Timestamp::UNIX_EPOCH,
+                        TimeDuration::ZERO,
+                    ),
+                };
+
+                let message = ws_v2::ProcedureResult {
+                    status,
+                    timestamp,
+                    total_host_execution_duration: execution_duration,
+                    request_id,
+                };
+
+                self.subscriptions()
+                    .send_procedure_message_v2(sender, message, tx_offset)
+            }
+        }
+    }
+
+    fn procedure_call_params<'a>(
+        &'a self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
-        procedure_id: ProcedureId,
-        procedure_def: &ProcedureDef,
+        procedure_name: &str,
         args: FunctionArgs,
-    ) -> Result<CallProcedureReturn, ProcedureCallError> {
+    ) -> Result<(&'a ProcedureDef, CallProcedureParams), ProcedureCallError> {
+        let (procedure_id, procedure_def) = self
+            .info
+            .module_def
+            .procedure_full(procedure_name)
+            .ok_or(ProcedureCallError::NoSuchProcedure)?;
+
+        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+            return Err(ProcedureCallError::NoSuchProcedure);
+        }
+
         let args = args
             .into_tuple_for_def(&self.info.module_def, procedure_def)
             .map_err(InvalidProcedureArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
-        let params = CallProcedureParams {
-            timestamp: Timestamp::now(),
-            caller_identity,
-            caller_connection_id,
-            timer,
-            procedure_id,
-            args,
-        };
-
-        Ok(self.call_procedure_with_params(&procedure_def.name, params).await?)
+        Ok((
+            procedure_def,
+            CallProcedureParams {
+                timestamp: Timestamp::now(),
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_id,
+                args,
+            },
+        ))
     }
 
     //TODO(shub) #4195: Also allow for collaborators along with owner
@@ -2381,16 +2688,7 @@ impl ModuleHost {
             timer,
         };
         log::debug!("One-off query: {}", params.query);
-        let metrics = self
-            .call(
-                "one_off_query_json",
-                params,
-                async |params, _inst| Self::one_off_query_json_inner(params),
-                async |params, inst| inst.one_off_query_json(params).await,
-            )
-            .await??;
-        self.record_one_off_query_metrics(metrics);
-        Ok(())
+        self.one_off_query_json_with_params(params).await
     }
 
     /// Execute a BSATN one-off query and send the results to the given client.
@@ -2417,16 +2715,72 @@ impl ModuleHost {
             rlb_pool,
         };
         log::debug!("One-off query: {}", params.query);
-        let metrics = self
-            .call(
-                "one_off_query_bsatn",
-                params,
-                async |params, _inst| Self::one_off_query_bsatn_inner(params),
-                async |params, inst| inst.one_off_query_bsatn(params).await,
-            )
-            .await??;
-        self.record_one_off_query_metrics(metrics);
-        Ok(())
+        self.one_off_query_bsatn_with_params(params).await
+    }
+
+    async fn one_off_query_for_websocket<P, Fut>(
+        &self,
+        label: &'static str,
+        params: P,
+        timer: Instant,
+        run_inner: impl FnOnce(P) -> OneOffQueryResult + Send + 'static,
+        enqueue_js: impl FnOnce(P, JsMainInstance, JsFatalHook) -> Fut + Send + 'static,
+    ) -> Result<(), anyhow::Error>
+    where
+        P: Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        scopeguard::defer_on_unwind!({
+            log::warn!("websocket one-off query operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        match &*self.inner {
+            ModuleHostInner::Js(js) => {
+                self.guard_closed()?;
+                let on_panic = self.on_panic.clone();
+                js.main_instance
+                    .with_instance(async |inst| enqueue_js(params, inst, on_panic).await)
+                    .await;
+                Ok(())
+            }
+            ModuleHostInner::Wasm(_) => {
+                let result = self
+                    .call(
+                        label,
+                        params,
+                        async move |params, _inst| run_inner(params),
+                        async |_, _| unreachable!("one-off query JS path is handled before Self::call"),
+                    )
+                    .await?;
+                Self::record_one_off_query_metrics_for_result(&self.info, self.relational_db(), timer, &result);
+                result.map(|_| ())
+            }
+        }
+    }
+
+    async fn one_off_query_json_with_params(&self, params: OneOffQueryJsonParams) -> Result<(), anyhow::Error> {
+        let timer = params.timer;
+        self.one_off_query_for_websocket(
+            "one_off_query_json",
+            params,
+            timer,
+            Self::one_off_query_json_inner,
+            |params, inst, on_panic| async move { inst.enqueue_one_off_query_json(params, on_panic).await },
+        )
+        .await
+    }
+
+    async fn one_off_query_bsatn_with_params(&self, params: OneOffQueryBsatnParams) -> Result<(), anyhow::Error> {
+        let timer = params.timer;
+        self.one_off_query_for_websocket(
+            "one_off_query_bsatn",
+            params,
+            timer,
+            Self::one_off_query_bsatn_inner,
+            |params, inst, on_panic| async move { inst.enqueue_one_off_query_bsatn(params, on_panic).await },
+        )
+        .await
     }
 
     pub(in crate::host) fn one_off_query_json_inner(params: OneOffQueryJsonParams) -> OneOffQueryResult {
@@ -2605,20 +2959,19 @@ impl ModuleHost {
             query,
             client,
             request_id,
+            timer: _timer,
             rlb_pool,
         };
         log::debug!("One-off query: {}", params.query);
-        let metrics = self
-            .call(
-                "one_off_query_v2",
-                params,
-                async |params, _inst| Self::one_off_query_v2_inner(params),
-                async |params, inst| inst.one_off_query_v2(params).await,
-            )
-            .await??;
-
-        self.record_one_off_query_metrics(metrics);
-        Ok(())
+        let timer = params.timer;
+        self.one_off_query_for_websocket(
+            "one_off_query_v2",
+            params,
+            timer,
+            Self::one_off_query_v2_inner,
+            |params, inst, on_panic| async move { inst.enqueue_one_off_query_v2(params, on_panic).await },
+        )
+        .await
     }
 
     pub(in crate::host) fn one_off_query_v2_inner(params: OneOffQueryV2Params) -> OneOffQueryResult {
@@ -2629,6 +2982,7 @@ impl ModuleHost {
             query,
             client,
             request_id,
+            timer: _,
             rlb_pool,
         } = params;
         let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
@@ -2716,12 +3070,18 @@ impl ModuleHost {
         Ok(metrics)
     }
 
-    fn record_one_off_query_metrics(&self, metrics: Option<ExecutionMetrics>) {
-        if let Some(metrics) = metrics {
-            self.relational_db()
-                .exec_counters_for(WorkloadType::Sql)
-                .record(&metrics);
+    pub(in crate::host) fn record_one_off_query_metrics_for_result(
+        info: &ModuleInfo,
+        db: &RelationalDB,
+        timer: Instant,
+        result: &OneOffQueryResult,
+    ) {
+        if let Ok(Some(metrics)) = result {
+            db.exec_counters_for(WorkloadType::Sql).record(metrics);
         }
+        info.metrics
+            .request_round_trip_sql
+            .observe(timer.elapsed().as_secs_f64());
     }
 
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
@@ -2866,6 +3226,7 @@ mod tests {
             query: "select * from t".to_string(),
             client: sender,
             request_id: 42,
+            timer: std::time::Instant::now(),
             rlb_pool: subs.bsatn_rlb_pool.clone(),
         })?;
 
@@ -2901,6 +3262,7 @@ mod tests {
             query: "select * from missing_table".to_string(),
             client: sender,
             request_id: 7,
+            timer: std::time::Instant::now(),
             rlb_pool: subs.bsatn_rlb_pool.clone(),
         })?;
 

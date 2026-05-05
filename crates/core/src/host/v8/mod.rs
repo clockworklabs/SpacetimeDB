@@ -20,7 +20,7 @@ use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
     call_identity_connected, init_database, ClientConnectedError, OneOffQueryBsatnParams, OneOffQueryJsonParams,
-    OneOffQueryResult, OneOffQueryV2Params, SqlCommand, SqlCommandResult, ViewCommand, ViewCommandResult,
+    OneOffQueryV2Params, SqlCommand, SqlCommandResult, ViewCommand, ViewCommandMetric, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -409,8 +409,14 @@ pub struct JsProcedureInstance {
 }
 
 impl JsMainInstance {
-    async fn send_request<T>(&self, ctx: &'static str, request: impl FnOnce(JsReplyTx<T>) -> JsMainWorkerRequest) -> T {
-        send_js_request(ctx, &self.tx, request).await
+    async fn request<R: JsMainRequest>(&self, request: R) -> R::Response {
+        send_js_request(R::CTX, &self.tx, |reply_tx| request.into_worker_request(reply_tx)).await
+    }
+
+    async fn send_detached_request(&self, ctx: &'static str, request: JsMainWorkerRequest) {
+        if self.tx.send(request).await.is_err() {
+            panic!("JS worker exited before accepting `{ctx}`");
+        }
     }
 
     pub async fn update_database(
@@ -419,8 +425,7 @@ impl JsMainInstance {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.send_request("update_database", |reply_tx| JsMainWorkerRequest::UpdateDatabase {
-            reply_tx,
+        self.request(UpdateDatabaseRequest {
             program,
             old_module_info,
             policy,
@@ -429,16 +434,19 @@ impl JsMainInstance {
     }
 
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
-        self.send_request("call_reducer", |reply_tx| JsMainWorkerRequest::CallReducer {
-            reply_tx,
-            params,
-        })
+        self.request(CallReducerRequest { params }).await
+    }
+
+    pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
+        self.send_detached_request(
+            "call_reducer",
+            JsMainWorkerRequest::CallReducerDetached { params, on_panic },
+        )
         .await
     }
 
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
-        self.send_request("clear_all_clients", JsMainWorkerRequest::ClearAllClients)
-            .await
+        self.request(ClearAllClientsRequest).await
     }
 
     pub async fn call_identity_connected(
@@ -446,12 +454,9 @@ impl JsMainInstance {
         caller_auth: ConnectionAuthCtx,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
-        self.send_request("call_identity_connected", |reply_tx| {
-            JsMainWorkerRequest::CallIdentityConnected {
-                reply_tx,
-                caller_auth,
-                caller_connection_id,
-            }
+        self.request(CallIdentityConnectedRequest {
+            caller_auth,
+            caller_connection_id,
         })
         .await
     }
@@ -461,63 +466,236 @@ impl JsMainInstance {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ReducerCallError> {
-        self.send_request("call_identity_disconnected", |reply_tx| {
-            JsMainWorkerRequest::CallIdentityDisconnected {
-                reply_tx,
-                caller_identity,
-                caller_connection_id,
-            }
+        self.request(CallIdentityDisconnectedRequest {
+            caller_identity,
+            caller_connection_id,
         })
         .await
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
-        self.send_request("disconnect_client", |reply_tx| JsMainWorkerRequest::DisconnectClient {
-            reply_tx,
-            client_id,
-        })
-        .await
+        self.request(DisconnectClientRequest { client_id }).await
     }
 
     pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        self.send_request("init_database", |reply_tx| JsMainWorkerRequest::InitDatabase {
-            reply_tx,
-            program,
-        })
-        .await
+        self.request(InitDatabaseRequest { program }).await
     }
 
     pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
-        self.send_request("call_view", |reply_tx| JsMainWorkerRequest::CallView { reply_tx, cmd })
-            .await
+        self.request(CallViewRequest { cmd }).await
+    }
+
+    pub(in crate::host) async fn enqueue_call_view(
+        &self,
+        cmd: ViewCommand,
+        metric: ViewCommandMetric,
+        on_panic: JsFatalHook,
+    ) {
+        self.send_detached_request(
+            "call_view",
+            JsMainWorkerRequest::CallViewDetached { cmd, metric, on_panic },
+        )
+        .await
     }
 
     pub(in crate::host) async fn call_sql(&self, cmd: SqlCommand) -> SqlCommandResult {
-        self.send_request("call_sql", |reply_tx| JsMainWorkerRequest::CallSql { reply_tx, cmd })
-            .await
+        self.request(CallSqlRequest { cmd }).await
     }
 
-    pub(in crate::host) async fn one_off_query_json(&self, params: OneOffQueryJsonParams) -> OneOffQueryResult {
-        self.send_request("one_off_query_json", |reply_tx| JsMainWorkerRequest::OneOffQueryJson {
+    pub(in crate::host) async fn enqueue_one_off_query_json(
+        &self,
+        params: OneOffQueryJsonParams,
+        on_panic: JsFatalHook,
+    ) {
+        self.send_detached_request(
+            "one_off_query_json",
+            JsMainWorkerRequest::OneOffQueryJsonDetached { params, on_panic },
+        )
+        .await
+    }
+
+    pub(in crate::host) async fn enqueue_one_off_query_bsatn(
+        &self,
+        params: OneOffQueryBsatnParams,
+        on_panic: JsFatalHook,
+    ) {
+        self.send_detached_request(
+            "one_off_query_bsatn",
+            JsMainWorkerRequest::OneOffQueryBsatnDetached { params, on_panic },
+        )
+        .await
+    }
+
+    pub(in crate::host) async fn enqueue_one_off_query_v2(&self, params: OneOffQueryV2Params, on_panic: JsFatalHook) {
+        self.send_detached_request(
+            "one_off_query_v2",
+            JsMainWorkerRequest::OneOffQueryV2Detached { params, on_panic },
+        )
+        .await
+    }
+}
+
+trait JsMainRequest {
+    type Response;
+
+    const CTX: &'static str;
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest;
+}
+
+struct UpdateDatabaseRequest {
+    program: Program,
+    old_module_info: Arc<ModuleInfo>,
+    policy: MigrationPolicy,
+}
+
+impl JsMainRequest for UpdateDatabaseRequest {
+    type Response = anyhow::Result<UpdateDatabaseResult>;
+
+    const CTX: &'static str = "update_database";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::UpdateDatabase {
             reply_tx,
-            params,
-        })
-        .await
+            program: self.program,
+            old_module_info: self.old_module_info,
+            policy: self.policy,
+        }
     }
+}
 
-    pub(in crate::host) async fn one_off_query_bsatn(&self, params: OneOffQueryBsatnParams) -> OneOffQueryResult {
-        self.send_request("one_off_query_bsatn", |reply_tx| {
-            JsMainWorkerRequest::OneOffQueryBsatn { reply_tx, params }
-        })
-        .await
-    }
+struct CallReducerRequest {
+    params: CallReducerParams,
+}
 
-    pub(in crate::host) async fn one_off_query_v2(&self, params: OneOffQueryV2Params) -> OneOffQueryResult {
-        self.send_request("one_off_query_v2", |reply_tx| JsMainWorkerRequest::OneOffQueryV2 {
+impl JsMainRequest for CallReducerRequest {
+    type Response = ReducerCallResult;
+
+    const CTX: &'static str = "call_reducer";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::CallReducer {
             reply_tx,
-            params,
-        })
-        .await
+            params: self.params,
+        }
+    }
+}
+
+struct ClearAllClientsRequest;
+
+impl JsMainRequest for ClearAllClientsRequest {
+    type Response = anyhow::Result<()>;
+
+    const CTX: &'static str = "clear_all_clients";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::ClearAllClients(reply_tx)
+    }
+}
+
+struct CallIdentityConnectedRequest {
+    caller_auth: ConnectionAuthCtx,
+    caller_connection_id: ConnectionId,
+}
+
+impl JsMainRequest for CallIdentityConnectedRequest {
+    type Response = Result<(), ClientConnectedError>;
+
+    const CTX: &'static str = "call_identity_connected";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::CallIdentityConnected {
+            reply_tx,
+            caller_auth: self.caller_auth,
+            caller_connection_id: self.caller_connection_id,
+        }
+    }
+}
+
+struct CallIdentityDisconnectedRequest {
+    caller_identity: Identity,
+    caller_connection_id: ConnectionId,
+}
+
+impl JsMainRequest for CallIdentityDisconnectedRequest {
+    type Response = Result<(), ReducerCallError>;
+
+    const CTX: &'static str = "call_identity_disconnected";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::CallIdentityDisconnected {
+            reply_tx,
+            caller_identity: self.caller_identity,
+            caller_connection_id: self.caller_connection_id,
+        }
+    }
+}
+
+struct DisconnectClientRequest {
+    client_id: ClientActorId,
+}
+
+impl JsMainRequest for DisconnectClientRequest {
+    type Response = Result<(), ReducerCallError>;
+
+    const CTX: &'static str = "disconnect_client";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::DisconnectClient {
+            reply_tx,
+            client_id: self.client_id,
+        }
+    }
+}
+
+struct InitDatabaseRequest {
+    program: Program,
+}
+
+impl JsMainRequest for InitDatabaseRequest {
+    type Response = anyhow::Result<Option<ReducerCallResult>>;
+
+    const CTX: &'static str = "init_database";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::InitDatabase {
+            reply_tx,
+            program: self.program,
+        }
+    }
+}
+
+struct CallViewRequest {
+    cmd: ViewCommand,
+}
+
+impl JsMainRequest for CallViewRequest {
+    type Response = ViewCommandResult;
+
+    const CTX: &'static str = "call_view";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::CallView {
+            reply_tx,
+            cmd: self.cmd,
+        }
+    }
+}
+
+struct CallSqlRequest {
+    cmd: SqlCommand,
+}
+
+impl JsMainRequest for CallSqlRequest {
+    type Response = SqlCommandResult;
+
+    const CTX: &'static str = "call_sql";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::CallSql {
+            reply_tx,
+            cmd: self.cmd,
+        }
     }
 }
 
@@ -540,6 +718,19 @@ impl JsProcedureInstance {
             params,
         })
         .await
+    }
+
+    pub(in crate::host) async fn enqueue_procedure(&self, params: CallProcedureParams) -> JsProcedureCall {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if self
+            .tx
+            .send(JsProcedureWorkerRequest::CallProcedure { reply_tx, params })
+            .await
+            .is_err()
+        {
+            panic!("JS worker exited before accepting `call_procedure`");
+        }
+        JsProcedureCall { reply_rx }
     }
 
     pub(in crate::host) async fn call_scheduled_function(
@@ -575,6 +766,27 @@ where
 type JsPanicPayload = Box<dyn std::any::Any + Send + 'static>;
 type JsReply<T> = Result<T, JsPanicPayload>;
 type JsReplyTx<T> = oneshot::Sender<JsReply<T>>;
+pub(in crate::host) type JsFatalHook = Arc<dyn Fn() + Send + Sync + 'static>;
+
+pub(in crate::host) struct JsProcedureCall {
+    reply_rx: oneshot::Receiver<JsReply<CallProcedureReturn>>,
+}
+
+pub(in crate::host) enum JsProcedureCallCompletion {
+    Completed(CallProcedureReturn),
+    Panicked,
+    WorkerExited,
+}
+
+impl JsProcedureCall {
+    pub(in crate::host) async fn receive(self) -> JsProcedureCallCompletion {
+        match self.reply_rx.await {
+            Ok(Ok(ret)) => JsProcedureCallCompletion::Completed(ret),
+            Ok(Err(_panic)) => JsProcedureCallCompletion::Panicked,
+            Err(_) => JsProcedureCallCompletion::WorkerExited,
+        }
+    }
+}
 
 /// Requests sent to the main JS worker thread.
 ///
@@ -594,30 +806,41 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
     },
+    /// See [`JsMainInstance::enqueue_reducer`].
+    CallReducerDetached {
+        params: CallReducerParams,
+        on_panic: JsFatalHook,
+    },
     /// See [`JsMainInstance::call_view`].
     CallView {
         reply_tx: JsReplyTx<ViewCommandResult>,
         cmd: ViewCommand,
+    },
+    /// See [`JsMainInstance::enqueue_call_view`].
+    CallViewDetached {
+        cmd: ViewCommand,
+        metric: ViewCommandMetric,
+        on_panic: JsFatalHook,
     },
     /// See [`JsMainInstance::call_sql`].
     CallSql {
         reply_tx: JsReplyTx<SqlCommandResult>,
         cmd: SqlCommand,
     },
-    /// See [`JsMainInstance::one_off_query_json`].
-    OneOffQueryJson {
-        reply_tx: JsReplyTx<OneOffQueryResult>,
+    /// See [`JsMainInstance::enqueue_one_off_query_json`].
+    OneOffQueryJsonDetached {
         params: OneOffQueryJsonParams,
+        on_panic: JsFatalHook,
     },
-    /// See [`JsMainInstance::one_off_query_bsatn`].
-    OneOffQueryBsatn {
-        reply_tx: JsReplyTx<OneOffQueryResult>,
+    /// See [`JsMainInstance::enqueue_one_off_query_bsatn`].
+    OneOffQueryBsatnDetached {
         params: OneOffQueryBsatnParams,
+        on_panic: JsFatalHook,
     },
-    /// See [`JsMainInstance::one_off_query_v2`].
-    OneOffQueryV2 {
-        reply_tx: JsReplyTx<OneOffQueryResult>,
+    /// See [`JsMainInstance::enqueue_one_off_query_v2`].
+    OneOffQueryV2Detached {
         params: OneOffQueryV2Params,
+        on_panic: JsFatalHook,
     },
     /// See [`JsMainInstance::clear_all_clients`].
     ClearAllClients(JsReplyTx<anyhow::Result<()>>),
@@ -704,6 +927,27 @@ fn handle_worker_request<T: 'static>(
         }
         Err(panic) => {
             send_worker_panic_reply(ctx, reply_tx, panic);
+            WorkerRequestOutcome::Fatal
+        }
+    }
+}
+
+fn handle_detached_worker_request(
+    ctx: &'static str,
+    on_panic: JsFatalHook,
+    f: impl FnOnce() -> bool,
+) -> WorkerRequestOutcome {
+    match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(recreate_instance) => {
+            if recreate_instance {
+                WorkerRequestOutcome::RecreateInstance
+            } else {
+                WorkerRequestOutcome::Continue
+            }
+        }
+        Err(_) => {
+            log::warn!("detached JS worker request `{ctx}` panicked");
+            on_panic();
             WorkerRequestOutcome::Fatal
         }
     }
@@ -1087,30 +1331,79 @@ fn handle_main_worker_request(
                 (res, trapped)
             })
         }
+        JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
+            handle_detached_worker_request("call_reducer", on_panic, || {
+                let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let (_res, trapped) = call_reducer(None, params);
+                trapped
+            })
+        }
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
             let (res, trapped) = instance_common.handle_cmd(cmd, inst);
             (res, trapped)
         }),
+        JsMainWorkerRequest::CallViewDetached { cmd, metric, on_panic } => {
+            handle_detached_worker_request("call_view", on_panic, || {
+                let (res, trapped) = instance_common.handle_cmd(cmd, inst);
+                ModuleHost::record_view_command_metrics_for_result(
+                    &module_common.info(),
+                    module_common.replica_ctx().relational_db(),
+                    metric,
+                    &res,
+                );
+                trapped
+            })
+        }
         JsMainWorkerRequest::CallSql { reply_tx, cmd } => handle_worker_request("call_sql", reply_tx, || {
             let (res, trapped) = instance_common.handle_sql_cmd(cmd, inst);
             (res, trapped)
         }),
-        JsMainWorkerRequest::OneOffQueryJson { reply_tx, params } => {
-            handle_worker_request("one_off_query_json", reply_tx, || {
+        JsMainWorkerRequest::OneOffQueryJsonDetached { params, on_panic } => {
+            handle_detached_worker_request("one_off_query_json", on_panic, || {
+                let timer = params.timer();
                 let res = ModuleHost::one_off_query_json_inner(params);
-                (res, false)
+                if let Err(err) = &res {
+                    log::warn!("detached one-off query failed: {err:#}");
+                }
+                ModuleHost::record_one_off_query_metrics_for_result(
+                    &module_common.info(),
+                    module_common.replica_ctx().relational_db(),
+                    timer,
+                    &res,
+                );
+                false
             })
         }
-        JsMainWorkerRequest::OneOffQueryBsatn { reply_tx, params } => {
-            handle_worker_request("one_off_query_bsatn", reply_tx, || {
+        JsMainWorkerRequest::OneOffQueryBsatnDetached { params, on_panic } => {
+            handle_detached_worker_request("one_off_query_bsatn", on_panic, || {
+                let timer = params.timer();
                 let res = ModuleHost::one_off_query_bsatn_inner(params);
-                (res, false)
+                if let Err(err) = &res {
+                    log::warn!("detached one-off query failed: {err:#}");
+                }
+                ModuleHost::record_one_off_query_metrics_for_result(
+                    &module_common.info(),
+                    module_common.replica_ctx().relational_db(),
+                    timer,
+                    &res,
+                );
+                false
             })
         }
-        JsMainWorkerRequest::OneOffQueryV2 { reply_tx, params } => {
-            handle_worker_request("one_off_query_v2", reply_tx, || {
+        JsMainWorkerRequest::OneOffQueryV2Detached { params, on_panic } => {
+            handle_detached_worker_request("one_off_query_v2", on_panic, || {
+                let timer = params.timer();
                 let res = ModuleHost::one_off_query_v2_inner(params);
-                (res, false)
+                if let Err(err) = &res {
+                    log::warn!("detached one-off query failed: {err:#}");
+                }
+                ModuleHost::record_one_off_query_metrics_for_result(
+                    &module_common.info(),
+                    module_common.replica_ctx().relational_db(),
+                    timer,
+                    &res,
+                );
+                false
             })
         }
         JsMainWorkerRequest::ClearAllClients(reply_tx) => handle_worker_request("clear_all_clients", reply_tx, || {

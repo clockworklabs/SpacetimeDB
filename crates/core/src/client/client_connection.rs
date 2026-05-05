@@ -7,15 +7,11 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
-use super::messages::ProcedureResultMessage;
 use super::{message_handlers, ClientActorId, MessageHandleError, OutboundMessage};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
-use crate::host::module_host::ClientConnectedError;
-use crate::host::{
-    CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
-    ReducerCallResult,
-};
+use crate::host::module_host::{ClientConnectedError, ProcedureResultTarget};
+use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError};
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -29,7 +25,7 @@ use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
+use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -839,7 +835,7 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         flags: ws_v1::CallReducerFlags,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+    ) -> Result<crate::host::ReducerCallResult, ReducerCallError> {
         let caller = match flags {
             ws_v1::CallReducerFlags::FullUpdate => Some(self.sender()),
             // Setting `sender = None` causes `eval_updates` to skip sending to the caller
@@ -867,9 +863,56 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         _flags: ws_v2::CallReducerFlags,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+    ) -> Result<crate::host::ReducerCallResult, ReducerCallError> {
         self.module()
             .call_reducer(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(self.sender()),
+                Some(request_id),
+                Some(timer),
+                reducer,
+                FunctionArgs::Bsatn(args),
+            )
+            .await
+    }
+
+    pub async fn enqueue_reducer(
+        &self,
+        reducer: &str,
+        args: FunctionArgs,
+        request_id: RequestId,
+        timer: Instant,
+        flags: ws_v1::CallReducerFlags,
+    ) -> Result<(), ReducerCallError> {
+        let caller = match flags {
+            ws_v1::CallReducerFlags::FullUpdate => Some(self.sender()),
+            ws_v1::CallReducerFlags::NoSuccessNotify => None,
+        };
+
+        self.module()
+            .enqueue_reducer(
+                self.id.identity,
+                Some(self.id.connection_id),
+                caller,
+                Some(request_id),
+                Some(timer),
+                reducer,
+                args,
+            )
+            .await
+    }
+
+    pub async fn enqueue_reducer_v2(
+        &self,
+        reducer: &str,
+        args: Bytes,
+        request_id: RequestId,
+        timer: Instant,
+        _flags: ws_v2::CallReducerFlags,
+    ) -> Result<(), ReducerCallError> {
+        self.module()
+            .enqueue_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(self.sender()),
@@ -888,22 +931,16 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
     ) -> Result<(), BroadcastError> {
-        let CallProcedureReturn { result, tx_offset } = self
-            .module()
-            .call_procedure(
+        self.module()
+            .enqueue_procedure(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
                 args,
+                ProcedureResultTarget::new(self.sender(), request_id),
             )
-            .await;
-
-        let message = ProcedureResultMessage::from_result(&result, request_id);
-
-        self.module()
-            .subscriptions()
-            .send_procedure_message(self.sender(), message, tx_offset)
+            .await
     }
 
     pub async fn call_procedure_v2(
@@ -914,48 +951,16 @@ impl ClientConnection {
         timer: Instant,
         _flags: ws_v2::CallProcedureFlags,
     ) -> Result<(), BroadcastError> {
-        let CallProcedureReturn { result, tx_offset } = self
-            .module()
-            .call_procedure(
+        self.module()
+            .enqueue_procedure(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
                 FunctionArgs::Bsatn(args),
+                ProcedureResultTarget::new(self.sender(), request_id),
             )
-            .await;
-
-        let (status, timestamp, execution_duration) = match result {
-            Ok(ProcedureCallResult {
-                return_val,
-                execution_duration,
-                start_timestamp,
-            }) => (
-                ws_v2::ProcedureStatus::Returned(
-                    bsatn::to_vec(&return_val)
-                        .expect("Procedure return value failed to serialize to BSATN")
-                        .into(),
-                ),
-                start_timestamp,
-                TimeDuration::from(execution_duration),
-            ),
-            Err(err) => (
-                ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
-                Timestamp::UNIX_EPOCH,
-                TimeDuration::ZERO,
-            ),
-        };
-
-        let message = ws_v2::ProcedureResult {
-            status,
-            timestamp,
-            total_host_execution_duration: execution_duration,
-            request_id,
-        };
-
-        self.module()
-            .subscriptions()
-            .send_procedure_message_v2(self.sender(), message, tx_offset)
+            .await
     }
 
     pub async fn subscribe_single(
