@@ -1,15 +1,19 @@
 namespace SpacetimeDB.Internal;
 
+using System;
 using System.Text;
 using SpacetimeDB.BSATN;
 
 public interface IReducerContext
 {
-    public static Identity GetIdentity()
+    public static Identity GetDatabaseIdentity()
     {
         FFI.identity(out var identity);
         return identity;
     }
+
+    [Obsolete("IReducerContext.GetIdentity() is deprecated. Use GetDatabaseIdentity() instead.")]
+    public static Identity GetIdentity() => GetDatabaseIdentity();
 }
 
 public interface IReducer

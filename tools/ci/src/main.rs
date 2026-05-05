@@ -455,6 +455,19 @@ fn run_typescript_tests() -> Result<()> {
 fn run_csharp_tests() -> Result<()> {
     cmd!(
         "cargo",
+        "run",
+        "-p",
+        "spacetimedb-codegen",
+        "--example",
+        "regen-csharp-moduledef",
+    )
+    .run()?;
+    cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
+    cmd!("dotnet", "test", "-warnaserror")
+        .dir("crates/bindings-csharp")
+        .run()?;
+    cmd!(
+        "cargo",
         "build",
         "--release",
         "-p",
@@ -591,19 +604,6 @@ fn main() -> Result<()> {
             )
             .run()?;
             cmd!("bash", "tools/check-diff.sh").run()?;
-            cmd!(
-                "cargo",
-                "run",
-                "-p",
-                "spacetimedb-codegen",
-                "--example",
-                "regen-csharp-moduledef",
-            )
-            .run()?;
-            cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
-            cmd!("dotnet", "test", "-warnaserror")
-                .dir("crates/bindings-csharp")
-                .run()?;
         }
 
         Some(CiCmd::Lint) => {

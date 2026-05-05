@@ -257,26 +257,27 @@ async fn exec_procedure_http_ok(db_name: &str) {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
-            ctx.procedures.read_my_schema_then(move |_ctx, res| {
-                result(
-                    // It's a try block!
-                    #[allow(clippy::redundant_closure_call)]
-                    (|| {
-                        anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
-                        let module_def: RawModuleDefV9 = spacetimedb_lib::de::serde::deserialize_from(
-                            &mut serde_json::Deserializer::from_str(&res.unwrap()),
-                        )?;
-                        anyhow::ensure!(module_def.misc_exports.iter().any(|misc_export| {
-                            if let RawMiscModuleExportV9::Procedure(procedure_def) = misc_export {
-                                &*procedure_def.name == "read_my_schema"
-                            } else {
-                                false
-                            }
-                        }));
-                        Ok(())
-                    })(),
-                )
-            })
+            ctx.procedures
+                .read_my_schema_then(LOCALHOST.to_owned(), move |_ctx, res| {
+                    result(
+                        // It's a try block!
+                        #[allow(clippy::redundant_closure_call)]
+                        (|| {
+                            anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
+                            let module_def: RawModuleDefV9 = spacetimedb_lib::de::serde::deserialize_from(
+                                &mut serde_json::Deserializer::from_str(&res.unwrap()),
+                            )?;
+                            anyhow::ensure!(module_def.misc_exports.iter().any(|misc_export| {
+                                if let RawMiscModuleExportV9::Procedure(procedure_def) = misc_export {
+                                    &*procedure_def.name == "read_my_schema"
+                                } else {
+                                    false
+                                }
+                            }));
+                            Ok(())
+                        })(),
+                    )
+                })
         }
     })
     .await;

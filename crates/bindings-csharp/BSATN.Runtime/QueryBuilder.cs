@@ -877,10 +877,14 @@ internal static class SqlFormat
 
     public static string FormatHexLiteral(string hex)
     {
+#if NET6_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(hex);
+#else
         if (hex is null)
         {
             throw new ArgumentNullException(nameof(hex));
         }
+#endif
 
         var s = hex;
         if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
