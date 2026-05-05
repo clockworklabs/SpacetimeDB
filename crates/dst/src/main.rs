@@ -1,14 +1,11 @@
-use std::{
-    future::Future,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use spacetimedb_dst::{
     config::{CommitlogFaultProfile, RunConfig},
     seed::DstSeed,
-    targets::descriptor::{RelationalDbCommitlogDescriptor, StandaloneHostDescriptor, TargetDescriptor},
-    workload::{module_ops::HostScenarioId, table_ops::TableScenarioId},
+    targets::descriptor::{RelationalDbCommitlogDescriptor, TargetDescriptor},
+    workload::table_ops::TableScenarioId,
 };
 
 #[derive(Parser, Debug)]
@@ -57,7 +54,6 @@ struct RunArgs {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum TargetKind {
     RelationalDbCommitlog,
-    StandaloneHost,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -65,7 +61,6 @@ enum ScenarioKind {
     RandomCrud,
     IndexedRanges,
     Banking,
-    HostSmoke,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -120,10 +115,6 @@ fn run_command(args: RunArgs) -> anyhow::Result<()> {
             let scenario = map_table_scenario(args.target.scenario)?;
             run_prepared_target::<RelationalDbCommitlogDescriptor>(seed, scenario, config)
         }
-        TargetKind::StandaloneHost => {
-            let scenario = map_host_scenario(args.target.scenario)?;
-            run_prepared_target::<StandaloneHostDescriptor>(seed, scenario, config)
-        }
     }
 }
 
@@ -133,25 +124,12 @@ fn run_prepared_target<D: TargetDescriptor>(
     config: RunConfig,
 ) -> anyhow::Result<()> {
     D::prepare(seed, &scenario, &config)?;
-    run_in_runtime(seed, run_target::<D>(seed, scenario, config))
-}
-
-#[cfg(all(simulation, madsim))]
-fn run_in_runtime<F, T>(seed: DstSeed, future: F) -> anyhow::Result<T>
-where
-    F: Future<Output = anyhow::Result<T>>,
-{
-    let mut runtime = madsim::runtime::Runtime::with_seed_and_config(seed.0, madsim::Config::default());
+    let mut runtime = spacetimedb_dst::sim::Runtime::new(seed)?;
+    // RelationalDB durability still runs on core's production runtime boundary.
+    // Let those external tasks wake the DST executor while this target is being
+    // migrated toward a fully local simulator.
     runtime.set_allow_system_thread(true);
-    runtime.block_on(future)
-}
-
-#[cfg(not(all(simulation, madsim)))]
-fn run_in_runtime<F, T>(_seed: DstSeed, future: F) -> anyhow::Result<T>
-where
-    F: Future<Output = anyhow::Result<T>>,
-{
-    tokio::runtime::Runtime::new()?.block_on(future)
+    runtime.block_on(run_target::<D>(seed, scenario, config))
 }
 
 fn map_table_scenario(scenario: ScenarioKind) -> anyhow::Result<TableScenarioId> {
@@ -159,14 +137,6 @@ fn map_table_scenario(scenario: ScenarioKind) -> anyhow::Result<TableScenarioId>
         ScenarioKind::RandomCrud => Ok(TableScenarioId::RandomCrud),
         ScenarioKind::IndexedRanges => Ok(TableScenarioId::IndexedRanges),
         ScenarioKind::Banking => Ok(TableScenarioId::Banking),
-        ScenarioKind::HostSmoke => anyhow::bail!("scenario host-smoke is only valid for --target standalone-host"),
-    }
-}
-
-fn map_host_scenario(scenario: ScenarioKind) -> anyhow::Result<HostScenarioId> {
-    match scenario {
-        ScenarioKind::HostSmoke => Ok(HostScenarioId::HostSmoke),
-        _ => anyhow::bail!("target standalone-host only supports --scenario host-smoke"),
     }
 }
 

@@ -13,7 +13,7 @@ use spacetimedb_commitlog::{
     segment::FileLike,
 };
 
-use crate::{config::CommitlogFaultProfile, workload::commitlog_ops::DiskFaultSummary};
+use crate::{config::CommitlogFaultProfile, seed::DstSeed, sim, workload::commitlog_ops::DiskFaultSummary};
 
 const INJECTED_DISK_ERROR_PREFIX: &str = "dst injected disk ";
 
@@ -123,10 +123,10 @@ pub(crate) struct BuggifiedRepo<R> {
 }
 
 impl<R> BuggifiedRepo<R> {
-    pub(crate) fn new(inner: R, config: CommitlogFaultConfig) -> Self {
+    pub(crate) fn new(inner: R, config: CommitlogFaultConfig, seed: DstSeed) -> Self {
         Self {
             inner,
-            faults: FaultController::new(config),
+            faults: FaultController::new(config, seed),
         }
     }
 
@@ -341,15 +341,17 @@ impl<S: SegmentReader> SegmentReader for BuggifiedReader<S> {
 struct FaultController {
     config: CommitlogFaultConfig,
     counters: Arc<FaultCounters>,
+    decisions: Arc<sim::DecisionSource>,
     armed: Arc<AtomicBool>,
     suspended: Arc<AtomicUsize>,
 }
 
 impl FaultController {
-    fn new(config: CommitlogFaultConfig) -> Self {
+    fn new(config: CommitlogFaultConfig, seed: DstSeed) -> Self {
         Self {
             config,
             counters: Arc::default(),
+            decisions: Arc::new(sim::decision_source(seed)),
             armed: Arc::new(AtomicBool::new(false)),
             suspended: Arc::default(),
         }
@@ -379,10 +381,7 @@ impl FaultController {
             } else {
                 Duration::from_millis(1)
             };
-            #[cfg(all(simulation, madsim))]
-            madsim::time::advance(latency);
-            #[cfg(not(all(simulation, madsim)))]
-            let _ = latency;
+            sim::advance_time(latency);
         }
     }
 
@@ -412,15 +411,7 @@ impl FaultController {
             return false;
         }
 
-        #[cfg(simulation)]
-        {
-            madsim::buggify::buggify_with_prob(probability)
-        }
-        #[cfg(not(simulation))]
-        {
-            let _ = probability;
-            false
-        }
+        self.decisions.sample_probability(probability)
     }
 
     fn summary(&self) -> DiskFaultSummary {

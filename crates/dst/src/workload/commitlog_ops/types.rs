@@ -125,7 +125,7 @@ pub struct TransactionSummary {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimeSummary {
-    pub known_tokio_tasks_scheduled: usize,
+    pub known_runtime_tasks_scheduled: usize,
     pub durability_actors_started: usize,
     pub runtime_alive_tasks: Option<usize>,
 }

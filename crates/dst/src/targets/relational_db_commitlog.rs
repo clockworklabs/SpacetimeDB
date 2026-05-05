@@ -37,6 +37,7 @@ use crate::{
     },
     schema::{SchemaPlan, SimRow},
     seed::DstSeed,
+    sim,
     targets::buggified_repo::{is_injected_disk_error_text, BuggifiedRepo, CommitlogFaultConfig},
     workload::{
         commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
@@ -193,7 +194,7 @@ impl RunStats {
 
     fn runtime_summary(&self) -> RuntimeSummary {
         RuntimeSummary {
-            known_tokio_tasks_scheduled: self.runtime.durability_actors_started,
+            known_runtime_tasks_scheduled: self.runtime.durability_actors_started,
             durability_actors_started: self.runtime.durability_actors_started,
             runtime_alive_tasks: runtime_alive_tasks(),
         }
@@ -213,10 +214,10 @@ struct RelationalDbEngine {
     last_observed_durable_offset: Option<u64>,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
-    runtime_handle: tokio::runtime::Handle,
+    runtime_handle: sim::RuntimeHandle,
     commitlog_repo: StressCommitlogRepo,
     stats: RunStats,
-    _runtime_guard: Option<tokio::runtime::Runtime>,
+    _runtime_guard: Option<sim::RuntimeGuard>,
 }
 
 impl RelationalDbEngine {
@@ -994,7 +995,7 @@ impl RelationalDbEngine {
                     .map_err(|err| format!("durability wait for tx offset {target_offset} failed: {err}"))?;
             }
         } else if forced {
-            tokio::task::yield_now().await;
+            sim::yield_now().await;
         }
         self.refresh_observed_durable_offset(forced)
     }
@@ -1386,27 +1387,21 @@ type InMemoryCommitlogDurability = Local<ProductValue, StressCommitlogRepo>;
 
 struct RelationalDbBootstrap {
     db: RelationalDB,
-    runtime_handle: tokio::runtime::Handle,
+    runtime_handle: sim::RuntimeHandle,
     commitlog_repo: StressCommitlogRepo,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
-    runtime_guard: Option<tokio::runtime::Runtime>,
+    runtime_guard: Option<sim::RuntimeGuard>,
 }
 
 fn bootstrap_relational_db(
     seed: DstSeed,
     fault_profile: CommitlogFaultProfile,
 ) -> anyhow::Result<RelationalDbBootstrap> {
-    let (runtime_handle, runtime_guard) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        (handle, None)
-    } else {
-        let runtime = tokio::runtime::Runtime::new()?;
-        (runtime.handle().clone(), Some(runtime))
-    };
+    let (runtime_handle, runtime_guard) = sim::current_handle_or_new_runtime()?;
     let fault_config = CommitlogFaultConfig::for_profile(fault_profile);
-    configure_simulation_buggify(fault_config.enabled());
 
-    let commitlog_repo = BuggifiedRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config);
+    let commitlog_repo = BuggifiedRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config, seed.fork(702));
     let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
         InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), runtime_handle.clone(), durability_opts)
@@ -1449,23 +1444,9 @@ fn commitlog_stress_options(seed: DstSeed) -> spacetimedb_durability::local::Opt
     opts
 }
 
-fn configure_simulation_buggify(enabled: bool) {
-    #[cfg(simulation)]
-    {
-        if enabled {
-            madsim::buggify::enable();
-        } else {
-            madsim::buggify::disable();
-        }
-    }
-    #[cfg(not(simulation))]
-    let _ = enabled;
-}
-
 fn runtime_alive_tasks() -> Option<usize> {
-    // The madsim runtime exposes live task metrics on `Runtime`, but the target
-    // only receives Tokio-compatible handles. Keep this explicit instead of
-    // reporting madsim-tokio's dummy zero-valued metrics as real data.
+    // The shim only exposes Tokio-compatible handles today. Keep this explicit
+    // until the target owns a simulator/runtime that can report live task state.
     None
 }
 

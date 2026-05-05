@@ -53,10 +53,6 @@ replication traffic. Targets translate those IDs into their own handles:
 
 - `relational-db-commitlog` maps `SessionId` to direct write/read transaction
   slots.
-- `standalone-host` currently maps `SessionId::ZERO` to its host
-  `ClientConnection`; reducer interactions already carry the logical session so
-  multi-session host workloads can be added without changing the interaction
-  shape again.
 - future replication targets can map `SessionId` plus endpoint/node IDs to a
   client connection routed through the simulated network.
 
@@ -75,8 +71,7 @@ DST workloads use three building blocks:
 
 `table_ops` is the base table-transaction workload. `commitlog_ops` composes it
 and injects durability lifecycle operations such as sync, close/reopen, dynamic
-table create/migrate/drop, and replay checks. `module_ops` drives standalone
-host/module interactions.
+table create/migrate/drop, and replay checks.
 
 Use this rule of thumb:
 
@@ -116,10 +111,6 @@ or properties to trust generator-provided expectations.
 - `relational-db-commitlog`: runs table and commitlog lifecycle interactions
   against `RelationalDB`, local durability, dynamic schema operations,
   close/reopen, and replay-from-history checks.
-- `standalone-host`: runs generated module interactions against a standalone
-  host environment.
-
-Both targets reuse shared workload families and the same streaming runner.
 
 ## Properties
 
@@ -144,7 +135,7 @@ Current property families include:
 ## Fault Injection
 
 `relational-db-commitlog` can wrap the in-memory commitlog repo in
-`BuggifiedRepo`. Fault decisions are deterministic in simulation runs and
+`BuggifiedRepo`. Fault decisions are deterministic from the run seed and
 summarized in the final outcome.
 
 Profiles:
@@ -169,24 +160,17 @@ Scenario examples:
 ```bash
 cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario banking --duration 5m
 cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario indexed-ranges --duration 5m
-cargo run -p spacetimedb-dst -- run --target standalone-host --scenario host-smoke --max-interactions 100
 ```
 
-madsim-backed simulation run with commitlog faults:
+Run with commitlog faults:
 
 ```bash
-RUSTFLAGS='--cfg madsim' cargo run -p spacetimedb-dst -- run \
+cargo run -p spacetimedb-dst -- run \
   --target relational-db-commitlog \
   --seed 42 \
   --max-interactions 400 \
   --commitlog-fault-profile default
 ```
-
-`--cfg madsim` is still the switch that enables madsim-tokio. Do not pass
-`--cfg simulation` directly: that only enables SpacetimeDB's cfg gates and leaves
-the madsim dependency in its normal Tokio/std mode. The workspace crates derive
-`cfg(simulation)` from `cfg(madsim)` so SpacetimeDB source code does not need
-provider-specific cfg gates.
 
 Trace every interaction:
 
@@ -212,6 +196,7 @@ Start here:
 - `src/workload/table_ops`: table interaction language, generation model, and
   scenarios.
 - `src/workload/commitlog_ops`: lifecycle layer over table workloads.
+- `src/sim/`: local executor and deterministic-decision shim.
 - `src/properties.rs`: property catalog and oracle/model checks.
 - `src/targets/relational_db_commitlog.rs`: target adapter for RelationalDB,
   commitlog durability, fault injection, close/reopen, and replay.
@@ -232,12 +217,11 @@ Start here:
 - No shrinker yet; seed replay is the current reproduction mechanism.
 - Sometimes-property reporting is still outcome-counter based, not a stable
   property-event catalog.
-- madsim backs the current deterministic runtime/fault hooks; deeper
-  host/network/filesystem simulation still needs explicit runtime and IO
-  boundaries.
+- The local `sim` shim is not a real simulator yet. It owns executor setup and
+  deterministic fault decisions so future simulator work has one boundary.
 - The current `RelationalDB` target drives open read snapshots to release before
   starting writes, because beginning a write behind an open read snapshot can
   block in this target shape. Interleaved read/write snapshot histories should
   come back once the target models that lock behavior explicitly.
-- Current simulation builds still expose runtime-boundary gaps, including
-  `spawn_blocking` call sites and randomized standard `HashMap` state warnings.
+- Runtime-boundary work for scheduler, time, network, filesystem, and lower
+  randomness sources is still future work.

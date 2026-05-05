@@ -1,8 +1,7 @@
 //! Narrow facade for SpacetimeDB-owned async IO boundaries.
 //!
-//! Production builds use Tokio through the `madsim-tokio` compatibility crate.
-//! Simulation builds use the simulator implementations exposed by that same
-//! compatibility crate.
+//! This crate currently re-exports the Tokio filesystem, IO, and network APIs
+//! that SpacetimeDB code is allowed to depend on directly.
 //!
 //! This crate is intentionally small. It is a migration point for filesystem and
 //! network APIs reached by deterministic simulation tests, not a general runtime

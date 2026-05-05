@@ -106,7 +106,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 thin-vec.workspace = true
 tokio-util.workspace = true
-tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
+tokio.workspace = true
 tokio-stream = { workspace = true, features = ["sync"] }
 tokio-metrics = { version = "0.4.0", features = ["rt"] }
 toml.workspace = true

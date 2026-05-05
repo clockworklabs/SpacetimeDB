@@ -23,13 +23,13 @@ spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-sats.workspace = true
 thiserror.workspace = true
-tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
+tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 spacetimedb-commitlog = { workspace = true, features = ["test"] }
 tempfile.workspace = true
-tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
+tokio.workspace = true
 
 [lints]
 workspace = true

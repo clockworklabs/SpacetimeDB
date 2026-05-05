@@ -233,31 +233,32 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn not_crash_catches_execute_panic() {
-        assert_not_crash_error(PanicPhase::Execute, "execute_interaction", "execute panic").await;
+    #[test]
+    fn not_crash_catches_execute_panic() {
+        assert_not_crash_error(PanicPhase::Execute, "execute_interaction", "execute panic");
     }
 
-    #[tokio::test]
-    async fn not_crash_catches_finish_panic() {
-        assert_not_crash_error(PanicPhase::Finish, "finish", "finish panic").await;
+    #[test]
+    fn not_crash_catches_finish_panic() {
+        assert_not_crash_error(PanicPhase::Finish, "finish", "finish panic");
     }
 
-    #[tokio::test]
-    async fn not_crash_catches_collect_outcome_panic() {
-        assert_not_crash_error(PanicPhase::CollectOutcome, "collect_outcome", "collect panic").await;
+    #[test]
+    fn not_crash_catches_collect_outcome_panic() {
+        assert_not_crash_error(PanicPhase::CollectOutcome, "collect_outcome", "collect panic");
     }
 
-    async fn assert_not_crash_error(phase: PanicPhase, expected_phase: &str, expected_payload: &str) {
-        let err = run_streaming(
-            SingleStepSource::new(),
-            PanicEngine::new(phase),
-            NoopProperties,
-            RunConfig::with_max_interactions(1),
-        )
-        .await
-        .unwrap_err()
-        .to_string();
+    fn assert_not_crash_error(phase: PanicPhase, expected_phase: &str, expected_payload: &str) {
+        let mut runtime = crate::sim::Runtime::new(crate::seed::DstSeed(0)).expect("runtime");
+        let err = runtime
+            .block_on(run_streaming(
+                SingleStepSource::new(),
+                PanicEngine::new(phase),
+                NoopProperties,
+                RunConfig::with_max_interactions(1),
+            ))
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("[NotCrash]"));
         assert!(err.contains(expected_phase));

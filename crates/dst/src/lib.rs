@@ -7,7 +7,7 @@
 //! - [`properties`] for reusable semantic checks,
 //! - [`seed`] for deterministic seeds,
 //! - [`workload`] for scenario identifiers,
-//! - [`targets`] for executable relational-db / standalone-host adapters.
+//! - [`targets`] for the executable relational-db + commitlog adapter.
 //!
 //! ## DST principles
 //!
@@ -32,13 +32,6 @@
 //! 7. Shared randomness, weighting, and sampling helpers belong in the
 //!    workload strategy module, not in ad hoc target or scenario code.
 
-#[cfg(all(simulation, not(madsim)))]
-compile_error!(
-    "cfg(simulation) enables SpacetimeDB simulation gates, but madsim itself \
-     still requires cfg(madsim). Use RUSTFLAGS=\"--cfg madsim\" or ./run_dst.sh; \
-     SpacetimeDB crates derive cfg(simulation) from cfg(madsim)."
-);
-
 /// Logical client/session identifiers shared by workloads and targets.
 pub mod client;
 /// Shared run-budget configuration for DST targets.
@@ -50,6 +43,8 @@ pub(crate) mod properties;
 mod schema;
 /// Stable seed and RNG utilities used to make runs reproducible.
 pub mod seed;
+/// Local executor and deterministic-decision shim.
+pub mod sim;
 /// Concrete simulator targets.
 pub mod targets;
 /// Shared workload generators reused by multiple targets.

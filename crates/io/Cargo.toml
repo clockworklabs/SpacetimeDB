@@ -7,7 +7,7 @@ license-file = "LICENSE"
 description = "Filesystem and network IO facade for SpacetimeDB crates"
 
 [dependencies]
-tokio = { package = "madsim-tokio", path = "../../../../madsim/madsim-tokio", features = ["full"] }
+tokio.workspace = true
 
 [lints]
 workspace = true
