@@ -3,9 +3,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
-    <RootNamespace>clientgodot</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.ClientSDK" Version="2.1.0" />
+    <PackageReference Include="SpacetimeDB.ClientSDK.Godot" Version="2.1.0" />
   </ItemGroup>
 </Project>
