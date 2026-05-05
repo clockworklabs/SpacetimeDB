@@ -125,6 +125,10 @@ namespace UE::SpacetimeDB
 	struct FPreprocessedTableDataBase
 	{
 		virtual ~FPreprocessedTableDataBase() {}
+		virtual int64 EstimateMemoryBytes() const
+		{
+			return sizeof(FPreprocessedTableDataBase);
+		}
 		int32 InsertRowCount = 0;
 		int32 DeleteRowCount = 0;
 		int32 RowSetCount = 0;
@@ -139,6 +143,23 @@ namespace UE::SpacetimeDB
 		// The type of the row being processed
 		TArray<FWithBsatn<RowType>> Inserts;
 		TArray<FWithBsatn<RowType>> Deletes;
+
+		virtual int64 EstimateMemoryBytes() const override
+		{
+			auto EstimateRowsBytes = [](const TArray<FWithBsatn<RowType>>& Rows)
+			{
+				int64 Bytes = Rows.GetAllocatedSize();
+				for (const FWithBsatn<RowType>& Row : Rows)
+				{
+					Bytes += Row.Bsatn.GetAllocatedSize();
+				}
+				return Bytes;
+			};
+
+			return sizeof(TPreprocessedTableData<RowType>)
+				+ EstimateRowsBytes(Inserts)
+				+ EstimateRowsBytes(Deletes);
+		}
 	};
 
 	/** Interface for deserializing table rows from a database update. Allows for different row types to be processed in SDK. */

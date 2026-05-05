@@ -16,78 +16,41 @@ enum class ETableCacheApplyMode : uint8
     DirectNativeDiff
 };
 
-namespace Private
+enum class ERuntimeBTreeIndexApplyMode : uint8
 {
-    static constexpr const TCHAR* MatchIdIndexName = TEXT("match_id");
-    static constexpr const TCHAR* MobRuntimeSnapshotBatchTableName = TEXT("mob_runtime_snapshot_batch");
-    static constexpr const TCHAR* MobCombatStateFrameTableName = TEXT("mob_combat_state_frame");
-    static constexpr const TCHAR* MobAttackVisualBatchTableName = TEXT("mob_attack_visual_batch");
-    static constexpr const TCHAR* MobProjectileVisualBatchTableName = TEXT("mob_projectile_visual_batch");
-    static constexpr const TCHAR* AbilityCastVisualBatchTableName = TEXT("ability_cast_visual_batch");
-    static constexpr const TCHAR* PlayerMotionFrameTableName = TEXT("player_motion_frame");
-    static constexpr const TCHAR* PlayerCombatStateFrameTableName = TEXT("player_combat_state_frame");
-
-    template<typename RowType, typename = void>
-    struct THasUint64FrameKey
-    {
-        static constexpr bool Value = false;
-    };
-
-    template<typename RowType>
-    struct THasUint64FrameKey<RowType, std::void_t<decltype(std::declval<const RowType&>().FrameKey)>>
-    {
-        using FieldType = std::remove_cv_t<std::remove_reference_t<decltype(std::declval<const RowType&>().FrameKey)>>;
-        static constexpr bool Value = std::is_same_v<FieldType, uint64>;
-    };
-
-    template<typename RowType, typename = void>
-    struct THasUint64BatchKey
-    {
-        static constexpr bool Value = false;
-    };
-
-    template<typename RowType>
-    struct THasUint64BatchKey<RowType, std::void_t<decltype(std::declval<const RowType&>().BatchKey)>>
-    {
-        using FieldType = std::remove_cv_t<std::remove_reference_t<decltype(std::declval<const RowType&>().BatchKey)>>;
-        static constexpr bool Value = std::is_same_v<FieldType, uint64>;
-    };
-}
+    Apply,
+    Skip
+};
 
 template<typename RowType>
 struct TCompactPrimaryKeyTraits
 {
-    static constexpr bool bHasFrameKey = Private::THasUint64FrameKey<RowType>::Value;
-    static constexpr bool bHasBatchKey = Private::THasUint64BatchKey<RowType>::Value;
-    static_assert(!(bHasFrameKey && bHasBatchKey), "SpacetimeDB compact cache key trait requires exactly one generated key field.");
-    static constexpr bool bEnabled = bHasFrameKey || bHasBatchKey;
-
+    static constexpr bool bEnabled = false;
     using KeyType = uint64;
 
     static KeyType GetKey(const RowType& Row)
     {
-        if constexpr (bHasFrameKey)
-        {
-            return Row.FrameKey;
-        }
-        else
-        {
-            static_assert(bHasBatchKey, "SpacetimeDB compact cache key trait is not active for this row type.");
-            return Row.BatchKey;
-        }
+        (void)Row;
+        static_assert(bEnabled, "SpacetimeDB compact cache key trait is not generated for this row type.");
+        return 0;
     }
 
     static const TCHAR* GetUniqueIndexName()
     {
-        if constexpr (bHasFrameKey)
-        {
-            return TEXT("frame_key");
-        }
-        else
-        {
-            static_assert(bHasBatchKey, "SpacetimeDB compact cache key trait is not active for this row type.");
-            return TEXT("batch_key");
-        }
+        static_assert(bEnabled, "SpacetimeDB compact cache key trait is not generated for this row type.");
+        return TEXT("");
+    }
+};
+
+template<typename RowType>
+struct TTableCachePolicy
+{
+    static constexpr ETableCacheApplyMode ApplyMode = ETableCacheApplyMode::PersistentIndexed;
+
+    static ERuntimeBTreeIndexApplyMode GetRuntimeBTreeIndexApplyMode(const FString& IndexName)
+    {
+        (void)IndexName;
+        return ERuntimeBTreeIndexApplyMode::Apply;
     }
 };
 }
@@ -117,6 +80,30 @@ public:
     UE::SpacetimeDB::ETableCacheApplyMode GetApplyMode() const
     {
         return ApplyMode;
+    }
+
+    void SetRuntimeBTreeIndexApplyMode(
+        const FString& IndexName,
+        UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode InApplyMode)
+    {
+        checkf(!IndexName.IsEmpty(), TEXT("Cannot configure runtime B-Tree index policy for an empty index name."));
+        switch (InApplyMode)
+        {
+        case UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode::Apply:
+            RuntimeBTreeIndexApplyModes.Add(IndexName, InApplyMode);
+            break;
+        case UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode::Skip:
+            RuntimeBTreeIndexApplyModes.Add(IndexName, InApplyMode);
+            break;
+        default:
+            checkf(false, TEXT("Unknown runtime B-Tree index apply mode for index '%s'."), *IndexName);
+            break;
+        }
+    }
+
+    void ClearRuntimeBTreeIndexApplyModes()
+    {
+        RuntimeBTreeIndexApplyModes.Reset();
     }
 
 
@@ -189,7 +176,7 @@ public:
             *Name,
             ExpectedUniqueIndexName);
 
-        if (ShouldApplyDirectNativeDiff(Name))
+        if (ShouldApplyDirectNativeDiff())
         {
             return BuildDirectDiffByPrimaryKey(Name, MoveTemp(Inserts), MoveTemp(Deletes));
         }
@@ -216,7 +203,7 @@ public:
             return CacheKey;
         };
 
-        auto RemoveFromIndices = [this, &Name](const TArray<uint8>& Key, const TSharedPtr<RowType>& Row)
+        auto RemoveFromIndices = [this](const TArray<uint8>& Key, const TSharedPtr<RowType>& Row)
         {
             checkf(Row.IsValid(), TEXT("Cannot remove invalid row from table indices."));
             for (auto& IndexPair : Table->UniqueIndices)
@@ -225,7 +212,7 @@ public:
             }
             for (auto& IndexPair : Table->BTreeIndices)
             {
-                if (ShouldSkipRuntimeApplyBTreeIndex(Name, IndexPair.Key))
+                if (!ShouldApplyRuntimeBTreeIndex(IndexPair.Key))
                 {
                     continue;
                 }
@@ -233,7 +220,7 @@ public:
             }
         };
 
-        auto AddToIndices = [this, &Name](const TArray<uint8>& Key, const TSharedPtr<RowType>& Row)
+        auto AddToIndices = [this](const TArray<uint8>& Key, const TSharedPtr<RowType>& Row)
         {
             checkf(Row.IsValid(), TEXT("Cannot add invalid row to table indices."));
             for (auto& IndexPair : Table->UniqueIndices)
@@ -242,7 +229,7 @@ public:
             }
             for (auto& IndexPair : Table->BTreeIndices)
             {
-                if (ShouldSkipRuntimeApplyBTreeIndex(Name, IndexPair.Key))
+                if (!ShouldApplyRuntimeBTreeIndex(IndexPair.Key))
                 {
                     continue;
                 }
@@ -445,6 +432,9 @@ public:
             UE_LOG(LogTemp, Error, TEXT("Failed to create or retrieve table: %s"), *Name);
             return FTableAppliedDiff<RowType>();
         }
+        checkf(ApplyMode != UE::SpacetimeDB::ETableCacheApplyMode::DirectNativeDiff,
+            TEXT("DirectNativeDiff for table %s requires a generated compact uint64 primary-key trait."),
+            *Name);
 
         struct FDeletedRow
         {
@@ -466,6 +456,10 @@ public:
             }
             for (auto& IndexPair : Table->BTreeIndices)
             {
+                if (!ShouldApplyRuntimeBTreeIndex(IndexPair.Key))
+                {
+                    continue;
+                }
                 IndexPair.Value->RemoveRow(Key, Row);
             }
         };
@@ -479,6 +473,10 @@ public:
             }
             for (auto& IndexPair : Table->BTreeIndices)
             {
+                if (!ShouldApplyRuntimeBTreeIndex(IndexPair.Key))
+                {
+                    continue;
+                }
                 IndexPair.Value->AddRow(Key, Row);
             }
         };
@@ -562,25 +560,22 @@ public:
         return Diff;
     }
 private:
-    bool ShouldApplyDirectNativeDiff(const FString& Name) const
+    bool ShouldApplyDirectNativeDiff() const
     {
-        return ApplyMode == UE::SpacetimeDB::ETableCacheApplyMode::DirectNativeDiff
-            || Name == UE::SpacetimeDB::Private::MobAttackVisualBatchTableName
-            || Name == UE::SpacetimeDB::Private::MobProjectileVisualBatchTableName
-            || Name == UE::SpacetimeDB::Private::AbilityCastVisualBatchTableName
-            || Name == UE::SpacetimeDB::Private::MobCombatStateFrameTableName
-            || Name == UE::SpacetimeDB::Private::PlayerMotionFrameTableName
-            || Name == UE::SpacetimeDB::Private::PlayerCombatStateFrameTableName;
+        return ApplyMode == UE::SpacetimeDB::ETableCacheApplyMode::DirectNativeDiff;
     }
 
-    bool ShouldSkipRuntimeApplyBTreeIndex(const FString& Name, const FString& IndexName) const
+    bool ShouldApplyRuntimeBTreeIndex(const FString& IndexName) const
     {
-        return IndexName == UE::SpacetimeDB::Private::MatchIdIndexName
-            && (Name == UE::SpacetimeDB::Private::MobRuntimeSnapshotBatchTableName
-                || Name == UE::SpacetimeDB::Private::MobAttackVisualBatchTableName
-                || Name == UE::SpacetimeDB::Private::MobProjectileVisualBatchTableName
-                || Name == UE::SpacetimeDB::Private::AbilityCastVisualBatchTableName);
+        checkf(!IndexName.IsEmpty(), TEXT("Cannot apply runtime B-Tree index policy for an empty index name."));
+        if (const UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode* RuntimeMode = RuntimeBTreeIndexApplyModes.Find(IndexName))
+        {
+            return *RuntimeMode == UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode::Apply;
+        }
+        return UE::SpacetimeDB::TTableCachePolicy<RowType>::GetRuntimeBTreeIndexApplyMode(IndexName)
+            == UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode::Apply;
     }
 
-    UE::SpacetimeDB::ETableCacheApplyMode ApplyMode = UE::SpacetimeDB::ETableCacheApplyMode::PersistentIndexed;
+    UE::SpacetimeDB::ETableCacheApplyMode ApplyMode = UE::SpacetimeDB::TTableCachePolicy<RowType>::ApplyMode;
+    TMap<FString, UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode> RuntimeBTreeIndexApplyModes;
 };

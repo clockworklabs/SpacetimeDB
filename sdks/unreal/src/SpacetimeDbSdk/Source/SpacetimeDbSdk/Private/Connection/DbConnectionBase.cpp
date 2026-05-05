@@ -26,8 +26,10 @@ enum class EWsCompressionTag : uint8
 constexpr int32 MaxQueuedInboundRawMessages = 8192;
 constexpr int64 MaxQueuedInboundRawBytes = 128ll * 1024ll * 1024ll;
 constexpr int32 MaxPendingInboundParsedMessages = 8192;
-constexpr int64 MaxPendingInboundParsedPayloadBytes = 128ll * 1024ll * 1024ll;
+constexpr int64 MaxInboundDecodedPayloadBytes = 128ll * 1024ll * 1024ll;
+constexpr int64 MaxPendingInboundParsedEstimatedBytes = 256ll * 1024ll * 1024ll;
 constexpr int32 PendingInboundCompactionMinConsumedMessages = 512;
+constexpr int32 InboundRawCompactionMinConsumedMessages = 512;
 constexpr uint32 InboundWorkerStackSizeBytes = 0;
 constexpr EThreadPriority InboundWorkerThreadPriority = TPri_Normal;
 constexpr const TCHAR* InboundWorkerThreadName = TEXT("SpacetimeDBInboundWorker");
@@ -121,6 +123,32 @@ static FString FormatInboundTableApplyStats(const FSpacetimeDBTableApplyStats& S
 		Stats.CacheMicros,
 		Stats.BroadcastMicros,
 		Stats.bProducedDiff ? 1 : 0);
+}
+
+static int64 EstimatePreprocessedTableDataBytes(const FPreprocessedTableDataMap& PreprocessedTableData)
+{
+	int64 EstimatedBytes = PreprocessedTableData.GetAllocatedSize();
+	for (const TPair<FPreprocessedTableKey, TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>>& TablePair : PreprocessedTableData)
+	{
+		EstimatedBytes += TablePair.Key.TableName.GetAllocatedSize();
+		EstimatedBytes += TablePair.Value.GetAllocatedSize();
+		for (const TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>& Data : TablePair.Value)
+		{
+			if (Data.IsValid())
+			{
+				EstimatedBytes += Data->EstimateMemoryBytes();
+			}
+		}
+	}
+	return EstimatedBytes;
+}
+
+static int64 EstimateInboundParsedMessageBytes(const FInboundParsedMessage& Message)
+{
+	return sizeof(FInboundParsedMessage)
+		+ static_cast<int64>(Message.DecodedPayloadSizeBytes)
+		+ Message.ProtocolError.GetAllocatedSize()
+		+ EstimatePreprocessedTableDataBytes(Message.PreprocessedTableData);
 }
 }
 
@@ -326,6 +354,7 @@ void UDbConnectionBase::StartInboundMessageWorker()
 	{
 		FScopeLock RawLock(&InboundRawMessagesMutex);
 		InboundRawMessages.Reset();
+		InboundRawMessageReadIndex = 0;
 		InboundQueuedRawBytes = 0;
 		++InboundConnectionEpoch;
 		NextInboundSequenceId = 0;
@@ -337,7 +366,7 @@ void UDbConnectionBase::StartInboundMessageWorker()
 		FScopeLock PendingLock(&PendingMessagesMutex);
 		PendingMessages.Reset();
 		PendingMessageReadIndex = 0;
-		PendingParsedPayloadBytes = 0;
+		PendingParsedEstimatedBytes = 0;
 	}
 
 	ActivePreprocessedTableData = nullptr;
@@ -352,6 +381,7 @@ void UDbConnectionBase::StopInboundMessageWorker()
 		{
 			FScopeLock RawLock(&InboundRawMessagesMutex);
 			InboundRawMessages.Reset();
+			InboundRawMessageReadIndex = 0;
 			InboundQueuedRawBytes = 0;
 			++InboundConnectionEpoch;
 			bInboundAcceptingMessages = false;
@@ -362,7 +392,7 @@ void UDbConnectionBase::StopInboundMessageWorker()
 			FScopeLock PendingLock(&PendingMessagesMutex);
 			PendingMessages.Reset();
 			PendingMessageReadIndex = 0;
-			PendingParsedPayloadBytes = 0;
+			PendingParsedEstimatedBytes = 0;
 		}
 
 		ActivePreprocessedTableData = nullptr;
@@ -383,6 +413,7 @@ void UDbConnectionBase::ClearInboundMessageQueues()
 	{
 		FScopeLock Lock(&InboundRawMessagesMutex);
 		InboundRawMessages.Reset();
+		InboundRawMessageReadIndex = 0;
 		InboundQueuedRawBytes = 0;
 	}
 
@@ -390,7 +421,7 @@ void UDbConnectionBase::ClearInboundMessageQueues()
 		FScopeLock Lock(&PendingMessagesMutex);
 		PendingMessages.Reset();
 		PendingMessageReadIndex = 0;
-		PendingParsedPayloadBytes = 0;
+		PendingParsedEstimatedBytes = 0;
 	}
 
 	ActivePreprocessedTableData = nullptr;
@@ -407,7 +438,9 @@ void UDbConnectionBase::NotifyInboundWorkerIfNeeded()
 	bool bShouldNotify = false;
 	{
 		FScopeLock RawLock(&InboundRawMessagesMutex);
-		bShouldNotify = InboundRawMessages.Num() > 0 && bInboundAcceptingMessages && !bInboundProtocolErrorQueued;
+		checkf(InboundRawMessageReadIndex <= InboundRawMessages.Num(),
+			TEXT("SpacetimeDB inbound raw queue read index exceeded queued messages while notifying worker."));
+		bShouldNotify = InboundRawMessages.Num() > InboundRawMessageReadIndex && bInboundAcceptingMessages && !bInboundProtocolErrorQueued;
 	}
 
 	if (bShouldNotify)
@@ -434,6 +467,7 @@ void UDbConnectionBase::MarkInboundProtocolErrorQueued()
 	bInboundProtocolErrorQueued = true;
 	bInboundAcceptingMessages = false;
 	InboundRawMessages.Reset();
+	InboundRawMessageReadIndex = 0;
 	InboundQueuedRawBytes = 0;
 }
 
@@ -458,13 +492,14 @@ void UDbConnectionBase::EnqueueInboundProtocolError(uint64 SequenceId, int32 Pay
 	Parsed.QueuedBytesAtEnqueue = QueuedBytesAtEnqueue;
 	Parsed.bProtocolError = true;
 	Parsed.ProtocolError = ErrorMessage;
+	Parsed.EstimatedMemoryBytes = EstimateInboundParsedMessageBytes(Parsed);
 
 	FScopeLock Lock(&PendingMessagesMutex);
 	PendingMessages.Reset();
 	PendingMessageReadIndex = 0;
-	PendingParsedPayloadBytes = 0;
+	PendingParsedEstimatedBytes = 0;
 	PendingMessages.Add(MoveTemp(Parsed));
-	PendingParsedPayloadBytes += static_cast<int64>(PayloadSizeBytes);
+	PendingParsedEstimatedBytes += PendingMessages[0].EstimatedMemoryBytes;
 }
 
 void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
@@ -497,8 +532,11 @@ void UDbConnectionBase::HandleWSBinaryMessageOwned(TArray<uint8>&& Message)
 
 		ConnectionEpoch = InboundConnectionEpoch;
 		SequenceId = NextInboundSequenceId++;
+		checkf(InboundRawMessageReadIndex <= InboundRawMessages.Num(),
+			TEXT("SpacetimeDB inbound raw queue read index exceeded queued messages while enqueuing payload."));
 		const int64 NewQueuedRawBytes = InboundQueuedRawBytes + static_cast<int64>(PayloadSizeBytes);
-		const int32 NewQueuedRawMessageCount = InboundRawMessages.Num() + 1;
+		const int32 LiveQueuedRawMessageCount = InboundRawMessages.Num() - InboundRawMessageReadIndex;
+		const int32 NewQueuedRawMessageCount = LiveQueuedRawMessageCount + 1;
 		QueueDepthAtEnqueue = NewQueuedRawMessageCount;
 		QueuedBytesAtEnqueue = NewQueuedRawBytes;
 		if (NewQueuedRawMessageCount > MaxQueuedInboundRawMessages || NewQueuedRawBytes > MaxQueuedInboundRawBytes)
@@ -506,6 +544,7 @@ void UDbConnectionBase::HandleWSBinaryMessageOwned(TArray<uint8>&& Message)
 			bInboundProtocolErrorQueued = true;
 			bInboundAcceptingMessages = false;
 			InboundRawMessages.Reset();
+			InboundRawMessageReadIndex = 0;
 			InboundQueuedRawBytes = 0;
 			bQueueOverloaded = true;
 			QueueOverloadError = FString::Printf(
@@ -567,7 +606,7 @@ void UDbConnectionBase::FrameTick()
 			{
 				PendingMessages.Reset();
 				PendingMessageReadIndex = 0;
-				PendingParsedPayloadBytes = 0;
+				PendingParsedEstimatedBytes = 0;
 				break;
 			}
 
@@ -578,13 +617,14 @@ void UDbConnectionBase::FrameTick()
 
 			FInboundParsedMessage& PendingMessage = PendingMessages[PendingMessageReadIndex];
 			const int64 PendingPayloadBytes = static_cast<int64>(PendingMessage.PayloadSizeBytes);
+			const int64 PendingEstimatedBytes = PendingMessage.EstimatedMemoryBytes;
 			if (!bDrainAllPendingMessages && MessagesProcessed > 0 && PayloadBytesProcessed + PendingPayloadBytes > InboundApplyBudget.MaxPayloadBytesPerFrame)
 			{
 				break;
 			}
 
 			PayloadBytesProcessed += PendingPayloadBytes;
-			PendingParsedPayloadBytes = FMath::Max<int64>(0, PendingParsedPayloadBytes - PendingPayloadBytes);
+			PendingParsedEstimatedBytes = FMath::Max<int64>(0, PendingParsedEstimatedBytes - PendingEstimatedBytes);
 			Msg = MoveTemp(PendingMessage);
 			++PendingMessageReadIndex;
 
@@ -592,7 +632,7 @@ void UDbConnectionBase::FrameTick()
 			{
 				PendingMessages.Reset();
 				PendingMessageReadIndex = 0;
-				PendingParsedPayloadBytes = 0;
+				PendingParsedEstimatedBytes = 0;
 			}
 			else if (PendingMessageReadIndex >= PendingInboundCompactionMinConsumedMessages)
 			{
@@ -689,15 +729,15 @@ void UDbConnectionBase::DrainInboundRawMessagesOnWorker()
 	while (!IsInboundProtocolErrorQueued())
 	{
 		int32 ParsedMessageCapacity = 0;
-		int64 ParsedPayloadByteCapacity = 0;
+		int64 ParsedEstimatedByteCapacity = 0;
 		{
 			FScopeLock Lock(&PendingMessagesMutex);
 			const int32 LivePendingMessages = PendingMessages.Num() - PendingMessageReadIndex;
 			ParsedMessageCapacity = MaxPendingInboundParsedMessages - LivePendingMessages;
-			ParsedPayloadByteCapacity = MaxPendingInboundParsedPayloadBytes - PendingParsedPayloadBytes;
+			ParsedEstimatedByteCapacity = MaxPendingInboundParsedEstimatedBytes - PendingParsedEstimatedBytes;
 		}
 
-		if (ParsedMessageCapacity <= 0 || ParsedPayloadByteCapacity <= 0)
+		if (ParsedMessageCapacity <= 0 || ParsedEstimatedByteCapacity <= 0)
 		{
 			return;
 		}
@@ -706,20 +746,24 @@ void UDbConnectionBase::DrainInboundRawMessagesOnWorker()
 		int64 DrainedRawBytes = 0;
 		{
 			FScopeLock Lock(&InboundRawMessagesMutex);
-			if (InboundRawMessages.Num() == 0 || !bInboundAcceptingMessages || bInboundProtocolErrorQueued)
+			checkf(InboundRawMessageReadIndex <= InboundRawMessages.Num(),
+				TEXT("SpacetimeDB inbound raw queue read index exceeded queued messages while draining worker queue."));
+			const int32 LiveRawMessageCount = InboundRawMessages.Num() - InboundRawMessageReadIndex;
+			if (LiveRawMessageCount <= 0 || !bInboundAcceptingMessages || bInboundProtocolErrorQueued)
 			{
 				return;
 			}
 
 			int32 DrainCount = 0;
-			for (; DrainCount < InboundRawMessages.Num() && DrainCount < ParsedMessageCapacity; ++DrainCount)
+			for (; DrainCount < LiveRawMessageCount && DrainCount < ParsedMessageCapacity; ++DrainCount)
 			{
-				const int64 NextPayloadBytes = static_cast<int64>(InboundRawMessages[DrainCount].Payload.Num());
-				if (DrainCount > 0 && DrainedRawBytes + NextPayloadBytes > ParsedPayloadByteCapacity)
+				const FInboundRawMessage& Candidate = InboundRawMessages[InboundRawMessageReadIndex + DrainCount];
+				const int64 NextPayloadBytes = static_cast<int64>(Candidate.Payload.Num());
+				if (DrainCount > 0 && DrainedRawBytes + NextPayloadBytes > ParsedEstimatedByteCapacity)
 				{
 					break;
 				}
-				if (DrainCount == 0 && NextPayloadBytes > ParsedPayloadByteCapacity)
+				if (DrainCount == 0 && NextPayloadBytes > ParsedEstimatedByteCapacity)
 				{
 					return;
 				}
@@ -735,10 +779,20 @@ void UDbConnectionBase::DrainInboundRawMessagesOnWorker()
 			LocalRawMessages.Reserve(DrainCount);
 			for (int32 Index = 0; Index < DrainCount; ++Index)
 			{
-				LocalRawMessages.Add(MoveTemp(InboundRawMessages[Index]));
+				LocalRawMessages.Add(MoveTemp(InboundRawMessages[InboundRawMessageReadIndex + Index]));
 			}
 
-			InboundRawMessages.RemoveAt(0, DrainCount, EAllowShrinking::No);
+			InboundRawMessageReadIndex += DrainCount;
+			if (InboundRawMessageReadIndex == InboundRawMessages.Num())
+			{
+				InboundRawMessages.Reset();
+				InboundRawMessageReadIndex = 0;
+			}
+			else if (InboundRawMessageReadIndex >= InboundRawCompactionMinConsumedMessages)
+			{
+				InboundRawMessages.RemoveAt(0, InboundRawMessageReadIndex, EAllowShrinking::No);
+				InboundRawMessageReadIndex = 0;
+			}
 			InboundQueuedRawBytes = FMath::Max<int64>(0, InboundQueuedRawBytes - DrainedRawBytes);
 		}
 
@@ -789,31 +843,52 @@ void UDbConnectionBase::DrainInboundRawMessagesOnWorker()
 		uint64 OverloadSequenceId = LocalParsedMessages[0].SequenceId;
 		int32 OverloadPayloadSizeBytes = LocalParsedMessages[0].PayloadSizeBytes;
 		uint8 OverloadCompressionTag = LocalParsedMessages[0].CompressionTag;
+		bool bParsedQueueOverloaded = false;
+		FString ParsedQueueOverloadError;
 		{
 			FScopeLock Lock(&PendingMessagesMutex);
-			int64 AddedPayloadBytes = 0;
+			int64 AddedEstimatedBytes = 0;
 			for (const FInboundParsedMessage& ParsedMessage : LocalParsedMessages)
 			{
-				AddedPayloadBytes += static_cast<int64>(ParsedMessage.PayloadSizeBytes);
+				AddedEstimatedBytes += ParsedMessage.EstimatedMemoryBytes;
 			}
 
 			const int32 LivePendingMessages = PendingMessages.Num() - PendingMessageReadIndex;
 			const int32 NewPendingMessageCount = LivePendingMessages + LocalParsedMessages.Num();
-			const int64 NewPendingPayloadBytes = PendingParsedPayloadBytes + AddedPayloadBytes;
-			checkf(bBatchEndsWithProtocolError ||
-				(NewPendingMessageCount <= MaxPendingInboundParsedMessages &&
-					NewPendingPayloadBytes <= MaxPendingInboundParsedPayloadBytes),
-				TEXT("SpacetimeDB parsed inbound queue overflow despite worker backpressure: sequence=%llu payload_bytes=%d compression_tag=%u queued_messages=%d queued_bytes=%lld max_messages=%d max_bytes=%lld"),
+			const int64 NewPendingEstimatedBytes = PendingParsedEstimatedBytes + AddedEstimatedBytes;
+			bParsedQueueOverloaded = !bBatchEndsWithProtocolError &&
+				(NewPendingMessageCount > MaxPendingInboundParsedMessages ||
+					NewPendingEstimatedBytes > MaxPendingInboundParsedEstimatedBytes);
+			if (bParsedQueueOverloaded)
+			{
+				ParsedQueueOverloadError = FString::Printf(
+					TEXT("SpacetimeDB parsed inbound queue overload: sequence=%llu payload_bytes=%d compression_tag=%u queued_messages=%d estimated_bytes=%lld max_messages=%d max_estimated_bytes=%lld"),
+					OverloadSequenceId,
+					OverloadPayloadSizeBytes,
+					static_cast<uint32>(OverloadCompressionTag),
+					NewPendingMessageCount,
+					NewPendingEstimatedBytes,
+					MaxPendingInboundParsedMessages,
+					MaxPendingInboundParsedEstimatedBytes);
+			}
+			else
+			{
+				PendingMessages.Append(MoveTemp(LocalParsedMessages));
+				PendingParsedEstimatedBytes = NewPendingEstimatedBytes;
+			}
+		}
+
+		if (bParsedQueueOverloaded)
+		{
+			MarkInboundProtocolErrorQueued();
+			EnqueueInboundProtocolError(
 				OverloadSequenceId,
 				OverloadPayloadSizeBytes,
-				static_cast<uint32>(OverloadCompressionTag),
-				NewPendingMessageCount,
-				NewPendingPayloadBytes,
-				MaxPendingInboundParsedMessages,
-				MaxPendingInboundParsedPayloadBytes);
-
-			PendingMessages.Append(MoveTemp(LocalParsedMessages));
-			PendingParsedPayloadBytes = NewPendingPayloadBytes;
+				OverloadCompressionTag,
+				LocalParsedMessages[0].QueueDepthAtEnqueue,
+				LocalParsedMessages[0].QueuedBytesAtEnqueue,
+				ParsedQueueOverloadError);
+			return;
 		}
 	}
 }
@@ -839,6 +914,7 @@ bool UDbConnectionBase::BuildInboundParsedMessage(const FInboundRawMessage& RawM
 			static_cast<uint32>(OutMessage.CompressionTag),
 			OutMessage.QueueDepthAtEnqueue,
 			OutMessage.QueuedBytesAtEnqueue);
+		OutMessage.EstimatedMemoryBytes = EstimateInboundParsedMessageBytes(OutMessage);
 		return false;
 	}
 
@@ -1127,7 +1203,20 @@ bool UDbConnectionBase::DecompressGzip(const uint8* InData, int32 InSize, TArray
 
 	// Gzip data ends with 4 bytes indicating the uncompressed size
 	const uint8* SizePtr = InData + InSize - GzipFooterUncompressedSizeBytes;
-	uint32 OutSize = SizePtr[0] | (SizePtr[1] << 8) | (SizePtr[2] << 16) | (SizePtr[3] << 24);
+	const uint32 OutSize =
+		static_cast<uint32>(SizePtr[0]) |
+		(static_cast<uint32>(SizePtr[1]) << 8) |
+		(static_cast<uint32>(SizePtr[2]) << 16) |
+		(static_cast<uint32>(SizePtr[3]) << 24);
+	if (static_cast<int64>(OutSize) > MaxInboundDecodedPayloadBytes)
+	{
+		UE_LOG(LogSpacetimeDb_Connection,
+			Error,
+			TEXT("Gzip payload declares %u decoded bytes, exceeding max decoded bytes %lld"),
+			OutSize,
+			MaxInboundDecodedPayloadBytes);
+		return false;
+	}
 
 	// Validate the output size
 	OutData.SetNumUninitialized(OutSize);
@@ -1264,6 +1353,16 @@ bool UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Message, FInbound
 		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Unknown compression variant"));
 		return false;
 	}
+	if (static_cast<int64>(DecodedPayloadSize) > MaxInboundDecodedPayloadBytes)
+	{
+		UE_LOG(LogSpacetimeDb_Connection,
+			Error,
+			TEXT("Decoded server message payload has %d bytes, exceeding max decoded bytes %lld after compression tag %u."),
+			DecodedPayloadSize,
+			MaxInboundDecodedPayloadBytes,
+			static_cast<uint32>(Compression));
+		return false;
+	}
 	if (DecodedPayloadSize <= 0 || DecodedPayload == nullptr)
 	{
 		UE_LOG(LogSpacetimeDb_Connection,
@@ -1273,6 +1372,7 @@ bool UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Message, FInbound
 		return false;
 	}
 
+	OutMessage.DecodedPayloadSizeBytes = DecodedPayloadSize;
 	// Deserialize the decompressed data into a UServerMessageType object
 	OutMessage.Message = UE::SpacetimeDB::DeserializeView<FServerMessageType>(DecodedPayload, DecodedPayloadSize);
 
@@ -1313,6 +1413,7 @@ bool UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Message, FInbound
 		default:
 			break;
 	}
+	OutMessage.EstimatedMemoryBytes = EstimateInboundParsedMessageBytes(OutMessage);
 	return true;
 }
 

@@ -4,10 +4,14 @@
 /* ============================================================================ *
  *  TableAppliedDiff.h (2025-05-28)
  *  ----------------------------------------------------------------------------
- *  Captures the semantic result of applying a low‑level diff (inserts/deletes)
- *  to a table cache.  Rows that transition from dead→live are inserts, live→dead
- *  are deletes, and a delete+insert with the same primary‑key is surfaced as an
- *  update pair.
+ *  Captures the semantic result of applying a low-level diff (inserts/deletes)
+ *  to a table cache. Rows that transition from dead to live are inserts, live
+ *  to dead are deletes, and a delete+insert with the same primary key is
+ *  surfaced as an update pair.
+ *
+ *  This is the SDK's lower-copy diff representation. Direct C++ consumers read
+ *  row payloads from TSharedPtr-backed arrays; generated dynamic delegates still
+ *  broadcast value references for Blueprint and existing dynamic delegate code.
  * ============================================================================ */
 template<typename RowType>
 struct FTableAppliedDiff

@@ -110,6 +110,8 @@ struct FInboundParsedMessage
 	uint64 ConnectionEpoch = 0;
 	uint64 SequenceId = 0;
 	int32 PayloadSizeBytes = 0;
+	int32 DecodedPayloadSizeBytes = 0;
+	int64 EstimatedMemoryBytes = 0;
 	uint8 CompressionTag = 0;
 	int32 QueueDepthAtEnqueue = 0;
 	int64 QueuedBytesAtEnqueue = 0;
@@ -207,6 +209,12 @@ const void* GetNativeTableListenerTypeId()
 	return &TypeId;
 }
 
+enum class ESpacetimeDBNativeListenerDispatchMode : uint8
+{
+	NativeAndDynamic,
+	NativeOnly
+};
+
 struct FNativeTableListenerBinding
 {
 	using FInsertThunk = void(*)(void* Owner, const void* Context, const void* Row);
@@ -214,17 +222,19 @@ struct FNativeTableListenerBinding
 	using FDeleteThunk = void(*)(void* Owner, const void* Context, const void* Row);
 	using FDiffThunk = void(*)(void* Owner, const void* Context, const void* Diff);
 
-	void* Owner = nullptr;
+	TWeakObjectPtr<UObject> Owner;
+	void* OwnerKey = nullptr;
 	const void* RowTypeId = nullptr;
 	const void* EventContextTypeId = nullptr;
 	FInsertThunk InsertThunk = nullptr;
 	FUpdateThunk UpdateThunk = nullptr;
 	FDeleteThunk DeleteThunk = nullptr;
 	FDiffThunk DiffThunk = nullptr;
+	ESpacetimeDBNativeListenerDispatchMode DispatchMode = ESpacetimeDBNativeListenerDispatchMode::NativeAndDynamic;
 
 	bool IsComplete() const
 	{
-		return Owner != nullptr &&
+		return OwnerKey != nullptr &&
 			RowTypeId != nullptr &&
 			EventContextTypeId != nullptr &&
 			(DiffThunk != nullptr ||
@@ -319,7 +329,7 @@ public:
 		virtual void BroadcastDiff(UDbConnectionBase* Conn, void* Context) = 0;
 		virtual const FString& GetTableName() const = 0;
 		virtual void RegisterNativeListener(const FNativeTableListenerBinding& Binding) = 0;
-		virtual void UnregisterNativeListener(void* Owner) = 0;
+		virtual void UnregisterNativeListener(void* OwnerKey) = 0;
 	};
 
 	template<typename RowType, typename TableClass, typename EventContext>
@@ -375,11 +385,8 @@ public:
 			checkf(PendingDiffReadIndex < PendingDiffs.Num(), TEXT("Missing pending SpacetimeDB table diff for broadcast."));
 			EventContext& Ctx = *reinterpret_cast<EventContext*>(Context);
 			const FTableAppliedDiff<RowType>& Diff = PendingDiffs[PendingDiffReadIndex];
-			if (!NativeListeners.IsEmpty())
-			{
-				BroadcastNativeDiff(Diff, Ctx);
-			}
-			else
+			const bool bSuppressDynamicDispatch = BroadcastNativeDiff(Diff, Ctx);
+			if (!bSuppressDynamicDispatch)
 			{
 				Conn->BroadcastDiff(Table, Diff, Ctx);
 			}
@@ -402,29 +409,32 @@ public:
 				TEXT("Cannot register native SpacetimeDB table listener during broadcast for table '%s'."),
 				*TableName);
 			checkf(Binding.IsComplete(), TEXT("Incomplete native SpacetimeDB table listener for table '%s'."), *TableName);
+			checkf(Binding.Owner.IsValid(),
+				TEXT("Cannot register invalid native SpacetimeDB table listener owner for table '%s'."),
+				*TableName);
 			checkf(Binding.RowTypeId == GetNativeTableListenerTypeId<RowType>(),
 				TEXT("Native SpacetimeDB table listener row type mismatch for table '%s'."), *TableName);
 			checkf(Binding.EventContextTypeId == GetNativeTableListenerTypeId<EventContext>(),
 				TEXT("Native SpacetimeDB table listener context type mismatch for table '%s'."), *TableName);
 			for (const FNativeTableListenerBinding& ExistingBinding : NativeListeners)
 			{
-				checkf(ExistingBinding.Owner != Binding.Owner,
+				checkf(ExistingBinding.OwnerKey != Binding.OwnerKey,
 					TEXT("Duplicate native SpacetimeDB table listener owner for table '%s'."),
 					*TableName);
 			}
 			NativeListeners.Add(Binding);
 		}
 
-		virtual void UnregisterNativeListener(void* Owner) override
+		virtual void UnregisterNativeListener(void* OwnerKey) override
 		{
 			checkf(!bBroadcastingNativeListeners,
 				TEXT("Cannot unregister native SpacetimeDB table listener during broadcast for table '%s'."),
 				*TableName);
-			checkf(Owner != nullptr, TEXT("Cannot unregister null native SpacetimeDB table listener owner for table '%s'."), *TableName);
+			checkf(OwnerKey != nullptr, TEXT("Cannot unregister null native SpacetimeDB table listener owner for table '%s'."), *TableName);
 			const int32 ListenerIndex = NativeListeners.IndexOfByPredicate(
-				[Owner](const FNativeTableListenerBinding& Binding)
+				[OwnerKey](const FNativeTableListenerBinding& Binding)
 				{
-					return Binding.Owner == Owner;
+					return Binding.OwnerKey == OwnerKey;
 				});
 			checkf(ListenerIndex != INDEX_NONE,
 				TEXT("Missing native SpacetimeDB table listener for table '%s'."),
@@ -433,49 +443,89 @@ public:
 		}
 
 	private:
-		void BroadcastNativeDiff(const FTableAppliedDiff<RowType>& Diff, const EventContext& Context)
+		bool BroadcastNativeDiff(const FTableAppliedDiff<RowType>& Diff, const EventContext& Context)
 		{
-			TGuardValue<bool> BroadcastingScope(bBroadcastingNativeListeners, true);
-			for (const FNativeTableListenerBinding& Listener : NativeListeners)
+			if (NativeListeners.IsEmpty())
 			{
-				BroadcastNativeDiffToListener(Diff, Context, Listener);
+				return false;
 			}
+
+			bool bSuppressDynamicDispatch = false;
+			TArray<void*> ExpiredOwnerKeys;
+			{
+				TGuardValue<bool> BroadcastingScope(bBroadcastingNativeListeners, true);
+				for (const FNativeTableListenerBinding& Listener : NativeListeners)
+				{
+					UObject* OwnerObject = Listener.Owner.Get();
+					if (OwnerObject == nullptr)
+					{
+						ExpiredOwnerKeys.Add(Listener.OwnerKey);
+						UE_LOG(LogSpacetimeDb_Connection,
+							Error,
+							TEXT("Removing expired native SpacetimeDB table listener owner for table '%s'. Native listeners must be unregistered before owner destruction."),
+							*TableName);
+						continue;
+					}
+
+					BroadcastNativeDiffToListener(Diff, Context, Listener, OwnerObject);
+					if (Listener.DispatchMode == ESpacetimeDBNativeListenerDispatchMode::NativeOnly)
+					{
+						bSuppressDynamicDispatch = true;
+					}
+				}
+			}
+
+			for (void* ExpiredOwnerKey : ExpiredOwnerKeys)
+			{
+				NativeListeners.RemoveAllSwap(
+					[ExpiredOwnerKey](const FNativeTableListenerBinding& Listener)
+					{
+						return Listener.OwnerKey == ExpiredOwnerKey;
+					},
+					EAllowShrinking::No);
+			}
+			return bSuppressDynamicDispatch;
 		}
 
-		void BroadcastNativeDiffToListener(
-			const FTableAppliedDiff<RowType>& Diff,
-			const EventContext& Context,
-			const FNativeTableListenerBinding& Listener)
-		{
-			checkf(Listener.IsComplete(), TEXT("Incomplete native SpacetimeDB table listener for table '%s'."), *TableName);
-			if (Listener.DiffThunk != nullptr)
+			void BroadcastNativeDiffToListener(
+				const FTableAppliedDiff<RowType>& Diff,
+				const EventContext& Context,
+				const FNativeTableListenerBinding& Listener,
+				UObject* OwnerObject)
 			{
-				Listener.DiffThunk(Listener.Owner, &Context, &Diff);
-				return;
-			}
+				checkf(Listener.IsComplete(), TEXT("Incomplete native SpacetimeDB table listener for table '%s'."), *TableName);
+				checkf(OwnerObject != nullptr, TEXT("Cannot dispatch native SpacetimeDB table listener to a null owner for table '%s'."), *TableName);
+				checkf(Listener.Owner.Get() == OwnerObject,
+					TEXT("Native SpacetimeDB table listener owner identity mismatch for table '%s'."),
+					*TableName);
+				if (Listener.DiffThunk != nullptr)
+				{
+					Listener.DiffThunk(Listener.OwnerKey, &Context, &Diff);
+					return;
+				}
 
-			for (const TSharedPtr<RowType>& Row : Diff.Inserts)
-			{
-				checkf(Row.IsValid(), TEXT("Invalid SpacetimeDB native insert diff row for table '%s'."), *TableName);
-				Listener.InsertThunk(Listener.Owner, &Context, Row.Get());
-			}
+				for (const TSharedPtr<RowType>& Row : Diff.Inserts)
+				{
+					checkf(Row.IsValid(), TEXT("Invalid SpacetimeDB native insert diff row for table '%s'."), *TableName);
+					Listener.InsertThunk(Listener.OwnerKey, &Context, Row.Get());
+				}
 
-			for (const TSharedPtr<RowType>& Row : Diff.Deletes)
-			{
-				checkf(Row.IsValid(), TEXT("Invalid SpacetimeDB native delete diff row for table '%s'."), *TableName);
-				Listener.DeleteThunk(Listener.Owner, &Context, Row.Get());
-			}
+				for (const TSharedPtr<RowType>& Row : Diff.Deletes)
+				{
+					checkf(Row.IsValid(), TEXT("Invalid SpacetimeDB native delete diff row for table '%s'."), *TableName);
+					Listener.DeleteThunk(Listener.OwnerKey, &Context, Row.Get());
+				}
 
 			checkf(Diff.UpdateDeletes.Num() == Diff.UpdateInserts.Num(),
 				TEXT("Mismatched SpacetimeDB native update diff counts for table '%s'."), *TableName);
 			for (int32 Index = 0; Index < Diff.UpdateInserts.Num(); ++Index)
 			{
 				const TSharedPtr<RowType>& OldRow = Diff.UpdateDeletes[Index];
-				const TSharedPtr<RowType>& NewRow = Diff.UpdateInserts[Index];
-				checkf(OldRow.IsValid() && NewRow.IsValid(), TEXT("Invalid SpacetimeDB native update diff row for table '%s'."), *TableName);
-				Listener.UpdateThunk(Listener.Owner, &Context, OldRow.Get(), NewRow.Get());
+					const TSharedPtr<RowType>& NewRow = Diff.UpdateInserts[Index];
+					checkf(OldRow.IsValid() && NewRow.IsValid(), TEXT("Invalid SpacetimeDB native update diff row for table '%s'."), *TableName);
+					Listener.UpdateThunk(Listener.OwnerKey, &Context, OldRow.Get(), NewRow.Get());
+				}
 			}
-		}
 
 		FString TableName;
 		TableClass* Table;
@@ -498,15 +548,20 @@ public:
 		void (OwnerType::*InsertFn)(const EventContext&, const RowType&),
 		void (OwnerType::*UpdateFn)(const EventContext&, const RowType&, const RowType&),
 		void (OwnerType::*DeleteFn)(const EventContext&, const RowType&)>
-	void RegisterNativeTableListener(const FString& TableName, OwnerType* Owner)
+	void RegisterNativeTableListener(
+		const FString& TableName,
+		OwnerType* Owner,
+		ESpacetimeDBNativeListenerDispatchMode DispatchMode = ESpacetimeDBNativeListenerDispatchMode::NativeAndDynamic)
 	{
 		static_assert(std::is_base_of_v<UObject, OwnerType>, "Native SpacetimeDB table listener owner must derive from UObject.");
 		checkf(Owner != nullptr, TEXT("Cannot register null native SpacetimeDB table listener owner for table '%s'."), *TableName);
 
 		FNativeTableListenerBinding Binding;
 		Binding.Owner = Owner;
+		Binding.OwnerKey = Owner;
 		Binding.RowTypeId = GetNativeTableListenerTypeId<RowType>();
 		Binding.EventContextTypeId = GetNativeTableListenerTypeId<EventContext>();
+		Binding.DispatchMode = DispatchMode;
 		Binding.InsertThunk = [](void* RawOwner, const void* RawContext, const void* RawRow)
 		{
 			(static_cast<OwnerType*>(RawOwner)->*InsertFn)(
@@ -536,15 +591,20 @@ public:
 
 	template<typename RowType, typename EventContext, typename OwnerType,
 		void (OwnerType::*DiffFn)(const EventContext&, const FTableAppliedDiff<RowType>&)>
-	void RegisterNativeTableDiffListener(const FString& TableName, OwnerType* Owner)
+	void RegisterNativeTableDiffListener(
+		const FString& TableName,
+		OwnerType* Owner,
+		ESpacetimeDBNativeListenerDispatchMode DispatchMode = ESpacetimeDBNativeListenerDispatchMode::NativeAndDynamic)
 	{
 		static_assert(std::is_base_of_v<UObject, OwnerType>, "Native SpacetimeDB table diff listener owner must derive from UObject.");
 		checkf(Owner != nullptr, TEXT("Cannot register null native SpacetimeDB table diff listener owner for table '%s'."), *TableName);
 
 		FNativeTableListenerBinding Binding;
 		Binding.Owner = Owner;
+		Binding.OwnerKey = Owner;
 		Binding.RowTypeId = GetNativeTableListenerTypeId<RowType>();
 		Binding.EventContextTypeId = GetNativeTableListenerTypeId<EventContext>();
+		Binding.DispatchMode = DispatchMode;
 		Binding.DiffThunk = [](void* RawOwner, const void* RawContext, const void* RawDiff)
 		{
 			(static_cast<OwnerType*>(RawOwner)->*DiffFn)(
@@ -668,11 +728,12 @@ protected:
 	/** Mutex protecting access to PendingMessages. */
 	FCriticalSection PendingMessagesMutex;
 	int32 PendingMessageReadIndex = 0;
-	int64 PendingParsedPayloadBytes = 0;
+	int64 PendingParsedEstimatedBytes = 0;
 
 	/** Raw inbound messages awaiting FIFO processing by the connection-owned worker. */
 	TArray<FInboundRawMessage> InboundRawMessages;
 	mutable FCriticalSection InboundRawMessagesMutex;
+	int32 InboundRawMessageReadIndex = 0;
 	int64 InboundQueuedRawBytes = 0;
 	uint64 InboundConnectionEpoch = 0;
 	uint64 NextInboundSequenceId = 0;
