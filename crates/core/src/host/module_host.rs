@@ -2385,17 +2385,32 @@ impl ModuleHost {
         .await
     }
 
-    pub(super) async fn call_scheduled_function(
+    pub(super) async fn call_scheduled_reducer(
+        &self,
+        params: ScheduledFunctionParams,
+    ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
+        self.call(
+            "scheduled reducer",
+            params,
+            async move |params, inst| inst.call_scheduled_function(params).await,
+            async move |params, inst| inst.call_scheduled_reducer(params).await,
+        )
+        .await
+        .map_err(Into::into)
+    }
+
+    pub(super) async fn call_scheduled_procedure(
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
         self.call_pooled(
-            "unknown scheduled function",
+            "scheduled procedure",
             params,
-            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
-            async move |params, inst| Ok(inst.call_scheduled_function(params).await),
+            async move |params, inst| inst.call_scheduled_function(params).await,
+            async move |params, inst| inst.call_scheduled_procedure(params).await,
         )
-        .await?
+        .await
+        .map_err(Into::into)
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,

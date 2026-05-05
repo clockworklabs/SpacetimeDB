@@ -437,6 +437,13 @@ impl JsMainInstance {
         self.request(CallReducerRequest { params }).await
     }
 
+    pub(in crate::host) async fn call_scheduled_reducer(
+        &self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        self.request(ScheduledReducerRequest { params }).await
+    }
+
     pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
         self.send_detached_request(
             "call_reducer",
@@ -575,6 +582,23 @@ impl JsMainRequest for CallReducerRequest {
 
     fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
         JsMainWorkerRequest::CallReducer {
+            reply_tx,
+            params: self.params,
+        }
+    }
+}
+
+struct ScheduledReducerRequest {
+    params: ScheduledFunctionParams,
+}
+
+impl JsMainRequest for ScheduledReducerRequest {
+    type Response = CallScheduledFunctionResult;
+
+    const CTX: &'static str = "scheduled_reducer";
+
+    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+        JsMainWorkerRequest::ScheduledReducer {
             reply_tx,
             params: self.params,
         }
@@ -733,12 +757,12 @@ impl JsProcedureInstance {
         JsProcedureCall { reply_rx }
     }
 
-    pub(in crate::host) async fn call_scheduled_function(
+    pub(in crate::host) async fn call_scheduled_procedure(
         &self,
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
-        self.send_request("call_scheduled_function", |reply_tx| {
-            JsProcedureWorkerRequest::CallScheduledFunction { reply_tx, params }
+        self.send_request("scheduled_procedure", |reply_tx| {
+            JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params }
         })
         .await
     }
@@ -811,6 +835,11 @@ enum JsMainWorkerRequest {
         params: CallReducerParams,
         on_panic: JsFatalHook,
     },
+    /// See [`JsMainInstance::call_scheduled_reducer`].
+    ScheduledReducer {
+        reply_tx: JsReplyTx<CallScheduledFunctionResult>,
+        params: ScheduledFunctionParams,
+    },
     /// See [`JsMainInstance::call_view`].
     CallView {
         reply_tx: JsReplyTx<ViewCommandResult>,
@@ -875,8 +904,8 @@ enum JsProcedureWorkerRequest {
         reply_tx: JsReplyTx<CallProcedureReturn>,
         params: CallProcedureParams,
     },
-    /// See [`JsProcedureInstance::call_scheduled_function`].
-    CallScheduledFunction {
+    /// See [`JsProcedureInstance::call_scheduled_procedure`].
+    ScheduledProcedure {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
     },
@@ -1338,6 +1367,15 @@ fn handle_main_worker_request(
                 trapped
             })
         }
+        JsMainWorkerRequest::ScheduledReducer { reply_tx, params } => {
+            handle_worker_request("scheduled_reducer", reply_tx, || {
+                let (res, trapped) = instance_common
+                    .call_scheduled_function(params, inst)
+                    .now_or_never()
+                    .expect("our call_scheduled_function implementation is not actually async");
+                (res, trapped)
+            })
+        }
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
             let (res, trapped) = instance_common.handle_cmd(cmd, inst);
             (res, trapped)
@@ -1450,12 +1488,12 @@ fn handle_procedure_worker_request(
                 (res, trapped)
             })
         }
-        JsProcedureWorkerRequest::CallScheduledFunction { reply_tx, params } => {
-            handle_worker_request("call_scheduled_function", reply_tx, || {
+        JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params } => {
+            handle_worker_request("scheduled_procedure", reply_tx, || {
                 let (res, trapped) = instance_common
                     .call_scheduled_function(params, inst)
                     .now_or_never()
-                    .expect("our call_procedure implementation is not actually async");
+                    .expect("our call_scheduled_function implementation is not actually async");
                 (res, trapped)
             })
         }
