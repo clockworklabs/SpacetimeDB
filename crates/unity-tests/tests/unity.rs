@@ -127,6 +127,12 @@ fn run_unity_tests(
     remove_file_if_exists(&results_path)?;
     remove_file_if_exists(&log_path)?;
 
+    let planned_tests = discover_unity_tests(project_dir)?;
+    println!("unity playmode: discovered {} tests before run", planned_tests.len());
+    for test in &planned_tests {
+        println!("planned {test}");
+    }
+
     let mut args = vec![
         "-batchmode".to_string(),
         "-nographics".to_string(),
@@ -159,8 +165,8 @@ fn run_unity_tests(
             print_log_excerpt(&log_path)?;
         }
         bail!(
-            "Unity did not write a test result file at {}; cannot determine which tests ran",
-            results_path.display()
+            "Unity exited with {status} but did not write a test result file at {}; cannot determine which tests actually ran. Command: {command_line}",
+            results_path.display(),
         );
     }
 
@@ -551,26 +557,32 @@ fn attr(event: &BytesStart<'_>, key: &[u8]) -> Result<Option<String>> {
 
 fn print_log_excerpt(path: &Path) -> Result<()> {
     let log = fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+
     eprintln!(
-        "Unity did not write a test result file. Last log lines from {}:",
+        "Unity did not write a test result file. Full log from {}:",
         path.display()
     );
-    let lines: Vec<_> = log.lines().rev().take(80).collect();
-    for line in lines.into_iter().rev() {
-        eprintln!("{line}");
+    eprint!("{log}");
+    if !log.ends_with('\n') {
+        eprintln!();
     }
+
     Ok(())
 }
 
 fn list_unity_tests(project_dir: &Path) -> Result<()> {
+    for test in discover_unity_tests(project_dir)? {
+        println!("{test}");
+    }
+    Ok(())
+}
+
+fn discover_unity_tests(project_dir: &Path) -> Result<Vec<String>> {
     let tests_dir = project_dir.join("Assets/PlayModeTests");
     let mut tests = Vec::new();
     collect_unity_tests(&tests_dir, &mut tests)?;
     tests.sort();
-    for test in tests {
-        println!("{test}");
-    }
-    Ok(())
+    Ok(tests)
 }
 
 fn collect_unity_tests(dir: &Path, tests: &mut Vec<String>) -> Result<()> {
