@@ -124,6 +124,8 @@ fn run_unity_tests(
     fs::create_dir_all(&out_dir).with_context(|| format!("failed to create {}", out_dir.display()))?;
     let results_path = out_dir.join("results.xml");
     let log_path = out_dir.join("unity.log");
+    remove_file_if_exists(&results_path)?;
+    remove_file_if_exists(&log_path)?;
 
     let mut args = vec![
         "-batchmode".to_string(),
@@ -152,11 +154,25 @@ fn run_unity_tests(
     if results_path.exists() {
         let results = parse_unity_results(&results_path)?;
         print_results("unity playmode", &results_path, &results)?;
-    } else if !status.success() && log_path.exists() {
-        print_log_excerpt(&log_path)?;
+    } else {
+        if log_path.exists() {
+            print_log_excerpt(&log_path)?;
+        }
+        bail!(
+            "Unity did not write a test result file at {}; cannot determine which tests ran",
+            results_path.display()
+        );
     }
 
     ensure_success(status, &command_line)
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("failed to remove {}", path.display())),
+    }
 }
 
 enum UnityRunner {
