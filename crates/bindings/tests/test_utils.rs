@@ -184,6 +184,65 @@ fn reducer_context_uses_test_backed_db() {
 }
 
 #[test]
+fn with_reducer_tx_commits_on_ok() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+
+    test.with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
+        ctx.db.test_utils_user().insert(TestUtilsUser {
+            id: 12,
+            name: "Committed".to_owned(),
+        });
+        assert_eq!(ctx.db.test_utils_user().count(), 1);
+        Ok(())
+    })
+    .expect("transaction should commit");
+
+    assert_eq!(
+        test.db.test_utils_user().iter().collect::<Vec<_>>(),
+        vec![TestUtilsUser {
+            id: 12,
+            name: "Committed".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn with_reducer_tx_rolls_back_on_err() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+
+    let res: Result<(), &'static str> = test.with_reducer_tx(TestAuth::internal(), |ctx| {
+        ctx.db.test_utils_user().insert(TestUtilsUser {
+            id: 13,
+            name: "Rolled back".to_owned(),
+        });
+        assert_eq!(ctx.db.test_utils_user().count(), 1);
+        Err("rollback")
+    });
+
+    assert_eq!(res, Err("rollback"));
+    assert_eq!(test.db.test_utils_user().count(), 0);
+}
+
+#[test]
+fn with_reducer_tx_rolls_back_on_panic() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _: Result<(), ()> = test.with_reducer_tx(TestAuth::internal(), |ctx| {
+            ctx.db.test_utils_user().insert(TestUtilsUser {
+                id: 14,
+                name: "Panicked".to_owned(),
+            });
+            assert_eq!(ctx.db.test_utils_user().count(), 1);
+            panic!("force rollback");
+        });
+    }));
+
+    assert!(panic.is_err());
+    assert_eq!(test.db.test_utils_user().count(), 0);
+}
+
+#[test]
 fn test_context_supports_unique_index_find_update_and_delete() {
     let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
 
@@ -221,4 +280,131 @@ fn test_context_supports_unique_index_find_update_and_delete() {
 
     assert!(test.db.test_utils_user().id().delete(11));
     assert_eq!(test.db.test_utils_user().count(), 0);
+}
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_try_with_tx_commits() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let mut procedure = test.procedure_context(TestAuth::internal());
+
+    procedure
+        .try_with_tx::<_, ()>(|tx| {
+            tx.db.test_utils_user().insert(TestUtilsUser {
+                id: 21,
+                name: "Committed".to_owned(),
+            });
+            assert_eq!(tx.db.test_utils_user().count(), 1);
+            Ok(())
+        })
+        .expect("transaction should commit");
+
+    assert_eq!(
+        test.db.test_utils_user().iter().collect::<Vec<_>>(),
+        vec![TestUtilsUser {
+            id: 21,
+            name: "Committed".to_owned(),
+        }]
+    );
+}
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_try_with_tx_rolls_back_on_err() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let mut procedure = test.procedure_context(TestAuth::internal());
+
+    let res: Result<(), &'static str> = procedure.try_with_tx(|tx| {
+        tx.db.test_utils_user().insert(TestUtilsUser {
+            id: 22,
+            name: "Rolled back".to_owned(),
+        });
+        assert_eq!(tx.db.test_utils_user().count(), 1);
+        Err("rollback")
+    });
+
+    assert_eq!(res, Err("rollback"));
+    assert_eq!(test.db.test_utils_user().count(), 0);
+}
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_transactions_can_be_interleaved() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let mut procedure = test.procedure_context(TestAuth::internal());
+
+    procedure
+        .try_with_tx::<_, ()>(|tx| {
+            tx.db.test_utils_user().insert(TestUtilsUser {
+                id: 23,
+                name: "First tx".to_owned(),
+            });
+            Ok(())
+        })
+        .expect("first transaction should commit");
+
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 24,
+        name: "Between txs".to_owned(),
+    });
+
+    procedure
+        .try_with_tx::<_, ()>(|tx| {
+            assert_eq!(tx.db.test_utils_user().count(), 2);
+            tx.db.test_utils_user().id().update(TestUtilsUser {
+                id: 23,
+                name: "Second tx".to_owned(),
+            });
+            Ok(())
+        })
+        .expect("second transaction should commit");
+
+    let mut rows = test.db.test_utils_user().iter().collect::<Vec<_>>();
+    rows.sort_by_key(|row| row.id);
+    assert_eq!(
+        rows,
+        vec![
+            TestUtilsUser {
+                id: 23,
+                name: "Second tx".to_owned(),
+            },
+            TestUtilsUser {
+                id: 24,
+                name: "Between txs".to_owned(),
+            },
+        ]
+    );
+}
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_uses_test_http_responder() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let seen_request = std::rc::Rc::new(std::cell::RefCell::new(None));
+
+    test.set_http_responder({
+        let seen_request = seen_request.clone();
+        move |request| {
+            seen_request.replace(Some((request.method().as_str().to_owned(), request.uri().to_string())));
+            Ok(spacetimedb::http::Response::builder()
+                .status(201)
+                .header("x-test", "yes")
+                .body(spacetimedb::http::Body::from("created"))
+                .expect("test response should be valid"))
+        }
+    });
+
+    let procedure = test.procedure_context(TestAuth::internal());
+    let response = procedure
+        .http
+        .get("https://example.invalid/create")
+        .expect("test HTTP responder should return a response");
+
+    assert_eq!(response.status(), 201);
+    assert_eq!(response.headers().get("x-test").unwrap(), "yes");
+    assert_eq!(response.into_body().into_string().unwrap(), "created");
+    assert_eq!(
+        seen_request.borrow().as_ref(),
+        Some(&("GET".to_owned(), "https://example.invalid/create".to_owned()))
+    );
 }

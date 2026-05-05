@@ -9,7 +9,9 @@ use spacetimedb_lib::db::raw_def::v10::{
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
-use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
+#[cfg(target_arch = "wasm32")]
+use spacetimedb_lib::de::DeserializeOwned;
+use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -1456,7 +1458,7 @@ pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, 
 ///
 /// Panics if the bytes from `source` fail to deserialize as `T`.
 /// The type name of `T` will be included in the panic message.
-#[cfg_attr(not(feature = "unstable"), allow(unused))]
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesSource) -> T {
     let mut buf = IterBuf::take();
     read_bytes_source_into(source, &mut buf);

@@ -186,6 +186,8 @@ pub struct TestContext {
     pub rng: TestRng,
     pub identity: crate::Identity,
     datastore: std::sync::Arc<TestDatastore>,
+    #[cfg(feature = "unstable")]
+    http_responder: std::cell::RefCell<Option<crate::http::TestHttpResponder>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -205,12 +207,31 @@ impl TestContext {
             rng: TestRng::default(),
             identity: crate::Identity::ZERO,
             datastore,
+            #[cfg(feature = "unstable")]
+            http_responder: std::cell::RefCell::new(None),
         })
     }
 
     /// The underlying in-memory datastore.
     pub fn datastore(&self) -> &std::sync::Arc<TestDatastore> {
         &self.datastore
+    }
+
+    /// Set the HTTP responder used by future procedure contexts created from this test context.
+    #[cfg(feature = "unstable")]
+    pub fn set_http_responder(
+        &self,
+        responder: impl Fn(crate::http::Request) -> Result<crate::http::Response, crate::http::Error> + 'static,
+    ) {
+        self.http_responder.replace(Some(std::rc::Rc::new(responder)));
+    }
+
+    #[cfg(feature = "unstable")]
+    fn http_responder(&self) -> crate::http::TestHttpResponder {
+        self.http_responder
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| std::rc::Rc::new(|_| Err(crate::http::Error::new("no test HTTP responder configured"))))
     }
 
     /// Create a reducer context backed by this test context's datastore.
@@ -223,6 +244,80 @@ impl TestContext {
             connection_id,
             self.clock.now(),
             self.identity,
+            #[cfg(feature = "rand08")]
+            self.rng.seed(),
+        )
+    }
+
+    /// Run `body` with a reducer context backed by a single mutable transaction.
+    ///
+    /// The transaction commits when `body` returns `Ok`, rolls back when `body`
+    /// returns `Err`, and rolls back during unwinding if `body` panics.
+    pub fn with_reducer_tx<T, E>(
+        &self,
+        auth: TestAuth,
+        body: impl FnOnce(&crate::ReducerContext) -> Result<T, E>,
+    ) -> Result<T, E> {
+        use core::mem;
+
+        let test_tx = std::rc::Rc::new(self.datastore.begin_mut_tx());
+        let rollback_tx = test_tx.clone();
+
+        struct DoOnDrop<F: Fn()>(F);
+        impl<F: Fn()> Drop for DoOnDrop<F> {
+            fn drop(&mut self) {
+                (self.0)();
+            }
+        }
+
+        let rollback_guard = DoOnDrop(move || {
+            rollback_tx
+                .rollback()
+                .expect("should have a pending mutable test transaction")
+        });
+
+        let (auth, connection_id, sender) = auth.into_parts(self.identity);
+        let ctx = crate::ReducerContext::__test(
+            crate::Local::__test_tx(test_tx.clone()),
+            sender,
+            auth,
+            connection_id,
+            self.clock.now(),
+            self.identity,
+            #[cfg(feature = "rand08")]
+            self.rng.seed(),
+        );
+
+        let res = body(&ctx);
+        mem::forget(rollback_guard);
+        match res {
+            Ok(value) => {
+                test_tx
+                    .commit()
+                    .expect("committing mutable test reducer transaction failed");
+                Ok(value)
+            }
+            Err(error) => {
+                test_tx
+                    .rollback()
+                    .expect("should have a pending mutable test transaction");
+                Err(error)
+            }
+        }
+    }
+
+    /// Create a procedure context backed by this test context's datastore.
+    #[cfg(feature = "unstable")]
+    pub fn procedure_context(&self, auth: TestAuth) -> crate::ProcedureContext {
+        let (auth, connection_id, sender) = auth.into_parts(self.identity);
+        crate::ProcedureContext::__test(
+            self.datastore.clone(),
+            sender,
+            auth,
+            connection_id,
+            self.clock.now(),
+            self.identity,
+            crate::http::HttpClient::test(self.http_responder()),
             #[cfg(feature = "rand08")]
             self.rng.seed(),
         )

@@ -1018,7 +1018,7 @@ pub struct ReducerContext {
     ///
     /// #[reducer]
     /// fn find_books_by(ctx: &ReducerContext, author: String) {
-    ///     let book: &book__TableHandle = ctx.db.book();
+    ///     let book: book__TableHandle = ctx.db.book();
     ///
     ///     log::debug!("looking up books by {author}...");
     ///     for book in book.author().filter(&author) {
@@ -1246,6 +1246,18 @@ pub struct ProcedureContext {
     /// Will be `None` for certain scheduled procedures.
     connection_id: Option<ConnectionId>,
 
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    sender_auth: AuthCtx,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    module_identity: Identity,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test_datastore: Option<std::sync::Arc<spacetimedb_test_datastore::TestDatastore>>,
+
+    #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
+    test_rng_seed: Option<u64>,
+
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
     // TODO: Change rng?
@@ -1267,9 +1279,46 @@ impl ProcedureContext {
             sender,
             timestamp,
             connection_id,
-            http: http::HttpClient {},
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            module_identity: Identity::ZERO,
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            test_datastore: None,
+            #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
+            test_rng_seed: None,
+            http: http::HttpClient::host(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub fn __test(
+        datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>,
+        sender: Identity,
+        sender_auth: AuthCtx,
+        connection_id: Option<ConnectionId>,
+        timestamp: Timestamp,
+        module_identity: Identity,
+        http: http::HttpClient,
+        #[cfg(feature = "rand08")] rng_seed: Option<u64>,
+    ) -> Self {
+        Self {
+            sender,
+            timestamp,
+            connection_id,
+            sender_auth,
+            module_identity,
+            test_datastore: Some(datastore),
+            #[cfg(feature = "rand08")]
+            test_rng_seed: rng_seed,
+            http,
+            #[cfg(feature = "rand08")]
+            rng: StdbRng::seeded_cell(rng_seed),
             #[cfg(feature = "rand")]
             counter_uuid: Cell::new(0),
         }
@@ -1289,15 +1338,28 @@ impl ProcedureContext {
 
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
-        // Hypothetically, we *could* read the module identity out of the system tables.
-        // However, this would be:
-        // - Onerous, because we have no tooling to inspect the system tables from module code.
-        // - Slow (at least relatively),
-        //   because it would involve multiple host calls which hit the datastore,
-        //   as compared to a single host call which does not.
-        // As such, we've just defined a host call
-        // which reads the module identity out of the `InstanceEnv`.
-        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        {
+            self.module_identity
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Hypothetically, we *could* read the module identity out of the system tables.
+            // However, this would be:
+            // - Onerous, because we have no tooling to inspect the system tables from module code.
+            // - Slow (at least relatively),
+            //   because it would involve multiple host calls which hit the datastore,
+            //   as compared to a single host call which does not.
+            // As such, we've just defined a host call
+            // which reads the module identity out of the `InstanceEnv`.
+            Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        }
+
+        #[cfg(all(not(feature = "test-utils"), not(target_arch = "wasm32")))]
+        {
+            panic!("ProcedureContext::identity() is only available in wasm or native test-utils contexts")
+        }
     }
 
     /// Suspend execution until approximately `Timestamp`.
@@ -1394,61 +1456,126 @@ impl ProcedureContext {
     /// This includes interior mutability through types like [`std::cell::Cell`].
     #[cfg(feature = "unstable")]
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        let abort = || {
-            sys::procedure::procedure_abort_mut_tx()
-                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
-        };
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        if let Some(datastore) = self.test_datastore.clone() {
+            let run = || {
+                use core::mem;
 
-        let run = || {
-            // Start the transaction.
+                let test_tx = std::rc::Rc::new(datastore.begin_mut_tx());
+                let tx = ReducerContext::__test(
+                    Local::__test_tx(test_tx.clone()),
+                    self.sender,
+                    self.sender_auth.clone(),
+                    self.connection_id,
+                    self.timestamp,
+                    self.module_identity,
+                    #[cfg(feature = "rand08")]
+                    self.test_rng_seed,
+                );
+                let tx = TxContext(tx);
 
-            use core::mem;
-            let timestamp = sys::procedure::procedure_start_mut_tx().expect(
-                "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
-            );
-            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
-
-            // We've resumed, so let's do the work, but first prepare the context.
-            let tx = ReducerContext::new(Local::__host(), self.sender, self.connection_id, timestamp);
-            let tx = TxContext(tx);
-
-            // Guard the execution of `body` with a scope-guard that `abort`s on panic.
-            // Wasmtime now supports unwinding, so we need to protect against that.
-            // We're not using `scopeguard::guard` here to avoid an extra dependency.
-            struct DoOnDrop<F: Fn()>(F);
-            impl<F: Fn()> Drop for DoOnDrop<F> {
-                fn drop(&mut self) {
-                    (self.0)();
+                struct DoOnDrop<F: Fn()>(F);
+                impl<F: Fn()> Drop for DoOnDrop<F> {
+                    fn drop(&mut self) {
+                        (self.0)();
+                    }
                 }
-            }
-            let abort_guard = DoOnDrop(abort);
-            let res = body(&tx);
-            // Defuse the bomb.
-            mem::forget(abort_guard);
-            res
-        };
 
-        let mut res = run();
+                let rollback_tx = test_tx.clone();
+                let rollback_guard = DoOnDrop(move || {
+                    rollback_tx
+                        .rollback()
+                        .expect("should have a pending mutable test transaction")
+                });
+                let res = body(&tx);
+                mem::forget(rollback_guard);
+                (res, test_tx)
+            };
 
-        // Commit or roll back?
-        match res {
-            Ok(_) if sys::procedure::procedure_commit_mut_tx().is_err() => {
-                // Tried to commit, but couldn't. Retry once.
-                log::warn!("committing anonymous transaction failed");
-                // NOTE(procedure,centril): there's no actual guarantee that `body`
-                // does the exact same as the time before, as the timestamps differ
-                // and due to interior mutability.
-                res = run();
-                match res {
-                    Ok(_) => sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
-                    Err(_) => abort(),
+            let (mut res, tx) = run();
+            match res {
+                Ok(_) if tx.commit().is_err() => {
+                    log::warn!("committing test anonymous transaction failed");
+                    let (retry_res, retry_tx) = run();
+                    res = retry_res;
+                    match res {
+                        Ok(_) => retry_tx.commit().expect("test transaction retry failed again"),
+                        Err(_) => retry_tx
+                            .rollback()
+                            .expect("should have a pending mutable test transaction"),
+                    }
                 }
+                Ok(_) => {}
+                Err(_) => tx.rollback().expect("should have a pending mutable test transaction"),
             }
-            Ok(_) => {}
-            Err(_) => abort(),
+
+            return res;
         }
 
-        res
+        #[cfg(target_arch = "wasm32")]
+        {
+            let abort = || {
+                sys::procedure::procedure_abort_mut_tx()
+                    .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
+            };
+
+            let run = || {
+                // Start the transaction.
+
+                use core::mem;
+                let timestamp = sys::procedure::procedure_start_mut_tx().expect(
+                    "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
+                );
+                let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+                // We've resumed, so let's do the work, but first prepare the context.
+                let tx = ReducerContext::new(Local::__host(), self.sender, self.connection_id, timestamp);
+                let tx = TxContext(tx);
+
+                // Guard the execution of `body` with a scope-guard that `abort`s on panic.
+                // Wasmtime now supports unwinding, so we need to protect against that.
+                // We're not using `scopeguard::guard` here to avoid an extra dependency.
+                struct DoOnDrop<F: Fn()>(F);
+                impl<F: Fn()> Drop for DoOnDrop<F> {
+                    fn drop(&mut self) {
+                        (self.0)();
+                    }
+                }
+                let abort_guard = DoOnDrop(abort);
+                let res = body(&tx);
+                // Defuse the bomb.
+                mem::forget(abort_guard);
+                res
+            };
+
+            let mut res = run();
+
+            // Commit or roll back?
+            match res {
+                Ok(_) if sys::procedure::procedure_commit_mut_tx().is_err() => {
+                    // Tried to commit, but couldn't. Retry once.
+                    log::warn!("committing anonymous transaction failed");
+                    // NOTE(procedure,centril): there's no actual guarantee that `body`
+                    // does the exact same as the time before, as the timestamps differ
+                    // and due to interior mutability.
+                    res = run();
+                    match res {
+                        Ok(_) => sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
+                        Err(_) => abort(),
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => abort(),
+            }
+
+            res
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = body;
+            panic!("ProcedureContext::try_with_tx() is only available in wasm or native test-utils contexts")
+        }
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -1576,6 +1703,13 @@ impl Local {
     fn __test(datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>) -> Self {
         Self {
             backend: table::LocalBackend::Test(datastore),
+        }
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test_tx(tx: std::rc::Rc<spacetimedb_test_datastore::TestTransaction>) -> Self {
+        Self {
+            backend: table::LocalBackend::TestTx(tx),
         }
     }
 }

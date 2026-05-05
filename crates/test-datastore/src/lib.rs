@@ -3,6 +3,7 @@
 #[cfg(target_arch = "wasm32")]
 compile_error!("spacetimedb-test-datastore is only supported for native module tests");
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use spacetimedb_core::db::relational_db::{MutTx, RelationalDB, Tx};
@@ -22,6 +23,12 @@ use thiserror::Error;
 pub struct TestDatastore {
     db: Arc<RelationalDB>,
     module_def: ModuleDef,
+}
+
+/// A single pending mutable transaction for procedure unit tests.
+pub struct TestTransaction {
+    db: Arc<RelationalDB>,
+    tx: RefCell<Option<MutTx>>,
 }
 
 impl TestDatastore {
@@ -80,6 +87,19 @@ impl TestDatastore {
         f: impl FnOnce(&mut MutTx) -> Result<T, TestDatastoreError>,
     ) -> Result<T, TestDatastoreError> {
         spacetimedb_core::db::relational_db::tests_utils::with_auto_commit(&self.db, f)
+    }
+
+    /// Begin an explicit mutable transaction.
+    ///
+    /// The transaction must be committed or rolled back. If it is dropped while
+    /// still pending, it rolls back.
+    pub fn begin_mut_tx(&self) -> TestTransaction {
+        TestTransaction {
+            db: self.db.clone(),
+            tx: RefCell::new(Some(spacetimedb_core::db::relational_db::tests_utils::begin_mut_tx(
+                &self.db,
+            ))),
+        }
     }
 
     /// Insert a BSATN-encoded row into `table_id`.
@@ -208,6 +228,169 @@ impl TestDatastore {
     }
 }
 
+impl TestTransaction {
+    fn with_mut_tx<T>(
+        &self,
+        f: impl FnOnce(&mut MutTx) -> Result<T, TestDatastoreError>,
+    ) -> Result<T, TestDatastoreError> {
+        let mut tx = self.tx.borrow_mut();
+        let tx = tx.as_mut().ok_or(TestDatastoreError::TransactionAlreadyFinished)?;
+        f(tx)
+    }
+
+    /// Commit this transaction.
+    pub fn commit(&self) -> Result<(), TestDatastoreError> {
+        let tx = self
+            .tx
+            .borrow_mut()
+            .take()
+            .ok_or(TestDatastoreError::TransactionAlreadyFinished)?;
+        self.db.commit_tx(tx)?;
+        Ok(())
+    }
+
+    /// Roll back this transaction.
+    pub fn rollback(&self) -> Result<(), TestDatastoreError> {
+        let Some(tx) = self.tx.borrow_mut().take() else {
+            return Ok(());
+        };
+        let _ = self.db.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    /// Resolve a table name to its datastore id inside this transaction.
+    pub fn table_id(&self, table_name: &str) -> Result<TableId, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let id = self.db.table_id_from_name_mut(tx, table_name)?;
+            id.ok_or_else(|| TestDatastoreError::MissingTable(table_name.into()))
+        })
+    }
+
+    /// Resolve an index name to its datastore id inside this transaction.
+    pub fn index_id(&self, index_name: &str) -> Result<IndexId, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let id = self.db.index_id_from_name_mut(tx, index_name)?;
+            id.ok_or_else(|| TestDatastoreError::MissingIndex(index_name.into()))
+        })
+    }
+
+    /// Insert a BSATN-encoded row and return BSATN-encoded generated columns.
+    pub fn insert_bsatn_generated_cols(&self, table_id: TableId, row: &[u8]) -> Result<Vec<u8>, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let (generated_cols, row_ref, _) = self.db.insert(tx, table_id, row)?;
+            Ok(row_ref.project_product(&generated_cols)?.to_bsatn_vec()?)
+        })
+    }
+
+    /// Return the number of rows in `table_id`.
+    pub fn table_row_count(&self, table_id: TableId) -> Result<u64, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            self.db
+                .table_row_count_mut(tx, table_id)
+                .ok_or(TestDatastoreError::MissingTableId(table_id))
+        })
+    }
+
+    /// Collect every row in `table_id` as BSATN-encoded row bytes.
+    pub fn table_rows_bsatn(&self, table_id: TableId) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let rows = self
+                .db
+                .iter_mut(tx, table_id)?
+                .map(|row_ref| row_ref.to_bsatn_vec())
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    /// Collect rows matching a point index scan as BSATN-encoded row bytes.
+    pub fn index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let (_, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
+            iter.map(|row_ref| row_ref.to_bsatn_vec())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(TestDatastoreError::from)
+        })
+    }
+
+    /// Collect rows matching a range index scan as BSATN-encoded row bytes.
+    pub fn index_scan_range_bsatn(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let (_, iter) = self
+                .db
+                .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+            match iter {
+                IndexScanPointOrRange::Point(_, iter) => iter
+                    .map(|row_ref| row_ref.to_bsatn_vec())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(TestDatastoreError::from),
+                IndexScanPointOrRange::Range(iter) => iter
+                    .map(|row_ref| row_ref.to_bsatn_vec())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(TestDatastoreError::from),
+            }
+        })
+    }
+
+    /// Delete rows matching a point index scan.
+    pub fn delete_by_index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<u32, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let (table_id, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
+            let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
+            Ok(self.db.delete(tx, table_id, rows_to_delete))
+        })
+    }
+
+    /// Delete rows matching a range index scan.
+    pub fn delete_by_index_scan_range_bsatn(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<u32, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let (table_id, iter) = self
+                .db
+                .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+            let rows_to_delete = match iter {
+                IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
+                IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
+            };
+            Ok(self.db.delete(tx, table_id, rows_to_delete))
+        })
+    }
+
+    /// Update a BSATN-encoded row by matching the existing row through `index_id`.
+    pub fn update_bsatn_generated_cols(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<Vec<u8>, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let (generated_cols, row_ref, _) = self.db.update(tx, table_id, index_id, row)?;
+            Ok(row_ref.project_product(&generated_cols)?.to_bsatn_vec()?)
+        })
+    }
+}
+
+impl Drop for TestTransaction {
+    fn drop(&mut self) {
+        if let Some(tx) = self.tx.get_mut().take() {
+            let _ = self.db.rollback_mut_tx(tx);
+        }
+    }
+}
+
 /// Errors returned by [`TestDatastore`].
 #[derive(Debug, Error)]
 pub enum TestDatastoreError {
@@ -225,6 +408,8 @@ pub enum TestDatastoreError {
     InvalidProjection(#[from] spacetimedb_lib::sats::product_value::InvalidFieldError),
     #[error("BSATN encode error: {0}")]
     BsatnEncode(#[from] EncodeError),
+    #[error("transaction already finished")]
+    TransactionAlreadyFinished,
 }
 
 impl TestDatastoreError {

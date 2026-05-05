@@ -17,6 +17,8 @@ pub enum LocalBackend {
     Host,
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     Test(std::sync::Arc<spacetimedb_test_datastore::TestDatastore>),
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    TestTx(std::rc::Rc<spacetimedb_test_datastore::TestTransaction>),
 }
 
 impl LocalBackend {
@@ -26,6 +28,8 @@ impl LocalBackend {
             Self::Host => TableHandleBackend::Host,
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             Self::Test(datastore) => TableHandleBackend::Test(datastore.clone()),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => TableHandleBackend::TestTx(tx.clone()),
         }
     }
 }
@@ -36,6 +40,8 @@ pub enum TableHandleBackend {
     Host,
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     Test(std::sync::Arc<spacetimedb_test_datastore::TestDatastore>),
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    TestTx(std::rc::Rc<spacetimedb_test_datastore::TestTransaction>),
 }
 
 impl TableHandleBackend {
@@ -54,6 +60,8 @@ impl TableHandleBackend {
             }
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             Self::Test(datastore) => datastore.table_id(table_name).map_err(|_| sys::Errno::NO_SUCH_TABLE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx.table_id(table_name).map_err(|_| sys::Errno::NO_SUCH_TABLE),
         }
     }
 
@@ -72,6 +80,8 @@ impl TableHandleBackend {
             }
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             Self::Test(datastore) => datastore.index_id(index_name).map_err(|_| sys::Errno::NO_SUCH_INDEX),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx.index_id(index_name).map_err(|_| sys::Errno::NO_SUCH_INDEX),
         }
     }
 
@@ -90,6 +100,12 @@ impl TableHandleBackend {
             }
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             Self::Test(datastore) => datastore.insert_bsatn_generated_cols(table_id, row).map_err(|err| {
+                err.insert_errno_code()
+                    .and_then(sys::Errno::from_code)
+                    .unwrap_or(sys::Errno::HOST_CALL_FAILURE)
+            }),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx.insert_bsatn_generated_cols(table_id, row).map_err(|err| {
                 err.insert_errno_code()
                     .and_then(sys::Errno::from_code)
                     .unwrap_or(sys::Errno::HOST_CALL_FAILURE)
@@ -115,6 +131,11 @@ impl TableHandleBackend {
                 .table_rows_bsatn(table_id)
                 .map(|rows| TableIterInner::Test(rows.into_iter()))
                 .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx
+                .table_rows_bsatn(table_id)
+                .map(|rows| TableIterInner::Test(rows.into_iter()))
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
         }
     }
 
@@ -135,6 +156,8 @@ impl TableHandleBackend {
             Self::Test(datastore) => datastore
                 .table_row_count(table_id)
                 .map_err(|_| sys::Errno::NO_SUCH_TABLE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx.table_row_count(table_id).map_err(|_| sys::Errno::NO_SUCH_TABLE),
         }
     }
 
@@ -153,6 +176,11 @@ impl TableHandleBackend {
             }
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             Self::Test(datastore) => datastore
+                .index_scan_point_bsatn(index_id, point)
+                .map(|rows| TableIterInner::Test(rows.into_iter()))
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx
                 .index_scan_point_bsatn(index_id, point)
                 .map(|rows| TableIterInner::Test(rows.into_iter()))
                 .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
@@ -185,6 +213,11 @@ impl TableHandleBackend {
                 .index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
                 .map(|rows| TableIterInner::Test(rows.into_iter()))
                 .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx
+                .index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                .map(|rows| TableIterInner::Test(rows.into_iter()))
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
         }
     }
 
@@ -203,6 +236,10 @@ impl TableHandleBackend {
             }
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             Self::Test(datastore) => datastore
+                .delete_by_index_scan_point_bsatn(index_id, point)
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx
                 .delete_by_index_scan_point_bsatn(index_id, point)
                 .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
         }
@@ -232,6 +269,10 @@ impl TableHandleBackend {
             Self::Test(datastore) => datastore
                 .delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
                 .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx
+                .delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
         }
     }
 
@@ -250,6 +291,10 @@ impl TableHandleBackend {
             }
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             Self::Test(datastore) => datastore
+                .update_bsatn_generated_cols(table_id, index_id, row)
+                .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            Self::TestTx(tx) => tx
                 .update_bsatn_generated_cols(table_id, index_id, row)
                 .map_err(|_| sys::Errno::HOST_CALL_FAILURE),
         }
@@ -690,7 +735,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 
         // Then, insert the new row.
         let buf = IterBuf::take();
-        insert::<Tbl>(new_row, buf)
+        insert_with_backend::<Tbl>(&self.backend, new_row, buf)
     }
 
     /// Inserts `new_row` into the table, first checking for an existing
@@ -1683,9 +1728,18 @@ impl SequenceTrigger for crate::sats::u256 {
 
 /// Insert a row of type `T` into the table identified by `table_id`.
 #[track_caller]
-fn insert<T: Table>(table: &T, mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInsertError<T>> {
-    let table_id = table
-        .__backend()
+fn insert<T: Table>(table: &T, row: T::Row, buf: IterBuf) -> Result<T::Row, TryInsertError<T>> {
+    insert_with_backend::<T>(table.__backend(), row, buf)
+}
+
+/// Insert a row of type `T` using `backend`.
+#[track_caller]
+fn insert_with_backend<T: Table>(
+    backend: &TableHandleBackend,
+    mut row: T::Row,
+    mut buf: IterBuf,
+) -> Result<T::Row, TryInsertError<T>> {
+    let table_id = backend
         .table_id(T::TABLE_NAME)
         .expect("table_id_from_name() call failed");
     // Encode the row as bsatn into the buffer `buf`.
@@ -1694,7 +1748,7 @@ fn insert<T: Table>(table: &T, mut row: T::Row, mut buf: IterBuf) -> Result<T::R
 
     // Insert row into table.
     // When table has an auto-incrementing column, we must re-decode the changed `buf`.
-    let res = table.__backend().insert_bsatn(table_id, &mut buf).map(|gen_cols| {
+    let res = backend.insert_bsatn(table_id, &mut buf).map(|gen_cols| {
         // Let the caller handle any generated columns written back by `sys::datastore_insert_bsatn` to `buf`.
         T::integrate_generated_columns(&mut row, &gen_cols);
         row

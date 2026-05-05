@@ -257,6 +257,71 @@ mod tests {
     }
 
     #[test]
+    fn test_procedure_context_try_with_tx_commits_chat_rows() {
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let timestamp = Timestamp::from_micros_since_unix_epoch(456);
+        test.clock.set(timestamp);
+
+        let mut ctx = test.procedure_context(spacetimedb::test_utils::TestAuth::internal());
+        ctx.try_with_tx::<_, String>(|tx| {
+            identity_connected(tx);
+            set_name(tx, "Alice".to_string())?;
+            send_message(tx, "Hello from a procedure tx".to_string())?;
+            Ok(())
+        })
+        .expect("procedure transaction should commit");
+
+        let user = test
+            .db
+            .user()
+            .identity()
+            .find(Identity::ZERO)
+            .expect("user should exist");
+        assert_eq!(user.name.as_deref(), Some("Alice"));
+        assert!(user.online);
+
+        let messages = test.db.message().iter().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].sender, Identity::ZERO);
+        assert_eq!(messages[0].sent, timestamp);
+        assert_eq!(messages[0].text, "Hello from a procedure tx");
+    }
+
+    fn fetch_status_message(ctx: &mut spacetimedb::ProcedureContext) -> Result<String, String> {
+        let response = ctx
+            .http
+            .get("https://example.invalid/status")
+            .map_err(|err| err.to_string())?;
+
+        if !response.status().is_success() {
+            return Err(format!("status endpoint returned {}", response.status()));
+        }
+
+        response.into_body().into_string().map_err(|err| err.to_string())
+    }
+
+    #[test]
+    fn test_procedure_context_can_mock_http() {
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+
+        test.set_http_responder(|request| {
+            assert_eq!(request.method().as_str(), "GET");
+            assert_eq!(request.uri().to_string(), "https://example.invalid/status");
+
+            Ok(spacetimedb::http::Response::builder()
+                .status(200)
+                .header("content-type", "text/plain")
+                .body(spacetimedb::http::Body::from("chat service is healthy"))
+                .expect("test response should be valid"))
+        });
+
+        let mut ctx = test.procedure_context(spacetimedb::test_utils::TestAuth::internal());
+        let message = fetch_status_message(&mut ctx).expect("mock HTTP call should succeed");
+
+        assert_eq!(message, "chat service is healthy");
+    }
+
+    #[test]
     fn test_update() {
         let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
 
