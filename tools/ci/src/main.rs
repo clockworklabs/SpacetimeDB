@@ -279,6 +279,8 @@ enum CiCmd {
     PublishChecks,
     /// Runs TypeScript workspace tests and template build checks.
     TypescriptTest,
+    /// Verifies that the repository version upgrade tool still works.
+    VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
 }
@@ -448,6 +450,21 @@ fn run_typescript_tests() -> Result<()> {
 fn run_docs_build() -> Result<()> {
     cmd!("pnpm", "install").dir("docs").run()?;
     cmd!("pnpm", "build").dir("docs").run()?;
+    Ok(())
+}
+
+fn run_version_upgrade_check() -> Result<()> {
+    cmd!(
+        "cargo",
+        "bump-versions",
+        "123.456.789",
+        "--rust-and-cli",
+        "--csharp",
+        "--typescript",
+        "--cpp",
+        "--accept-snapshots"
+    )
+    .run()?;
     Ok(())
 }
 
@@ -717,6 +734,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::TypescriptTest) => {
             run_typescript_tests()?;
+        }
+
+        Some(CiCmd::VersionUpgradeCheck) => {
+            run_version_upgrade_check()?;
         }
 
         Some(CiCmd::Docs) => {
