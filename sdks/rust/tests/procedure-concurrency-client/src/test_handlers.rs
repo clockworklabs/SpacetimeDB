@@ -275,10 +275,7 @@ async fn exec_procedure_reducer_interleaving(db_name: &str) {
     procedure_conn
         .procedures
         .procedure_sleep_between_inserts_then(move |_ctx, res| {
-            procedure_callback_result(
-                res.context("procedure_sleep_between_inserts failed unexpectedly")
-                    .map(|()| ()),
-            );
+            procedure_callback_result(res.context("procedure_sleep_between_inserts failed unexpectedly"));
         });
 
     test_counter.wait_for_all().await;
@@ -378,10 +375,7 @@ async fn exec_procedure_reducer_same_client_not_interleaved(db_name: &str) {
             subscribe_all_then(ctx, move |ctx| {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
                 ctx.procedures.procedure_sleep_between_inserts_then(move |_ctx, res| {
-                    procedure_callback_result(
-                        res.context("procedure_sleep_between_inserts failed unexpectedly")
-                            .map(|()| ()),
-                    );
+                    procedure_callback_result(res.context("procedure_sleep_between_inserts failed unexpectedly"));
                 });
             });
         }
