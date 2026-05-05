@@ -220,13 +220,23 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
 
         store.epoch_deadline_callback(|store| {
             let env = store.data();
-            let database = env.instance_env().replica_ctx.database_identity;
+            let instance_env = env.instance_env();
+            let database = instance_env.replica_ctx.database_identity;
             let funcall = env.log_record_function().unwrap_or_default();
             let dur = env.funcall_start().elapsed();
             // TODO(procedure-timing): This measurement is not super meaningful for procedures,
             // which may (will) suspend execution and therefore may not have been continuously running since `env.funcall_start`.
             tracing::warn!(funcall, ?database, "Wasm has been running for {dur:?}");
-            Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
+
+            // Only yield if we're currently executing procedure code outside of `with_tx()`
+            // reducers and views should never yield
+            let should_yield = env.epoch_can_yield() && !instance_env.in_tx();
+
+            if should_yield {
+                Ok(wasmtime::UpdateDeadline::Yield(EPOCH_TICKS_PER_SECOND))
+            } else {
+                Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
+            }
         });
 
         // Note: this budget is just for initializers
@@ -593,6 +603,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             };
             return (res, None);
         };
+        store.data_mut().set_epoch_can_yield(true);
         let call_result = call_procedure
             .call_async(
                 &mut *store,
@@ -610,6 +621,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 ),
             )
             .await;
+        store.data_mut().set_epoch_can_yield(false);
 
         // Close any ongoing anonymous transactions by aborting them,
         // in case of improper ABI use (start but no commit/abort).
