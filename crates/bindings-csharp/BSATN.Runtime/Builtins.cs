@@ -1,6 +1,8 @@
 namespace SpacetimeDB;
 
+#if !NET5_0_OR_GREATER
 using System.Diagnostics;
+#endif
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
 
