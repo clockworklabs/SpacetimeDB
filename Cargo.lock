@@ -5784,6 +5784,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "procedure-concurrency-client"
+version = "2.2.0"
+dependencies = [
+ "anyhow",
+ "console_error_panic_hook",
+ "env_logger 0.10.2",
+ "futures",
+ "spacetimedb-sdk",
+ "test-counter",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "prometheus"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7144,6 +7159,16 @@ dependencies = [
 
 [[package]]
 name = "sdk-test-module"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "paste",
+ "spacetimedb 2.2.0",
+]
+
+[[package]]
+name = "sdk-test-procedure-concurrency-module"
 version = "0.1.0"
 dependencies = [
  "anyhow",
