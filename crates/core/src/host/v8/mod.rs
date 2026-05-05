@@ -1541,6 +1541,29 @@ fn handle_procedure_worker_request(
     }
 }
 
+const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 8;
+
+fn js_main_worker_thread_name(database_identity: Identity) -> String {
+    let hex = database_identity.to_hex();
+    // We use the tail of the identity to avoid the common structured prefix.
+    let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
+    format!("js-main-{suffix}")
+}
+
+fn spawn_v8_worker_thread(worker_kind: JsWorkerKind, database_identity: Identity, f: impl FnOnce() + Send + 'static) {
+    match worker_kind {
+        JsWorkerKind::Main => {
+            std::thread::Builder::new()
+                .name(js_main_worker_thread_name(database_identity))
+                .spawn(f)
+                .expect("failed to spawn V8 worker thread");
+        }
+        JsWorkerKind::Procedure => {
+            std::thread::spawn(f);
+        }
+    }
+}
+
 /// Spawns an instance worker for `program` and returns on success the
 /// corresponding instance handle that talks to the worker.
 ///
@@ -1574,7 +1597,7 @@ where
 
     let rt = tokio::runtime::Handle::current();
 
-    std::thread::spawn(move || {
+    spawn_v8_worker_thread(worker_kind, database_identity, move || {
         let _guard = load_balance_guard;
         core_pinner.pin_now();
 

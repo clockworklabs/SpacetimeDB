@@ -221,7 +221,12 @@ pub struct AllocatedJobCore {
 impl AllocatedJobCore {
     /// Spawn a [`SingleCoreExecutor`] allocated to this core.
     pub fn spawn_async_executor(self) -> SingleCoreExecutor {
-        SingleCoreExecutor::spawn(self)
+        SingleCoreExecutor::spawn(self, None)
+    }
+
+    /// Spawn a named [`SingleCoreExecutor`] allocated to this core.
+    pub fn spawn_named_async_executor(self, name: impl Into<String>) -> SingleCoreExecutor {
+        SingleCoreExecutor::spawn(self, Some(name.into()))
     }
 }
 
@@ -293,7 +298,7 @@ struct SingleCoreExecutorInner {
 
 impl SingleCoreExecutor {
     /// Spawn a `SingleCoreExecutor` on the given core.
-    fn spawn(core: AllocatedJobCore) -> Self {
+    fn spawn(core: AllocatedJobCore, name: Option<String>) -> Self {
         let AllocatedJobCore { guard, mut pinner } = core;
 
         let (job_tx, mut job_rx) = mpsc::unbounded_channel();
@@ -301,7 +306,11 @@ impl SingleCoreExecutor {
         let inner = Arc::new(SingleCoreExecutorInner { job_tx });
 
         let rt = runtime::Handle::current();
-        std::thread::spawn(move || {
+        let mut thread = std::thread::Builder::new();
+        if let Some(name) = name {
+            thread = thread.name(name);
+        }
+        let worker = move || {
             let _guard = guard;
             pinner.pin_now();
 
@@ -322,7 +331,8 @@ impl SingleCoreExecutor {
             // This is very important to do - otherwise, in-progress tasks will be
             // dropped and cancelled.
             rt.block_on(local)
-        });
+        };
+        thread.spawn(worker).expect("failed to spawn SingleCoreExecutor thread");
 
         Self { inner }
     }
@@ -334,7 +344,7 @@ impl SingleCoreExecutor {
     /// This method should only be used for short-lived instances which do not perform intense computation,
     /// e.g. to extract the schema by calling `describe_module`.
     pub fn in_current_tokio_runtime() -> Self {
-        Self::spawn(AllocatedJobCore::default())
+        Self::spawn(AllocatedJobCore::default(), None)
     }
 
     /// Run a job for this database executor.
