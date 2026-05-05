@@ -17,6 +17,9 @@ pub async fn dispatch(test: &str, db_name: &str) {
         "insert-with-tx-commit" => exec_insert_with_tx_commit(db_name).await,
         "insert-with-tx-rollback" => exec_insert_with_tx_rollback(db_name).await,
         "procedure-reducer-interleaving" => exec_procedure_reducer_interleaving(db_name).await,
+        "procedure-reducer-same-client-not-interleaved" => {
+            exec_procedure_reducer_same_client_not_interleaved(db_name).await
+        }
         "schedule-procedure" => exec_schedule_procedure(db_name).await,
         "sorted-uuids-insert" => exec_sorted_uuids_insert(db_name).await,
         _ => panic!("Unknown test: {test}"),
@@ -251,20 +254,246 @@ async fn exec_insert_with_tx_rollback(db_name: &str) {
 }
 
 #[derive(Default)]
-struct ProcedureReducerInterleavingState {
+struct ConnectionRowObservation {
     procedure_before: Option<u32>,
     reducer: Option<u32>,
     procedure_after: Option<u32>,
-    reducer_invoked: bool,
     ordering_checked: bool,
 }
 
+#[derive(Default)]
+struct ProcedureReducerInterleavingState {
+    procedure_conn: ConnectionRowObservation,
+    reducer_conn: ConnectionRowObservation,
+    reducer_invoked: bool,
+}
+
+/// Test that a procedure and a reducer can execute concurrently,
+/// provided that the procedure cooperatively yields with `ctx.sleep_until`.
+///
+/// This test creates two separate connections, `procedure_conn` and `reducer_conn`.
+/// Two connections are necessary because, as of writing (pgoldman 2026-05-05),
+/// WS messages from a single client are processed strictly in-order,
+/// so a long-running procedure invoked by a client causes all subsequent messages from that client
+/// to wait until the procedure finishes.
+/// https://github.com/clockworklabs/SpacetimeDB/issues/4954 tracks this behavior.
+///
+/// In the test, `procedure_conn` invokes a procedure, `procedure_sleep_between_inserts`,
+/// which inserts a row, sleeps for 10 seconds, then inserts another row.
+/// `reducer_conn` listens for the first row, and when it sees it,
+/// invokes a reducer `insert_reducer_row` which inserts a row.
+/// Both connections then collect all 3 rows and assert
+/// that their `auto_inc` IDs are ordered s.t. the reducer row was inserted before the procedure post-sleep row.
 async fn exec_procedure_reducer_interleaving(db_name: &str) {
+    let init_counter = TestCounter::new();
+    let procedure_sub_applied_result = init_counter.add_test("procedure_on_subscription_applied_nothing");
+    let reducer_sub_applied_result = init_counter.add_test("reducer_on_subscription_applied_nothing");
+
+    let test_counter = TestCounter::new();
+    let procedure_callback_result = test_counter.add_test("procedure_sleep_between_inserts_callback");
+    let mut reducer_callback_result = Some(test_counter.add_test("insert_reducer_row_callback"));
+    let mut procedure_ordering_result = Some(test_counter.add_test("procedure_connection_order"));
+    let mut reducer_ordering_result = Some(test_counter.add_test("reducer_connection_order"));
+    let state = Arc::new(Mutex::new(ProcedureReducerInterleavingState::default()));
+
+    let procedure_conn = connect_with_then(
+        db_name,
+        &init_counter,
+        "procedure",
+        |x| x,
+        {
+            let state = Arc::clone(&state);
+            move |ctx| {
+                ctx.db().procedure_concurrency_row().on_insert({
+                    let state = Arc::clone(&state);
+                    move |_ctx, row| {
+                        let maybe_ordering = {
+                            let mut state = state.lock().expect("ProcedureReducerInterleavingState mutex is poisoned");
+                            let observation = &mut state.procedure_conn;
+                            match row.insertion_context.as_str() {
+                                "procedure_before" => {
+                                    assert!(observation.procedure_before.replace(row.insertion_order).is_none());
+                                }
+                                "reducer" => {
+                                    assert!(observation.reducer.replace(row.insertion_order).is_none());
+                                }
+                                "procedure_after" => {
+                                    assert!(observation.procedure_after.replace(row.insertion_order).is_none());
+                                }
+                                unexpected => panic!("Unexpected insertion context: {unexpected}"),
+                            }
+                            match (
+                                observation.procedure_before,
+                                observation.reducer,
+                                observation.procedure_after,
+                            ) {
+                                (Some(before), Some(reducer), Some(after)) if !observation.ordering_checked => {
+                                    observation.ordering_checked = true;
+                                    Some((before, reducer, after))
+                                }
+                                _ => None,
+                            }
+                        };
+
+                        if let Some((before, reducer, after)) = maybe_ordering {
+                            (procedure_ordering_result
+                                .take()
+                                .expect("Procedure ordering result should only be reported once"))(
+                                #[allow(clippy::redundant_closure_call)]
+                                (|| {
+                                    anyhow::ensure!(
+                                        before < reducer && reducer < after,
+                                        "Procedure connection observed wrong insertion order: {before} < {reducer} < {after}"
+                                    );
+                                    Ok(())
+                                })(),
+                            );
+                        }
+                    }
+                });
+
+                subscribe_all_then(ctx, move |ctx| {
+                    procedure_sub_applied_result(assert_all_tables_empty(ctx));
+                });
+            }
+        },
+    )
+    .await;
+
+    let reducer_conn = connect_with_then(db_name, &init_counter, "reducer", |x| x, {
+        let state = Arc::clone(&state);
+        move |ctx| {
+            ctx.db().procedure_concurrency_row().on_insert({
+                let state = Arc::clone(&state);
+                move |ctx, row| {
+                    let should_call_reducer = {
+                        let mut state = state
+                            .lock()
+                            .expect("ProcedureReducerInterleavingState mutex is poisoned");
+                        match row.insertion_context.as_str() {
+                            "procedure_before" => {
+                                assert!(state
+                                    .reducer_conn
+                                    .procedure_before
+                                    .replace(row.insertion_order)
+                                    .is_none());
+                                if !state.reducer_invoked {
+                                    state.reducer_invoked = true;
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            "reducer" => {
+                                assert!(state.reducer_conn.reducer.replace(row.insertion_order).is_none());
+                                false
+                            }
+                            "procedure_after" => {
+                                assert!(state
+                                    .reducer_conn
+                                    .procedure_after
+                                    .replace(row.insertion_order)
+                                    .is_none());
+                                false
+                            }
+                            unexpected => panic!("Unexpected insertion context: {unexpected}"),
+                        }
+                    };
+
+                    if should_call_reducer {
+                        let reducer_callback_result = reducer_callback_result
+                            .take()
+                            .expect("Reducer callback should only be registered once");
+                        ctx.reducers
+                            .insert_reducer_row_then(move |_ctx, outcome| {
+                                reducer_callback_result(match outcome {
+                                    Ok(Ok(())) => Ok(()),
+                                    Ok(Err(msg)) => {
+                                        Err(anyhow::anyhow!("`insert_reducer_row` reducer returned error: {msg}"))
+                                    }
+                                    Err(internal_error) => Err(anyhow::anyhow!(
+                                        "`insert_reducer_row` reducer panicked: {internal_error:?}"
+                                    )),
+                                });
+                            })
+                            .unwrap();
+                    }
+
+                    let maybe_ordering = {
+                        let mut state = state
+                            .lock()
+                            .expect("ProcedureReducerInterleavingState mutex is poisoned");
+                        let observation = &mut state.reducer_conn;
+                        match (
+                            observation.procedure_before,
+                            observation.reducer,
+                            observation.procedure_after,
+                        ) {
+                            (Some(before), Some(reducer), Some(after)) if !observation.ordering_checked => {
+                                observation.ordering_checked = true;
+                                Some((before, reducer, after))
+                            }
+                            _ => None,
+                        }
+                    };
+
+                    if let Some((before, reducer, after)) = maybe_ordering {
+                        (reducer_ordering_result
+                            .take()
+                            .expect("Reducer ordering result should only be reported once"))(
+                            #[allow(clippy::redundant_closure_call)]
+                            (|| {
+                                anyhow::ensure!(
+                                    before < reducer && reducer < after,
+                                    "Reducer connection observed wrong insertion order: {before} < {reducer} < {after}"
+                                );
+                                Ok(())
+                            })(),
+                        );
+                    }
+                }
+            });
+
+            subscribe_all_then(ctx, move |ctx| {
+                reducer_sub_applied_result(assert_all_tables_empty(ctx));
+            });
+        }
+    })
+    .await;
+
+    init_counter.wait_for_all().await;
+
+    procedure_conn
+        .procedures
+        .procedure_sleep_between_inserts_then(move |_ctx, res| {
+            procedure_callback_result(
+                res.context("procedure_sleep_between_inserts failed unexpectedly")
+                    .map(|()| ()),
+            );
+        });
+
+    test_counter.wait_for_all().await;
+
+    let _keep_connections_alive = (procedure_conn, reducer_conn);
+}
+
+/// Test that messages to and from a single connection, including `CallProcedure` and `ProcedureResult`, are strictly ordered.
+///
+/// This test is the dual of [`exec_procedure_reducer_interleaving`]:
+/// it asserts that the reducer does not run until after the procedure has completed,
+/// because the host won't reorder or concurrently process messages from the same client.
+///
+/// We're not attached to this behavior, and in fact https://github.com/clockworklabs/SpacetimeDB/issues/4954
+/// tracks a plan to change it.
+/// When that ticket is fixed, we should merge the two tests into a single one,
+/// which asserts the interleaved order expected by [`exec_procedure_reducer_interleaving`],
+/// but uses only a single connection like this test.
+async fn exec_procedure_reducer_same_client_not_interleaved(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let procedure_callback_result = test_counter.add_test("procedure_sleep_between_inserts_callback");
     let mut reducer_callback_result = Some(test_counter.add_test("insert_reducer_row_callback"));
-    let mut ordering_result = Some(test_counter.add_test("procedure_reducer_interleaving_order"));
+    let mut ordering_result = Some(test_counter.add_test("procedure_reducer_same_client_order"));
     let state = Arc::new(Mutex::new(ProcedureReducerInterleavingState::default()));
 
     connect_then(db_name, &test_counter, {
@@ -275,12 +504,10 @@ async fn exec_procedure_reducer_interleaving(db_name: &str) {
                 move |ctx, row| {
                     let should_call_reducer = {
                         let mut state = state.lock().expect("ProcedureReducerInterleavingState mutex is poisoned");
+                        let observation = &mut state.procedure_conn;
                         match row.insertion_context.as_str() {
                             "procedure_before" => {
-                                assert!(
-                                    state.procedure_before.replace(row.insertion_order).is_none(),
-                                    "Saw duplicate procedure_before row"
-                                );
+                                assert!(observation.procedure_before.replace(row.insertion_order).is_none());
                                 if !state.reducer_invoked {
                                     state.reducer_invoked = true;
                                     true
@@ -289,17 +516,11 @@ async fn exec_procedure_reducer_interleaving(db_name: &str) {
                                 }
                             }
                             "reducer" => {
-                                assert!(
-                                    state.reducer.replace(row.insertion_order).is_none(),
-                                    "Saw duplicate reducer row"
-                                );
+                                assert!(observation.reducer.replace(row.insertion_order).is_none());
                                 false
                             }
                             "procedure_after" => {
-                                assert!(
-                                    state.procedure_after.replace(row.insertion_order).is_none(),
-                                    "Saw duplicate procedure_after row"
-                                );
+                                assert!(observation.procedure_after.replace(row.insertion_order).is_none());
                                 false
                             }
                             unexpected => panic!("Unexpected insertion context: {unexpected}"),
@@ -327,9 +548,14 @@ async fn exec_procedure_reducer_interleaving(db_name: &str) {
 
                     let maybe_ordering = {
                         let mut state = state.lock().expect("ProcedureReducerInterleavingState mutex is poisoned");
-                        match (state.procedure_before, state.reducer, state.procedure_after) {
-                            (Some(before), Some(reducer), Some(after)) if !state.ordering_checked => {
-                                state.ordering_checked = true;
+                        let observation = &mut state.procedure_conn;
+                        match (
+                            observation.procedure_before,
+                            observation.reducer,
+                            observation.procedure_after,
+                        ) {
+                            (Some(before), Some(reducer), Some(after)) if !observation.ordering_checked => {
+                                observation.ordering_checked = true;
                                 Some((before, reducer, after))
                             }
                             _ => None,
@@ -341,8 +567,8 @@ async fn exec_procedure_reducer_interleaving(db_name: &str) {
                             #[allow(clippy::redundant_closure_call)]
                             (|| {
                                 anyhow::ensure!(
-                                    before < reducer && reducer < after,
-                                    "Expected insertion order procedure_before < reducer < procedure_after, got {before} < {reducer} < {after}"
+                                    before < after && after < reducer,
+                                    "Expected same-client insertion order procedure_before < procedure_after < reducer, got {before} < {after} < {reducer}"
                                 );
                                 Ok(())
                             })(),

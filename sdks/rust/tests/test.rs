@@ -495,6 +495,16 @@ macro_rules! procedure_tests {
                 make_test("procedure-reducer-interleaving").run()
             }
 
+            /// Test for the behavior tracked in https://github.com/clockworklabs/SpacetimeDB/issues/4954 .
+            ///
+            /// We're not attached to this behavior, and in fact the ticket is to change it.
+            /// At that time, this test should be altered as described in the doc comment on
+            /// ./procedure_client/src/test_handlers.rs#exec_procedure_reducer_same_client_not_interleaved .
+            #[test]
+            fn procedure_reducer_same_client_not_interleaved() {
+                make_test("procedure-reducer-same-client-not-interleaved").run()
+            }
+
             #[test]
             fn http_ok() {
                 make_test("procedure-http-ok").run()
