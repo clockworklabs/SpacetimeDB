@@ -1246,6 +1246,6 @@ jobs:
         with:
           run_install: true
       - name: Verify that upgrade-version still works
-        run: cargo bump-versions 123.456.789 --rust-and-cli --csharp --typescript --cpp --accept-snapshots
+        run: cargo ci version-upgrade-check
       - name: Show diff
         run: git diff HEAD
