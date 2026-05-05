@@ -835,6 +835,10 @@ jobs:
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const publicPrNumber = context.payload.pull_request?.number ?? context.payload.inputs?.pr_number;
             const preDispatch = new Date().toISOString();
+            const inputs = { public_ref: publicRef };
+            if (publicPrNumber) {
+              inputs.public_pr_number = String(publicPrNumber);
+            }
 
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
@@ -842,7 +846,7 @@ jobs:
               repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
-              inputs: { public_ref: publicRef, public_pr_number: String(publicPrNumber) }
+              inputs,
             });
   
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
