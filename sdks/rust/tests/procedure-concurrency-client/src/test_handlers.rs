@@ -470,6 +470,8 @@ async fn exec_procedure_concurrent_with_scheduled_reducer(db_name: &str) {
     test_counter.wait_for_all().await;
 }
 
+/// Like [`exec_procedure_reducer_same_client_not_interleaved`], but with the scheduler instead of a client.
+/// Tracks a behavior that we'd like to change.
 async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");

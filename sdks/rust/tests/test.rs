@@ -549,6 +549,10 @@ mod rust_procedure_concurrency {
         make_test("procedure-concurrent-with-scheduled-reducer").run()
     }
 
+    /// Similar to [`procedure_reducer_same_client_not_interleaved`],
+    /// but with the scheduler subsystem acting as the "client."
+    ///
+    /// As with the linked test, we're not attached to this behavior.
     #[test]
     fn scheduled_procedure_scheduled_reducer_not_interleaved() {
         make_test("scheduled-procedure-scheduled-reducer-not-interleaved").run()
