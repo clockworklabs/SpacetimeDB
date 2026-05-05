@@ -53,31 +53,31 @@ namespace SpacetimeDB
         private const string Section = "stdb";
         private static string Key => "identity_token";
 
-        private static ConfigFile _config;
+        private static ConfigFile? _config;
         private static ConfigFile Config => _config ??= new ConfigFile();
 
-        public static string GetToken(string keySuffix = null)
+        public static string GetToken(string? keySuffix = null)
         {
             var key = GetKey(keySuffix);
             if(!Config.HasSectionKey(Section, key))
             {
                 Config.Load(Path);
             }
-            return Config.GetValue(Section, key, default(string)).As<string>();
+            return Config.GetValue(Section, key, "").As<string>();
         }
 	    public static bool TryGetToken(out string result) => TryGetToken(null, out result);
-	    public static bool TryGetToken(string keySuffix, out string result) {
+	    public static bool TryGetToken(string? keySuffix, out string result) {
 		    result = GetToken(keySuffix);
 		    return !string.IsNullOrWhiteSpace(result);
 	    }
 
-        public static void SaveToken(string token, string keySuffix = null)
+        public static void SaveToken(string token, string? keySuffix = null)
         {
             Config.SetValue(Section, GetKey(keySuffix), token);
             Config.Save(Path);
         }
 
-        private static string GetKey(string suffix) => string.IsNullOrWhiteSpace(suffix) ? Key : $"{Key}_{suffix}";
+        private static string GetKey(string? suffix) => string.IsNullOrWhiteSpace(suffix) ? Key : $"{Key}_{suffix}";
     }
 }
 #else

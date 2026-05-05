@@ -3,6 +3,9 @@
  *  *
  */
 #if GODOT
+using System;
+using Godot;
+
 namespace SpacetimeDB
 {
     internal class GodotDebugLogger : ISpacetimeDBLogger
