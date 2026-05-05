@@ -1609,30 +1609,21 @@ log = "0.4"
     /// This matches Python's subscribe semantics - start subscription first,
     /// perform actions, then call the handle to collect results.
     pub fn subscribe_background(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, Duration::from_secs(30), None)
-    }
-
-    pub fn subscribe_background_with_timeout(
-        &self,
-        queries: &[&str],
-        n: usize,
-        timeout: Duration,
-    ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, timeout, None)
+        self.subscribe_background_opts(queries, n, None)
     }
 
     pub fn subscribe_background_on(&self, database: &str, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, Duration::from_secs(30), Some(false))
+        self.subscribe_background_on_opts(database, queries, n, Some(false))
     }
 
     /// Starts a subscription in the background with --confirmed flag.
     pub fn subscribe_background_confirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, Duration::from_secs(30), Some(true))
+        self.subscribe_background_opts(queries, n, Some(true))
     }
 
     /// Starts a subscription in the background with --confirmed flag.
     pub fn subscribe_background_unconfirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, Duration::from_secs(30), Some(false))
+        self.subscribe_background_opts(queries, n, Some(false))
     }
 
     pub fn subscribe_background_on_confirmed(
@@ -1641,7 +1632,7 @@ log = "0.4"
         queries: &[&str],
         n: usize,
     ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, Duration::from_secs(30), Some(true))
+        self.subscribe_background_on_opts(database, queries, n, Some(true))
     }
 
     /// Internal helper for background subscribe with options.
@@ -1649,7 +1640,6 @@ log = "0.4"
         &self,
         queries: &[&str],
         n: usize,
-        timeout: Duration,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
         let identity = self
@@ -1658,7 +1648,7 @@ log = "0.4"
             .context("No database published")?
             .clone();
 
-        self.subscribe_background_on_impl(&identity, queries, n, timeout, confirmed)
+        self.subscribe_background_on_impl(&identity, queries, n, confirmed)
     }
 
     fn subscribe_background_on_opts(
@@ -1666,10 +1656,9 @@ log = "0.4"
         database: &str,
         queries: &[&str],
         n: usize,
-        timeout: Duration,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_impl(database, queries, n, timeout, confirmed)
+        self.subscribe_background_on_impl(database, queries, n, confirmed)
     }
 
     fn subscribe_background_on_impl(
@@ -1677,7 +1666,6 @@ log = "0.4"
         database: &str,
         queries: &[&str],
         n: usize,
-        timeout: Duration,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
         let cli_path = ensure_binaries_built();
@@ -1692,7 +1680,7 @@ log = "0.4"
             self.server_url.clone(),
             database.to_string(),
             "-t".to_string(),
-            timeout.as_secs().to_string(),
+            "30".to_string(),
             "-n".to_string(),
             n.to_string(),
             "--print-initial-update".to_string(),
