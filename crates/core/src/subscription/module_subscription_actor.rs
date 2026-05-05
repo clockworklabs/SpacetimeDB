@@ -666,7 +666,7 @@ impl ModuleSubscriptions {
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
 
-        let (tx, tx_offset, trapped) =
+        let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &query, auth.caller())?;
 
         let (table_rows, metrics) = return_on_err_with_sql_bool!(
@@ -674,6 +674,7 @@ impl ModuleSubscriptions {
             query.sql(),
             send_err_msg
         );
+        tx.metrics.merge(metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -751,13 +752,14 @@ impl ModuleSubscriptions {
             return Ok(None);
         };
 
-        let (tx, tx_offset) = self.unsubscribe_views(query, auth.caller())?;
+        let (mut tx, tx_offset) = self.unsubscribe_views(query, auth.caller())?;
 
         let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe),
             query.sql(),
             send_err_msg
         );
+        tx.metrics.merge(metrics);
 
         // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
         // queue while we are still holding a read-lock on the database.
@@ -831,7 +833,7 @@ impl ModuleSubscriptions {
         };
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
-        let (tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, &removed_queries, auth.caller())?;
+        let (mut tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, &removed_queries, auth.caller())?;
 
         let (update, metrics) = return_on_err!(
             self.evaluate_queries(
@@ -844,6 +846,7 @@ impl ModuleSubscriptions {
             send_err_msg,
             None
         );
+        tx.metrics.merge(metrics);
 
         // How many queries did we evaluate?
         subscription_metrics
@@ -947,7 +950,7 @@ impl ModuleSubscriptions {
         };
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
-        let (tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, &removed_queries, auth.caller())?;
+        let (mut tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, &removed_queries, auth.caller())?;
 
         let (rows, metrics) = if request.flags == ws_v2::UnsubscribeFlags::SendDroppedRows {
             let (update, metrics) = return_on_err!(
@@ -977,6 +980,9 @@ impl ModuleSubscriptions {
         } else {
             (None, None)
         };
+        if let Some(metrics) = metrics {
+            tx.metrics.merge(metrics);
+        }
 
         let _ = self.broadcast_queue.send_client_message_v2(
             sender.clone(),
@@ -1257,11 +1263,12 @@ impl ModuleSubscriptions {
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
 
-        let (tx, tx_offset, trapped) =
+        let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
 
         let (update, metrics) =
             self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)?;
+        tx.metrics.merge(metrics);
 
         subscription_metrics.num_queries_evaluated.inc_by(queries.len() as _);
 
@@ -1362,7 +1369,7 @@ impl ModuleSubscriptions {
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
 
-        let (tx, tx_offset, trapped) =
+        let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
 
         let Ok((update, metrics)) =
@@ -1383,6 +1390,7 @@ impl ModuleSubscriptions {
             send_err_msg("Internal error evaluating queries".into());
             return Ok((None, trapped));
         };
+        tx.metrics.merge(metrics);
 
         // How many queries did we actually evaluate?
         subscription_metrics.num_queries_evaluated.inc_by(queries.len() as _);
@@ -1479,7 +1487,7 @@ impl ModuleSubscriptions {
             subscription_metrics,
         )?;
 
-        let (tx, tx_offset, trapped) =
+        let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
 
         check_row_limit(
@@ -1497,16 +1505,22 @@ impl ModuleSubscriptions {
         // Record how long it took to compile the subscription
         drop(compile_timer);
 
-        let tx = DeltaTx::from(&*tx);
+        let delta_tx = DeltaTx::from(&*tx);
         let (database_update, metrics, query_metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe, &self.bsatn_rlb_pool)
-                .map(|(table_update, metrics, query_metrics)| {
+            Protocol::Binary => execute_plans(
+                &auth,
+                &queries,
+                &delta_tx,
+                TableUpdateType::Subscribe,
+                &self.bsatn_rlb_pool,
+            )
+            .map(|(table_update, metrics, query_metrics)| {
                 (ws_v1::FormatSwitch::Bsatn(table_update), metrics, query_metrics)
             })?,
             Protocol::Text => execute_plans(
                 &auth,
                 &queries,
-                &tx,
+                &delta_tx,
                 TableUpdateType::Subscribe,
                 &JsonRowListBuilderFakePool,
             )
@@ -1516,6 +1530,7 @@ impl ModuleSubscriptions {
         };
 
         record_query_metrics(&self.relational_db.database_identity(), query_metrics);
+        tx.metrics.merge(metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -1730,7 +1745,7 @@ impl ModuleSubscriptions {
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
         Self::_unsubscribe_views(&mut tx, view_collector, sender)?;
-        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Unsubscribe);
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }

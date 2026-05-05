@@ -1344,13 +1344,8 @@ fn handle_main_worker_request(
         }),
         JsMainWorkerRequest::CallViewDetached { cmd, metric, on_panic } => {
             handle_detached_worker_request("call_view", on_panic, || {
-                let (res, trapped) = instance_common.handle_cmd(cmd, inst);
-                ModuleHost::record_view_command_metrics_for_result(
-                    &module_common.info(),
-                    module_common.replica_ctx().relational_db(),
-                    metric,
-                    &res,
-                );
+                let (_, trapped) = instance_common.handle_cmd(cmd, inst);
+                ModuleHost::record_view_command_round_trip(&module_common.info(), metric);
                 trapped
             })
         }
@@ -1365,12 +1360,7 @@ fn handle_main_worker_request(
                 if let Err(err) = &res {
                     log::warn!("detached one-off query failed: {err:#}");
                 }
-                ModuleHost::record_one_off_query_metrics_for_result(
-                    &module_common.info(),
-                    module_common.replica_ctx().relational_db(),
-                    timer,
-                    &res,
-                );
+                ModuleHost::record_one_off_query_round_trip(&module_common.info(), timer);
                 false
             })
         }
@@ -1381,12 +1371,7 @@ fn handle_main_worker_request(
                 if let Err(err) = &res {
                     log::warn!("detached one-off query failed: {err:#}");
                 }
-                ModuleHost::record_one_off_query_metrics_for_result(
-                    &module_common.info(),
-                    module_common.replica_ctx().relational_db(),
-                    timer,
-                    &res,
-                );
+                ModuleHost::record_one_off_query_round_trip(&module_common.info(), timer);
                 false
             })
         }
@@ -1397,12 +1382,7 @@ fn handle_main_worker_request(
                 if let Err(err) = &res {
                     log::warn!("detached one-off query failed: {err:#}");
                 }
-                ModuleHost::record_one_off_query_metrics_for_result(
-                    &module_common.info(),
-                    module_common.replica_ctx().relational_db(),
-                    timer,
-                    &res,
-                );
+                ModuleHost::record_one_off_query_round_trip(&module_common.info(), timer);
                 false
             })
         }

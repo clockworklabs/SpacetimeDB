@@ -1583,22 +1583,13 @@ impl ModuleHost {
                     .call_view_command(label, cmd)
                     .await
                     .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
-                Self::record_view_command_metrics_for_result(&self.info, self.relational_db(), metric, &result);
+                Self::record_view_command_round_trip(&self.info, metric);
                 result
             }
         }
     }
 
-    pub(in crate::host) fn record_view_command_metrics_for_result(
-        info: &ModuleInfo,
-        db: &RelationalDB,
-        metric: ViewCommandMetric,
-        result: &ViewCommandResult,
-    ) {
-        if let Ok(Some(metrics)) = result {
-            db.exec_counters_for(metric.workload).record(metrics);
-        }
-
+    pub(in crate::host) fn record_view_command_round_trip(info: &ModuleInfo, metric: ViewCommandMetric) {
         match metric.workload {
             WorkloadType::Subscribe => info
                 .metrics
@@ -2753,7 +2744,7 @@ impl ModuleHost {
                         async |_, _| unreachable!("one-off query JS path is handled before Self::call"),
                     )
                     .await?;
-                Self::record_one_off_query_metrics_for_result(&self.info, self.relational_db(), timer, &result);
+                Self::record_one_off_query_round_trip(&self.info, timer);
                 result.map(|_| ())
             }
         }
@@ -2843,7 +2834,7 @@ impl ModuleHost {
         into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage,
     ) -> OneOffQueryResult {
         let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
-        let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+        let mut tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
             let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
             let _ = tx_offset_sender.send(tx_offset);
             db.report_read_tx_metrics(reducer, tx_metrics);
@@ -2914,15 +2905,18 @@ impl ModuleHost {
 
         let total_host_execution_duration = timer.elapsed().into();
         let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
-            Ok((rows, metrics)) => (
-                into_message(OneOffQueryResponseMessage {
-                    message_id,
-                    error: None,
-                    results: vec![rows],
-                    total_host_execution_duration,
-                }),
-                Some(metrics),
-            ),
+            Ok((rows, metrics)) => {
+                tx.metrics.merge(metrics);
+                (
+                    into_message(OneOffQueryResponseMessage {
+                        message_id,
+                        error: None,
+                        results: vec![rows],
+                        total_host_execution_duration,
+                    }),
+                    Some(metrics),
+                )
+            }
             Err(err) => (
                 into_message(OneOffQueryResponseMessage {
                     message_id,
@@ -2986,7 +2980,7 @@ impl ModuleHost {
             rlb_pool,
         } = params;
         let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
-        let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+        let mut tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
             let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
             let _ = tx_offset_sender.send(tx_offset);
             db.report_read_tx_metrics(reducer, tx_metrics);
@@ -3048,15 +3042,18 @@ impl ModuleHost {
         })();
 
         let (message, metrics) = match result {
-            Ok((rows, metrics)) => (
-                ws_v2::OneOffQueryResult {
-                    request_id,
-                    result: Ok(ws_v2::QueryRows {
-                        tables: vec![rows].into_boxed_slice(),
-                    }),
-                },
-                Some(metrics),
-            ),
+            Ok((rows, metrics)) => {
+                tx.metrics.merge(metrics);
+                (
+                    ws_v2::OneOffQueryResult {
+                        request_id,
+                        result: Ok(ws_v2::QueryRows {
+                            tables: vec![rows].into_boxed_slice(),
+                        }),
+                    },
+                    Some(metrics),
+                )
+            }
             Err(err) => (
                 ws_v2::OneOffQueryResult {
                     request_id,
@@ -3070,15 +3067,7 @@ impl ModuleHost {
         Ok(metrics)
     }
 
-    pub(in crate::host) fn record_one_off_query_metrics_for_result(
-        info: &ModuleInfo,
-        db: &RelationalDB,
-        timer: Instant,
-        result: &OneOffQueryResult,
-    ) {
-        if let Ok(Some(metrics)) = result {
-            db.exec_counters_for(WorkloadType::Sql).record(metrics);
-        }
+    pub(in crate::host) fn record_one_off_query_round_trip(info: &ModuleInfo, timer: Instant) {
         info.metrics
             .request_round_trip_sql
             .observe(timer.elapsed().as_secs_f64());
