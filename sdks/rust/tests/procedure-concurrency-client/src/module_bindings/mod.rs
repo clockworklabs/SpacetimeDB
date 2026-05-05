@@ -12,6 +12,10 @@ pub mod procedure_concurrency_row_table;
 pub mod procedure_concurrency_row_type;
 pub mod procedure_schedule_reducer_between_inserts_procedure;
 pub mod procedure_sleep_between_inserts_procedure;
+pub mod schedule_procedure_then_reducer_reducer;
+pub mod scheduled_procedure_row_table;
+pub mod scheduled_procedure_row_type;
+pub mod scheduled_procedure_sleep_between_inserts_procedure;
 pub mod scheduled_reducer_row_table;
 pub mod scheduled_reducer_row_type;
 
@@ -21,6 +25,10 @@ pub use procedure_concurrency_row_table::*;
 pub use procedure_concurrency_row_type::ProcedureConcurrencyRow;
 pub use procedure_schedule_reducer_between_inserts_procedure::procedure_schedule_reducer_between_inserts;
 pub use procedure_sleep_between_inserts_procedure::procedure_sleep_between_inserts;
+pub use schedule_procedure_then_reducer_reducer::schedule_procedure_then_reducer;
+pub use scheduled_procedure_row_table::*;
+pub use scheduled_procedure_row_type::ScheduledProcedureRow;
+pub use scheduled_procedure_sleep_between_inserts_procedure::scheduled_procedure_sleep_between_inserts;
 pub use scheduled_reducer_row_table::*;
 pub use scheduled_reducer_row_type::ScheduledReducerRow;
 
@@ -34,6 +42,7 @@ pub use scheduled_reducer_row_type::ScheduledReducerRow;
 pub enum Reducer {
     InsertReducerRow,
     InsertScheduledReducer { schedule: ScheduledReducerRow },
+    ScheduleProcedureThenReducer,
 }
 
 impl __sdk::InModule for Reducer {
@@ -45,6 +54,7 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::InsertReducerRow => "insert_reducer_row",
             Reducer::InsertScheduledReducer { .. } => "insert_scheduled_reducer",
+            Reducer::ScheduleProcedureThenReducer => "schedule_procedure_then_reducer",
             _ => unreachable!(),
         }
     }
@@ -57,6 +67,9 @@ impl __sdk::Reducer for Reducer {
                     schedule: schedule.clone(),
                 })
             }
+            Reducer::ScheduleProcedureThenReducer => {
+                __sats::bsatn::to_vec(&schedule_procedure_then_reducer_reducer::ScheduleProcedureThenReducerArgs {})
+            }
             _ => unreachable!(),
         }
     }
@@ -67,6 +80,7 @@ impl __sdk::Reducer for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     procedure_concurrency_row: __sdk::TableUpdate<ProcedureConcurrencyRow>,
+    scheduled_procedure_row: __sdk::TableUpdate<ScheduledProcedureRow>,
     scheduled_reducer_row: __sdk::TableUpdate<ScheduledReducerRow>,
 }
 
@@ -79,6 +93,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "procedure_concurrency_row" => db_update
                     .procedure_concurrency_row
                     .append(procedure_concurrency_row_table::parse_table_update(table_update)?),
+                "scheduled_procedure_row" => db_update
+                    .scheduled_procedure_row
+                    .append(scheduled_procedure_row_table::parse_table_update(table_update)?),
                 "scheduled_reducer_row" => db_update
                     .scheduled_reducer_row
                     .append(scheduled_reducer_row_table::parse_table_update(table_update)?),
@@ -104,6 +121,9 @@ impl __sdk::DbUpdate for DbUpdate {
             "procedure_concurrency_row",
             &self.procedure_concurrency_row,
         );
+        diff.scheduled_procedure_row = cache
+            .apply_diff_to_table::<ScheduledProcedureRow>("scheduled_procedure_row", &self.scheduled_procedure_row)
+            .with_updates_by_pk(|row| &row.scheduled_id);
         diff.scheduled_reducer_row = cache
             .apply_diff_to_table::<ScheduledReducerRow>("scheduled_reducer_row", &self.scheduled_reducer_row)
             .with_updates_by_pk(|row| &row.scheduled_id);
@@ -116,6 +136,9 @@ impl __sdk::DbUpdate for DbUpdate {
             match &table_rows.table[..] {
                 "procedure_concurrency_row" => db_update
                     .procedure_concurrency_row
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "scheduled_procedure_row" => db_update
+                    .scheduled_procedure_row
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "scheduled_reducer_row" => db_update
                     .scheduled_reducer_row
@@ -134,6 +157,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "procedure_concurrency_row" => db_update
                     .procedure_concurrency_row
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "scheduled_procedure_row" => db_update
+                    .scheduled_procedure_row
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "scheduled_reducer_row" => db_update
                     .scheduled_reducer_row
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -151,6 +177,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     procedure_concurrency_row: __sdk::TableAppliedDiff<'r, ProcedureConcurrencyRow>,
+    scheduled_procedure_row: __sdk::TableAppliedDiff<'r, ScheduledProcedureRow>,
     scheduled_reducer_row: __sdk::TableAppliedDiff<'r, ScheduledReducerRow>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
@@ -164,6 +191,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<ProcedureConcurrencyRow>(
             "procedure_concurrency_row",
             &self.procedure_concurrency_row,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ScheduledProcedureRow>(
+            "scheduled_procedure_row",
+            &self.scheduled_procedure_row,
             event,
         );
         callbacks.invoke_table_row_callbacks::<ScheduledReducerRow>(
@@ -829,7 +861,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         procedure_concurrency_row_table::register_table(client_cache);
+        scheduled_procedure_row_table::register_table(client_cache);
         scheduled_reducer_row_table::register_table(client_cache);
     }
-    const ALL_TABLE_NAMES: &'static [&'static str] = &["procedure_concurrency_row", "scheduled_reducer_row"];
+    const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "procedure_concurrency_row",
+        "scheduled_procedure_row",
+        "scheduled_reducer_row",
+    ];
 }

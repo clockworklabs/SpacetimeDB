@@ -15,6 +15,9 @@ pub async fn dispatch(test: &str, db_name: &str) {
         "procedure-concurrent-with-scheduled-reducer" => {
             exec_procedure_concurrent_with_scheduled_reducer(db_name).await
         }
+        "scheduled-procedure-scheduled-reducer-not-interleaved" => {
+            exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name).await
+        }
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -93,6 +96,8 @@ struct ConnectionRowObservation {
     reducer: Option<u32>,
     scheduled_reducer: Option<u32>,
     procedure_after: Option<u32>,
+    scheduled_procedure_before: Option<u32>,
+    scheduled_procedure_after: Option<u32>,
     ordering_checked: bool,
 }
 
@@ -457,6 +462,98 @@ async fn exec_procedure_concurrent_with_scheduled_reducer(db_name: &str) {
                             res.context("procedure_schedule_reducer_between_inserts failed unexpectedly"),
                         );
                     });
+            });
+        }
+    })
+    .await;
+
+    test_counter.wait_for_all().await;
+}
+
+async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &str) {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+    let mut reducer_callback_result = Some(test_counter.add_test("schedule_procedure_then_reducer_callback"));
+    let mut ordering_result = Some(test_counter.add_test("scheduled_procedure_scheduled_reducer_order"));
+    let state = Arc::new(Mutex::new(ConnectionRowObservation::default()));
+
+    connect_then(db_name, &test_counter, {
+        let state = Arc::clone(&state);
+        move |ctx| {
+            ctx.db().procedure_concurrency_row().on_insert({
+                let state = Arc::clone(&state);
+                move |_ctx, row| {
+                    let maybe_ordering = {
+                        let mut observation = state.lock().expect("ConnectionRowObservation mutex is poisoned");
+                        match row.insertion_context.as_str() {
+                            "scheduled_procedure_before" => {
+                                assert!(observation
+                                    .scheduled_procedure_before
+                                    .replace(row.insertion_order)
+                                    .is_none());
+                            }
+                            "scheduled_procedure_after" => {
+                                assert!(observation
+                                    .scheduled_procedure_after
+                                    .replace(row.insertion_order)
+                                    .is_none());
+                            }
+                            "scheduled_reducer" => {
+                                assert!(observation
+                                    .scheduled_reducer
+                                    .replace(row.insertion_order)
+                                    .is_none());
+                            }
+                            unexpected => panic!("Unexpected insertion context: {unexpected}"),
+                        }
+                        match (
+                            observation.scheduled_procedure_before,
+                            observation.scheduled_reducer,
+                            observation.scheduled_procedure_after,
+                        ) {
+                            (Some(before), Some(scheduled_reducer), Some(after))
+                                if !observation.ordering_checked =>
+                            {
+                                observation.ordering_checked = true;
+                                Some((before, scheduled_reducer, after))
+                            }
+                            _ => None,
+                        }
+                    };
+
+                    if let Some((before, scheduled_reducer, after)) = maybe_ordering {
+                        (ordering_result.take().expect("Ordering result should only be reported once"))(
+                            #[allow(clippy::redundant_closure_call)]
+                            (|| {
+                                anyhow::ensure!(
+                                    before < after && after < scheduled_reducer,
+                                    "Expected scheduled procedure insertion order scheduled_procedure_before < scheduled_procedure_after < scheduled_reducer, got {before} < {after} < {scheduled_reducer}"
+                                );
+                                Ok(())
+                            })(),
+                        );
+                    }
+                }
+            });
+
+            subscribe_all_then(ctx, move |ctx| {
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+                let reducer_callback_result = reducer_callback_result
+                    .take()
+                    .expect("Reducer callback should only be registered once");
+                ctx.reducers
+                    .schedule_procedure_then_reducer_then(move |_ctx, outcome| {
+                        reducer_callback_result(match outcome {
+                            Ok(Ok(())) => Ok(()),
+                            Ok(Err(msg)) => Err(anyhow::anyhow!(
+                                "`schedule_procedure_then_reducer` reducer returned error: {msg}"
+                            )),
+                            Err(internal_error) => Err(anyhow::anyhow!(
+                                "`schedule_procedure_then_reducer` reducer panicked: {internal_error:?}"
+                            )),
+                        });
+                    })
+                    .unwrap();
             });
         }
     })

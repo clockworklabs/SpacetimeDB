@@ -60,3 +60,30 @@ fn procedure_schedule_reducer_between_inserts(ctx: &mut ProcedureContext) {
     ctx.sleep_until(ctx.timestamp + Duration::from_secs(10));
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "procedure_after"));
 }
+
+#[table(accessor = scheduled_procedure_row, scheduled(scheduled_procedure_sleep_between_inserts))]
+struct ScheduledProcedureRow {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+}
+
+#[procedure]
+fn scheduled_procedure_sleep_between_inserts(ctx: &mut ProcedureContext, _schedule: ScheduledProcedureRow) {
+    ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_before"));
+    ctx.sleep_until(ctx.timestamp + Duration::from_secs(10));
+    ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_after"));
+}
+
+#[reducer]
+fn schedule_procedure_then_reducer(ctx: &ReducerContext) {
+    ctx.db().scheduled_procedure_row().insert(ScheduledProcedureRow {
+        scheduled_id: 0,
+        scheduled_at: ctx.timestamp.into(),
+    });
+    ctx.db().scheduled_reducer_row().insert(ScheduledReducerRow {
+        scheduled_id: 0,
+        scheduled_at: (ctx.timestamp + Duration::from_secs(2)).into(),
+    });
+}

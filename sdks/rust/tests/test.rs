@@ -548,6 +548,11 @@ mod rust_procedure_concurrency {
     fn procedure_concurrent_with_scheduled_reducer() {
         make_test("procedure-concurrent-with-scheduled-reducer").run()
     }
+
+    #[test]
+    fn scheduled_procedure_scheduled_reducer_not_interleaved() {
+        make_test("scheduled-procedure-scheduled-reducer-not-interleaved").run()
+    }
 }
 
 macro_rules! view_tests {
