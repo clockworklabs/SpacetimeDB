@@ -491,6 +491,11 @@ macro_rules! procedure_tests {
             }
 
             #[test]
+            fn procedure_reducer_interleaving() {
+                make_test("procedure-reducer-interleaving").run()
+            }
+
+            #[test]
             fn http_ok() {
                 make_test("procedure-http-ok").run()
             }
