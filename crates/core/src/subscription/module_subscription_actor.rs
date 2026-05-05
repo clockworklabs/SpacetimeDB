@@ -2046,7 +2046,7 @@ mod tests {
                 durability: durability.clone(),
                 disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
-                runtime: rt,
+                runtime: crate::runtime::RuntimeDispatch::tokio(rt),
             }),
             None,
             0,

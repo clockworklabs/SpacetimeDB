@@ -278,7 +278,7 @@ enum CiCmd {
     TypescriptTest,
     /// Builds the docs site.
     Docs,
-    /// Checks that core database crates use SpacetimeDB fs/net IO boundaries.
+    /// Checks that runtime is not used as a Tokio-shaped IO facade.
     IoBoundary,
 }
 
@@ -312,9 +312,9 @@ fn check_io_boundary() -> Result<()> {
     ensure_repo_root()?;
 
     let mut violations = Vec::new();
-    for root in ["crates/datastore", "crates/core"] {
+    for root in ["crates/runtime", "crates/datastore", "crates/core", "crates/commitlog"] {
         for path in tracked_rs_files_under(root)? {
-            check_file_for_direct_tokio_fs_net(&path, &mut violations)?;
+            check_file_for_runtime_io_facade(&path, &mut violations)?;
         }
     }
 
@@ -326,38 +326,59 @@ fn check_io_boundary() -> Result<()> {
         eprintln!("{violation}");
     }
     bail!(
-        "direct tokio::fs/tokio::net usage is forbidden in crates/datastore and crates/core; use spacetimedb_io::{{fs, net}}"
+        "spacetimedb_runtime must not be used as a Tokio-shaped io/fs/net facade; use Tokio directly in normal-only code and semantic seams for simulation code"
     );
 }
 
-fn check_file_for_direct_tokio_fs_net(path: &Path, violations: &mut Vec<String>) -> Result<()> {
+fn check_file_for_runtime_io_facade(path: &Path, violations: &mut Vec<String>) -> Result<()> {
     let contents = fs::read_to_string(path)?;
-    let mut in_tokio_use_tree = false;
+    let mut in_runtime_use_tree = false;
 
     for (line_idx, line) in contents.lines().enumerate() {
         let line_no = line_idx + 1;
         let code = line.split("//").next().unwrap_or(line);
 
-        if code.contains("tokio::fs") || code.contains("tokio::net") {
-            violations.push(format!("{}:{line_no}: direct tokio fs/net path", path.display()));
+        for module in ["io", "fs", "net", "blocking_fs"] {
+            if code.contains(&format!("spacetimedb_runtime::{module}")) {
+                violations.push(format!(
+                    "{}:{line_no}: spacetimedb_runtime::{module} facade usage",
+                    path.display()
+                ));
+            }
+            if path == Path::new("crates/runtime/src/lib.rs") && code.contains(&format!("pub mod {module}")) {
+                violations.push(format!(
+                    "{}:{line_no}: spacetimedb_runtime::{module} facade export",
+                    path.display()
+                ));
+            }
         }
 
-        if in_tokio_use_tree {
-            if tokio_use_tree_mentions_fs_or_net(code) {
-                violations.push(format!("{}:{line_no}: direct tokio fs/net import", path.display()));
+        if in_runtime_use_tree {
+            for module in ["io", "fs", "net", "blocking_fs"] {
+                if use_tree_mentions_token(code, module) {
+                    violations.push(format!(
+                        "{}:{line_no}: spacetimedb_runtime::{module} facade import",
+                        path.display()
+                    ));
+                }
             }
             if code.contains("};") {
-                in_tokio_use_tree = false;
+                in_runtime_use_tree = false;
             }
             continue;
         }
 
-        if code.contains("use tokio::{") {
-            if tokio_use_tree_mentions_fs_or_net(code) {
-                violations.push(format!("{}:{line_no}: direct tokio fs/net import", path.display()));
+        if code.contains("use spacetimedb_runtime::{") {
+            for module in ["io", "fs", "net", "blocking_fs"] {
+                if use_tree_mentions_token(code, module) {
+                    violations.push(format!(
+                        "{}:{line_no}: spacetimedb_runtime::{module} facade import",
+                        path.display()
+                    ));
+                }
             }
             if !code.contains("};") {
-                in_tokio_use_tree = true;
+                in_runtime_use_tree = true;
             }
         }
     }
@@ -365,19 +386,19 @@ fn check_file_for_direct_tokio_fs_net(path: &Path, violations: &mut Vec<String>)
     Ok(())
 }
 
-fn tokio_use_tree_mentions_fs_or_net(code: &str) -> bool {
+fn use_tree_mentions_token(code: &str, forbidden: &str) -> bool {
     let mut token = String::new();
     for ch in code.chars() {
         if ch == '_' || ch.is_ascii_alphanumeric() {
             token.push(ch);
             continue;
         }
-        if token == "fs" || token == "net" {
+        if token == forbidden {
             return true;
         }
         token.clear();
     }
-    token == "fs" || token == "net"
+    token == forbidden
 }
 
 fn run_dlls() -> Result<()> {

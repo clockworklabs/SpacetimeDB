@@ -76,6 +76,11 @@ pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
 
     let debit_rows = planner.visible_rows(conn, 0);
     let choose_insert = debit_rows.is_empty() || planner.roll_percent(65);
+    let wrap_pair_in_tx = planner.active_writer().is_none();
+    if wrap_pair_in_tx {
+        planner.begin_tx(conn);
+        planner.push_interaction(TableWorkloadInteraction::begin_tx(conn));
+    }
     if choose_insert {
         let row = planner.make_row(0);
         let mirror = row.clone();
@@ -83,6 +88,10 @@ pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
         planner.insert(conn, 1, mirror.clone());
         planner.push_interaction(TableWorkloadInteraction::insert(conn, 0, row.clone()));
         planner.push_interaction(TableWorkloadInteraction::insert(conn, 1, mirror.clone()));
+        if wrap_pair_in_tx {
+            planner.commit_tx(conn);
+            planner.push_interaction(TableWorkloadInteraction::commit_tx(conn));
+        }
         return;
     }
 
@@ -92,4 +101,8 @@ pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
     planner.delete(conn, 1, mirror.clone());
     planner.push_interaction(TableWorkloadInteraction::delete(conn, 0, row.clone()));
     planner.push_interaction(TableWorkloadInteraction::delete(conn, 1, mirror.clone()));
+    if wrap_pair_in_tx {
+        planner.commit_tx(conn);
+        planner.push_interaction(TableWorkloadInteraction::commit_tx(conn));
+    }
 }

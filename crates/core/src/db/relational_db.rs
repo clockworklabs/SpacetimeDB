@@ -1,6 +1,7 @@
 use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
+use crate::runtime::RuntimeDispatch;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -99,7 +100,7 @@ pub struct RelationalDB {
 
     inner: Locking,
     durability: Option<Arc<Durability>>,
-    durability_runtime: Option<tokio::runtime::Handle>,
+    durability_runtime: Option<RuntimeDispatch>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -1939,7 +1940,7 @@ pub mod tests_utils {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
-                runtime: rt,
+                runtime: RuntimeDispatch::tokio(rt),
             };
 
             let (db, _) = RelationalDB::open(
@@ -2060,7 +2061,7 @@ pub mod tests_utils {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
-                runtime: rt,
+                runtime: RuntimeDispatch::tokio(rt),
             };
             let db = Self::open_db(history, Some(persistence), None, 0)?;
 

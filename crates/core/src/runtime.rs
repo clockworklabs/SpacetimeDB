@@ -1,13 +1,3 @@
-//! Opaque runtime boundary for crates that should not depend on Tokio directly.
+//! Runtime boundary re-exported for core call sites.
 
-pub type Handle = tokio::runtime::Handle;
-pub type Runtime = tokio::runtime::Runtime;
-
-pub fn current_handle_or_new_runtime() -> anyhow::Result<(Handle, Option<Runtime>)> {
-    if let Ok(handle) = Handle::try_current() {
-        return Ok((handle, None));
-    }
-
-    let runtime = Runtime::new()?;
-    Ok((runtime.handle().clone(), Some(runtime)))
-}
+pub use spacetimedb_runtime::{current_handle_or_new_runtime, Handle, Runtime, RuntimeDispatch, RuntimeTimeout};

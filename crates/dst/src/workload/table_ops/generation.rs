@@ -225,6 +225,10 @@ impl<S: TableScenario> TableWorkloadSource<S> {
         self.model.any_read_tx()
     }
 
+    pub fn has_open_write_tx(&self) -> bool {
+        self.model.active_writer().is_some()
+    }
+
     fn fill_pending(&mut self) {
         if self.emitted >= self.target_interactions {
             // Once the workload budget is spent, stop asking the scenario for

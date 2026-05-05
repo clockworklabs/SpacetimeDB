@@ -8211,7 +8211,6 @@ dependencies = [
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-fs-utils",
- "spacetimedb-io",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib 2.2.0",
@@ -8221,6 +8220,7 @@ dependencies = [
  "spacetimedb-physical-plan",
  "spacetimedb-primitives 2.2.0",
  "spacetimedb-query",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
@@ -8310,16 +8310,15 @@ name = "spacetimedb-dst"
 version = "2.2.0"
 dependencies = [
  "anyhow",
- "async-task",
  "clap 4.5.50",
  "futures-util",
- "libc",
  "spacetimedb-commitlog",
  "spacetimedb-core",
  "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-lib 2.2.0",
  "spacetimedb-primitives 2.2.0",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-table",
@@ -8405,13 +8404,6 @@ dependencies = [
  "portpicker",
  "reqwest 0.12.24",
  "tempfile",
-]
-
-[[package]]
-name = "spacetimedb-io"
-version = "2.2.0"
-dependencies = [
- "tokio",
 ]
 
 [[package]]
@@ -8613,6 +8605,19 @@ name = "spacetimedb-query-builder"
 version = "2.2.0"
 dependencies = [
  "spacetimedb-lib 2.2.0",
+]
+
+[[package]]
+name = "spacetimedb-runtime"
+version = "2.2.0"
+dependencies = [
+ "anyhow",
+ "async-task",
+ "futures",
+ "futures-util",
+ "libc",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

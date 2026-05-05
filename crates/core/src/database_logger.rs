@@ -3,8 +3,6 @@ use chrono::{NaiveDate, Utc};
 use futures::stream::{self, BoxStream};
 use futures::{Stream, StreamExt as _, TryStreamExt};
 use pin_project_lite::pin_project;
-use spacetimedb_io::fs::FileFromStd;
-use spacetimedb_io::io::{AsyncRead, BufReader, ReadBuf};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::future;
@@ -13,6 +11,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, BufReader, ReadBuf};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
@@ -108,7 +107,7 @@ impl Logger for FileLogger {
                     seek_to(&mut file, &mut buf, n)?;
                 }
 
-                Ok::<_, io::Error>(spacetimedb_io::fs::file_from_std(file))
+                Ok::<_, io::Error>(tokio::fs::File::from_std(file))
             }
         }))
         .map_ok(ReaderStream::new)
@@ -593,7 +592,7 @@ fn seek_to(file: &mut File, buf: &mut [u8], num_lines: u32) -> io::Result<()> {
     Ok(())
 }
 
-fn read_exact_at(file: &std::fs::File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::FileExt;
@@ -627,14 +626,14 @@ fn into_file_stream(file: impl Into<Option<File>>) -> impl Stream<Item = io::Res
 pin_project! {
     #[project = MaybeFileProj]
     enum MaybeFile {
-        File { #[pin] inner: FileFromStd },
+        File { #[pin] inner: tokio::fs::File },
         Empty,
     }
 }
 
 impl MaybeFile {
     pub fn new(file: Option<File>) -> Self {
-        match file.map(spacetimedb_io::fs::file_from_std) {
+        match file.map(tokio::fs::File::from_std) {
             Some(inner) => Self::File { inner },
             None => Self::Empty,
         }

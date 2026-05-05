@@ -1,6 +1,6 @@
 //! RelationalDB DST target with mocked commitlog file chaos and replay checks.
 
-use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, sync::Arc};
+use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, sync::Arc, time::Duration};
 
 use spacetimedb_commitlog::repo::{Memory as MemoryCommitlogRepo, SizeOnDisk};
 use spacetimedb_core::{
@@ -12,7 +12,7 @@ use spacetimedb_datastore::{
     execution_context::Workload,
     traits::{IsolationLevel, Program},
 };
-use spacetimedb_durability::{Durability, EmptyHistory, Local};
+use spacetimedb_durability::{DirectLocal, Durability, EmptyHistory};
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
@@ -54,6 +54,8 @@ use crate::{
 pub type RelationalDbCommitlogOutcome = CommitlogWorkloadOutcome;
 type RelationalDbCommitlogSource = crate::workload::commitlog_ops::CommitlogWorkloadSource<TableScenarioId>;
 type RelationalDbCommitlogProperties = PropertyRuntime;
+
+const DURABILITY_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn run_generated_with_config_and_scenario(
     seed: DstSeed,
@@ -216,10 +218,8 @@ struct RelationalDbEngine {
     last_observed_durable_offset: Option<u64>,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
-    runtime_handle: sim::RuntimeHandle,
     commitlog_repo: StressCommitlogRepo,
     stats: RunStats,
-    _runtime_guard: Option<sim::RuntimeGuard>,
 }
 
 impl RelationalDbEngine {
@@ -242,15 +242,11 @@ impl RelationalDbEngine {
             last_observed_durable_offset: None,
             durability: bootstrap.durability,
             durability_opts: bootstrap.durability_opts,
-            runtime_handle: bootstrap.runtime_handle,
             commitlog_repo: bootstrap.commitlog_repo,
             stats: RunStats {
-                runtime: RuntimeStats {
-                    durability_actors_started: 1,
-                },
+                runtime: RuntimeStats::default(),
                 ..Default::default()
             },
-            _runtime_guard: bootstrap.runtime_guard,
         };
         this.install_base_schema().map_err(anyhow::Error::msg)?;
         this.refresh_observed_durable_offset(true).map_err(anyhow::Error::msg)?;
@@ -354,7 +350,6 @@ impl RelationalDbEngine {
 
         let (durability, db) = self.reopen_from_history_with_fault_retry("close/reopen")?;
 
-        self.stats.runtime.durability_actors_started += 1;
         self.durability = durability;
         self.db = Some(db);
         self.rebuild_table_handles_after_reopen()?;
@@ -384,18 +379,14 @@ impl RelationalDbEngine {
 
     fn reopen_from_history(&self) -> Result<(Arc<InMemoryCommitlogDurability>, RelationalDB), String> {
         let durability = Arc::new(
-            InMemoryCommitlogDurability::open_with_repo(
-                self.commitlog_repo.clone(),
-                self.runtime_handle.clone(),
-                self.durability_opts,
-            )
-            .map_err(|err| format!("reopen in-memory durability failed: {err}"))?,
+            InMemoryCommitlogDurability::open_with_repo(self.commitlog_repo.clone(), self.durability_opts)
+                .map_err(|err| format!("reopen in-memory durability failed: {err}"))?,
         );
         let persistence = Persistence {
             durability: durability.clone(),
             disk_size: Arc::new(in_memory_size_on_disk),
             snapshots: None,
-            runtime: self.runtime_handle.clone(),
+            runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
         };
         let (db, connected_clients) = RelationalDB::open(
             Identity::ZERO,
@@ -990,10 +981,15 @@ impl RelationalDbEngine {
         if let Some(target_offset) = self.last_requested_durable_offset {
             let current = self.durability.durable_tx_offset().last_seen();
             if current.is_none_or(|offset| offset < target_offset) {
-                self.durability
-                    .durable_tx_offset()
-                    .wait_for(target_offset)
+                let mut durable_offset = self.durability.durable_tx_offset();
+                sim::time::timeout(DURABILITY_WAIT_TIMEOUT, durable_offset.wait_for(target_offset))
                     .await
+                    .map_err(|err| {
+                        format!(
+                            "durability wait for tx offset {target_offset} timed out after {:?}",
+                            err.duration()
+                        )
+                    })?
                     .map_err(|err| format!("durability wait for tx offset {target_offset} failed: {err}"))?;
             }
         } else if forced {
@@ -1239,7 +1235,6 @@ impl RelationalDbEngine {
         drop(old_db);
 
         let (durability, db) = self.reopen_from_history_with_fault_retry("final replay check")?;
-        self.stats.runtime.durability_actors_started += 1;
         self.durability = durability;
         self.db = Some(db);
         self.rebuild_table_handles_after_reopen()?;
@@ -1385,35 +1380,32 @@ impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
 }
 
 type StressCommitlogRepo = FaultableRepo<MemoryCommitlogRepo>;
-type InMemoryCommitlogDurability = Local<ProductValue, StressCommitlogRepo>;
+type InMemoryCommitlogDurability = DirectLocal<ProductValue, StressCommitlogRepo>;
 
 struct RelationalDbBootstrap {
     db: RelationalDB,
-    runtime_handle: sim::RuntimeHandle,
     commitlog_repo: StressCommitlogRepo,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
-    runtime_guard: Option<sim::RuntimeGuard>,
 }
 
 fn bootstrap_relational_db(
     seed: DstSeed,
     fault_profile: CommitlogFaultProfile,
 ) -> anyhow::Result<RelationalDbBootstrap> {
-    let (runtime_handle, runtime_guard) = sim::current_handle_or_new_runtime()?;
     let fault_config = CommitlogFaultConfig::for_profile(fault_profile);
 
     let commitlog_repo = FaultableRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config, seed.fork(702));
     let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
-        InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), runtime_handle.clone(), durability_opts)
+        InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), durability_opts)
             .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?,
     );
     let persistence = Persistence {
         durability: durability.clone(),
         disk_size: Arc::new(in_memory_size_on_disk),
         snapshots: None,
-        runtime: runtime_handle.clone(),
+        runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
     };
     let (db, connected_clients) = RelationalDB::open(
         Identity::ZERO,
@@ -1429,11 +1421,9 @@ fn bootstrap_relational_db(
     })?;
     Ok(RelationalDbBootstrap {
         db,
-        runtime_handle,
         commitlog_repo,
         durability,
         durability_opts,
-        runtime_guard,
     })
 }
 

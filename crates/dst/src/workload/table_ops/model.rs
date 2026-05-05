@@ -443,7 +443,7 @@ impl TableOracle {
         {
             return Ok(Some(PredictedOutcome::Error {
                 kind: TableErrorKind::WriteConflict,
-                subject: Some((conn, table)),
+                subject: None,
             }));
         }
         Ok(None)
@@ -604,5 +604,101 @@ fn bound_contains_upper(bound: &Bound<AlgebraicValue>, key: &AlgebraicValue) -> 
         Bound::Included(value) => key <= value,
         Bound::Excluded(value) => key < value,
         Bound::Unbounded => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use spacetimedb_sats::AlgebraicValue;
+
+    use crate::{client::SessionId, schema::SimRow};
+
+    use super::{PredictedOutcome, TableErrorKind, TableOperation, TableOracle};
+
+    fn row(id: u64) -> SimRow {
+        SimRow {
+            values: vec![AlgebraicValue::U64(id)],
+        }
+    }
+
+    #[test]
+    fn write_conflict_prediction_does_not_request_blocking_visibility_check() {
+        let owner = SessionId::from_index(0);
+        let contender = SessionId::from_index(1);
+        let mut oracle = TableOracle::new(1, 2);
+        oracle.apply(&TableOperation::BeginTx { conn: owner });
+
+        let prediction = oracle
+            .predict(&TableOperation::InsertRows {
+                conn: contender,
+                table: 0,
+                rows: vec![row(1)],
+            })
+            .unwrap();
+
+        assert_eq!(
+            prediction,
+            PredictedOutcome::Error {
+                kind: TableErrorKind::WriteConflict,
+                subject: None,
+            }
+        );
+    }
+
+    #[test]
+    fn exact_duplicate_insert_is_predicted_as_no_mutation() {
+        let conn = SessionId::from_index(0);
+        let mut oracle = TableOracle::new(1, 1);
+        oracle.apply(&TableOperation::InsertRows {
+            conn,
+            table: 0,
+            rows: vec![row(1)],
+        });
+
+        let prediction = oracle
+            .predict(&TableOperation::InsertRows {
+                conn,
+                table: 0,
+                rows: vec![row(1)],
+            })
+            .unwrap();
+
+        assert_eq!(
+            prediction,
+            PredictedOutcome::NoMutation {
+                subject: Some((conn, 0)),
+            }
+        );
+    }
+
+    #[test]
+    fn same_id_different_row_is_predicted_as_unique_constraint_violation() {
+        let conn = SessionId::from_index(0);
+        let mut oracle = TableOracle::new(1, 1);
+        oracle.apply(&TableOperation::InsertRows {
+            conn,
+            table: 0,
+            rows: vec![SimRow {
+                values: vec![AlgebraicValue::U64(1), AlgebraicValue::U64(10)],
+            }],
+        });
+
+        let prediction = oracle
+            .predict(&TableOperation::InsertRows {
+                conn,
+                table: 0,
+                rows: vec![SimRow {
+                    values: vec![AlgebraicValue::U64(1), AlgebraicValue::U64(11)],
+                }],
+            })
+            .unwrap();
+
+        assert_eq!(
+            prediction,
+            PredictedOutcome::Error {
+                kind: TableErrorKind::UniqueConstraintViolation,
+                subject: Some((conn, 0)),
+            }
+        );
     }
 }

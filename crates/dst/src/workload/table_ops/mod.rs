@@ -6,6 +6,8 @@ mod scenarios;
 pub(crate) mod strategies;
 mod types;
 
+#[cfg(test)]
+pub(crate) use generation::ScenarioPlanner;
 pub(crate) use generation::TableWorkloadSource;
 pub(crate) use model::{PredictedOutcome, TableOracle};
 pub use scenarios::TableScenarioId;

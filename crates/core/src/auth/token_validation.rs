@@ -481,7 +481,7 @@ mod tests {
     use axum::routing::get;
     use axum::Json;
     use axum::Router;
-    use spacetimedb_io::net::TcpListener;
+    use tokio::net::TcpListener;
     use tokio::sync::oneshot;
 
     use serde::{Deserialize, Serialize};

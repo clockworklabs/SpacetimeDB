@@ -96,7 +96,7 @@ impl<S: TableScenario> CommitlogWorkloadSource<S> {
         };
         self.pending.push_back(CommitlogInteraction::Table(base_op));
 
-        if self.base.has_open_read_tx() {
+        if self.base.has_open_read_tx() || self.base.has_open_write_tx() {
             return true;
         }
 
@@ -188,5 +188,89 @@ impl<S: TableScenario> Iterator for CommitlogWorkloadSource<S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.pull_next_interaction()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use spacetimedb_sats::AlgebraicType;
+
+    use crate::{
+        client::SessionId,
+        schema::{ColumnPlan, SchemaPlan, TablePlan},
+        seed::{DstRng, DstSeed},
+        workload::{
+            commitlog_ops::CommitlogInteraction,
+            table_ops::{ScenarioPlanner, TableOperation, TableScenario, TableWorkloadInteraction},
+        },
+    };
+
+    use super::{CommitlogWorkloadProfile, CommitlogWorkloadSource};
+
+    #[derive(Clone)]
+    struct BeginThenCommitScenario;
+
+    impl TableScenario for BeginThenCommitScenario {
+        fn generate_schema(&self, _rng: &mut DstRng) -> SchemaPlan {
+            SchemaPlan {
+                tables: vec![TablePlan {
+                    name: "test_table".to_string(),
+                    columns: vec![ColumnPlan {
+                        name: "id".to_string(),
+                        ty: AlgebraicType::U64,
+                    }],
+                    extra_indexes: vec![],
+                }],
+            }
+        }
+
+        fn validate_outcome(
+            &self,
+            _schema: &SchemaPlan,
+            _outcome: &crate::workload::table_ops::TableWorkloadOutcome,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
+            if planner.active_writer() == Some(conn) {
+                planner.commit_tx(conn);
+                planner.push_interaction(TableWorkloadInteraction::commit_tx(conn));
+            } else {
+                planner.begin_tx(conn);
+                planner.push_interaction(TableWorkloadInteraction::begin_tx(conn));
+            }
+        }
+    }
+
+    #[test]
+    fn lifecycle_interactions_wait_for_open_write_tx_to_close() {
+        let scenario = BeginThenCommitScenario;
+        let mut rng = DstSeed(1).rng();
+        let schema = scenario.generate_schema(&mut rng);
+        let profile = CommitlogWorkloadProfile {
+            close_reopen_pct: 100,
+            create_dynamic_table_pct: 100,
+            migrate_after_create_pct: 100,
+            migrate_dynamic_table_pct: 100,
+            drop_dynamic_table_pct: 100,
+        };
+        let mut source = CommitlogWorkloadSource::with_profile(DstSeed(10), scenario, schema, 1, 2, profile);
+
+        assert!(matches!(
+            source.next(),
+            Some(CommitlogInteraction::Table(TableWorkloadInteraction {
+                op: TableOperation::BeginTx { .. },
+                ..
+            }))
+        ));
+        assert!(matches!(
+            source.next(),
+            Some(CommitlogInteraction::Table(TableWorkloadInteraction {
+                op: TableOperation::CommitTx { .. },
+                ..
+            }))
+        ));
+        assert!(matches!(source.next(), Some(CommitlogInteraction::CloseReopen)));
     }
 }

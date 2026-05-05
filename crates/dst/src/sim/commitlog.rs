@@ -324,7 +324,9 @@ impl<S: BufRead> BufRead for FaultableReader<S> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.faults.maybe_disk_latency();
         self.faults.maybe_error(FaultKind::Read)?;
-        self.inner.fill_buf()
+        let buf = self.inner.fill_buf()?;
+        let len = self.faults.maybe_short_len(buf.len(), ShortIoKind::Read);
+        Ok(&buf[..len])
     }
 
     fn consume(&mut self, amount: usize) {
@@ -532,5 +534,39 @@ impl FaultKind {
             Self::Open => "dst injected disk open error",
             Self::Metadata => "dst injected disk metadata error",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{BufRead, Cursor};
+
+    use super::*;
+
+    fn always_short_read_config() -> CommitlogFaultConfig {
+        CommitlogFaultConfig {
+            profile: CommitlogFaultProfile::Default,
+            enabled: true,
+            latency_prob: 0.0,
+            long_latency_prob: 0.0,
+            short_io_prob: 1.0,
+            read_error_prob: 0.0,
+            write_error_prob: 0.0,
+            flush_error_prob: 0.0,
+            fsync_error_prob: 0.0,
+            open_error_prob: 0.0,
+            metadata_error_prob: 0.0,
+            max_short_io_divisor: 2,
+        }
+    }
+
+    #[test]
+    fn buf_read_path_applies_short_read_faults() {
+        let faults = FaultController::new(always_short_read_config(), DstSeed(55));
+        faults.enable();
+        let mut reader = FaultableReader::new(Cursor::new(vec![1, 2, 3, 4]), faults.clone());
+
+        assert_eq!(reader.fill_buf().unwrap(), &[1, 2]);
+        assert_eq!(faults.summary().short_read, 1);
     }
 }

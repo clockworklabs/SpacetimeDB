@@ -1,6 +1,7 @@
 //! Minimal asynchronous executor adapted from madsim's `sim/task` loop.
 
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     fmt,
     future::Future,
@@ -17,12 +18,11 @@ use std::{
 
 use futures_util::FutureExt;
 
-use crate::{
-    seed::DstSeed,
-    sim::rng::{enter_rng_context, DeterminismLog},
-    sim::system_thread::enter_simulation_thread,
-    sim::time::{enter_time_context, TimeHandle},
-    sim::Rng,
+use crate::sim::{
+    rng::{enter_rng_context, DeterminismLog},
+    system_thread::enter_simulation_thread,
+    time::{enter_time_context, TimeHandle},
+    Rng,
 };
 
 type Runnable = async_task::Runnable<NodeId>;
@@ -51,13 +51,14 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub fn new(seed: DstSeed) -> anyhow::Result<Self> {
+    pub fn new(seed: u64) -> anyhow::Result<Self> {
         Ok(Self {
             executor: Arc::new(Executor::new(seed)),
         })
     }
 
     pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
+        let _handle_context = enter_handle_context(self.handle());
         self.executor.block_on(future)
     }
 
@@ -92,7 +93,7 @@ impl Runtime {
     }
 
     /// Run a future twice with the same seed and fail if simulator choices diverge.
-    pub fn check_determinism<F>(seed: DstSeed, make_future: fn() -> F) -> F::Output
+    pub fn check_determinism<F>(seed: u64, make_future: fn() -> F) -> F::Output
     where
         F: Future + 'static,
         F::Output: Send + 'static,
@@ -101,7 +102,7 @@ impl Runtime {
     }
 
     /// Run a future twice with the same seed and fail if simulator choices diverge.
-    pub fn check_determinism_with<M, F>(seed: DstSeed, make_future: M) -> F::Output
+    pub fn check_determinism_with<M, F>(seed: u64, make_future: M) -> F::Output
     where
         M: Fn() -> F + Clone + Send + 'static,
         F: Future + 'static,
@@ -109,7 +110,7 @@ impl Runtime {
     {
         let first = make_future.clone();
         let log = thread::spawn(move || {
-            let mut runtime = Runtime::new(seed).expect("failed to create DST runtime");
+            let mut runtime = Runtime::new(seed).expect("failed to create simulation runtime");
             runtime.executor.enable_determinism_log();
             runtime.block_on(first());
             runtime
@@ -122,7 +123,7 @@ impl Runtime {
         .unwrap();
 
         thread::spawn(move || {
-            let mut runtime = Runtime::new(seed).expect("failed to create DST runtime");
+            let mut runtime = Runtime::new(seed).expect("failed to create simulation runtime");
             runtime.executor.enable_determinism_check(log);
             let output = runtime.block_on(make_future());
             runtime
@@ -144,6 +145,10 @@ pub struct Handle {
 }
 
 impl Handle {
+    pub fn current() -> Option<Self> {
+        current_handle()
+    }
+
     pub fn create_node(&self) -> NodeId {
         self.executor.create_node()
     }
@@ -162,6 +167,39 @@ impl Handle {
         F::Output: Send + 'static,
     {
         self.executor.spawn_on(node, future)
+    }
+
+    pub fn spawn_local_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        self.executor.spawn_local_on(node, future)
+    }
+}
+
+thread_local! {
+    static CURRENT_HANDLE: RefCell<Option<Handle>> = RefCell::new(None);
+}
+
+pub(crate) fn current_handle() -> Option<Handle> {
+    CURRENT_HANDLE.with(|handle| handle.borrow().clone())
+}
+
+fn enter_handle_context(handle: Handle) -> HandleContextGuard {
+    let previous = CURRENT_HANDLE.with(|slot| slot.borrow_mut().replace(handle));
+    HandleContextGuard { previous }
+}
+
+struct HandleContextGuard {
+    previous: Option<Handle>,
+}
+
+impl Drop for HandleContextGuard {
+    fn drop(&mut self) {
+        CURRENT_HANDLE.with(|slot| {
+            *slot.borrow_mut() = self.previous.take();
+        });
     }
 }
 
@@ -184,8 +222,8 @@ impl<T> Future for JoinHandle<T> {
     }
 }
 
-fn panic_with_seed(seed: DstSeed, payload: Box<dyn std::any::Any + Send>) -> ! {
-    eprintln!("note: run with --seed {} to reproduce this error", seed.0);
+fn panic_with_seed(seed: u64, payload: Box<dyn std::any::Any + Send>) -> ! {
+    eprintln!("note: run with --seed {seed} to reproduce this error");
     std::panic::resume_unwind(payload);
 }
 
@@ -199,7 +237,7 @@ struct Executor {
 }
 
 impl Executor {
-    fn new(seed: DstSeed) -> Self {
+    fn new(seed: u64) -> Self {
         let queue = Queue::new();
         let mut nodes = BTreeMap::new();
         nodes.insert(NodeId::MAIN, Arc::new(NodeState::default()));
@@ -267,6 +305,24 @@ impl Executor {
         let (runnable, task) = async_task::Builder::new()
             .metadata(node)
             .spawn(move |_| future, move |runnable| sender.send(runnable));
+        runnable.schedule();
+
+        JoinHandle { task }
+    }
+
+    fn spawn_local_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        self.node_state(node);
+
+        let sender = self.sender.clone();
+        let (runnable, task) = unsafe {
+            async_task::Builder::new()
+                .metadata(node)
+                .spawn_unchecked(move |_| future, move |runnable| sender.send(runnable))
+        };
         runnable.schedule();
 
         JoinHandle { task }
@@ -448,7 +504,7 @@ mod tests {
 
     #[test]
     fn paused_node_does_not_run_until_resumed() {
-        let mut runtime = Runtime::new(DstSeed(1)).unwrap();
+        let mut runtime = Runtime::new(1).unwrap();
         let node = runtime.create_node();
         runtime.pause(node);
 
@@ -471,7 +527,7 @@ mod tests {
 
     #[test]
     fn handle_can_spawn_onto_node_from_simulated_task() {
-        let mut runtime = Runtime::new(DstSeed(2)).unwrap();
+        let mut runtime = Runtime::new(2).unwrap();
         let handle = runtime.handle();
 
         let value = runtime.block_on(async move {
@@ -483,11 +539,32 @@ mod tests {
     }
 
     #[test]
+    fn current_handle_can_spawn_local_task_inside_runtime() {
+        assert!(Handle::current().is_none());
+
+        let mut runtime = Runtime::new(5).unwrap();
+        let value = runtime.block_on(async {
+            let handle = Handle::current().expect("sim handle should be present inside block_on");
+            let node = handle.create_node();
+            let captured = std::rc::Rc::new(17);
+            handle
+                .spawn_local_on(node, async move {
+                    yield_now().await;
+                    *captured
+                })
+                .await
+        });
+
+        assert_eq!(value, 17);
+        assert!(Handle::current().is_none());
+    }
+
+    #[test]
     fn check_determinism_runs_future_twice() {
         static CALLS: AtomicUsize = AtomicUsize::new(0);
         CALLS.store(0, Ordering::SeqCst);
 
-        let value = Runtime::check_determinism(DstSeed(3), || async {
+        let value = Runtime::check_determinism(3, || async {
             CALLS.fetch_add(1, Ordering::SeqCst);
             yield_now().await;
             13
@@ -503,7 +580,7 @@ mod tests {
         static FIRST_RUN: AtomicBool = AtomicBool::new(true);
         FIRST_RUN.store(true, Ordering::SeqCst);
 
-        Runtime::check_determinism(DstSeed(4), || async {
+        Runtime::check_determinism(4, || async {
             if FIRST_RUN.swap(false, Ordering::SeqCst) {
                 yield_now().await;
             }

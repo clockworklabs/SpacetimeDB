@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use spacetimedb_io::fs;
-use spacetimedb_io::io::AsyncWriteExt;
 use spacetimedb_lib::{hash_bytes, Hash};
 use std::io;
 use std::path::PathBuf;
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
 
 use super::ExternalStorage;
 

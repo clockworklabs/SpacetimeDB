@@ -26,7 +26,7 @@ members = [
   "crates/physical-plan",
   "crates/primitives",
   "crates/query",
-  "crates/io",
+  "crates/runtime",
   "crates/sats",
   "crates/schema",
   "crates/smoketests",
@@ -132,7 +132,6 @@ spacetimedb-durability = { path = "crates/durability", version = "=2.2.0" }
 spacetimedb-execution = { path = "crates/execution", version = "=2.2.0" }
 spacetimedb-expr = { path = "crates/expr", version = "=2.2.0" }
 spacetimedb-guard = { path = "crates/guard", version = "=2.2.0" }
-spacetimedb-io = { path = "crates/io", version = "=2.2.0" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.2.0" }
 spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.2.0", default-features = false }
 spacetimedb-metrics = { path = "crates/metrics", version = "=2.2.0" }
@@ -141,6 +140,7 @@ spacetimedb-pg = { path = "crates/pg", version = "=2.2.0" }
 spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.2.0" }
 spacetimedb-primitives = { path = "crates/primitives", version = "=2.2.0" }
 spacetimedb-query = { path = "crates/query", version = "=2.2.0" }
+spacetimedb-runtime = { path = "crates/runtime", version = "=2.2.0", default-features = false }
 spacetimedb-sats = { path = "crates/sats", version = "=2.2.0" }
 spacetimedb-schema = { path = "crates/schema", version = "=2.2.0" }
 spacetimedb-standalone = { path = "crates/standalone", version = "=2.2.0" }

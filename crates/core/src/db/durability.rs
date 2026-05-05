@@ -9,9 +9,8 @@ use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::Transaction;
 use spacetimedb_lib::Identity;
 use spacetimedb_sats::ProductValue;
-use tokio::{runtime, time::timeout};
 
-use crate::db::persistence::Durability;
+use crate::{db::persistence::Durability, runtime::RuntimeDispatch};
 
 pub(super) fn request_durability(
     durability: &Durability,
@@ -32,12 +31,12 @@ pub(super) fn request_durability(
     }));
 }
 
-pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &runtime::Handle, database_identity: Identity) {
-    let rt = runtime.clone();
-    rt.spawn(async move {
+pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &RuntimeDispatch, database_identity: Identity) {
+    let label = format!("[{database_identity}]");
+    let runtime = runtime.clone();
+    runtime.clone().spawn(async move {
         log::info!("starting spawn close");
-        let label = format!("[{database_identity}]");
-        match timeout(Duration::from_secs(10), durability.close()).await {
+        match runtime.timeout(Duration::from_secs(10), durability.close()).await {
             Err(_elapsed) => {
                 error!("{label} timeout waiting for durability shutdown");
             }
@@ -45,7 +44,6 @@ pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &runtime::Handle
                 info!("{label} durability shut down at tx offset: {offset:?}");
             }
         }
-
         log::info!("closing spawn close");
     });
 }

@@ -6,7 +6,7 @@ use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
 use spacetimedb_snapshot::SnapshotRepository;
 
-use crate::{messages::control_db::Database, util::asyncify};
+use crate::{messages::control_db::Database, runtime::RuntimeDispatch, util::asyncify};
 
 use super::{
     relational_db::{self, Txdata},
@@ -41,8 +41,8 @@ pub struct Persistence {
     /// persistent (as opposed to in-memory) databases. This is enforced by
     /// this type.
     pub snapshots: Option<SnapshotWorker>,
-    /// The tokio runtime onto which durability-related tasks shall be spawned.
-    pub runtime: tokio::runtime::Handle,
+    /// Runtime onto which durability-related tasks shall be spawned.
+    pub runtime: RuntimeDispatch,
 }
 
 impl Persistence {
@@ -52,6 +52,15 @@ impl Persistence {
         disk_size: impl Fn() -> io::Result<SizeOnDisk> + Send + Sync + 'static,
         snapshots: Option<SnapshotWorker>,
         runtime: tokio::runtime::Handle,
+    ) -> Self {
+        Self::new_with_runtime(durability, disk_size, snapshots, RuntimeDispatch::tokio(runtime))
+    }
+
+    pub fn new_with_runtime(
+        durability: impl spacetimedb_durability::Durability<TxData = Txdata> + 'static,
+        disk_size: impl Fn() -> io::Result<SizeOnDisk> + Send + Sync + 'static,
+        snapshots: Option<SnapshotWorker>,
+        runtime: RuntimeDispatch,
     ) -> Self {
         Self {
             durability: Arc::new(durability),
@@ -91,7 +100,7 @@ impl Persistence {
         Option<Arc<Durability>>,
         Option<DiskSizeFn>,
         Option<SnapshotWorker>,
-        Option<tokio::runtime::Handle>,
+        Option<RuntimeDispatch>,
     ) {
         this.map(
             |Self {
@@ -162,7 +171,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
             durability,
             disk_size,
             snapshots: Some(snapshot_worker),
-            runtime: tokio::runtime::Handle::current(),
+            runtime: RuntimeDispatch::tokio_current(),
         })
     }
 }

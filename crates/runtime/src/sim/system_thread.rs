@@ -50,12 +50,12 @@ unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc:
 
 #[cfg(test)]
 mod tests {
-    use crate::{seed::DstSeed, sim};
+    use crate::sim;
 
     #[test]
     #[cfg(unix)]
     fn runtime_forbids_system_thread_spawn() {
-        let mut runtime = sim::Runtime::new(DstSeed(200)).unwrap();
+        let mut runtime = sim::Runtime::new(200).unwrap();
         runtime.block_on(async {
             let result = std::panic::catch_unwind(|| std::thread::Builder::new().spawn(|| {}));
             assert!(result.is_err());

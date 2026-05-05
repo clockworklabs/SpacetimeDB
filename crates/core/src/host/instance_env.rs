@@ -1019,7 +1019,7 @@ impl reqwest::dns::Resolve for FilteredDnsResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         let host = name.as_str().to_owned();
         Box::pin(async move {
-            let addrs = spacetimedb_io::net::lookup_host((host.as_str(), 0)).await?;
+            let addrs = tokio::net::lookup_host((host.as_str(), 0)).await?;
             let filtered_addrs: Vec<SocketAddr> = addrs.filter(|addr| !is_blocked_ip(addr.ip())).collect();
 
             if filtered_addrs.is_empty() {

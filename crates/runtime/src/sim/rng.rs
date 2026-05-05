@@ -7,8 +7,6 @@ use std::{
     },
 };
 
-use crate::seed::DstSeed;
-
 const GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
 
 #[derive(Clone, Debug)]
@@ -20,14 +18,14 @@ pub struct Rng {
 }
 
 impl Rng {
-    pub fn new(seed: DstSeed) -> Self {
+    pub fn new(seed: u64) -> Self {
         unsafe { getentropy(ptr::null_mut(), 0) };
-        if !init_std_random_state(seed.0) {
+        if !init_std_random_state(seed) {
             tracing::warn!("failed to initialize std random state, std HashMap will not be deterministic");
         }
         Self {
-            seed: seed.0,
-            state: splitmix64(seed.0),
+            seed,
+            state: splitmix64(seed),
             log: None,
             check: None,
         }
@@ -111,23 +109,23 @@ impl Rng {
 pub(crate) struct DeterminismLog(Vec<u8>);
 
 #[derive(Debug)]
-pub(crate) struct DecisionSource {
+pub struct DecisionSource {
     state: AtomicU64,
 }
 
 impl DecisionSource {
-    pub(crate) fn new(seed: DstSeed) -> Self {
+    pub fn new(seed: u64) -> Self {
         Self {
-            state: AtomicU64::new(splitmix64(seed.0)),
+            state: AtomicU64::new(splitmix64(seed)),
         }
     }
 
-    pub(crate) fn sample_probability(&self, probability: f64) -> bool {
+    pub fn sample_probability(&self, probability: f64) -> bool {
         probability_sample(self.next_u64(), probability)
     }
 
     fn next_u64(&self) -> u64 {
-        let state = self.state.fetch_add(GAMMA, Ordering::Relaxed);
+        let state = self.state.fetch_add(GAMMA, Ordering::Relaxed).wrapping_add(GAMMA);
         splitmix64(state)
     }
 }
@@ -297,12 +295,12 @@ mod tests {
 
     #[test]
     fn rng_log_check_accepts_same_sequence() {
-        let mut first = Rng::new(DstSeed(10));
+        let mut first = Rng::new(10);
         first.enable_determinism_log();
         let first_values = (0..8).map(|_| first.next_u64()).collect::<Vec<_>>();
         let log = first.take_determinism_log().unwrap();
 
-        let mut second = Rng::new(DstSeed(10));
+        let mut second = Rng::new(10);
         second.enable_determinism_check(log);
         let second_values = (0..8).map(|_| second.next_u64()).collect::<Vec<_>>();
         second.finish_determinism_check().unwrap();
@@ -311,21 +309,31 @@ mod tests {
     }
 
     #[test]
+    fn decision_source_matches_rng_sequence() {
+        let source = DecisionSource::new(12);
+        let mut rng = Rng::new(12);
+
+        for _ in 0..16 {
+            assert_eq!(source.next_u64(), rng.next_u64());
+        }
+    }
+
+    #[test]
     #[should_panic(expected = "non-determinism detected")]
     fn rng_log_check_rejects_different_sequence() {
-        let mut first = Rng::new(DstSeed(10));
+        let mut first = Rng::new(10);
         first.enable_determinism_log();
         first.next_u64();
         let log = first.take_determinism_log().unwrap();
 
-        let mut second = Rng::new(DstSeed(11));
+        let mut second = Rng::new(11);
         second.enable_determinism_check(log);
         second.next_u64();
     }
 
     #[test]
     fn getentropy_uses_current_sim_rng() {
-        let rng = Arc::new(Mutex::new(Rng::new(DstSeed(20))));
+        let rng = Arc::new(Mutex::new(Rng::new(20)));
         let _guard = enter_rng_context(Arc::clone(&rng));
 
         let mut actual = [0u8; 24];
@@ -333,7 +341,7 @@ mod tests {
             assert_eq!(getentropy(actual.as_mut_ptr(), actual.len()), 0);
         }
 
-        let mut expected_rng = Rng::new(DstSeed(20));
+        let mut expected_rng = Rng::new(20);
         let mut expected = [0u8; 24];
         expected_rng.fill_bytes(&mut expected);
         assert_eq!(actual, expected);
@@ -341,7 +349,7 @@ mod tests {
 
     #[test]
     fn std_hashmap_order_is_seeded_for_runtime_thread() {
-        fn order_for(seed: DstSeed) -> Vec<(u64, u64)> {
+        fn order_for(seed: u64) -> Vec<(u64, u64)> {
             std::thread::spawn(move || {
                 let _rng = Rng::new(seed);
                 (0..12)
@@ -354,6 +362,6 @@ mod tests {
             .unwrap()
         }
 
-        assert_eq!(order_for(DstSeed(30)), order_for(DstSeed(30)));
+        assert_eq!(order_for(30), order_for(30));
     }
 }
