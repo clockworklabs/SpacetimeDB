@@ -6,9 +6,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-struct ReadMySchemaArgs {
-    pub server_url: String,
-}
+struct ReadMySchemaArgs {}
 
 impl __sdk::InModule for ReadMySchemaArgs {
     type Module = super::RemoteModule;
@@ -19,13 +17,12 @@ impl __sdk::InModule for ReadMySchemaArgs {
 ///
 /// Implemented for [`super::RemoteProcedures`].
 pub trait read_my_schema {
-    fn read_my_schema(&self, server_url: String) {
-        self.read_my_schema_then(server_url, |_, _| {});
+    fn read_my_schema(&self) {
+        self.read_my_schema_then(|_, _| {});
     }
 
     fn read_my_schema_then(
         &self,
-        server_url: String,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<String, __sdk::InternalError>) + Send + 'static,
     );
@@ -34,14 +31,10 @@ pub trait read_my_schema {
 impl read_my_schema for super::RemoteProcedures {
     fn read_my_schema_then(
         &self,
-        server_url: String,
 
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<String, __sdk::InternalError>) + Send + 'static,
     ) {
-        self.imp.invoke_procedure_with_callback::<_, String>(
-            "read_my_schema",
-            ReadMySchemaArgs { server_url },
-            __callback,
-        );
+        self.imp
+            .invoke_procedure_with_callback::<_, String>("read_my_schema", ReadMySchemaArgs {}, __callback);
     }
 }
