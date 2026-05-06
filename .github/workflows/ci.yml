@@ -967,6 +967,21 @@ jobs:
       - name: Run regression tests
         run: |
           bash sdks/csharp/tools~/run-regression-tests.sh
+          # Restore global.json symlinks (we replaced them with files to work around .NET 10 SDK bug)
+          # server is 5 levels deep from root, republishing dirs are 6 levels deep
+          if [ -f sdks/csharp/examples~/regression-tests/server/global.json ] && [ ! -L sdks/csharp/examples~/regression-tests/server/global.json ]; then
+            echo "Restoring symlink at server/global.json"
+            rm -f sdks/csharp/examples~/regression-tests/server/global.json
+            ln -s ../../../../../global.json sdks/csharp/examples~/regression-tests/server/global.json
+          fi
+          for dir in sdks/csharp/examples~/regression-tests/republishing/server-initial \
+                     sdks/csharp/examples~/regression-tests/republishing/server-republish; do
+            if [ -f "$dir/global.json" ] && [ ! -L "$dir/global.json" ]; then
+              echo "Restoring symlink at $dir/global.json"
+              rm -f "$dir/global.json"
+              ln -s ../../../../../../global.json "$dir/global.json"
+            fi
+          done
           tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1
