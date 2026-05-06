@@ -680,7 +680,9 @@ impl<T> MeteredUnboundedReceiver<T> {
 
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
         let poll = self.inner.poll_recv(cx);
-        if let Poll::Ready(Some(_)) = poll && let Some(gauge) = &self.gauge {
+        if let Poll::Ready(Some(_)) = poll
+            && let Some(gauge) = &self.gauge
+        {
             gauge.dec()
         }
         poll
