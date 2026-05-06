@@ -1556,7 +1556,6 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "duct",
- "tempfile",
 ]
 
 [[package]]
@@ -6253,7 +6252,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.50",
- "csharp-tools",
+ "duct",
+ "tempfile",
 ]
 
 [[package]]
