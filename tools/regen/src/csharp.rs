@@ -21,14 +21,6 @@ fn sdk_dir() -> PathBuf {
     workspace_dir().join("sdks/csharp")
 }
 
-fn cli_manifest() -> PathBuf {
-    workspace_dir().join("crates/cli/Cargo.toml")
-}
-
-fn standalone_manifest() -> PathBuf {
-    workspace_dir().join("crates/standalone/Cargo.toml")
-}
-
 fn path_arg(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
