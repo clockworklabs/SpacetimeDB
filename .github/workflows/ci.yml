@@ -837,6 +837,24 @@ jobs:
           dotnet workload install wasi-experimental
           rm global.json
 
+      # Install native WASI SDK toolchain (needed by WasiApp.Native.targets to compile native files).
+      - name: Install WASI SDK
+        run: |
+          WASI_SDK_VERSION="25"
+          WASI_SDK_PATH="/opt/wasi-sdk"
+          if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
+            echo "WASI SDK already installed at $WASI_SDK_PATH"
+          else
+            echo "Installing WASI SDK version $WASI_SDK_VERSION..."
+            wget -q "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            tar -xzf "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            sudo mv "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" "$WASI_SDK_PATH"
+            rm -f "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            echo "WASI SDK installed successfully"
+          fi
+          echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
+          echo "Using WASI SDK at: $WASI_SDK_PATH"
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
