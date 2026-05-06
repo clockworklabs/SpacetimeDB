@@ -1,17 +1,15 @@
-//! Production snapshot storage with deterministic fault injection.
+//! In-memory snapshot storage with deterministic fault injection.
 //!
-//! This is intentionally a semantic snapshot seam, not a filesystem facade.
-//! Targets can use it to model snapshot lifecycle behavior while still writing
-//! and reading real `SnapshotRepository` data.
+//! This is intentionally a semantic snapshot seam, not a filesystem facade. It
+//! keeps DST snapshot bytes inside controlled memory storage, while still using
+//! the same snapshot capture/restore shape as production.
 
 use std::sync::Arc;
 
-use spacetimedb_core::db::relational_db::{open_snapshot_repo, RelationalDB};
+use spacetimedb_core::db::relational_db::RelationalDB;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
-use spacetimedb_snapshot::SnapshotRepository;
-use tempfile::TempDir;
+use spacetimedb_snapshot::{MemorySnapshotRepository, SnapshotStore};
 
 use crate::{
     seed::DstSeed,
@@ -29,39 +27,30 @@ pub(crate) fn is_injected_snapshot_error_text(text: &str) -> bool {
 }
 
 pub(crate) struct SnapshotRestoreRepo {
-    pub(crate) repo: Option<Arc<SnapshotRepository>>,
+    pub(crate) store: Option<Arc<dyn SnapshotStore>>,
     pub(crate) restored_snapshot_offset: Option<TxOffset>,
     pub(crate) latest_snapshot_offset: Option<TxOffset>,
 }
 
-/// Real snapshot repository wrapped with deterministic operation-level faults.
+/// In-memory snapshot repository wrapped with deterministic operation-level faults.
 ///
 /// The bytes/pages are written and read by `spacetimedb-snapshot`; this wrapper
 /// only decides whether a DST operation reaches that repository. That keeps
-/// restore semantics aligned with production without requiring the Tokio-backed
-/// `SnapshotWorker` inside the simulator.
+/// restore semantics aligned with production without requiring the
+/// Tokio-backed `SnapshotWorker` or the host filesystem inside the simulator.
 ///
 /// This is the intended boundary for the current DST target. It exercises
 /// capture/restore behavior, retry classification, and replay correctness. It
-/// does not model torn snapshot pages or byte-level corruption; those require a
-/// deeper repository abstraction inside `spacetimedb-snapshot`.
+/// does not model torn snapshot pages or byte-level corruption.
 pub(crate) struct BuggifiedSnapshotRepo {
-    _root: TempDir,
-    repo: Arc<SnapshotRepository>,
+    repo: Arc<MemorySnapshotRepository>,
     faults: StorageFaultController,
 }
 
 impl BuggifiedSnapshotRepo {
     pub(crate) fn new(config: SnapshotFaultConfig, seed: DstSeed) -> anyhow::Result<Self> {
-        let root = tempfile::Builder::new()
-            .prefix("spacetimedb-dst-snapshots-")
-            .tempdir()?;
-        let path = SnapshotsPath::from_path_unchecked(root.path());
-        let repo = open_snapshot_repo(path, Identity::ZERO, 0)
-            .map_err(|err| anyhow::anyhow!("open DST snapshot repo failed: {err}"))?;
         Ok(Self {
-            _root: root,
-            repo,
+            repo: Arc::new(MemorySnapshotRepository::new(Identity::ZERO, 0)),
             faults: StorageFaultController::new(config, StorageFaultDomain::Snapshot, seed),
         })
     }
@@ -94,15 +83,9 @@ impl BuggifiedSnapshotRepo {
         self.inject(StorageFaultKind::Fsync)?;
 
         let created = db
-            .take_snapshot(&self.repo)
+            .take_snapshot_store(self.repo.as_ref())
             .map_err(|err| format!("snapshot capture failed: {err}"))?;
-        if created.is_none() {
-            return Ok(None);
-        }
-
-        self.repo
-            .latest_snapshot()
-            .map_err(|err| format!("snapshot metadata after capture failed: {err}"))
+        Ok(created)
     }
 
     pub(crate) fn repo_for_restore(&self, durable_offset: Option<TxOffset>) -> Result<SnapshotRestoreRepo, String> {
@@ -111,7 +94,7 @@ impl BuggifiedSnapshotRepo {
         self.inject(StorageFaultKind::Metadata)?;
         let Some(durable_offset) = durable_offset else {
             return Ok(SnapshotRestoreRepo {
-                repo: None,
+                store: None,
                 restored_snapshot_offset: None,
                 latest_snapshot_offset,
             });
@@ -122,7 +105,7 @@ impl BuggifiedSnapshotRepo {
             .map_err(|err| format!("snapshot metadata before restore failed: {err}"))?;
         if restored_snapshot_offset.is_none() {
             return Ok(SnapshotRestoreRepo {
-                repo: None,
+                store: None,
                 restored_snapshot_offset,
                 latest_snapshot_offset,
             });
@@ -131,7 +114,7 @@ impl BuggifiedSnapshotRepo {
         self.inject(StorageFaultKind::Open)?;
         self.inject(StorageFaultKind::Read)?;
         Ok(SnapshotRestoreRepo {
-            repo: Some(self.repo.clone()),
+            store: Some(self.repo.clone()),
             restored_snapshot_offset,
             latest_snapshot_offset,
         })
@@ -164,7 +147,7 @@ mod tests {
     fn repo_without_snapshots_is_not_used_for_restore() {
         let repo = BuggifiedSnapshotRepo::new(no_faults(), DstSeed(41)).unwrap();
 
-        assert!(repo.repo_for_restore(Some(0)).unwrap().repo.is_none());
+        assert!(repo.repo_for_restore(Some(0)).unwrap().store.is_none());
     }
 
     #[test]
@@ -188,7 +171,7 @@ mod tests {
 
         let restore = repo.with_faults_suspended(|| repo.repo_for_restore(Some(0)));
 
-        assert!(restore.unwrap().repo.is_none());
+        assert!(restore.unwrap().store.is_none());
         assert_eq!(repo.fault_summary().metadata_error, 0);
     }
 }

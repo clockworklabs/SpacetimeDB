@@ -14,7 +14,7 @@ use prometheus::{Histogram, IntGauge};
 use spacetimedb_datastore::locking_tx_datastore::{committed_state::CommittedState, datastore::Locking};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_snapshot::{CompressionStats, SnapshotRepository};
+use spacetimedb_snapshot::{CompressionStats, SnapshotRepository, SnapshotStore};
 use tokio::sync::watch;
 
 use crate::{util::asyncify, worker_metrics::WORKER_METRICS};
@@ -108,6 +108,11 @@ impl SnapshotWorker {
     /// Get the [SnapshotRepository] this worker is operating on.
     pub fn repo(&self) -> &SnapshotRepository {
         &self.snapshot_repository
+    }
+
+    /// Get this worker's snapshot storage as a generic snapshot store.
+    pub fn snapshot_store(&self) -> Arc<dyn SnapshotStore> {
+        self.snapshot_repository.clone()
     }
 
     /// Request a snapshot to be taken.

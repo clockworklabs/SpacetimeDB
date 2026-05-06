@@ -234,7 +234,7 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
             disk_size: Arc::new(|| Ok(<_>::default())),
-            snapshot_repo: None,
+            snapshot_store: None,
             snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
             runtime: rt,
         };

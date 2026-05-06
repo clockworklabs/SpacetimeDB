@@ -52,7 +52,7 @@ use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
+use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository, SnapshotStore};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
@@ -237,11 +237,11 @@ impl RelationalDB {
     ///
     ///   `None` may be passed to obtain an in-memory only database.
     ///
-    /// - `snapshot_repo`
+    /// - snapshot storage
     ///
-    ///   The [`SnapshotRepository`] which stores snapshots of this database.
+    ///   The [`SnapshotStore`] which stores snapshots of this database.
     ///   This is only meaningful if `history` and `durability` are also supplied.
-    ///   If restoring from an existing database, the `snapshot_repo` must
+    ///   If restoring from an existing database, the snapshot store must
     ///   store views of the same sequence of TXes as the `history`.
     ///
     /// - `metrics_recorder_queue`
@@ -282,9 +282,10 @@ impl RelationalDB {
 
         let start_time = std::time::Instant::now();
 
+        let snapshot_store = persistence.as_ref().and_then(|p| p.snapshot_store());
         let inner = Self::restore_from_snapshot_or_bootstrap(
             database_identity,
-            persistence.as_ref().and_then(|p| p.snapshot_repo()),
+            snapshot_store.as_deref(),
             durable_tx_offset,
             min_commitlog_offset,
             page_pool,
@@ -293,10 +294,10 @@ impl RelationalDB {
             // Sanity check because the snapshot worker could've been used before.
             debug_assert!(
                 persistence
-                    .snapshot_repo()
-                    .map(|repo| repo.database_identity() == database_identity)
+                    .snapshot_store()
+                    .map(|store| store.database_identity() == database_identity)
                     .unwrap_or(true),
-                "snapshot repository does not match database identity",
+                "snapshot store does not match database identity",
             );
             persistence.set_snapshot_state(inner.committed_state.clone());
         }
@@ -475,7 +476,7 @@ impl RelationalDB {
 
     fn restore_from_snapshot_or_bootstrap(
         database_identity: Identity,
-        snapshot_repo: Option<&SnapshotRepository>,
+        snapshot_store: Option<&dyn SnapshotStore>,
         durable_tx_offset: Option<TxOffset>,
         min_commitlog_offset: TxOffset,
         page_pool: PagePool,
@@ -483,14 +484,14 @@ impl RelationalDB {
         // Try to load the `ReconstructedSnapshot` at `snapshot_offset`.
         fn try_load_snapshot(
             database_identity: &Identity,
-            snapshot_repo: &SnapshotRepository,
+            snapshot_store: &dyn SnapshotStore,
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
 
-            let snapshot = snapshot_repo
+            let snapshot = snapshot_store
                 .read_snapshot(snapshot_offset, page_pool)
                 .map_err(Box::new)?;
 
@@ -556,11 +557,11 @@ impl RelationalDB {
             }
         }
 
-        if let Some((snapshot_repo, durable_tx_offset)) = snapshot_repo.zip(durable_tx_offset) {
+        if let Some((snapshot_store, durable_tx_offset)) = snapshot_store.zip(durable_tx_offset) {
             // Mark any newer snapshots as invalid, as the history past
             // `durable_tx_offset` may have been reset and thus diverge from
             // any snapshots taken earlier.
-            snapshot_repo
+            snapshot_store
                 .invalidate_newer_snapshots(durable_tx_offset)
                 .map_err(|e| RestoreSnapshotError::Invalidate {
                     offset: durable_tx_offset,
@@ -571,7 +572,7 @@ impl RelationalDB {
             // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
             let mut upper_bound = durable_tx_offset;
             loop {
-                let Some(snapshot_offset) = snapshot_repo
+                let Some(snapshot_offset) = snapshot_store
                     .latest_snapshot_older_than(upper_bound)
                     .map_err(Box::new)?
                 else {
@@ -581,7 +582,7 @@ impl RelationalDB {
                     log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
                 }
-                match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &page_pool) {
+                match try_load_snapshot(&database_identity, snapshot_store, snapshot_offset, &page_pool) {
                     Ok(snapshot) if snapshot.database_identity != database_identity => {
                         return Err(RestoreSnapshotError::IdentityMismatch {
                             expected: database_identity,
@@ -596,11 +597,12 @@ impl RelationalDB {
                         // Invalidate the snapshot if the error is permanent.
                         // Newly created snapshots should not depend on it.
                         if !is_transient_error(&e) {
-                            let path = snapshot_repo.snapshot_dir_path(snapshot_offset);
-                            log::info!("invalidating bad snapshot at {}", path.display());
-                            path.rename_invalid().map_err(|e| RestoreSnapshotError::Invalidate {
-                                offset: snapshot_offset,
-                                source: Box::new(e.into()),
+                            log::info!("invalidating bad snapshot at {snapshot_offset}");
+                            snapshot_store.invalidate_snapshot(snapshot_offset).map_err(|e| {
+                                RestoreSnapshotError::Invalidate {
+                                    offset: snapshot_offset,
+                                    source: Box::new(e),
+                                }
                             })?;
                         }
                         // Try the next older one if the error was transient.
@@ -616,7 +618,7 @@ impl RelationalDB {
                 }
             }
         }
-        log::info!("[{database_identity}] DATABASE: no usable snapshot on disk");
+        log::info!("[{database_identity}] DATABASE: no usable snapshot in store");
 
         // If we didn't find a snapshot and the commitlog doesn't start at the
         // zero-th commit (e.g. due to archiving), there is no way to restore
@@ -901,6 +903,14 @@ impl RelationalDB {
     /// Tokio-backed [`SnapshotWorker`].
     pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>, DBError> {
         Ok(self.inner.take_snapshot(repo)?)
+    }
+
+    /// Capture a snapshot into a repository abstraction.
+    ///
+    /// This is used by simulator-backed tests which need controlled storage
+    /// instead of a filesystem path.
+    pub fn take_snapshot_store(&self, store: &dyn SnapshotStore) -> Result<Option<TxOffset>, DBError> {
+        Ok(self.inner.take_snapshot_store(store)?)
     }
 
     /// Run a fallible function in a transaction.
@@ -1959,7 +1969,7 @@ pub mod tests_utils {
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
-                snapshot_repo: None,
+                snapshot_store: None,
                 snapshots,
                 runtime: RuntimeDispatch::tokio(rt),
             };
@@ -2081,7 +2091,7 @@ pub mod tests_utils {
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
-                snapshot_repo: None,
+                snapshot_store: None,
                 snapshots,
                 runtime: RuntimeDispatch::tokio(rt),
             };
@@ -3687,7 +3697,7 @@ mod tests {
         let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
         RelationalDB::restore_from_snapshot_or_bootstrap(
             Identity::ZERO,
-            Some(&repo),
+            Some(repo.as_ref()),
             Some(last_compress),
             0,
             PagePool::new_for_test(),
@@ -3715,8 +3725,13 @@ mod tests {
         );
 
         let last = repo.latest_snapshot()?;
-        let stdb =
-            RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last, 0, PagePool::new_for_test())?;
+        let stdb = RelationalDB::restore_from_snapshot_or_bootstrap(
+            identity,
+            Some(repo.as_ref()),
+            last,
+            0,
+            PagePool::new_for_test(),
+        )?;
 
         let out = TempDir::with_prefix("snapshot_test")?;
         let dir = SnapshotsPath::from_path_unchecked(out.path());

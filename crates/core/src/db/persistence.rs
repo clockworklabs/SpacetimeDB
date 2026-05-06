@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
-use spacetimedb_snapshot::SnapshotRepository;
+use spacetimedb_snapshot::SnapshotStore;
 
 use crate::{messages::control_db::Database, runtime::RuntimeDispatch, util::asyncify};
 
@@ -35,12 +35,12 @@ pub struct Persistence {
     /// Currently the expectation is that the reported size is the commitlog
     /// size only.
     pub disk_size: DiskSizeFn,
-    /// An optional [SnapshotRepository] used when restoring from snapshots.
+    /// Optional snapshot storage used when restoring from snapshots.
     ///
     /// This is separate from [SnapshotWorker] so deterministic simulation
     /// targets can use synchronous snapshot creation without starting the
     /// Tokio-backed worker.
-    pub snapshot_repo: Option<Arc<SnapshotRepository>>,
+    pub snapshot_store: Option<Arc<dyn SnapshotStore>>,
     /// An optional [SnapshotWorker].
     ///
     /// The current expectation is that snapshots are only enabled for
@@ -71,17 +71,17 @@ impl Persistence {
         Self {
             durability: Arc::new(durability),
             disk_size: Arc::new(disk_size),
-            snapshot_repo: None,
+            snapshot_store: None,
             snapshots,
             runtime,
         }
     }
 
-    /// If snapshots are enabled, get the [SnapshotRepository] they are stored in.
-    pub fn snapshot_repo(&self) -> Option<&SnapshotRepository> {
-        self.snapshot_repo
-            .as_deref()
-            .or_else(|| self.snapshots.as_ref().map(|worker| worker.repo()))
+    /// If snapshots are enabled, get the snapshot storage they are stored in.
+    pub fn snapshot_store(&self) -> Option<Arc<dyn SnapshotStore>> {
+        self.snapshot_store
+            .clone()
+            .or_else(|| self.snapshots.as_ref().map(|worker| worker.snapshot_store()))
     }
 
     /// Get the [TxOffset] reported as durable by the [Durability] impl.
@@ -115,7 +115,7 @@ impl Persistence {
             |Self {
                  durability,
                  disk_size,
-                 snapshot_repo: _,
+                 snapshot_store: _,
                  snapshots,
                  runtime,
              }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
@@ -180,7 +180,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
         Ok(Persistence {
             durability,
             disk_size,
-            snapshot_repo: None,
+            snapshot_store: None,
             snapshots: Some(snapshot_worker),
             runtime: RuntimeDispatch::tokio_current(),
         })

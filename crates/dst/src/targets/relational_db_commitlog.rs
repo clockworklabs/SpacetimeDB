@@ -484,7 +484,7 @@ impl RelationalDbEngine {
         let persistence = Persistence {
             durability: durability.clone(),
             disk_size: Arc::new(in_memory_size_on_disk),
-            snapshot_repo: snapshot_restore.repo,
+            snapshot_store: snapshot_restore.store,
             snapshots: None,
             runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
         };
@@ -1534,7 +1534,7 @@ fn bootstrap_relational_db(
     let persistence = Persistence {
         durability: durability.clone(),
         disk_size: Arc::new(in_memory_size_on_disk),
-        snapshot_repo: None,
+        snapshot_store: None,
         snapshots: None,
         runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
     };

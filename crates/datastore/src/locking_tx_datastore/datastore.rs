@@ -39,7 +39,7 @@ use spacetimedb_schema::{
     reducer_name::ReducerName,
     schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
 };
-use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository, UnflushedSnapshot};
+use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository, SnapshotStore, UnflushedSnapshot};
 use spacetimedb_table::{
     indexes::RowPointer,
     page_pool::PagePool,
@@ -234,6 +234,14 @@ impl Locking {
             .map_err(Into::into)
     }
 
+    /// Take a snapshot through a repository abstraction.
+    ///
+    /// Unlike [`Self::take_snapshot`], this does not expose filesystem paths and
+    /// can therefore be backed by in-memory simulator storage.
+    pub fn take_snapshot_store(&self, store: &dyn SnapshotStore) -> Result<Option<TxOffset>> {
+        Self::take_snapshot_store_internal(&self.committed_state, store)
+    }
+
     pub fn assert_system_tables_match(&self) -> Result<()> {
         let committed_state = self.committed_state.read_arc();
         committed_state.assert_system_table_schemas_match()
@@ -258,6 +266,28 @@ impl Locking {
         let unflushed_snapshot = repo.create_snapshot(tables, blob_store, tx_offset)?;
 
         Ok(Some((tx_offset, unflushed_snapshot)))
+    }
+
+    pub fn take_snapshot_store_internal(
+        committed_state: &RwLock<CommittedState>,
+        store: &dyn SnapshotStore,
+    ) -> Result<Option<TxOffset>> {
+        let mut committed_state = committed_state.write();
+        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
+            return Ok(None);
+        };
+
+        log::info!(
+            "Capturing snapshot of database {:?} at TX offset {}",
+            store.database_identity(),
+            tx_offset,
+        );
+
+        let (mut tables, blob_store) = committed_state.persistent_tables_and_blob_store();
+        store
+            .capture_snapshot(&mut tables, blob_store, tx_offset)
+            .map(Some)
+            .map_err(Into::into)
     }
 
     /// Returns a list over all the currently connected clients,

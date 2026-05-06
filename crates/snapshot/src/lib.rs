@@ -48,6 +48,7 @@ use std::fs::{self, File};
 use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 use std::{
     collections::BTreeMap,
@@ -1139,11 +1140,17 @@ impl SnapshotRepository {
             .collect::<Vec<TxOffset>>();
 
         for newer_snapshot in newer_snapshots {
-            let path = self.snapshot_dir_path(newer_snapshot);
-            log::info!("Renaming snapshot newer than {upper_bound} from {path:?} to {path:?}");
-            path.rename_invalid()?;
+            self.invalidate_snapshot(newer_snapshot)?;
         }
         Ok(())
+    }
+
+    /// Mark a single snapshot invalid so it will not be considered for future
+    /// restores.
+    pub fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
+        let path = self.snapshot_dir_path(tx_offset);
+        log::info!("Renaming snapshot {tx_offset} from {path:?} to invalid");
+        path.rename_invalid().map_err(Into::into)
     }
 
     /// Compress the `current` snapshot, unless it is already compressed.
@@ -1327,6 +1334,327 @@ impl SnapshotRepository {
 
         Ok(size)
     }
+}
+
+/// Snapshot storage backend.
+///
+/// Production uses the filesystem-backed [`SnapshotRepository`]. DST can use
+/// [`MemorySnapshotRepository`] to keep snapshot storage inside the simulator
+/// boundary instead of depending on temporary directories or host filesystem
+/// behavior.
+pub trait SnapshotStore: Send + Sync {
+    fn database_identity(&self) -> Identity;
+
+    fn capture_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<TxOffset, SnapshotError>;
+
+    fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError>;
+
+    fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError>;
+
+    fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
+        self.latest_snapshot_older_than(TxOffset::MAX)
+    }
+
+    fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError>;
+
+    fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError>;
+}
+
+impl SnapshotStore for SnapshotRepository {
+    fn database_identity(&self) -> Identity {
+        SnapshotRepository::database_identity(self)
+    }
+
+    fn capture_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<TxOffset, SnapshotError> {
+        self.create_snapshot(tables, blobs, tx_offset)?.sync_all()?;
+        Ok(tx_offset)
+    }
+
+    fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError> {
+        SnapshotRepository::read_snapshot(self, tx_offset, page_pool)
+    }
+
+    fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
+        SnapshotRepository::latest_snapshot_older_than(self, upper_bound)
+    }
+
+    fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
+        SnapshotRepository::latest_snapshot(self)
+    }
+
+    fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
+        SnapshotRepository::invalidate_newer_snapshots(self, upper_bound)
+    }
+
+    fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
+        SnapshotRepository::invalidate_snapshot(self, tx_offset)
+    }
+}
+
+/// In-memory snapshot repository for deterministic tests.
+///
+/// This stores snapshot object bytes in process memory and reconstructs through
+/// the same [`ReconstructedSnapshot`] shape as the filesystem repository. It is
+/// not durable and intentionally does not model the on-disk two-phase flush
+/// protocol; it is a simulator/test backend for semantic snapshot capture and
+/// restore.
+pub struct MemorySnapshotRepository {
+    database_identity: Identity,
+    replica_id: u64,
+    snapshots: RwLock<BTreeMap<TxOffset, MemorySnapshot>>,
+}
+
+impl MemorySnapshotRepository {
+    pub fn new(database_identity: Identity, replica_id: u64) -> Self {
+        Self {
+            database_identity,
+            replica_id,
+            snapshots: RwLock::new(BTreeMap::new()),
+        }
+    }
+
+    pub fn database_identity(&self) -> Identity {
+        self.database_identity
+    }
+
+    pub fn capture_snapshot<'db>(
+        &self,
+        tables: impl Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<TxOffset, SnapshotError> {
+        self.invalidate_newer_snapshots(tx_offset.saturating_sub(1))?;
+        let snapshot = MemorySnapshot::capture(self.database_identity, self.replica_id, tables, blobs, tx_offset)?;
+        self.write_snapshots()?.insert(tx_offset, snapshot);
+        Ok(tx_offset)
+    }
+
+    pub fn read_snapshot(
+        &self,
+        tx_offset: TxOffset,
+        page_pool: &PagePool,
+    ) -> Result<ReconstructedSnapshot, SnapshotError> {
+        let snapshot = self
+            .read_snapshots()?
+            .get(&tx_offset)
+            .cloned()
+            .ok_or_else(|| memory_snapshot_not_found(tx_offset))?;
+        snapshot.reconstruct(page_pool)
+    }
+
+    pub fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
+        Ok(self
+            .read_snapshots()?
+            .range(..=upper_bound)
+            .next_back()
+            .map(|(&tx_offset, _)| tx_offset))
+    }
+
+    pub fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
+        self.latest_snapshot_older_than(TxOffset::MAX)
+    }
+
+    pub fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
+        self.write_snapshots()?.retain(|tx_offset, _| *tx_offset <= upper_bound);
+        Ok(())
+    }
+
+    pub fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
+        self.write_snapshots()?.remove(&tx_offset);
+        Ok(())
+    }
+
+    fn read_snapshots(&self) -> Result<RwLockReadGuard<'_, BTreeMap<TxOffset, MemorySnapshot>>, SnapshotError> {
+        self.snapshots.read().map_err(|_| memory_snapshot_lock_poisoned())
+    }
+
+    fn write_snapshots(&self) -> Result<RwLockWriteGuard<'_, BTreeMap<TxOffset, MemorySnapshot>>, SnapshotError> {
+        self.snapshots.write().map_err(|_| memory_snapshot_lock_poisoned())
+    }
+}
+
+impl SnapshotStore for MemorySnapshotRepository {
+    fn database_identity(&self) -> Identity {
+        MemorySnapshotRepository::database_identity(self)
+    }
+
+    fn capture_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<TxOffset, SnapshotError> {
+        MemorySnapshotRepository::capture_snapshot(self, tables, blobs, tx_offset)
+    }
+
+    fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError> {
+        MemorySnapshotRepository::read_snapshot(self, tx_offset, page_pool)
+    }
+
+    fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
+        MemorySnapshotRepository::latest_snapshot_older_than(self, upper_bound)
+    }
+
+    fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
+        MemorySnapshotRepository::latest_snapshot(self)
+    }
+
+    fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
+        MemorySnapshotRepository::invalidate_newer_snapshots(self, upper_bound)
+    }
+
+    fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
+        MemorySnapshotRepository::invalidate_snapshot(self, tx_offset)
+    }
+}
+
+#[derive(Clone)]
+struct MemorySnapshot {
+    database_identity: Identity,
+    replica_id: u64,
+    tx_offset: TxOffset,
+    module_abi_version: [u16; 2],
+    blobs: Vec<MemoryBlob>,
+    tables: BTreeMap<TableId, Vec<MemoryPage>>,
+}
+
+impl MemorySnapshot {
+    fn capture<'db>(
+        database_identity: Identity,
+        replica_id: u64,
+        tables: impl Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<Self, SnapshotError> {
+        let blobs = blobs
+            .iter_blobs()
+            .map(|(hash, uses, bytes)| MemoryBlob {
+                hash: *hash,
+                uses: uses as u32,
+                bytes: bytes.into(),
+            })
+            .collect();
+
+        let tables = tables
+            .map(|table| {
+                let pages = table
+                    .iter_pages_with_hashes()
+                    .map(|(hash, page)| {
+                        let bytes = bsatn::to_vec(page).map_err(|cause| SnapshotError::Serialize {
+                            ty: ObjectType::Page(hash),
+                            cause,
+                        })?;
+                        Ok(MemoryPage { hash, bytes })
+                    })
+                    .collect::<Result<Vec<_>, SnapshotError>>()?;
+                Ok((table.schema.table_id, pages))
+            })
+            .collect::<Result<BTreeMap<_, _>, SnapshotError>>()?;
+
+        Ok(Self {
+            database_identity,
+            replica_id,
+            tx_offset,
+            module_abi_version: CURRENT_MODULE_ABI_VERSION,
+            blobs,
+            tables,
+        })
+    }
+
+    fn reconstruct(self, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError> {
+        let source_repo = memory_snapshot_path(self.tx_offset);
+        let mut blob_store = HashMapBlobStore::default();
+        for MemoryBlob { hash, uses, bytes } in self.blobs {
+            let computed = BlobHash::hash_from_bytes(&bytes);
+            if hash != computed {
+                return Err(SnapshotError::HashMismatch {
+                    ty: ObjectType::Blob(hash),
+                    expected: hash.data,
+                    computed: computed.data,
+                    source_repo: source_repo.clone(),
+                });
+            }
+            blob_store.insert_with_uses(&hash, uses as usize, bytes);
+        }
+
+        let tables =
+            self.tables
+                .into_iter()
+                .map(|(table_id, pages)| {
+                    let pages = pages
+                        .into_iter()
+                        .map(|MemoryPage { hash, bytes }| {
+                            let page = page_pool.take_deserialize_from(&bytes).map_err(|cause| {
+                                SnapshotError::Deserialize {
+                                    ty: ObjectType::Page(hash),
+                                    source_repo: source_repo.clone(),
+                                    cause,
+                                }
+                            })?;
+                            let computed = page.content_hash();
+                            if hash != computed {
+                                return Err(SnapshotError::HashMismatch {
+                                    ty: ObjectType::Page(hash),
+                                    expected: *hash.as_bytes(),
+                                    computed: *computed.as_bytes(),
+                                    source_repo: source_repo.clone(),
+                                });
+                            }
+                            Ok(page)
+                        })
+                        .collect::<Result<Vec<_>, SnapshotError>>()?;
+                    Ok((table_id, pages))
+                })
+                .collect::<Result<BTreeMap<_, _>, SnapshotError>>()?;
+
+        Ok(ReconstructedSnapshot {
+            database_identity: self.database_identity,
+            replica_id: self.replica_id,
+            tx_offset: self.tx_offset,
+            module_abi_version: self.module_abi_version,
+            blob_store,
+            tables,
+            compress_type: CompressType::None,
+        })
+    }
+}
+
+#[derive(Clone)]
+struct MemoryBlob {
+    hash: BlobHash,
+    uses: u32,
+    bytes: Box<[u8]>,
+}
+
+#[derive(Clone)]
+struct MemoryPage {
+    hash: blake3::Hash,
+    bytes: Vec<u8>,
+}
+
+fn memory_snapshot_lock_poisoned() -> SnapshotError {
+    SnapshotError::Io(io::Error::other("memory snapshot repository lock poisoned"))
+}
+
+fn memory_snapshot_not_found(tx_offset: TxOffset) -> SnapshotError {
+    SnapshotError::Io(io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("memory snapshot {tx_offset} not found"),
+    ))
+}
+
+fn memory_snapshot_path(tx_offset: TxOffset) -> PathBuf {
+    PathBuf::from(format!("<memory-snapshot-{tx_offset}>"))
 }
 
 pub struct ReconstructedSnapshot {
