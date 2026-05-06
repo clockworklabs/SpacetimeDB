@@ -8,7 +8,7 @@ use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
-use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::energy::{EnergyMonitor, FunctionBudget, NullEnergyMonitor};
 use crate::host::v8::V8Runtime;
 use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
@@ -135,7 +135,7 @@ impl HostRuntimes {
 #[derive(Clone, Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
-    pub energy_used: EnergyQuanta,
+    pub execution_budget_used: FunctionBudget,
     pub execution_duration: Duration,
 }
 
