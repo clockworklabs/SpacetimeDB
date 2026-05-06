@@ -1707,13 +1707,12 @@ where
                 let (hooks, module_common) = match startup_result {
                     Err(_) => {
                         if let Some(result_tx) = startup_result_tx.take() {
-                            let _ = result_tx
+                            if result_tx
                                 .send(Err(anyhow::anyhow!("JS worker panicked during startup")))
-                                .inspect_err(|_| {
-                                    // This should never happen as we immediately `.recv` on the
-                                    // other end of the channel, but sometimes it gets cancelled.
-                                    log::error!("startup result receiver disconnected");
-                                });
+                                .is_err()
+                            {
+                                log::error!("startup result receiver disconnected");
+                            }
                         } else {
                             log::error!("JS worker panicked while recreating isolate");
                         }
@@ -1721,11 +1720,9 @@ where
                     }
                     Ok(Err(err)) => {
                         if let Some(result_tx) = startup_result_tx.take() {
-                            let _ = result_tx.send(Err(err)).inspect_err(|_| {
-                                // This should never happen as we immediately `.recv` on the
-                                // other end of the channel, but sometimes it gets cancelled.
+                            if result_tx.send(Err(err)).is_err() {
                                 log::error!("startup result receiver disconnected");
-                            });
+                            }
                         } else {
                             log::error!("failed to restart JS worker: {err:#}");
                         }
