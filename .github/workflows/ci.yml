@@ -689,7 +689,7 @@ jobs:
           }
 
       - name: Hydrate Unity SDK DLLs
-        run: cargo ci dlls
+        run: cargo regen csharp dlls
 
       - name: Check Unity meta files
         uses: DeNA/unity-meta-check@v3
