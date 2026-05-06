@@ -1612,16 +1612,6 @@ impl ModuleSubscriptions {
         tx: MutTx,
     ) -> Result<CommitAndBroadcastEventResult, DBError> {
         let subscription_metrics = &self.metrics.update;
-        if let (Some(timer), Some(reducer)) = (event.timer, event.function_call.reducer.as_ref()) {
-            WORKER_METRICS
-                .request_round_trip
-                .with_label_values(
-                    &WorkloadType::Reducer,
-                    &self.relational_db.database_identity(),
-                    reducer.as_ref(),
-                )
-                .observe(timer.elapsed().as_secs_f64());
-        }
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
