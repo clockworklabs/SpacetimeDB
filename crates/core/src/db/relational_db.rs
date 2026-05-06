@@ -57,9 +57,11 @@ use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::io;
 use std::ops::RangeBounds;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 pub use super::persistence::{DiskSizeFn, Durability, Persistence};
@@ -1635,6 +1637,11 @@ fn apply_history(
 }
 
 pub type LocalDurability = Arc<durability::Local<ProductValue>>;
+
+const COMMITLOG_COMPRESSION_IDLE_WINDOW: Duration = Duration::from_millis(500);
+const COMMITLOG_COMPRESSION_IDLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const COMMITLOG_COMPRESSION_FORCE_SEGMENT_BACKLOG: usize = 8;
+
 /// Initialize local durability with the default parameters.
 ///
 /// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
@@ -1682,61 +1689,260 @@ pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<
     asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
 
-/// Watches snapshot creation events and compresses all commitlog segments older
-/// than the snapshot.
+async fn commitlog_segments_to_compress(
+    durability: LocalDurability,
+    prev_snapshot_offset: TxOffset,
+    snapshot_offset: TxOffset,
+) -> io::Result<Vec<TxOffset>> {
+    asyncify(move || {
+        let segment_offsets = durability.existing_segment_offsets()?;
+        let start_idx = segment_offsets
+            .binary_search(&prev_snapshot_offset)
+            // if the snapshot is in the middle of a segment, we want to round down.
+            // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
+            .unwrap_or_else(|i| i.saturating_sub(1));
+        let segment_offsets = &segment_offsets[start_idx..];
+        let end_idx = segment_offsets
+            .binary_search(&snapshot_offset)
+            .unwrap_or_else(|i| i.saturating_sub(1));
+        // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
+        // which we don't want to compress, so an exclusive range is correct.
+        Ok(segment_offsets[..end_idx].to_vec())
+    })
+    .await
+}
+
+async fn enqueue_commitlog_compression_work(
+    durability: LocalDurability,
+    compressed_snapshot_offset: TxOffset,
+    pending_snapshot_offset: &mut Option<TxOffset>,
+    pending_segments: &mut VecDeque<TxOffset>,
+    snapshot_offset: TxOffset,
+) -> io::Result<()> {
+    let prev_snapshot_offset = pending_snapshot_offset.unwrap_or(compressed_snapshot_offset);
+    pending_segments.extend(commitlog_segments_to_compress(durability, prev_snapshot_offset, snapshot_offset).await?);
+    *pending_snapshot_offset = Some(snapshot_offset);
+    Ok(())
+}
+
+fn mark_commitlog_compression_caught_up(
+    compressed_snapshot_offset: &mut TxOffset,
+    pending_snapshot_offset: &mut Option<TxOffset>,
+    pending_segments: &VecDeque<TxOffset>,
+) {
+    if pending_segments.is_empty()
+        && let Some(snapshot_offset) = pending_snapshot_offset.take()
+    {
+        *compressed_snapshot_offset = snapshot_offset;
+    }
+}
+
+async fn compress_next_commitlog_segment(
+    durability: LocalDurability,
+    clog_tx: &mut Option<tokio::sync::mpsc::Sender<u64>>,
+    compressed_snapshot_offset: &mut TxOffset,
+    pending_snapshot_offset: &mut Option<TxOffset>,
+    pending_segments: &mut VecDeque<TxOffset>,
+) -> bool {
+    let Some(segment_offset) = pending_segments.front().copied() else {
+        return true;
+    };
+
+    if let Err(err) = asyncify(move || durability.compress_segments(&[segment_offset])).await {
+        tracing::warn!("failed to compress commitlog segment {segment_offset}: {err}");
+        return false;
+    }
+
+    pending_segments.pop_front();
+    mark_commitlog_compression_caught_up(compressed_snapshot_offset, pending_snapshot_offset, pending_segments);
+
+    if let Some(clog_tx) = clog_tx
+        && let Err(err) = clog_tx.try_send(segment_offset)
+    {
+        tracing::warn!("failed to send offset {segment_offset} after compression: {err}");
+    }
+
+    true
+}
+
+async fn compress_commitlog_segments_while_idle(
+    durability: LocalDurability,
+    clog_tx: &mut Option<tokio::sync::mpsc::Sender<u64>>,
+    compressed_snapshot_offset: &mut TxOffset,
+    pending_snapshot_offset: &mut Option<TxOffset>,
+    pending_segments: &mut VecDeque<TxOffset>,
+) -> bool {
+    while !pending_segments.is_empty() {
+        if durability.queue_depth() != 0 {
+            return true;
+        }
+        if !compress_next_commitlog_segment(
+            durability.clone(),
+            clog_tx,
+            compressed_snapshot_offset,
+            pending_snapshot_offset,
+            pending_segments,
+        )
+        .await
+        {
+            return false;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    true
+}
+
+/// Watches snapshot creation events and compresses commitlog segments older
+/// than the snapshot once the database appears idle.
 ///
 /// Suitable **only** for non-replicated databases.
+///
+/// Commitlog compression state machine:
+///
+/// ```text
+///   +-------------------+
+///   | wait for snapshot |
+///   +---------+---------+
+///             |
+///             v
+///   +-------------------+       backlog >= threshold       +-------------+
+///   | pending segments  +---------------------------------->+ force one   |
+///   +---------+---------+                                   +------+------+
+///             |                                                    |
+///             | queue empty for IDLE_WINDOW                       |
+///             v                                                    |
+///   +-------------------+      queue empty       +-----------------+
+///   | drain while idle  +----------------------->+ compress next   |
+///   +----+---------+----+                        +--------+--------+
+///        |         ^                                      |
+///        |         | queue non-empty                      |
+///        |         +--------------------------------------+
+///        |
+///        | pending empty
+///        v
+///   +-------------------+
+///   | wait for snapshot |
+///   +-------------------+
+/// ```
+///
+/// Compression is treated as idle maintenance unless the uncompressed segment
+/// backlog grows large enough to force bounded progress under load.
 pub async fn snapshot_watching_commitlog_compressor(
     mut snapshot_rx: watch::Receiver<u64>,
     mut clog_tx: Option<tokio::sync::mpsc::Sender<u64>>,
     mut snap_tx: Option<tokio::sync::mpsc::Sender<u64>>,
     durability: LocalDurability,
 ) {
-    let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
-    while snapshot_rx.changed().await.is_ok() {
-        let snapshot_offset = *snapshot_rx.borrow_and_update();
-        let durability = durability.clone();
+    let mut compressed_snapshot_offset = *snapshot_rx.borrow_and_update();
+    let mut pending_snapshot_offset = None;
+    let mut pending_segments = VecDeque::new();
+    let mut idle_since = None;
 
-        if let Some(snap_tx) = &mut snap_tx
-            && let Err(err) = snap_tx.try_send(snapshot_offset)
-        {
-            tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
+    loop {
+        mark_commitlog_compression_caught_up(
+            &mut compressed_snapshot_offset,
+            &mut pending_snapshot_offset,
+            &pending_segments,
+        );
+
+        if pending_segments.is_empty() {
+            if snapshot_rx.changed().await.is_err() {
+                break;
+            }
+            let snapshot_offset = *snapshot_rx.borrow_and_update();
+            if let Some(snap_tx) = &mut snap_tx
+                && let Err(err) = snap_tx.try_send(snapshot_offset)
+            {
+                tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
+            }
+
+            if let Err(err) = enqueue_commitlog_compression_work(
+                durability.clone(),
+                compressed_snapshot_offset,
+                &mut pending_snapshot_offset,
+                &mut pending_segments,
+                snapshot_offset,
+            )
+            .await
+            {
+                tracing::warn!("failed to get commitlog segments to compress: {err}");
+            }
+            idle_since = None;
+            continue;
         }
 
-        let res: io::Result<_> = asyncify(move || {
-            let segment_offsets = durability.existing_segment_offsets()?;
-            let start_idx = segment_offsets
-                .binary_search(&prev_snapshot_offset)
-                // if the snapshot is in the middle of a segment, we want to round down.
-                // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
-                .unwrap_or_else(|i| i.saturating_sub(1));
-            let segment_offsets = &segment_offsets[start_idx..];
-            let end_idx = segment_offsets
-                .binary_search(&snapshot_offset)
-                .unwrap_or_else(|i| i.saturating_sub(1));
-            // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
-            // which we don't want to compress, so an exclusive range is correct.
-            let segment_offsets = &segment_offsets[..end_idx];
-            durability.compress_segments(segment_offsets)?;
-            let n = segment_offsets.len();
-            let last_compressed_segment = if n > 0 { Some(segment_offsets[n - 1]) } else { None };
-            Ok(last_compressed_segment)
-        })
-        .await;
-
-        let last_compressed_segment = match res {
-            Ok(opt_offset) => opt_offset,
-            Err(err) => {
-                tracing::warn!("failed to compress segments: {err}");
-                continue;
+        if pending_segments.len() >= COMMITLOG_COMPRESSION_FORCE_SEGMENT_BACKLOG {
+            tracing::debug!(
+                pending_segments = pending_segments.len(),
+                "forcing commitlog compression; segment backlog exceeded threshold"
+            );
+            if !compress_next_commitlog_segment(
+                durability.clone(),
+                &mut clog_tx,
+                &mut compressed_snapshot_offset,
+                &mut pending_snapshot_offset,
+                &mut pending_segments,
+            )
+            .await
+            {
+                tokio::time::sleep(COMMITLOG_COMPRESSION_IDLE_WINDOW).await;
             }
-        };
-        prev_snapshot_offset = snapshot_offset;
+            idle_since = None;
+            tokio::task::yield_now().await;
+            continue;
+        }
 
-        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
-            && let Err(err) = clog_tx.try_send(last_compressed_segment)
-        {
-            tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
+        tokio::select! {
+            res = snapshot_rx.changed() => {
+                if res.is_err() {
+                    break;
+                }
+                let snapshot_offset = *snapshot_rx.borrow_and_update();
+                if let Some(snap_tx) = &mut snap_tx
+                    && let Err(err) = snap_tx.try_send(snapshot_offset)
+                {
+                    tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
+                }
+
+                if let Err(err) = enqueue_commitlog_compression_work(
+                    durability.clone(),
+                    compressed_snapshot_offset,
+                    &mut pending_snapshot_offset,
+                    &mut pending_segments,
+                    snapshot_offset,
+                )
+                .await
+                {
+                    tracing::warn!("failed to get commitlog segments to compress: {err}");
+                }
+                idle_since = None;
+            }
+            _ = tokio::time::sleep(COMMITLOG_COMPRESSION_IDLE_POLL_INTERVAL) => {
+                if durability.queue_depth() == 0 {
+                    let now = Instant::now();
+                    if idle_since
+                        .get_or_insert(now)
+                        .elapsed()
+                        >= COMMITLOG_COMPRESSION_IDLE_WINDOW
+                    {
+                        if !compress_commitlog_segments_while_idle(
+                            durability.clone(),
+                            &mut clog_tx,
+                            &mut compressed_snapshot_offset,
+                            &mut pending_snapshot_offset,
+                            &mut pending_segments,
+                        )
+                        .await
+                        {
+                            tokio::time::sleep(COMMITLOG_COMPRESSION_IDLE_WINDOW).await;
+                        }
+                        idle_since = None;
+                    }
+                } else {
+                    idle_since = None;
+                }
+            }
         }
     }
 }
