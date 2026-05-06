@@ -284,6 +284,8 @@ enum CiCmd {
         #[arg(long)]
         skip_dlls: bool,
     },
+    /// Verifies that the repository version upgrade tool still works.
+    VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
 }
@@ -523,6 +525,21 @@ fn run_unity_tests(skip_dlls: bool) -> Result<()> {
 fn run_docs_build() -> Result<()> {
     cmd!("pnpm", "install").dir("docs").run()?;
     cmd!("pnpm", "build").dir("docs").run()?;
+    Ok(())
+}
+
+fn run_version_upgrade_check() -> Result<()> {
+    cmd!(
+        "cargo",
+        "bump-versions",
+        "123.456.789",
+        "--rust-and-cli",
+        "--csharp",
+        "--typescript",
+        "--cpp",
+        "--accept-snapshots"
+    )
+    .run()?;
     Ok(())
 }
 
@@ -793,6 +810,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::UnityTests { skip_dlls }) => {
             run_unity_tests(skip_dlls)?;
+        }
+
+        Some(CiCmd::VersionUpgradeCheck) => {
+            run_version_upgrade_check()?;
         }
 
         Some(CiCmd::Docs) => {

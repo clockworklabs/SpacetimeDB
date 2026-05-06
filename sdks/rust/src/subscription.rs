@@ -379,21 +379,21 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         if self.is_ended() {
             return Err(crate::Error::AlreadyEnded);
         }
-        // Check if it has already been called.
+
         if self.unsubscribe_called {
             return Err(crate::Error::AlreadyUnsubscribed);
         }
-
-        self.unsubscribe_called = true;
-        self.on_ended = on_end;
-        // self.on_ended = Some(Box::new(on_end));
 
         // We send this even if the status is still Pending, so we can remove it from the manager.
         self.pending_mutation_sender
             .unbounded_send(PendingMutation::Unsubscribe {
                 query_set_id: self.query_set_id,
             })
-            .unwrap();
+            .map_err(|_| crate::Error::AlreadyEnded)?;
+
+        self.unsubscribe_called = true;
+        self.on_ended = on_end;
+
         Ok(())
     }
 

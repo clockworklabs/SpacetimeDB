@@ -240,6 +240,17 @@ Usage: unity-tests [OPTIONS]
 - `--skip-dlls`: Skip hydrating Unity SDK DLLs before running the Unity harness
 - `--help`: Print help
 
+### `version-upgrade-check`
+
+**Usage:**
+```bash
+Usage: version-upgrade-check
+```
+
+**Options:**
+
+- `--help`: Print help
+
 ### `docs`
 
 **Usage:**
