@@ -18,11 +18,16 @@ use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
-use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
+use spacetimedb::client::messages::SerializableMessage;
+use spacetimedb::client::{
+    ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, OutboundMessage,
+};
 use spacetimedb::db::{Config, Storage};
+use spacetimedb::host::module_host::EventStatus;
 use spacetimedb::host::FunctionArgs;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
@@ -47,11 +52,11 @@ pub(crate) fn module_path(name: &str) -> PathBuf {
     root.join("../../modules").join(name)
 }
 
-#[derive(Clone)]
 pub struct ModuleHandle {
     // Needs to hold a reference to the standalone env.
     _env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
+    receiver: ClientConnectionReceiver,
     pub db_identity: Identity,
 }
 
@@ -84,6 +89,36 @@ impl ModuleHandle {
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
         let timer = Instant::now();
         self.client.handle_message(message, timer).await.map_err(Into::into)
+    }
+
+    pub async fn recv_message(&mut self) -> Option<OutboundMessage> {
+        self.receiver.recv().await
+    }
+
+    pub async fn recv_reducer_update(&mut self, request_id: RequestId) -> anyhow::Result<()> {
+        let message = self
+            .recv_message()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("client receiver closed before reducer update {request_id}"))?;
+        let OutboundMessage::V1(SerializableMessage::TxUpdate(update)) = message else {
+            anyhow::bail!("expected reducer transaction update {request_id}, got {message:?}");
+        };
+        let Some(event) = update.event else {
+            anyhow::bail!("expected full reducer transaction update {request_id}, got light update");
+        };
+        if event.request_id != Some(request_id) {
+            anyhow::bail!(
+                "expected reducer transaction update {request_id}, got request id {:?}",
+                event.request_id
+            );
+        }
+        match &event.status {
+            EventStatus::Committed(_) => Ok(()),
+            EventStatus::FailedUser(err) | EventStatus::FailedInternal(err) => {
+                anyhow::bail!("reducer transaction update {request_id} failed: {err}")
+            }
+            EventStatus::OutOfEnergy => anyhow::bail!("reducer transaction update {request_id} ran out of energy"),
+        }
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
@@ -245,9 +280,13 @@ impl CompiledModule {
         // it easier to interact with the database. For example it could include
         // the runtime on which a module was created and then we could add impl
         // for stuff like "get logs" or "get message log"
+        let (client, receiver) =
+            ClientConnection::dummy_with_receiver(client_id, ClientConfig::for_test(), instance.id, module_rx);
+
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
+            client,
+            receiver,
             db_identity,
         }
     }

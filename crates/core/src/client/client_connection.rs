@@ -873,13 +873,26 @@ impl ClientConnection {
         replica_id: u64,
         module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
+        Self::dummy_with_receiver(id, config, replica_id, module_rx).0
+    }
+
+    pub fn dummy_with_receiver(
+        id: ClientActorId,
+        config: ClientConfig,
+        replica_id: u64,
+        module_rx: watch::Receiver<ModuleHost>,
+    ) -> (Self, ClientConnectionReceiver) {
         let auth = AuthCtx::new(module_rx.borrow().database_info().database_identity, id.identity);
-        Self {
-            sender: Arc::new(ClientConnectionSender::dummy(id, config, module_rx.clone())),
-            replica_id,
-            module_rx,
-            auth,
-        }
+        let (sender, receiver) = ClientConnectionSender::dummy_with_channel(id, config, module_rx.clone());
+        (
+            Self {
+                sender: Arc::new(sender),
+                replica_id,
+                module_rx,
+                auth,
+            },
+            receiver,
+        )
     }
 
     pub fn sender(&self) -> Arc<ClientConnectionSender> {
