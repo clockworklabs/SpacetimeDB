@@ -864,10 +864,10 @@ jobs:
             if [ -L "$dir/global.json" ] && [ ! -f "$dir/global.json" ]; then
               echo "Fixing broken symlink at $dir/global.json"
               rm -f "$dir/global.json"
-              cp global.json "$dir/global.json"
+              cp "$GITHUB_WORKSPACE/global.json" "$dir/global.json"
             elif [ ! -f "$dir/global.json" ]; then
               echo "Creating missing $dir/global.json"
-              cp global.json "$dir/global.json"
+              cp "$GITHUB_WORKSPACE/global.json" "$dir/global.json"
             fi
           done
 
