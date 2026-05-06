@@ -504,7 +504,7 @@ fn main() -> Result<()> {
                 "--features",
                 "allow_loopback_http_for_tests",
                 "--",
-                "--test-threads=1",
+                "--test-threads=2",
                 "--skip",
                 "unreal"
             )
@@ -518,7 +518,7 @@ fn main() -> Result<()> {
                 "--features",
                 "allow_loopback_http_for_tests,browser",
                 "--",
-                "--test-threads=1",
+                "--test-threads=2",
                 "--skip",
                 "unreal"
             )
