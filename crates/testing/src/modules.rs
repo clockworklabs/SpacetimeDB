@@ -201,7 +201,7 @@ impl CompiledModule {
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
                 websocket: WebSocketOptions::default(),
-                v8_heap_policy: Default::default(),
+                v8: Default::default(),
             },
             &certs,
             paths.data_dir.into(),

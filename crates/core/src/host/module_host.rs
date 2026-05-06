@@ -1010,11 +1010,6 @@ impl CreateInstanceTimeMetric {
     }
 }
 
-fn default_procedure_instance_limit() -> NonZeroUsize {
-    let num_cores = std::thread::available_parallelism().map(NonZeroUsize::get).unwrap_or(1);
-    NonZeroUsize::new(num_cores.saturating_mul(2)).expect("procedure instance limit should be non-zero")
-}
-
 impl<M: GenericModule> ModuleInstanceManager<M> {
     fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
         let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
@@ -1335,13 +1330,14 @@ impl ModuleHost {
             ModuleWithInstance::Js { module, init_inst } => {
                 info = module.info();
                 let metrics = module.metrics();
+                let procedure_instance_pool_size = module.procedure_instance_pool_size();
                 let host_module = module.clone();
                 let main_instance = SharedJsMainInstanceManager::new(init_inst, metrics.clone());
                 let procedure_instances = ModuleInstanceManager::new_bounded_with_metrics(
                     module,
                     None,
                     metrics,
-                    default_procedure_instance_limit(),
+                    procedure_instance_pool_size,
                 );
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module: host_module,

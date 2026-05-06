@@ -15,7 +15,7 @@ use super::module_host::{
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
-use crate::config::V8HeapPolicyConfig;
+use crate::config::{V8Config, V8HeapPolicyConfig};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
@@ -51,6 +51,7 @@ use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
+use std::num::NonZeroUsize;
 use std::os::raw::c_void;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
@@ -75,19 +76,19 @@ mod util;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
 pub struct V8Runtime {
-    heap_policy: V8HeapPolicyConfig,
+    config: V8Config,
 }
 
 impl Default for V8Runtime {
     fn default() -> Self {
-        Self::new(V8HeapPolicyConfig::default())
+        Self::new(V8Config::default())
     }
 }
 
 impl V8Runtime {
-    pub fn new(heap_policy: V8HeapPolicyConfig) -> Self {
+    pub fn new(config: V8Config) -> Self {
         Self {
-            heap_policy: heap_policy.normalized(),
+            config: config.normalized(),
         }
     }
 
@@ -98,7 +99,7 @@ impl V8Runtime {
         core: AllocatedJobCore,
     ) -> anyhow::Result<ModuleWithInstance> {
         V8_RUNTIME_GLOBAL
-            .make_actor(mcc, program_bytes, core, self.heap_policy)
+            .make_actor(mcc, program_bytes, core, self.config)
             .await
     }
 }
@@ -166,7 +167,7 @@ impl V8RuntimeInner {
         mcc: ModuleCreationContext,
         program_bytes: &[u8],
         core: AllocatedJobCore,
-        heap_policy: V8HeapPolicyConfig,
+        config: V8Config,
     ) -> anyhow::Result<ModuleWithInstance> {
         #![allow(unreachable_code, unused_variables)]
 
@@ -184,6 +185,7 @@ impl V8RuntimeInner {
         let mcc = Either::Right(mcc);
         let load_balance_guard = Arc::new(core.guard);
         let core_pinner = core.pinner;
+        let heap_policy = config.heap_policy;
         let (common, init_inst) = spawn_main_instance_worker(
             program.clone(),
             mcc,
@@ -198,7 +200,8 @@ impl V8RuntimeInner {
             program,
             load_balance_guard,
             core_pinner,
-            heap_policy,
+            procedure_instance_pool_size: config.procedure_instance_pool_size,
+            heap_policy: config.heap_policy,
             metrics,
         };
 
@@ -212,6 +215,7 @@ pub struct JsModule {
     program: Arc<str>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
+    procedure_instance_pool_size: NonZeroUsize,
     heap_policy: V8HeapPolicyConfig,
     metrics: InstanceManagerMetrics,
 }
@@ -231,6 +235,10 @@ impl JsModule {
 
     pub(in crate::host) fn metrics(&self) -> InstanceManagerMetrics {
         self.metrics.clone()
+    }
+
+    pub(in crate::host) fn procedure_instance_pool_size(&self) -> NonZeroUsize {
+        self.procedure_instance_pool_size
     }
 
     async fn create_procedure_instance(&self) -> JsProcedureInstance {
