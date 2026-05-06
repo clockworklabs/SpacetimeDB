@@ -175,7 +175,6 @@ PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud dat
 ## Running the Benchmarks
 
 See [DEVELOP.md](./DEVELOP.md) for prerequisites, configuration, and full CLI reference.
-The distributed TypeScript SpacetimeDB workflow is documented there as `Run the distributed TypeScript SpacetimeDB benchmark`.
 
 ## Output
 
