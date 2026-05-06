@@ -97,15 +97,20 @@ public:
      * 
      * Example:
      * @code
-     * auto module_id = ctx.identity();
+     * auto module_id = ctx.database_identity();
      * std::string url = "http://localhost:3000/v1/database/" + 
      *                   module_id.to_hex() + "/schema?version=9";
      * @endcode
      */
-    Identity identity() const {
+    Identity database_identity() const {
         std::array<uint8_t, 32> id_bytes;
         ::identity(id_bytes.data());
         return Identity(id_bytes);
+    }
+
+    [[deprecated("Use database_identity() instead.")]]
+    Identity identity() const {
+        return database_identity();
     }
 
     /**
