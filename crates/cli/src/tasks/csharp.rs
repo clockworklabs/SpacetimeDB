@@ -36,10 +36,12 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     // Detect the .NET SDK version. Run from project directory only if global.json exists,
     // otherwise run from current directory. .NET 10 SDK crashes if global.json is missing.
     let global_json_exists = project_path.join("global.json").exists();
-    let dotnet_version_str = match global_json_exists {
-        true => dotnet!("--version").read(),
-        false => duct::cmd!("dotnet", "--version").read(),
-    } {
+    let dotnet_version_result = if global_json_exists {
+        dotnet!("--version").read()
+    } else {
+        duct::cmd!("dotnet", "--version").read()
+    };
+    let dotnet_version_str = match dotnet_version_result {
         Ok(v) => v,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!("dotnet not found in PATH. Please install .NET SDK 8.0 or 10.0.")
