@@ -33,8 +33,13 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     // This takes precedence over auto-detection.
     let dotnet_version_override = std::env::var("SPACETIMEDB_DOTNET_VERSION").ok();
 
-    // Detect the .NET SDK version available at the project path (respects global.json).
-    let dotnet_version_str = match dotnet!("--version").read() {
+    // Detect the .NET SDK version. Run from project directory only if global.json exists,
+    // otherwise run from current directory. .NET 10 SDK crashes if global.json is missing.
+    let global_json_exists = project_path.join("global.json").exists();
+    let dotnet_version_str = match global_json_exists {
+        true => dotnet!("--version").read(),
+        false => duct::cmd!("dotnet", "--version").read(),
+    } {
         Ok(v) => v,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!("dotnet not found in PATH. Please install .NET SDK 8.0 or 10.0.")
