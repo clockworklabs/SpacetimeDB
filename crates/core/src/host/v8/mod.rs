@@ -1,3 +1,58 @@
+//! V8 has two independent execution lanes. Non-procedure work uses the main lane and
+//! is serialized through a single queue. Websocket operations enqueue and return to
+//! the caller immediately. Blocking/sync callers, such as HTTP, also enqueue onto the
+//! worker but do not resume the caller until their operation completes.
+//!
+//! Procedures use a separate bounded instance pool. A procedure call waits to check
+//! out an exclusive procedure instance from the pool, and that instance is held
+//! until the procedure finishes. Because procedures do not use the main lane, there
+//! is no ordering guarantee between procedure work and non-procedure work, even when
+//! both come from the same connection.
+//!
+//! Each worker owns its V8 isolate and replaces it inline after a trap or heap
+//! retirement. Client-visible responses are emitted through SendWorker.
+//!
+//! Current V8 ModuleHost topology:
+//!
+//! ```text
+//!                         +-------------------------------------------+
+//!                         |              V8ModuleHost                 |
+//!                         |                                           |
+//!                         |  +-------------------------------------+  |
+//!   reducers              |  | SharedJsMainInstanceManager         |  |
+//!   subscriptions         |  | mpsc queue feeding a single worker  |--+----+
+//!   one-off queries  ---->|  | thread                              |       |
+//!                         |  +-------------------------------------+  |    v
+//!                         |                                           |  +----------------------+
+//!                         |                                           |  | os thread            |
+//!                         |                                           |  | one V8 isolate       |
+//!                         |                                           |  | inline replacement   |
+//!                         |                                           |  +----------+-----------+
+//!                         |                                           |             |
+//!                         |                                           |             v
+//!                         |                                           |       SendWorker
+//!                         |                                           |
+//!   procedure work        |  +-------------------------------------+  |
+//!   waits here if   ----->|  | ModuleInstanceManager<JsModule>     |  |
+//!   pool is full          |  | bounded procedure instance pool     |  |
+//!                         |  | checkout held until procedure done  |--+----+
+//!                         |  +-------------------------------------+  |    |
+//!                         +-------------------------------------------+    |
+//!                                                                          |
+//!                              +-------------------------------------------+
+//!                              |
+//!                              v
+//!                  +----------------------+      +----------------------+
+//!                  | os thread 1          |      | os thread N          |
+//!                  | one V8 isolate       |      | one V8 isolate       |
+//!                  | inline replacement   |      | inline replacement   |
+//!                  +----------+-----------+      +----------+-----------+
+//!                             |                             |
+//!                             +-------------+---------------+
+//!                                           |
+//!                                           v
+//!                                      SendWorker
+//! ```
 use self::budget::energy_from_elapsed;
 use self::error::{
     catch_exception, exception_already_thrown, log_traceback, ErrorOrException, ExcResult, ExceptionThrown,
