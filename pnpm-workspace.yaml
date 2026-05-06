@@ -1,6 +1,7 @@
 packages:
   - 'crates/bindings-typescript'
   - 'crates/bindings-typescript/test-app'
+  - 'crates/bindings-typescript/case-conversion-test-client'
   - 'templates/chat-react-ts'
   - 'templates/react-ts'
   - 'templates/basic-ts'
@@ -19,4 +20,5 @@ packages:
   - 'modules/sdk-test-connect-disconnect-ts'
   - 'modules/sdk-test-procedure-ts'
   - 'modules/sdk-test-ts'
+  - 'modules/sdk-test-case-conversion-ts'
   - 'docs'
