@@ -207,7 +207,7 @@ pub struct ModuleEvent {
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub reducer_return_value: Option<Bytes>,
-    pub execution_energy_used: FunctionBudget,
+    pub execution_budget_used: FunctionBudget,
     pub host_execution_duration: Duration,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -980,7 +980,7 @@ impl From<EventStatus> for ViewOutcome {
 pub struct ViewCallResult {
     pub outcome: ViewOutcome,
     pub tx: MutTxId,
-    pub energy_used: FunctionBudget,
+    pub execution_budget_used: FunctionBudget,
     pub total_duration: Duration,
     pub abi_duration: Duration,
 }
@@ -989,7 +989,7 @@ impl fmt::Debug for ViewCallResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ViewCallResult")
             .field("outcome", &self.outcome)
-            .field("energy_used", &self.energy_used)
+            .field("execution_budget_used", &self.execution_budget_used)
             .field("total_duration", &self.total_duration)
             .field("abi_duration", &self.abi_duration)
             .finish()
@@ -1000,7 +1000,7 @@ impl ViewCallResult {
     pub fn default(tx: MutTxId) -> Self {
         Self {
             outcome: ViewOutcome::Success,
-            energy_used: FunctionBudget::ZERO,
+            execution_budget_used: FunctionBudget::ZERO,
             total_duration: Duration::ZERO,
             abi_duration: Duration::ZERO,
             tx,
@@ -2061,7 +2061,7 @@ impl ModuleHost {
             // Increment execution stats
             tx = result.tx;
             outcome = result.outcome;
-            energy_used += result.energy_used;
+            energy_used += result.execution_budget_used;
             total_duration += result.total_duration;
             abi_duration += result.abi_duration;
             trapped |= trap;
@@ -2075,7 +2075,7 @@ impl ModuleHost {
             ViewCallResult {
                 outcome,
                 tx,
-                energy_used,
+                execution_budget_used: energy_used,
                 total_duration,
                 abi_duration,
             },

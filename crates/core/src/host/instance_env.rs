@@ -784,7 +784,7 @@ impl InstanceEnv {
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.
-            execution_energy_used: FunctionBudget::ZERO,
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::from_millis(0),
         };
         // Commit the tx and broadcast it.

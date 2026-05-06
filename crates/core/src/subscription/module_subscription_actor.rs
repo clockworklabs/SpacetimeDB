@@ -2101,7 +2101,7 @@ mod tests {
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
             reducer_return_value: None,
-            execution_energy_used: FunctionBudget::ZERO,
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::from_millis(0),
             request_id: None,
             timer: None,

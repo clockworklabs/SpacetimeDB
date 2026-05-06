@@ -200,7 +200,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
             Ok((
                 status,
-                TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
+                TypedHeader(SpacetimeEnergyUsed(result.execution_budget_used)),
                 TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
                 body,
             )

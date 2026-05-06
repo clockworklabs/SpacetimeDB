@@ -414,7 +414,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 // elsewhere. So, we just pretend that this is `EnergyQuanta` when it's actually
                 // a different unit, and it doesn't really matter to the client anyway.
                 // TODO(noa): maybe we could just have this be zero, unconditionally?
-                energy_quanta_used: EnergyQuanta::new(event.execution_energy_used.get().into()),
+                energy_quanta_used: EnergyQuanta::new(event.execution_budget_used.get().into()),
                 total_host_execution_duration: event.host_execution_duration.into(),
                 caller_connection_id: event.caller_connection_id.unwrap_or(ConnectionId::ZERO),
             };

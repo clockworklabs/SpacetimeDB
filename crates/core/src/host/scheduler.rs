@@ -585,7 +585,7 @@ fn refresh_views_then_commit_and_broadcast(
         status,
         reducer_return_value: None,
         //Keeping them 0 as it is internal transaction, not by reducer
-        execution_energy_used: FunctionBudget::ZERO,
+        execution_budget_used: FunctionBudget::ZERO,
         host_execution_duration: Duration::from_millis(0),
         request_id: None,
         timer: None,

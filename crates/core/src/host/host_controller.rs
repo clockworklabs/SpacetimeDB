@@ -135,7 +135,7 @@ impl HostRuntimes {
 #[derive(Clone, Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
-    pub energy_used: FunctionBudget,
+    pub execution_budget_used: FunctionBudget,
     pub execution_duration: Duration,
 }
 
