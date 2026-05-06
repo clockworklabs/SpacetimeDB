@@ -6,6 +6,7 @@ import { RowBuilder, type RowObj } from '../lib/type_builders';
 import { toPascalCase } from '../lib/util';
 import {
   exportContext,
+  moduleExportKind,
   registerExport,
   type ModuleExport,
   type SchemaInner,
@@ -21,6 +22,15 @@ export interface ReducerOpts {
   name: string;
 }
 
+export const reducerExportInfo = Symbol('SpacetimeDB.reducerExportInfo');
+
+export type ReducerExportInfo = {
+  params: RowObj | RowBuilder<RowObj>;
+  fn: Reducer<any, any>;
+  opts?: ReducerOpts;
+  lifecycle?: Lifecycle;
+};
+
 export function makeReducerExport<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
@@ -31,8 +41,20 @@ export function makeReducerExport<
   fn: Reducer<any, any>,
   lifecycle?: Lifecycle
 ): ReducerExport<S, Params> {
-  const reducerExport: ReducerExport<S, Params> = (...args) => fn(...args);
+  const reducerExport: ReducerExport<S, Params> = ((...args) =>
+    (fn as any)(...args)) as ReducerExport<S, Params>;
   reducerExport[exportContext] = ctx;
+  reducerExport[moduleExportKind] = 'reducer';
+  (
+    reducerExport as ReducerExport<S, Params> & {
+      [reducerExportInfo]: ReducerExportInfo;
+    }
+  )[reducerExportInfo] = {
+    params,
+    fn,
+    opts,
+    lifecycle,
+  };
   reducerExport[registerExport] = (ctx, exportName) => {
     registerReducer(ctx, exportName, params, fn, opts, lifecycle);
     ctx.functionExports.set(

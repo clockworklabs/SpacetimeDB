@@ -2,7 +2,7 @@ import type { DbView } from '../server/db_view';
 import type { Random } from '../server/rng';
 import type { ConnectionId } from './connection_id';
 import type { Identity } from './identity';
-import { type UntypedSchemaDef } from './schema';
+import { type MountsOf, type UntypedSchemaDef } from './schema';
 import { type Timestamp } from './timestamp';
 import {
   ColumnBuilder,
@@ -80,6 +80,12 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 
+export type ReducerCtxMounts<SchemaDef extends UntypedSchemaDef> = {
+  readonly [Alias in keyof MountsOf<SchemaDef> & string]: ReducerCtx<
+    MountsOf<SchemaDef>[Alias]
+  >;
+};
+
 /**
  * Auth Claims extracted from the payload of a JWT token
  */
@@ -109,6 +115,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  as: ReducerCtxMounts<SchemaDef>;
   senderAuth: AuthCtx;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;

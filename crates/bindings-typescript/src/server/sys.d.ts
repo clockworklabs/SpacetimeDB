@@ -40,6 +40,7 @@ declare module 'spacetime:sys@2.0' {
   }
 
   export function register_hooks(hooks: ModuleHooks);
+  export function __resetMockSys(): void;
 
   export function table_id_from_name(name: string): u32;
   export function index_id_from_name(name: string): u32;

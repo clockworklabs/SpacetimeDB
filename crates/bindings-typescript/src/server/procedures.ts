@@ -25,6 +25,7 @@ import { makeRandom, type Random } from './rng';
 import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
 import {
   exportContext,
+  moduleExportKind,
   registerExport,
   type ModuleExport,
   type SchemaInner,
@@ -52,6 +53,7 @@ export function makeProcedureExport<
   const procedureExport: ProcedureExport<S, Params, Ret> = (...args) =>
     fn(...args);
   procedureExport[exportContext] = ctx;
+  procedureExport[moduleExportKind] = 'procedure';
   procedureExport[registerExport] = (ctx, exportName) => {
     registerProcedure(ctx, name ?? exportName, params, ret, fn);
     ctx.functionExports.set(
@@ -160,7 +162,8 @@ export function callProcedure(
   connectionId: ConnectionId | null,
   timestamp: Timestamp,
   argsBuf: Uint8Array,
-  dbView: () => DbView<any>
+  dbView: () => DbView<any>,
+  asView: () => ReducerCtx<UntypedSchemaDef>['as']
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
     moduleCtx.procedures[id];
@@ -170,7 +173,8 @@ export function callProcedure(
     sender,
     timestamp,
     connectionId,
-    dbView
+    dbView,
+    asView
   );
 
   const ret = callUserFunction(fn, ctx, args);
@@ -187,14 +191,17 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  #asView: () => ReducerCtx<UntypedSchemaDef>['as'];
 
   constructor(
     readonly sender: Identity,
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
-    dbView: () => DbView<any>
+    dbView: () => DbView<any>,
+    asView: () => ReducerCtx<UntypedSchemaDef>['as']
   ) {
     this.#dbView = dbView;
+    this.#asView = asView;
   }
 
   get databaseIdentity() {
@@ -222,8 +229,9 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
           this.sender,
           new Timestamp(timestamp),
           this.connectionId,
-          this.#dbView()
-        );
+          this.#dbView(),
+          this.#asView()
+        ) as unknown as TransactionCtx<S>;
         return body(ctx);
       } catch (e) {
         sys.procedure_abort_mut_tx();

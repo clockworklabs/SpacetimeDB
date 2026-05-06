@@ -37,11 +37,17 @@ export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
 >['accessorName'];
 
+export type MountsOf<S extends UntypedSchemaDef> = Extract<
+  NonNullable<S['mounts']>,
+  Record<string, UntypedSchemaDef>
+>;
+
 /**
  * An untyped representation of the database schema.
  */
 export type UntypedSchemaDef = {
   tables: Record<string, UntypedTableDef>;
+  mounts?: Record<string, UntypedSchemaDef>;
 };
 
 /**
@@ -52,6 +58,7 @@ export interface TablesToSchema<T extends Record<string, UntypedTableSchema>>
   tables: {
     readonly [AccName in keyof T & string]: TableToSchema<AccName, T[AccName]>;
   };
+  mounts?: {};
 }
 
 export interface TableToSchema<
@@ -90,6 +97,7 @@ export function tablesToSchema<
 
   return {
     tables: tableDefs as TablesToSchema<T>['tables'],
+    mounts: {},
   };
 }
 
@@ -149,7 +157,7 @@ export function tableToSchema<
     // For client,`schama.tableName` will always be there as canonical name.
     // For module, if explicit name is not provided via `name`, accessor name will
     // be used, it is stored as alias in database, hence works in query builder.
-    sourceName: schema.tableName || accName,
+    sourceName: tableDef.sourceName,
     accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,

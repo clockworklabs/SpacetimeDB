@@ -14,6 +14,7 @@ import {
 } from '../lib/schema';
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
+import { hasOwn } from '../lib/util';
 import {
   makeProcedureExport,
   type ProcedureExport,
@@ -23,7 +24,10 @@ import {
 } from './procedures';
 import {
   makeReducerExport,
+  reducerExportInfo,
+  registerReducer,
   type ReducerExport,
+  type ReducerExportInfo,
   type ReducerOpts,
   type Reducers,
 } from './reducers';
@@ -41,6 +45,45 @@ import {
   type Views,
 } from './views';
 import type { UntypedTableDef } from '../lib/table';
+
+type TableEntriesOf<Entries extends Record<string, SchemaEntry>> = {
+  [Name in keyof Entries & string as Entries[Name] extends UntypedTableSchema
+    ? Name
+    : never]: Extract<Entries[Name], UntypedTableSchema>;
+};
+
+type MountEntriesOf<Entries extends Record<string, SchemaEntry>> = {
+  [Name in keyof Entries &
+    string as Entries[Name] extends MountedSchemaNamespace<any>
+    ? Name
+    : never]: Entries[Name] extends MountedSchemaNamespace<infer S> ? S : never;
+};
+
+type SchemaEntry = UntypedTableSchema | MountedSchemaNamespace<any>;
+
+type SchemaEntriesToSchema<Entries extends Record<string, SchemaEntry>> = {
+  tables: TablesToSchema<TableEntriesOf<Entries>>['tables'];
+  mounts: MountEntriesOf<Entries>;
+};
+
+export interface MountedSchemaNamespace<
+  S extends UntypedSchemaDef = UntypedSchemaDef,
+> {
+  readonly default: Schema<S>;
+  readonly [name: string]: unknown;
+}
+
+type MountedSchemaRegistration = {
+  alias: string;
+  namespace: MountedSchemaNamespace;
+  schema: SchemaInner;
+  scopedSchema: UntypedSchemaDef;
+};
+
+export const moduleExportKind = Symbol('SpacetimeDB.moduleExportKind');
+export const schemaContext = Symbol('SpacetimeDB.schemaContext');
+
+export type ModuleExportKind = 'reducer' | 'procedure' | 'view';
 
 export class SchemaInner<
   S extends UntypedSchemaDef = UntypedSchemaDef,
@@ -61,6 +104,8 @@ export class SchemaInner<
     string
   > = new Map();
   pendingSchedules: PendingSchedule[] = [];
+  mountedSchemas: Record<string, MountedSchemaRegistration> =
+    Object.create(null);
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
@@ -137,6 +182,10 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     this.#ctx = ctx;
   }
 
+  get [schemaContext](): SchemaInner<S> {
+    return this.#ctx;
+  }
+
   [moduleHooks](exports: object) {
     // if (!(hasOwn(exports, 'default') && exports.default instanceof Schema)) {
     //   throw new TypeError('must export schema as default export');
@@ -152,6 +201,11 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       checkExportContext(moduleExport, registeredSchema);
       moduleExport[registerExport](registeredSchema, name);
     }
+    registerMountedReducers(
+      registeredSchema,
+      registeredSchema.mountedSchemas,
+      []
+    );
     registeredSchema.resolveSchedules();
     return makeHooks(registeredSchema);
   }
@@ -490,6 +544,7 @@ export const exportContext = Symbol('SpacetimeDB.exportContext');
 export interface ModuleExport {
   [registerExport](ctx: SchemaInner, exportName: string): void;
   [exportContext]?: SchemaInner;
+  [moduleExportKind]?: ModuleExportKind;
 }
 
 function isModuleExport(x: unknown): x is ModuleExport {
@@ -543,39 +598,254 @@ export interface ModuleSettings {
   CASE_CONVERSION_POLICY?: CaseConversionPolicy;
 }
 
-export function schema<const H extends Record<string, UntypedTableSchema>>(
-  tables: H,
+export function schema<const H extends Record<string, SchemaEntry>>(
+  entries: H,
   moduleSettings?: ModuleSettings
-): Schema<TablesToSchema<H>> {
-  const ctx = new SchemaInner<TablesToSchema<H>>(ctx => {
+): Schema<SchemaEntriesToSchema<H>> {
+  const ctx = new SchemaInner<SchemaEntriesToSchema<H>>(ctx => {
     // Apply module settings.
     if (moduleSettings?.CASE_CONVERSION_POLICY != null) {
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
     }
 
-    const tableSchemas: Record<string, UntypedTableDef> = {};
-    for (const [accName, table] of Object.entries(tables)) {
-      const tableDef = table.tableDef(ctx, accName);
-      tableSchemas[accName] = tableToSchema(accName, table, tableDef);
+    const tableSchemas: Record<string, UntypedTableDef> = Object.create(null);
+    const mounts: Record<string, UntypedSchemaDef> = Object.create(null);
+    for (const [accName, entry] of Object.entries(entries)) {
+      if (entry instanceof Schema) {
+        throw new TypeError(
+          `Schema entry '${accName}' must use a module namespace import (for example: import * as lib from './lib') rather than a default schema import`
+        );
+      }
+
+      if (isMountedSchemaNamespace(entry)) {
+        const mounted = mountSchema(ctx, accName, entry);
+        mounts[accName] = mounted.scopedSchema;
+        continue;
+      }
+
+      if (!isUntypedTableSchema(entry)) {
+        throw new TypeError(
+          `Schema entry '${accName}' must be a table() definition or a mounted library namespace`
+        );
+      }
+
+      const tableDef = entry.tableDef(ctx, accName);
+      tableSchemas[accName] = tableToSchema(accName, entry, tableDef);
       ctx.moduleDef.tables.push(tableDef);
-      if (table.schedule) {
+      if (entry.schedule) {
         ctx.pendingSchedules.push({
-          ...table.schedule,
+          ...entry.schedule,
           tableName: tableDef.sourceName,
         });
       }
-      if (table.tableName) {
+      if (entry.tableName) {
         ctx.moduleDef.explicitNames.entries.push({
           tag: 'Table',
           value: {
             sourceName: accName,
-            canonicalName: table.tableName,
+            canonicalName: entry.tableName,
           },
         });
       }
     }
-    return { tables: tableSchemas } as TablesToSchema<H>;
+    return {
+      tables: tableSchemas as SchemaEntriesToSchema<H>['tables'],
+      mounts: mounts as SchemaEntriesToSchema<H>['mounts'],
+    };
   });
 
   return new Schema(ctx);
+}
+
+function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    hasOwn(x, 'tableDef') &&
+    typeof x.tableDef === 'function'
+  );
+}
+
+function isMountedSchemaNamespace(x: unknown): x is MountedSchemaNamespace {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    hasOwn(x, 'default') &&
+    x.default instanceof Schema
+  );
+}
+
+function internalMountName(prefix: string, name: string): string {
+  return `${prefix}__${name}`;
+}
+
+function mountSchema(
+  hostCtx: SchemaInner,
+  alias: string,
+  namespace: MountedSchemaNamespace
+): MountedSchemaRegistration {
+  const mountedDefault = namespace.default;
+  const mountedCtx = mountedDefault[schemaContext];
+  const scopedSchema = prefixSchemaType(alias, mountedCtx.schemaType);
+
+  for (const table of mountedCtx.moduleDef.tables) {
+    hostCtx.moduleDef.tables.push(prefixRawTableDef(alias, table));
+  }
+
+  for (const explicitName of mountedCtx.moduleDef.explicitNames.entries) {
+    if (explicitName.tag === 'Function') continue;
+    hostCtx.moduleDef.explicitNames.entries.push(
+      prefixExplicitNameEntry(alias, explicitName)
+    );
+  }
+
+  for (const pendingSchedule of mountedCtx.pendingSchedules) {
+    hostCtx.pendingSchedules.push({
+      ...pendingSchedule,
+      tableName: internalMountName(alias, pendingSchedule.tableName),
+    });
+  }
+
+  const mounted = {
+    alias,
+    namespace,
+    schema: mountedCtx,
+    scopedSchema,
+  } satisfies MountedSchemaRegistration;
+  hostCtx.mountedSchemas[alias] = mounted;
+  return mounted;
+}
+
+function prefixSchemaType(
+  prefix: string,
+  schemaDef: UntypedSchemaDef
+): UntypedSchemaDef {
+  const tables = Object.fromEntries(
+    Object.entries(schemaDef.tables).map(([accName, table]) => {
+      const tableDef = prefixRawTableDef(prefix, table.tableDef);
+      return [
+        accName,
+        {
+          ...table,
+          sourceName: tableDef.sourceName,
+          tableDef,
+        } satisfies UntypedTableDef,
+      ];
+    })
+  );
+
+  const mounts = Object.fromEntries(
+    Object.entries(schemaDef.mounts ?? {}).map(([alias, mounted]) => [
+      alias,
+      prefixSchemaType(internalMountName(prefix, alias), mounted),
+    ])
+  );
+
+  return {
+    tables,
+    mounts,
+  };
+}
+
+function prefixRawTableDef(prefix: string, table: any) {
+  return {
+    ...table,
+    sourceName: internalMountName(prefix, table.sourceName),
+    indexes: table.indexes.map((index: any) => ({
+      ...index,
+      sourceName:
+        index.sourceName == null
+          ? index.sourceName
+          : internalMountName(prefix, index.sourceName),
+    })),
+    constraints: table.constraints.map((constraint: any) => ({
+      ...constraint,
+      sourceName:
+        constraint.sourceName == null
+          ? constraint.sourceName
+          : internalMountName(prefix, constraint.sourceName),
+    })),
+    sequences: table.sequences.map((sequence: any) => ({
+      ...sequence,
+      sourceName:
+        sequence.sourceName == null
+          ? sequence.sourceName
+          : internalMountName(prefix, sequence.sourceName),
+    })),
+  };
+}
+
+function prefixExplicitNameEntry(prefix: string, explicitName: any) {
+  return {
+    ...explicitName,
+    value: {
+      sourceName: internalMountName(prefix, explicitName.value.sourceName),
+      canonicalName: internalMountName(
+        prefix,
+        explicitName.value.canonicalName
+      ),
+    },
+  };
+}
+
+function registerMountedReducers(
+  hostCtx: SchemaInner,
+  mounts: Record<string, MountedSchemaRegistration>,
+  parentPath: string[]
+) {
+  for (const mounted of Object.values(mounts)) {
+    const path = [...parentPath, mounted.alias];
+    const exportPrefix = path.join('__');
+    registerMountedReducerExports(hostCtx, mounted, path, exportPrefix);
+    registerMountedReducers(hostCtx, mounted.schema.mountedSchemas, path);
+  }
+}
+
+function registerMountedReducerExports(
+  hostCtx: SchemaInner,
+  mounted: MountedSchemaRegistration,
+  path: string[],
+  exportPrefix: string
+) {
+  for (const [exportName, moduleExport] of Object.entries(mounted.namespace)) {
+    if (exportName === 'default' || !isModuleExport(moduleExport)) continue;
+    if (moduleExport[moduleExportKind] !== 'reducer') continue;
+
+    const reducerInfo = (
+      moduleExport as ReducerExport<any, any> & {
+        [reducerExportInfo]: ReducerExportInfo;
+      }
+    )[reducerExportInfo];
+    if (reducerInfo == null) continue;
+
+    const internalExportName = internalMountName(exportPrefix, exportName);
+    const mountedOpts =
+      reducerInfo.opts == null
+        ? undefined
+        : {
+            ...reducerInfo.opts,
+            name: internalMountName(exportPrefix, reducerInfo.opts.name),
+          };
+
+    const wrapperFn: Reducer<any, any> = (ctx, payload) => {
+      let mountedCtx: ReducerCtx<any> = ctx;
+      for (const alias of path) {
+        mountedCtx = mountedCtx.as[alias];
+      }
+      reducerInfo.fn(mountedCtx, payload);
+    };
+
+    registerReducer(
+      hostCtx,
+      internalExportName,
+      reducerInfo.params,
+      wrapperFn,
+      mountedOpts,
+      reducerInfo.lifecycle
+    );
+    hostCtx.functionExports.set(
+      moduleExport as ReducerExport<any, any>,
+      internalExportName
+    );
+  }
 }

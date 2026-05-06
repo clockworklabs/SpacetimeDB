@@ -97,3 +97,39 @@ spacetimedbIndexSplit.init(ctx => {
   // @ts-expect-error `nickname` is not indexed, so no index accessor should exist.
   const _nickname = ctx.db.account.nickname;
 });
+
+const authLib = schema({
+  user: table({}, { id: t.u32() }),
+});
+
+function authHelper(
+  ctx: import('../lib/reducers').ReducerCtx<typeof authLib.schemaType>
+) {
+  ctx.db.user.count();
+}
+
+const authCreate = authLib.reducer(ctx => {
+  ctx.db.user.count();
+});
+
+const appWithMount = schema({
+  account,
+  auth: {
+    default: authLib,
+    authCreate,
+    authHelper,
+  },
+});
+
+appWithMount.init(ctx => {
+  ctx.db.account.byEmailAndOrg.filter(['a@example.com', 1]);
+  ctx.db.auth.user.count();
+  ctx.as.auth.db.user.count();
+  authHelper(ctx.as.auth);
+
+  // @ts-expect-error mounted aliases are only exposed through declared namespaces.
+  ctx.as.public;
+
+  // @ts-expect-error mounted tables are not hoisted onto the root db view.
+  ctx.db.user;
+});

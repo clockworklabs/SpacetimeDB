@@ -21,6 +21,7 @@ import type { ReadonlyDbView } from './db_view';
 import { type QueryBuilder, type RowTypedQuery } from './query';
 import {
   exportContext,
+  moduleExportKind,
   registerExport,
   type ModuleExport,
   type SchemaInner,
@@ -44,6 +45,7 @@ export function makeViewExport<
     // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
     fn.bind() as ViewExport<F>;
   viewExport[exportContext] = ctx;
+  viewExport[moduleExportKind] = 'view';
   viewExport[registerExport] = (ctx, exportName) => {
     registerView(ctx, opts, exportName, false, params, ret, fn);
   };
@@ -66,6 +68,7 @@ export function makeAnonViewExport<
     // @ts-expect-error typescript incorrectly says Function#bind requires an argument.
     fn.bind() as ViewExport<F>;
   viewExport[exportContext] = ctx;
+  viewExport[moduleExportKind] = 'view';
   viewExport[registerExport] = (ctx, exportName) => {
     registerView(ctx, opts, exportName, true, params, ret, fn);
   };
@@ -186,7 +189,7 @@ export function registerView<
   }
 
   (anon ? ctx.anonViews : ctx.views).push({
-    fn,
+    fn: fn as ViewFn<any, any, any>,
     deserializeParams: ProductType.makeDeserializer(paramType, typespace),
     serializeReturn: AlgebraicType.makeSerializer(returnType, typespace),
     returnTypeBaseSize: bsatnBaseSize(typespace, returnType),

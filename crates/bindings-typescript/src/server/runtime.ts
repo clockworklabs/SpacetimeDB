@@ -193,18 +193,21 @@ export const ReducerCtxImpl = class ReducerCtx<
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  as: IReducerCtx<SchemaDef>['as'];
 
   constructor(
     sender: Identity,
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
-    dbView: DbView<any>
+    dbView: DbView<any>,
+    asView: IReducerCtx<SchemaDef>['as']
   ) {
     Object.seal(this);
     this.sender = sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
-    this.db = dbView;
+    this.db = dbView as DbView<SchemaDef>;
+    this.as = asView;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -219,6 +222,20 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.connectionId = connectionId;
     me.#uuidCounter = undefined;
     me.#senderAuth = undefined;
+  }
+
+  static resetTree(
+    me: InstanceType<typeof this>,
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    this.reset(me, sender, timestamp, connectionId);
+    for (const childCtx of Object.values(me.as) as InstanceType<
+      typeof this
+    >[]) {
+      this.resetTree(childCtx, sender, timestamp, connectionId);
+    }
   }
 
   get databaseIdentity() {
@@ -290,22 +307,16 @@ class ModuleHooksImpl implements ModuleHooks {
   }
 
   get #dbView() {
-    return (this.#dbView_ ??= freeze(
-      Object.fromEntries(
-        Object.values(this.#schema.schemaType.tables).map(table => [
-          table.accessorName,
-          makeTableView(this.#schema.typespace, table.tableDef),
-        ])
-      )
+    return (this.#dbView_ ??= makeDbView(
+      this.#schema.typespace,
+      this.#schema.schemaType
     ));
   }
 
   get #reducerCtx() {
-    return (this.#reducerCtx_ ??= new ReducerCtxImpl(
-      Identity.zero(),
-      Timestamp.UNIX_EPOCH,
-      null,
-      this.#dbView
+    return (this.#reducerCtx_ ??= makeReducerCtx(
+      this.#dbView,
+      this.#schema.schemaType
     ));
   }
 
@@ -339,13 +350,13 @@ class ModuleHooksImpl implements ModuleHooks {
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
     const ctx = this.#reducerCtx;
-    ReducerCtxImpl.reset(
+    ReducerCtxImpl.resetTree(
       ctx,
       senderIdentity,
       new Timestamp(timestamp),
       ConnectionId.nullIfZero(new ConnectionId(connId))
     );
-    callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
+    callUserFunction(moduleCtx.reducers[reducerId] as any, ctx as any, args);
   }
 
   __call_view__(
@@ -415,13 +426,58 @@ class ModuleHooksImpl implements ModuleHooks {
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
       new Timestamp(timestamp),
       args,
-      () => this.#dbView
+      () => this.#dbView,
+      () => this.#reducerCtx.as
     );
   }
 }
 
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
+
+function makeDbView(
+  typespace: Typespace,
+  schemaDef: UntypedSchemaDef
+): DbView<any> {
+  return freeze(
+    Object.assign(
+      Object.create(null),
+      Object.fromEntries(
+        Object.values(schemaDef.tables).map(table => [
+          table.accessorName,
+          makeTableView(typespace, table.tableDef),
+        ])
+      ),
+      Object.fromEntries(
+        Object.entries(schemaDef.mounts ?? {}).map(([alias, mountedSchema]) => [
+          alias,
+          makeDbView(typespace, mountedSchema),
+        ])
+      )
+    )
+  ) as DbView<any>;
+}
+
+function makeReducerCtx(
+  dbView: DbView<any>,
+  schemaDef: UntypedSchemaDef
+): InstanceType<typeof ReducerCtxImpl> {
+  const asView = freeze(
+    Object.fromEntries(
+      Object.keys(schemaDef.mounts ?? {}).map(alias => [
+        alias,
+        makeReducerCtx(dbView[alias], (schemaDef.mounts ?? {})[alias]),
+      ])
+    )
+  );
+  return new ReducerCtxImpl(
+    Identity.zero(),
+    Timestamp.UNIX_EPOCH,
+    null,
+    dbView,
+    asView
+  );
+}
 
 function makeTableView(
   typespace: Typespace,

@@ -1,7 +1,7 @@
 use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage, MessageHandleError, Protocol};
 use crate::energy::EnergyQuanta;
-use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{EventStatus, ModuleDefReducerLookupExt, ModuleEvent, ModuleFunctionCall};
 use crate::host::{FunctionArgs, ReducerId};
 use crate::identity::Identity;
 use crate::worker_metrics::WORKER_METRICS;
@@ -67,7 +67,10 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             res.map(drop).map_err(|e| {
                 (
                     Some(reducer),
-                    mod_info.module_def.reducer_full(&**reducer).map(|(id, _)| id),
+                    mod_info
+                        .module_def
+                        .lookup_reducer_by_external_name(reducer)
+                        .map(|(id, _)| id),
                     e.into(),
                 )
             })

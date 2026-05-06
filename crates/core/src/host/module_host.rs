@@ -67,6 +67,7 @@ use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
@@ -1632,7 +1633,7 @@ impl ModuleHost {
             let (reducer_id, reducer_def) = self
                 .info
                 .module_def
-                .reducer_full(reducer_name)
+                .lookup_reducer_by_external_name(reducer_name)
                 .ok_or(ReducerCallError::NoSuchReducer)?;
             if let Some(lifecycle) = reducer_def.lifecycle {
                 return Err(ReducerCallError::LifecycleReducer(lifecycle));
@@ -2548,9 +2549,30 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
     )
 }
 
+fn normalize_external_reducer_name(name: &str) -> Option<Cow<'_, str>> {
+    match name.split_once('/') {
+        Some((alias, reducer)) if !alias.is_empty() && !reducer.is_empty() && !reducer.contains('/') => {
+            Some(Cow::Owned(format!("{alias}__{reducer}")))
+        }
+        Some(_) => None,
+        None => Some(Cow::Borrowed(name)),
+    }
+}
+
+pub(crate) trait ModuleDefReducerLookupExt {
+    fn lookup_reducer_by_external_name(&self, name: &str) -> Option<(ReducerId, &ReducerDef)>;
+}
+
+impl ModuleDefReducerLookupExt for ModuleDef {
+    fn lookup_reducer_by_external_name(&self, name: &str) -> Option<(ReducerId, &ReducerDef)> {
+        let normalized = normalize_external_reducer_name(name)?;
+        self.reducer_full(normalized.as_ref())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{normalize_external_reducer_name, ModuleDefReducerLookupExt, ModuleHost};
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
@@ -2558,9 +2580,12 @@ mod tests {
     use crate::db::relational_db::tests_utils::{insert, with_auto_commit, TestDB};
     use crate::subscription::module_subscription_actor::ModuleSubscriptions;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::RawModuleDef;
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::def::ModuleDef;
     use std::sync::Arc;
 
     fn v2_client_config() -> ClientConfig {
@@ -2655,5 +2680,31 @@ mod tests {
         });
 
         Ok(())
+    }
+
+    #[test]
+    fn namespaced_reducer_names_are_normalized() {
+        assert_eq!(
+            normalize_external_reducer_name("auth/login").as_deref(),
+            Some("auth__login")
+        );
+        assert_eq!(
+            normalize_external_reducer_name("login").as_deref(),
+            Some("login")
+        );
+        assert_eq!(normalize_external_reducer_name("auth/"), None);
+        assert_eq!(normalize_external_reducer_name("/login"), None);
+        assert_eq!(normalize_external_reducer_name("auth/login/extra"), None);
+    }
+
+    #[test]
+    fn reducer_lookup_uses_namespaced_aliases() {
+        let mut raw = RawModuleDefV10Builder::new();
+        raw.add_reducer("auth__login", product![]);
+        let module = ModuleDef::try_from(RawModuleDef::V10(raw.finish())).expect("valid module");
+
+        assert!(module.lookup_reducer_by_external_name("auth/login").is_some());
+        assert!(module.lookup_reducer_by_external_name("login").is_none());
+        assert!(module.lookup_reducer_by_external_name("auth/unknown").is_none());
     }
 }
