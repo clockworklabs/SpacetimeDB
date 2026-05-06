@@ -75,7 +75,8 @@ Copy `.env.example` to `.env` and adjust.
 - `SKIP_SQLITE` – `1` = don't init SQLite in prep
 - `SKIP_SUPABASE` – `1` = don't init Supabase in prep
 - `SKIP_CONVEX` – `1` = don't init Convex in prep
-- `SPACETIME_METRICS_ENDPOINT` – `1` = read committed transfer counts from the derived SpacetimeDB metrics endpoint; otherwise only local counters are used
+
+Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every connector, including SpacetimeDB.
 
 **PostgreSQL / CockroachDB:**
 
