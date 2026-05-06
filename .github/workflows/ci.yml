@@ -614,6 +614,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -637,11 +642,6 @@ jobs:
         run: |
           sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -758,6 +758,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -782,11 +787,6 @@ jobs:
       - name: Verify C# formatting
         working-directory: sdks/csharp
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
