@@ -5,6 +5,8 @@
 //! deterministic RNG instead of being driven by a package-level async runtime.
 
 pub(crate) mod commitlog;
+pub(crate) mod snapshot;
+pub(crate) mod storage_faults;
 pub mod time;
 
 use std::{future::Future, time::Duration};

@@ -6,5 +6,6 @@ mod types;
 pub(crate) use generation::CommitlogWorkloadSource;
 pub use types::{
     CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary, InteractionSummary,
-    RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary,
+    RuntimeSummary, SchemaSummary, SnapshotCaptureStatus, SnapshotObservation, TableOperationSummary,
+    TransactionSummary,
 };

@@ -19,18 +19,6 @@ impl ClientId {
     pub const fn new(raw: u32) -> Self {
         Self(raw)
     }
-
-    pub const fn from_index(index: usize) -> Self {
-        Self(index as u32)
-    }
-
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    pub const fn as_index(self) -> usize {
-        self.0 as usize
-    }
 }
 
 impl fmt::Display for ClientId {
@@ -78,37 +66,5 @@ impl SessionId {
 impl fmt::Display for SessionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.session{}", self.client, self.generation)
-    }
-}
-
-/// Logical server endpoint used by future client/network/replication workloads.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct EndpointId(u32);
-
-impl EndpointId {
-    pub const ZERO: Self = Self(0);
-
-    pub const fn new(raw: u32) -> Self {
-        Self(raw)
-    }
-
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-}
-
-/// Logical node identifier for future replication and multi-node targets.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct NodeId(u32);
-
-impl NodeId {
-    pub const ZERO: Self = Self(0);
-
-    pub const fn new(raw: u32) -> Self {
-        Self(raw)
-    }
-
-    pub const fn as_u32(self) -> u32 {
-        self.0
     }
 }

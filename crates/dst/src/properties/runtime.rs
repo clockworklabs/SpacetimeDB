@@ -7,7 +7,7 @@ use crate::{
     core::{StreamingProperties, TargetEngine},
     schema::{SchemaPlan, SimRow},
     workload::{
-        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary},
+        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary, SnapshotObservation},
         table_ops::{
             PredictedOutcome, TableErrorKind, TableOracle, TableScenario, TableWorkloadInteraction,
             TableWorkloadOutcome,
@@ -119,72 +119,63 @@ impl PropertyRuntime {
         runtime
     }
 
-    pub fn on_table_interaction(
-        &mut self,
-        access: &dyn TargetPropertyAccess,
-        interaction: &TableWorkloadInteraction,
-    ) -> Result<(), String> {
-        self.models.apply(interaction);
+    fn observe_event(&mut self, access: &dyn TargetPropertyAccess, event: PropertyEvent<'_>) -> Result<(), String> {
         let ctx = PropertyContext {
             access,
             models: &self.models,
         };
         for entry in &mut self.rules {
-            entry.rule.observe(&ctx, PropertyEvent::TableInteractionApplied)?;
+            entry.rule.observe(&ctx, event.clone())?;
         }
         Ok(())
     }
 
-    pub fn on_mutations(
+    fn on_table_interaction(
+        &mut self,
+        access: &dyn TargetPropertyAccess,
+        interaction: &TableWorkloadInteraction,
+    ) -> Result<(), String> {
+        self.models.apply(interaction);
+        self.observe_event(access, PropertyEvent::TableInteractionApplied)
+    }
+
+    fn on_mutations(
         &mut self,
         access: &dyn TargetPropertyAccess,
         conn: SessionId,
         mutations: &[TableMutation],
         in_tx: bool,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
-            access,
-            models: &self.models,
-        };
-
         for mutation in mutations {
             match mutation {
                 TableMutation::Inserted {
                     table,
                     requested: _,
                     returned,
-                } => {
-                    for entry in &mut self.rules {
-                        entry.rule.observe(
-                            &ctx,
-                            PropertyEvent::RowInserted {
-                                conn,
-                                table: *table,
-                                returned,
-                                in_tx,
-                            },
-                        )?;
-                    }
-                }
-                TableMutation::Deleted { table, row } => {
-                    for entry in &mut self.rules {
-                        entry.rule.observe(
-                            &ctx,
-                            PropertyEvent::RowDeleted {
-                                conn,
-                                table: *table,
-                                row,
-                                in_tx,
-                            },
-                        )?;
-                    }
-                }
+                } => self.observe_event(
+                    access,
+                    PropertyEvent::RowInserted {
+                        conn,
+                        table: *table,
+                        returned,
+                        in_tx,
+                    },
+                )?,
+                TableMutation::Deleted { table, row } => self.observe_event(
+                    access,
+                    PropertyEvent::RowDeleted {
+                        conn,
+                        table: *table,
+                        row,
+                        in_tx,
+                    },
+                )?,
             }
         }
         Ok(())
     }
 
-    pub fn on_observed_error(
+    fn on_observed_error(
         &mut self,
         access: &dyn TargetPropertyAccess,
         observed: TableErrorKind,
@@ -192,49 +183,35 @@ impl PropertyRuntime {
         subject: Option<(SessionId, usize)>,
         interaction: &TableWorkloadInteraction,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
+        self.observe_event(
             access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(
-                &ctx,
-                PropertyEvent::ObservedError {
-                    observed,
-                    predicted,
-                    subject,
-                    interaction,
-                },
-            )?;
-        }
-        Ok(())
+            PropertyEvent::ObservedError {
+                observed,
+                predicted,
+                subject,
+                interaction,
+            },
+        )
     }
 
-    pub fn on_no_mutation(
+    fn on_no_mutation(
         &mut self,
         access: &dyn TargetPropertyAccess,
         subject: Option<(SessionId, usize)>,
         interaction: &TableWorkloadInteraction,
         observation: &TableObservation,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
+        self.observe_event(
             access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(
-                &ctx,
-                PropertyEvent::NoMutation {
-                    subject,
-                    interaction,
-                    observation,
-                },
-            )?;
-        }
-        Ok(())
+            PropertyEvent::NoMutation {
+                subject,
+                interaction,
+                observation,
+            },
+        )
     }
 
-    pub fn on_point_lookup(
+    fn on_point_lookup(
         &mut self,
         access: &dyn TargetPropertyAccess,
         conn: SessionId,
@@ -242,25 +219,18 @@ impl PropertyRuntime {
         id: u64,
         actual: &Option<SimRow>,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
+        self.observe_event(
             access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(
-                &ctx,
-                PropertyEvent::PointLookup {
-                    conn,
-                    table,
-                    id,
-                    actual,
-                },
-            )?;
-        }
-        Ok(())
+            PropertyEvent::PointLookup {
+                conn,
+                table,
+                id,
+                actual,
+            },
+        )
     }
 
-    pub fn on_predicate_count(
+    fn on_predicate_count(
         &mut self,
         access: &dyn TargetPropertyAccess,
         conn: SessionId,
@@ -269,27 +239,20 @@ impl PropertyRuntime {
         value: &AlgebraicValue,
         actual: usize,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
+        self.observe_event(
             access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(
-                &ctx,
-                PropertyEvent::PredicateCount {
-                    conn,
-                    table,
-                    col,
-                    value,
-                    actual,
-                },
-            )?;
-        }
-        Ok(())
+            PropertyEvent::PredicateCount {
+                conn,
+                table,
+                col,
+                value,
+                actual,
+            },
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn on_range_scan(
+    fn on_range_scan(
         &mut self,
         access: &dyn TargetPropertyAccess,
         conn: SessionId,
@@ -299,101 +262,63 @@ impl PropertyRuntime {
         upper: &Bound<AlgebraicValue>,
         actual: &[SimRow],
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
+        self.observe_event(
             access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(
-                &ctx,
-                PropertyEvent::RangeScan {
-                    conn,
-                    table,
-                    cols,
-                    lower,
-                    upper,
-                    actual,
-                },
-            )?;
-        }
-        Ok(())
+            PropertyEvent::RangeScan {
+                conn,
+                table,
+                cols,
+                lower,
+                upper,
+                actual,
+            },
+        )
     }
 
-    pub fn on_full_scan(
+    fn on_full_scan(
         &mut self,
         access: &dyn TargetPropertyAccess,
         conn: SessionId,
         table: usize,
         actual: &[SimRow],
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
-            access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry
-                .rule
-                .observe(&ctx, PropertyEvent::FullScan { conn, table, actual })?;
-        }
-        Ok(())
+        self.observe_event(access, PropertyEvent::FullScan { conn, table, actual })
     }
 
-    pub fn on_commit_or_rollback(&mut self, access: &dyn TargetPropertyAccess) -> Result<(), String> {
-        let ctx = PropertyContext {
-            access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(&ctx, PropertyEvent::CommitOrRollback)?;
-        }
-        Ok(())
+    fn on_commit_or_rollback(&mut self, access: &dyn TargetPropertyAccess) -> Result<(), String> {
+        self.observe_event(access, PropertyEvent::CommitOrRollback)
     }
 
-    pub fn on_dynamic_migration_probe(
+    fn on_dynamic_migration_probe(
         &mut self,
         access: &dyn TargetPropertyAccess,
         probe: &DynamicMigrationProbe,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
-            access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(&ctx, PropertyEvent::DynamicMigrationProbe(probe))?;
-        }
-        Ok(())
+        self.observe_event(access, PropertyEvent::DynamicMigrationProbe(probe))
     }
 
-    pub fn on_durable_replay(
+    fn on_snapshot_capture(
+        &mut self,
+        access: &dyn TargetPropertyAccess,
+        snapshot: &SnapshotObservation,
+    ) -> Result<(), String> {
+        self.observe_event(access, PropertyEvent::SnapshotCapture(snapshot))
+    }
+
+    fn on_durable_replay(
         &mut self,
         access: &dyn TargetPropertyAccess,
         replay: &DurableReplaySummary,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
-            access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry.rule.observe(&ctx, PropertyEvent::DurableReplay(replay))?;
-        }
-        Ok(())
+        self.observe_event(access, PropertyEvent::DurableReplay(replay))
     }
 
-    pub fn on_table_workload_finish(
+    fn on_table_workload_finish(
         &mut self,
         access: &dyn TargetPropertyAccess,
         outcome: &TableWorkloadOutcome,
     ) -> Result<(), String> {
-        let ctx = PropertyContext {
-            access,
-            models: &self.models,
-        };
-        for entry in &mut self.rules {
-            entry
-                .rule
-                .observe(&ctx, PropertyEvent::TableWorkloadFinished(outcome))?;
-        }
-        Ok(())
+        self.observe_event(access, PropertyEvent::TableWorkloadFinished(outcome))
     }
 
     fn observe_table_observation(
@@ -487,6 +412,9 @@ where
                 self.observe_table_observation(engine, table_interaction, table_observation)
             }
             (_, CommitlogObservation::DynamicMigrationProbe(probe)) => self.on_dynamic_migration_probe(engine, probe),
+            (CommitlogInteraction::TakeSnapshot, CommitlogObservation::Snapshot(snapshot)) => {
+                self.on_snapshot_capture(engine, snapshot)
+            }
             (_, CommitlogObservation::DurableReplay(replay)) => self.on_durable_replay(engine, replay),
             (_, CommitlogObservation::Applied | CommitlogObservation::Skipped) => Ok(()),
             (other, observation) => Err(format!(
@@ -523,6 +451,8 @@ impl Default for PropertyRuntime {
             PropertyKind::BankingTablesMatch,
             PropertyKind::DynamicMigrationAutoInc,
             PropertyKind::DurableReplayMatchesModel,
+            PropertyKind::SnapshotCaptureMaintainsPrefix,
+            PropertyKind::SnapshotRestoreWithinDurablePrefix,
             PropertyKind::ErrorMatchesOracle,
             PropertyKind::NoMutationMatchesModel,
             PropertyKind::PointLookupMatchesModel,

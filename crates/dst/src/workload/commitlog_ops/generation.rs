@@ -17,6 +17,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CommitlogWorkloadProfile {
     pub(crate) close_reopen_pct: usize,
+    pub(crate) snapshot_pct: usize,
     pub(crate) create_dynamic_table_pct: usize,
     pub(crate) migrate_after_create_pct: usize,
     pub(crate) migrate_dynamic_table_pct: usize,
@@ -27,6 +28,7 @@ impl Default for CommitlogWorkloadProfile {
     fn default() -> Self {
         Self {
             close_reopen_pct: 1,
+            snapshot_pct: 2,
             create_dynamic_table_pct: 1,
             migrate_after_create_pct: 55,
             migrate_dynamic_table_pct: 6,
@@ -102,6 +104,10 @@ impl<S: TableScenario> CommitlogWorkloadSource<S> {
 
         if Percent::new(self.profile.close_reopen_pct).sample(&mut self.rng) {
             self.pending.push_back(CommitlogInteraction::CloseReopen);
+        }
+
+        if Percent::new(self.profile.snapshot_pct).sample(&mut self.rng) {
+            self.pending.push_back(CommitlogInteraction::TakeSnapshot);
         }
 
         if Percent::new(self.profile.create_dynamic_table_pct).sample(&mut self.rng) {
@@ -250,6 +256,7 @@ mod tests {
         let schema = scenario.generate_schema(&mut rng);
         let profile = CommitlogWorkloadProfile {
             close_reopen_pct: 100,
+            snapshot_pct: 100,
             create_dynamic_table_pct: 100,
             migrate_after_create_pct: 100,
             migrate_dynamic_table_pct: 100,

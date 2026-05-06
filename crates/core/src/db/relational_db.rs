@@ -41,7 +41,7 @@ use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
+use spacetimedb_paths::server::{ReplicaDir, SnapshotDirPath, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -774,6 +774,18 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
+    pub fn try_begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Option<MutTx> {
+        log::trace!("TRY BEGIN MUT TX");
+        let r = self.inner.try_begin_mut_tx(isolation_level, workload);
+        if r.is_some() {
+            log::trace!("ACQUIRED MUT TX");
+        } else {
+            log::trace!("MUT TX CONTENDED");
+        }
+        r
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn begin_tx(&self, workload: Workload) -> Tx {
         log::trace!("BEGIN TX");
         let r = self.inner.begin_tx(workload);
@@ -881,6 +893,14 @@ impl RelationalDB {
     /// was taken at.
     pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<TxOffset>> {
         self.snapshot_worker.as_ref().map(|snap| snap.subscribe())
+    }
+
+    /// Capture a snapshot synchronously into `repo`.
+    ///
+    /// This is primarily used by deterministic tests which cannot use the
+    /// Tokio-backed [`SnapshotWorker`].
+    pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>, DBError> {
+        Ok(self.inner.take_snapshot(repo)?)
     }
 
     /// Run a fallible function in a transaction.
@@ -1939,6 +1959,7 @@ pub mod tests_utils {
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
+                snapshot_repo: None,
                 snapshots,
                 runtime: RuntimeDispatch::tokio(rt),
             };
@@ -2060,6 +2081,7 @@ pub mod tests_utils {
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
+                snapshot_repo: None,
                 snapshots,
                 runtime: RuntimeDispatch::tokio(rt),
             };

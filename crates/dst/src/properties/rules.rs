@@ -5,7 +5,10 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use crate::{
     client::SessionId,
     schema::{SchemaPlan, SimRow},
-    workload::table_ops::{TableOperation, TableScenario},
+    workload::{
+        commitlog_ops::SnapshotCaptureStatus,
+        table_ops::{TableOperation, TableScenario},
+    },
 };
 
 use super::{PropertyContext, PropertyEvent, PropertyKind, TableMutation, TableObservation, TargetPropertyAccess};
@@ -29,6 +32,8 @@ pub(super) fn rule_for_kind(kind: PropertyKind) -> Box<dyn PropertyRule> {
         PropertyKind::BankingTablesMatch => Box::<BankingMatchRule>::default(),
         PropertyKind::DynamicMigrationAutoInc => Box::<DynamicMigrationAutoIncRule>::default(),
         PropertyKind::DurableReplayMatchesModel => Box::<DurableReplayMatchesModelRule>::default(),
+        PropertyKind::SnapshotCaptureMaintainsPrefix => Box::<SnapshotCaptureMaintainsPrefixRule>::default(),
+        PropertyKind::SnapshotRestoreWithinDurablePrefix => Box::<SnapshotRestoreWithinDurablePrefixRule>::default(),
         PropertyKind::ErrorMatchesOracle => Box::<ErrorMatchesOracleRule>::default(),
         PropertyKind::NoMutationMatchesModel => Box::<NoMutationMatchesModelRule>::default(),
         PropertyKind::PointLookupMatchesModel => Box::<PointLookupMatchesModelRule>::default(),
@@ -347,8 +352,93 @@ impl PropertyRule for DurableReplayMatchesModelRule {
         let expected_rows = ctx.models.table().committed_rows();
         if replay.base_rows != expected_rows {
             return Err(format!(
-                "[DurableReplayMatchesModel] replayed durable state mismatch at offset {:?}: expected={expected_rows:?} actual={:?}",
-                replay.durable_offset, replay.base_rows
+                "[DurableReplayMatchesModel] replayed durable state mismatch at durable_offset {:?}, restored_snapshot {:?}: expected={expected_rows:?} actual={:?}",
+                replay.durable_offset, replay.restored_snapshot_offset, replay.base_rows
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct SnapshotCaptureMaintainsPrefixRule;
+
+impl PropertyRule for SnapshotCaptureMaintainsPrefixRule {
+    fn observe(&mut self, _ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
+        let PropertyEvent::SnapshotCapture(snapshot) = event else {
+            return Ok(());
+        };
+
+        match snapshot.status {
+            SnapshotCaptureStatus::Captured { offset } => {
+                if snapshot.latest_after != Some(offset) {
+                    return Err(format!(
+                        "[SnapshotCaptureMaintainsPrefix] captured offset {offset}, but latest snapshot is {:?}: {snapshot:?}",
+                        snapshot.latest_after
+                    ));
+                }
+                let durable = snapshot.durable_offset.ok_or_else(|| {
+                    format!(
+                        "[SnapshotCaptureMaintainsPrefix] captured snapshot {offset} without a durable offset: {snapshot:?}"
+                    )
+                })?;
+                if offset > durable {
+                    return Err(format!(
+                        "[SnapshotCaptureMaintainsPrefix] captured snapshot {offset} beyond durable offset {durable}: {snapshot:?}"
+                    ));
+                }
+            }
+            SnapshotCaptureStatus::SkippedInjectedFault => {
+                if snapshot.latest_after > snapshot.latest_before {
+                    return Err(format!(
+                        "[SnapshotCaptureMaintainsPrefix] injected snapshot fault published newer snapshot: before={:?}, after={:?}",
+                        snapshot.latest_before, snapshot.latest_after
+                    ));
+                }
+            }
+            SnapshotCaptureStatus::SkippedOpenTransaction | SnapshotCaptureStatus::SkippedNoSnapshotCreated => {
+                if snapshot.latest_after != snapshot.latest_before {
+                    return Err(format!(
+                        "[SnapshotCaptureMaintainsPrefix] skipped snapshot changed latest snapshot: before={:?}, after={:?}, status={:?}",
+                        snapshot.latest_before, snapshot.latest_after, snapshot.status
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct SnapshotRestoreWithinDurablePrefixRule;
+
+impl PropertyRule for SnapshotRestoreWithinDurablePrefixRule {
+    fn observe(&mut self, _ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
+        let PropertyEvent::DurableReplay(replay) = event else {
+            return Ok(());
+        };
+        let Some(snapshot_offset) = replay.restored_snapshot_offset else {
+            return Ok(());
+        };
+        let durable_offset = replay.durable_offset.ok_or_else(|| {
+            format!(
+                "[SnapshotRestoreWithinDurablePrefix] restored snapshot {snapshot_offset} without durable offset: {replay:?}"
+            )
+        })?;
+        if snapshot_offset > durable_offset {
+            return Err(format!(
+                "[SnapshotRestoreWithinDurablePrefix] restored snapshot {snapshot_offset} beyond durable offset {durable_offset}: {replay:?}"
+            ));
+        }
+        if replay.latest_snapshot_offset == Some(snapshot_offset) {
+            return Ok(());
+        }
+        if let Some(latest) = replay.latest_snapshot_offset
+            && latest <= durable_offset
+            && latest > snapshot_offset
+        {
+            return Err(format!(
+                "[SnapshotRestoreWithinDurablePrefix] restored snapshot {snapshot_offset}, but newer usable snapshot {latest} exists within durable offset {durable_offset}: {replay:?}"
             ));
         }
         Ok(())

@@ -2045,6 +2045,7 @@ mod tests {
             Some(Persistence {
                 durability: durability.clone(),
                 disk_size: Arc::new(|| Ok(<_>::default())),
+                snapshot_repo: None,
                 snapshots: None,
                 runtime: crate::runtime::RuntimeDispatch::tokio(rt),
             }),

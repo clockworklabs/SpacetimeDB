@@ -314,13 +314,13 @@ fn emit_write_conflict(planner: &mut ScenarioPlanner<'_>, owner: SessionId) -> b
     }
     let conn = candidates[planner.choose_index(candidates.len())];
     if planner.roll_percent(50) {
-        planner.push_interaction(TableWorkloadInteraction::begin_tx_conflict(owner, conn));
+        planner.push_interaction(TableWorkloadInteraction::begin_tx_conflict(conn));
         return true;
     }
 
     let table = planner.choose_table();
     let row = planner.make_row(table);
-    planner.push_interaction(TableWorkloadInteraction::write_conflict_insert(owner, conn, table, row));
+    planner.push_interaction(TableWorkloadInteraction::write_conflict_insert(conn, table, row));
     true
 }
 

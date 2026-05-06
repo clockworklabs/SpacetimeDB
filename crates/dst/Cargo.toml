@@ -23,10 +23,13 @@ spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "
 spacetimedb-commitlog = { workspace = true, features = ["test"] }
 spacetimedb_durability = { package = "spacetimedb-durability", path = "../durability", version = "=2.2.0", features = ["test"] }
 spacetimedb-lib.workspace = true
+spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-runtime = { workspace = true, features = ["simulation"] }
 spacetimedb-sats.workspace = true
 spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-snapshot.workspace = true
 spacetimedb-table.workspace = true
+tempfile.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

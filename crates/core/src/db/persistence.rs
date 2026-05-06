@@ -35,6 +35,12 @@ pub struct Persistence {
     /// Currently the expectation is that the reported size is the commitlog
     /// size only.
     pub disk_size: DiskSizeFn,
+    /// An optional [SnapshotRepository] used when restoring from snapshots.
+    ///
+    /// This is separate from [SnapshotWorker] so deterministic simulation
+    /// targets can use synchronous snapshot creation without starting the
+    /// Tokio-backed worker.
+    pub snapshot_repo: Option<Arc<SnapshotRepository>>,
     /// An optional [SnapshotWorker].
     ///
     /// The current expectation is that snapshots are only enabled for
@@ -65,6 +71,7 @@ impl Persistence {
         Self {
             durability: Arc::new(durability),
             disk_size: Arc::new(disk_size),
+            snapshot_repo: None,
             snapshots,
             runtime,
         }
@@ -72,7 +79,9 @@ impl Persistence {
 
     /// If snapshots are enabled, get the [SnapshotRepository] they are stored in.
     pub fn snapshot_repo(&self) -> Option<&SnapshotRepository> {
-        self.snapshots.as_ref().map(|worker| worker.repo())
+        self.snapshot_repo
+            .as_deref()
+            .or_else(|| self.snapshots.as_ref().map(|worker| worker.repo()))
     }
 
     /// Get the [TxOffset] reported as durable by the [Durability] impl.
@@ -106,6 +115,7 @@ impl Persistence {
             |Self {
                  durability,
                  disk_size,
+                 snapshot_repo: _,
                  snapshots,
                  runtime,
              }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
@@ -170,6 +180,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
         Ok(Persistence {
             durability,
             disk_size,
+            snapshot_repo: None,
             snapshots: Some(snapshot_worker),
             runtime: RuntimeDispatch::tokio_current(),
         })

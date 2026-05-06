@@ -29,7 +29,7 @@ use tracing::{debug, info, trace};
 
 use crate::{
     client::SessionId,
-    config::{CommitlogFaultProfile, RunConfig},
+    config::RunConfig,
     core::{self, TargetEngine},
     properties::{
         CommitlogObservation, DynamicMigrationProbe, PropertyRuntime, TableMutation, TableObservation,
@@ -40,9 +40,13 @@ use crate::{
     sim::{
         self,
         commitlog::{is_injected_disk_error_text, CommitlogFaultConfig, CommitlogFaultSummary, FaultableRepo},
+        snapshot::{is_injected_snapshot_error_text, BuggifiedSnapshotRepo, SnapshotFaultConfig},
     },
     workload::{
-        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary},
+        commitlog_ops::{
+            CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary,
+            SnapshotCaptureStatus, SnapshotObservation,
+        },
         commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
         table_ops::{
             ConnectionWriteState, TableErrorKind, TableInteractionCase, TableOperation, TableScenario, TableScenarioId,
@@ -82,6 +86,26 @@ fn build(
     RelationalDbEngine,
     RelationalDbCommitlogProperties,
 )> {
+    build_with_fault_configs(
+        seed,
+        scenario,
+        config,
+        CommitlogFaultConfig::for_profile(config.commitlog_fault_profile),
+        SnapshotFaultConfig::for_profile(config.commitlog_fault_profile),
+    )
+}
+
+fn build_with_fault_configs(
+    seed: DstSeed,
+    scenario: TableScenarioId,
+    config: &RunConfig,
+    commitlog_fault_config: CommitlogFaultConfig,
+    snapshot_fault_config: SnapshotFaultConfig,
+) -> anyhow::Result<(
+    RelationalDbCommitlogSource,
+    RelationalDbEngine,
+    RelationalDbCommitlogProperties,
+)> {
     let mut connection_rng = seed.fork(121).rng();
     let num_connections = connection_rng.index(3) + 1;
     let mut schema_rng = seed.fork(122).rng();
@@ -93,7 +117,13 @@ fn build(
         num_connections,
         config.max_interactions_or_default(usize::MAX),
     );
-    let engine = RelationalDbEngine::new(seed, &schema, num_connections, config.commitlog_fault_profile)?;
+    let engine = RelationalDbEngine::new_with_fault_configs(
+        seed,
+        &schema,
+        num_connections,
+        commitlog_fault_config,
+        snapshot_fault_config,
+    )?;
     let properties = PropertyRuntime::for_table_workload(scenario, schema.clone(), num_connections);
     Ok((generator, engine, properties))
 }
@@ -134,6 +164,7 @@ impl RunStats {
             CommitlogInteraction::CreateDynamicTable { .. } => self.interactions.create_dynamic_table += 1,
             CommitlogInteraction::DropDynamicTable { .. } => self.interactions.drop_dynamic_table += 1,
             CommitlogInteraction::MigrateDynamicTable { .. } => self.interactions.migrate_dynamic_table += 1,
+            CommitlogInteraction::TakeSnapshot => self.interactions.snapshot_requested += 1,
             CommitlogInteraction::CloseReopen => self.interactions.close_reopen_requested += 1,
         }
     }
@@ -148,6 +179,16 @@ impl RunStats {
                 CommitlogObservation::Applied | CommitlogObservation::DurableReplay(_) => {
                     self.interactions.close_reopen_applied += 1
                 }
+                _ => {}
+            }
+        }
+        if matches!(interaction, CommitlogInteraction::TakeSnapshot) {
+            match observation {
+                CommitlogObservation::Snapshot(SnapshotObservation {
+                    status: SnapshotCaptureStatus::Captured { .. },
+                    ..
+                }) => self.interactions.snapshot_created += 1,
+                CommitlogObservation::Snapshot(_) => self.interactions.snapshot_skipped += 1,
                 _ => {}
             }
         }
@@ -205,6 +246,13 @@ impl RunStats {
     }
 }
 
+struct ReopenedRelationalDb {
+    durability: Arc<InMemoryCommitlogDurability>,
+    db: RelationalDB,
+    restored_snapshot_offset: Option<u64>,
+    latest_snapshot_offset: Option<u64>,
+}
+
 /// Engine executing mixed table+lifecycle interactions while recording mocked durable history.
 struct RelationalDbEngine {
     db: Option<RelationalDB>,
@@ -216,20 +264,24 @@ struct RelationalDbEngine {
     step: usize,
     last_requested_durable_offset: Option<u64>,
     last_observed_durable_offset: Option<u64>,
+    last_restored_snapshot_offset: Option<u64>,
+    latest_snapshot_offset: Option<u64>,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
     commitlog_repo: StressCommitlogRepo,
+    snapshot_repo: StressSnapshotRepo,
     stats: RunStats,
 }
 
 impl RelationalDbEngine {
-    fn new(
+    fn new_with_fault_configs(
         seed: DstSeed,
         schema: &SchemaPlan,
         num_connections: usize,
-        fault_profile: CommitlogFaultProfile,
+        commitlog_fault_config: CommitlogFaultConfig,
+        snapshot_fault_config: SnapshotFaultConfig,
     ) -> anyhow::Result<Self> {
-        let bootstrap = bootstrap_relational_db(seed.fork(700), fault_profile)?;
+        let bootstrap = bootstrap_relational_db(seed.fork(700), commitlog_fault_config, snapshot_fault_config)?;
         let mut this = Self {
             db: Some(bootstrap.db),
             execution: ConnectionWriteState::new(num_connections),
@@ -240,9 +292,12 @@ impl RelationalDbEngine {
             step: 0,
             last_requested_durable_offset: None,
             last_observed_durable_offset: None,
+            last_restored_snapshot_offset: None,
+            latest_snapshot_offset: None,
             durability: bootstrap.durability,
             durability_opts: bootstrap.durability_opts,
             commitlog_repo: bootstrap.commitlog_repo,
+            snapshot_repo: bootstrap.snapshot_repo,
             stats: RunStats {
                 runtime: RuntimeStats::default(),
                 ..Default::default()
@@ -251,6 +306,7 @@ impl RelationalDbEngine {
         this.install_base_schema().map_err(anyhow::Error::msg)?;
         this.refresh_observed_durable_offset(true).map_err(anyhow::Error::msg)?;
         this.commitlog_repo.enable_faults();
+        this.snapshot_repo.enable_faults();
         Ok(this)
     }
 
@@ -319,6 +375,7 @@ impl RelationalDbEngine {
             CommitlogInteraction::CreateDynamicTable { conn, slot } => self.create_dynamic_table(*conn, *slot),
             CommitlogInteraction::DropDynamicTable { conn, slot } => self.drop_dynamic_table(*conn, *slot),
             CommitlogInteraction::MigrateDynamicTable { conn, slot } => self.migrate_dynamic_table(*conn, *slot),
+            CommitlogInteraction::TakeSnapshot => self.take_snapshot().await,
             CommitlogInteraction::CloseReopen => self.close_and_reopen().await,
         }?;
         if !matches!(interaction, CommitlogInteraction::CloseReopen) {
@@ -348,10 +405,12 @@ impl RelationalDbEngine {
         drop(old_db);
         info!("starting in-memory durability");
 
-        let (durability, db) = self.reopen_from_history_with_fault_retry("close/reopen")?;
+        let reopened = self.reopen_from_history_with_fault_retry("close/reopen")?;
 
-        self.durability = durability;
-        self.db = Some(db);
+        self.durability = reopened.durability;
+        self.db = Some(reopened.db);
+        self.last_restored_snapshot_offset = reopened.restored_snapshot_offset;
+        self.latest_snapshot_offset = reopened.latest_snapshot_offset;
         self.rebuild_table_handles_after_reopen()?;
         self.last_observed_durable_offset = self.durability.durable_tx_offset().last_seen();
         let replay = self.durable_replay_summary()?;
@@ -363,28 +422,69 @@ impl RelationalDbEngine {
         Ok(CommitlogObservation::DurableReplay(replay))
     }
 
-    fn reopen_from_history_with_fault_retry(
-        &self,
-        context: &'static str,
-    ) -> Result<(Arc<InMemoryCommitlogDurability>, RelationalDB), String> {
-        match self.reopen_from_history() {
-            Ok(reopened) => Ok(reopened),
-            Err(err) if is_injected_disk_error_text(&err) => {
-                trace!(error = %err, "retrying {context} with injected disk faults suspended");
-                self.commitlog_repo.with_faults_suspended(|| self.reopen_from_history())
+    async fn take_snapshot(&mut self) -> Result<CommitlogObservation, String> {
+        let latest_before = self.snapshot_repo.latest_snapshot_unfaulted()?;
+        if self.execution.active_writer.is_some()
+            || self.execution.tx_by_connection.iter().any(|tx| tx.is_some())
+            || self.read_tx_by_connection.iter().any(|tx| tx.is_some())
+        {
+            trace!("skip snapshot while transaction is open");
+            return self.snapshot_observation(latest_before, SnapshotCaptureStatus::SkippedOpenTransaction);
+        }
+
+        self.wait_for_requested_durability(true).await?;
+        match self.snapshot_repo.capture_from(self.db()?) {
+            Ok(Some(offset)) => {
+                debug!(offset, "captured DST snapshot");
+                self.snapshot_observation(latest_before, SnapshotCaptureStatus::Captured { offset })
+            }
+            Ok(None) => self.snapshot_observation(latest_before, SnapshotCaptureStatus::SkippedNoSnapshotCreated),
+            Err(err) if is_injected_snapshot_error_text(&err) => {
+                trace!(error = %err, "injected snapshot fault skipped snapshot capture");
+                self.snapshot_observation(latest_before, SnapshotCaptureStatus::SkippedInjectedFault)
             }
             Err(err) => Err(err),
         }
     }
 
-    fn reopen_from_history(&self) -> Result<(Arc<InMemoryCommitlogDurability>, RelationalDB), String> {
+    fn snapshot_observation(
+        &mut self,
+        latest_before: Option<u64>,
+        status: SnapshotCaptureStatus,
+    ) -> Result<CommitlogObservation, String> {
+        let latest_after = self.snapshot_repo.latest_snapshot_unfaulted()?;
+        self.latest_snapshot_offset = latest_after;
+        Ok(CommitlogObservation::Snapshot(SnapshotObservation {
+            durable_offset: self.last_observed_durable_offset,
+            latest_before,
+            latest_after,
+            status,
+        }))
+    }
+
+    fn reopen_from_history_with_fault_retry(&self, context: &'static str) -> Result<ReopenedRelationalDb, String> {
+        match self.reopen_from_history() {
+            Ok(reopened) => Ok(reopened),
+            Err(err) if is_injected_disk_error_text(&err) || is_injected_snapshot_error_text(&err) => {
+                trace!(error = %err, "retrying {context} with injected storage faults suspended");
+                self.commitlog_repo
+                    .with_faults_suspended(|| self.snapshot_repo.with_faults_suspended(|| self.reopen_from_history()))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn reopen_from_history(&self) -> Result<ReopenedRelationalDb, String> {
         let durability = Arc::new(
             InMemoryCommitlogDurability::open_with_repo(self.commitlog_repo.clone(), self.durability_opts)
                 .map_err(|err| format!("reopen in-memory durability failed: {err}"))?,
         );
+        let durable_offset = durability.durable_tx_offset().last_seen();
+        let snapshot_restore = self.snapshot_repo.repo_for_restore(durable_offset)?;
         let persistence = Persistence {
             durability: durability.clone(),
             disk_size: Arc::new(in_memory_size_on_disk),
+            snapshot_repo: snapshot_restore.repo,
             snapshots: None,
             runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
         };
@@ -402,7 +502,12 @@ impl RelationalDbEngine {
                 "unexpected connected clients after reopen: {connected_clients:?}"
             ));
         }
-        Ok((durability, db))
+        Ok(ReopenedRelationalDb {
+            durability,
+            db,
+            restored_snapshot_offset: snapshot_restore.restored_snapshot_offset,
+            latest_snapshot_offset: snapshot_restore.latest_snapshot_offset,
+        })
     }
 
     fn rebuild_table_handles_after_reopen(&mut self) -> Result<(), String> {
@@ -608,7 +713,8 @@ impl RelationalDbEngine {
         if self.execution.tx_by_connection[conn.as_index()].is_some() {
             return Err(format!("connection {conn} already has open transaction"));
         }
-        if self.execution.active_writer.is_some() {
+        if let Some(owner) = self.execution.active_writer {
+            self.expect_write_lock_contended(conn, owner, "begin write transaction")?;
             return Ok(TableObservation::ObservedError(TableErrorKind::WriteConflict));
         }
         self.execution.tx_by_connection[conn.as_index()] = Some(
@@ -710,7 +816,8 @@ impl RelationalDbEngine {
             return result;
         }
 
-        if self.execution.active_writer.is_some() {
+        if let Some(owner) = self.execution.active_writer {
+            self.expect_write_lock_contended(conn, owner, "auto-commit write")?;
             return Ok(Err(TableErrorKind::WriteConflict));
         }
 
@@ -763,6 +870,7 @@ impl RelationalDbEngine {
         }
 
         if let Some(owner) = self.execution.active_writer {
+            self.expect_write_lock_contended(conn, owner, "auto-commit write")?;
             return Err(format!(
                 "connection {conn} cannot auto-commit write while connection {owner} owns lock"
             ));
@@ -791,6 +899,17 @@ impl RelationalDbEngine {
         self.execution.active_writer = None;
         self.stats.transactions.auto_commit += 1;
         Ok(value)
+    }
+
+    fn expect_write_lock_contended(&self, contender: SessionId, owner: SessionId, action: &str) -> Result<(), String> {
+        let db = self.db()?;
+        if let Some(tx) = db.try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests) {
+            let _ = db.rollback_mut_tx(tx);
+            return Err(format!(
+                "expected write lock contention for connection {contender} during {action} while connection {owner} owns lock, but datastore accepted a second writer"
+            ));
+        }
+        Ok(())
     }
 
     fn try_insert_base_row(
@@ -1221,6 +1340,8 @@ impl RelationalDbEngine {
     fn durable_replay_summary(&self) -> Result<DurableReplaySummary, String> {
         Ok(DurableReplaySummary {
             durable_offset: self.last_observed_durable_offset,
+            restored_snapshot_offset: self.last_restored_snapshot_offset,
+            latest_snapshot_offset: self.latest_snapshot_offset,
             base_rows: self.collect_base_rows()?,
             dynamic_table_count: self.dynamic_tables.len(),
         })
@@ -1234,9 +1355,11 @@ impl RelationalDbEngine {
         old_db.shutdown().await;
         drop(old_db);
 
-        let (durability, db) = self.reopen_from_history_with_fault_retry("final replay check")?;
-        self.durability = durability;
-        self.db = Some(db);
+        let reopened = self.reopen_from_history_with_fault_retry("final replay check")?;
+        self.durability = reopened.durability;
+        self.db = Some(reopened.db);
+        self.last_restored_snapshot_offset = reopened.restored_snapshot_offset;
+        self.latest_snapshot_offset = reopened.latest_snapshot_offset;
         self.rebuild_table_handles_after_reopen()?;
         self.last_observed_durable_offset = self.durability.durable_tx_offset().last_seen();
         self.durable_replay_summary()
@@ -1262,6 +1385,7 @@ impl RelationalDbEngine {
             transactions: self.stats.transaction_summary(durable_commit_count),
             runtime: self.stats.runtime_summary(),
             disk_faults: disk_fault_summary(self.commitlog_repo.fault_summary()),
+            snapshot_faults: disk_fault_summary(self.snapshot_repo.fault_summary()),
             replay,
             table,
         })
@@ -1380,22 +1504,28 @@ impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
 }
 
 type StressCommitlogRepo = FaultableRepo<MemoryCommitlogRepo>;
+type StressSnapshotRepo = BuggifiedSnapshotRepo;
 type InMemoryCommitlogDurability = DirectLocal<ProductValue, StressCommitlogRepo>;
 
 struct RelationalDbBootstrap {
     db: RelationalDB,
     commitlog_repo: StressCommitlogRepo,
+    snapshot_repo: StressSnapshotRepo,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
 }
 
 fn bootstrap_relational_db(
     seed: DstSeed,
-    fault_profile: CommitlogFaultProfile,
+    commitlog_fault_config: CommitlogFaultConfig,
+    snapshot_fault_config: SnapshotFaultConfig,
 ) -> anyhow::Result<RelationalDbBootstrap> {
-    let fault_config = CommitlogFaultConfig::for_profile(fault_profile);
-
-    let commitlog_repo = FaultableRepo::new(MemoryCommitlogRepo::new(8 * 1024 * 1024), fault_config, seed.fork(702));
+    let commitlog_repo = FaultableRepo::new(
+        MemoryCommitlogRepo::new(8 * 1024 * 1024),
+        commitlog_fault_config,
+        seed.fork(702),
+    );
+    let snapshot_repo = BuggifiedSnapshotRepo::new(snapshot_fault_config, seed.fork(703))?;
     let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
         InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), durability_opts)
@@ -1404,6 +1534,7 @@ fn bootstrap_relational_db(
     let persistence = Persistence {
         durability: durability.clone(),
         disk_size: Arc::new(in_memory_size_on_disk),
+        snapshot_repo: None,
         snapshots: None,
         runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
     };
@@ -1422,6 +1553,7 @@ fn bootstrap_relational_db(
     Ok(RelationalDbBootstrap {
         db,
         commitlog_repo,
+        snapshot_repo,
         durability,
         durability_opts,
     })
@@ -1558,4 +1690,111 @@ fn dynamic_schema(name: &str, version: u32) -> TableSchema {
         false,
         None,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::CommitlogFaultProfile;
+
+    use super::*;
+
+    fn run_seed_12_with_snapshot_fault(
+        configure: impl FnOnce(&mut SnapshotFaultConfig),
+    ) -> RelationalDbCommitlogOutcome {
+        let seed = DstSeed(12);
+        let config = RunConfig::with_max_interactions(100).with_commitlog_fault_profile(CommitlogFaultProfile::Off);
+        let mut snapshot_fault_config = SnapshotFaultConfig::for_profile(CommitlogFaultProfile::Off);
+        snapshot_fault_config.enabled = true;
+        configure(&mut snapshot_fault_config);
+        let mut runtime = sim::Runtime::new(seed).unwrap();
+
+        runtime
+            .block_on(async move {
+                let (source, engine, properties) = build_with_fault_configs(
+                    seed,
+                    TableScenarioId::RandomCrud,
+                    &config,
+                    CommitlogFaultConfig::for_profile(CommitlogFaultProfile::Off),
+                    snapshot_fault_config,
+                )?;
+                core::run_streaming(source, engine, properties, config).await
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn seed_12_exercises_snapshot_capture_and_restore() {
+        let seed = DstSeed(12);
+        let config = RunConfig::with_max_interactions(100).with_commitlog_fault_profile(CommitlogFaultProfile::Off);
+        let mut runtime = sim::Runtime::new(seed).unwrap();
+
+        let outcome = runtime
+            .block_on(run_generated_with_config_and_scenario(
+                seed,
+                TableScenarioId::RandomCrud,
+                config,
+            ))
+            .unwrap();
+
+        assert_eq!(outcome.interactions.snapshot_requested, 2);
+        assert_eq!(outcome.interactions.snapshot_created, 2);
+        assert_eq!(outcome.interactions.close_reopen_applied, 1);
+        assert!(outcome.replay.durable_offset.is_some());
+        assert!(outcome.replay.restored_snapshot_offset.is_some());
+        assert!(outcome.replay.restored_snapshot_offset <= outcome.replay.durable_offset);
+    }
+
+    #[test]
+    fn targeted_snapshot_open_faults_are_skipped_and_replay_matches_model() {
+        let outcome = run_seed_12_with_snapshot_fault(|config| config.open_error_prob = 1.0);
+
+        assert_eq!(outcome.interactions.snapshot_requested, 2);
+        assert_eq!(outcome.interactions.snapshot_created, 0);
+        assert_eq!(outcome.interactions.snapshot_skipped, 2);
+        assert!(outcome.snapshot_faults.open_error > 0);
+        assert_eq!(outcome.table.final_rows, outcome.replay.base_rows);
+    }
+
+    #[test]
+    fn targeted_snapshot_metadata_faults_are_retryable_on_reopen() {
+        let outcome = run_seed_12_with_snapshot_fault(|config| config.metadata_error_prob = 1.0);
+
+        assert_eq!(outcome.interactions.close_reopen_applied, 1);
+        assert!(outcome.snapshot_faults.metadata_error > 0);
+        assert_eq!(outcome.table.final_rows, outcome.replay.base_rows);
+    }
+
+    #[test]
+    fn targeted_snapshot_read_faults_are_retryable_on_reopen() {
+        let outcome = run_seed_12_with_snapshot_fault(|config| config.read_error_prob = 1.0);
+
+        assert_eq!(outcome.interactions.snapshot_created, 2);
+        assert!(outcome.snapshot_faults.read_error > 0);
+        assert!(outcome.replay.restored_snapshot_offset.is_some());
+        assert_eq!(outcome.table.final_rows, outcome.replay.base_rows);
+    }
+
+    #[test]
+    fn targeted_snapshot_write_faults_do_not_publish_new_snapshots() {
+        let outcome = run_seed_12_with_snapshot_fault(|config| config.write_error_prob = 1.0);
+
+        assert_eq!(outcome.interactions.snapshot_requested, 2);
+        assert_eq!(outcome.interactions.snapshot_created, 0);
+        assert_eq!(outcome.interactions.snapshot_skipped, 2);
+        assert!(outcome.snapshot_faults.write_error > 0);
+        assert!(outcome.replay.restored_snapshot_offset.is_none());
+        assert_eq!(outcome.table.final_rows, outcome.replay.base_rows);
+    }
+
+    #[test]
+    fn targeted_snapshot_fsync_faults_do_not_publish_new_snapshots() {
+        let outcome = run_seed_12_with_snapshot_fault(|config| config.fsync_error_prob = 1.0);
+
+        assert_eq!(outcome.interactions.snapshot_requested, 2);
+        assert_eq!(outcome.interactions.snapshot_created, 0);
+        assert_eq!(outcome.interactions.snapshot_skipped, 2);
+        assert!(outcome.snapshot_faults.fsync_error > 0);
+        assert!(outcome.replay.restored_snapshot_offset.is_none());
+        assert_eq!(outcome.table.final_rows, outcome.replay.base_rows);
+    }
 }

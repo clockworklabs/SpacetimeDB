@@ -17,6 +17,7 @@
 //!
 //! - Safety properties: `NotCrash`, `ErrorMatchesOracle`,
 //!   `NoMutationMatchesModel`, `DurableReplayMatchesModel`,
+//!   `SnapshotCaptureMaintainsPrefix`, `SnapshotRestoreWithinDurablePrefix`,
 //!   `BankingTablesMatch`, and `DynamicMigrationAutoInc`.
 //! - Model/oracle properties: `PointLookupMatchesModel`,
 //!   `PredicateCountMatchesModel`, `RangeScanMatchesModel`,
@@ -38,7 +39,7 @@ use crate::{
     client::SessionId,
     schema::{SchemaPlan, SimRow},
     workload::{
-        commitlog_ops::DurableReplaySummary,
+        commitlog_ops::{DurableReplaySummary, SnapshotObservation},
         table_ops::{TableErrorKind, TableWorkloadInteraction, TableWorkloadOutcome},
     },
 };
@@ -85,6 +86,10 @@ pub(crate) enum PropertyKind {
     DynamicMigrationAutoInc,
     /// Safety: durable replay state equals the oracle committed model.
     DurableReplayMatchesModel,
+    /// Safety: failed snapshot capture does not publish a newer usable snapshot.
+    SnapshotCaptureMaintainsPrefix,
+    /// Safety: restored snapshots are within the durable prefix.
+    SnapshotRestoreWithinDurablePrefix,
     /// Safety: observed errors match the model-predicted error class.
     ErrorMatchesOracle,
     /// Safety: model-predicted no-op interactions do not mutate visible state.
@@ -165,6 +170,7 @@ pub(crate) enum CommitlogObservation {
     Applied,
     Skipped,
     DynamicMigrationProbe(DynamicMigrationProbe),
+    Snapshot(SnapshotObservation),
     DurableReplay(DurableReplaySummary),
 }
 
@@ -227,6 +233,7 @@ enum PropertyEvent<'a> {
     },
     CommitOrRollback,
     DynamicMigrationProbe(&'a DynamicMigrationProbe),
+    SnapshotCapture(&'a SnapshotObservation),
     DurableReplay(&'a DurableReplaySummary),
     TableWorkloadFinished(&'a TableWorkloadOutcome),
 }

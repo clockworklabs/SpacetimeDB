@@ -3,43 +3,11 @@
 //! This is intentionally minimal: we keep DST's streaming execution model and
 //! use strategies only for typed, composable input generation.
 
-use std::marker::PhantomData;
-
 use crate::seed::DstRng;
 
 /// Typed strategy that can sample values from the shared deterministic RNG.
 pub(crate) trait Strategy<T>: Sized {
     fn sample(&self, rng: &mut DstRng) -> T;
-
-    #[allow(dead_code)]
-    fn map<U, F>(self, f: F) -> Map<Self, F, T>
-    where
-        F: Fn(T) -> U,
-    {
-        Map {
-            inner: self,
-            f,
-            _marker: PhantomData,
-        }
-    }
-}
-
-/// `map` combinator for strategies.
-#[allow(dead_code)]
-pub(crate) struct Map<S, F, T> {
-    inner: S,
-    f: F,
-    _marker: PhantomData<fn() -> T>,
-}
-
-impl<S, F, T, U> Strategy<U> for Map<S, F, T>
-where
-    S: Strategy<T>,
-    F: Fn(T) -> U,
-{
-    fn sample(&self, rng: &mut DstRng) -> U {
-        (self.f)(self.inner.sample(rng))
-    }
 }
 
 /// Picks a value in `[0, upper)`.
@@ -125,14 +93,6 @@ mod tests {
         let a = (0..16).map(|_| strategy.sample(&mut rng_a)).collect::<Vec<_>>();
         let b = (0..16).map(|_| strategy.sample(&mut rng_b)).collect::<Vec<_>>();
         assert_eq!(a, b);
-    }
-
-    #[test]
-    fn map_combinator_works() {
-        let strategy = Percent::new(30).map(|picked| if picked { 1 } else { 0 });
-        let mut rng = DstSeed(99).rng();
-        let values = (0..8).map(|_| strategy.sample(&mut rng)).collect::<Vec<_>>();
-        assert!(values.iter().all(|v| *v == 0 || *v == 1));
     }
 
     #[test]

@@ -924,6 +924,28 @@ impl MutTx for Locking {
 }
 
 impl Locking {
+    pub fn try_begin_mut_tx(&self, _isolation_level: IsolationLevel, workload: Workload) -> Option<MutTxId> {
+        let metrics = ExecutionMetrics::default();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
+
+        let timer = Instant::now();
+        let committed_state_write_lock = self.committed_state.try_write_arc()?;
+        let sequence_state_lock = self.sequence_state.try_lock_arc()?;
+        let lock_wait_time = timer.elapsed();
+
+        Some(MutTxId {
+            committed_state_write_lock,
+            sequence_state_lock,
+            tx_state: TxState::default(),
+            lock_wait_time,
+            read_sets: <_>::default(),
+            timer,
+            ctx,
+            metrics,
+            _not_send: std::marker::PhantomData,
+        })
+    }
+
     pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxMetrics, TxId) {
         tx.rollback_downgrade(workload)
     }
@@ -2799,6 +2821,38 @@ pub(crate) mod tests {
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
         let _ = read_tx_2.release();
         let _ = read_tx_1.release();
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_begin_mut_tx_reports_writer_contention() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let tx = begin_mut_tx(&datastore);
+        assert!(datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .is_none());
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let tx = datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .expect("write lock should be available after rollback");
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_begin_mut_tx_reports_read_contention() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let tx = begin_tx(&datastore);
+        assert!(datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .is_none());
+        let _ = datastore.release_tx(tx);
+
+        let tx = datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .expect("write lock should be available after read release");
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 

@@ -152,19 +152,12 @@ impl PlannedInteraction {
         )
     }
 
-    pub fn begin_tx_conflict(_owner: SessionId, conn: SessionId) -> Self {
+    pub fn begin_tx_conflict(conn: SessionId) -> Self {
         Self::new(TableOperation::BeginTx { conn }, TableInteractionCase::BeginTxConflict)
     }
 
-    pub fn write_conflict_insert(_owner: SessionId, conn: SessionId, table: usize, row: SimRow) -> Self {
-        Self::new(
-            TableOperation::InsertRows {
-                conn,
-                table,
-                rows: vec![row],
-            },
-            TableInteractionCase::WriteConflictInsert,
-        )
+    pub fn write_conflict_insert(conn: SessionId, table: usize, row: SimRow) -> Self {
+        Self::insert_rows(conn, table, vec![row], TableInteractionCase::WriteConflictInsert)
     }
 
     pub fn insert(conn: SessionId, table: usize, row: SimRow) -> Self {
@@ -172,14 +165,7 @@ impl PlannedInteraction {
     }
 
     pub fn insert_with_case(conn: SessionId, table: usize, row: SimRow, case: TableInteractionCase) -> Self {
-        Self::new(
-            TableOperation::InsertRows {
-                conn,
-                table,
-                rows: vec![row],
-            },
-            case,
-        )
+        Self::insert_rows(conn, table, vec![row], case)
     }
 
     pub fn delete(conn: SessionId, table: usize, row: SimRow) -> Self {
@@ -187,14 +173,7 @@ impl PlannedInteraction {
     }
 
     pub fn delete_with_case(conn: SessionId, table: usize, row: SimRow, case: TableInteractionCase) -> Self {
-        Self::new(
-            TableOperation::DeleteRows {
-                conn,
-                table,
-                rows: vec![row],
-            },
-            case,
-        )
+        Self::delete_rows(conn, table, vec![row], case)
     }
 
     pub fn exact_duplicate_insert(conn: SessionId, table: usize, row: SimRow) -> Self {
@@ -210,17 +189,19 @@ impl PlannedInteraction {
     }
 
     pub fn batch_insert(conn: SessionId, table: usize, rows: Vec<SimRow>) -> Self {
-        Self::new(
-            TableOperation::InsertRows { conn, table, rows },
-            TableInteractionCase::BatchInsert,
-        )
+        Self::insert_rows(conn, table, rows, TableInteractionCase::BatchInsert)
     }
 
     pub fn batch_delete(conn: SessionId, table: usize, rows: Vec<SimRow>) -> Self {
-        Self::new(
-            TableOperation::DeleteRows { conn, table, rows },
-            TableInteractionCase::BatchDelete,
-        )
+        Self::delete_rows(conn, table, rows, TableInteractionCase::BatchDelete)
+    }
+
+    fn insert_rows(conn: SessionId, table: usize, rows: Vec<SimRow>, case: TableInteractionCase) -> Self {
+        Self::new(TableOperation::InsertRows { conn, table, rows }, case)
+    }
+
+    fn delete_rows(conn: SessionId, table: usize, rows: Vec<SimRow>, case: TableInteractionCase) -> Self {
+        Self::new(TableOperation::DeleteRows { conn, table, rows }, case)
     }
 
     pub fn add_column(conn: SessionId, table: usize, column: ColumnPlan, default: AlgebraicValue) -> Self {

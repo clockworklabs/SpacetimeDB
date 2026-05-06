@@ -18,6 +18,8 @@ pub enum CommitlogInteraction {
     DropDynamicTable { conn: SessionId, slot: u32 },
     /// Migrate dynamic table schema for a slot.
     MigrateDynamicTable { conn: SessionId, slot: u32 },
+    /// Capture a durable snapshot of the current database state.
+    TakeSnapshot,
     /// Close and restart the database from durable history.
     CloseReopen,
 }
@@ -34,6 +36,7 @@ pub struct CommitlogWorkloadOutcome {
     pub transactions: TransactionSummary,
     pub runtime: RuntimeSummary,
     pub disk_faults: DiskFaultSummary,
+    pub snapshot_faults: DiskFaultSummary,
     pub replay: DurableReplaySummary,
     pub table: TableWorkloadOutcome,
 }
@@ -42,8 +45,28 @@ pub struct CommitlogWorkloadOutcome {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DurableReplaySummary {
     pub durable_offset: Option<u64>,
+    pub restored_snapshot_offset: Option<u64>,
+    pub latest_snapshot_offset: Option<u64>,
     pub base_rows: Vec<Vec<SimRow>>,
     pub dynamic_table_count: usize,
+}
+
+/// Snapshot capture status observed by a target.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SnapshotCaptureStatus {
+    Captured { offset: u64 },
+    SkippedOpenTransaction,
+    SkippedNoSnapshotCreated,
+    SkippedInjectedFault,
+}
+
+/// Snapshot capture facts exposed to properties.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotObservation {
+    pub durable_offset: Option<u64>,
+    pub latest_before: Option<u64>,
+    pub latest_after: Option<u64>,
+    pub status: SnapshotCaptureStatus,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -64,6 +87,9 @@ pub struct InteractionSummary {
     pub close_reopen_requested: usize,
     pub close_reopen_applied: usize,
     pub close_reopen_skipped: usize,
+    pub snapshot_requested: usize,
+    pub snapshot_created: usize,
+    pub snapshot_skipped: usize,
     pub skipped: usize,
 }
 
