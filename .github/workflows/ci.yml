@@ -1527,6 +1527,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Restore source mtimes from git history
+        # `actions/checkout@v4` stamps every file with the checkout time, but
+        # cargo's freshness check uses mtime. Without this, every workspace
+        # crate looks newer than its cached fingerprint and gets recompiled.
+        # git-restore-mtime sets each file's mtime to its last commit time,
+        # making mtimes deterministic across the cache builder and the runner.
+        # No-op on hosted runners (binary only exists on the self-hosted image).
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if command -v git-restore-mtime >/dev/null 2>&1; then
+            git restore-mtime --quiet
+          fi
+      - name: Use cached cargo target if available
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -d /mnt/runner-cache/target/SpacetimeDB ]; then
+            echo "CARGO_TARGET_DIR=/mnt/runner-cache/target/SpacetimeDB" >> "$GITHUB_ENV"
+          fi
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
