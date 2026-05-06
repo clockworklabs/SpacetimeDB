@@ -108,6 +108,10 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
+    /// Deprecated; use `cargo regen csharp dlls`.
+    ///
+    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows.
+    Dlls,
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
@@ -419,6 +423,11 @@ fn main() -> Result<()> {
                 .join("target/debug/spacetimedb-cli")
                 .with_extension(std::env::consts::EXE_EXTENSION);
             cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
+        }
+
+        Some(CiCmd::Dlls) => {
+            eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
+            cmd!("cargo", "regen", "csharp", "dlls").run()?;
         }
 
         Some(CiCmd::Smoketests(args)) => {
