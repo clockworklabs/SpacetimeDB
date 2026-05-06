@@ -70,6 +70,21 @@ Usage: wasm-bindings
 
 - `--help`: Print help (see a summary with '-h')
 
+### `dlls`
+
+Deprecated; use `cargo regen csharp dlls`.
+
+Builds and packs C# DLLs and NuGet packages for local Unity workflows.
+
+**Usage:**
+```bash
+Usage: dlls
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
+
 ### `smoketests`
 
 Runs smoketests
