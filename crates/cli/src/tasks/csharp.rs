@@ -92,6 +92,16 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         CsharpBuildPath::Net8Jit => {}
     }
 
+    // .NET 10 SDK crashes if global.json doesn't exist in the working directory.
+    // Create one in the project directory if using .NET 10 and none exists.
+    if matches!(build_path, CsharpBuildPath::Net10Aot) {
+        let global_json_path = project_path.join("global.json");
+        if !global_json_path.exists() {
+            let global_json_content = r#"{"sdk":{"version":"10.0.100","rollForward":"latestMinor"}}"#;
+            fs::write(&global_json_path, global_json_content)?;
+        }
+    }
+
     // For the JIT path, ensure the wasi-experimental workload is installed.
     if matches!(build_path, CsharpBuildPath::Net8Jit) {
         // Check if the `wasi-experimental` workload is installed. Unfortunately, we

@@ -855,6 +855,22 @@ jobs:
           echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
           echo "Using WASI SDK at: $WASI_SDK_PATH"
 
+      # Ensure global.json files exist for regression tests (symlinks may not work in CI)
+      - name: Fix global.json symlinks
+        run: |
+          for dir in sdks/csharp/examples~/regression-tests/server \
+                     sdks/csharp/examples~/regression-tests/republishing/server-initial \
+                     sdks/csharp/examples~/regression-tests/republishing/server-republish; do
+            if [ -L "$dir/global.json" ] && [ ! -f "$dir/global.json" ]; then
+              echo "Fixing broken symlink at $dir/global.json"
+              rm -f "$dir/global.json"
+              cp global.json "$dir/global.json"
+            elif [ ! -f "$dir/global.json" ]; then
+              echo "Creating missing $dir/global.json"
+              cp global.json "$dir/global.json"
+            fi
+          done
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
