@@ -53,7 +53,7 @@ enum MsgOrExit<T> {
 enum SchedulerMessage {
     Schedule {
         id: ScheduledFunctionId,
-        function_name: Box<str>,
+        function_name: Arc<str>,
         /// The timestamp we'll tell the reducer it is.
         effective_at: Timestamp,
         /// The actual instant we're scheduling for.
@@ -103,7 +103,8 @@ impl SchedulerStarter {
         // Find all Scheduled tables
         for st_scheduled_row in self.db.iter(&tx, ST_SCHEDULED_ID)? {
             let table_id = st_scheduled_row.read_col(StScheduledFields::TableId)?;
-            let function_name = st_scheduled_row.read_col::<Box<str>>(StScheduledFields::ReducerName)?;
+            let function_name =
+                Arc::<str>::from(st_scheduled_row.read_col::<Box<str>>(StScheduledFields::ReducerName)?);
             let (id_column, at_column) = self
                 .db
                 .table_scheduled_id_and_at(&tx, table_id)?
@@ -210,7 +211,7 @@ impl Scheduler {
         schedule_at: ScheduleAt,
         id_column: ColId,
         at_column: ColId,
-        function_name: Box<str>,
+        function_name: Arc<str>,
         fn_start: Timestamp,
     ) -> Result<(), ScheduleError> {
         // if `Timestamp::now()` is properly monotonic, use it; otherwise, use
@@ -279,7 +280,7 @@ struct SchedulerActor {
 enum QueueItem {
     Id {
         id: ScheduledFunctionId,
-        function_name: Box<str>,
+        function_name: Arc<str>,
         at: Timestamp,
     },
     VolatileNonatomicImmediate {
