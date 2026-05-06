@@ -217,6 +217,17 @@ Usage: typescript-test
 
 - `--help`: Print help
 
+### `version-upgrade-check`
+
+**Usage:**
+```bash
+Usage: version-upgrade-check
+```
+
+**Options:**
+
+- `--help`: Print help
+
 ### `docs`
 
 **Usage:**

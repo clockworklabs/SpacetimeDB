@@ -1,8 +1,10 @@
 namespace SpacetimeDB;
 
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
+#if !NET5_0_OR_GREATER
+using System.Diagnostics;
+#endif
 
 internal static class Util
 {

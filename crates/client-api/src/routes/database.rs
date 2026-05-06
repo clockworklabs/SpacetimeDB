@@ -292,7 +292,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
             NO_SUCH_DATABASE
         })?;
 
-    let leader = worker_ctx.leader(database.id).await.map_err(log_and_500)?;
+    let leader = worker_ctx.leader(database.id).await.map_err(Into::into)?;
 
     Ok((leader, database))
 }
