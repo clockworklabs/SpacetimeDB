@@ -86,7 +86,7 @@ impl JobCores {
     /// and runs all databases in the `global_runtime`.
     pub fn from_pinned_cores(cores: impl IntoIterator<Item = CoreId>) -> Self {
         let cores: IndexMap<_, _> = cores.into_iter().map(|id| (id, CoreInfo::default())).collect();
-        let inner = if cfg!(feature = "no-job-core-pinning") || cores.is_empty() {
+        let inner = if cfg!(not(feature = "core-pinning")) || cores.is_empty() {
             JobCoresInner::NoPinning
         } else {
             JobCoresInner::PinnedCores(Arc::new(Mutex::new(PinnedCoresExecutorManager {
