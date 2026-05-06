@@ -1,0 +1,19 @@
+[package]
+name = "spacetimedb-unity-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[test]]
+name = "unity"
+path = "tests/unity.rs"
+harness = false
+
+[dev-dependencies]
+anyhow.workspace = true
+clap.workspace = true
+quick-xml.workspace = true
+serde_json.workspace = true
+spacetimedb-language-test-support = { path = "../language-test-support" }
+tempfile.workspace = true
