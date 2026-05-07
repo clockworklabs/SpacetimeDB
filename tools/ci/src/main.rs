@@ -348,7 +348,6 @@ fn main() -> Result<()> {
                 "regen-csharp-moduledef",
             )
             .run()?;
-            cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
             if !check_diff(Path::new("crates/bindings-csharp"))? {
                 bail!("Repository has uncommitted changes.");
             }
