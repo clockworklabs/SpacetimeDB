@@ -137,6 +137,7 @@ impl fmt::Display for MetadataFile {
 pub struct ConfigFile {
     pub certificate_authority: Option<CertificateAuthority>,
     pub logs: LogConfig,
+    pub wasm: WasmConfig,
     pub v8: V8Config,
 }
 
@@ -147,6 +148,8 @@ struct ConfigFileToml {
     certificate_authority: Option<CertificateAuthority>,
     #[serde(default)]
     logs: LogConfig,
+    #[serde(default)]
+    wasm: WasmConfigToml,
     #[serde(default)]
     v8: V8ConfigToml,
     #[serde(default)]
@@ -162,6 +165,9 @@ impl<'de> serde::Deserialize<'de> for ConfigFile {
         Ok(Self {
             certificate_authority: config.certificate_authority,
             logs: config.logs,
+            wasm: WasmConfig {
+                procedure_instance_pool_size: config.wasm.procedure_instance_pool_size,
+            },
             v8: V8Config {
                 procedure_instance_pool_size: config.v8.procedure_instance_pool_size,
                 heap_policy: config.v8_heap_policy,
@@ -204,6 +210,37 @@ pub struct LogConfig {
     pub level: Option<tracing_core::LevelFilter>,
     #[serde(default)]
     pub directives: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WasmConfig {
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for WasmConfig {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct WasmConfigToml {
+    #[serde(
+        default = "default_wasm_procedure_instance_pool_size",
+        deserialize_with = "de_nz_usize"
+    )]
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for WasmConfigToml {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -320,6 +357,10 @@ fn def_heap_limit() -> usize {
 }
 
 fn default_v8_procedure_instance_pool_size() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
+}
+
+fn default_wasm_procedure_instance_pool_size() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
 }
 
@@ -522,6 +563,10 @@ mod tests {
         let config: ConfigFile = toml::from_str("").unwrap();
 
         assert_eq!(
+            config.wasm.procedure_instance_pool_size,
+            default_wasm_procedure_instance_pool_size()
+        );
+        assert_eq!(
             config.v8.procedure_instance_pool_size,
             default_v8_procedure_instance_pool_size()
         );
@@ -538,6 +583,9 @@ mod tests {
     #[test]
     fn v8_heap_policy_parses_from_toml() {
         let toml = r#"
+            [wasm]
+            procedure-instance-pool-size = 4
+
             [v8]
             procedure-instance-pool-size = 3
 
@@ -551,6 +599,7 @@ mod tests {
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
 
+        assert_eq!(config.wasm.procedure_instance_pool_size.get(), 4);
         assert_eq!(config.v8.procedure_instance_pool_size.get(), 3);
         assert_eq!(config.v8.heap_policy.heap_check_request_interval, None);
         assert_eq!(

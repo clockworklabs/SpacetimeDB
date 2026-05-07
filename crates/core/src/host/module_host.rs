@@ -343,6 +343,7 @@ pub enum ModuleWithInstance {
         module: super::wasmtime::Module,
         executor: SingleCoreExecutor,
         init_inst: Box<super::wasmtime::ModuleInstance>,
+        procedure_instance_pool_size: NonZeroUsize,
     },
     Js {
         module: super::v8::JsModule,
@@ -377,10 +378,6 @@ struct V8ModuleHost {
 enum InstanceKind {
     Main,
     Procedure,
-}
-
-fn default_wasm_procedure_instance_pool_size() -> NonZeroUsize {
-    std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
 }
 
 /// A module; used as a bound on `InstanceManager`.
@@ -1342,6 +1339,7 @@ impl ModuleHost {
                 module,
                 executor,
                 init_inst,
+                procedure_instance_pool_size,
             } => {
                 info = module.info();
                 let module = Arc::new(module);
@@ -1355,7 +1353,7 @@ impl ModuleHost {
                     module,
                     None,
                     metrics,
-                    default_wasm_procedure_instance_pool_size(),
+                    procedure_instance_pool_size,
                 ));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     executor,
