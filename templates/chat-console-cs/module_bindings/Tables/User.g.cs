@@ -15,20 +15,20 @@ namespace SpacetimeDB.Types
     {
         public sealed class UserHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "User";
+            protected override string RemoteTableName => "user";
 
-            public sealed class UserIdentityIdxBtreeUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(User row) => row.Identity;
 
-                public UserIdentityIdxBtreeUniqueIndex(UserHandle table) : base(table) { }
+                public IdentityUniqueIndex(UserHandle table) : base(table) { }
             }
 
-            public readonly UserIdentityIdxBtreeUniqueIndex UserIdentityIdxBtree;
+            public readonly IdentityUniqueIndex Identity;
 
             internal UserHandle(DbConnection conn) : base(conn)
             {
-                UserIdentityIdxBtree = new(this);
+                Identity = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Identity;
@@ -45,9 +45,9 @@ namespace SpacetimeDB.Types
 
         public UserCols(string tableName)
         {
-            Identity = new global::SpacetimeDB.Col<User, SpacetimeDB.Identity>(tableName, "Identity");
-            Name = new global::SpacetimeDB.Col<User, string>(tableName, "Name");
-            Online = new global::SpacetimeDB.Col<User, bool>(tableName, "Online");
+            Identity = new global::SpacetimeDB.Col<User, SpacetimeDB.Identity>(tableName, "identity");
+            Name = new global::SpacetimeDB.Col<User, string>(tableName, "name");
+            Online = new global::SpacetimeDB.Col<User, bool>(tableName, "online");
         }
     }
 
@@ -57,7 +57,7 @@ namespace SpacetimeDB.Types
 
         public UserIxCols(string tableName)
         {
-            Identity = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Identity>(tableName, "Identity");
+            Identity = new global::SpacetimeDB.IxCol<User, SpacetimeDB.Identity>(tableName, "identity");
         }
     }
 }
