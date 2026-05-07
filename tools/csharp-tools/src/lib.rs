@@ -75,29 +75,28 @@ fn render_nuget_config(bsatn_source: &Path, runtime_source: &Path) -> String {
     )
 }
 
-pub fn write_persistent_nuget_configs(spacetimedb_repo_path: Option<&Path>) -> Result<()> {
+pub fn write_nuget_configs(target_dirs: &[PathBuf], spacetimedb_repo_path: Option<&Path>, quiet: bool) -> Result<()> {
     let spacetimedb_repo_path = match spacetimedb_repo_path {
         Some(path) => canonicalize_existing(path)?,
         None => workspace_dir(),
     };
 
-    let sdk_config = sdk_dir().join("NuGet.Config");
-    let sdk_config_contents = render_nuget_config(
+    let config_contents = render_nuget_config(
         &spacetimedb_repo_path.join("crates/bindings-csharp/BSATN.Runtime/bin/Release"),
         &spacetimedb_repo_path.join("crates/bindings-csharp/Runtime/bin/Release"),
     );
-    fs::write(&sdk_config, sdk_config_contents).with_context(|| format!("failed to write {}", sdk_config.display()))?;
 
-    let repo_config = spacetimedb_repo_path.join("NuGet.Config");
-    let repo_config_contents = render_nuget_config(
-        Path::new("crates/bindings-csharp/BSATN.Runtime/bin/Release"),
-        Path::new("crates/bindings-csharp/Runtime/bin/Release"),
-    );
-    fs::write(&repo_config, repo_config_contents)
-        .with_context(|| format!("failed to write {}", repo_config.display()))?;
+    for target_dir in target_dirs {
+        let target_dir = canonicalize_existing(target_dir)?;
+        let config_path = target_dir.join("NuGet.Config");
+        fs::write(&config_path, &config_contents)
+            .with_context(|| format!("failed to write {}", config_path.display()))?;
 
-    println!("Wrote {} contents:", sdk_config.display());
-    print!("{}", fs::read_to_string(&sdk_config)?);
+        if !quiet {
+            println!("Wrote {} contents:", config_path.display());
+            print!("{}", fs::read_to_string(&config_path)?);
+        }
+    }
 
     Ok(())
 }

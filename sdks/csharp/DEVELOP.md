@@ -12,7 +12,7 @@ When developing against a local clone of SpacetimeDB, you'll need to ensure that
 To develop against a local clone of SpacetimeDB at `../SpacetimeDB`, run the following command:
 
 ```sh
-dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && cargo csharp write-nuget-config ../SpacetimeDB
+dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && cargo csharp write-nuget-config . --stdb-path ../SpacetimeDB
 ```
 
 This will create a (`.gitignore`d) `nuget.config` file that uses the local build of the package, instead of the package on NuGet.

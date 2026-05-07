@@ -132,7 +132,7 @@ jobs:
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
-          cargo csharp write-nuget-config
+          cargo csharp write-nuget-config sdks/csharp .
 
       # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
       # ChatGPT suspects that this could be due to different build invocations using the same target dir,
@@ -630,7 +630,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cargo csharp write-nuget-config
+          cargo csharp write-nuget-config sdks/csharp .
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -774,7 +774,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cargo csharp write-nuget-config
+          cargo csharp write-nuget-config sdks/csharp .
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
