@@ -161,3 +161,38 @@ fn all_segments_sealed() {
     assert_eq!(num_segments + 1, segments.len());
     assert_eq!(segments.last().copied(), Some(num_commits as u64));
 }
+
+#[test]
+fn resume_empty_segment() {
+    enable_logging();
+
+    let root = tempdir().unwrap();
+    let path = CommitLogDir::from_path_unchecked(root.path());
+    let opts = Options {
+        max_segment_size: 64 * 1024,
+        ..<_>::default()
+    };
+    let num_commits = 1024;
+    let repo = repo::Fs::new(path, None).unwrap();
+    {
+        let mut clog = commitlog::Generic::open(&repo, opts).unwrap();
+        for (i, payload) in compressible_payloads().take(num_commits).enumerate() {
+            clog.commit([(i as u64, payload)]).unwrap();
+        }
+        clog.flush().unwrap();
+        clog.sync();
+    }
+
+    let mut segments = repo.existing_offsets().unwrap();
+    while let Some(last_segment) = segments.pop() {
+        repo.open_segment_writer(last_segment).unwrap().set_len(0).unwrap();
+
+        let _ = commitlog::Generic::<_, [u8; 256]>::open(&repo, opts).unwrap();
+        let segments1 = repo.existing_offsets().unwrap();
+        if segments.is_empty() {
+            assert_eq!([0], segments1.as_slice());
+        } else {
+            assert_eq!(segments, segments1);
+        }
+    }
+}
