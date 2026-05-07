@@ -21,9 +21,8 @@ unstable = ["spacetimedb-client-api/unstable"]
 allow_loopback_http_for_tests = ["spacetimedb-core/allow_loopback_http_for_tests"]
 # Perfmaps for profiling modules
 perfmap = ["spacetimedb-core/perfmap"]
-# Disables core pinning
-no-core-pinning = ["spacetimedb-core/no-core-pinning"]
-no-job-core-pinning = ["spacetimedb-core/no-job-core-pinning"]
+# Enables core pinning.
+core-pinning = ["spacetimedb-core/core-pinning"]
 
 [dependencies]
 spacetimedb-client-api-messages.workspace = true

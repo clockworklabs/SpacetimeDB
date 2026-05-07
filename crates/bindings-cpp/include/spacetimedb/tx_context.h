@@ -69,7 +69,9 @@ public:
     // Access to ReducerContext methods
     Identity sender() const { return ctx_.sender(); }
     const AuthCtx& sender_auth() const { return ctx_.sender_auth(); }
-    Identity identity() const { return ctx_.identity(); }
+    Identity database_identity() const { return ctx_.database_identity(); }
+    [[deprecated("Use database_identity() instead.")]]
+    Identity identity() const { return database_identity(); }
     StdbRng& rng() const { return ctx_.rng(); }
     
     /**

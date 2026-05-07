@@ -14,15 +14,6 @@ export function normalizeStdbUrl(rawUrl: string): string {
   return parseStdbUrl(rawUrl).host;
 }
 
-export function deriveMetricsUrl(rawUrl: string): string {
-  const url = parseStdbUrl(rawUrl);
-  url.protocol = 'http:';
-  url.pathname = '/v1/metrics';
-  url.search = '';
-  url.hash = '';
-  return url.toString();
-}
-
 export function deriveWebsocketUrl(rawUrl: string): string {
   const url = parseStdbUrl(rawUrl);
   url.protocol = 'ws:';

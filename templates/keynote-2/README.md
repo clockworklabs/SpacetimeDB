@@ -35,8 +35,6 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 
 **Key Finding:** SpacetimeDB achieves **~14x higher throughput** than the next best option (SQLite RPC) and maintains nearly identical performance under high contention (only ~4% drop), while traditional databases suffer significant degradation (CockroachDB drops 96%).
 
-> **Note:** SpacetimeDB runs on ARM architectures (including Apple M-series Macs), but has not yet been optimized for them.
-
 ### Contention Impact
 
 ![Contention Chart](./contention-chart.png)
@@ -68,6 +66,8 @@ Client → Integrated Platform (compute + storage colocated)
 ```
 
 This ensures we're measuring real-world application performance, not raw database throughput.
+
+Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
 
 ### The Transaction
 
@@ -175,7 +175,6 @@ PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud dat
 ## Running the Benchmarks
 
 See [DEVELOP.md](./DEVELOP.md) for prerequisites, configuration, and full CLI reference.
-The distributed TypeScript SpacetimeDB workflow is documented there as `Run the distributed TypeScript SpacetimeDB benchmark`.
 
 ## Output
 
