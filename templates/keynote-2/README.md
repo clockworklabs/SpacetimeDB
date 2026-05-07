@@ -44,9 +44,7 @@ The chart above shows TPS vs Zipf Alpha (contention level). Higher alpha values 
 
 ## Methodology
 
-All systems were tested with **out-of-the-box default settings**: no custom tuning, no configuration optimization. This reflects what developers experience when they first adopt these technologies.
-
-Postgres (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'`.
+All systems were tested with **out-of-the-box default settings**, with one exception: Postgres (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'` for an apples-to-apples comparison. No other custom tuning or configuration optimization was applied.
 
 The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
 
