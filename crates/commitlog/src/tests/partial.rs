@@ -274,8 +274,8 @@ impl Repo for ShortMem {
     type SegmentWriter = ShortSegment;
     type SegmentReader = repo::mem::ReadOnlySegment;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        self.inner.create_segment(offset).map(|inner| ShortSegment {
+    fn create_segment(&self, offset: u64, header: segment::Header) -> io::Result<Self::SegmentWriter> {
+        self.inner.create_segment(offset, header).map(|inner| ShortSegment {
             inner,
             max_len: self.max_len,
         })

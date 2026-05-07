@@ -96,7 +96,7 @@ pub mod advisory {
     use std::{
         error::Error as StdError,
         fmt,
-        fs::File,
+        fs::{self, File},
         io::{self, Read, Seek, SeekFrom, Write},
         path::{Path, PathBuf},
         process,
@@ -166,6 +166,19 @@ pub mod advisory {
             self.lock.seek(SeekFrom::Start(0))?;
             self.lock.write_all(metadata.as_ref())?;
             self.lock.sync_data()?;
+            Ok(())
+        }
+
+        /// Release the lock and optionally remove the locked file.
+        ///
+        /// By default, dropping [LockedFile] will release the lock, but not
+        /// remove the file. If `remove` is `true`, this method will also remove
+        /// the file.
+        pub fn release(self, remove: bool) -> io::Result<()> {
+            if remove {
+                fs::remove_file(&self.path)?;
+            }
+
             Ok(())
         }
 
