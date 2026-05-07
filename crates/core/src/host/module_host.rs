@@ -37,7 +37,7 @@ use derive_more::From;
 use futures::lock::Mutex;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use prometheus::{Histogram, IntGauge};
+use prometheus::{Histogram, HistogramTimer, IntGauge};
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
@@ -356,6 +356,22 @@ enum ModuleHostInner {
     Js(Box<V8ModuleHost>),
 }
 
+struct CallTimerGuard {
+    queue_timer: Option<HistogramTimer>,
+    queue_length_gauge: IntGauge,
+}
+
+impl Drop for CallTimerGuard {
+    fn drop(&mut self) {
+        self.queue_length_gauge.dec();
+        if let Some(queue_timer) = self.queue_timer.take() {
+            queue_timer.stop_and_record();
+        }
+    }
+}
+
+type WasmtimeInstanceManager = ModuleInstanceManager<Arc<super::wasmtime::Module>>;
+
 /// Wasm uses one instance manager for reducers/views and one for procedures.
 ///
 /// Both managers share the compiled module via `Arc` so either manager can
@@ -364,8 +380,83 @@ enum ModuleHostInner {
 /// enqueue first instead of racing to allocate multiple main instances.
 struct WasmtimeModuleHost {
     executor: SingleCoreExecutor,
-    main_instance: Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>>,
-    procedure_instances: Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>>,
+    main_instance: Arc<WasmtimeInstanceManager>,
+    procedure_instances: Arc<WasmtimeInstanceManager>,
+}
+
+impl WasmtimeModuleHost {
+    fn instance_manager(&self, kind: InstanceKind) -> Arc<WasmtimeInstanceManager> {
+        match kind {
+            InstanceKind::Main => self.main_instance.clone(),
+            InstanceKind::Procedure => self.procedure_instances.clone(),
+        }
+    }
+
+    fn enqueue_job<F>(&self, label: &str, on_panic: Arc<dyn Fn() + Send + Sync>, timer_guard: CallTimerGuard, f: F)
+    where
+        F: AsyncFnOnce() + Send + 'static,
+    {
+        let label = label.to_owned();
+        self.executor.enqueue_job(async move || {
+            scopeguard::defer_on_unwind!({
+                log::warn!("wasm job {label} panicked");
+                on_panic();
+            });
+
+            drop(timer_guard);
+            f().await;
+        });
+    }
+
+    fn enqueue_with_instance<A>(
+        &self,
+        label: &str,
+        on_panic: Arc<dyn Fn() + Send + Sync>,
+        timer_guard: CallTimerGuard,
+        instance_kind: InstanceKind,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) where
+        A: Send + 'static,
+    {
+        let instance_manager = self.instance_manager(instance_kind);
+        self.enqueue_job(label, on_panic, timer_guard, async move || {
+            instance_manager
+                .with_instance(async move |mut inst| {
+                    wasm(arg, &mut inst).await;
+                    ((), inst)
+                })
+                .await;
+        });
+    }
+
+    async fn enqueue_with_procedure_instance<A>(
+        &self,
+        label: &str,
+        on_panic: Arc<dyn Fn() + Send + Sync>,
+        timer_guard: CallTimerGuard,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) where
+        A: Send + 'static,
+    {
+        let instance_manager = self.instance_manager(InstanceKind::Procedure);
+        let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+        let label = label.to_owned();
+        self.executor.enqueue_job(async move || {
+            scopeguard::defer_on_unwind!({
+                log::warn!("wasm procedure {label} panicked");
+                on_panic();
+            });
+
+            let mut inst = instance;
+            drop(timer_guard);
+            wasm(arg, &mut inst).await;
+            instance_manager
+                .return_instance(ModuleInstanceLease { instance: inst, slot })
+                .await;
+        });
+    }
 }
 
 struct V8ModuleHost {
@@ -1603,7 +1694,7 @@ impl ModuleHost {
         }
     }
 
-    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(()) + use<>> {
+    fn start_call_timer(&self, label: &str) -> CallTimerGuard {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -1620,22 +1711,9 @@ impl ModuleHost {
                 .with_label_values(&self.info.database_identity)
                 .observe(queue_length as f64);
         }
-        // Ensure that we always decrement the gauge.
-        scopeguard::guard((), move |_| {
-            // Decrement the queue length gauge when we're done.
-            // This is done in a defer so that it happens even if the reducer call panics.
-            queue_length_gauge.dec();
-            queue_timer.stop_and_record();
-        })
-    }
-
-    fn wasm_instance_manager(
-        host: &WasmtimeModuleHost,
-        kind: InstanceKind,
-    ) -> Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>> {
-        match kind {
-            InstanceKind::Main => host.main_instance.clone(),
-            InstanceKind::Procedure => host.procedure_instances.clone(),
+        CallTimerGuard {
+            queue_timer: Some(queue_timer),
+            queue_length_gauge,
         }
     }
 
@@ -1665,7 +1743,7 @@ impl ModuleHost {
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
                 let executor = host.executor.clone();
-                let instance_manager = Self::wasm_instance_manager(host, InstanceKind::Main);
+                let instance_manager = host.instance_manager(InstanceKind::Main);
                 executor
                     .run_job(async move || {
                         drop(timer_guard);
@@ -1713,7 +1791,7 @@ impl ModuleHost {
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
                 let executor = host.executor.clone();
-                let instance_manager = Self::wasm_instance_manager(host, InstanceKind::Procedure);
+                let instance_manager = host.instance_manager(InstanceKind::Procedure);
                 instance_manager
                     .with_instance(async move |mut inst| {
                         executor
@@ -1738,110 +1816,13 @@ impl ModuleHost {
         })
     }
 
-    fn enqueue_wasm_job<F>(&self, kind: &str, label: &str, f: F) -> Result<(), NoSuchModule>
-    where
-        F: AsyncFnOnce() + Send + 'static,
-    {
-        self.guard_closed()?;
-
-        let timer_guard = self.start_call_timer(label);
-        let kind = kind.to_owned();
-        let label = label.to_owned();
-        let on_panic = self.on_panic.clone();
-
-        match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                let executor = host.executor.clone();
-                executor.enqueue_job(async move || {
-                    scopeguard::defer_on_unwind!({
-                        log::warn!("{kind} {label} panicked");
-                        on_panic();
-                    });
-
-                    drop(timer_guard);
-                    f().await;
-                });
-                Ok(())
-            }
-            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_job should only be used for wasm"),
-        }
-    }
-
-    fn enqueue_wasm_instance<A>(
-        &self,
-        kind: &str,
-        label: &str,
-        instance_kind: InstanceKind,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
-    ) -> Result<(), NoSuchModule>
-    where
-        A: Send + 'static,
-    {
-        match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                let instance_manager = Self::wasm_instance_manager(host, instance_kind);
-                self.enqueue_wasm_job(kind, label, async move || {
-                    instance_manager
-                        .with_instance(async move |mut inst| {
-                            wasm(arg, &mut inst).await;
-                            ((), inst)
-                        })
-                        .await;
-                })
-            }
-            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_instance should only be used for wasm"),
-        }
-    }
-
-    async fn enqueue_wasm_procedure_instance<A>(
-        &self,
-        kind: &str,
-        label: &str,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
-    ) -> Result<(), NoSuchModule>
-    where
-        A: Send + 'static,
-    {
-        self.guard_closed()?;
-
-        let timer_guard = self.start_call_timer(label);
-        let kind = kind.to_owned();
-        let label = label.to_owned();
-        let on_panic = self.on_panic.clone();
-
-        match &*self.inner {
-            ModuleHostInner::Wasm(host) => {
-                let executor = host.executor.clone();
-                let instance_manager = Self::wasm_instance_manager(host, InstanceKind::Procedure);
-                let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
-                executor.enqueue_job(async move || {
-                    scopeguard::defer_on_unwind!({
-                        log::warn!("{kind} {label} panicked");
-                        on_panic();
-                    });
-
-                    let mut inst = instance;
-                    drop(timer_guard);
-                    wasm(arg, &mut inst).await;
-                    instance_manager
-                        .return_instance(ModuleInstanceLease { instance: inst, slot })
-                        .await;
-                });
-                Ok(())
-            }
-            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_procedure_instance should only be used for wasm"),
-        }
-    }
-
     async fn enqueue_main_operation<A, JsFut>(
         &self,
         panic_kind: &'static str,
         label: &str,
         arg: A,
         js: impl FnOnce(A, JsMainInstance, JsFatalHook) -> JsFut,
-        wasm: impl FnOnce(&Self, A) -> Result<(), NoSuchModule>,
+        wasm: impl FnOnce(A, &WasmtimeModuleHost, JsFatalHook, CallTimerGuard) -> Result<(), NoSuchModule>,
     ) -> Result<(), NoSuchModule>
     where
         A: Send + 'static,
@@ -1863,7 +1844,12 @@ impl ModuleHost {
                     .await;
                 Ok(())
             }
-            ModuleHostInner::Wasm(_) => wasm(self, arg),
+            ModuleHostInner::Wasm(wasm_host) => {
+                self.guard_closed()?;
+                let timer_guard = self.start_call_timer(label);
+                let on_panic = self.on_panic.clone();
+                wasm(arg, wasm_host, on_panic, timer_guard)
+            }
         }
     }
 
@@ -1880,11 +1866,12 @@ impl ModuleHost {
             label,
             (cmd, metric),
             |(cmd, metric), inst, on_panic| async move { inst.enqueue_call_view(cmd, metric, on_panic).await },
-            move |module, (cmd, metric)| {
+            move |(cmd, metric), wasm_host, on_panic, timer_guard| {
                 let info = info.clone();
-                module.enqueue_wasm_instance(
-                    "main-instance operation",
+                wasm_host.enqueue_with_instance(
                     label,
+                    on_panic,
+                    timer_guard,
                     InstanceKind::Main,
                     cmd,
                     async move |cmd, inst| {
@@ -1894,7 +1881,8 @@ impl ModuleHost {
                             log::warn!("websocket view operation failed: {err:#}");
                         }
                     },
-                )
+                );
+                Ok(())
             },
         )
         .await
@@ -2308,16 +2296,18 @@ impl ModuleHost {
                     reducer_name,
                     call.params,
                     |params, inst, on_panic| async move { inst.enqueue_reducer(params, on_panic).await },
-                    move |module, params| {
-                        module.enqueue_wasm_instance(
-                            "main-instance operation",
+                    move |params, wasm_host, on_panic, timer_guard| {
+                        wasm_host.enqueue_with_instance(
                             &reducer_label,
+                            on_panic,
+                            timer_guard,
                             InstanceKind::Main,
                             params,
                             async |params, inst| {
                                 let _ = inst.call_reducer(params);
                             },
-                        )
+                        );
+                        Ok(())
                     },
                 )
                 .await
@@ -2527,14 +2517,17 @@ impl ModuleHost {
                 });
                 Ok(())
             }
-            ModuleHostInner::Wasm(_) => {
+            ModuleHostInner::Wasm(wasm_host) => {
                 let module = self.clone();
                 let procedure_name_for_job = procedure_name.clone();
                 let target_for_job = target.clone();
-                match self
-                    .enqueue_wasm_procedure_instance(
-                        "pooled operation",
+                let timer_guard = self.start_call_timer(&procedure_name);
+                let on_panic = self.on_panic.clone();
+                wasm_host
+                    .enqueue_with_procedure_instance(
                         &procedure_name,
+                        on_panic,
+                        timer_guard,
                         params,
                         async move |params, inst| {
                             let ret = inst.call_procedure(params).await;
@@ -2548,11 +2541,8 @@ impl ModuleHost {
                             }
                         },
                     )
-                    .await
-                {
-                    Ok(()) => Ok(()),
-                    Err(err) => self.send_procedure_error(&procedure_name, timer, target, err.into()),
-                }
+                    .await;
+                Ok(())
             }
         }
     }
@@ -3079,15 +3069,16 @@ impl ModuleHost {
             label,
             request,
             |request, inst, on_panic| async move { inst.enqueue_one_off_query(request, on_panic).await },
-            move |module, request| {
+            move |request, wasm_host, on_panic, timer_guard| {
                 let info = info.clone();
-                module.enqueue_wasm_job("module-thread operation", label, async move || {
+                wasm_host.enqueue_job(label, on_panic, timer_guard, async move || {
                     let result = request.run();
                     Self::record_one_off_query_round_trip(&info, timer);
                     if let Err(err) = result {
                         log::warn!("One-off query failed: {err:#}");
                     }
-                })
+                });
+                Ok(())
             },
         )
         .await?;
