@@ -36,12 +36,6 @@ All tests run for 60 seconds with 50 concurrent connections, with a transfer wor
 
 **Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite at 3,186 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
 
-### Contention Impact
-
-![Contention Chart](./contention-chart.png)
-
-The chart above shows TPS vs Zipf Alpha (contention level). Higher alpha values concentrate more transactions on fewer "hot" accounts, increasing contention. SpacetimeDB maintains consistent performance regardless of contention level, while traditional database architectures show significant degradation.
-
 ## Methodology
 
 All systems were tested with **out-of-the-box default settings**, with one exception: Postgres (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'` for an apples-to-apples comparison. No other custom tuning or configuration optimization was applied.
