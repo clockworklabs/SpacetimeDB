@@ -1516,39 +1516,18 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(ExecutionMetrics, bool), DBError> {
-        // Send an error message to the client.
-        let send_err_msg = |message| {
-            let _ = self.broadcast_queue.send_client_message_v1(
-                sender.clone(),
-                None,
-                SubscriptionMessage {
-                    request_id: Some(subscription.request_id),
-                    query_id: None,
-                    timer: Some(timer),
-                    result: SubscriptionResult::Error(SubscriptionError {
-                        table_id: None,
-                        message,
-                    }),
-                },
-            );
-        };
-
         // How many queries make up this subscription?
         let subscription_metrics = &self.metrics.subscribe;
         let num_queries = subscription.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
-        let (queries, auth, mut_tx, compile_timer) = return_on_err!(
-            self.compile_queries(
-                sender.id.identity,
-                auth,
-                &subscription.query_strings,
-                num_queries,
-                subscription_metrics,
-            ),
-            send_err_msg,
-            (ExecutionMetrics::default(), false)
-        );
+        let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
+            sender.id.identity,
+            auth,
+            &subscription.query_strings,
+            num_queries,
+            subscription_metrics,
+        )?;
 
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
