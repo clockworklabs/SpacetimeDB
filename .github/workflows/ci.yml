@@ -681,7 +681,7 @@ jobs:
 
       - name: Check for changes
         run: |
-          tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
+          cargo ci check-diff demo/Blackholio/client-unity/Assets/Scripts/autogen || {
               echo 'Error: Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
               exit 1
           }
@@ -827,11 +827,10 @@ jobs:
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Check quickstart-chat bindings are up to date
-        working-directory: sdks/csharp
         run: |
-          bash tools~/gen-quickstart.sh
-          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
-              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
+          cargo regen csharp quickstart
+          cargo ci check-diff templates/chat-console-cs/module_bindings || {
+              echo 'Error: quickstart-chat bindings have changed. Please run `cargo regen csharp quickstart`.'
               exit 1
           }
 
@@ -840,7 +839,7 @@ jobs:
       #   working-directory: sdks/csharp
       #   run: |
       #     bash tools~/gen-client-api.sh
-      #     "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
+      #     cargo ci check-diff sdks/csharp/src/SpacetimeDB/ClientApi || {
       #         echo 'Error: Client API bindings are dirty. Please run `sdks/csharp/tools~/gen-client-api.sh`.'
       #         exit 1
       #     }
@@ -853,7 +852,7 @@ jobs:
       - name: Run regression tests
         run: |
           cargo csharp run-regression-tests
-          tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
+          cargo ci check-diff sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `cargo regen csharp regression-tests`.'
               exit 1
           }
