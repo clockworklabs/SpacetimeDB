@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 
-use spacetimedb_core::db::relational_db::RelationalDB;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_snapshot::{MemorySnapshotRepository, SnapshotStore};
+use spacetimedb_snapshot::{MemorySnapshotRepository, ReconstructedSnapshot, SnapshotError, SnapshotRepo};
+use spacetimedb_table::{blob_store::BlobStore, page_pool::PagePool, table::Table};
 
 use crate::{
     seed::DstSeed,
@@ -27,7 +27,7 @@ pub(crate) fn is_injected_snapshot_error_text(text: &str) -> bool {
 }
 
 pub(crate) struct SnapshotRestoreRepo {
-    pub(crate) store: Option<Arc<dyn SnapshotStore>>,
+    pub(crate) store: Option<Arc<dyn SnapshotRepo>>,
     pub(crate) restored_snapshot_offset: Option<TxOffset>,
     pub(crate) latest_snapshot_offset: Option<TxOffset>,
 }
@@ -42,6 +42,7 @@ pub(crate) struct SnapshotRestoreRepo {
 /// This is the intended boundary for the current DST target. It exercises
 /// capture/restore behavior, retry classification, and replay correctness. It
 /// does not model torn snapshot pages or byte-level corruption.
+#[derive(Clone)]
 pub(crate) struct BuggifiedSnapshotRepo {
     repo: Arc<MemorySnapshotRepository>,
     faults: StorageFaultController,
@@ -73,19 +74,6 @@ impl BuggifiedSnapshotRepo {
                 .latest_snapshot()
                 .map_err(|err| format!("snapshot metadata read failed: {err}"))
         })
-    }
-
-    pub(crate) fn capture_from(&self, db: &RelationalDB) -> Result<Option<TxOffset>, String> {
-        self.faults.maybe_latency();
-        self.inject(StorageFaultKind::Open)?;
-        self.inject(StorageFaultKind::Metadata)?;
-        self.inject(StorageFaultKind::Write)?;
-        self.inject(StorageFaultKind::Fsync)?;
-
-        let created = db
-            .take_snapshot_store(self.repo.as_ref())
-            .map_err(|err| format!("snapshot capture failed: {err}"))?;
-        Ok(created)
     }
 
     pub(crate) fn repo_for_restore(&self, durable_offset: Option<TxOffset>) -> Result<SnapshotRestoreRepo, String> {
@@ -122,6 +110,77 @@ impl BuggifiedSnapshotRepo {
 
     fn inject(&self, kind: StorageFaultKind) -> Result<(), String> {
         self.faults.maybe_error(kind).map_err(|err| err.to_string())
+    }
+}
+
+impl SnapshotRepo for BuggifiedSnapshotRepo {
+    fn database_identity(&self) -> Identity {
+        self.repo.database_identity()
+    }
+
+    fn capture_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<TxOffset, SnapshotError> {
+        self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::Open)
+            .map_err(SnapshotError::Io)?;
+        self.faults
+            .maybe_error(StorageFaultKind::Metadata)
+            .map_err(SnapshotError::Io)?;
+        self.faults
+            .maybe_error(StorageFaultKind::Write)
+            .map_err(SnapshotError::Io)?;
+        self.faults
+            .maybe_error(StorageFaultKind::Fsync)
+            .map_err(SnapshotError::Io)?;
+        self.repo.capture_snapshot(tables, blobs, tx_offset)
+    }
+
+    fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError> {
+        self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::Open)
+            .map_err(SnapshotError::Io)?;
+        self.faults
+            .maybe_error(StorageFaultKind::Read)
+            .map_err(SnapshotError::Io)?;
+        self.repo.read_snapshot(tx_offset, page_pool)
+    }
+
+    fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
+        self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::Metadata)
+            .map_err(SnapshotError::Io)?;
+        self.repo.latest_snapshot_older_than(upper_bound)
+    }
+
+    fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
+        self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::Metadata)
+            .map_err(SnapshotError::Io)?;
+        self.repo.latest_snapshot()
+    }
+
+    fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
+        self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::Metadata)
+            .map_err(SnapshotError::Io)?;
+        self.repo.invalidate_newer_snapshots(upper_bound)
+    }
+
+    fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
+        self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::Metadata)
+            .map_err(SnapshotError::Io)?;
+        self.repo.invalidate_snapshot(tx_offset)
     }
 }
 

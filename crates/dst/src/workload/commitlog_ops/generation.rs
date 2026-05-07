@@ -106,10 +106,6 @@ impl<S: TableScenario> CommitlogWorkloadSource<S> {
             self.pending.push_back(CommitlogInteraction::CloseReopen);
         }
 
-        if Percent::new(self.profile.snapshot_pct).sample(&mut self.rng) {
-            self.pending.push_back(CommitlogInteraction::TakeSnapshot);
-        }
-
         if Percent::new(self.profile.create_dynamic_table_pct).sample(&mut self.rng) {
             let conn = ConnectionChoice {
                 connection_count: self.num_connections,

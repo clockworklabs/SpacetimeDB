@@ -67,6 +67,28 @@ impl RuntimeDispatch {
         }
     }
 
+    pub async fn spawn_blocking<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
+        let _ = &f;
+        match self {
+            #[cfg(feature = "tokio")]
+            Self::Tokio(_) => tokio::task::spawn_blocking(f)
+                .await
+                .unwrap_or_else(|e| match e.try_into_panic() {
+                    Ok(panic_payload) => std::panic::resume_unwind(panic_payload),
+                    Err(e) => panic!("Unexpected JoinError: {e}"),
+                }),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.spawn_on(sim::NodeId::MAIN, async move { f() }).await,
+            #[cfg(not(any(feature = "tokio", feature = "simulation")))]
+            _ => unreachable!("runtime dispatch has no enabled backend"),
+        }
+    }
+
     pub async fn timeout<T>(
         &self,
         timeout_after: Duration,

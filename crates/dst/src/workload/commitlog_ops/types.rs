@@ -18,8 +18,6 @@ pub enum CommitlogInteraction {
     DropDynamicTable { conn: SessionId, slot: u32 },
     /// Migrate dynamic table schema for a slot.
     MigrateDynamicTable { conn: SessionId, slot: u32 },
-    /// Capture a durable snapshot of the current database state.
-    TakeSnapshot,
     /// Close and restart the database from durable history.
     CloseReopen,
 }

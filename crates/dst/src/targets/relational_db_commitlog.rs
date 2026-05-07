@@ -4,7 +4,7 @@ use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, sy
 
 use spacetimedb_commitlog::repo::{Memory as MemoryCommitlogRepo, SizeOnDisk};
 use spacetimedb_core::{
-    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB, Tx as RelTx},
+    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB, SnapshotWorker, Tx as RelTx},
     error::{DBError, DatastoreError, IndexError},
     messages::control_db::HostType,
 };
@@ -45,7 +45,6 @@ use crate::{
     workload::{
         commitlog_ops::{
             CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary,
-            SnapshotCaptureStatus, SnapshotObservation,
         },
         commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
         table_ops::{
@@ -164,7 +163,6 @@ impl RunStats {
             CommitlogInteraction::CreateDynamicTable { .. } => self.interactions.create_dynamic_table += 1,
             CommitlogInteraction::DropDynamicTable { .. } => self.interactions.drop_dynamic_table += 1,
             CommitlogInteraction::MigrateDynamicTable { .. } => self.interactions.migrate_dynamic_table += 1,
-            CommitlogInteraction::TakeSnapshot => self.interactions.snapshot_requested += 1,
             CommitlogInteraction::CloseReopen => self.interactions.close_reopen_requested += 1,
         }
     }
@@ -179,16 +177,6 @@ impl RunStats {
                 CommitlogObservation::Applied | CommitlogObservation::DurableReplay(_) => {
                     self.interactions.close_reopen_applied += 1
                 }
-                _ => {}
-            }
-        }
-        if matches!(interaction, CommitlogInteraction::TakeSnapshot) {
-            match observation {
-                CommitlogObservation::Snapshot(SnapshotObservation {
-                    status: SnapshotCaptureStatus::Captured { .. },
-                    ..
-                }) => self.interactions.snapshot_created += 1,
-                CommitlogObservation::Snapshot(_) => self.interactions.snapshot_skipped += 1,
                 _ => {}
             }
         }
@@ -251,6 +239,7 @@ struct ReopenedRelationalDb {
     db: RelationalDB,
     restored_snapshot_offset: Option<u64>,
     latest_snapshot_offset: Option<u64>,
+    snapshot_worker: SnapshotWorker,
 }
 
 /// Engine executing mixed table+lifecycle interactions while recording mocked durable history.
@@ -270,6 +259,7 @@ struct RelationalDbEngine {
     durability_opts: spacetimedb_durability::local::Options,
     commitlog_repo: StressCommitlogRepo,
     snapshot_repo: StressSnapshotRepo,
+    snapshot_worker: SnapshotWorker,
     stats: RunStats,
 }
 
@@ -298,6 +288,7 @@ impl RelationalDbEngine {
             durability_opts: bootstrap.durability_opts,
             commitlog_repo: bootstrap.commitlog_repo,
             snapshot_repo: bootstrap.snapshot_repo,
+            snapshot_worker: bootstrap.snapshot_worker,
             stats: RunStats {
                 runtime: RuntimeStats::default(),
                 ..Default::default()
@@ -375,7 +366,6 @@ impl RelationalDbEngine {
             CommitlogInteraction::CreateDynamicTable { conn, slot } => self.create_dynamic_table(*conn, *slot),
             CommitlogInteraction::DropDynamicTable { conn, slot } => self.drop_dynamic_table(*conn, *slot),
             CommitlogInteraction::MigrateDynamicTable { conn, slot } => self.migrate_dynamic_table(*conn, *slot),
-            CommitlogInteraction::TakeSnapshot => self.take_snapshot().await,
             CommitlogInteraction::CloseReopen => self.close_and_reopen().await,
         }?;
         if !matches!(interaction, CommitlogInteraction::CloseReopen) {
@@ -411,6 +401,7 @@ impl RelationalDbEngine {
         self.db = Some(reopened.db);
         self.last_restored_snapshot_offset = reopened.restored_snapshot_offset;
         self.latest_snapshot_offset = reopened.latest_snapshot_offset;
+        self.snapshot_worker = reopened.snapshot_worker;
         self.rebuild_table_handles_after_reopen()?;
         self.last_observed_durable_offset = self.durability.durable_tx_offset().last_seen();
         let replay = self.durable_replay_summary()?;
@@ -420,46 +411,6 @@ impl RelationalDbEngine {
             "reopened relational db from durable history"
         );
         Ok(CommitlogObservation::DurableReplay(replay))
-    }
-
-    async fn take_snapshot(&mut self) -> Result<CommitlogObservation, String> {
-        let latest_before = self.snapshot_repo.latest_snapshot_unfaulted()?;
-        if self.execution.active_writer.is_some()
-            || self.execution.tx_by_connection.iter().any(|tx| tx.is_some())
-            || self.read_tx_by_connection.iter().any(|tx| tx.is_some())
-        {
-            trace!("skip snapshot while transaction is open");
-            return self.snapshot_observation(latest_before, SnapshotCaptureStatus::SkippedOpenTransaction);
-        }
-
-        self.wait_for_requested_durability(true).await?;
-        match self.snapshot_repo.capture_from(self.db()?) {
-            Ok(Some(offset)) => {
-                debug!(offset, "captured DST snapshot");
-                self.snapshot_observation(latest_before, SnapshotCaptureStatus::Captured { offset })
-            }
-            Ok(None) => self.snapshot_observation(latest_before, SnapshotCaptureStatus::SkippedNoSnapshotCreated),
-            Err(err) if is_injected_snapshot_error_text(&err) => {
-                trace!(error = %err, "injected snapshot fault skipped snapshot capture");
-                self.snapshot_observation(latest_before, SnapshotCaptureStatus::SkippedInjectedFault)
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    fn snapshot_observation(
-        &mut self,
-        latest_before: Option<u64>,
-        status: SnapshotCaptureStatus,
-    ) -> Result<CommitlogObservation, String> {
-        let latest_after = self.snapshot_repo.latest_snapshot_unfaulted()?;
-        self.latest_snapshot_offset = latest_after;
-        Ok(CommitlogObservation::Snapshot(SnapshotObservation {
-            durable_offset: self.last_observed_durable_offset,
-            latest_before,
-            latest_after,
-            status,
-        }))
     }
 
     fn reopen_from_history_with_fault_retry(&self, context: &'static str) -> Result<ReopenedRelationalDb, String> {
@@ -481,11 +432,14 @@ impl RelationalDbEngine {
         );
         let durable_offset = durability.durable_tx_offset().last_seen();
         let snapshot_restore = self.snapshot_repo.repo_for_restore(durable_offset)?;
+        let snapshot_worker = SnapshotWorker::new(
+            Arc::new(self.snapshot_repo.clone()),
+            spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+        );
         let persistence = Persistence {
             durability: durability.clone(),
             disk_size: Arc::new(in_memory_size_on_disk),
-            snapshot_store: snapshot_restore.store,
-            snapshots: None,
+            snapshots: Some(snapshot_worker.clone()),
             runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
         };
         let (db, connected_clients) = RelationalDB::open(
@@ -507,6 +461,7 @@ impl RelationalDbEngine {
             db,
             restored_snapshot_offset: snapshot_restore.restored_snapshot_offset,
             latest_snapshot_offset: snapshot_restore.latest_snapshot_offset,
+            snapshot_worker,
         })
     }
 
@@ -1511,6 +1466,7 @@ struct RelationalDbBootstrap {
     db: RelationalDB,
     commitlog_repo: StressCommitlogRepo,
     snapshot_repo: StressSnapshotRepo,
+    snapshot_worker: SnapshotWorker,
     durability: Arc<InMemoryCommitlogDurability>,
     durability_opts: spacetimedb_durability::local::Options,
 }
@@ -1531,11 +1487,14 @@ fn bootstrap_relational_db(
         InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), durability_opts)
             .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?,
     );
+    let snapshot_worker = SnapshotWorker::new(
+        Arc::new(snapshot_repo.clone()),
+        spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+    );
     let persistence = Persistence {
         durability: durability.clone(),
         disk_size: Arc::new(in_memory_size_on_disk),
-        snapshot_store: None,
-        snapshots: None,
+        snapshots: Some(snapshot_worker.clone()),
         runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
     };
     let (db, connected_clients) = RelationalDB::open(
@@ -1554,6 +1513,7 @@ fn bootstrap_relational_db(
         db,
         commitlog_repo,
         snapshot_repo,
+        snapshot_worker,
         durability,
         durability_opts,
     })

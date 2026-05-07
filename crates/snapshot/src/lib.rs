@@ -1342,7 +1342,7 @@ impl SnapshotRepository {
 /// [`MemorySnapshotRepository`] to keep snapshot storage inside the simulator
 /// boundary instead of depending on temporary directories or host filesystem
 /// behavior.
-pub trait SnapshotStore: Send + Sync {
+pub trait SnapshotRepo: Send + Sync {
     fn database_identity(&self) -> Identity;
 
     fn capture_snapshot<'db>(
@@ -1365,7 +1365,7 @@ pub trait SnapshotStore: Send + Sync {
     fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError>;
 }
 
-impl SnapshotStore for SnapshotRepository {
+impl SnapshotRepo for SnapshotRepository {
     fn database_identity(&self) -> Identity {
         SnapshotRepository::database_identity(self)
     }
@@ -1483,7 +1483,7 @@ impl MemorySnapshotRepository {
     }
 }
 
-impl SnapshotStore for MemorySnapshotRepository {
+impl SnapshotRepo for MemorySnapshotRepository {
     fn database_identity(&self) -> Identity {
         MemorySnapshotRepository::database_identity(self)
     }
@@ -1517,6 +1517,8 @@ impl SnapshotStore for MemorySnapshotRepository {
         MemorySnapshotRepository::invalidate_snapshot(self, tx_offset)
     }
 }
+
+pub use SnapshotRepo as SnapshotStore;
 
 #[derive(Clone)]
 struct MemorySnapshot {

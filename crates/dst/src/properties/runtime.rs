@@ -412,9 +412,6 @@ where
                 self.observe_table_observation(engine, table_interaction, table_observation)
             }
             (_, CommitlogObservation::DynamicMigrationProbe(probe)) => self.on_dynamic_migration_probe(engine, probe),
-            (CommitlogInteraction::TakeSnapshot, CommitlogObservation::Snapshot(snapshot)) => {
-                self.on_snapshot_capture(engine, snapshot)
-            }
             (_, CommitlogObservation::DurableReplay(replay)) => self.on_durable_replay(engine, replay),
             (_, CommitlogObservation::Applied | CommitlogObservation::Skipped) => Ok(()),
             (other, observation) => Err(format!(
