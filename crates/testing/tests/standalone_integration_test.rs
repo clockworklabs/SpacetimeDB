@@ -46,7 +46,7 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
-        |module| async move {
+        |mut module| async move {
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
                     .to_string();
@@ -69,6 +69,10 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
                 r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
                     .to_string();
             module.send(json).await.unwrap();
+
+            for request_id in 0..=4 {
+                module.recv_reducer_update(request_id).await.unwrap();
+            }
 
             assert_eq!(
                 read_logs(&module).await,
@@ -283,11 +287,11 @@ fn test_calling_with_tx() {
 ///     TestF::Baz("buzz".to_string()),
 /// ]
 /// ```
-fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
+fn test_call_query_macro_with_caller<F: Future<Output = ModuleHandle>>(caller: impl FnOnce(ModuleHandle) -> F) {
     CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            caller(module.clone()).await;
+            let module = caller(module).await;
             let logs = read_logs(&module)
                 .await
                 .into_iter()
@@ -330,9 +334,10 @@ fn test_call_query_macro() {
     "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"foo\": {} }, { \"baz\": \"buzz\" } ]",
   "request_id": 0,
   "flags": 0
-} }"#
+	} }"#
             .to_string();
         module.send(json).await.unwrap();
+        module
     });
 
     let args_pv = &product![
@@ -345,11 +350,13 @@ fn test_call_query_macro() {
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_json("test", args_pv).await.unwrap();
+        module
     });
 
     // BSATN via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_binary("test", args_pv).await.unwrap();
+        module
     });
 }
 
