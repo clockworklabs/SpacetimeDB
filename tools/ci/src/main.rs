@@ -15,7 +15,7 @@ mod ci_docs;
 mod smoketest;
 mod util;
 
-use util::{check_diff, check_diff_or_bail, ensure_repo_root};
+use util::{bail_if_diff, ensure_repo_root, has_git_diff};
 
 /// SpacetimeDB CI tasks
 ///
@@ -240,7 +240,7 @@ fn run_typescript_tests() -> Result<()> {
     )
     .run()?;
     cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
-    if !check_diff(Path::new("templates/chat-react-ts/src/module_bindings"))? {
+    if has_git_diff(Path::new("templates/chat-react-ts/src/module_bindings"))? {
         bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
     }
     cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
@@ -263,7 +263,7 @@ fn run_csharp_tests() -> Result<()> {
         "regen-csharp-moduledef",
     )
     .run()?;
-    check_diff_or_bail(Path::new("crates/bindings-csharp"))?;
+    bail_if_diff(Path::new("crates/bindings-csharp"))?;
     cmd!("dotnet", "test", "-warnaserror")
         .dir("crates/bindings-csharp")
         .run()?;
@@ -290,10 +290,10 @@ fn run_csharp_tests() -> Result<()> {
     .dir("sdks/csharp")
     .run()?;
     cmd!("cargo", "regen", "csharp", "quickstart").run()?;
-    if !check_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
+    if has_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
         bail!("quickstart bindings have changed. Please run `cargo regen csharp quickstart`.");
     }
-    if !check_diff(Path::new("sdks/csharp/examples~/regression-tests"))? {
+    if has_diff(Path::new("sdks/csharp/examples~/regression-tests"))? {
         bail!("Bindings are dirty. Please run `cargo regen csharp regression-tests`.");
     }
     Ok(())
@@ -589,7 +589,7 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::CheckDiff { subdir }) => {
-            check_diff_or_bail(&subdir)?;
+            bail_if_diff(&subdir)?;
         }
 
         Some(CiCmd::Docs) => {
