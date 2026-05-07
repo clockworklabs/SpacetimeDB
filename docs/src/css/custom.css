@@ -104,7 +104,7 @@
   --ifm-tabs-padding-horizontal: 8px;
   --ifm-tabs-padding-vertical: 8px;
 
-  --ifm-navbar-height: 48px;
+  --ifm-navbar-height: 49px;
   --ifm-pre-padding: 16px;
   /* override doc sidebar width based on design */
   --doc-sidebar-width: 320px !important;
@@ -478,10 +478,10 @@ li.tabs__item--active,
 .navbar__logo {
   width: 152px;
   height: 32px;
-  margin-top: 1px;
 }
 
 .navbar__logo img {
+  display: block;
   width: 152px;
   height: 32px;
 }

@@ -156,9 +156,11 @@ const config: Config = {
     navbar: {
       logo: {
         alt: 'SpacetimeDB Logo',
-        src: 'https://spacetimedb.com/images/brand.svg',
+        src: '/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
+        width: 152,
+        height: 32,
       },
       hideOnScroll: false,
       items: [
