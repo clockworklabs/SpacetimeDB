@@ -7991,6 +7991,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
+ "scopeguard",
  "serde",
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
