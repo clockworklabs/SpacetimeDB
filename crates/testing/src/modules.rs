@@ -236,6 +236,7 @@ impl CompiledModule {
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
                 websocket: WebSocketOptions::default(),
+                wasm: Default::default(),
                 v8: Default::default(),
             },
             &certs,
