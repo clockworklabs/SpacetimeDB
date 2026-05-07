@@ -778,6 +778,7 @@ impl RelationalDB {
         r
     }
 
+    #[cfg(any(feature = "test", test))]
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn try_begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Option<MutTx> {
         log::trace!("TRY BEGIN MUT TX");
@@ -1028,7 +1029,7 @@ impl RelationalDB {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
     }
 
-    pub fn add_columns_to_table(
+    pub(crate) fn add_columns_to_table_mut_tx(
         &self,
         tx: &mut MutTx,
         table_id: TableId,
@@ -1038,6 +1039,17 @@ impl RelationalDB {
         Ok(self
             .inner
             .add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?)
+    }
+
+    #[cfg(any(feature = "test", test))]
+    pub fn add_columns_to_table(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        default_values: Vec<AlgebraicValue>,
+    ) -> Result<TableId, DBError> {
+        self.add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)
     }
 
     /// Reports the `TxMetrics`s passed.
@@ -1666,7 +1678,7 @@ pub async fn local_durability(
     replica_dir: ReplicaDir,
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
-    let rt = tokio::runtime::Handle::current();
+    let runtime = RuntimeDispatch::tokio_current();
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1678,7 +1690,7 @@ pub async fn local_durability(
     let local = asyncify(move || {
         durability::Local::open(
             replica_dir.clone(),
-            rt,
+            runtime,
             <_>::default(),
             // Give the durability a handle to request a new snapshot run,
             // which it will send down whenever we rotate commitlog segments.

@@ -12,7 +12,7 @@ use spacetimedb_datastore::{
     execution_context::Workload,
     traits::{IsolationLevel, Program},
 };
-use spacetimedb_durability::{DirectLocal, Durability, EmptyHistory};
+use spacetimedb_durability::{Durability, EmptyHistory, Local};
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
@@ -427,8 +427,12 @@ impl RelationalDbEngine {
 
     fn reopen_from_history(&self) -> Result<ReopenedRelationalDb, String> {
         let durability = Arc::new(
-            InMemoryCommitlogDurability::open_with_repo(self.commitlog_repo.clone(), self.durability_opts)
-                .map_err(|err| format!("reopen in-memory durability failed: {err}"))?,
+            InMemoryCommitlogDurability::open_with_repo(
+                self.commitlog_repo.clone(),
+                spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+                self.durability_opts,
+            )
+            .map_err(|err| format!("reopen in-memory durability failed: {err}"))?,
         );
         let durable_offset = durability.durable_tx_offset().last_seen();
         let snapshot_restore = self.snapshot_repo.repo_for_restore(durable_offset)?;
@@ -1468,7 +1472,7 @@ impl TargetEngine<CommitlogInteraction> for RelationalDbEngine {
 
 type StressCommitlogRepo = FaultableRepo<MemoryCommitlogRepo>;
 type StressSnapshotRepo = BuggifiedSnapshotRepo;
-type InMemoryCommitlogDurability = DirectLocal<ProductValue, StressCommitlogRepo>;
+type InMemoryCommitlogDurability = Local<ProductValue, StressCommitlogRepo>;
 
 struct RelationalDbBootstrap {
     db: RelationalDB,
@@ -1492,8 +1496,12 @@ fn bootstrap_relational_db(
     let snapshot_repo = BuggifiedSnapshotRepo::new(snapshot_fault_config, seed.fork(703))?;
     let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
-        InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), durability_opts)
-            .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?,
+        InMemoryCommitlogDurability::open_with_repo(
+            commitlog_repo.clone(),
+            spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+            durability_opts,
+        )
+        .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?,
     );
     let snapshot_worker = SnapshotWorker::new(
         Arc::new(snapshot_repo.clone()),

@@ -7,7 +7,7 @@ use std::{
 
 use spacetimedb_commitlog::{
     repo::{Repo, RepoWithoutLockFile, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut},
-    segment::FileLike,
+    segment::{FileLike, Header},
 };
 
 use crate::{
@@ -69,11 +69,11 @@ impl<R: Repo> Repo for FaultableRepo<R> {
     type SegmentWriter = FaultableSegment<R::SegmentWriter>;
     type SegmentReader = FaultableReader<R::SegmentReader>;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
+    fn create_segment(&self, offset: u64, header: Header) -> io::Result<Self::SegmentWriter> {
         self.faults.maybe_latency();
         self.faults.maybe_error(StorageFaultKind::Open)?;
         self.inner
-            .create_segment(offset)
+            .create_segment(offset, header)
             .map(|inner| FaultableSegment::new(inner, self.faults.clone()))
     }
 

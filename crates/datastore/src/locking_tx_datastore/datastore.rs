@@ -946,6 +946,7 @@ impl MutTx for Locking {
 }
 
 impl Locking {
+    #[cfg(any(feature = "test", test))]
     pub fn try_begin_mut_tx(&self, _isolation_level: IsolationLevel, workload: Workload) -> Option<MutTxId> {
         let metrics = ExecutionMetrics::default();
         let ctx = ExecutionContext::with_workload(self.database_identity, workload);
