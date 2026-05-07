@@ -15,7 +15,7 @@ mod ci_docs;
 mod smoketest;
 mod util;
 
-use util::{check_diff, ensure_repo_root};
+use util::{check_diff, check_diff_or_bail, ensure_repo_root};
 
 /// SpacetimeDB CI tasks
 ///
@@ -263,9 +263,7 @@ fn run_csharp_tests() -> Result<()> {
         "regen-csharp-moduledef",
     )
     .run()?;
-    if !check_diff(Path::new("crates/bindings-csharp"))? {
-        bail!("C# bindings are dirty. Please regenerate them and commit the changes.");
-    }
+    check_diff_or_bail(Path::new("crates/bindings-csharp"))?;
     cmd!("dotnet", "test", "-warnaserror")
         .dir("crates/bindings-csharp")
         .run()?;
@@ -397,9 +395,7 @@ fn main() -> Result<()> {
                 "--test-threads=1",
             )
             .run()?;
-            if !check_diff(Path::new("."))? {
-                bail!("Repository has uncommitted changes.");
-            }
+            check_diff_or_bail(Path::new("."))?;
         }
 
         Some(CiCmd::Lint) => {
@@ -593,9 +589,7 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::CheckDiff { subdir }) => {
-            if !check_diff(&subdir)? {
-                bail!("{} has uncommitted changes.", subdir.display());
-            }
+            check_diff_or_bail(&subdir)?;
         }
 
         Some(CiCmd::Docs) => {

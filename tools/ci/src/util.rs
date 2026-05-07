@@ -23,3 +23,10 @@ pub fn check_diff(subdir: &Path) -> Result<bool> {
 
     Ok(status.success())
 }
+
+pub fn check_diff_or_bail(subdir: &Path) -> Result<()> {
+    if !check_diff(subdir)? {
+        bail!("{} is dirty.", subdir.display());
+    }
+    Ok(())
+}

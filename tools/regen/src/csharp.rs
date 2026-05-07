@@ -248,7 +248,7 @@ pub fn regen_dlls() -> Result<()> {
     .run()?;
 
     let nuget_config_dir = tempfile::tempdir()?;
-    let nuget_config_path = nuget_config_dir.path().join("NuGet.Config");
+    let nuget_config_path = nuget_config_dir.path().join("nuget.config");
     cmd!(
         "cargo",
         "csharp",
