@@ -180,7 +180,7 @@ fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Res
 
     ensure!(status.success(), "Tests failed");
     ensure!(
-        util::check_diff(Path::new("crates/smoketests"))?,
+        !util::has_git_diff(Path::new("crates/smoketests"))?,
         "There is a diff in the smoketests directory."
     );
     Ok(())

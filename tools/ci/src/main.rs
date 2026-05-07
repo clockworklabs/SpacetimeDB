@@ -15,7 +15,7 @@ mod ci_docs;
 mod smoketest;
 mod util;
 
-use util::{check_diff, check_diff_or_bail, ensure_repo_root};
+use util::{bail_if_diff, ensure_repo_root, has_git_diff};
 
 /// SpacetimeDB CI tasks
 ///
@@ -231,7 +231,7 @@ fn run_typescript_tests() -> Result<()> {
     cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
     cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
     cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
-    if !check_diff(Path::new("templates/chat-react-ts/src/module_bindings"))? {
+    if has_git_diff(Path::new("templates/chat-react-ts/src/module_bindings"))? {
         bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
     }
     cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
@@ -336,7 +336,7 @@ fn main() -> Result<()> {
                 "--test-threads=1",
             )
             .run()?;
-            check_diff_or_bail(Path::new("."))?;
+            bail_if_diff(Path::new("."))?;
             cmd!(
                 "cargo",
                 "run",
@@ -346,7 +346,7 @@ fn main() -> Result<()> {
                 "regen-csharp-moduledef",
             )
             .run()?;
-            check_diff_or_bail(Path::new("crates/bindings-csharp"))?;
+            bail_if_diff(Path::new("crates/bindings-csharp"))?;
             cmd!("dotnet", "test", "-warnaserror")
                 .dir("crates/bindings-csharp")
                 .run()?;
@@ -539,7 +539,7 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::CheckDiff { subdir }) => {
-            check_diff_or_bail(&subdir)?;
+            bail_if_diff(&subdir)?;
         }
 
         Some(CiCmd::Docs) => {
