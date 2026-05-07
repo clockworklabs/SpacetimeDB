@@ -832,7 +832,7 @@ jobs:
       - name: Check quickstart-chat bindings are up to date
         run: |
           bash sdks/csharp/tools~/gen-quickstart.sh
-          tools/check-diff.sh templates/chat-console-cs/module_bindings/ || {
+          tools/check-diff.sh templates/chat-console-cs/module_bindings || {
               echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
               exit 1
           }
