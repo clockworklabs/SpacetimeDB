@@ -22,19 +22,20 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 All tests run for 60 seconds with 50 concurrent connections, with a transfer workload (read-modify-write transaction between two accounts).
 
-| System                            | TPS (~0% Contention) | TPS (~80% Contention) |
-| --------------------------------- | -------------------- | --------------------- |
-| SpacetimeDB (TypeScript Module)   |                      | 307,074               |
-| SpacetimeDB (Rust Module)         |                      | 265,542               |
-| SQLite + Node HTTP + Drizzle      | 3,095                | 3,186                 |
-| Bun + Drizzle + Postgres          | 10,736               | 2,817                 |
-| Supabase + Node HTTP + Drizzle    | 7,299                | 2,582                 |
-| Postgres + Node HTTP + Drizzle    | 9,946                | 1,111                 |
-| Convex (self-hosted local)        | 1,218                | 225                   |
-| PlanetScale + Node HTTP + Drizzle | -                    | 203                   |
-| CockroachDB + Node HTTP + Drizzle | 3,931                | 142                   |
+Each cell shows **mean TPS ± sample standard deviation** across 3 × 60-second runs. Cells where the standard deviation approaches or exceeds the mean (e.g. CockroachDB and Convex at ~80% contention) indicate that the system's throughput varies substantially between runs.
 
-**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite at 3,186 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
+| System                            | Mean TPS (~0% Contention) | Mean TPS (~80% Contention) |
+| --------------------------------- | ------------------------- | -------------------------- |
+| SpacetimeDB (TypeScript Module)   |                           | 307,074                    |
+| SpacetimeDB (Rust Module)         |                           | 265,542                    |
+| SQLite + Node HTTP + Drizzle      | 3,081 ± 15                | 3,169 ± 16                 |
+| Bun + Drizzle + Postgres          | 10,582 ± 7                | 2,754 ± 5                  |
+| Supabase + Node HTTP + Drizzle    | 7,116 ± 161               | 2,581 ± 2                  |
+| Postgres + Node HTTP + Drizzle    | 9,425 ± 25                | 1,087 ± 5                  |
+| CockroachDB + Node HTTP + Drizzle | 3,933 ± 28                | 145 ± 168                  |
+| Convex (self-hosted local)        | 1,210 ± 47                | 130 ± 98                   |
+
+**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite at 3,169 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
 
 ## Methodology
 
