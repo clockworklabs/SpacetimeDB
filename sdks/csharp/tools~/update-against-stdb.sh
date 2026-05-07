@@ -10,7 +10,7 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 
 cargo csharp write-nuget-config "$SDK_PATH" "$STDB_PATH" --stdb-path "$STDB_PATH"
 "$SDK_PATH/tools~/gen-client-api.sh"
-"$SDK_PATH/tools~/gen-quickstart.sh"
+cargo regen csharp quickstart
 cargo regen csharp regression-tests
 dotnet nuget locals all --clear
 dotnet pack "$STDB_PATH/crates/bindings-csharp"
