@@ -20,7 +20,7 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 ## Results Summary
 
-All tests use 50 concurrent connections with a transfer workload (read-modify-write transaction between two accounts).
+All tests run for 60 seconds and use 50 concurrent connections with a transfer workload (read-modify-write transaction between two accounts).
 
 | System                            | TPS (~0% Contention) | TPS (~80% Contention) |
 | --------------------------------- | -------------------- | --------------------- |
@@ -87,10 +87,10 @@ This is a classic read-modify-write workload that tests transactional integrity 
 ### Test Command
 
 ```bash
-docker compose run --rm bench -- --seconds 10 --concurrency 50 --alpha XX --connectors YY
+docker compose run --rm bench -- --seconds 60 --concurrency 50 --alpha XX --connectors YY
 ```
 
-- `--seconds 10`: Duration of benchmark run
+- `--seconds 60`: Duration of benchmark run
 - `--concurrency 50`: Number of concurrent client connections
 - `--alpha 0`: ~0% contention (uniform account distribution)
 - `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
