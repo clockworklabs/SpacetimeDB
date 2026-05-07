@@ -147,9 +147,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_connect_error(callback)` to your builder to register a callback to run when your connection fails.
-
-A known bug in the SpacetimeDB Rust client SDK currently causes this callback never to be invoked. [`on_disconnect`](#callback-on_disconnect) callbacks are invoked instead.
+Chain a call to `.on_connect_error(callback)` to your builder to register a callback to run when a connection attempt fails asynchronously. Errors which prevent `build` from creating the connection are returned by `build` instead.
 
 #### Callback `on_disconnect`
 
@@ -162,7 +160,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your established `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
 
 #### Method `with_token`
 

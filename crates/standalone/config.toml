@@ -18,6 +18,11 @@ directives = [
     "axum::rejection=trace",
 ]
 
+[v8]
+# Maximum number of JS procedure isolates per database. Omit to use the number
+# of cores reported by the OS.
+# procedure-instance-pool-size = 8
+
 [v8-heap-policy]
 # Check the V8 heap after this many requests. Set to 0 to disable.
 # heap-check-request-interval = 65536
