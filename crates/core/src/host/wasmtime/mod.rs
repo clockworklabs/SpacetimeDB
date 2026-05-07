@@ -106,6 +106,15 @@ impl WasmtimeRuntime {
 pub type Module = WasmModuleHostActor<WasmtimeModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
+const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 8;
+
+fn wasm_executor_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
+    let hex = database_identity.to_hex();
+    // We use the tail of the identity to avoid the common structured prefix.
+    let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
+    format!("wasm-{suffix}")
+}
+
 impl WasmtimeRuntime {
     pub fn make_actor(
         &self,
@@ -129,11 +138,12 @@ impl WasmtimeRuntime {
             .map_err(InitializationError::Instantiation)?;
 
         let module = WasmtimeModule::new(module);
+        let executor_thread_name = wasm_executor_thread_name(&mcc.replica_ctx.database_identity);
 
         let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
         Ok(super::module_host::ModuleWithInstance::Wasm {
             module,
-            executor: core.spawn_async_executor(),
+            executor: core.spawn_named_async_executor(executor_thread_name),
             init_inst: Box::new(init_inst),
         })
     }
