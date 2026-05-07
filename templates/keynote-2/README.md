@@ -20,21 +20,21 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 ## Results Summary
 
-All tests run for 60 seconds and use 50 concurrent connections with a transfer workload (read-modify-write transaction between two accounts).
+All tests run for 60 seconds with 50 concurrent connections, with a transfer workload (read-modify-write transaction between two accounts).
 
 | System                            | TPS (~0% Contention) | TPS (~80% Contention) |
 | --------------------------------- | -------------------- | --------------------- |
 | SpacetimeDB (TypeScript Module)   |                      | 307,074               |
 | SpacetimeDB (Rust Module)         |                      | 265,542               |
-| SQLite + Node HTTP + Drizzle      |                      | 3,236                 |
-| Bun + Drizzle + Postgres          | 7,115                | 2,074                 |
-| Postgres + Node HTTP + Drizzle    | 6,429                | 2,798                 |
-| Supabase + Node HTTP + Drizzle    | 6,310                | 1,268                 |
-| CockroachDB + Node HTTP + Drizzle | 5,129                | 197                   |
-| PlanetScale + Node HTTP + Drizzle | 477                  | 30                    |
-| Convex                            | 438                  | 58                    |
+| SQLite + Node HTTP + Drizzle      | 3,095                | 3,186                 |
+| Bun + Drizzle + Postgres          | 10,736               | 2,817                 |
+| Supabase + Node HTTP + Drizzle    | 7,299                | 2,582                 |
+| Postgres + Node HTTP + Drizzle    | 9,946                | 1,111                 |
+| Convex (self-hosted local)        | 1,218                | 225                   |
+| PlanetScale + Node HTTP + Drizzle | -                    | 203                   |
+| CockroachDB + Node HTTP + Drizzle | 3,931                | 142                   |
 
-**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite RPC at 3,236 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
+**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite at 3,186 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
 
 ### Contention Impact
 
@@ -44,13 +44,9 @@ The chart above shows TPS vs Zipf Alpha (contention level). Higher alpha values 
 
 ## Methodology
 
-All systems were tested with **out-of-the-box default settings** - no custom tuning, no configuration optimization. This reflects what developers experience when they first adopt these technologies.
+All systems were tested with **out-of-the-box default settings**: no custom tuning, no configuration optimization. This reflects what developers experience when they first adopt these technologies.
 
-For cloud services, we tested paid tiers to give them their best chance:
-
-- **PlanetScale**: PS-2560 (32 vCPUs, 256 GB RAM), single node, us-central1.
-- **Supabase**: Pro tier
-- **Convex**: Pro tier
+Postgres (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'`.
 
 The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
 
@@ -86,8 +82,13 @@ This is a classic read-modify-write workload that tests transactional integrity 
 
 ### Test Command
 
+The numbers in the table above were collected by running each connector directly with `pnpm`:
+
 ```bash
-docker compose run --rm bench -- --seconds 60 --concurrency 50 --alpha XX --connectors YY
+pnpm install
+pnpm run prep                                                                # seed all backing databases once
+pnpm run bench test-1 --seconds 60 --concurrency 50 --alpha 0   --connectors <name>   # uncontended
+pnpm run bench test-1 --seconds 60 --concurrency 50 --alpha 1.5 --connectors <name>   # ~80% contention
 ```
 
 - `--seconds 60`: Duration of benchmark run
@@ -95,6 +96,8 @@ docker compose run --rm bench -- --seconds 60 --concurrency 50 --alpha XX --conn
 - `--alpha 0`: ~0% contention (uniform account distribution)
 - `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
 - `--stdb-compression none|gzip`: SpacetimeDB client compression mode (default: `none`)
+
+The Docker workflow (`docker compose run --rm bench -- ...`) produces equivalent numbers.
 
 ### Hardware Configuration
 
@@ -160,7 +163,7 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 
 ### Cloud vs Local Results
 
-PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
+PlanetScale results (203 TPS under high contention) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
 
 ## Systems Tested
 
