@@ -10,7 +10,7 @@ use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
     ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance,
-    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    SqlCommand, SqlCommandResult, ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
@@ -551,6 +551,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.trapped = trapped;
         res
     }
+
+    pub(in crate::host) fn call_sql(&mut self, cmd: SqlCommand) -> SqlCommandResult {
+        let (res, trapped) = self.common.handle_sql_cmd(cmd, &mut self.instance);
+        self.trapped = trapped;
+        res
+    }
 }
 
 pub struct InstanceCommon {
@@ -1052,8 +1058,8 @@ impl InstanceCommon {
                     .add_single_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                    Err(err) => (Err(err), false),
                 }
             }
             ViewCommand::AddLegacySubscription {
@@ -1067,13 +1073,8 @@ impl InstanceCommon {
                     .add_legacy_subscriber_with_instance(&mut inst, sender, auth, subscribe, timer, None);
 
                 match res {
-                    Ok((metrics, trapped)) => (
-                        ViewCommandResult::Subscription {
-                            result: Ok(Some(metrics)),
-                        },
-                        trapped,
-                    ),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                    Ok((metrics, trapped)) => (Ok(Some(metrics)), trapped),
+                    Err(err) => (Err(err), false),
                 }
             }
             ViewCommand::AddSubscriptionV2 {
@@ -1087,10 +1088,20 @@ impl InstanceCommon {
                     .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                    Err(err) => (Err(err), false),
                 }
             }
+            ViewCommand::RemoveSingleSubscription {
+                sender,
+                auth,
+                request,
+                timer,
+            } => (
+                info.subscriptions
+                    .remove_single_subscription(sender, auth, request, timer),
+                false,
+            ),
             ViewCommand::RemoveSubscriptionV2 {
                 sender,
                 auth,
@@ -1102,10 +1113,20 @@ impl InstanceCommon {
                     .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                    Err(err) => (Err(err), false),
                 }
             }
+            ViewCommand::RemoveMultiSubscription {
+                sender,
+                auth,
+                request,
+                timer,
+            } => (
+                info.subscriptions
+                    .remove_multi_subscription(sender, auth, request, timer),
+                false,
+            ),
             ViewCommand::AddMultiSubscription {
                 sender,
                 auth,
@@ -1117,30 +1138,40 @@ impl InstanceCommon {
                     .add_multi_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                    Err(err) => (Err(err), false),
                 }
             }
-            ViewCommand::Sql {
-                db,
-                sql_text,
-                auth,
-                subs,
-            } => {
-                let mut head = vec![];
-                let res = run_with_instance(&mut inst, db, sql_text, auth, subs, &mut head);
+        }
+    }
 
-                match res {
-                    Ok((result, trapped)) => (
-                        ViewCommandResult::Sql {
-                            result: Ok(result),
-                            head,
-                        },
-                        trapped,
-                    ),
-                    Err(err) => (ViewCommandResult::Sql { result: Err(err), head }, false),
-                }
-            }
+    pub(in crate::host) fn handle_sql_cmd<I: WasmInstance>(
+        &mut self,
+        cmd: SqlCommand,
+        inst: &mut I,
+    ) -> (SqlCommandResult, bool) {
+        let mut inst = RefInstance {
+            instance: inst,
+            common: self,
+        };
+        let SqlCommand {
+            db,
+            sql_text,
+            auth,
+            subs,
+        } = cmd;
+        let mut head = vec![];
+        let res = run_with_instance(&mut inst, db, sql_text, auth, subs, &mut head);
+
+        match res {
+            Ok((result, trapped)) => (
+                SqlCommandResult {
+                    result: Ok(result),
+                    head,
+                },
+                trapped,
+            ),
+            Err(err) => (SqlCommandResult { result: Err(err), head }, false),
         }
     }
 
