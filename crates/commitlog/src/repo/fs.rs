@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use log::{debug, warn};
 use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
+use spacetimedb_fs_utils::lockfile;
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
 use tempfile::NamedTempFile;
 
-use crate::segment::FileLike;
+use crate::segment::{self, FileLike};
 
 use super::{Repo, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
 
@@ -160,6 +161,7 @@ impl FileLike for NamedTempFile {
 /// [Self::sealed] returns `true` if the segment is compressed.
 pub struct ReadOnlySegment {
     inner: CompressReader,
+    len: u64,
 }
 
 impl SegmentReader for ReadOnlySegment {
@@ -195,45 +197,98 @@ impl io::Seek for ReadOnlySegment {
     }
 }
 
-impl SegmentLen for ReadOnlySegment {}
+impl SegmentLen for ReadOnlySegment {
+    fn segment_len(&mut self) -> io::Result<u64> {
+        // If the segment is compressed, we guarantee that it is immutable,
+        // so use the file length as determined when opening the reader.
+        // Seeking would be somewhat expensive in this case, as the zstd reader
+        // translates to uncompressed offsets and thus must decompress at least
+        // some frames.
+        //
+        // If the segment is not compressed, we may be reading the active
+        // segment, so immutability is not guaranteed. Use the default seek
+        // strategy thus.
+        if self.inner.is_compressed() {
+            Ok(self.len)
+        } else {
+            use io::Seek as _;
+
+            let old_pos = self.stream_position()?;
+            let len = self.seek(io::SeekFrom::End(0))?;
+
+            // Avoid seeking a third time when we were already at the end of the
+            // stream. The branch is usually way cheaper than a seek operation.
+            if old_pos != len {
+                self.seek(io::SeekFrom::Start(old_pos))?;
+            }
+
+            Ok(len)
+        }
+    }
+}
 
 impl Repo for Fs {
     type SegmentWriter = File;
     type SegmentReader = ReadOnlySegment;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        File::options()
-            .read(true)
-            .append(true)
-            .create_new(true)
-            .open(self.segment_path(offset))
-            .or_else(|e| {
-                if e.kind() == io::ErrorKind::AlreadyExists {
-                    debug!("segment {offset} already exists");
-                    // If the segment is completely empty, we can resume writing.
-                    let file = self.open_segment_writer(offset)?;
-                    if file.metadata()?.len() == 0 {
-                        debug!("segment {offset} is empty");
-                        return Ok(file);
-                    }
+    fn create_segment(&self, offset: u64, header: segment::Header) -> io::Result<Self::SegmentWriter> {
+        let path = self.segment_path(offset);
 
-                    // Otherwise, provide some context.
+        // We need to check if the segment already exists,
+        // so use file locking to prevent a TOCTOU race.
+        // Using `flock` means we don't need to worry about stale lockfiles.
+        let lock_path = path.0.with_extension("lock");
+        let _lock = scopeguard::guard(
+            lockfile::advisory::LockedFile::lock(&lock_path)
+                .map_err(|e| io::Error::new(e.source.kind(), format!("repo {}: {}: {}", self, e, e.source)))?,
+            |lockfile| {
+                if let Err(e) = lockfile.release(true) {
+                    // It's ok if removing the file fails, but print a warning
+                    // anyways.
+                    warn!("repo {}: failed to remove {}: {}", self, lock_path.display(), e);
+                }
+            },
+        );
+
+        // Check whether the segment already exists.
+        // Overwrite it if its length is zero.
+        match fs::metadata(&path) {
+            Ok(stat) => {
+                if stat.len() > 0 {
                     return Err(io::Error::new(
                         io::ErrorKind::AlreadyExists,
                         format!("repo {}: segment {} already exists and is non-empty", self, offset),
                     ));
                 }
-
-                Err(e)
-            })
-            .inspect(|_| {
-                // We're rotating commitlog segments, so we should also take a snapshot at the earliest opportunity.
-                if let Some(on_new_segment) = self.on_new_segment.as_ref() {
-                    // No need to handle the error here: if the snapshot worker is closed we'll eventually close too,
-                    // and we don't want to die prematurely if there are still TXes to write.
-                    on_new_segment();
+            }
+            Err(e) => {
+                if e.kind() != io::ErrorKind::NotFound {
+                    return Err(io::Error::new(
+                        e.kind(),
+                        format!(
+                            "repo {}: error getting file metadata for segment {}: {}",
+                            self, offset, e
+                        ),
+                    ));
                 }
-            })
+            }
+        }
+
+        // The segment file either does not exist, or is of length zero.
+        // Write the header to a temporary file and atomically move it into place.
+        let mut tmp = tempfile::Builder::new().make_in(&self.root.0, |tmp_path| {
+            File::options().read(true).append(true).create_new(true).open(tmp_path)
+        })?;
+        header.write(&mut tmp)?;
+        tmp.as_file_mut().sync_all()?;
+        let segment = tmp.persist(path)?;
+
+        // Notify subscribers.
+        if let Some(on_new_segment) = self.on_new_segment.as_ref() {
+            on_new_segment();
+        }
+
+        Ok(segment)
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
@@ -248,7 +303,8 @@ impl Repo for Fs {
         let path = self.segment_path(offset);
         debug!("fs: open segment at {}", path.display());
         let file = File::open(&path)?;
-        CompressReader::new(file).map(|inner| ReadOnlySegment { inner })
+        let len = file.metadata()?.len();
+        CompressReader::new(file).map(|inner| ReadOnlySegment { inner, len })
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
@@ -314,8 +370,6 @@ impl Repo for Fs {
         TxOffsetIndex::open_index_file(&self.root.index(offset))
     }
 }
-
-impl SegmentLen for CompressReader {}
 
 #[cfg(feature = "streaming")]
 impl crate::stream::AsyncRepo for Fs {
