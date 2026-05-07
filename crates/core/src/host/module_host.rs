@@ -379,6 +379,10 @@ enum InstanceKind {
     Procedure,
 }
 
+fn default_wasm_procedure_instance_pool_size() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
+}
+
 /// A module; used as a bound on `InstanceManager`.
 trait GenericModule {
     type Instance: GenericModuleInstance;
@@ -1347,7 +1351,12 @@ impl ModuleHost {
                     Some(init_inst),
                     metrics.clone(),
                 ));
-                let procedure_instances = Arc::new(ModuleInstanceManager::new_with_metrics(module, None, metrics));
+                let procedure_instances = Arc::new(ModuleInstanceManager::new_bounded_with_metrics(
+                    module,
+                    None,
+                    metrics,
+                    default_wasm_procedure_instance_pool_size(),
+                ));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     executor,
                     main_instance,
@@ -1523,11 +1532,11 @@ impl ModuleHost {
             ModuleHostInner::Wasm(host) => {
                 let executor = host.executor.clone();
                 let instance_manager = Self::wasm_instance_manager(host, InstanceKind::Procedure);
-                executor
-                    .run_job(async move || {
-                        drop(timer_guard);
-                        instance_manager
-                            .with_instance(async move |mut inst| {
+                instance_manager
+                    .with_instance(async move |mut inst| {
+                        executor
+                            .run_job(async move || {
+                                drop(timer_guard);
                                 let res = wasm(arg, &mut inst).await;
                                 (res, inst)
                             })
@@ -1600,6 +1609,47 @@ impl ModuleHost {
                 })
             }
             ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_instance should only be used for wasm"),
+        }
+    }
+
+    async fn enqueue_wasm_procedure_instance<A>(
+        &self,
+        kind: &str,
+        label: &str,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) -> Result<(), NoSuchModule>
+    where
+        A: Send + 'static,
+    {
+        self.guard_closed()?;
+
+        let timer_guard = self.start_call_timer(label);
+        let kind = kind.to_owned();
+        let label = label.to_owned();
+        let on_panic = self.on_panic.clone();
+
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                let instance_manager = Self::wasm_instance_manager(host, InstanceKind::Procedure);
+                let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+                executor.enqueue_job(async move || {
+                    scopeguard::defer_on_unwind!({
+                        log::warn!("{kind} {label} panicked");
+                        on_panic();
+                    });
+
+                    let mut inst = instance;
+                    drop(timer_guard);
+                    wasm(arg, &mut inst).await;
+                    instance_manager
+                        .return_instance(ModuleInstanceLease { instance: inst, slot })
+                        .await;
+                });
+                Ok(())
+            }
+            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_procedure_instance should only be used for wasm"),
         }
     }
 
@@ -2312,21 +2362,23 @@ impl ModuleHost {
                 let module = self.clone();
                 let procedure_name_for_job = procedure_name.clone();
                 let target_for_job = target.clone();
-                match self.enqueue_wasm_instance(
-                    "pooled operation",
-                    &procedure_name,
-                    InstanceKind::Procedure,
-                    params,
-                    async move |params, inst| {
-                        let ret = inst.call_procedure(params).await;
-                        module.log_procedure_validation_result(&procedure_name_for_job, &ret);
-                        if let Err(err) =
-                            module.send_procedure_result(&procedure_name_for_job, timer, target_for_job, ret)
-                        {
-                            log::warn!("Procedure call failed: {err:#}");
-                        }
-                    },
-                ) {
+                match self
+                    .enqueue_wasm_procedure_instance(
+                        "pooled operation",
+                        &procedure_name,
+                        params,
+                        async move |params, inst| {
+                            let ret = inst.call_procedure(params).await;
+                            module.log_procedure_validation_result(&procedure_name_for_job, &ret);
+                            if let Err(err) =
+                                module.send_procedure_result(&procedure_name_for_job, timer, target_for_job, ret)
+                            {
+                                log::warn!("Procedure call failed: {err:#}");
+                            }
+                        },
+                    )
+                    .await
+                {
                     Ok(()) => Ok(()),
                     Err(err) => {
                         let ret = CallProcedureReturn {
