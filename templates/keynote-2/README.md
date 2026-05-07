@@ -101,31 +101,9 @@ The Docker workflow (`docker compose run --rm bench -- ...`) produces equivalent
 
 ### Hardware Configuration
 
-**Server Machine (Variant A - PhoenixNAP):**
+**Server Machine:**
 
-- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory, OS: Ubuntu 24.04
-
-**Server Machine (Variant B - Google Cloud):**
-
-- c4-standard-32-lssd (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
-- RAID 0 on 5 Local SSDs
-- Region: us-central1
-
-**Client Machine:**
-
-- c4-standard-32 (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
-- Region: us-central1
-- Runs on a **separate machine** from the server
-
-**Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
-
-### Why Separate Client Machines?
-
-Running clients on separate machines ensures:
-
-- Network round-trip latency is measured (realistic production scenario)
-- Client CPU/memory doesn't compete with server resources
-- Results reflect actual deployment conditions
+- PhoenixNAP s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory, OS: Ubuntu 24.04
 
 ### Account Seeding
 
