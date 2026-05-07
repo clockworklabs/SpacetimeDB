@@ -39,7 +39,7 @@ use spacetimedb_schema::{
     reducer_name::ReducerName,
     schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
 };
-use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository, SnapshotStore, UnflushedSnapshot};
+use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepo, SnapshotRepository, UnflushedSnapshot};
 use spacetimedb_table::{
     indexes::RowPointer,
     page_pool::PagePool,
@@ -234,14 +234,6 @@ impl Locking {
             .map_err(Into::into)
     }
 
-    /// Take a snapshot through a repository abstraction.
-    ///
-    /// Unlike [`Self::take_snapshot`], this does not expose filesystem paths and
-    /// can therefore be backed by in-memory simulator storage.
-    pub fn take_snapshot_store(&self, store: &dyn SnapshotStore) -> Result<Option<TxOffset>> {
-        Self::take_snapshot_store_internal(&self.committed_state, store)
-    }
-
     pub fn assert_system_tables_match(&self) -> Result<()> {
         let committed_state = self.committed_state.read_arc();
         committed_state.assert_system_table_schemas_match()
@@ -270,7 +262,7 @@ impl Locking {
 
     pub fn take_snapshot_store_internal(
         committed_state: &RwLock<CommittedState>,
-        store: &dyn SnapshotStore,
+        store: &dyn SnapshotRepo,
     ) -> Result<Option<TxOffset>> {
         let mut committed_state = committed_state.write();
         let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {

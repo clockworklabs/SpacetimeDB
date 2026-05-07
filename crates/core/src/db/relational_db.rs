@@ -41,7 +41,9 @@ use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{ReplicaDir, SnapshotDirPath, SnapshotsPath};
+use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
+#[cfg(test)]
+use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -237,11 +239,12 @@ impl RelationalDB {
     ///
     ///   `None` may be passed to obtain an in-memory only database.
     ///
-    /// - snapshot storage
+    /// - snapshots
     ///
-    ///   The [`SnapshotStore`] which stores snapshots of this database.
+    ///   Optional snapshot persistence and background snapshot execution,
+    ///   carried through [`Persistence`].
     ///   This is only meaningful if `history` and `durability` are also supplied.
-    ///   If restoring from an existing database, the snapshot store must
+    ///   If restoring from an existing database, the snapshot repository must
     ///   store views of the same sequence of TXes as the `history`.
     ///
     /// - `metrics_recorder_queue`

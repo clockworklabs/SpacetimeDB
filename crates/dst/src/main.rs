@@ -1,11 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use spacetimedb_dst::{
-    config::{CommitlogFaultProfile, RunConfig},
+    config::RunConfig,
     seed::DstSeed,
-    targets::descriptor::{RelationalDbCommitlogDescriptor, TargetDescriptor},
-    workload::table_ops::TableScenarioId,
+    targets::descriptor::{RelationalDbConcurrentDescriptor, TargetDescriptor},
 };
 
 #[derive(Parser, Debug)]
@@ -21,18 +20,8 @@ enum Command {
     Run(RunArgs),
 }
 
-#[derive(Args, Debug, Clone)]
-struct TargetArgs {
-    #[arg(long, value_enum, default_value_t = TargetKind::RelationalDbCommitlog)]
-    target: TargetKind,
-    #[arg(long, value_enum, default_value_t = ScenarioKind::RandomCrud)]
-    scenario: ScenarioKind,
-}
-
 #[derive(Args, Debug)]
 struct RunArgs {
-    #[command(flatten)]
-    target: TargetArgs,
     #[arg(long, help = "Seed for generated choices. Defaults to wall-clock time.")]
     seed: Option<u64>,
     #[arg(
@@ -42,44 +31,6 @@ struct RunArgs {
     duration: Option<String>,
     #[arg(long, help = "Deterministic interaction budget. Preferred for replayable failures.")]
     max_interactions: Option<usize>,
-    #[arg(
-        long,
-        value_enum,
-        default_value_t = CommitlogFaultProfileKind::Default,
-        help = "Commitlog disk-fault profile for commitlog-backed targets."
-    )]
-    commitlog_fault_profile: CommitlogFaultProfileKind,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-enum TargetKind {
-    RelationalDbCommitlog,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-enum ScenarioKind {
-    RandomCrud,
-    IndexedRanges,
-    Banking,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-enum CommitlogFaultProfileKind {
-    Off,
-    Light,
-    Default,
-    Aggressive,
-}
-
-impl From<CommitlogFaultProfileKind> for CommitlogFaultProfile {
-    fn from(profile: CommitlogFaultProfileKind) -> Self {
-        match profile {
-            CommitlogFaultProfileKind::Off => Self::Off,
-            CommitlogFaultProfileKind::Light => Self::Light,
-            CommitlogFaultProfileKind::Default => Self::Default,
-            CommitlogFaultProfileKind::Aggressive => Self::Aggressive,
-        }
-    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -104,18 +55,9 @@ fn init_tracing() {
 
 fn run_command(args: RunArgs) -> anyhow::Result<()> {
     let seed = resolve_seed(args.seed);
-    let config = build_config(
-        args.duration.as_deref(),
-        args.max_interactions,
-        args.commitlog_fault_profile,
-    )?;
+    let config = build_config(args.duration.as_deref(), args.max_interactions)?;
 
-    match args.target.target {
-        TargetKind::RelationalDbCommitlog => {
-            let scenario = map_table_scenario(args.target.scenario)?;
-            run_prepared_target::<RelationalDbCommitlogDescriptor>(seed, scenario, config)
-        }
-    }
+    run_prepared_target::<RelationalDbConcurrentDescriptor>(seed, (), config)
 }
 
 fn run_prepared_target<D: TargetDescriptor>(
@@ -136,14 +78,6 @@ where
     .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
 }
 
-fn map_table_scenario(scenario: ScenarioKind) -> anyhow::Result<TableScenarioId> {
-    match scenario {
-        ScenarioKind::RandomCrud => Ok(TableScenarioId::RandomCrud),
-        ScenarioKind::IndexedRanges => Ok(TableScenarioId::IndexedRanges),
-        ScenarioKind::Banking => Ok(TableScenarioId::Banking),
-    }
-}
-
 fn resolve_seed(seed: Option<u64>) -> DstSeed {
     seed.map(DstSeed).unwrap_or_else(|| {
         let nanos = SystemTime::now()
@@ -154,12 +88,8 @@ fn resolve_seed(seed: Option<u64>) -> DstSeed {
     })
 }
 
-fn build_config(
-    duration: Option<&str>,
-    max_interactions: Option<usize>,
-    commitlog_fault_profile: CommitlogFaultProfileKind,
-) -> anyhow::Result<RunConfig> {
-    let config = match (duration, max_interactions) {
+fn build_config(duration: Option<&str>, max_interactions: Option<usize>) -> anyhow::Result<RunConfig> {
+    Ok(match (duration, max_interactions) {
         (Some(duration), Some(max_interactions)) => RunConfig {
             max_interactions: Some(max_interactions),
             max_duration_ms: Some(spacetimedb_dst::config::parse_duration_spec(duration)?.as_millis() as u64),
@@ -168,8 +98,7 @@ fn build_config(
         (Some(duration), None) => RunConfig::with_duration_spec(duration)?,
         (None, Some(max_interactions)) => RunConfig::with_max_interactions(max_interactions),
         (None, None) => RunConfig::with_max_interactions(1_000),
-    };
-    Ok(config.with_commitlog_fault_profile(commitlog_fault_profile.into()))
+    })
 }
 
 #[allow(clippy::disallowed_macros)]

@@ -151,7 +151,11 @@ impl Options {
     }
 }
 
-/// The canonical commitlog, backed by on-disk log files.
+/// The canonical commitlog API over a repository backend `R`.
+///
+/// The default backend is the on-disk filesystem repository
+/// [`repo::Fs`], but tests and simulators may supply another [`Repo`]
+/// implementation.
 ///
 /// Records in the log are of type `T`, which canonically is instantiated to
 /// [`payload::Txdata`].

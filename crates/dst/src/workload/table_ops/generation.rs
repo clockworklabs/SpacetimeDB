@@ -66,10 +66,6 @@ impl<'a> ScenarioPlanner<'a> {
         Percent::new(percent).sample(self.rng)
     }
 
-    pub fn connection_count(&self) -> usize {
-        self.model.connections.len()
-    }
-
     pub fn active_writer(&self) -> Option<SessionId> {
         self.model.active_writer()
     }
@@ -121,12 +117,15 @@ impl<'a> ScenarioPlanner<'a> {
         .sample(self.rng)
         {
             TxControlAction::Begin
-                if !self.model.connections[conn.as_index()].in_tx
-                    && !self.model.has_read_tx(conn)
-                    && self.model.active_writer().is_none() =>
+                if !self.model.connections[conn.as_index()].in_tx && !self.model.has_read_tx(conn) =>
             {
-                self.model.begin_tx(conn);
-                self.pending.push_back(TableWorkloadInteraction::begin_tx(conn));
+                if self.model.active_writer().is_none() && !self.model.any_read_tx() {
+                    self.model.begin_tx(conn);
+                    self.pending.push_back(TableWorkloadInteraction::begin_tx(conn));
+                } else {
+                    self.pending
+                        .push_back(TableWorkloadInteraction::begin_tx_conflict(conn));
+                }
                 true
             }
             TxControlAction::Commit if self.model.connections[conn.as_index()].in_tx => {
@@ -251,26 +250,14 @@ impl<S: TableScenario> TableWorkloadSource<S> {
             return;
         }
 
-        // Locking targets allow only one writer at a time. If a writer is
-        // already open, keep driving that same connection until it commits or
-        // rolls back. Otherwise pick a fresh connection uniformly.
-        let conn = if let Some(active_writer) = self.model.active_writer() {
-            active_writer
-        } else if let Some(read_conn) = (0..self.num_connections)
-            .map(SessionId::from_index)
-            .find(|&conn| self.model.has_read_tx(conn))
-        {
-            // The current RelationalDB target can block when a write transaction
-            // starts behind an open read transaction. Keep driving the snapshot
-            // holder until it releases; interleaved read/write snapshots should
-            // be reintroduced once the target models that lock behavior.
-            read_conn
-        } else {
-            ConnectionChoice {
-                connection_count: self.num_connections,
-            }
-            .sample(&mut self.rng)
-        };
+        // Transactions stay open across interactions, but each API call is a
+        // separate synchronous step. Always choose a connection uniformly so
+        // later steps can naturally observe lock contention instead of the
+        // planner steering around open readers or writers.
+        let conn = ConnectionChoice {
+            connection_count: self.num_connections,
+        }
+        .sample(&mut self.rng);
         let mut planner = ScenarioPlanner {
             rng: &mut self.rng,
             model: &mut self.model,

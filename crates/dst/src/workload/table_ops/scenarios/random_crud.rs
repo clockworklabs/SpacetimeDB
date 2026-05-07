@@ -30,7 +30,6 @@ struct TableWorkloadProfile {
     begin_read_tx_pct: usize,
     release_read_tx_pct: usize,
     empty_tx_pct: usize,
-    write_conflict_pct: usize,
     exact_duplicate_insert_pct: usize,
     unique_key_conflict_insert_pct: usize,
     add_column_pct: usize,
@@ -55,7 +54,6 @@ const RANDOM_CRUD_PROFILE: TableWorkloadProfile = TableWorkloadProfile {
     begin_read_tx_pct: 4,
     release_read_tx_pct: 35,
     empty_tx_pct: 2,
-    write_conflict_pct: 8,
     exact_duplicate_insert_pct: 4,
     unique_key_conflict_insert_pct: 4,
     add_column_pct: 1,
@@ -80,7 +78,6 @@ const INDEXED_RANGES_PROFILE: TableWorkloadProfile = TableWorkloadProfile {
     begin_read_tx_pct: 6,
     release_read_tx_pct: 30,
     empty_tx_pct: 2,
-    write_conflict_pct: 10,
     exact_duplicate_insert_pct: 3,
     unique_key_conflict_insert_pct: 4,
     add_column_pct: 2,
@@ -175,13 +172,6 @@ fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: SessionId,
         } else if !emit_query(planner, conn, table, &visible_rows) {
             planner.push_interaction(TableWorkloadInteraction::full_scan(conn, table));
         }
-        return;
-    }
-
-    if let Some(owner) = planner.active_writer()
-        && planner.roll_percent(profile.write_conflict_pct)
-        && emit_write_conflict(planner, owner)
-    {
         return;
     }
 
@@ -302,26 +292,6 @@ fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: SessionId,
     let row = visible_rows[planner.choose_index(visible_rows.len())].clone();
     planner.delete(conn, table, row.clone());
     planner.push_interaction(TableWorkloadInteraction::delete(conn, table, row));
-}
-
-fn emit_write_conflict(planner: &mut ScenarioPlanner<'_>, owner: SessionId) -> bool {
-    let candidates = (0..planner.connection_count())
-        .map(SessionId::from_index)
-        .filter(|&conn| conn != owner && !planner.has_read_tx(conn))
-        .collect::<Vec<_>>();
-    if candidates.is_empty() {
-        return false;
-    }
-    let conn = candidates[planner.choose_index(candidates.len())];
-    if planner.roll_percent(50) {
-        planner.push_interaction(TableWorkloadInteraction::begin_tx_conflict(conn));
-        return true;
-    }
-
-    let table = planner.choose_table();
-    let row = planner.make_row(table);
-    planner.push_interaction(TableWorkloadInteraction::write_conflict_insert(conn, table, row));
-    true
 }
 
 fn emit_add_column(planner: &mut ScenarioPlanner<'_>, conn: SessionId, table: usize) -> bool {

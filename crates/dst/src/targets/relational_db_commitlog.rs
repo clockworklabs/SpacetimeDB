@@ -668,17 +668,32 @@ impl RelationalDbEngine {
         if self.execution.tx_by_connection[conn.as_index()].is_some() {
             return Err(format!("connection {conn} already has open transaction"));
         }
-        if let Some(owner) = self.execution.active_writer {
-            self.expect_write_lock_contended(conn, owner, "begin write transaction")?;
-            return Ok(TableObservation::ObservedError(TableErrorKind::WriteConflict));
+        match self
+            .db()?
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+        {
+            Some(tx) => {
+                if self.execution.active_writer.is_some() || self.any_open_read_tx() {
+                    let _ = self.db()?.rollback_mut_tx(tx);
+                    return Err(format!(
+                        "connection {conn} unexpectedly acquired write lock while conflicting transaction was open"
+                    ));
+                }
+                self.execution.tx_by_connection[conn.as_index()] = Some(tx);
+                self.execution.active_writer = Some(conn);
+                self.stats.transactions.explicit_begin += 1;
+                Ok(TableObservation::Applied)
+            }
+            None => {
+                if self.execution.active_writer.is_some() || self.any_open_read_tx() {
+                    Ok(TableObservation::ObservedError(TableErrorKind::WriteConflict))
+                } else {
+                    Err(format!(
+                        "connection {conn} failed to begin write transaction without an open conflicting lock"
+                    ))
+                }
+            }
         }
-        self.execution.tx_by_connection[conn.as_index()] = Some(
-            self.db()?
-                .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests),
-        );
-        self.execution.active_writer = Some(conn);
-        self.stats.transactions.explicit_begin += 1;
-        Ok(TableObservation::Applied)
     }
 
     fn execute_insert_rows(
@@ -771,14 +786,14 @@ impl RelationalDbEngine {
             return result;
         }
 
-        if let Some(owner) = self.execution.active_writer {
-            self.expect_write_lock_contended(conn, owner, "auto-commit write")?;
+        if self.execution.active_writer.is_some() || self.any_open_read_tx() {
             return Ok(Err(TableErrorKind::WriteConflict));
         }
 
         let mut tx = self
             .db()?
-            .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .ok_or_else(|| format!("connection {conn} failed to acquire write transaction"))?;
         self.execution.active_writer = Some(conn);
         let value = match f(self, &mut tx) {
             Ok(Ok(value)) => value,
@@ -824,16 +839,16 @@ impl RelationalDbEngine {
             return result;
         }
 
-        if let Some(owner) = self.execution.active_writer {
-            self.expect_write_lock_contended(conn, owner, "auto-commit write")?;
+        if self.execution.active_writer.is_some() || self.any_open_read_tx() {
             return Err(format!(
-                "connection {conn} cannot auto-commit write while connection {owner} owns lock"
+                "connection {conn} cannot auto-commit write while a conflicting lock is open"
             ));
         }
 
         let mut tx = self
             .db()?
-            .begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .ok_or_else(|| format!("connection {conn} failed to acquire write transaction"))?;
         self.execution.active_writer = Some(conn);
         let value = match f(self, &mut tx) {
             Ok(value) => value,
@@ -854,17 +869,6 @@ impl RelationalDbEngine {
         self.execution.active_writer = None;
         self.stats.transactions.auto_commit += 1;
         Ok(value)
-    }
-
-    fn expect_write_lock_contended(&self, contender: SessionId, owner: SessionId, action: &str) -> Result<(), String> {
-        let db = self.db()?;
-        if let Some(tx) = db.try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests) {
-            let _ = db.rollback_mut_tx(tx);
-            return Err(format!(
-                "expected write lock contention for connection {contender} during {action} while connection {owner} owns lock, but datastore accepted a second writer"
-            ));
-        }
-        Ok(())
     }
 
     fn try_insert_base_row(
@@ -908,7 +912,7 @@ impl RelationalDbEngine {
     }
 
     fn create_dynamic_table(&mut self, conn: SessionId, slot: u32) -> Result<CommitlogObservation, String> {
-        if self.execution.active_writer.is_some() {
+        if self.execution.active_writer.is_some() || self.any_open_read_tx() {
             trace!(
                 step = self.step,
                 slot,
@@ -952,7 +956,7 @@ impl RelationalDbEngine {
     }
 
     fn drop_dynamic_table(&mut self, conn: SessionId, slot: u32) -> Result<CommitlogObservation, String> {
-        if self.execution.active_writer.is_some() {
+        if self.execution.active_writer.is_some() || self.any_open_read_tx() {
             trace!(
                 step = self.step,
                 slot,
@@ -979,7 +983,7 @@ impl RelationalDbEngine {
     }
 
     fn migrate_dynamic_table(&mut self, conn: SessionId, slot: u32) -> Result<CommitlogObservation, String> {
-        if self.execution.active_writer.is_some() {
+        if self.execution.active_writer.is_some() || self.any_open_read_tx() {
             trace!(
                 step = self.step,
                 slot,
@@ -1041,6 +1045,10 @@ impl RelationalDbEngine {
 
     fn normalize_conn(&self, conn: SessionId) -> SessionId {
         self.execution.active_writer.unwrap_or(conn)
+    }
+
+    fn any_open_read_tx(&self) -> bool {
+        self.read_tx_by_connection.iter().any(Option::is_some)
     }
 
     fn refresh_observed_durable_offset(&mut self, forced: bool) -> Result<(), String> {
