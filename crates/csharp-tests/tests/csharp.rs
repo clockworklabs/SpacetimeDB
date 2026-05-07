@@ -152,25 +152,25 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
         })?;
     ensure_success(workspace, "dotnet pack crates/bindings-csharp/Runtime", status)?;
 
-    let cwd = workspace.join("sdks/csharp");
     // Write out the NuGet config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
     // to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
     // available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
     // This means that (if version numbers match) we will test the local versions of the C# packages, even
     // if they're not pushed to NuGet.
     // See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-    let status = Command::new("bash")
-        .args(["./tools~/write-nuget-config.sh", "../.."])
-        .current_dir(&cwd)
+    let status = Command::new("cargo")
+        .args(["csharp", "write-nuget-config", "sdks/csharp", "--quiet"])
+        .current_dir(workspace)
         .status()
         .with_context(|| {
             format!(
-                "failed to spawn `bash ./tools~/write-nuget-config.sh ../..` in {}",
-                cwd.display()
+                "failed to spawn `cargo csharp write-nuget-config sdks/csharp --quiet` in {}",
+                workspace.display()
             )
         })?;
-    ensure_success(&cwd, "bash ./tools~/write-nuget-config.sh ../..", status)?;
+    ensure_success(workspace, "cargo csharp write-nuget-config sdks/csharp --quiet", status)?;
 
+    let cwd = workspace.join("sdks/csharp");
     let status = Command::new("dotnet")
         .args(["restore", "--configfile", "NuGet.Config", "SpacetimeDB.ClientSDK.sln"])
         .current_dir(&cwd)
@@ -191,19 +191,18 @@ fn prepare_csharp_sdk_solution(workspace: &Path) -> Result<()> {
 
 fn run_regression_tests(workspace: &Path) -> Result<()> {
     let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
-    let cwd = workspace.join("sdks/csharp");
-    let status = Command::new("bash")
-        .args(["tools~/run-regression-tests.sh"])
-        .current_dir(&cwd)
+    let status = Command::new("cargo")
+        .args(["csharp", "run-regression-tests"])
+        .current_dir(workspace)
         .env("SPACETIMEDB_SERVER_URL", &guard.host_url)
         .status()
         .with_context(|| {
             format!(
-                "failed to spawn `bash tools~/run-regression-tests.sh` in {}",
-                cwd.display()
+                "failed to spawn `cargo csharp run-regression-tests` in {}",
+                workspace.display()
             )
         })?;
-    ensure_success(&cwd, "bash tools~/run-regression-tests.sh", status)?;
+    ensure_success(workspace, "cargo csharp run-regression-tests", status)?;
     Ok(())
 }
 
