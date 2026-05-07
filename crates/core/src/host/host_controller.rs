@@ -3,7 +3,7 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
-use crate::config::V8HeapPolicyConfig;
+use crate::config::V8Config;
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -125,9 +125,9 @@ pub(crate) struct HostRuntimes {
 }
 
 impl HostRuntimes {
-    fn new(data_dir: Option<&ServerDataDir>, v8_heap_policy: V8HeapPolicyConfig) -> Arc<Self> {
+    fn new(data_dir: Option<&ServerDataDir>, v8_config: V8Config) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
-        let v8 = V8Runtime::new(v8_heap_policy);
+        let v8 = V8Runtime::new(v8_config);
         Arc::new(Self { wasmtime, v8 })
     }
 }
@@ -211,7 +211,7 @@ impl HostController {
     pub fn new(
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
-        v8_heap_policy: V8HeapPolicyConfig,
+        v8_config: V8Config,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         persistence: Arc<dyn PersistenceProvider>,
@@ -223,7 +223,7 @@ impl HostController {
             program_storage,
             energy_monitor,
             persistence,
-            runtimes: HostRuntimes::new(Some(&data_dir), v8_heap_policy),
+            runtimes: HostRuntimes::new(Some(&data_dir), v8_config),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
@@ -366,30 +366,6 @@ impl HostController {
         Ok(launched.module_host.info)
     }
 
-    /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
-    /// this controller, launching the host if necessary.
-    ///
-    /// If the computation `F` panics, the host is removed from this controller,
-    /// releasing its resources.
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn using_database<F, Fut, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
-    where
-        F: FnOnce(Arc<RelationalDB>) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = T> + Send + 'static,
-        T: Send + 'static,
-    {
-        trace!("using database {}/{}", database.database_identity, replica_id);
-        let module = self.get_or_launch_module_host(database, replica_id).await?;
-        let on_panic = self.unregister_fn(replica_id);
-        scopeguard::defer_on_unwind!({
-            warn!("database operation panicked");
-            on_panic();
-        });
-
-        let db = module.relational_db().clone();
-        let result = module.on_module_thread_async("using_database", move || f(db)).await?;
-        Ok(result)
-    }
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
     /// program.
     ///
@@ -1389,7 +1365,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     extract_schema_with_pools(
         PagePool::new(None),
         BsatnRowListBuilderPool::new(),
-        &HostRuntimes::new(None, V8HeapPolicyConfig::default()),
+        &HostRuntimes::new(None, V8Config::default()),
         program_bytes,
         host_type,
     )
@@ -1423,7 +1399,7 @@ where
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
     let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
-    let worker_kind = crate::host::v8::V8_WORKER_KIND_INSTANCE_LANE;
+    let worker_kind = crate::host::v8::V8_WORKER_KIND_MAIN;
     let _ = WORKER_METRICS
         .v8_total_heap_size_bytes
         .remove_label_values(db, worker_kind);
@@ -1444,4 +1420,5 @@ where
         .remove_label_values(db, worker_kind);
     let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(db, worker_kind);
     let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(db, worker_kind);
+    let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
 }
