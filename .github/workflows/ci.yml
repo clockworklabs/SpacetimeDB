@@ -99,7 +99,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          WASI_SDK_VERSION="25"
+          WASI_SDK_VERSION="29"
           WASI_SDK_PATH="/opt/wasi-sdk"
           if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
             echo "WASI SDK already installed at $WASI_SDK_PATH"
@@ -287,7 +287,7 @@ jobs:
       - name: Install WASI SDK
         shell: bash
         run: |
-          WASI_SDK_VERSION="25"
+          WASI_SDK_VERSION="29"
           WASI_SDK_PATH="/opt/wasi-sdk"
           if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
             echo "WASI SDK already installed at $WASI_SDK_PATH"
@@ -840,7 +840,7 @@ jobs:
       # Install native WASI SDK toolchain (needed by WasiApp.Native.targets to compile native files).
       - name: Install WASI SDK
         run: |
-          WASI_SDK_VERSION="25"
+          WASI_SDK_VERSION="29"
           WASI_SDK_PATH="/opt/wasi-sdk"
           if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
             echo "WASI SDK already installed at $WASI_SDK_PATH"
