@@ -103,6 +103,8 @@ export interface JwtClaims {
  */
 export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
+  databaseIdentity: Identity;
+  /** @deprecated Use `databaseIdentity` instead. */
   identity: Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;

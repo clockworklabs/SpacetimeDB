@@ -45,7 +45,6 @@ export interface SharedRuntimeConfig {
   stdbCompression: StdbCompression;
   stdbConfirmedReads: boolean;
   useDocker: boolean;
-  useSpacetimeMetricsEndpoint: boolean;
   poolMax: number;
   bunUrl: string;
   convexUrl: string;
@@ -108,9 +107,7 @@ export type RunnerRuntimeConfig = Pick<
   | 'minOpTimeoutMs'
   | 'opTimeoutMs'
   | 'precomputedTransferPairs'
-  | 'stdbUrl'
   | 'tailSlackMs'
-  | 'useSpacetimeMetricsEndpoint'
   | 'verifyTransactions'
 >;
 
@@ -235,11 +232,6 @@ export function getSharedRuntimeDefaults(
     ),
     stdbConfirmedReads: readBooleanEnv('STDB_CONFIRMED_READS', true, env),
     useDocker: readBooleanEnv('USE_DOCKER', false, env),
-    useSpacetimeMetricsEndpoint: readBooleanEnv(
-      'SPACETIME_METRICS_ENDPOINT',
-      true,
-      env,
-    ),
     poolMax: readNumberEnv('MAX_POOL', 1000, env),
     bunUrl: readStringEnv('BUN_URL', 'http://127.0.0.1:4000', env),
     convexUrl: readStringEnv('CONVEX_URL', 'http://127.0.0.1:3210', env),

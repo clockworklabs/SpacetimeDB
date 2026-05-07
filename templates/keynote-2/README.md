@@ -24,8 +24,9 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 
 | System                            | TPS (~0% Contention) | TPS (~80% Contention) |
 | --------------------------------- | -------------------- | --------------------- |
-| **SpacetimeDB**                   | **107,850**          | **103,590**           |
-| SQLite + Node HTTP + Drizzle      | 7,845                | 7,652                 |
+| SpacetimeDB (TypeScript Module)   |                      | 307,074               |
+| SpacetimeDB (Rust Module)         |                      | 265,542               |
+| SQLite + Node HTTP + Drizzle      |                      | 3,236                 |
 | Bun + Drizzle + Postgres          | 7,115                | 2,074                 |
 | Postgres + Node HTTP + Drizzle    | 6,429                | 2,798                 |
 | Supabase + Node HTTP + Drizzle    | 6,310                | 1,268                 |
@@ -33,9 +34,7 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 | PlanetScale + Node HTTP + Drizzle | 477                  | 30                    |
 | Convex                            | 438                  | 58                    |
 
-**Key Finding:** SpacetimeDB achieves **~14x higher throughput** than the next best option (SQLite RPC) and maintains nearly identical performance under high contention (only ~4% drop), while traditional databases suffer significant degradation (CockroachDB drops 96%).
-
-> **Note:** SpacetimeDB runs on ARM architectures (including Apple M-series Macs), but has not yet been optimized for them.
+**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite RPC at 3,236 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
 
 ### Contention Impact
 
@@ -53,6 +52,8 @@ For cloud services, we tested paid tiers to give them their best chance:
 - **Supabase**: Pro tier
 - **Convex**: Pro tier
 
+The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
+
 ### Test Architecture
 
 All benchmarks follow an **apples-to-apples** comparison using the same architecture pattern:
@@ -68,6 +69,8 @@ Client → Integrated Platform (compute + storage colocated)
 ```
 
 This ensures we're measuring real-world application performance, not raw database throughput.
+
+Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
 
 ### The Transaction
 
@@ -175,7 +178,6 @@ PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud dat
 ## Running the Benchmarks
 
 See [DEVELOP.md](./DEVELOP.md) for prerequisites, configuration, and full CLI reference.
-The distributed TypeScript SpacetimeDB workflow is documented there as `Run the distributed TypeScript SpacetimeDB benchmark`.
 
 ## Output
 
