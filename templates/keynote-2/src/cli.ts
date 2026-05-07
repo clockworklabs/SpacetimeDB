@@ -42,7 +42,6 @@ class BenchmarkTester {
     let totals = {
       tps: 0,
       samples: 0,
-      committed_txns: 0,
       p50_ms: 0,
       p95_ms: 0,
       p99_ms: 0,
@@ -54,7 +53,6 @@ class BenchmarkTester {
       const result = await runOne({ ...this.config, concurrency, alpha });
       totals.tps += result.tps;
       totals.samples += result.samples;
-      totals.committed_txns += result.committed_txns ?? 0;
       totals.p50_ms += result.p50_ms;
       totals.p95_ms += result.p95_ms;
       totals.p99_ms += result.p99_ms;
@@ -67,7 +65,6 @@ class BenchmarkTester {
     const avg = {
       tps: totals.tps / runs,
       samples: totals.samples / runs,
-      committed_txns: totals.committed_txns / runs,
       p50_ms: totals.p50_ms / runs,
       p95_ms: totals.p95_ms / runs,
       p99_ms: totals.p99_ms / runs,
