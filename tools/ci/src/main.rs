@@ -264,9 +264,26 @@ fn run_csharp_tests() -> Result<()> {
     )
     .run()?;
     bail_if_diff(Path::new("crates/bindings-csharp"))?;
+
     cmd!("dotnet", "test", "-warnaserror")
         .dir("crates/bindings-csharp")
         .run()?;
+
+    cmd!(
+        "dotnet",
+        "format",
+        "--no-restore",
+        "--verify-no-changes",
+        "SpacetimeDB.ClientSDK.sln"
+    )
+    .dir("sdks/csharp")
+    .run()?;
+
+    cmd!("cargo", "regen", "csharp", "quickstart").run()?;
+    if has_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
+        bail!("quickstart bindings have changed. Please run `cargo regen csharp quickstart`.");
+    }
+
     cmd!(
         "cargo",
         "build",
@@ -280,19 +297,7 @@ fn run_csharp_tests() -> Result<()> {
     )
     .run()?;
     cmd!("cargo", "test", "-p", "spacetimedb-csharp-tests").run()?;
-    cmd!(
-        "dotnet",
-        "format",
-        "--no-restore",
-        "--verify-no-changes",
-        "SpacetimeDB.ClientSDK.sln"
-    )
-    .dir("sdks/csharp")
-    .run()?;
-    cmd!("cargo", "regen", "csharp", "quickstart").run()?;
-    if has_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
-        bail!("quickstart bindings have changed. Please run `cargo regen csharp quickstart`.");
-    }
+
     if has_diff(Path::new("sdks/csharp/examples~/regression-tests"))? {
         bail!("Bindings are dirty. Please run `cargo regen csharp regression-tests`.");
     }
