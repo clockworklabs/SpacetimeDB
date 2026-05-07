@@ -851,7 +851,7 @@ jobs:
 
       - name: Run regression tests
         run: |
-          cargo csharp run-regression-tests
+          bash sdks/csharp/tools~/run-regression-tests.sh
           cargo ci check-diff sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `cargo regen csharp regression-tests`.'
               exit 1

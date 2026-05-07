@@ -23,8 +23,6 @@ enum Command {
         #[arg(long)]
         quiet: bool,
     },
-    /// Run the C# regression test workflow against a running local SpacetimeDB instance.
-    RunRegressionTests,
 }
 
 fn main() -> Result<()> {
@@ -37,9 +35,6 @@ fn main() -> Result<()> {
             quiet,
         } => {
             csharp_tools::write_nuget_configs(&target_dirs, stdb_path.as_deref(), quiet)?;
-        }
-        Command::RunRegressionTests => {
-            csharp_tools::run_regression_tests()?;
         }
     }
 

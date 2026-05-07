@@ -1,6 +1,6 @@
 ///  tests run with a live server.
 /// To run these, run a local SpacetimeDB via `spacetime start`,
-/// then in a separate terminal run `cargo csharp run-regression-tests`.
+/// then in a separate terminal run `tools~/run-regression-tests.sh PATH_TO_SPACETIMEDB_REPO_CHECKOUT`.
 /// This is done on CI in .github/workflows/test.yml.
 using System;
 using System.Collections.Generic;
