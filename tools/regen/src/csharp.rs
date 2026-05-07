@@ -91,6 +91,31 @@ pub fn regen_regression_tests() -> Result<()> {
     Ok(())
 }
 
+pub fn regen_quickstart() -> Result<()> {
+    let workspace = workspace_dir();
+
+    cmd!("cargo", "build", "--manifest-path", path_arg(&standalone_manifest())).run()?;
+
+    cmd!(
+        "cargo",
+        "run",
+        "--manifest-path",
+        path_arg(&cli_manifest()),
+        "--",
+        "generate",
+        "-y",
+        "-l",
+        "csharp",
+        "-o",
+        path_arg(&workspace.join("templates/chat-console-cs/module_bindings")),
+        "--module-path",
+        path_arg(&workspace.join("templates/chat-console-cs/spacetimedb")),
+    )
+    .run()?;
+
+    Ok(())
+}
+
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
     let sdk = sdk_dir();
     let skeleton_base = sdk.join("unity-meta-skeleton~");
