@@ -6,6 +6,11 @@ use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
+const SERVER_URL_ENV_VAR: &str = "SPACETIME_SDK_TEST_SERVER_URL";
+
+fn server_url() -> String {
+    std::env::var(SERVER_URL_ENV_VAR).unwrap_or_else(|_| LOCALHOST.to_owned())
+}
 
 pub async fn dispatch(test: &str, db_name: &str) {
     match test {
@@ -69,7 +74,7 @@ async fn connect_with_then(
     let name = db_name.to_owned();
     let builder = DbConnection::builder()
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));
@@ -257,27 +262,26 @@ async fn exec_procedure_http_ok(db_name: &str) {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
-            ctx.procedures
-                .read_my_schema_then(LOCALHOST.to_owned(), move |_ctx, res| {
-                    result(
-                        // It's a try block!
-                        #[allow(clippy::redundant_closure_call)]
-                        (|| {
-                            anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
-                            let module_def: RawModuleDefV9 = spacetimedb_lib::de::serde::deserialize_from(
-                                &mut serde_json::Deserializer::from_str(&res.unwrap()),
-                            )?;
-                            anyhow::ensure!(module_def.misc_exports.iter().any(|misc_export| {
-                                if let RawMiscModuleExportV9::Procedure(procedure_def) = misc_export {
-                                    &*procedure_def.name == "read_my_schema"
-                                } else {
-                                    false
-                                }
-                            }));
-                            Ok(())
-                        })(),
-                    )
-                })
+            ctx.procedures.read_my_schema_then(server_url(), move |_ctx, res| {
+                result(
+                    // It's a try block!
+                    #[allow(clippy::redundant_closure_call)]
+                    (|| {
+                        anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
+                        let module_def: RawModuleDefV9 = spacetimedb_lib::de::serde::deserialize_from(
+                            &mut serde_json::Deserializer::from_str(&res.unwrap()),
+                        )?;
+                        anyhow::ensure!(module_def.misc_exports.iter().any(|misc_export| {
+                            if let RawMiscModuleExportV9::Procedure(procedure_def) = misc_export {
+                                &*procedure_def.name == "read_my_schema"
+                            } else {
+                                false
+                            }
+                        }));
+                        Ok(())
+                    })(),
+                )
+            })
         }
     })
     .await;
