@@ -15,7 +15,7 @@ mod ci_docs;
 mod smoketest;
 mod util;
 
-use util::ensure_repo_root;
+use util::{check_diff, ensure_repo_root};
 
 /// SpacetimeDB CI tasks
 ///
@@ -161,6 +161,12 @@ enum CiCmd {
     CsharpTests,
     /// Verifies that the repository version upgrade tool still works.
     VersionUpgradeCheck,
+    /// Checks for uncommitted diffs, ignoring generated SpacetimeDB CLI version comments.
+    CheckDiff {
+        /// Subdirectory to check. Defaults to the whole repository.
+        #[arg(default_value = ".")]
+        subdir: PathBuf,
+    },
     /// Builds the docs site.
     Docs,
 }
@@ -192,7 +198,9 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn run_publish_checks() -> Result<()> {
-    cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
+    if !Path::new("venv").is_dir() {
+        cmd!("python3", "-m", "venv", "venv").run()?;
+    }
     cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
 
     let crates = cmd!(
@@ -232,13 +240,7 @@ fn run_typescript_tests() -> Result<()> {
     )
     .run()?;
     cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
-    let diff_status = cmd!(
-        "bash",
-        "tools/check-diff.sh",
-        "templates/chat-react-ts/src/module_bindings"
-    )
-    .run()?;
-    if !diff_status.status.success() {
+    if !check_diff(Path::new("templates/chat-react-ts/src/module_bindings"))? {
         bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
     }
     cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
@@ -261,7 +263,9 @@ fn run_csharp_tests() -> Result<()> {
         "regen-csharp-moduledef",
     )
     .run()?;
-    cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
+    if !check_diff(Path::new("crates/bindings-csharp"))? {
+        bail!("C# bindings are dirty. Please regenerate them and commit the changes.");
+    }
     cmd!("dotnet", "test", "-warnaserror")
         .dir("crates/bindings-csharp")
         .run()?;
@@ -287,14 +291,12 @@ fn run_csharp_tests() -> Result<()> {
     )
     .dir("sdks/csharp")
     .run()?;
-    cmd!("bash", "tools~/gen-quickstart.sh").dir("sdks/csharp").run()?;
-    let diff_status = cmd!("bash", "tools/check-diff.sh", "sdks/csharp/examples~/quickstart-chat").run()?;
-    if !diff_status.status.success() {
-        bail!("quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.");
+    cmd!("cargo", "regen", "csharp", "quickstart").run()?;
+    if !check_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
+        bail!("quickstart bindings have changed. Please run `cargo regen csharp quickstart`.");
     }
-    let diff_status = cmd!("bash", "tools/check-diff.sh", "sdks/csharp/examples~/regression-tests").run()?;
-    if !diff_status.status.success() {
-        bail!("Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.");
+    if !check_diff(Path::new("sdks/csharp/examples~/regression-tests"))? {
+        bail!("Bindings are dirty. Please run `cargo regen csharp regression-tests`.");
     }
     Ok(())
 }
@@ -395,7 +397,9 @@ fn main() -> Result<()> {
                 "--test-threads=1",
             )
             .run()?;
-            cmd!("bash", "tools/check-diff.sh").run()?;
+            if !check_diff(Path::new("."))? {
+                bail!("Repository has uncommitted changes.");
+            }
         }
 
         Some(CiCmd::Lint) => {
@@ -586,6 +590,12 @@ fn main() -> Result<()> {
 
         Some(CiCmd::VersionUpgradeCheck) => {
             run_version_upgrade_check()?;
+        }
+
+        Some(CiCmd::CheckDiff { subdir }) => {
+            if !check_diff(&subdir)? {
+                bail!("{} has uncommitted changes.", subdir.display());
+            }
         }
 
         Some(CiCmd::Docs) => {

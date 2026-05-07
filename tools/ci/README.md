@@ -239,6 +239,18 @@ Usage: version-upgrade-check
 
 - `--help`: Print help
 
+### `check-diff`
+
+**Usage:**
+```bash
+Usage: check-diff [SUBDIR]
+```
+
+**Options:**
+
+- `subdir`: Subdirectory to check. Defaults to the whole repository
+- `--help`: Print help
+
 ### `docs`
 
 **Usage:**
