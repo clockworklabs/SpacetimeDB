@@ -741,6 +741,20 @@ pub(in crate::host) struct ViewCommandMetric {
     timer: Instant,
 }
 
+pub(in crate::host) enum ViewCommandErrorTarget {
+    V1 {
+        sender: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_id: Option<ws_v1::QueryId>,
+        timer: Option<Instant>,
+    },
+    V2 {
+        sender: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_set_id: ws_v2::QuerySetId,
+    },
+}
+
 impl ViewCommand {
     pub(in crate::host) fn metric(&self) -> ViewCommandMetric {
         match self {
@@ -757,6 +771,102 @@ impl ViewCommand {
                 workload: WorkloadType::Unsubscribe,
                 timer: *timer,
             },
+        }
+    }
+
+    pub(in crate::host) fn error_target(&self) -> ViewCommandErrorTarget {
+        match self {
+            Self::AddSingleSubscription {
+                sender,
+                request,
+                _timer,
+                ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*_timer),
+            },
+            Self::AddMultiSubscription {
+                sender,
+                request,
+                _timer,
+                ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*_timer),
+            },
+            Self::AddLegacySubscription {
+                sender,
+                subscribe,
+                _timer,
+                ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(subscribe.request_id),
+                query_id: None,
+                timer: Some(*_timer),
+            },
+            Self::RemoveSingleSubscription {
+                sender, request, timer, ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*timer),
+            },
+            Self::RemoveMultiSubscription {
+                sender, request, timer, ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*timer),
+            },
+            Self::AddSubscriptionV2 { sender, request, .. } => ViewCommandErrorTarget::V2 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_set_id: request.query_set_id,
+            },
+            Self::RemoveSubscriptionV2 { sender, request, .. } => ViewCommandErrorTarget::V2 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_set_id: request.query_set_id,
+            },
+        }
+    }
+}
+
+impl ViewCommandErrorTarget {
+    pub(in crate::host) fn send(&self, subscriptions: &ModuleSubscriptions, err: &DBError) {
+        let res = match self {
+            Self::V1 {
+                sender,
+                request_id,
+                query_id,
+                timer,
+            } => subscriptions.send_subscription_error_v1(
+                sender.clone(),
+                *request_id,
+                *query_id,
+                *timer,
+                err.to_string().into(),
+            ),
+            Self::V2 {
+                sender,
+                request_id,
+                query_set_id,
+            } => subscriptions.send_subscription_error_v2(
+                sender.clone(),
+                *request_id,
+                *query_set_id,
+                err.to_string().into(),
+            ),
+        };
+        if let Err(send_err) = res {
+            log::warn!("failed to send subscription error: {send_err:#}");
         }
     }
 }

@@ -37,6 +37,7 @@ use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
@@ -1136,6 +1137,47 @@ impl ModuleSubscriptions {
             .send_client_message_v2(recipient, Some(tx_offset), message)
     }
 
+    pub fn send_subscription_error_v1(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_id: Option<ws_v1::QueryId>,
+        timer: Option<Instant>,
+        message: Box<str>,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message_v1(
+            recipient,
+            None,
+            SubscriptionMessage {
+                request_id,
+                query_id,
+                timer,
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            },
+        )
+    }
+
+    pub fn send_subscription_error_v2(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_set_id: ws_v2::QuerySetId,
+        message: Box<str>,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message_v2(
+            recipient,
+            None,
+            ws_v2::SubscriptionError {
+                request_id,
+                query_set_id,
+                error: message,
+            },
+        )
+    }
+
     /// Add a subscription consisting of multiple queries.
     ///
     /// Read more in [`Self::add_single_subscription`].
@@ -1474,18 +1516,39 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(ExecutionMetrics, bool), DBError> {
+        // Send an error message to the client.
+        let send_err_msg = |message| {
+            let _ = self.broadcast_queue.send_client_message_v1(
+                sender.clone(),
+                None,
+                SubscriptionMessage {
+                    request_id: Some(subscription.request_id),
+                    query_id: None,
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            );
+        };
+
         // How many queries make up this subscription?
         let subscription_metrics = &self.metrics.subscribe;
         let num_queries = subscription.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
-        let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
-            sender.id.identity,
-            auth,
-            &subscription.query_strings,
-            num_queries,
-            subscription_metrics,
-        )?;
+        let (queries, auth, mut_tx, compile_timer) = return_on_err!(
+            self.compile_queries(
+                sender.id.identity,
+                auth,
+                &subscription.query_strings,
+                num_queries,
+                subscription_metrics,
+            ),
+            send_err_msg,
+            (ExecutionMetrics::default(), false)
+        );
 
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
