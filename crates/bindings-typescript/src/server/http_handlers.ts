@@ -302,7 +302,6 @@ export class Router {
         `Cannot nest router at \`${path}\`; existing routes overlap with nested path`
       );
     }
-
     let merged = new Router(this.#routes);
     for (const route of subRouter.#routes) {
       merged = merged.addRoute(
