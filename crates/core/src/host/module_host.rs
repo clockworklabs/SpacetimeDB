@@ -355,15 +355,28 @@ enum ModuleHostInner {
     Js(Box<V8ModuleHost>),
 }
 
+/// Wasm uses one instance manager for reducers/views and one for procedures.
+///
+/// Both managers share the compiled module via `Arc` so either manager can
+/// create replacement instances. Main-lane instance checkout happens after the
+/// job is queued on the [`SingleCoreExecutor`], so concurrent websocket callers
+/// enqueue first instead of racing to allocate multiple main instances.
 struct WasmtimeModuleHost {
     executor: SingleCoreExecutor,
-    instance_manager: ModuleInstanceManager<super::wasmtime::Module>,
+    main_instance: Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>>,
+    procedure_instances: Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>>,
 }
 
 struct V8ModuleHost {
     module: super::v8::JsModule,
     main_instance: SharedJsMainInstanceManager,
     procedure_instances: ModuleInstanceManager<super::v8::JsModule>,
+}
+
+#[derive(Clone, Copy)]
+enum InstanceKind {
+    Main,
+    Procedure,
 }
 
 /// A module; used as a bound on `InstanceManager`.
@@ -401,6 +414,16 @@ impl GenericModule for super::wasmtime::Module {
     type Instance = Box<super::wasmtime::ModuleInstance>;
     async fn create_instance(&self) -> Self::Instance {
         Box::new(self.create_instance())
+    }
+    fn host_type(&self) -> HostType {
+        HostType::Wasm
+    }
+}
+
+impl GenericModule for Arc<super::wasmtime::Module> {
+    type Instance = Box<super::wasmtime::ModuleInstance>;
+    async fn create_instance(&self) -> Self::Instance {
+        Box::new((**self).create_instance())
     }
     fn host_type(&self) -> HostType {
         HostType::Wasm
@@ -801,6 +824,7 @@ impl OneOffQueryV2Params {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ProcedureResultTarget {
     sender: Arc<ClientConnectionSender>,
     request_id: RequestId,
@@ -1011,11 +1035,6 @@ impl CreateInstanceTimeMetric {
 }
 
 impl<M: GenericModule> ModuleInstanceManager<M> {
-    fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
-        let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
-        Self::new_with_metrics(module, init_inst, metrics)
-    }
-
     fn new_with_metrics(module: M, init_inst: Option<M::Instance>, metrics: InstanceManagerMetrics) -> Self {
         Self::new_inner(module, init_inst, metrics, None)
     }
@@ -1321,10 +1340,18 @@ impl ModuleHost {
                 init_inst,
             } => {
                 info = module.info();
-                let instance_manager = ModuleInstanceManager::new(module, Some(init_inst), database_identity);
+                let module = Arc::new(module);
+                let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
+                let main_instance = Arc::new(ModuleInstanceManager::new_with_metrics(
+                    module.clone(),
+                    Some(init_inst),
+                    metrics.clone(),
+                ));
+                let procedure_instances = Arc::new(ModuleInstanceManager::new_with_metrics(module, None, metrics));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     executor,
-                    instance_manager,
+                    main_instance,
+                    procedure_instances,
                 })))
             }
             ModuleWithInstance::Js { module, init_inst } => {
@@ -1411,45 +1438,14 @@ impl ModuleHost {
         })
     }
 
-    /// Run a function for this module which has access to the module instance.
-    async fn with_instance<Guard, A, R>(
-        &self,
-        label: &str,
-        arg: A,
-        timer: impl FnOnce(&str) -> Guard,
-        work_wasm: impl AsyncFnOnce(Guard, &SingleCoreExecutor, Box<ModuleInstance>, A) -> (R, Box<ModuleInstance>),
-        work_js: impl AsyncFnOnce(Guard, &JsMainInstance, A) -> R,
-    ) -> Result<R, NoSuchModule> {
-        self.guard_closed()?;
-        let timer_guard = timer(label);
-
-        // Operations on module instances (e.g. calling reducers) is blocking,
-        // partially because the computation can potentially take a long time
-        // and partially because interacting with the database requires taking
-        // a blocking lock. So, we run `f` on a dedicated thread with `self.executor`.
-        // This will bubble up any panic that may occur.
-
-        // If a function call panics, we **must** ensure to call `self.on_panic`
-        // so that the module is discarded by the host controller.
-        scopeguard::defer_on_unwind!({
-            log::warn!("module operation {label} panicked");
-            (self.on_panic)();
-        });
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => {
-                let executor = &wasm.executor;
-                let instance_manager = &wasm.instance_manager;
-                instance_manager
-                    .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
-                    .await
-            }
-            ModuleHostInner::Js(js) => {
-                js.main_instance
-                    .with_instance(async |inst| work_js(timer_guard, &inst, arg).await)
-                    .await
-            }
-        })
+    fn wasm_instance_manager(
+        host: &WasmtimeModuleHost,
+        kind: InstanceKind,
+    ) -> Arc<ModuleInstanceManager<Arc<super::wasmtime::Module>>> {
+        match kind {
+            InstanceKind::Main => host.main_instance.clone(),
+            InstanceKind::Procedure => host.procedure_instances.clone(),
+        }
     }
 
     /// Run a function for this module which has access to the module instance.
@@ -1467,36 +1463,43 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.with_instance(
-            label,
-            arg,
-            |l| self.start_call_timer(l),
-            // Operations on module instances (e.g. calling reducers) is blocking,
-            // partially because the computation can potentially take a long time
-            // and partially because interacting with the database requires taking a blocking lock.
-            // So, we run `work` on a dedicated thread with `self.executor`.
-            // This will bubble up any panic that may occur.
-            async move |timer_guard, executor, mut inst, arg| {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("module operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                let instance_manager = Self::wasm_instance_manager(host, InstanceKind::Main);
                 executor
                     .run_job(async move || {
                         drop(timer_guard);
-                        (wasm(arg, &mut inst).await, inst)
+                        instance_manager
+                            .with_instance(async move |mut inst| {
+                                let res = wasm(arg, &mut inst).await;
+                                (res, inst)
+                            })
+                            .await
                     })
                     .await
-            },
-            async move |timer_guard, inst, arg| {
+            }
+            ModuleHostInner::Js(host) => {
                 drop(timer_guard);
-                js(arg, inst).await
-            },
-        )
-        .await
+                host.main_instance
+                    .with_instance(async |inst| js(arg, &inst).await)
+                    .await
+            }
+        })
     }
 
     /// Run a function for this module using pooled instances.
     ///
-    /// For WASM, this is identical to [`Self::call`].
-    /// For V8/JS, this uses the pooled procedure instances instead of the
-    /// shared main instance.
+    /// For both WASM and V8/JS, this uses the pooled procedure instances
+    /// instead of the shared main instance.
     async fn call_pooled<A, R>(
         &self,
         label: &str,
@@ -1518,12 +1521,15 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                host.instance_manager
-                    .with_instance(async |mut inst| {
-                        host.executor
-                            .run_job(async move || {
-                                drop(timer_guard);
-                                (wasm(arg, &mut inst).await, inst)
+                let executor = host.executor.clone();
+                let instance_manager = Self::wasm_instance_manager(host, InstanceKind::Procedure);
+                executor
+                    .run_job(async move || {
+                        drop(timer_guard);
+                        instance_manager
+                            .with_instance(async move |mut inst| {
+                                let res = wasm(arg, &mut inst).await;
+                                (res, inst)
                             })
                             .await
                     })
@@ -1541,15 +1547,60 @@ impl ModuleHost {
         })
     }
 
-    async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.call(
-            label,
-            cmd,
-            async |cmd, inst| inst.call_view(cmd),
-            async |cmd, inst| inst.call_view(cmd).await,
-        )
-        .await
-        .map_err(Into::into)
+    fn enqueue_wasm_job<F>(&self, kind: &str, label: &str, f: F) -> Result<(), NoSuchModule>
+    where
+        F: AsyncFnOnce() + Send + 'static,
+    {
+        self.guard_closed()?;
+
+        let timer_guard = self.start_call_timer(label);
+        let kind = kind.to_owned();
+        let label = label.to_owned();
+        let on_panic = self.on_panic.clone();
+
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                executor.enqueue_job(async move || {
+                    scopeguard::defer_on_unwind!({
+                        log::warn!("{kind} {label} panicked");
+                        on_panic();
+                    });
+
+                    drop(timer_guard);
+                    f().await;
+                });
+                Ok(())
+            }
+            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_job should only be used for wasm"),
+        }
+    }
+
+    fn enqueue_wasm_instance<A>(
+        &self,
+        kind: &str,
+        label: &str,
+        instance_kind: InstanceKind,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) -> Result<(), NoSuchModule>
+    where
+        A: Send + 'static,
+    {
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let instance_manager = Self::wasm_instance_manager(host, instance_kind);
+                self.enqueue_wasm_job(kind, label, async move || {
+                    instance_manager
+                        .with_instance(async move |mut inst| {
+                            wasm(arg, &mut inst).await;
+                            ((), inst)
+                        })
+                        .await;
+                })
+            }
+            ModuleHostInner::Js(_) => unreachable!("enqueue_wasm_instance should only be used for wasm"),
+        }
     }
 
     async fn call_view_command_for_websocket(
@@ -1575,12 +1626,22 @@ impl ModuleHost {
                 Ok(None)
             }
             ModuleHostInner::Wasm(_) => {
-                let result = self
-                    .call_view_command(label, cmd)
-                    .await
-                    .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
-                Self::record_view_command_round_trip(&self.info, metric);
-                result
+                let info = self.info.clone();
+                self.enqueue_wasm_instance(
+                    "main-instance operation",
+                    label,
+                    InstanceKind::Main,
+                    cmd,
+                    async move |cmd, inst| {
+                        let result = inst.call_view(cmd);
+                        Self::record_view_command_round_trip(&info, metric);
+                        if let Err(err) = result {
+                            log::warn!("websocket view operation failed: {err:#}");
+                        }
+                    },
+                )
+                .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+                Ok(None)
             }
         }
     }
@@ -1983,7 +2044,17 @@ impl ModuleHost {
                         .await;
                     Ok(())
                 }
-                ModuleHostInner::Wasm(_) => self.call_reducer_with_params(reducer_def, params).await.map(drop),
+                ModuleHostInner::Wasm(_) => self
+                    .enqueue_wasm_instance(
+                        "main-instance operation",
+                        &reducer_def.name,
+                        InstanceKind::Main,
+                        params,
+                        async |params, inst| {
+                            let _ = inst.call_reducer(params);
+                        },
+                    )
+                    .map_err(Into::into),
             }
         }
         .await;
@@ -2238,15 +2309,34 @@ impl ModuleHost {
                 Ok(())
             }
             ModuleHostInner::Wasm(_) => {
-                let ret = match self.call_procedure_with_params(&procedure_name, params).await {
-                    Ok(ret) => ret,
-                    Err(err) => CallProcedureReturn {
-                        result: Err(err.into()),
-                        tx_offset: None,
+                let module = self.clone();
+                let procedure_name_for_job = procedure_name.clone();
+                let target_for_job = target.clone();
+                match self.enqueue_wasm_instance(
+                    "pooled operation",
+                    &procedure_name,
+                    InstanceKind::Procedure,
+                    params,
+                    async move |params, inst| {
+                        let ret = inst.call_procedure(params).await;
+                        module.log_procedure_validation_result(&procedure_name_for_job, &ret);
+                        if let Err(err) =
+                            module.send_procedure_result(&procedure_name_for_job, timer, target_for_job, ret)
+                        {
+                            log::warn!("Procedure call failed: {err:#}");
+                        }
                     },
-                };
-                self.log_procedure_validation_result(&procedure_name, &ret);
-                self.send_procedure_result(&procedure_name, timer, target, ret)
+                ) {
+                    Ok(()) => Ok(()),
+                    Err(err) => {
+                        let ret = CallProcedureReturn {
+                            result: Err(err.into()),
+                            tx_offset: None,
+                        };
+                        self.log_procedure_validation_result(&procedure_name, &ret);
+                        self.send_procedure_result(&procedure_name, timer, target, ret)
+                    }
+                }
             }
         }
     }
@@ -2747,16 +2837,15 @@ impl ModuleHost {
                 Ok(())
             }
             ModuleHostInner::Wasm(_) => {
-                let result = self
-                    .call(
-                        label,
-                        params,
-                        async move |params, _inst| run_inner(params),
-                        async |_, _| unreachable!("one-off query JS path is handled before Self::call"),
-                    )
-                    .await?;
-                Self::record_one_off_query_round_trip(&self.info, timer);
-                result.map(|_| ())
+                let info = self.info.clone();
+                self.enqueue_wasm_job("module-thread operation", label, async move || {
+                    let result = run_inner(params);
+                    Self::record_one_off_query_round_trip(&info, timer);
+                    if let Err(err) = result {
+                        log::warn!("One-off query failed: {err:#}");
+                    }
+                })?;
+                Ok(())
             }
         }
     }
@@ -3131,14 +3220,14 @@ impl ModuleHost {
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
         match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.replica_ctx(),
+            ModuleHostInner::Wasm(wasm) => wasm.main_instance.module.replica_ctx(),
             ModuleHostInner::Js(js) => js.module.replica_ctx(),
         }
     }
 
     fn scheduler(&self) -> &Scheduler {
         match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.scheduler(),
+            ModuleHostInner::Wasm(wasm) => wasm.main_instance.module.scheduler(),
             ModuleHostInner::Js(js) => js.module.scheduler(),
         }
     }
