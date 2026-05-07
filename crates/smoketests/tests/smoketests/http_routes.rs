@@ -230,31 +230,90 @@ fn router() -> Router {
 }
 "#;
 
-const TS_HTTP_ROUTES_MODULE: &str = r#"import { schema, SyncResponse } from "spacetimedb/server";
+const TS_HTTP_ROUTES_MODULE: &str = r#"import { Request, Router, SyncResponse, schema, table, t } from "spacetimedb/server";
 
-const spacetimedb = schema({});
+const entry = table(
+  { name: "entry", public: true },
+  {
+    id: t.u32().primaryKey(),
+    value: t.string(),
+  }
+);
+
+const spacetimedb = schema({ entry });
 
 export default spacetimedb;
 
-export const get_echo = spacetimedb.http.handler(
-  req =>
-    new SyncResponse(req.headers.get("x-echo") ?? "", {
-      headers: { "x-method": "GET" },
-    })
+export const get_echo = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.headers.get("x-echo") ?? "", {
+    headers: { "x-method": "GET" },
+  })
 );
 
-export const post_echo = spacetimedb.http.handler(
-  req =>
-    new SyncResponse(req.body, {
-      status: 201,
-      headers: { "x-method": "POST" },
-    })
+export const post_echo = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.bytes(), {
+    status: 201,
+    headers: { "x-method": "POST" },
+  })
 );
 
-export const router = spacetimedb.http.router(
-  new spacetimedb.http.Router()
+export const root_empty = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("empty")
+);
+
+export const root_slash = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("slash")
+);
+
+export const foo = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo")
+);
+
+export const foo_slash = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo-slash")
+);
+
+export const any_handler = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.method)
+);
+
+export const echo_uri = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.uri)
+);
+
+export const reverse_bytes = spacetimedb.httpHandler((_ctx, req) => {
+  const bytes = req.bytes();
+  bytes.reverse();
+  return new SyncResponse(bytes);
+});
+
+export const reverse_words = spacetimedb.httpHandler((_ctx, req) => {
+  const reversed = req.text().split(" ").reverse().join(" ");
+  return new SyncResponse(reversed);
+});
+
+export const insert_entry = spacetimedb.httpHandler((ctx, _req) => {
+  const count = ctx.withTx(tx => {
+    const id = Number(tx.db.entry.count());
+    tx.db.entry.insert({ id, value: "inserted" });
+    return tx.db.entry.count();
+  });
+  return new SyncResponse(String(count));
+});
+
+export const router = spacetimedb.httpRouter(
+  new Router()
     .get("/echo", get_echo)
     .post("/echo", post_echo)
+    .get("", root_empty)
+    .get("/", root_slash)
+    .get("/foo", foo)
+    .get("/foo/", foo_slash)
+    .any("/any", any_handler)
+    .get("/echo-uri", echo_uri)
+    .post("/insert", insert_entry)
+    .post("/reverse-bytes", reverse_bytes)
+    .post("/reverse-words", reverse_words)
 );
 "#;
 
@@ -533,7 +592,6 @@ fn handle_request_body() {
 #[test]
 fn typescript_http_routes_end_to_end() {
     require_pnpm!();
-
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test
         .publish_typescript_module_source(
@@ -579,6 +637,109 @@ fn typescript_http_routes_end_to_end() {
         resp.bytes().expect("typescript post echo body").as_ref(),
         payload.as_slice()
     );
+
+    let resp = client.get(base.clone()).send().expect("typescript empty root failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("typescript empty root body"), "empty");
+
+    let resp = client
+        .get(format!("{base}/"))
+        .send()
+        .expect("typescript slash root failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("typescript slash root body"), "slash");
+
+    let resp = client.get(format!("{base}/foo")).send().expect("typescript foo failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("typescript foo body"), "foo");
+
+    let resp = client
+        .get(format!("{base}/foo/"))
+        .send()
+        .expect("typescript foo slash failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("typescript foo slash body"), "foo-slash");
+
+    let resp = client
+        .get(format!("{base}//"))
+        .send()
+        .expect("typescript double slash failed");
+    assert_eq!(resp.status().as_u16(), 404);
+    assert_eq!(
+        resp.text().expect("typescript double slash body"),
+        NO_SUCH_ROUTE_BODY
+    );
+
+    let resp = client
+        .get(format!("{base}//foo"))
+        .send()
+        .expect("typescript double slash foo failed");
+    assert_eq!(resp.status().as_u16(), 404);
+    assert_eq!(
+        resp.text().expect("typescript double slash foo body"),
+        NO_SUCH_ROUTE_BODY
+    );
+
+    let resp = client
+        .put(format!("{base}/any"))
+        .send()
+        .expect("typescript any failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("typescript any body"), "PUT");
+
+    let url = format!("{base}/echo-uri?alpha=beta");
+    let resp = client
+        .get(&url)
+        .send()
+        .expect("typescript echo-uri failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("typescript echo-uri body"), url);
+
+    let resp = client
+        .post(format!("{base}/reverse-bytes"))
+        .body(vec![0xFF, 0x00, 0xFE, 0x7F])
+        .send()
+        .expect("typescript reverse-bytes failed");
+    assert!(resp.status().is_success());
+    assert_eq!(
+        resp.bytes().expect("typescript reverse-bytes body").as_ref(),
+        [0x7F, 0xFE, 0x00, 0xFF]
+    );
+
+    let resp = client
+        .post(format!("{base}/reverse-words"))
+        .body("red green blue")
+        .send()
+        .expect("typescript reverse-words failed");
+    assert!(resp.status().is_success());
+    assert_eq!(
+        resp.text().expect("typescript reverse-words body"),
+        "blue green red"
+    );
+
+    let resp = client
+        .post(format!("{base}/insert"))
+        .send()
+        .expect("typescript insert failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("typescript insert body"), "1");
+
+    let resp = client
+        .get(format!("{base}/missing"))
+        .send()
+        .expect("typescript missing route failed");
+    assert_eq!(resp.status().as_u16(), 404);
+    assert_eq!(
+        resp.text().expect("typescript missing route body"),
+        NO_SUCH_ROUTE_BODY
+    );
+
+    let resp = client
+        .get(format!("{base}/echo-uri"))
+        .header("authorization", "Bearer not-a-jwt")
+        .send()
+        .expect("typescript auth bypass route failed");
+    assert!(resp.status().is_success());
 }
 
 /// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.

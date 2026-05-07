@@ -3,7 +3,7 @@ import t from '../lib/type_builders';
 import {
   type HandlerContext,
   Request,
-  Response,
+  SyncResponse,
   Router,
   schema,
 } from './index';
@@ -28,32 +28,53 @@ const hello = stdb.httpHandler((ctx, req) => {
     tx.db.person.insert({ id: 1, name: 'alice' });
   });
 
-  return new Response('hello', {
+  return new SyncResponse('hello', {
     headers: { 'content-type': 'text/plain' },
     status: 200,
   });
 });
 
-const _typedHello: (ctx: HandlerContext<any>, req: Request) => Response = (
+const _typedHello: (ctx: HandlerContext<any>, req: Request) => SyncResponse = (
   ctx,
   req
 ) => {
   void ctx.timestamp;
-  return new Response(req.text());
+  return new SyncResponse(req.text());
 };
 
+const named = stdb.httpHandler({ name: 'hello' }, (_ctx, _req) => {
+  return new SyncResponse('named');
+});
+
 const routes = stdb.httpRouter(
-  Router.new()
+  new Router()
     .get('/hello', hello)
+    .get('/named', named)
     .post('/hello-post', hello)
-    .nest('/api', Router.new().any('/v1', hello))
-    .merge(Router.new().get('', hello))
+    .nest('/api', new Router().any('/v1', hello))
+    .merge(new Router().get('', hello))
 );
 
 void routes;
 
-// @ts-expect-error handlers must return Response
+// @ts-expect-error handlers must return SyncResponse
 stdb.httpHandler((_ctx, _req) => 123);
 
+// @ts-expect-error handlers must take HandlerContext as the first argument
+stdb.httpHandler((_ctx: number, _req: Request) => new SyncResponse('bad'));
+
 // @ts-expect-error handlers must take a Request as the second argument
-stdb.httpHandler((_ctx, _req: number) => new Response('bad'));
+stdb.httpHandler((_ctx, _req: number) => new SyncResponse('bad'));
+
+stdb.httpHandler((ctx, req) => {
+  // @ts-expect-error HTTP handlers do not expose sender directly
+  void ctx.sender;
+  // @ts-expect-error HTTP handlers do not expose connectionId directly
+  void ctx.connectionId;
+  // @ts-expect-error HTTP handlers do not expose db directly
+  void ctx.db;
+  return new SyncResponse(req.text());
+});
+
+// @ts-expect-error routers must reference exported http handlers, not raw functions
+new Router().get('/raw', (_ctx, _req) => new SyncResponse('bad'));

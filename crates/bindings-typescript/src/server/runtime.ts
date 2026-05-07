@@ -28,11 +28,17 @@ import {
 } from '../lib/indexes';
 import { callProcedure } from './procedures';
 import {
-  makeHandlerHttpClient,
-  requestFromWire,
-  responseIntoWire,
-} from './http_wire';
-import { type HandlerContext } from './http_handlers';
+  type HandlerContext,
+  Request,
+  SyncResponse,
+  makeRequest,
+} from './http_handlers';
+import { httpClient } from './http_internal';
+import {
+  deserializeHeaders,
+  deserializeMethod,
+  serializeHeaders,
+} from './http_shared';
 import {
   type AuthCtx,
   type JsonObject,
@@ -49,11 +55,31 @@ import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
 import type { SchemaInner } from './schema';
-import { HttpRequest, HttpResponse } from '../lib/http_types';
+import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
 
 export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
+
+function requestFromWire(request: HttpRequest, body: Uint8Array): Request {
+  return Request[makeRequest](body, {
+    headers: deserializeHeaders(request.headers),
+    method: deserializeMethod(request.method),
+    uri: request.uri,
+    version: request.version,
+  });
+}
+
+function responseIntoWire(response: SyncResponse): [HttpResponse, Uint8Array] {
+  return [
+    {
+      headers: serializeHeaders(response.headers),
+      version: response.version,
+      code: response.status,
+    },
+    response.bytes(),
+  ];
+}
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -460,7 +486,7 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   #random: Random | undefined;
   #dbView: () => DbView<any>;
 
-  readonly http = makeHandlerHttpClient();
+  readonly http = httpClient;
 
   constructor(
     readonly timestamp: Timestamp,

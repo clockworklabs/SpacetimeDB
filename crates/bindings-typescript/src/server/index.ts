@@ -25,7 +25,7 @@ export { Range, type Bound } from './range';
 export {
   Headers,
   Request,
-  Response,
+  SyncResponse,
   Router,
   type BodyInit,
   type HeadersInit,

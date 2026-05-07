@@ -1,5 +1,9 @@
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
-import { CaseConversionPolicy, Lifecycle } from '../lib/autogen/types';
+import {
+  CaseConversionPolicy,
+  Lifecycle,
+  type MethodOrAny,
+} from '../lib/autogen/types';
 import {
   type ParamsAsObject,
   type ParamsObj,
@@ -15,13 +19,13 @@ import {
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
 import {
-  makeHttpHandlerExport,
-  makeHttpRouterExport,
+  Router,
   type HandlerFn,
   type HttpHandlerExport,
   type HttpHandlerOpts,
+  makeHttpHandlerExport,
+  makeHttpRouterExport,
 } from './http_handlers';
-import { Router } from './http_router';
 import {
   makeProcedureExport,
   type ProcedureExport,
@@ -134,7 +138,7 @@ export class SchemaInner<
 type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
 type PendingHttpRoute = {
   handler: HttpHandlerExport<UntypedSchemaDef>;
-  method: import('../lib/http_types').MethodOrAny;
+  method: MethodOrAny;
   path: string;
 };
 
