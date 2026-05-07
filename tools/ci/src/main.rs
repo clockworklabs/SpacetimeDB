@@ -400,7 +400,7 @@ fn main() -> Result<()> {
                 "--test-threads=1",
             )
             .run()?;
-            check_diff_or_bail(Path::new("."))?;
+            bail_if_diff(Path::new("."))?;
         }
 
         Some(CiCmd::Lint) => {
