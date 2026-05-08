@@ -3,7 +3,7 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
-use crate::config::V8Config;
+use crate::config::{V8Config, WasmConfig};
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -124,10 +124,22 @@ pub(crate) struct HostRuntimes {
     v8: V8Runtime,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HostRuntimeConfig {
+    pub wasm: WasmConfig,
+    pub v8: V8Config,
+}
+
+impl HostRuntimeConfig {
+    pub fn new(wasm: WasmConfig, v8: V8Config) -> Self {
+        Self { wasm, v8 }
+    }
+}
+
 impl HostRuntimes {
-    fn new(data_dir: Option<&ServerDataDir>, v8_config: V8Config) -> Arc<Self> {
-        let wasmtime = WasmtimeRuntime::new(data_dir);
-        let v8 = V8Runtime::new(v8_config);
+    fn new(data_dir: Option<&ServerDataDir>, config: HostRuntimeConfig) -> Arc<Self> {
+        let wasmtime = WasmtimeRuntime::new(data_dir, config.wasm);
+        let v8 = V8Runtime::new(config.v8);
         Arc::new(Self { wasmtime, v8 })
     }
 }
@@ -211,7 +223,7 @@ impl HostController {
     pub fn new(
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
-        v8_config: V8Config,
+        runtime_config: HostRuntimeConfig,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         persistence: Arc<dyn PersistenceProvider>,
@@ -223,7 +235,7 @@ impl HostController {
             program_storage,
             energy_monitor,
             persistence,
-            runtimes: HostRuntimes::new(Some(&data_dir), v8_config),
+            runtimes: HostRuntimes::new(Some(&data_dir), runtime_config),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
@@ -1365,7 +1377,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     extract_schema_with_pools(
         PagePool::new(None),
         BsatnRowListBuilderPool::new(),
-        &HostRuntimes::new(None, V8Config::default()),
+        &HostRuntimes::new(None, HostRuntimeConfig::default()),
         program_bytes,
         host_type,
     )
