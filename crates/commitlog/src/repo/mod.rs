@@ -156,8 +156,12 @@ pub trait RepoWithSizeOnDisk: Repo {
 /// violate single-writer safety.
 pub trait RepoWithoutLockFile: Repo {}
 
-impl<T: RepoWithoutLockFile> RepoWithoutLockFile for &T {}
-impl<T: RepoWithSizeOnDisk> RepoWithSizeOnDisk for &T {
+impl<T> RepoWithoutLockFile for &T where T: RepoWithoutLockFile {}
+
+impl<T> RepoWithSizeOnDisk for &T
+where
+    T: RepoWithSizeOnDisk,
+{
     fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         T::size_on_disk(self)
     }

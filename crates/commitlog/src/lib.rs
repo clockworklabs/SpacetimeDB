@@ -187,7 +187,6 @@ impl<T> Commitlog<T, repo::Fs> {
         }
         Self::open_with_repo(repo::Fs::new(root, on_new_segment)?, opts)
     }
-
 }
 
 impl<T, R> Commitlog<T, R>
@@ -228,7 +227,6 @@ impl<T, R> Commitlog<T, R>
 where
     R: Repo,
 {
-
     /// Determine the maximum transaction offset considered durable.
     ///
     /// The offset is `None` if the log hasn't been flushed to disk yet.
@@ -423,8 +421,9 @@ where
     }
 }
 
-impl<T: Encode, R> Commitlog<T, R>
+impl<T, R> Commitlog<T, R>
 where
+    T: Encode,
     R: Repo,
 {
     /// Write `transactions` to the log.
