@@ -151,15 +151,22 @@ impl Options {
     }
 }
 
-/// The canonical commitlog, backed by on-disk log files.
+/// The canonical commitlog API over a repository backend `R`.
+///
+/// The default backend is the on-disk filesystem repository
+/// [`repo::Fs`], but tests may supply another [`Repo`]
+/// implementation.
 ///
 /// Records in the log are of type `T`, which canonically is instantiated to
 /// [`payload::Txdata`].
-pub struct Commitlog<T> {
-    inner: RwLock<commitlog::Generic<repo::Fs, T>>,
+pub struct Commitlog<T, R = repo::Fs>
+where
+    R: Repo,
+{
+    inner: RwLock<commitlog::Generic<R, T>>,
 }
 
-impl<T> Commitlog<T> {
+impl<T> Commitlog<T, repo::Fs> {
     /// Open the log at root directory `root` with [`Options`].
     ///
     /// The root directory must already exist.
@@ -178,7 +185,26 @@ impl<T> Commitlog<T> {
                 root.display()
             );
         }
-        let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
+        Self::open_with_repo(repo::Fs::new(root, on_new_segment)?, opts)
+    }
+
+    /// Determine the size on disk of this commitlog.
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        let inner = self.inner.read().unwrap();
+        inner.repo.size_on_disk()
+    }
+}
+
+impl<T, R> Commitlog<T, R>
+where
+    R: Repo,
+{
+    /// Open the log in `repo` with [`Options`].
+    ///
+    /// This is useful for tests which provide a repository
+    /// implementation other than [`repo::Fs`].
+    pub fn open_with_repo(repo: R, opts: Options) -> io::Result<Self> {
+        let inner = commitlog::Generic::open(repo, opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -307,7 +333,7 @@ impl<T> Commitlog<T> {
     /// This means that, when this iterator yields an `Err` value, the consumer
     /// may want to check if the iterator is exhausted (by calling `next()`)
     /// before treating the `Err` value as an application error.
-    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
+    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T, R> {
         self.commits_from(0)
     }
 
@@ -320,7 +346,10 @@ impl<T> Commitlog<T> {
     /// Note that the first [`StoredCommit`] yielded is the first commit
     /// containing the given transaction offset, i.e. its `min_tx_offset` may be
     /// smaller than `offset`.
-    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
+    pub fn commits_from(
+        &self,
+        offset: u64,
+    ) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T, R> {
         self.inner.read().unwrap().commits_from(offset)
     }
 
@@ -374,15 +403,12 @@ impl<T> Commitlog<T> {
             inner: RwLock::new(inner),
         })
     }
-
-    /// Determine the size on disk of this commitlog.
-    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
-        let inner = self.inner.read().unwrap();
-        inner.repo.size_on_disk()
-    }
 }
 
-impl<T: Encode> Commitlog<T> {
+impl<T: Encode, R> Commitlog<T, R>
+where
+    R: Repo,
+{
     /// Write `transactions` to the log.
     ///
     /// This will store all `transactions` as a single [Commit]
@@ -452,10 +478,11 @@ impl<T: Encode> Commitlog<T> {
     pub fn transactions<'a, D>(
         &self,
         de: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T, R>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
+        R: 'a,
         T: 'a,
     {
         self.transactions_from(0, de)
@@ -471,10 +498,11 @@ impl<T: Encode> Commitlog<T> {
         &self,
         offset: u64,
         de: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T, R>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
+        R: 'a,
         T: 'a,
     {
         self.inner.read().unwrap().transactions_from(offset, de)

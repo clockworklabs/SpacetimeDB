@@ -11,7 +11,12 @@ use futures::FutureExt as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
 use scopeguard::ScopeGuard;
-use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
+use spacetimedb_commitlog::{
+    error,
+    payload::Txdata,
+    repo::{Fs, Repo, RepoWithoutLockFile},
+    Commit, Commitlog, Decoder, Encode, Transaction,
+};
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
 use thiserror::Error;
@@ -83,9 +88,12 @@ pub enum OpenError {
 ///
 /// Note, however, that instantiating `T` to a different type may require to
 /// change the log format version!
-pub struct Local<T> {
+pub struct Local<T, R = Fs>
+where
+    R: Repo,
+{
     /// The [`Commitlog`] this [`Durability`] and [`History`] impl wraps.
-    clog: Arc<Commitlog<Txdata<T>>>,
+    clog: Arc<Commitlog<Txdata<T>, R>>,
     /// The durable transaction offset, as reported by the background
     /// [`FlushAndSyncTask`].
     durable_offset: watch::Receiver<Option<TxOffset>>,
@@ -106,7 +114,7 @@ pub struct Local<T> {
     actor: Mutex<Option<JoinHandle<()>>>,
 }
 
-impl<T: Encode + Send + Sync + 'static> Local<T> {
+impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
     /// Create a [`Local`] instance at the `replica_dir`.
     ///
     /// `replica_dir` must already exist.
@@ -132,6 +140,21 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             opts.commitlog,
             on_new_segment,
         )?);
+        Self::open_inner(clog, rt, opts, Some(lock))
+    }
+}
+
+impl<T, R> Local<T, R>
+where
+    T: Encode + Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
+    fn open_inner(
+        clog: Arc<Commitlog<Txdata<T>, R>>,
+        rt: tokio::runtime::Handle,
+        opts: Options,
+        lock: Option<LockedFile>,
+    ) -> Result<Self, OpenError> {
         let queue_capacity = opts.queue_capacity();
         let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
@@ -161,12 +184,29 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain a read-only copy of the durable state that implements [History].
-    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T> {
+    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T, R> {
         self.clog.clone()
     }
 }
 
-impl<T: Send + Sync + 'static> Local<T> {
+impl<T, R> Local<T, R>
+where
+    T: Encode + Send + Sync + 'static,
+    R: RepoWithoutLockFile + Send + Sync + 'static,
+{
+    /// Create a [`Local`] instance backed by the provided commitlog repo.
+    pub fn open_with_repo(repo: R, rt: tokio::runtime::Handle, opts: Options) -> Result<Self, OpenError> {
+        info!("open local durability");
+        let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
+        Self::open_inner(clog, rt, opts, None)
+    }
+}
+
+impl<T, R> Local<T, R>
+where
+    T: Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     /// Inspect how many transactions added via [`Self::append_tx`] are pending
     /// to be applied to the underlying [`Commitlog`].
     pub fn queue_depth(&self) -> u64 {
@@ -174,7 +214,7 @@ impl<T: Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T> {
+    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T, R> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
@@ -187,15 +227,20 @@ impl<T: Send + Sync + 'static> Local<T> {
     pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
         self.clog.compress_segments(offsets)
     }
+}
 
+impl<T: Send + Sync + 'static> Local<T, Fs> {
     /// Get the size on disk of the underlying [`Commitlog`].
     pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         self.clog.size_on_disk()
     }
 }
 
-struct Actor<T> {
-    clog: Arc<Commitlog<Txdata<T>>>,
+struct Actor<T, R>
+where
+    R: Repo,
+{
+    clog: Arc<Commitlog<Txdata<T>, R>>,
 
     durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
@@ -203,10 +248,14 @@ struct Actor<T> {
     batch_capacity: NonZeroUsize,
 
     #[allow(unused)]
-    lock: LockedFile,
+    lock: Option<LockedFile>,
 }
 
-impl<T: Encode + Send + Sync + 'static> Actor<T> {
+impl<T, R> Actor<T, R>
+where
+    T: Encode + Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(self, transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>) {
         info!("starting durability actor");
@@ -287,7 +336,11 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Durability for Local<T> {
+impl<T, R> Durability for Local<T, R>
+where
+    T: Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: PreparedTx<Self::TxData>) {
@@ -332,7 +385,11 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     }
 }
 
-impl<T: Encode + 'static> History for Commitlog<Txdata<T>> {
+impl<T, R> History for Commitlog<Txdata<T>, R>
+where
+    T: Encode + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     type TxData = Txdata<T>;
 
     fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>

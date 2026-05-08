@@ -144,6 +144,17 @@ pub trait Repo: Clone + fmt::Display {
     }
 }
 
+/// Marker for repos that do not require an external lock file.
+///
+/// Durability implementations can use this to expose repo-backed opening
+/// only for storage backends where skipping the filesystem `db.lock` cannot
+/// violate single-writer safety.
+pub trait RepoWithoutLockFile: Repo {}
+
+impl<T: RepoWithoutLockFile> RepoWithoutLockFile for &T {}
+
+impl RepoWithoutLockFile for Memory {}
+
 impl<T: Repo> Repo for &T {
     type SegmentWriter = T::SegmentWriter;
     type SegmentReader = T::SegmentReader;

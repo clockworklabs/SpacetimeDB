@@ -51,7 +51,7 @@ use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
+use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
@@ -235,7 +235,7 @@ impl RelationalDB {
     ///
     /// - `snapshot_repo`
     ///
-    ///   The [`SnapshotRepository`] which stores snapshots of this database.
+    ///   The [`SnapshotRepo`] which stores snapshots of this database.
     ///   This is only meaningful if `history` and `durability` are also supplied.
     ///   If restoring from an existing database, the `snapshot_repo` must
     ///   store views of the same sequence of TXes as the `history`.
@@ -278,9 +278,10 @@ impl RelationalDB {
 
         let start_time = std::time::Instant::now();
 
+        let snapshot_repo = persistence.as_ref().and_then(|p| p.snapshot_repo());
         let inner = Self::restore_from_snapshot_or_bootstrap(
             database_identity,
-            persistence.as_ref().and_then(|p| p.snapshot_repo()),
+            snapshot_repo.as_deref(),
             durable_tx_offset,
             min_commitlog_offset,
             page_pool,
@@ -292,7 +293,7 @@ impl RelationalDB {
                     .snapshot_repo()
                     .map(|repo| repo.database_identity() == database_identity)
                     .unwrap_or(true),
-                "snapshot repository does not match database identity",
+                "snapshot repo does not match database identity",
             );
             persistence.set_snapshot_state(inner.committed_state.clone());
         }
@@ -471,7 +472,7 @@ impl RelationalDB {
 
     fn restore_from_snapshot_or_bootstrap(
         database_identity: Identity,
-        snapshot_repo: Option<&SnapshotRepository>,
+        snapshot_repo: Option<&DynSnapshotRepo>,
         durable_tx_offset: Option<TxOffset>,
         min_commitlog_offset: TxOffset,
         page_pool: PagePool,
@@ -479,7 +480,7 @@ impl RelationalDB {
         // Try to load the `ReconstructedSnapshot` at `snapshot_offset`.
         fn try_load_snapshot(
             database_identity: &Identity,
-            snapshot_repo: &SnapshotRepository,
+            snapshot_repo: &DynSnapshotRepo,
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
@@ -592,11 +593,12 @@ impl RelationalDB {
                         // Invalidate the snapshot if the error is permanent.
                         // Newly created snapshots should not depend on it.
                         if !is_transient_error(&e) {
-                            let path = snapshot_repo.snapshot_dir_path(snapshot_offset);
-                            log::info!("invalidating bad snapshot at {}", path.display());
-                            path.rename_invalid().map_err(|e| RestoreSnapshotError::Invalidate {
-                                offset: snapshot_offset,
-                                source: Box::new(e.into()),
+                            log::info!("invalidating bad snapshot at {snapshot_offset}");
+                            snapshot_repo.invalidate_snapshot(snapshot_offset).map_err(|e| {
+                                RestoreSnapshotError::Invalidate {
+                                    offset: snapshot_offset,
+                                    source: Box::new(e),
+                                }
                             })?;
                         }
                         // Try the next older one if the error was transient.
@@ -612,7 +614,7 @@ impl RelationalDB {
                 }
             }
         }
-        log::info!("[{database_identity}] DATABASE: no usable snapshot on disk");
+        log::info!("[{database_identity}] DATABASE: no usable snapshot in snapshot repo");
 
         // If we didn't find a snapshot and the commitlog doesn't start at the
         // zero-th commit (e.g. due to archiving), there is no way to restore
@@ -766,6 +768,19 @@ impl RelationalDB {
         log::trace!("BEGIN MUT TX");
         let r = self.inner.begin_mut_tx(isolation_level, workload);
         log::trace!("ACQUIRED MUT TX");
+        r
+    }
+
+    #[cfg(any(feature = "test", test))]
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn try_begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Option<MutTx> {
+        log::trace!("TRY BEGIN MUT TX");
+        let r = self.inner.try_begin_mut_tx(isolation_level, workload);
+        if r.is_some() {
+            log::trace!("ACQUIRED MUT TX");
+        } else {
+            log::trace!("MUT TX CONTENDED");
+        }
         r
     }
 
@@ -1007,7 +1022,7 @@ impl RelationalDB {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
     }
 
-    pub(crate) fn add_columns_to_table(
+    pub(crate) fn add_columns_to_table_mut_tx(
         &self,
         tx: &mut MutTx,
         table_id: TableId,
@@ -1017,6 +1032,17 @@ impl RelationalDB {
         Ok(self
             .inner
             .add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?)
+    }
+
+    #[cfg(any(feature = "test", test))]
+    pub fn add_columns_to_table(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        default_values: Vec<AlgebraicValue>,
+    ) -> Result<TableId, DBError> {
+        self.add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)
     }
 
     /// Reports the `TxMetrics`s passed.
@@ -1777,7 +1803,6 @@ pub mod tests_utils {
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::server::ReplicaDir;
-    use spacetimedb_paths::server::SnapshotDirPath;
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
@@ -2091,7 +2116,7 @@ pub mod tests_utils {
             Arc::new(|_, _| i64::MAX)
         }
 
-        pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>, DBError> {
+        pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>, DBError> {
             Ok(self.inner.take_snapshot(repo)?)
         }
     }
@@ -3661,7 +3686,7 @@ mod tests {
         let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
         RelationalDB::restore_from_snapshot_or_bootstrap(
             Identity::ZERO,
-            Some(&repo),
+            Some(repo.as_ref()),
             Some(last_compress),
             0,
             PagePool::new_for_test(),
@@ -3689,8 +3714,13 @@ mod tests {
         );
 
         let last = repo.latest_snapshot()?;
-        let stdb =
-            RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last, 0, PagePool::new_for_test())?;
+        let stdb = RelationalDB::restore_from_snapshot_or_bootstrap(
+            identity,
+            Some(repo.as_ref()),
+            last,
+            0,
+            PagePool::new_for_test(),
+        )?;
 
         let out = TempDir::with_prefix("snapshot_test")?;
         let dir = SnapshotsPath::from_path_unchecked(out.path());

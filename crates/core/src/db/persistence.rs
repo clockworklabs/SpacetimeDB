@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
-use spacetimedb_snapshot::SnapshotRepository;
+use spacetimedb_snapshot::DynSnapshotRepo;
 
 use crate::{messages::control_db::Database, util::asyncify};
 
@@ -61,9 +61,9 @@ impl Persistence {
         }
     }
 
-    /// If snapshots are enabled, get the [SnapshotRepository] they are stored in.
-    pub fn snapshot_repo(&self) -> Option<&SnapshotRepository> {
-        self.snapshots.as_ref().map(|worker| worker.repo())
+    /// If snapshots are enabled, get the [SnapshotRepo] they are stored in.
+    pub fn snapshot_repo(&self) -> Option<Arc<DynSnapshotRepo>> {
+        self.snapshots.as_ref().map(|worker| worker.snapshot_repo())
     }
 
     /// Get the [TxOffset] reported as durable by the [Durability] impl.

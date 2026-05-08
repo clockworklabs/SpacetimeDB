@@ -46,7 +46,7 @@ use spacetimedb_table::{
 };
 use std::fs::{self, File};
 use std::io;
-use std::ops::RangeBounds;
+use std::ops::{Range, RangeBounds};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{
@@ -206,6 +206,11 @@ pub struct UnflushedSnapshot {
 }
 
 impl UnflushedSnapshot {
+    /// Return the transaction offset this pending snapshot will finalize at.
+    pub fn tx_offset(&self) -> TxOffset {
+        self.inner.as_ref().unwrap().snapshot.tx_offset
+    }
+
     /// Sync all objects in the snapshot and write out the snapshot file.
     ///
     /// Returns the [SnapshotDirPath] on success.
@@ -258,6 +263,28 @@ impl UnflushedSnapshotInner {
         drop(self.lockfile);
 
         Ok(self.snapshot_dir)
+    }
+}
+
+pub trait PendingSnapshot: Send {
+    /// Sync all snapshot state and return the finalized transaction offset.
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError>;
+}
+
+pub type BoxedPendingSnapshot = Box<dyn PendingSnapshot>;
+pub type DynSnapshotRepo = dyn SnapshotRepo<Pending = BoxedPendingSnapshot>;
+
+impl PendingSnapshot for BoxedPendingSnapshot {
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError> {
+        (*self).sync_all()
+    }
+}
+
+impl PendingSnapshot for UnflushedSnapshot {
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError> {
+        let tx_offset = self.tx_offset();
+        UnflushedSnapshot::sync_all(*self)?;
+        Ok(tx_offset)
     }
 }
 
@@ -1139,11 +1166,17 @@ impl SnapshotRepository {
             .collect::<Vec<TxOffset>>();
 
         for newer_snapshot in newer_snapshots {
-            let path = self.snapshot_dir_path(newer_snapshot);
-            log::info!("Renaming snapshot newer than {upper_bound} from {path:?} to {path:?}");
-            path.rename_invalid()?;
+            self.invalidate_snapshot(newer_snapshot)?;
         }
         Ok(())
+    }
+
+    /// Mark a single snapshot invalid so it will not be considered for future
+    /// restores.
+    pub fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
+        let path = self.snapshot_dir_path(tx_offset);
+        log::info!("Renaming snapshot {tx_offset} from {path:?} to invalid");
+        path.rename_invalid().map_err(Into::into)
     }
 
     /// Compress the `current` snapshot, unless it is already compressed.
@@ -1326,6 +1359,91 @@ impl SnapshotRepository {
         }
 
         Ok(size)
+    }
+}
+
+/// Snapshot storage backend.
+pub trait SnapshotRepo: Send + Sync {
+    type Pending: PendingSnapshot;
+
+    /// Return the database identity associated with this snapshot backend.
+    fn database_identity(&self) -> Identity;
+
+    /// Start creating a snapshot at `tx_offset` from the provided tables and blob store.
+    fn create_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<Self::Pending, SnapshotError>;
+
+    /// Reconstruct the snapshot at `tx_offset` using the supplied page pool.
+    fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError>;
+
+    /// Return the latest snapshot at or before `upper_bound`, if one exists.
+    fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError>;
+
+    /// Return the latest snapshot in this backend, if one exists.
+    fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
+        self.latest_snapshot_older_than(TxOffset::MAX)
+    }
+
+    /// Attempt to compress all snapshots that fall into `range`, and record
+    /// the outcome in `stats`.
+    ///
+    /// The snapshots in `range` are traversed in ascending order.
+    /// If an error occurs, processing stops and the error is returned.
+    ///
+    /// See [CompressionStats] for how to interpret the results.
+    fn compress_snapshots(&self, stats: &mut CompressionStats, range: Range<TxOffset>) -> Result<(), SnapshotError>;
+
+    /// Invalidate every snapshot newer than `upper_bound`.
+    fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError>;
+
+    /// Invalidate the snapshot at `tx_offset`.
+    fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError>;
+}
+
+impl SnapshotRepo for SnapshotRepository {
+    type Pending = BoxedPendingSnapshot;
+
+    fn database_identity(&self) -> Identity {
+        SnapshotRepository::database_identity(self)
+    }
+
+    fn create_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<Self::Pending, SnapshotError> {
+        Ok(Box::new(SnapshotRepository::create_snapshot(
+            self, tables, blobs, tx_offset,
+        )?))
+    }
+
+    fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError> {
+        SnapshotRepository::read_snapshot(self, tx_offset, page_pool)
+    }
+
+    fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
+        SnapshotRepository::latest_snapshot_older_than(self, upper_bound)
+    }
+
+    fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
+        SnapshotRepository::latest_snapshot(self)
+    }
+
+    fn compress_snapshots(&self, stats: &mut CompressionStats, range: Range<TxOffset>) -> Result<(), SnapshotError> {
+        SnapshotRepository::compress_snapshots(self, stats, range)
+    }
+
+    fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
+        SnapshotRepository::invalidate_newer_snapshots(self, upper_bound)
+    }
+
+    fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
+        SnapshotRepository::invalidate_snapshot(self, tx_offset)
     }
 }
 
