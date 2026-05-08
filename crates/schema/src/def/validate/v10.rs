@@ -701,10 +701,12 @@ impl<'a> ModuleValidatorV10<'a> {
                 })
             })?;
 
+        let name = self.core.resolve_function_ident(accessor_name.clone())?;
+
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
-                    view_name: accessor_name.clone(),
+                    view_name: name.as_raw().clone(),
                     position,
                     arg_name,
                 })?;
@@ -718,15 +720,13 @@ impl<'a> ModuleValidatorV10<'a> {
 
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
-                view_name: accessor_name.clone(),
+                view_name: name.as_raw().clone(),
             },
             &return_type_for_generate_input,
         );
 
-        let name = self.core.resolve_function_ident(accessor_name.clone())?;
-
         let mut view_validator = ViewValidator::new(
-            accessor_name.clone(),
+            name.as_raw().clone(),
             product_type_ref,
             product_type,
             &params,
