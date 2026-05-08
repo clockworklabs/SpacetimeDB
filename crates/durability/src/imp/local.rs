@@ -11,10 +11,12 @@ use futures::FutureExt as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
 use scopeguard::ScopeGuard;
+#[cfg(any(test, feature = "test"))]
+use spacetimedb_commitlog::repo::Memory;
 use spacetimedb_commitlog::{
     error,
     payload::Txdata,
-    repo::{Fs, Repo, RepoWithSizeOnDisk, RepoWithoutLockFile},
+    repo::{Fs, Repo, RepoWithSizeOnDisk},
     Commit, Commitlog, Decoder, Encode, Transaction,
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
@@ -142,7 +144,11 @@ impl Repo for LockedFsRepo {
     type SegmentWriter = <Fs as Repo>::SegmentWriter;
     type SegmentReader = <Fs as Repo>::SegmentReader;
 
-    fn create_segment(&self, offset: u64, header: spacetimedb_commitlog::segment::Header) -> io::Result<Self::SegmentWriter> {
+    fn create_segment(
+        &self,
+        offset: u64,
+        header: spacetimedb_commitlog::segment::Header,
+    ) -> io::Result<Self::SegmentWriter> {
         self.repo.create_segment(offset, header)
     }
 
@@ -170,7 +176,11 @@ impl Repo for LockedFsRepo {
         self.repo.existing_offsets()
     }
 
-    fn create_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<spacetimedb_commitlog::repo::TxOffsetIndexMut> {
+    fn create_offset_index(
+        &self,
+        offset: TxOffset,
+        cap: u64,
+    ) -> io::Result<spacetimedb_commitlog::repo::TxOffsetIndexMut> {
         self.repo.create_offset_index(offset, cap)
     }
 
@@ -216,6 +226,11 @@ where
     T: Encode + Send + Sync + 'static,
     R: Repo + Send + Sync + 'static,
 {
+    pub fn open_with_repo(repo: R, rt: tokio::runtime::Handle, opts: Options) -> Result<Self, OpenError> {
+        info!("open local durability");
+        let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
+        Self::open_inner(clog, rt, opts)
+    }
     fn open_inner(
         clog: Arc<Commitlog<Txdata<T>, R>>,
         rt: tokio::runtime::Handle,
@@ -250,19 +265,6 @@ where
     /// Obtain a read-only copy of the durable state that implements [History].
     pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T, R> {
         self.clog.clone()
-    }
-}
-
-impl<T, R> Local<T, R>
-where
-    T: Encode + Send + Sync + 'static,
-    R: RepoWithoutLockFile + Send + Sync + 'static,
-{
-    /// Create a [`Local`] instance backed by the provided commitlog repo.
-    pub fn open_with_repo(repo: R, rt: tokio::runtime::Handle, opts: Options) -> Result<Self, OpenError> {
-        info!("open local durability");
-        let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
-        Self::open_inner(clog, rt, opts)
     }
 }
 

@@ -149,15 +149,6 @@ pub trait RepoWithSizeOnDisk: Repo {
     fn size_on_disk(&self) -> io::Result<SizeOnDisk>;
 }
 
-/// Marker for repos that do not require an external lock file.
-///
-/// Durability implementations can use this to expose repo-backed opening
-/// only for storage backends where skipping the filesystem `db.lock` cannot
-/// violate single-writer safety.
-pub trait RepoWithoutLockFile: Repo {}
-
-impl<T> RepoWithoutLockFile for &T where T: RepoWithoutLockFile {}
-
 impl<T> RepoWithSizeOnDisk for &T
 where
     T: RepoWithSizeOnDisk,
@@ -166,10 +157,6 @@ where
         T::size_on_disk(self)
     }
 }
-
-#[cfg(any(test, feature = "test"))]
-impl RepoWithoutLockFile for Memory {}
-
 impl<T: Repo> Repo for &T {
     type SegmentWriter = T::SegmentWriter;
     type SegmentReader = T::SegmentReader;
