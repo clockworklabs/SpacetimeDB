@@ -19,7 +19,7 @@ start_window() {
   local name=$1; shift
   local cmd="$*"
   tmux kill-window -t "${SESSION}:${name}" 2>/dev/null || true
-  tmux new-window -t "${SESSION}" -n "${name}" \
+  tmux new-window -a -t "${SESSION}:" -n "${name}" \
     "bash -c '${cmd}; rc=\$?; echo; echo \"[${name} exited rc=\$rc]\"; read'"
 }
 
