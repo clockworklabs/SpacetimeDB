@@ -5,19 +5,22 @@ Reads timeSeries arrays from runs/test-1-*.json (added by core/runner.ts)
 and emits a stacked TPS + p99-latency chart per alpha.
 
 Usage:
-  python3 plot-bench.py [alpha] [outfile]
+  python3 plot-bench.py [alpha] [outfile] [--runs-dir DIR] [--exclude conn1,conn2]
 
 Examples:
   python3 plot-bench.py 0
   python3 plot-bench.py 1.5
   python3 plot-bench.py 1.5 contended.png
+  python3 plot-bench.py 1.5 no-stdb.png --exclude spacetimedb
+  python3 plot-bench.py 1.5 chart.png --runs-dir D:/keynote-2-runs
 """
+import argparse
 import json
 import sys
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-RUNS_DIR = Path.home() / "SpacetimeDB/templates/keynote-2/runs"
+DEFAULT_RUNS_DIR = Path.home() / "SpacetimeDB/templates/keynote-2/runs"
 
 
 def load_run(path):
@@ -31,15 +34,18 @@ def load_run(path):
     }
 
 
-def plot(runs, alpha, outfile):
+def plot(runs, alpha, outfile, exclude=None):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
 
     matched = [r for r in runs if r["alpha"] == alpha and r["ts"]]
+    if exclude:
+        matched = [r for r in matched if r["connector"] not in exclude]
+
     if not matched:
         print(f"no runs with timeSeries data found at alpha={alpha}", file=sys.stderr)
         sys.exit(1)
 
-    # one line per run; group by connector for color reuse
+    # one line per run; group by connector for legend de-dup
     seen_connectors = {}
     for r in matched:
         ts = r["ts"]
@@ -47,7 +53,7 @@ def plot(runs, alpha, outfile):
 
         label = r["connector"]
         if label in seen_connectors:
-            label = None  # avoid duplicate legend entries when there are multiple runs
+            label = None
         else:
             seen_connectors[r["connector"]] = True
 
@@ -55,8 +61,12 @@ def plot(runs, alpha, outfile):
         ax2.plot(x, [p["p99_ms"] for p in ts], label=label, linewidth=2, alpha=0.85)
 
     contention = "uncontended" if alpha == 0 else f"alpha={alpha}"
+    title = f"alpha={alpha}  ({contention})"
+    if exclude:
+        title += f"  (excluded: {','.join(exclude)})"
+
     ax1.set_ylabel("TPS")
-    ax1.set_title(f"alpha={alpha}  ({contention})")
+    ax1.set_title(title)
     ax1.legend(loc="upper right")
     ax1.grid(True, alpha=0.3)
 
@@ -72,8 +82,17 @@ def plot(runs, alpha, outfile):
 
 
 if __name__ == "__main__":
-    alpha = float(sys.argv[1]) if len(sys.argv) > 1 else 0
-    outfile = sys.argv[2] if len(sys.argv) > 2 else f"bench-alpha{alpha}.png"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("alpha", nargs="?", type=float, default=0)
+    parser.add_argument("outfile", nargs="?", default=None)
+    parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR,
+                        help="directory containing test-1-*.json files")
+    parser.add_argument("--exclude", default="",
+                        help="comma-separated connectors to skip")
+    args = parser.parse_args()
 
-    runs = [load_run(p) for p in sorted(RUNS_DIR.glob("test-1-*.json"))]
-    plot(runs, alpha, outfile)
+    outfile = args.outfile or f"bench-alpha{args.alpha}.png"
+    exclude = [c.strip() for c in args.exclude.split(",") if c.strip()]
+
+    runs = [load_run(p) for p in sorted(args.runs_dir.glob("test-1-*.json"))]
+    plot(runs, args.alpha, outfile, exclude=exclude)

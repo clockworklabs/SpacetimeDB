@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Usage: run-all-benches.sh [RUNS] [SECONDS] [CONNECTORS_CSV] [ALPHAS_CSV]
+# Usage: run-all-benches.sh [RUNS] [SECONDS] [CONNECTORS_CSV] [ALPHAS_CSV] [OUT_NAME]
 #
 # Defaults:
 #   RUNS=5  SECONDS=60  CONNECTORS=all  ALPHAS=0,1.5
+#   OUT_NAME=auto-generated timestamp + tags
 #
-# Examples:
-#   run-all-benches.sh 3 60 sqlite_rpc          # 3 runs x 60s, sqlite, both alphas
-#   run-all-benches.sh 3 60 sqlite_rpc 1.5      # 3 runs x 60s, sqlite, alpha=1.5 only
-#   run-all-benches.sh 3 60 sqlite_rpc,bun 0    # alpha=0 only
-#   run-all-benches.sh 1 10 convex 0.5,1.0,1.5  # alpha sweep
+# Output goes to /tmp/<OUT_NAME>.tsv  (or /tmp/bench-<timestamp>-<tags>.tsv if not specified)
+# A symlink /tmp/bench-results.tsv points at the most recent run.
 
 set -uo pipefail
 cd ~/SpacetimeDB/templates/keynote-2
@@ -17,15 +15,25 @@ RUNS=${1:-5}
 SECS=${2:-60}
 CONNECTORS_CSV=${3:-sqlite_rpc,postgres_rpc,cockroach_rpc,bun,supabase_rpc,convex}
 ALPHAS_CSV=${4:-0,1.5}
+OUT_NAME=${5:-}
 
-OUT=/tmp/bench-results.tsv
-LOG=/tmp/bench-progress.log
+if [ -z "$OUT_NAME" ]; then
+  TS=$(date +%Y%m%dT%H%M%S)
+  CONN_TAG=$(echo "$CONNECTORS_CSV" | tr ',' '-')
+  ALPHA_TAG=$(echo "$ALPHAS_CSV" | tr ',' '-')
+  OUT_NAME="bench-${TS}-${CONN_TAG}-a${ALPHA_TAG}-${RUNS}x${SECS}s"
+fi
+
+OUT="/tmp/${OUT_NAME}.tsv"
+LOG="/tmp/${OUT_NAME}.log"
+LATEST_LINK="/tmp/bench-results.tsv"
 : > "$LOG"
 
 CONVEX_URL=$(grep '^CONVEX_URL=' convex-app/.env.local 2>/dev/null | cut -d= -f2)
 [ -z "$CONVEX_URL" ] && CONVEX_URL=http://127.0.0.1:3210
 
 echo "config: runs=$RUNS seconds=$SECS connectors=$CONNECTORS_CSV alphas=$ALPHAS_CSV convex=$CONVEX_URL" | tee -a "$LOG"
+echo "out: $OUT" | tee -a "$LOG"
 
 printf 'connector\talpha\trun\ttps\tsamples\tp50_ms\tp95_ms\tp99_ms\tcollision_rate\tverify_ok\tverify_total\tverify_changed\n' > "$OUT"
 
@@ -92,7 +100,10 @@ for c in "${CONNECTORS[@]}"; do
   done
 done
 
+ln -sfn "$OUT" "$LATEST_LINK"
+
 echo
 echo "=== DONE ==="
 echo "Results: $OUT"
 echo "Log:     $LOG"
+echo "Latest symlink: $LATEST_LINK -> $OUT"
