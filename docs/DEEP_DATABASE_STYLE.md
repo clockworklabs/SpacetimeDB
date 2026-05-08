@@ -69,7 +69,7 @@ Thread-per-core is the model that makes this possible. It gives us locality, pre
 
 To control our failure modes, we should enforce no memory allocation inside the core. This is not absolute. Primitives like pages can be allocated outside the core and passed in. But the rule is that the deep core does not allocate.
 
-The natural way to express this in Rust is to be generic over an allocator, with a separate allocator per resource type. That way each resource has its own bounded budget that we can reason about independently. This is intrusive in the datastore, and we expect it to be. We cannot reach the failure-mode control we want without that intrusion: the same property that makes an allocator visible to the type system is what lets us reason about exhaustion at every call site.
+This is intrusive in the datastore, and we expect it to be. We cannot reach the failure-mode control we want without that intrusion. These goals and guidelines exist precisely so that resource exhaustion is something we can reason about at every call site, not something the system encounters silently.
 
 This naturally precludes Tokio inside the core, which is desirable anyway. It serves principles 1, 2, and 3 simultaneously.
 
