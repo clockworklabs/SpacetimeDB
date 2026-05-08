@@ -144,6 +144,11 @@ pub trait Repo: Clone + fmt::Display {
     }
 }
 
+/// Capability trait for repos that can report storage usage.
+pub trait RepoWithSizeOnDisk: Repo {
+    fn size_on_disk(&self) -> io::Result<SizeOnDisk>;
+}
+
 /// Marker for repos that do not require an external lock file.
 ///
 /// Durability implementations can use this to expose repo-backed opening
@@ -152,6 +157,11 @@ pub trait Repo: Clone + fmt::Display {
 pub trait RepoWithoutLockFile: Repo {}
 
 impl<T: RepoWithoutLockFile> RepoWithoutLockFile for &T {}
+impl<T: RepoWithSizeOnDisk> RepoWithSizeOnDisk for &T {
+    fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        T::size_on_disk(self)
+    }
+}
 
 #[cfg(any(test, feature = "test"))]
 impl RepoWithoutLockFile for Memory {}

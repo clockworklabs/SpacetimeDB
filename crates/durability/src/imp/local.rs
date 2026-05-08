@@ -14,7 +14,7 @@ use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{
     error,
     payload::Txdata,
-    repo::{Fs, Repo, RepoWithoutLockFile},
+    repo::{Fs, Repo, RepoWithSizeOnDisk, RepoWithoutLockFile},
     Commit, Commitlog, Decoder, Encode, Transaction,
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
@@ -88,7 +88,7 @@ pub enum OpenError {
 ///
 /// Note, however, that instantiating `T` to a different type may require to
 /// change the log format version!
-pub struct Local<T, R = Fs>
+pub struct Local<T, R = LockedFsRepo>
 where
     R: Repo,
 {
@@ -114,7 +114,82 @@ where
     actor: Mutex<Option<JoinHandle<()>>>,
 }
 
-impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
+/// Commitlog repo backed by [`Fs`] and protected by a [`LockedFile`].
+#[derive(Clone, Debug)]
+pub struct LockedFsRepo {
+    repo: Fs,
+    #[allow(unused)]
+    lock: Arc<LockedFile>,
+}
+
+impl LockedFsRepo {
+    pub fn open(replica_dir: ReplicaDir, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> Result<Self, OpenError> {
+        // We use the `db.lock` file for historical reasons and to keep
+        // compatibility with existing standalone layouts.
+        let lock = LockedFile::lock(replica_dir.0.join("db.lock")).map(Arc::new)?;
+        let repo = Fs::new(replica_dir.commit_log(), on_new_segment)?;
+        Ok(Self { repo, lock })
+    }
+}
+
+impl std::fmt::Display for LockedFsRepo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.repo.fmt(f)
+    }
+}
+
+impl Repo for LockedFsRepo {
+    type SegmentWriter = <Fs as Repo>::SegmentWriter;
+    type SegmentReader = <Fs as Repo>::SegmentReader;
+
+    fn create_segment(&self, offset: u64, header: spacetimedb_commitlog::segment::Header) -> io::Result<Self::SegmentWriter> {
+        self.repo.create_segment(offset, header)
+    }
+
+    fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
+        self.repo.open_segment_reader(offset)
+    }
+
+    fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
+        self.repo.open_segment_writer(offset)
+    }
+
+    fn segment_file_path(&self, offset: u64) -> Option<String> {
+        self.repo.segment_file_path(offset)
+    }
+
+    fn remove_segment(&self, offset: u64) -> io::Result<()> {
+        self.repo.remove_segment(offset)
+    }
+
+    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+        self.repo.compress_segment(offset)
+    }
+
+    fn existing_offsets(&self) -> io::Result<Vec<u64>> {
+        self.repo.existing_offsets()
+    }
+
+    fn create_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<spacetimedb_commitlog::repo::TxOffsetIndexMut> {
+        self.repo.create_offset_index(offset, cap)
+    }
+
+    fn remove_offset_index(&self, offset: TxOffset) -> io::Result<()> {
+        self.repo.remove_offset_index(offset)
+    }
+
+    fn get_offset_index(&self, offset: TxOffset) -> io::Result<spacetimedb_commitlog::repo::TxOffsetIndex> {
+        self.repo.get_offset_index(offset)
+    }
+}
+
+impl RepoWithSizeOnDisk for LockedFsRepo {
+    fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        self.repo.size_on_disk()
+    }
+}
+
+impl<T: Encode + Send + Sync + 'static> Local<T, LockedFsRepo> {
     /// Create a [`Local`] instance at the `replica_dir`.
     ///
     /// `replica_dir` must already exist.
@@ -130,17 +205,9 @@ impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
         on_new_segment: Option<Arc<OnNewSegmentFn>>,
     ) -> Result<Self, OpenError> {
         info!("open local durability");
-
-        // We could just place a lock on the commitlog directory,
-        // yet for backwards-compatibility, we keep using the `db.lock` file.
-        let lock = LockedFile::lock(replica_dir.0.join("db.lock"))?;
-
-        let clog = Arc::new(Commitlog::open(
-            replica_dir.commit_log(),
-            opts.commitlog,
-            on_new_segment,
-        )?);
-        Self::open_inner(clog, rt, opts, Some(lock))
+        let repo = LockedFsRepo::open(replica_dir, on_new_segment)?;
+        let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
+        Self::open_inner(clog, rt, opts)
     }
 }
 
@@ -153,7 +220,6 @@ where
         clog: Arc<Commitlog<Txdata<T>, R>>,
         rt: tokio::runtime::Handle,
         opts: Options,
-        lock: Option<LockedFile>,
     ) -> Result<Self, OpenError> {
         let queue_capacity = opts.queue_capacity();
         let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
@@ -168,8 +234,6 @@ where
                 queue_depth: queue_depth.clone(),
 
                 batch_capacity: opts.batch_capacity,
-
-                lock,
             }
             .run(txdata_rx),
         );
@@ -198,7 +262,7 @@ where
     pub fn open_with_repo(repo: R, rt: tokio::runtime::Handle, opts: Options) -> Result<Self, OpenError> {
         info!("open local durability");
         let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
-        Self::open_inner(clog, rt, opts, None)
+        Self::open_inner(clog, rt, opts)
     }
 }
 
@@ -229,7 +293,7 @@ where
     }
 }
 
-impl<T: Send + Sync + 'static> Local<T, Fs> {
+impl<T: Send + Sync + 'static> Local<T, LockedFsRepo> {
     /// Get the size on disk of the underlying [`Commitlog`].
     pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         self.clog.size_on_disk()
@@ -246,9 +310,6 @@ where
     queue_depth: Arc<AtomicU64>,
 
     batch_capacity: NonZeroUsize,
-
-    #[allow(unused)]
-    lock: Option<LockedFile>,
 }
 
 impl<T, R> Actor<T, R>
