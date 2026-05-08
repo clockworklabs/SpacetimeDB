@@ -240,6 +240,8 @@ enum Error {
     },
     #[error("encountered failed transaction: {reason}")]
     TransactionFailure { reason: Box<str> },
+    #[error("encountered error in initial subscribe: {reason}")]
+    SubscribeFailure { reason: Box<str> },
     #[error("error formatting response: {source:#}")]
     Reformat {
         #[source]
@@ -295,6 +297,9 @@ where
                 }
                 break;
             }
+            ws_v1::ServerMessage::SubscriptionError(error) => {
+                return Err(Error::SubscribeFailure { reason: error.error });
+            }
             ws_v1::ServerMessage::TransactionUpdate(ws_v1::TransactionUpdate { status, .. }) => {
                 return Err(match status {
                     ws_v1::UpdateStatus::Failed(msg) => Error::TransactionFailure { reason: msg },
@@ -340,6 +345,9 @@ where
                 return Err(Error::Protocol {
                     details: "received a second initial subscription update",
                 })
+            }
+            ws_v1::ServerMessage::SubscriptionError(error) => {
+                return Err(Error::SubscribeFailure { reason: error.error });
             }
             ws_v1::ServerMessage::TransactionUpdateLight(ws_v1::TransactionUpdateLight { update, .. })
             | ws_v1::ServerMessage::TransactionUpdate(ws_v1::TransactionUpdate {
