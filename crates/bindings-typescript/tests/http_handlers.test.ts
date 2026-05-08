@@ -71,12 +71,16 @@ describe('http handler exports', async () => {
         httpHandlers: [] as Array<{ sourceName: string }>,
         explicitNames: { entries: [] as unknown[] },
       },
+      existingHttpHandlers: new Set<string>(),
       httpHandlers: [] as Array<unknown>,
       httpHandlerExports: new Map<object, string>(),
       defineHttpHandler(name: string) {
-        if (this.httpHandlers.some(() => false)) {
-          throw new TypeError(name);
+        if (this.existingHttpHandlers.has(name)) {
+          throw new TypeError(
+            `There is already an HTTP handler with the name '${name}'`
+          );
         }
+        this.existingHttpHandlers.add(name);
       },
     };
   }
@@ -107,6 +111,22 @@ describe('http handler exports', async () => {
       first[registerExport](ctx as never, 'first');
       second[registerExport](ctx as never, 'second');
     }).not.toThrow();
+  });
+
+  it('rejects duplicate exported handler names', () => {
+    const ctx = makeCtx();
+    const first = makeHttpHandlerExport(ctx as never, undefined, () => {
+      return new SyncResponse('first');
+    });
+    const second = makeHttpHandlerExport(ctx as never, undefined, () => {
+      return new SyncResponse('second');
+    });
+
+    first[registerExport](ctx as never, 'hello');
+
+    expect(() => second[registerExport](ctx as never, 'hello')).toThrow(
+      "There is already an HTTP handler with the name 'hello'"
+    );
   });
 
   it('records the originating schema context on the export', () => {
