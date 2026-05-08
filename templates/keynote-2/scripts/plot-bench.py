@@ -5,7 +5,9 @@ Reads timeSeries arrays from runs/test-1-*.json (added by core/runner.ts)
 and emits a stacked TPS + latency chart per alpha.
 
 Usage:
-  python3 plot-bench.py [alpha] [outfile] [--runs-dir DIR] [--exclude conn1,conn2] [--latency p50|p95|p99]
+  python3 plot-bench.py [alpha] [outfile] [--runs-dir DIR] [--exclude conn1,conn2]
+                        [--latency p50|p95|p99] [--metric both|tps|latency]
+                        [--tps-scale linear|log|symlog] [--latency-scale log|linear|symlog]
 
 Examples:
   python3 plot-bench.py 0
@@ -13,6 +15,7 @@ Examples:
   python3 plot-bench.py 1.5 contended.png
   python3 plot-bench.py 1.5 no-stdb.png --exclude spacetimedb
   python3 plot-bench.py 1.5 chart.png --runs-dir D:/keynote-2-runs --latency p95
+  python3 plot-bench.py 1.5 chart.png --tps-scale log --latency-scale linear
 """
 import argparse
 import json
@@ -34,7 +37,8 @@ def load_run(path):
     }
 
 
-def plot(runs, alpha, outfile, exclude=None, latency="p99", metric="both"):
+def plot(runs, alpha, outfile, exclude=None, latency="p99", metric="both",
+         tps_scale="linear", latency_scale="log"):
     matched = [r for r in runs if r["alpha"] == alpha and r["ts"]]
     if exclude:
         matched = [r for r in matched if r["connector"] not in exclude]
@@ -80,9 +84,15 @@ def plot(runs, alpha, outfile, exclude=None, latency="p99", metric="both"):
     for i, (ax, key, ylabel) in enumerate(axes):
         ax.set_ylabel(ylabel)
         ax.legend(loc="upper right" if key == "tps" else "upper left")
-        ax.grid(True, alpha=0.3)
-        if key != "tps":
+        ax.grid(True, alpha=0.3, which="both")
+
+        scale = tps_scale if key == "tps" else latency_scale
+        if scale == "log":
             ax.set_yscale("log")
+        elif scale == "symlog":
+            ax.set_yscale("symlog", linthresh=1)
+        # "linear" leaves the matplotlib default
+
         if i == 0:
             ax.set_title(title)
 
@@ -105,6 +115,10 @@ if __name__ == "__main__":
                         help="which latency percentile to plot")
     parser.add_argument("--metric", choices=["both", "tps", "latency"], default="both",
                         help="show TPS only, latency only, or both panels")
+    parser.add_argument("--tps-scale", choices=["linear", "log", "symlog"], default="linear",
+                        help="y-axis scale for the TPS panel")
+    parser.add_argument("--latency-scale", choices=["log", "linear", "symlog"], default="log",
+                        help="y-axis scale for the latency panel")
     args = parser.parse_args()
 
     # If outfile is just a filename (not a path), put it in the runs dir.
@@ -118,4 +132,13 @@ if __name__ == "__main__":
     exclude = [c.strip() for c in args.exclude.split(",") if c.strip()]
 
     runs = [load_run(p) for p in sorted(args.runs_dir.glob("test-1-*.json"))]
-    plot(runs, args.alpha, str(outfile_path), exclude=exclude, latency=args.latency, metric=args.metric)
+    plot(
+        runs,
+        args.alpha,
+        str(outfile_path),
+        exclude=exclude,
+        latency=args.latency,
+        metric=args.metric,
+        tps_scale=args.tps_scale,
+        latency_scale=args.latency_scale,
+    )
