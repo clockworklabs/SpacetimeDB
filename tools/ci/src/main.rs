@@ -192,7 +192,6 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-
 fn run_publish_checks() -> Result<()> {
     cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
     cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
