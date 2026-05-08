@@ -34,7 +34,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "891477e0c6a8957309ee5c45a6368af3ae14bb510732d2684ffa19af310920f9"
 dependencies = [
- "getrandom 0.2.16",
+ "getrandom 0.2.13",
  "once_cell",
  "version_check",
 ]
@@ -275,6 +275,12 @@ dependencies = [
  "quote",
  "syn 2.0.107",
 ]
+
+[[package]]
+name = "async-task"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
 
 [[package]]
 name = "async-trait"
@@ -2551,9 +2557,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.16"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
+checksum = "a06fddc2749e0528d2813f95e050e87e52c8cbbae56223b9babf73b3e53b0cc6"
 dependencies = [
  "cfg-if",
  "js-sys",
@@ -6113,7 +6119,7 @@ version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
- "getrandom 0.2.16",
+ "getrandom 0.2.13",
 ]
 
 [[package]]
@@ -6187,7 +6193,7 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
- "getrandom 0.2.16",
+ "getrandom 0.2.13",
  "libredox",
  "thiserror 1.0.69",
 ]
@@ -6416,7 +6422,7 @@ checksum = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
 dependencies = [
  "cc",
  "cfg-if",
- "getrandom 0.2.16",
+ "getrandom 0.2.13",
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
@@ -7649,7 +7655,7 @@ checksum = "db18cb19c7499ba4a65b1504442179a7e4aba487dc35978d90966c5ca02ee16b"
 dependencies = [
  "bytemuck",
  "derive_more 0.99.20",
- "getrandom 0.2.16",
+ "getrandom 0.2.13",
  "log",
  "rand 0.8.5",
  "scoped-tls",
@@ -7668,7 +7674,7 @@ dependencies = [
  "bytemuck",
  "bytes",
  "derive_more 0.99.20",
- "getrandom 0.2.16",
+ "getrandom 0.2.13",
  "http 1.3.1",
  "insta",
  "log",
@@ -8093,6 +8099,7 @@ dependencies = [
  "spacetimedb-physical-plan",
  "spacetimedb-primitives 2.2.0",
  "spacetimedb-query",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
@@ -8190,6 +8197,7 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.2.0",
  "tempfile",
  "thiserror 1.0.69",
@@ -8456,6 +8464,19 @@ name = "spacetimedb-query-builder"
 version = "2.2.0"
 dependencies = [
  "spacetimedb-lib 2.2.0",
+]
+
+[[package]]
+name = "spacetimedb-runtime"
+version = "2.2.0"
+dependencies = [
+ "anyhow",
+ "async-task",
+ "futures",
+ "futures-util",
+ "libc",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

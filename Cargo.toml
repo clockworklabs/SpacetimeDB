@@ -25,6 +25,7 @@ members = [
   "crates/physical-plan",
   "crates/primitives",
   "crates/query",
+  "crates/runtime",
   "crates/sats",
   "crates/schema",
   "crates/smoketests",
@@ -138,6 +139,7 @@ spacetimedb-pg = { path = "crates/pg", version = "=2.2.0" }
 spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.2.0" }
 spacetimedb-primitives = { path = "crates/primitives", version = "=2.2.0" }
 spacetimedb-query = { path = "crates/query", version = "=2.2.0" }
+spacetimedb-runtime = { path = "crates/runtime", version = "=2.2.0", default-features = false }
 spacetimedb-sats = { path = "crates/sats", version = "=2.2.0" }
 spacetimedb-schema = { path = "crates/schema", version = "=2.2.0" }
 spacetimedb-standalone = { path = "crates/standalone", version = "=2.2.0" }
@@ -388,7 +390,7 @@ features = [
 ]
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)', 'cfg(simulation)'] }
 
 [workspace.lints.clippy]
 # FIXME: we should work on this lint incrementally

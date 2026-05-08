@@ -10,7 +10,6 @@ use std::{
 use futures::FutureExt as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
-use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{
     error,
     payload::Txdata,
@@ -19,11 +18,9 @@ use spacetimedb_commitlog::{
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
+use spacetimedb_runtime::RuntimeDispatch;
 use thiserror::Error;
-use tokio::{
-    sync::watch,
-    task::{spawn_blocking, JoinHandle},
-};
+use tokio::sync::{oneshot, watch};
 use tracing::{instrument, Span};
 
 use crate::{Close, Durability, DurableOffset, History, PreparedTx, TxOffset};
@@ -109,9 +106,9 @@ where
     /// This is mainly for observability purposes, and can thus be updated with
     /// relaxed memory ordering.
     queue_depth: Arc<AtomicU64>,
-    /// [JoinHandle] for the actor task. Contains `None` if already cancelled
-    /// (via [Durability::close]).
-    actor: Mutex<Option<JoinHandle<()>>>,
+    /// Completion notification for the background actor. Contains `None` once
+    /// consumed by [`Durability::close`].
+    actor_done: Mutex<Option<oneshot::Receiver<()>>>,
 }
 
 impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
@@ -119,13 +116,13 @@ impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
     ///
     /// `replica_dir` must already exist.
     ///
-    /// Background tasks are spawned onto the provided tokio runtime.
+    /// Background tasks are spawned onto the provided runtime.
     ///
     /// We will send a message down the `on_new_segment` channel whenever we begin a new commitlog segment.
     /// This is used to capture a snapshot each new segment.
     pub fn open(
         replica_dir: ReplicaDir,
-        rt: tokio::runtime::Handle,
+        runtime: RuntimeDispatch,
         opts: Options,
         on_new_segment: Option<Arc<OnNewSegmentFn>>,
     ) -> Result<Self, OpenError> {
@@ -140,7 +137,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
             opts.commitlog,
             on_new_segment,
         )?);
-        Self::open_inner(clog, rt, opts, Some(lock))
+        Self::open_inner(clog, runtime, opts, Some(lock))
     }
 }
 
@@ -151,7 +148,7 @@ where
 {
     fn open_inner(
         clog: Arc<Commitlog<Txdata<T>, R>>,
-        rt: tokio::runtime::Handle,
+        runtime: RuntimeDispatch,
         opts: Options,
         lock: Option<LockedFile>,
     ) -> Result<Self, OpenError> {
@@ -159,19 +156,17 @@ where
         let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
-
-        let actor = rt.spawn(
+        let (actor_done_tx, actor_done_rx) = oneshot::channel();
+        runtime.spawn(
             Actor {
                 clog: clog.clone(),
-
                 durable_offset: durable_tx,
                 queue_depth: queue_depth.clone(),
-
                 batch_capacity: opts.batch_capacity,
-
-                lock,
+                runtime: runtime.clone(),
+                _lock: lock,
             }
-            .run(txdata_rx),
+            .run(txdata_rx, actor_done_tx),
         );
 
         Ok(Self {
@@ -179,7 +174,7 @@ where
             durable_offset: durable_rx,
             queue,
             queue_depth,
-            actor: Mutex::new(Some(actor)),
+            actor_done: Mutex::new(Some(actor_done_rx)),
         })
     }
 
@@ -195,10 +190,10 @@ where
     R: RepoWithoutLockFile + Send + Sync + 'static,
 {
     /// Create a [`Local`] instance backed by the provided commitlog repo.
-    pub fn open_with_repo(repo: R, rt: tokio::runtime::Handle, opts: Options) -> Result<Self, OpenError> {
+    pub fn open_with_repo(repo: R, runtime: RuntimeDispatch, opts: Options) -> Result<Self, OpenError> {
         info!("open local durability");
         let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
-        Self::open_inner(clog, rt, opts, None)
+        Self::open_inner(clog, runtime, opts, None)
     }
 }
 
@@ -246,9 +241,9 @@ where
     queue_depth: Arc<AtomicU64>,
 
     batch_capacity: NonZeroUsize,
+    runtime: RuntimeDispatch,
 
-    #[allow(unused)]
-    lock: Option<LockedFile>,
+    _lock: Option<LockedFile>,
 }
 
 impl<T, R> Actor<T, R>
@@ -257,7 +252,7 @@ where
     R: Repo + Send + Sync + 'static,
 {
     #[instrument(name = "durability::local::actor", skip_all)]
-    async fn run(self, transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>) {
+    async fn run(self, transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>, done: oneshot::Sender<()>) {
         info!("starting durability actor");
 
         let mut tx_buf = Vec::with_capacity(self.batch_capacity.get());
@@ -281,14 +276,14 @@ where
             let clog = self.clog.clone();
             let ready_len = tx_buf.len();
             self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
-            tx_buf = spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
+            let runtime = self.runtime.clone();
+            tx_buf = runtime.spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
                 for tx in tx_buf.drain(..) {
                     clog.commit([tx.into_transaction()])?;
                 }
                 Ok(tx_buf)
             })
             .await
-            .expect("commitlog write panicked")
             .expect("commitlog write failed");
             if self.flush_and_sync().await.is_err() {
                 sync_on_exit = false;
@@ -305,6 +300,7 @@ where
         }
 
         info!("exiting durability actor");
+        let _ = done.send(());
     }
 
     #[instrument(skip_all)]
@@ -318,12 +314,13 @@ where
 
         let clog = self.clog.clone();
         let span = Span::current();
-        spawn_blocking(move || {
+        let runtime = self.runtime.clone();
+        runtime
+            .spawn_blocking(move || {
             let _span = span.enter();
             clog.flush_and_sync()
         })
         .await
-        .expect("commitlog flush-and-sync blocking task panicked")
         .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
         .inspect(|maybe_offset| {
             if let Some(new_offset) = maybe_offset {
@@ -356,29 +353,14 @@ where
         info!("close local durability");
 
         let durable_offset = self.durable_tx_offset();
-        let maybe_actor = self.actor.lock().unwrap().take();
-        // Abort actor if shutdown future is dropped.
-        let abort = scopeguard::guard(
-            maybe_actor.as_ref().map(|join_handle| join_handle.abort_handle()),
-            |maybe_abort_handle| {
-                if let Some(abort_handle) = maybe_abort_handle {
-                    warn!("close future dropped, aborting durability actor");
-                    abort_handle.abort();
-                }
-            },
-        );
+        let maybe_actor_done = self.actor_done.lock().unwrap().take();
         self.queue.close();
         async move {
-            if let Some(actor) = maybe_actor
-                && let Err(e) = actor.await
+            if let Some(actor_done) = maybe_actor_done
+                && actor_done.await.is_err()
             {
-                // Will print "durability actor: task was cancelled"
-                // or "durability actor: task panicked [...]"
-                warn!("durability actor: {e}");
+                warn!("durability actor completion signal dropped");
             }
-            // Don't abort if the actor completed.
-            let _ = ScopeGuard::into_inner(abort);
-
             durable_offset.last_seen()
         }
         .boxed()

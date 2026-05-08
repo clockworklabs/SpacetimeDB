@@ -56,4 +56,9 @@ mod testing {
             future::ready(*self.durable_offset.borrow()).boxed()
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+    }
 }
