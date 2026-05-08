@@ -143,6 +143,41 @@ export async function runOne({
     let completedWithinWindow = 0;
     let completedTotal = 0;
 
+    // === per-second time-series tracking ===
+    const intervalMs = 1000;
+    const series: {
+      tSec: number;
+      tps: number;
+      p50_ms: number;
+      p95_ms: number;
+      p99_ms: number;
+      samples: number;
+    }[] = [];
+    const intervalHist = hdr.build({
+      lowestDiscernibleValue: 1,
+      highestTrackableValue: 10_000_000_000,
+      numberOfSignificantValueDigits: 3,
+    });
+    let intervalCount = 0;
+
+    const intervalTimer = setInterval(() => {
+      const now = performance.now();
+      // Stop recording once we've passed the test window
+      if (now > endAt) return;
+      const elapsedSec = (now - start) / 1000;
+      const samples = intervalCount;
+      series.push({
+        tSec: Math.round(elapsedSec * 10) / 10,
+        tps: samples * (1000 / intervalMs),
+        p50_ms: samples ? intervalHist.getValueAtPercentile(50) / 1000 : 0,
+        p95_ms: samples ? intervalHist.getValueAtPercentile(95) / 1000 : 0,
+        p99_ms: samples ? intervalHist.getValueAtPercentile(99) / 1000 : 0,
+        samples,
+      });
+      intervalCount = 0;
+      intervalHist.reset();
+    }, intervalMs);
+
     // Track when workers reach end of test window (before waiting for in-flight ops)
     let workersReachedEnd = 0;
     let resolveTestWindowEnd: () => void;
@@ -223,7 +258,10 @@ export async function runOne({
             completedTotal++;
             if (t1 <= endAt) {
               completedWithinWindow++;
-              hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
+              const latencyUs = Math.max(1, Math.round((t1 - t0) * 1e3));
+              hist.recordValue(latencyUs);
+              intervalHist.recordValue(latencyUs);
+              intervalCount++;
             }
           }
         }
@@ -254,7 +292,10 @@ export async function runOne({
             completedTotal++;
             if (t1 <= endAt) {
               completedWithinWindow++;
-              hist.recordValue(Math.max(1, Math.round((t1 - t0) * 1e3)));
+              const latencyUs = Math.max(1, Math.round((t1 - t0) * 1e3));
+              hist.recordValue(latencyUs);
+              intervalHist.recordValue(latencyUs);
+              intervalCount++;
             }
           } catch (err) {
             if (logErrors) {
@@ -317,12 +358,15 @@ export async function runOne({
     // Now wait for all workers to fully complete (including in-flight ops)
     await Promise.all(workerPromises);
 
-    return { start, completedWithinWindow, completedTotal };
+    clearInterval(intervalTimer);
+
+    return { start, completedWithinWindow, completedTotal, series };
   };
 
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
-  const { start, completedWithinWindow, completedTotal } = await run(seconds);
+  const { start, completedWithinWindow, completedTotal, series } =
+    await run(seconds);
 
   console.log(
     `[${connector.name}] All workers finished (including in-flight ops)`,
@@ -397,5 +441,6 @@ export async function runOne({
     collision_ops: c.total,
     collision_count: c.collisions,
     collision_rate: c.collisionRate,
+    timeSeries: series,
   };
 }
