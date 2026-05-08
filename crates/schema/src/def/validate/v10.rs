@@ -359,8 +359,13 @@ impl<'a> ModuleValidatorV10<'a> {
                 })
             })?;
 
-        let mut table_validator =
-            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
+        let mut table_validator = TableValidator::new(
+            raw_table_name.clone(),
+            product_type_ref,
+            product_type,
+            &mut self.core,
+            CoreValidator::resolve_table_ident,
+        )?;
 
         let table_ident = table_validator.table_ident.clone();
 
@@ -726,7 +731,7 @@ impl<'a> ModuleValidatorV10<'a> {
         );
 
         let mut view_validator = ViewValidator::new(
-            name.as_raw().clone(),
+            accessor_name.clone(),
             product_type_ref,
             product_type,
             &params,
@@ -2111,5 +2116,42 @@ mod tests {
         );
         assert_eq!(schedule.at_column, 1.into());
         assert_eq!(schedule.function_kind, FunctionKind::Reducer);
+    }
+
+    #[test]
+    fn test_child_defs_use_explicit_view_name() {
+        use spacetimedb_lib::db::raw_def::v10::ExplicitNames;
+
+        let id = |s: &str| Identifier::for_test(s);
+
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "Person",
+            AlgebraicType::product([("PersonId", AlgebraicType::U64)]),
+            true,
+        );
+        builder.add_view(
+            "PersonAtLevel2",
+            0,
+            true,
+            true,
+            ProductType::from([("Level", AlgebraicType::U32)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_function("PersonAtLevel2", "Level2Person");
+        builder.add_explicit_names(explicit);
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        let view = def
+            .view("Level2Person")
+            .expect("view should use explicit canonical name");
+
+        assert_eq!(view.name, id("Level2Person"));
+        assert_eq!(view.accessor_name, id("PersonAtLevel2"));
+        assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
+        assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
     }
 }
