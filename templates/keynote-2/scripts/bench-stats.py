@@ -210,7 +210,8 @@ def main():
     parser.add_argument("--tail-sec", type=int, default=30,
                         help="Tail window size for last-N-seconds stats")
     parser.add_argument("--out", type=Path, default=None,
-                        help="Write TSV to this file in addition to stdout")
+                        help="Write TSV here. If a bare filename, lands in --runs-dir. "
+                             "If omitted, defaults to <runs-dir>/stats.tsv.")
     args = parser.parse_args()
 
     files = sorted(args.runs_dir.glob("test-1-*.json"))
@@ -227,10 +228,18 @@ def main():
     body = "\n".join("\t".join(fmt(r[c]) for c in COLUMNS) for r in rows)
     output = header + "\n" + body + "\n"
 
+    # Resolve output path: default to <runs-dir>/stats.tsv;
+    # bare filenames land in runs-dir; absolute paths are used as-is.
+    if args.out is None:
+        out_path = args.runs_dir / "stats.tsv"
+    elif args.out.parent == Path("."):
+        out_path = args.runs_dir / args.out
+    else:
+        out_path = args.out
+
+    out_path.write_text(output)
     print(output)
-    if args.out:
-        args.out.write_text(output)
-        print(f"\nwrote {args.out}", file=sys.stderr)
+    print(f"\nwrote {out_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
