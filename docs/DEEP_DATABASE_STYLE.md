@@ -1,8 +1,8 @@
-# Deep Core Style
+# Deep Database Style
 
 > Inspired by [TIGER STYLE](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md).
 
-This document records the principles by which we design the **deep core** of SpacetimeDB.
+This document records the principles by which we design the **deep core** of the SpacetimeDB database.
 
 It is almost impossible to list every constraint the deep core must satisfy. We have begun to enumerate them, but the list is unbounded. What we can do is write down the principles by which we design the core. Principles compose. Constraints do not.
 
@@ -69,11 +69,15 @@ Thread-per-core is the model that makes this possible. It gives us locality, pre
 
 To control our failure modes, we should enforce no memory allocation inside the core. This is not absolute. Primitives like pages can be allocated outside the core and passed in. But the rule is that the deep core does not allocate.
 
+The natural way to express this in Rust is to be generic over an allocator, with a separate allocator per resource type. That way each resource has its own bounded budget that we can reason about independently. This is intrusive in the datastore, and we expect it to be. We cannot reach the failure-mode control we want without that intrusion: the same property that makes an allocator visible to the type system is what lets us reason about exhaustion at every call site.
+
 This naturally precludes Tokio inside the core, which is desirable anyway. It serves principles 1, 2, and 3 simultaneously.
 
 ## 5. Think in terms of persistent data structures
 
 We want to support time-travel APIs, sub-transactions, background snapshotting, and potentially MVCC. Persistent data structures, such as Merkle trees and Postgres-style MVCC, naturally allow us to look at multiple versions of data and update versions atomically.
+
+This principle is about the externally observable behavior of the system, not a ban on mutable internals. Individual components may use mutable, non-persistent structures where that is the right tool. What matters is that the system as a whole presents the properties of a persistent data structure: prior versions remain observable, updates are atomic with respect to readers, and history is not silently overwritten.
 
 Merkle trees are particularly valuable because, in addition to being a persistent immutable data structure, they verify integrity: each node is identified by the hash of its contents, so corruption or tampering is detectable. This comes at a performance cost, and we must weigh that cost carefully wherever we apply them.
 
@@ -93,7 +97,9 @@ This is a principle, not an optimization, because pipelining cannot be cleanly r
 
 We should model the core's communication with the outside world (Tokio, disk I/O, networking, peers) as unreliable, asynchronous message passing.
 
-This sharpens our error handling. Every message can be lost, delayed, or reordered, and the core's logic must remain correct under those conditions. It is also a natural fit with principle 6, since messages to other processes are inherently pipelined.
+This sharpens our error handling. Every message can be lost, delayed, reordered, or corrupted, and the core's logic must remain correct under those conditions. Corruption is included deliberately: bits flip on disk, in transit, and in memory (cosmic rays and ordinary hardware faults alike). The core must assume that any byte it reads back may differ from the byte it wrote, and verify integrity at the boundaries where it matters. This is one of the reasons we lean on Merkle structures in principle 5.
+
+This is also a natural fit with principle 6, since messages to other processes are inherently pipelined.
 
 ## Style
 
@@ -121,7 +127,7 @@ The majority of catastrophic failures in distributed systems come from the misha
 
 ### Control flow
 
-Prefer simple, explicit control flow. Split compound conditions into nested `if/else` rather than chaining them. State invariants positively. Avoid macros where a function will do.
+Prefer simple, explicit control flow. Avoid macros where a function will do: macros obscure types, complicate tooling, and make control flow harder to follow at the call site.
 
 ### Naming
 
@@ -132,7 +138,8 @@ Prefer simple, explicit control flow. Split compound conditions into nested `if/
 
 ### Comments and formatting
 
-- Comments explain *why*, not *what*. The code already says *what*.
+- Comments should primarily explain *why*, not *what*. The code already says *what*. *What*-comments tend to drift out of sync with the code they describe and become actively misleading; we have had recent post-mortems on exactly this failure mode.
+- An exception is summarizing genuinely complex logic, where a short *what*-paragraph at the top of a section lets a reader skip the body when it is not relevant to their task. Use these sparingly and keep them at a level of abstraction that is unlikely to need updating when the implementation changes.
 - Run `rustfmt` and `clippy`. 100-column line limit.
 - Always brace `if` bodies, even single-line, as defense in depth.
 
