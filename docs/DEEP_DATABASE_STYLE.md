@@ -138,7 +138,7 @@ Prefer simple, explicit control flow. Avoid macros where a function will do: mac
 
 ### Comments and formatting
 
-- Comments should primarily explain *why*, not *what*. The code already says *what*. *What*-comments tend to drift out of sync with the code they describe and become actively misleading; we have had recent post-mortems on exactly this failure mode.
+- Comments should primarily explain *why*, not *what*. The code already says *what*. *What*-comments tend to drift out of sync with the code they describe and become actively misleading.
 - An exception is summarizing genuinely complex logic, where a short *what*-paragraph at the top of a section lets a reader skip the body when it is not relevant to their task. Use these sparingly and keep them at a level of abstraction that is unlikely to need updating when the implementation changes.
 - Run `rustfmt` and `clippy`. 100-column line limit.
 - Always brace `if` bodies, even single-line, as defense in depth.
