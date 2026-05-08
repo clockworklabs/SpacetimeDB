@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{env, io};
 
 use crate::auth::{
@@ -24,7 +24,6 @@ use axum_extra::TypedHeader;
 use derive_more::From;
 use futures::TryStreamExt;
 use http::StatusCode;
-use log::{info, warn};
 use serde::Deserialize;
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
@@ -49,6 +48,7 @@ use spacetimedb_schema::auto_migrate::{
 use tokio::sync::oneshot;
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
+use tracing::{info, warn};
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -838,6 +838,15 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     };
 
     let schema_migration_policy = schema_migration_policy(policy, token)?;
+    let publish_start = Instant::now();
+    info!(
+        database = %database_identity,
+        op = ?publish_op,
+        host_type = ?host_type,
+        num_replicas = ?num_replicas,
+        confirmation_timeout = ?confirmation_timeout,
+        "publishing database"
+    );
     let maybe_updated = ctx
         .publish_database(
             &auth.claims.identity,
@@ -853,6 +862,13 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         )
         .await
         .map_err(log_and_500)?;
+    info!(
+        database = %database_identity,
+        op = ?publish_op,
+        result = update_database_result_name(&maybe_updated),
+        elapsed = ?publish_start.elapsed(),
+        "publish_database returned"
+    );
 
     let success = || {
         axum::Json(PublishResult::Success {
@@ -879,24 +895,139 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 durable_offset,
             },
         ) => {
-            timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
-                let tx_offset = tx_offset.await?;
+            let confirmation_timeout = confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT);
+            let confirmation_start = Instant::now();
+            let initial_durable_offset = durable_offset.as_ref().and_then(|offset| offset.last_seen());
+            info!(
+                database = %database_identity,
+                op = ?publish_op,
+                confirmation_timeout = ?confirmation_timeout,
+                has_durable_offset = durable_offset.is_some(),
+                initial_durable_offset = ?initial_durable_offset,
+                "waiting for database update confirmation"
+            );
+            let confirmation_result = timeout(confirmation_timeout, async {
+                let tx_wait_start = Instant::now();
+                let tx_offset = match tx_offset.await {
+                    Ok(tx_offset) => {
+                        info!(
+                            database = %database_identity,
+                            op = ?publish_op,
+                            tx_offset,
+                            elapsed = ?tx_wait_start.elapsed(),
+                            "database update tx offset confirmed"
+                        );
+                        tx_offset
+                    }
+                    Err(err) => {
+                        warn!(
+                            database = %database_identity,
+                            op = ?publish_op,
+                            elapsed = ?tx_wait_start.elapsed(),
+                            error = %err,
+                            "database update tx offset wait was cancelled"
+                        );
+                        return Err(UpdateConfirmationError::Cancelled(err));
+                    }
+                };
                 if let Some(mut durable_offset) = durable_offset {
-                    durable_offset.wait_for(tx_offset).await?;
+                    let durable_wait_start = Instant::now();
+                    let last_seen_before_wait = durable_offset.last_seen();
+                    info!(
+                        database = %database_identity,
+                        op = ?publish_op,
+                        tx_offset,
+                        last_seen_durable_offset = ?last_seen_before_wait,
+                        "waiting for database update durable offset"
+                    );
+                    match durable_offset.wait_for(tx_offset).await {
+                        Ok(confirmed_durable_offset) => {
+                            info!(
+                                database = %database_identity,
+                                op = ?publish_op,
+                                tx_offset,
+                                confirmed_durable_offset,
+                                elapsed = ?durable_wait_start.elapsed(),
+                                "database update durable offset confirmed"
+                            );
+                        }
+                        Err(err) => {
+                            warn!(
+                                database = %database_identity,
+                                op = ?publish_op,
+                                tx_offset,
+                                last_seen_durable_offset = ?durable_offset.last_seen(),
+                                elapsed = ?durable_wait_start.elapsed(),
+                                error = %err,
+                                "database update durable offset wait failed"
+                            );
+                            return Err(UpdateConfirmationError::Crashed(err));
+                        }
+                    }
+                } else {
+                    info!(
+                        database = %database_identity,
+                        op = ?publish_op,
+                        tx_offset,
+                        "database update has no durable offset to wait for"
+                    );
                 }
 
                 Ok::<_, UpdateConfirmationError>(())
             })
-            .await
-            .map_err(Into::into)
-            .flatten()?;
+            .await;
+
+            match confirmation_result {
+                Ok(Ok(())) => {
+                    info!(
+                        database = %database_identity,
+                        op = ?publish_op,
+                        elapsed = ?confirmation_start.elapsed(),
+                        "database update confirmation completed"
+                    );
+                }
+                Ok(Err(err)) => {
+                    warn!(
+                        database = %database_identity,
+                        op = ?publish_op,
+                        elapsed = ?confirmation_start.elapsed(),
+                        error = ?err,
+                        "database update confirmation failed"
+                    );
+                    return Err(err.into());
+                }
+                Err(err) => {
+                    warn!(
+                        database = %database_identity,
+                        op = ?publish_op,
+                        confirmation_timeout = ?confirmation_timeout,
+                        elapsed = ?confirmation_start.elapsed(),
+                        initial_durable_offset = ?initial_durable_offset,
+                        "database update confirmation timed out"
+                    );
+                    return Err(UpdateConfirmationError::Timeout(err).into());
+                }
+            }
 
             Ok(success())
         }
     }
 }
 
-#[derive(From)]
+fn update_database_result_name(result: &Option<UpdateDatabaseResult>) -> &'static str {
+    match result {
+        None => "created",
+        Some(UpdateDatabaseResult::NoUpdateNeeded) => "no_update_needed",
+        Some(UpdateDatabaseResult::UpdatePerformed { .. }) => "update_performed",
+        Some(UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }) => {
+            "update_performed_with_client_disconnect"
+        }
+        Some(UpdateDatabaseResult::AutoMigrateError(_)) => "auto_migrate_error",
+        Some(UpdateDatabaseResult::ErrorExecutingMigration(_)) => "error_executing_migration",
+    }
+}
+
+#[derive(Debug, From)]
 enum UpdateConfirmationError {
     Cancelled(oneshot::error::RecvError),
     Crashed(DurabilityExited),

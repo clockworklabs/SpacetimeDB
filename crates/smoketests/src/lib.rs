@@ -1166,6 +1166,12 @@ log = "0.4"
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
+        eprintln!(
+            "[SMOKETEST] publish start: server={} module={} target={}",
+            self.server_url,
+            self.module_name,
+            name.unwrap_or("<new>")
+        );
 
         if opts.force {
             args.push("--yes");
@@ -1223,6 +1229,10 @@ log = "0.4"
     /// Arguments are passed directly to the CLI as strings.
     pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
+        eprintln!(
+            "[SMOKETEST] call start: server={} database={} reducer={} args={:?}",
+            self.server_url, identity, name, args
+        );
 
         let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
         cmd_args.extend(args);
@@ -1282,6 +1292,10 @@ log = "0.4"
     /// Executes a SQL query against the database.
     pub fn sql(&self, query: &str) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
+        eprintln!(
+            "[SMOKETEST] sql start: server={} database={} query={}",
+            self.server_url, identity, query
+        );
 
         self.spacetime(&["sql", "--server", &self.server_url, identity.as_str(), query])
     }
@@ -1289,6 +1303,10 @@ log = "0.4"
     /// Executes a SQL query with the --confirmed flag.
     pub fn sql_confirmed(&self, query: &str) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
+        eprintln!(
+            "[SMOKETEST] confirmed sql start: server={} database={} query={}",
+            self.server_url, identity, query
+        );
 
         self.spacetime(&[
             "sql",
