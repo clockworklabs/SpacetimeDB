@@ -830,10 +830,9 @@ jobs:
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Check quickstart-chat bindings are up to date
-        working-directory: sdks/csharp
         run: |
-          bash tools~/gen-quickstart.sh
-          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
+          bash sdks/csharp/tools~/gen-quickstart.sh
+          tools/check-diff.sh templates/chat-console-cs/module_bindings || {
               echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
               exit 1
           }
