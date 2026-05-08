@@ -5,6 +5,7 @@ import { type UntypedSchemaDef } from '../lib/schema';
 import { RowBuilder, type RowObj } from '../lib/type_builders';
 import { toPascalCase } from '../lib/util';
 import {
+  assertNotReservedMountedName,
   exportContext,
   moduleExportKind,
   registerExport,
@@ -80,8 +81,15 @@ export function registerReducer(
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
   opts?: ReducerOpts,
-  lifecycle?: Lifecycle
+  lifecycle?: Lifecycle,
+  allowReservedMountedName: boolean = false
 ): void {
+  if (!allowReservedMountedName) {
+    assertNotReservedMountedName(exportName, 'Reducer export name');
+  }
+  if (!allowReservedMountedName && opts?.name != null) {
+    assertNotReservedMountedName(opts.name, 'Reducer name');
+  }
   ctx.defineFunction(exportName);
 
   if (!(params instanceof RowBuilder)) {

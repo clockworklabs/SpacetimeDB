@@ -20,6 +20,7 @@ import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import type { ReadonlyDbView } from './db_view';
 import { type QueryBuilder, type RowTypedQuery } from './query';
 import {
+  assertNotReservedMountedName,
   exportContext,
   moduleExportKind,
   registerExport,
@@ -146,6 +147,10 @@ export function registerView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
+  assertNotReservedMountedName(exportName, 'View export name');
+  if (opts.name != null) {
+    assertNotReservedMountedName(opts.name, 'View name');
+  }
   const paramsBuilder = new RowBuilder(params, toPascalCase(exportName));
 
   // Register return types if they are product types

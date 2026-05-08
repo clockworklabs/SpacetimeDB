@@ -82,6 +82,7 @@ type MountedSchemaRegistration = {
 
 export const moduleExportKind = Symbol('SpacetimeDB.moduleExportKind');
 export const schemaContext = Symbol('SpacetimeDB.schemaContext');
+export const reservedMountedPrefix = '__ns__';
 
 export type ModuleExportKind = 'reducer' | 'procedure' | 'view';
 
@@ -547,6 +548,14 @@ export interface ModuleExport {
   [moduleExportKind]?: ModuleExportKind;
 }
 
+export function assertNotReservedMountedName(name: string, kind: string): void {
+  if (name.startsWith(reservedMountedPrefix)) {
+    throw new TypeError(
+      `${kind} '${name}' cannot start with '${reservedMountedPrefix}'; this prefix is reserved for internal mounted-library names`
+    );
+  }
+}
+
 function isModuleExport(x: unknown): x is ModuleExport {
   return (
     (typeof x === 'function' || typeof x === 'object') &&
@@ -611,6 +620,8 @@ export function schema<const H extends Record<string, SchemaEntry>>(
     const tableSchemas: Record<string, UntypedTableDef> = Object.create(null);
     const mounts: Record<string, UntypedSchemaDef> = Object.create(null);
     for (const [accName, entry] of Object.entries(entries)) {
+      assertNotReservedMountedName(accName, 'Schema entry name');
+
       if (entry instanceof Schema) {
         throw new TypeError(
           `Schema entry '${accName}' must use a module namespace import (for example: import * as lib from './lib') rather than a default schema import`
@@ -629,6 +640,9 @@ export function schema<const H extends Record<string, SchemaEntry>>(
         );
       }
 
+      if (entry.tableName) {
+        assertNotReservedMountedName(entry.tableName, 'Table name');
+      }
       const tableDef = entry.tableDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, entry, tableDef);
       ctx.moduleDef.tables.push(tableDef);
@@ -675,8 +689,11 @@ function isMountedSchemaNamespace(x: unknown): x is MountedSchemaNamespace {
   );
 }
 
-function internalMountName(prefix: string, name: string): string {
-  return `${prefix}__${name}`;
+function internalMountName(path: readonly string[], name: string): string {
+  const normalizedName = name.startsWith(reservedMountedPrefix)
+    ? name.slice(reservedMountedPrefix.length)
+    : name;
+  return `${reservedMountedPrefix}${[...path, normalizedName].join('__')}`;
 }
 
 function mountSchema(
@@ -686,23 +703,23 @@ function mountSchema(
 ): MountedSchemaRegistration {
   const mountedDefault = namespace.default;
   const mountedCtx = mountedDefault[schemaContext];
-  const scopedSchema = prefixSchemaType(alias, mountedCtx.schemaType);
+  const scopedSchema = prefixSchemaType([alias], mountedCtx.schemaType);
 
   for (const table of mountedCtx.moduleDef.tables) {
-    hostCtx.moduleDef.tables.push(prefixRawTableDef(alias, table));
+    hostCtx.moduleDef.tables.push(prefixRawTableDef([alias], table));
   }
 
   for (const explicitName of mountedCtx.moduleDef.explicitNames.entries) {
     if (explicitName.tag === 'Function') continue;
     hostCtx.moduleDef.explicitNames.entries.push(
-      prefixExplicitNameEntry(alias, explicitName)
+      prefixExplicitNameEntry([alias], explicitName)
     );
   }
 
   for (const pendingSchedule of mountedCtx.pendingSchedules) {
     hostCtx.pendingSchedules.push({
       ...pendingSchedule,
-      tableName: internalMountName(alias, pendingSchedule.tableName),
+      tableName: internalMountName([alias], pendingSchedule.tableName),
     });
   }
 
@@ -717,12 +734,12 @@ function mountSchema(
 }
 
 function prefixSchemaType(
-  prefix: string,
+  path: readonly string[],
   schemaDef: UntypedSchemaDef
 ): UntypedSchemaDef {
   const tables = Object.fromEntries(
     Object.entries(schemaDef.tables).map(([accName, table]) => {
-      const tableDef = prefixRawTableDef(prefix, table.tableDef);
+      const tableDef = prefixRawTableDef(path, table.tableDef);
       return [
         accName,
         {
@@ -737,7 +754,7 @@ function prefixSchemaType(
   const mounts = Object.fromEntries(
     Object.entries(schemaDef.mounts ?? {}).map(([alias, mounted]) => [
       alias,
-      prefixSchemaType(internalMountName(prefix, alias), mounted),
+      prefixSchemaType([...path, alias], mounted),
     ])
   );
 
@@ -747,43 +764,40 @@ function prefixSchemaType(
   };
 }
 
-function prefixRawTableDef(prefix: string, table: any) {
+function prefixRawTableDef(path: readonly string[], table: any) {
   return {
     ...table,
-    sourceName: internalMountName(prefix, table.sourceName),
+    sourceName: internalMountName(path, table.sourceName),
     indexes: table.indexes.map((index: any) => ({
       ...index,
       sourceName:
         index.sourceName == null
           ? index.sourceName
-          : internalMountName(prefix, index.sourceName),
+          : internalMountName(path, index.sourceName),
     })),
     constraints: table.constraints.map((constraint: any) => ({
       ...constraint,
       sourceName:
         constraint.sourceName == null
           ? constraint.sourceName
-          : internalMountName(prefix, constraint.sourceName),
+          : internalMountName(path, constraint.sourceName),
     })),
     sequences: table.sequences.map((sequence: any) => ({
       ...sequence,
       sourceName:
         sequence.sourceName == null
           ? sequence.sourceName
-          : internalMountName(prefix, sequence.sourceName),
+          : internalMountName(path, sequence.sourceName),
     })),
   };
 }
 
-function prefixExplicitNameEntry(prefix: string, explicitName: any) {
+function prefixExplicitNameEntry(path: readonly string[], explicitName: any) {
   return {
     ...explicitName,
     value: {
-      sourceName: internalMountName(prefix, explicitName.value.sourceName),
-      canonicalName: internalMountName(
-        prefix,
-        explicitName.value.canonicalName
-      ),
+      sourceName: internalMountName(path, explicitName.value.sourceName),
+      canonicalName: internalMountName(path, explicitName.value.canonicalName),
     },
   };
 }
@@ -795,8 +809,7 @@ function registerMountedReducers(
 ) {
   for (const mounted of Object.values(mounts)) {
     const path = [...parentPath, mounted.alias];
-    const exportPrefix = path.join('__');
-    registerMountedReducerExports(hostCtx, mounted, path, exportPrefix);
+    registerMountedReducerExports(hostCtx, mounted, path);
     registerMountedReducers(hostCtx, mounted.schema.mountedSchemas, path);
   }
 }
@@ -804,8 +817,7 @@ function registerMountedReducers(
 function registerMountedReducerExports(
   hostCtx: SchemaInner,
   mounted: MountedSchemaRegistration,
-  path: string[],
-  exportPrefix: string
+  path: string[]
 ) {
   for (const [exportName, moduleExport] of Object.entries(mounted.namespace)) {
     if (exportName === 'default' || !isModuleExport(moduleExport)) continue;
@@ -818,13 +830,13 @@ function registerMountedReducerExports(
     )[reducerExportInfo];
     if (reducerInfo == null) continue;
 
-    const internalExportName = internalMountName(exportPrefix, exportName);
+    const internalExportName = internalMountName(path, exportName);
     const mountedOpts =
       reducerInfo.opts == null
         ? undefined
         : {
             ...reducerInfo.opts,
-            name: internalMountName(exportPrefix, reducerInfo.opts.name),
+            name: internalMountName(path, reducerInfo.opts.name),
           };
 
     const wrapperFn: Reducer<any, any> = (ctx, payload) => {
@@ -841,7 +853,8 @@ function registerMountedReducerExports(
       reducerInfo.params,
       wrapperFn,
       mountedOpts,
-      reducerInfo.lifecycle
+      reducerInfo.lifecycle,
+      true
     );
     hostCtx.functionExports.set(
       moduleExport as ReducerExport<any, any>,

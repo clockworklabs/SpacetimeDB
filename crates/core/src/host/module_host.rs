@@ -2552,7 +2552,7 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 fn normalize_external_reducer_name(name: &str) -> Option<Cow<'_, str>> {
     match name.split_once('/') {
         Some((alias, reducer)) if !alias.is_empty() && !reducer.is_empty() && !reducer.contains('/') => {
-            Some(Cow::Owned(format!("{alias}__{reducer}")))
+            Some(Cow::Owned(format!("__ns__{alias}__{reducer}")))
         }
         Some(_) => None,
         None => Some(Cow::Borrowed(name)),
@@ -2686,7 +2686,7 @@ mod tests {
     fn namespaced_reducer_names_are_normalized() {
         assert_eq!(
             normalize_external_reducer_name("auth/login").as_deref(),
-            Some("auth__login")
+            Some("__ns__auth__login")
         );
         assert_eq!(
             normalize_external_reducer_name("login").as_deref(),
@@ -2700,7 +2700,7 @@ mod tests {
     #[test]
     fn reducer_lookup_uses_namespaced_aliases() {
         let mut raw = RawModuleDefV10Builder::new();
-        raw.add_reducer("auth__login", product![]);
+        raw.add_reducer("__ns__auth__login", product![]);
         let module = ModuleDef::try_from(RawModuleDef::V10(raw.finish())).expect("valid module");
 
         assert!(module.lookup_reducer_by_external_name("auth/login").is_some());

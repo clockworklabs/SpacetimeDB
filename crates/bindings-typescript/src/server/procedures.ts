@@ -24,6 +24,7 @@ import type { DbView } from './db_view';
 import { makeRandom, type Random } from './rng';
 import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
 import {
+  assertNotReservedMountedName,
   exportContext,
   moduleExportKind,
   registerExport,
@@ -111,6 +112,10 @@ function registerProcedure<
   fn: ProcedureFn<S, Params, Ret>,
   opts?: ProcedureOpts
 ) {
+  assertNotReservedMountedName(exportName, 'Procedure export name');
+  if (opts?.name != null) {
+    assertNotReservedMountedName(opts.name, 'Procedure name');
+  }
   ctx.defineFunction(exportName);
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
