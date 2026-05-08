@@ -94,123 +94,6 @@ fn check_global_json_policy() -> Result<()> {
     Ok(())
 }
 
-fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
-    let skeleton_root = skeleton_base.join(pkg_id);
-    if !skeleton_root.exists() {
-        return Ok(());
-    }
-
-    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
-    if !pkg_root.exists() {
-        return Ok(());
-    }
-
-    // Copy spacetimedb.<pkg>.meta
-    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
-    if pkg_root_meta.exists()
-        && let Some(parent) = pkg_root.parent()
-    {
-        let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
-        fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
-    }
-
-    let versioned_dir = match find_only_subdir(&pkg_root) {
-        Ok(dir) => dir,
-        Err(err) => {
-            log::info!("Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}");
-            return Ok(());
-        }
-    };
-
-    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
-    let version_meta_template = skeleton_root.join("version.meta");
-    if version_meta_template.exists()
-        && let Some(parent) = versioned_dir.parent()
-    {
-        let version_name = versioned_dir
-            .file_name()
-            .expect("versioned directory should have a file name");
-        let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
-        fs::copy(&version_meta_template, &version_meta_dst)?;
-    }
-
-    copy_overlay_dir(&skeleton_root, &versioned_dir)
-}
-
-fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
-    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
-    if !pkg_root.exists() {
-        return Ok(());
-    }
-
-    fs::remove_dir_all(&pkg_root)?;
-
-    Ok(())
-}
-
-fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
-    let mut subdirs: Vec<PathBuf> = vec![];
-
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            subdirs.push(entry.path());
-        }
-    }
-
-    match subdirs.as_slice() {
-        [] => Err(anyhow::anyhow!(
-            "Could not find a restored versioned directory under {}",
-            dir.display()
-        )),
-        [only] => Ok(only.clone()),
-        _ => Err(anyhow::anyhow!(
-            "Expected exactly one restored versioned directory under {}, found {}",
-            dir.display(),
-            subdirs.len()
-        )),
-    }
-}
-
-fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
-    if !src.exists() {
-        bail!("Skeleton directory does not exist: {}", src.display());
-    }
-    if !dst.exists() {
-        bail!("Destination directory does not exist: {}", dst.display());
-    }
-
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            if dst_path.exists() {
-                copy_overlay_dir(&src_path, &dst_path)?;
-            }
-        } else {
-            if src_path.extension() == Some(OsStr::new("meta")) {
-                let asset_path = dst_path
-                    .parent()
-                    .expect("dst_path should have a parent")
-                    .join(dst_path.file_stem().expect(".meta file should have a file stem"));
-
-                if asset_path.exists() {
-                    fs::copy(&src_path, &dst_path)?;
-                } else if dst_path.exists() {
-                    fs::remove_file(&dst_path)?;
-                }
-                continue;
-            }
-
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -228,11 +111,9 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
-    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
+    /// Deprecated; use `cargo regen csharp dlls`.
     ///
-    /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
-    /// Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored
-    /// versioned package directory, so Unity can associate stable meta files with the most recently built package.
+    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows.
     Dlls,
     /// Runs smoketests
     ///
@@ -631,7 +512,8 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Dlls) => {
-            run_dlls()?;
+            eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
+            cmd!("cargo", "regen", "csharp", "dlls").run()?;
         }
 
         Some(CiCmd::Smoketests(args)) => {
