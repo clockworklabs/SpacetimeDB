@@ -34,9 +34,7 @@ def load_run(path):
     }
 
 
-def plot(runs, alpha, outfile, exclude=None, latency="p99"):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
-
+def plot(runs, alpha, outfile, exclude=None, latency="p99", metric="both"):
     matched = [r for r in runs if r["alpha"] == alpha and r["ts"]]
     if exclude:
         matched = [r for r in matched if r["connector"] not in exclude]
@@ -46,6 +44,18 @@ def plot(runs, alpha, outfile, exclude=None, latency="p99"):
         sys.exit(1)
 
     latency_key = f"{latency}_ms"
+
+    if metric == "both":
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+        axes = [(ax1, "tps", "TPS"), (ax2, latency_key, f"{latency} latency (ms)")]
+    elif metric == "tps":
+        fig, ax1 = plt.subplots(1, 1, figsize=(11, 5))
+        axes = [(ax1, "tps", "TPS")]
+    elif metric == "latency":
+        fig, ax1 = plt.subplots(1, 1, figsize=(11, 5))
+        axes = [(ax1, latency_key, f"{latency} latency (ms)")]
+    else:
+        raise ValueError(f"unknown metric: {metric}")
 
     # one line per run; group by connector for legend de-dup
     seen_connectors = {}
@@ -59,28 +69,28 @@ def plot(runs, alpha, outfile, exclude=None, latency="p99"):
         else:
             seen_connectors[r["connector"]] = True
 
-        ax1.plot(x, [p["tps"] for p in ts], label=label, linewidth=2, alpha=0.85)
-        ax2.plot(x, [p[latency_key] for p in ts], label=label, linewidth=2, alpha=0.85)
+        for ax, key, _ in axes:
+            ax.plot(x, [p[key] for p in ts], label=label, linewidth=2, alpha=0.85)
 
     contention = "uncontended" if alpha == 0 else f"alpha={alpha}"
     title = f"alpha={alpha}  ({contention})"
     if exclude:
         title += f"  (excluded: {','.join(exclude)})"
 
-    ax1.set_ylabel("TPS")
-    ax1.set_title(title)
-    ax1.legend(loc="upper right")
-    ax1.grid(True, alpha=0.3)
+    for i, (ax, key, ylabel) in enumerate(axes):
+        ax.set_ylabel(ylabel)
+        ax.legend(loc="upper right" if key == "tps" else "upper left")
+        ax.grid(True, alpha=0.3)
+        if key != "tps":
+            ax.set_yscale("log")
+        if i == 0:
+            ax.set_title(title)
 
-    ax2.set_ylabel(f"{latency} latency (ms)")
-    ax2.set_xlabel("Time (s)")
-    ax2.set_yscale("log")
-    ax2.legend(loc="upper left")
-    ax2.grid(True, alpha=0.3)
+    axes[-1][0].set_xlabel("Time (s)")
 
     plt.tight_layout()
     plt.savefig(outfile, dpi=120)
-    print(f"wrote {outfile} ({len(matched)} runs, latency={latency})")
+    print(f"wrote {outfile} ({len(matched)} runs, metric={metric}, latency={latency})")
 
 
 if __name__ == "__main__":
@@ -92,11 +102,20 @@ if __name__ == "__main__":
     parser.add_argument("--exclude", default="",
                         help="comma-separated connectors to skip")
     parser.add_argument("--latency", choices=["p50", "p95", "p99"], default="p99",
-                        help="which latency percentile to plot in the bottom panel")
+                        help="which latency percentile to plot")
+    parser.add_argument("--metric", choices=["both", "tps", "latency"], default="both",
+                        help="show TPS only, latency only, or both panels")
     args = parser.parse_args()
 
-    outfile = args.outfile or f"bench-alpha{args.alpha}-{args.latency}.png"
+    # If outfile is just a filename (not a path), put it in the runs dir.
+    if args.outfile:
+        outfile_path = Path(args.outfile)
+        if outfile_path.parent == Path("."):
+            outfile_path = args.runs_dir / outfile_path
+    else:
+        outfile_path = args.runs_dir / f"bench-alpha{args.alpha}-{args.metric}-{args.latency}.png"
+
     exclude = [c.strip() for c in args.exclude.split(",") if c.strip()]
 
     runs = [load_run(p) for p in sorted(args.runs_dir.glob("test-1-*.json"))]
-    plot(runs, args.alpha, outfile, exclude=exclude, latency=args.latency)
+    plot(runs, args.alpha, str(outfile_path), exclude=exclude, latency=args.latency, metric=args.metric)
