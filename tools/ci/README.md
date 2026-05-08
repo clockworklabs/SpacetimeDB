@@ -72,9 +72,9 @@ Usage: wasm-bindings
 
 ### `dlls`
 
-Builds and packs C# DLLs and NuGet packages for local Unity workflows
+Deprecated; use `cargo regen csharp dlls`.
 
-Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`. Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored versioned package directory, so Unity can associate stable meta files with the most recently built package.
+Builds and packs C# DLLs and NuGet packages for local Unity workflows.
 
 **Usage:**
 ```bash
@@ -211,6 +211,17 @@ Usage: publish-checks
 **Usage:**
 ```bash
 Usage: typescript-test
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `version-upgrade-check`
+
+**Usage:**
+```bash
+Usage: version-upgrade-check
 ```
 
 **Options:**

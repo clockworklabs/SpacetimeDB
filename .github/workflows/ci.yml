@@ -689,7 +689,7 @@ jobs:
           }
 
       - name: Hydrate Unity SDK DLLs
-        run: cargo ci dlls
+        run: cargo regen csharp dlls
 
       - name: Check Unity meta files
         uses: DeNA/unity-meta-check@v3
@@ -830,10 +830,9 @@ jobs:
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Check quickstart-chat bindings are up to date
-        working-directory: sdks/csharp
         run: |
-          bash tools~/gen-quickstart.sh
-          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
+          bash sdks/csharp/tools~/gen-quickstart.sh
+          tools/check-diff.sh templates/chat-console-cs/module_bindings || {
               echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
               exit 1
           }
@@ -889,6 +888,10 @@ jobs:
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const publicPrNumber = context.payload.pull_request?.number ?? context.payload.inputs?.pr_number;
             const preDispatch = new Date().toISOString();
+            const inputs = { public_ref: publicRef };
+            if (publicPrNumber) {
+              inputs.public_pr_number = String(publicPrNumber);
+            }
 
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
@@ -896,7 +899,7 @@ jobs:
               repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
-              inputs: { public_ref: publicRef, public_pr_number: String(publicPrNumber) }
+              inputs,
             });
   
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -1228,3 +1231,24 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
+
+  version_upgrade_check:
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      # pnpm is required for regenerating the typescript bindings
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+      - name: Verify that upgrade-version still works
+        run: cargo ci version-upgrade-check
+      - name: Show diff
+        run: git diff HEAD

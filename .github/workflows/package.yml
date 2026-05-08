@@ -25,7 +25,7 @@ jobs:
           # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
-          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
+          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: spacetimedb-windows-runner }
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -66,41 +66,57 @@ jobs:
           $dir = Split-Path $signtool.FullName
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
-      - name: Write certificate file for signing
-        if: ${{ runner.os == 'Windows' }}
-        shell: powershell
+      - name: Decode DigiCert client auth certificate
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
         env:
-          DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
         run: |
-          [IO.File]::WriteAllBytes("digicert.pfx", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
+          echo "$SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
+
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        uses: digicert/code-signing-software-trust-action@v1
+        env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
       - name: Sign binaries for Windows
-        # Disabled for now since the current flow isn't working.
-        if: false
-        #if: ${{ runner.os == 'Windows' }}
-        shell: powershell
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
         env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
         run: |
           $ErrorActionPreference = 'Stop'
           $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
-          $certFile = Join-Path $env:GITHUB_WORKSPACE 'digicert.pfx'
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            Write-Host "Signing $exe..."
+            & smctl sign --keypair-alias $env:DIGICERT_KEYPAIR_ALIAS --input $path
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
+            Write-Host "$exe signed successfully"
+          }
 
-          $signtool = Get-Command signtool.exe -ErrorAction Stop
-
-          $files = @(
-            (Join-Path $targetDir 'spacetimedb-update.exe'),
-            (Join-Path $targetDir 'spacetimedb-cli.exe'),
-            (Join-Path $targetDir 'spacetimedb-standalone.exe')
-          )
-
-          foreach ($file in $files) {
-            & $signtool.Path sign /f $certFile /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $file
-            & $signtool.Path verify /v /pa $file
+      - name: Verify signatures
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            & signtool.exe verify /v /pa $path
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $exe" }
           }
 
       - name: Package (unix)
