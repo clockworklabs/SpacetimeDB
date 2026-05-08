@@ -364,7 +364,7 @@ mod test {
         host::module_host::create_table_from_def,
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
-    use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
@@ -456,7 +456,7 @@ mod test {
         let stdb = TestDB::durable()?;
 
         // Step 1: Table with a primary key (requires unique constraint + index).
-        let module_v1 = {
+        let module_v1: ModuleDef = {
             let mut builder = RawModuleDefV9Builder::new();
             builder
                 .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
@@ -470,7 +470,7 @@ mod test {
         };
 
         // Step 2: Same table, but primary key removed.
-        let module_v2 = {
+        let module_v2: ModuleDef = {
             let mut builder = RawModuleDefV9Builder::new();
             builder
                 .build_table_with_new_type("person", [("name", AlgebraicType::String)], true)
@@ -602,6 +602,120 @@ mod test {
             "failed migration should leave no pending schema changes: {:?}",
             tx.pending_schema_changes()
         );
+        Ok(())
+    }
+
+    /// Verifies that `autoinc` sequence survives a schema migration that adds a column,
+    /// and is also correctly persisted across database replay.
+    ///
+    /// Flow:
+    /// - Create v1 schema and consume a few sequence values.
+    /// - Migrate to v2 (adds a column with a default).
+    /// - Ensure next insert continues the sequence (no reset).
+    /// - Reopen DB and verify allocation cursor is still preserved.
+    #[test]
+    fn auto_inc_sequence_survives_add_column_migration() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        // Define the old module that was before.
+        let module_v1: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type("seq_t", [("id", AlgebraicType::I64)], true)
+                .with_auto_inc_primary_key(0)
+                .with_index_no_accessor_name(RawIndexAlgorithm::BTree { columns: 0.into() })
+                .with_access(TableAccess::Public)
+                .finish();
+            b.finish().try_into().expect("valid module v1")
+        };
+
+        // Define the module that we're migrating to.
+        let module_v2: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type(
+                "seq_t",
+                [("id", AlgebraicType::I64), ("payload", AlgebraicType::U64)],
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(btree(0))
+            .with_access(TableAccess::Public)
+            .with_default_column_value(1, product![0u64].into())
+            .finish();
+            b.finish().try_into().expect("valid module v2")
+        };
+
+        // helper to insert + collect sorted ids
+        let insert_and_collect_ids = |stdb: &TestDB, payload: AlgebraicValue| -> anyhow::Result<Vec<i64>> {
+            let mut tx = begin_mut_tx(stdb);
+            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+
+            insert(stdb, &mut tx, table_id, &payload)?;
+
+            let mut ids = stdb
+                .iter_mut(&tx, table_id)?
+                .map(|r| r.read_col::<i64>(0))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            ids.sort();
+            stdb.commit_tx(tx)?;
+            Ok(ids)
+        };
+
+        // Create the old tables and insert two rows
+        // that use the auto-inc sequence.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+
+            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+
+            insert(&stdb, &mut tx, table_id, &product![0i64])?;
+            insert(&stdb, &mut tx, table_id, &product![0i64])?;
+
+            stdb.commit_tx(tx)?;
+        }
+
+        // Successfully update the database to the new module.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+            assert!(matches!(
+                res,
+                UpdateResult::Success | UpdateResult::RequiresClientDisconnect
+            ));
+
+            stdb.commit_tx(tx)?;
+        }
+
+        // Check that the new table has reused the sequence
+        // from the old table such that the last row has the value 3.
+        {
+            let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
+            assert!(
+                ids.iter().last().unwrap() == &3,
+                "expected id 3 after migration, got {ids:?}"
+            );
+        }
+
+        // Check that we can replay.
+        let stdb = stdb.reopen()?;
+
+        // After replay, the allocation cursor should be preserved.
+        {
+            let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
+            assert!(
+                ids.iter().last().unwrap() == &4097,
+                "expected id 4097 after reopen, got {ids:?}"
+            );
+        }
+
         Ok(())
     }
 }

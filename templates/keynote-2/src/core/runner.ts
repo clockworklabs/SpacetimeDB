@@ -1,7 +1,6 @@
 import hdr from 'hdr-histogram-js';
 import { performance } from 'node:perf_hooks';
 import { pickTwoDistinct, zipfSampler } from './zipf.ts';
-import { getSpacetimeCommittedTransfers } from './spacetimeMetrics.ts';
 import { makeCollisionTracker } from './collision_tracker.ts';
 import { RunResult } from './types.ts';
 import { BaseConnector } from './connectors.ts';
@@ -76,9 +75,7 @@ export async function runOne({
     minOpTimeoutMs,
     opTimeoutMs,
     precomputedTransferPairs,
-    stdbUrl,
     tailSlackMs,
-    useSpacetimeMetricsEndpoint,
     verifyTransactions,
   } = runtimeConfig;
 
@@ -109,31 +106,6 @@ export async function runOne({
     await connector.open();
     for (let i = 0; i < concurrency; i++) {
       workers.push(connector);
-    }
-  }
-
-  const useSpacetimeMetrics =
-    useSpacetimeMetricsEndpoint && connector.name === 'spacetimedb';
-  let beforeTransfers: bigint | null = null;
-
-  if (useSpacetimeMetrics) {
-    try {
-      beforeTransfers = await getSpacetimeCommittedTransfers(stdbUrl);
-      if (beforeTransfers !== null) {
-        console.log(
-          `[spacetimedb] metrics before run: committed transfer txns = ${beforeTransfers.toString()}`,
-        );
-      } else {
-        beforeTransfers = BigInt(0);
-        console.warn(
-          '[spacetimedb] spacetime_num_txns_total (transfer) not found before run; falling back to client call count',
-        );
-      }
-    } catch (err) {
-      console.warn(
-        '[spacetimedb] failed to read metrics before run; falling back to client call count:',
-        err,
-      );
     }
   }
 
@@ -339,47 +311,18 @@ export async function runOne({
 
     const testWindowEndTime = performance.now();
     console.log(
-      `[${connector.name}] Test window ended at ${((testWindowEndTime - start) / 1000).toFixed(2)}s; capturing metrics...`,
+      `[${connector.name}] Test window ended at ${((testWindowEndTime - start) / 1000).toFixed(2)}s; waiting for in-flight operations...`,
     );
-
-    // Capture metrics immediately when test window ends
-    let committedDelta: number | null = null;
-
-    if (useSpacetimeMetrics && beforeTransfers !== null) {
-      try {
-        const afterTransfers = await getSpacetimeCommittedTransfers(stdbUrl);
-        if (afterTransfers !== null && afterTransfers >= beforeTransfers) {
-          const deltaBig = afterTransfers - beforeTransfers;
-          const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
-          committedDelta =
-            deltaBig <= maxSafe ? Number(deltaBig) : Number(maxSafe);
-
-          console.log(
-            `[spacetimedb] metrics at test window end: committed transfer txns = ${afterTransfers.toString()} (delta = ${deltaBig.toString()})`,
-          );
-        } else {
-          console.warn(
-            '[spacetimedb] metrics at test window end missing or decreased; ignoring metrics delta',
-          );
-        }
-      } catch (err) {
-        console.warn(
-          '[spacetimedb] failed to read metrics at test window end; ignoring metrics delta:',
-          err,
-        );
-      }
-    }
 
     // Now wait for all workers to fully complete (including in-flight ops)
     await Promise.all(workerPromises);
 
-    return { start, completedWithinWindow, completedTotal, committedDelta };
+    return { start, completedWithinWindow, completedTotal };
   };
 
   console.log(`[${connector.name}] Starting workers for ${seconds}s run...`);
 
-  const { start, completedWithinWindow, completedTotal, committedDelta } =
-    await run(seconds);
+  const { start, completedWithinWindow, completedTotal } = await run(seconds);
 
   console.log(
     `[${connector.name}] All workers finished (including in-flight ops)`,
@@ -429,8 +372,6 @@ export async function runOne({
 
   const q = (p: number) => hist.getValueAtPercentile(p) / 1000;
 
-  const committedOrCompleted = committedDelta ?? completedWithinWindow;
-
   const c = collisionTracker.stats();
   const elapsedSeconds = (performance.now() - start) / 1000;
 
@@ -448,9 +389,8 @@ export async function runOne({
   );
 
   return {
-    tps: committedOrCompleted / seconds,
+    tps: completedWithinWindow / seconds,
     samples: completedWithinWindow,
-    committed_txns: committedDelta,
     p50_ms: q(50),
     p95_ms: q(95),
     p99_ms: q(99),

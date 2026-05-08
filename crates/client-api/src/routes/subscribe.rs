@@ -202,7 +202,7 @@ where
         .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let leader = ctx.leader(database.id).await.map_err(log_and_500)?;
+    let leader = ctx.leader(database.id).await.map_err(Into::into)?;
 
     let identity_token = auth.creds.token().into();
 
