@@ -9,6 +9,8 @@ use log::trace;
 use repo::{fs::OnNewSegmentFn, Repo};
 use spacetimedb_paths::server::CommitLogDir;
 
+pub use spacetimedb_fs_utils::compression::CompressionStats;
+
 pub mod commit;
 pub mod commitlog;
 mod index;
@@ -346,7 +348,7 @@ impl<T> Commitlog<T> {
     /// Attempting to compress a segment that is already compressed incurs a
     /// small overhead to open the file and determining its format, but
     /// otherwise does nothing.
-    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
+    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<CompressionStats> {
         let (repo, head_offset) = {
             let inner = self.inner.read().unwrap();
             let repo = inner.repo.clone();
@@ -360,7 +362,11 @@ impl<T> Commitlog<T> {
                 format!("refusing to compress mutable segment {head_offset}"),
             ));
         }
-        offsets.iter().try_for_each(|&offset| repo.compress_segment(offset))
+        let mut stats = <_>::default();
+        for offset in offsets {
+            stats += repo.compress_segment(*offset)?;
+        }
+        Ok(stats)
     }
 
     /// Remove all data from the log and reopen it.

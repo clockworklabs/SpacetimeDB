@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::ops::AddAssign;
 use tokio::io::AsyncSeek;
 use zstd_framed;
 use zstd_framed::{ZstdReader, ZstdWriter};
@@ -149,16 +150,81 @@ pub fn new_zstd_writer<'a, W: io::Write>(inner: W, max_frame_size: Option<u32>) 
     .build()
 }
 
+/// Compress `src` to `dst` in one go.
+///
+/// Like a `FnOnce` closure, but polymorphic over the arguments.
+pub trait CompressOnce {
+    fn compress(self, src: impl io::Read, dst: impl io::Write) -> io::Result<CompressionStats>;
+}
+
+/// Implements [CompressOnce] for the zstd compression algorithm.
+pub struct Zstd {
+    /// If `Some`, add a seek table with `max_frame_size` to the compressed output.
+    ///
+    /// See [zstd_framed::writer::ZstdWriterBuilder::with_seek_table].
+    pub max_frame_size: Option<u32>,
+}
+
+impl CompressOnce for Zstd {
+    fn compress(self, src: impl io::Read, dst: impl io::Write) -> io::Result<CompressionStats> {
+        compress_with_zstd(src, dst, self.max_frame_size)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CompressionStats {
+    pub bytes_read: u64,
+    pub bytes_written: u64,
+}
+
+impl AddAssign for CompressionStats {
+    fn add_assign(&mut self, rhs: Self) {
+        self.bytes_read += rhs.bytes_read;
+        self.bytes_written += rhs.bytes_written;
+    }
+}
+
 pub fn compress_with_zstd<W: io::Write, R: io::Read>(
     mut src: R,
-    mut dst: W,
+    dst: W,
     max_frame_size: Option<u32>,
-) -> io::Result<()> {
-    let mut writer = new_zstd_writer(&mut dst, max_frame_size)?;
-    io::copy(&mut src, &mut writer)?;
-    writer.shutdown()?;
-    drop(writer);
-    Ok(())
+) -> io::Result<CompressionStats> {
+    /// [io::Write] wrapper that counts how many bytes were written.
+    struct Writer<W> {
+        bytes_written: u64,
+        inner: W,
+    }
+
+    impl<W: io::Write> io::Write for Writer<W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let n = self.inner.write(buf)?;
+            self.bytes_written += n as u64;
+            Ok(n)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.inner.flush()
+        }
+    }
+
+    // Wrap `dst` in [Writer], and use it as the sink for the zstd writer,
+    // such that we can determine how many (compressed) bytes came out at the end.
+    let mut dst = Writer {
+        bytes_written: 0,
+        inner: dst,
+    };
+    let mut zstd_writer = new_zstd_writer(&mut dst, max_frame_size)?;
+
+    let bytes_read = io::copy(&mut src, &mut zstd_writer)?;
+    zstd_writer.shutdown()?;
+    drop(zstd_writer);
+
+    let stats = CompressionStats {
+        bytes_read,
+        bytes_written: dst.bytes_written,
+    };
+
+    Ok(stats)
 }
 
 pub use async_impls::AsyncCompressReader;

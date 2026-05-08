@@ -652,6 +652,8 @@ impl fmt::Debug for SnapshotSize {
 pub struct ObjectCompressionStats {
     /// Number of objects freshly compressed.
     pub compressed: usize,
+    /// Cumulative stats of the compressed objects.
+    pub compression_stats: spacetimedb_fs_utils::compression::CompressionStats,
     /// Number of objects hardlinked from a parent repository.
     pub hardlinked: usize,
 }
@@ -667,8 +669,16 @@ impl ObjectCompressionStats {
 }
 
 impl AddAssign for ObjectCompressionStats {
-    fn add_assign(&mut self, Self { compressed, hardlinked }: Self) {
+    fn add_assign(
+        &mut self,
+        Self {
+            compressed,
+            compression_stats,
+            hardlinked,
+        }: Self,
+    ) {
         self.compressed += compressed;
+        self.compression_stats += compression_stats;
         self.hardlinked += hardlinked;
     }
 }
@@ -1215,10 +1225,11 @@ impl SnapshotRepository {
             let dst = src.with_extension("_tmp");
             let mut write = BufWriter::new(o_excl().open(&dst)?);
             // The default frame size compress better.
-            compress_with_zstd(read, &mut write, None)?;
+            let compression_stats = compress_with_zstd(read, &mut write, None)?;
             std::fs::rename(dst, src)?;
             if let Some(stats) = stats {
                 stats.compressed += 1;
+                stats.compression_stats += compression_stats;
             }
 
             Ok(())
