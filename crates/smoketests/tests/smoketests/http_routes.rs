@@ -665,10 +665,7 @@ fn typescript_http_routes_end_to_end() {
         .send()
         .expect("typescript double slash failed");
     assert_eq!(resp.status().as_u16(), 404);
-    assert_eq!(
-        resp.text().expect("typescript double slash body"),
-        NO_SUCH_ROUTE_BODY
-    );
+    assert_eq!(resp.text().expect("typescript double slash body"), NO_SUCH_ROUTE_BODY);
 
     let resp = client
         .get(format!("{base}//foo"))
@@ -680,18 +677,12 @@ fn typescript_http_routes_end_to_end() {
         NO_SUCH_ROUTE_BODY
     );
 
-    let resp = client
-        .put(format!("{base}/any"))
-        .send()
-        .expect("typescript any failed");
+    let resp = client.put(format!("{base}/any")).send().expect("typescript any failed");
     assert!(resp.status().is_success());
     assert_eq!(resp.text().expect("typescript any body"), "PUT");
 
     let url = format!("{base}/echo-uri?alpha=beta");
-    let resp = client
-        .get(&url)
-        .send()
-        .expect("typescript echo-uri failed");
+    let resp = client.get(&url).send().expect("typescript echo-uri failed");
     assert!(resp.status().is_success());
     assert_eq!(resp.text().expect("typescript echo-uri body"), url);
 
@@ -712,10 +703,7 @@ fn typescript_http_routes_end_to_end() {
         .send()
         .expect("typescript reverse-words failed");
     assert!(resp.status().is_success());
-    assert_eq!(
-        resp.text().expect("typescript reverse-words body"),
-        "blue green red"
-    );
+    assert_eq!(resp.text().expect("typescript reverse-words body"), "blue green red");
 
     let resp = client
         .post(format!("{base}/insert"))
@@ -729,10 +717,7 @@ fn typescript_http_routes_end_to_end() {
         .send()
         .expect("typescript missing route failed");
     assert_eq!(resp.status().as_u16(), 404);
-    assert_eq!(
-        resp.text().expect("typescript missing route body"),
-        NO_SUCH_ROUTE_BODY
-    );
+    assert_eq!(resp.text().expect("typescript missing route body"), NO_SUCH_ROUTE_BODY);
 
     let resp = client
         .get(format!("{base}/echo-uri"))
