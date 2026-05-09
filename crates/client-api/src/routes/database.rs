@@ -9,6 +9,7 @@ use crate::auth::{
     SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
+use crate::util::serde::humantime_duration;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
     log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
@@ -20,12 +21,14 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
+use derive_more::From;
 use futures::TryStreamExt;
 use http::StatusCode;
 use log::{info, warn};
 use serde::Deserialize;
+use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::ClientConnectedError;
+use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited};
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
@@ -37,11 +40,15 @@ use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
+use tokio::sync::oneshot;
+use tokio::time::error::Elapsed;
+use tokio::time::timeout;
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -97,6 +104,7 @@ fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String)
             log::debug!("Attempt to call non-existent reducer {reducer}");
             StatusCode::NOT_FOUND
         }
+        ReducerCallError::WorkerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         ReducerCallError::LifecycleReducer(lifecycle) => {
             log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
             StatusCode::BAD_REQUEST
@@ -183,8 +191,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     module
-        // We don't clear views or procedures after reducer calls
-        .call_identity_disconnected(caller_identity, connection_id, false)
+        .call_identity_disconnected(caller_identity, connection_id)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
@@ -285,7 +292,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
             NO_SUCH_DATABASE
         })?;
 
-    let leader = worker_ctx.leader(database.id).await.map_err(log_and_500)?;
+    let leader = worker_ctx.leader(database.id).await.map_err(Into::into)?;
 
     Ok((leader, database))
 }
@@ -327,6 +334,8 @@ pub struct SchemaQueryParams {
 enum SchemaVersion {
     #[serde(rename = "9")]
     V9,
+    #[serde(rename = "10")]
+    V10,
 }
 
 pub async fn schema<S>(
@@ -338,12 +347,23 @@ pub async fn schema<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let (leader, _) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    // Wait for the module to finish loading rather than returning an immediate
+    // 500 error. The database may still be initializing (replaying the log,
+    // running init reducers, etc.).
+    let module = leader
+        .wait_for_module(std::time::Duration::from_secs(10))
+        .await
+        .map_err(log_and_500)?;
 
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
             let raw = RawModuleDefV9::from(module_def.as_ref().clone());
+            axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
+        }
+        SchemaVersion::V10 => {
+            let raw = RawModuleDefV10::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };
@@ -504,22 +524,46 @@ pub async fn sql_direct<S>(
     SqlParams { name_or_identity }: SqlParams,
     SqlQueryParams { confirmed }: SqlQueryParams,
     caller_identity: Identity,
+    caller_auth: ConnectionAuthCtx,
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    // Anyone is authorized to execute SQL queries. The SQL engine will determine
-    // which queries this identity is allowed to execute against the database.
+    let connection_id = generate_random_connection_id();
 
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
-    let auth = worker_ctx
-        .authorize_sql(caller_identity, database.database_identity)
-        .await?;
-
-    host.exec_sql(auth, database, confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS), sql)
+    // Run the module's client_connected reducer, if any.
+    // If it rejects the connection, bail before executing SQL.
+    let module = host.module().await.map_err(log_and_500)?;
+    module
+        .call_identity_connected(caller_auth, connection_id)
         .await
+        .map_err(client_connected_error_to_response)?;
+
+    let result = async {
+        let sql_auth = worker_ctx
+            .authorize_sql(caller_identity, database.database_identity)
+            .await?;
+
+        host.exec_sql(
+            sql_auth,
+            database,
+            confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
+            sql,
+        )
+        .await
+    }
+    .await;
+
+    // Always disconnect, even if authorization or execution failed.
+    module
+        .call_identity_disconnected(caller_identity, connection_id)
+        .await
+        .map_err(client_disconnected_error_to_response)?;
+
+    result
 }
 
 pub async fn sql<S>(
@@ -532,7 +576,9 @@ pub async fn sql<S>(
 where
     S: NodeDelegate + ControlStateDelegate + Authorization,
 {
-    let json = sql_direct(worker_ctx, name_or_identity, params, auth.claims.identity, body).await?;
+    let caller_identity = auth.claims.identity;
+    let caller_auth: ConnectionAuthCtx = auth.into();
+    let json = sql_direct(worker_ctx, name_or_identity, params, caller_identity, caller_auth, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
@@ -654,7 +700,32 @@ pub struct PublishDatabaseQueryParams {
     parent: Option<NameOrIdentity>,
     #[serde(alias = "org")]
     organization: Option<NameOrIdentity>,
+    /// Duration to wait for a database update to become confirmed (i.e. durable).
+    ///
+    /// The value is parsed via the `humantime` crate, e.g. "1m", "23s", "5min".
+    ///
+    /// If not given, defaults to [default_update_confirmation_timeout].
+    /// The maximum timeout is capped by [MAX_UPDATE_CONFIRMATION_TIMEOUT].
+    ///
+    /// The parameter has no effect when creating a new database.
+    #[serde(with = "humantime_duration", default = "default_update_confirmation_timeout")]
+    update_confirmation_timeout: Duration,
 }
+
+/// Default timeout for a database update to become confirmed / durable.
+///
+/// Currently, the value is 5s.
+const fn default_update_confirmation_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+/// Maximum timeout for a database update to become confirmed / durable.
+///
+/// If a replication group doesn't converge within this time span, it is
+/// probably not making progress at all.
+///
+/// Currently, the value is 5min.
+const MAX_UPDATE_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
@@ -667,6 +738,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
         parent,
         organization,
+        update_confirmation_timeout: confirmation_timeout,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -782,6 +854,13 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .await
         .map_err(log_and_500)?;
 
+    let success = || {
+        axum::Json(PublishResult::Success {
+            domain: db_name.cloned(),
+            database_identity,
+            op: publish_op,
+        })
+    };
     match maybe_updated {
         Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
             Err(bad_request(format!("Database update rejected: {errs}").into()))
@@ -789,16 +868,58 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(bad_request(
             format!("Failed to create or update the database: {err}").into(),
         )),
-        None
-        | Some(
-            UpdateDatabaseResult::NoUpdateNeeded
-            | UpdateDatabaseResult::UpdatePerformed
-            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect,
-        ) => Ok(axum::Json(PublishResult::Success {
-            domain: db_name.cloned(),
-            database_identity,
-            op: publish_op,
-        })),
+        None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
+        Some(
+            UpdateDatabaseResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            }
+            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                tx_offset,
+                durable_offset,
+            },
+        ) => {
+            timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
+                let tx_offset = tx_offset.await?;
+                if let Some(mut durable_offset) = durable_offset {
+                    durable_offset.wait_for(tx_offset).await?;
+                }
+
+                Ok::<_, UpdateConfirmationError>(())
+            })
+            .await
+            .map_err(Into::into)
+            .flatten()?;
+
+            Ok(success())
+        }
+    }
+}
+
+#[derive(From)]
+enum UpdateConfirmationError {
+    Cancelled(oneshot::error::RecvError),
+    Crashed(DurabilityExited),
+    Timeout(Elapsed),
+}
+
+impl From<UpdateConfirmationError> for ErrorResponse {
+    fn from(e: UpdateConfirmationError) -> Self {
+        match e {
+            UpdateConfirmationError::Cancelled(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database update failed: transaction was cancelled",
+            ),
+            UpdateConfirmationError::Crashed(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database update failed: database crashed while waiting for transaction confirmation",
+            ),
+            UpdateConfirmationError::Timeout(_) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "Database update failed: timeout waiting for transaction confirmation",
+            ),
+        }
+        .into()
     }
 }
 
@@ -1094,7 +1215,12 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_database_identity(name.as_str()).await.unwrap().is_some() {
+        if ctx
+            .lookup_database_identity(name.as_str())
+            .await
+            .map_err(log_and_500)?
+            .is_some()
+        {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

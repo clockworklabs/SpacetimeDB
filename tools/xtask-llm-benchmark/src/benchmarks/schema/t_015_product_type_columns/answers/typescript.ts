@@ -1,16 +1,16 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Address = t.object('Address', {
+const Address = t.object('Address', {
   street: t.string(),
   zip: t.i32(),
 });
 
-export const Position = t.object('Position', {
+const Position = t.object('Position', {
   x: t.i32(),
   y: t.i32(),
 });
 
-export const profile = table(
+const profile = table(
   {
     name: 'profile',
   },

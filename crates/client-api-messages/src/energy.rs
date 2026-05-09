@@ -16,13 +16,17 @@ pub struct EnergyQuanta {
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta { quanta: 0 };
 
+    // per the comment on [`FunctionBudget::DEFAULT_BUDGET`]: 1 second of wasm runtime is roughtly 2 TeV
+    pub const PER_EXECUTION_SEC: Self = Self::new(2_000_000_000_000);
+    pub const PER_EXECUTION_NANOSEC: Self = Self::new(Self::PER_EXECUTION_SEC.get() / 1_000_000_000);
+
     #[inline]
-    pub fn new(quanta: u128) -> Self {
+    pub const fn new(quanta: u128) -> Self {
         Self { quanta }
     }
 
     #[inline]
-    pub fn get(&self) -> u128 {
+    pub const fn get(&self) -> u128 {
         self.quanta
     }
 

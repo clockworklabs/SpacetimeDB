@@ -147,9 +147,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_connect_error(callback)` to your builder to register a callback to run when your connection fails.
-
-A known bug in the SpacetimeDB Rust client SDK currently causes this callback never to be invoked. [`on_disconnect`](#callback-on_disconnect) callbacks are invoked instead.
+Chain a call to `.on_connect_error(callback)` to your builder to register a callback to run when a connection attempt fails asynchronously. Errors which prevent `build` from creating the connection are returned by `build` instead.
 
 #### Callback `on_disconnect`
 
@@ -162,7 +160,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your established `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
 
 #### Method `with_token`
 
@@ -1059,7 +1057,7 @@ The `on_delete` callback runs whenever a previously-resident row is deleted from
 spacetimedb_sdk::TableWithPrimaryKey
 ```
 
-Implemented for table handles whose tables have a primary key.
+Implemented for handles whose rows have a known primary key, including query builder views with inferred primary keys.
 
 | Name                                        | Description                                                                          |
 | ------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -1078,6 +1076,8 @@ trait spacetimedb_sdk::TableWithPrimaryKey {
 ```
 
 The `on_update` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. Registering an `on_update` callback returns a callback id, which can later be passed to `remove_on_update` to cancel the callback. Newly registered or canceled callbacks do not take effect until the following event.
+
+This also applies to query builder views over tables with primary keys.
 
 ### Unique constraint index access
 

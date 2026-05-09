@@ -51,7 +51,14 @@ const tablesSchema = __schema({
   counter: __table(
     {
       name: 'counter',
-      indexes: [{ name: 'id', algorithm: 'btree', columns: ['id'] }],
+      indexes: [
+        {
+          accessor: 'id',
+          name: 'counter_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['id'],
+        },
+      ],
       constraints: [
         { name: 'counter_id_key', constraint: 'unique', columns: ['id'] },
       ],
@@ -62,7 +69,12 @@ const tablesSchema = __schema({
     {
       name: 'offline_user',
       indexes: [
-        { name: 'identity', algorithm: 'btree', columns: ['identity'] },
+        {
+          accessor: 'identity',
+          name: 'offline_user_identity_idx_btree',
+          algorithm: 'btree',
+          columns: ['identity'],
+        },
       ],
       constraints: [
         {
@@ -78,7 +90,12 @@ const tablesSchema = __schema({
     {
       name: 'user',
       indexes: [
-        { name: 'identity', algorithm: 'btree', columns: ['identity'] },
+        {
+          accessor: 'identity',
+          name: 'user_identity_idx_btree',
+          algorithm: 'btree',
+          columns: ['identity'],
+        },
       ],
       constraints: [
         {

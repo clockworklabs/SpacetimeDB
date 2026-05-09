@@ -1,16 +1,16 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Rect = t.object('Rect', {
+const Rect = t.object('Rect', {
   width: t.i32(),
   height: t.i32(),
 });
 
-export const Shape = t.enum('Shape', {
+const Shape = t.enum('Shape', {
   circle: t.i32(),
   rectangle: Rect,
 });
 
-export const result = table(
+const result = table(
   {
     name: 'result',
   },

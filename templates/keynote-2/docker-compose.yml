@@ -257,7 +257,7 @@
       STDB_URL: ${STDB_URL}
       STDB_MODULE: ${STDB_MODULE}
       STDB_MODULE_PATH: ${STDB_MODULE_PATH}
-      STDB_METRICS_URL: ${STDB_METRICS_URL}
+      STDB_CONFIRMED_READS: ${STDB_CONFIRMED_READS}
       BUN_URL: ${BUN_URL}
       SQLITE_FILE: ${SQLITE_FILE}
       SQLITE_MODE: ${SQLITE_MODE}
@@ -270,13 +270,12 @@
       PLANETSCALE_RPC_URL: ${PLANETSCALE_RPC_URL}
       SEED_ACCOUNTS: ${SEED_ACCOUNTS}
       SEED_INITIAL_BALANCE: ${SEED_INITIAL_BALANCE}
-      USE_SPACETIME_METRICS_ENDPOINT: ${USE_SPACETIME_METRICS_ENDPOINT}
       CONVEX_USE_SHARDED_COUNTER: ${CONVEX_USE_SHARDED_COUNTER}
       VERIFY: ${VERIFY}
     volumes:
       - sqlite_data:/data
       - ./runs:/app/runs
-    command: ["--seconds", "5", "--concurrency", "50", "--alpha", "1", "--connectors", "sqlite"]
+    command: ["--seconds", "5", "--concurrency", "50", "--alpha", "1.5", "--connectors", "sqlite"]
     network_mode: host
 
   sqlite-seed:

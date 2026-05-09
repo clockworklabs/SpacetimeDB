@@ -1,6 +1,8 @@
 namespace SpacetimeDB.Tests;
 
 using System;
+using System.Globalization;
+using System.Threading;
 using Xunit;
 
 public sealed class QueryBuilderTests
@@ -17,6 +19,7 @@ public sealed class QueryBuilderTests
         public Col<Row, string> Weird { get; }
         public Col<Row, int> Age { get; }
         public Col<Row, bool> IsAdmin { get; }
+        public Col<Row, Timestamp> CreatedAt { get; }
 
         public RowCols(string tableName)
         {
@@ -24,46 +27,25 @@ public sealed class QueryBuilderTests
             Weird = new Col<Row, string>(tableName, "we\"ird");
             Age = new Col<Row, int>(tableName, "Age");
             IsAdmin = new Col<Row, bool>(tableName, "IsAdmin");
+            CreatedAt = new Col<Row, Timestamp>(tableName, "CreatedAt");
         }
     }
 
     private sealed class RowIxCols
     {
         public IxCol<Row, string> Name { get; }
+        public IxCol<Row, Timestamp> CreatedAt { get; }
 
         public RowIxCols(string tableName)
         {
             Name = new IxCol<Row, string>(tableName, "Name");
+            CreatedAt = new IxCol<Row, Timestamp>(tableName, "CreatedAt");
         }
     }
 
     private static Table<Row, RowCols, RowIxCols> MakeTable(string tableName) =>
         new(tableName, new RowCols(tableName), new RowIxCols(tableName));
 
-    private sealed class RowNullableCols
-    {
-        public NullableCol<Row, string> Name { get; }
-        public NullableCol<Row, int> Age { get; }
-
-        public RowNullableCols(string tableName)
-        {
-            Name = new NullableCol<Row, string>(tableName, "Name");
-            Age = new NullableCol<Row, int>(tableName, "Age");
-        }
-    }
-
-    private sealed class RowNullableIxCols
-    {
-        public NullableIxCol<Row, string> Name { get; }
-
-        public RowNullableIxCols(string tableName)
-        {
-            Name = new NullableIxCol<Row, string>(tableName, "Name");
-        }
-    }
-
-    private static Table<Row, RowNullableCols, RowNullableIxCols> MakeNullableTable(string tableName) =>
-        new(tableName, new RowNullableCols(tableName), new RowNullableIxCols(tableName));
 
     private sealed class LeftCols
     {
@@ -111,31 +93,6 @@ public sealed class QueryBuilderTests
     private static Table<RightRow, RightCols, RightIxCols> MakeRightTable(string tableName) =>
         new(tableName, new RightCols(tableName), new RightIxCols(tableName));
 
-    private sealed class LeftNullableIxCols
-    {
-        public NullableIxCol<LeftRow, int> Id { get; }
-
-        public LeftNullableIxCols(string tableName)
-        {
-            Id = new NullableIxCol<LeftRow, int>(tableName, "id");
-        }
-    }
-
-    private sealed class RightNullableIxCols
-    {
-        public NullableIxCol<RightRow, int> Uid { get; }
-
-        public RightNullableIxCols(string tableName)
-        {
-            Uid = new NullableIxCol<RightRow, int>(tableName, "uid");
-        }
-    }
-
-    private static Table<LeftRow, LeftCols, LeftNullableIxCols> MakeLeftNullableIxTable(string tableName) =>
-        new(tableName, new LeftCols(tableName), new LeftNullableIxCols(tableName));
-
-    private static Table<RightRow, RightCols, RightNullableIxCols> MakeRightNullableIxTable(string tableName) =>
-        new(tableName, new RightCols(tableName), new RightNullableIxCols(tableName));
 
     [Fact]
     public void All_QuotesTableName()
@@ -172,6 +129,14 @@ public sealed class QueryBuilderTests
             "SELECT * FROM \"T\" WHERE (\"T\".\"IsAdmin\" = FALSE)",
             table.Where(c => c.IsAdmin.Eq(false)).ToSql()
         );
+    }
+
+    [Fact]
+    public void Where_BoolColumn_FormatsCorrectly()
+    {
+        var table = MakeTable("T");
+        var sql = table.Where(c => c.IsAdmin.Eq(true)).ToSql();
+        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"IsAdmin\" = TRUE)", sql);
     }
 
     [Fact]
@@ -248,6 +213,48 @@ public sealed class QueryBuilderTests
     }
 
     [Fact]
+    public void FormatLiteral_Timestamp_UsesQuotedIsoString()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expected = "2025-01-22T21:53:13.990639Z";
+
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
+            table.Where(c => c.CreatedAt.Eq(timestamp)).ToSql()
+        );
+    }
+
+    [Fact]
+    public void Where_Timestamp_ComparisonOperators_FormatCorrectly()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expected = "2025-01-22T21:53:13.990639Z";
+
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
+            table.Where(c => c.CreatedAt.Neq(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" < '{expected}')",
+            table.Where(c => c.CreatedAt.Lt(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <= '{expected}')",
+            table.Where(c => c.CreatedAt.Lte(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" > '{expected}')",
+            table.Where(c => c.CreatedAt.Gt(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" >= '{expected}')",
+            table.Where(c => c.CreatedAt.Gte(timestamp)).ToSql()
+        );
+    }
+
+    [Fact]
     public void IxCol_EqNeq_FormatsCorrectly()
     {
         var ix = new IxCol<Row, string>("T", "Name");
@@ -263,6 +270,48 @@ public sealed class QueryBuilderTests
     }
 
     [Fact]
+    public void IxCol_Timestamp_EqNeq_FormatsCorrectly()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expected = "2025-01-22T21:53:13.990639Z";
+
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
+            table.Where((_, ix) => ix.CreatedAt.Eq(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
+            table.Where((_, ix) => ix.CreatedAt.Neq(timestamp)).ToSql()
+        );
+    }
+
+    [Fact]
+    public void FormatLiteral_Timestamp_UsesInvariantCulture()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expectedSql =
+            "SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '2025-01-22T21:53:13.990639Z')";
+        var originalCulture = Thread.CurrentThread.CurrentCulture;
+
+        try
+        {
+            // Ensure the format is agnostic to the culture. Using ar-SA because it's different than Gregorian, which is used in UTC.
+            Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo("ar-SA");
+
+            Assert.Equal(
+                expectedSql,
+                table.Where(c => c.CreatedAt.Eq(timestamp)).ToSql()
+            );
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
     public void LeftSemijoin_Build_FormatsCorrectly()
     {
         var left = MakeLeftTable("users");
@@ -273,22 +322,6 @@ public sealed class QueryBuilderTests
             "SELECT \"users\".* FROM \"users\" JOIN \"other\" ON \"users\".\"id\" = \"other\".\"uid\"",
             sql
         );
-    }
-
-    [Fact]
-    public void Where_NullableCol_Eq_FormatsCorrectly()
-    {
-        var table = MakeNullableTable("T");
-        var sql = table.Where(c => c.Name.Eq("x")).ToSql();
-        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Name\" = 'x')", sql);
-    }
-
-    [Fact]
-    public void Where_NullableCol_Gt_FormatsCorrectly()
-    {
-        var table = MakeNullableTable("T");
-        var sql = table.Where(c => c.Age.Gt(123)).ToSql();
-        Assert.Equal("SELECT * FROM \"T\" WHERE (\"T\".\"Age\" > 123)", sql);
     }
 
     [Fact]

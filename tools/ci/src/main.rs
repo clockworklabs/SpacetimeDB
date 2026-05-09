@@ -4,6 +4,7 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 use std::{env, fs};
@@ -12,6 +13,9 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod smoketest;
+mod util;
+
+use util::ensure_repo_root;
 
 /// SpacetimeDB CI tasks
 ///
@@ -33,13 +37,6 @@ struct Cli {
     /// subcommand, use `--skip unreal-tests`.
     #[arg(long)]
     skip: Vec<String>,
-}
-
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
 }
 
 fn check_global_json_policy() -> Result<()> {
@@ -94,123 +91,6 @@ fn check_global_json_policy() -> Result<()> {
     Ok(())
 }
 
-fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
-    let skeleton_root = skeleton_base.join(pkg_id);
-    if !skeleton_root.exists() {
-        return Ok(());
-    }
-
-    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
-    if !pkg_root.exists() {
-        return Ok(());
-    }
-
-    // Copy spacetimedb.<pkg>.meta
-    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
-    if pkg_root_meta.exists() {
-        if let Some(parent) = pkg_root.parent() {
-            let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
-            fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
-        }
-    }
-
-    let versioned_dir = match find_only_subdir(&pkg_root) {
-        Ok(dir) => dir,
-        Err(err) => {
-            log::info!("Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}");
-            return Ok(());
-        }
-    };
-
-    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
-    let version_meta_template = skeleton_root.join("version.meta");
-    if version_meta_template.exists() {
-        if let Some(parent) = versioned_dir.parent() {
-            let version_name = versioned_dir
-                .file_name()
-                .expect("versioned directory should have a file name");
-            let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
-            fs::copy(&version_meta_template, &version_meta_dst)?;
-        }
-    }
-
-    copy_overlay_dir(&skeleton_root, &versioned_dir)
-}
-
-fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
-    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
-    if !pkg_root.exists() {
-        return Ok(());
-    }
-
-    fs::remove_dir_all(&pkg_root)?;
-
-    Ok(())
-}
-
-fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
-    let mut subdirs: Vec<PathBuf> = vec![];
-
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            subdirs.push(entry.path());
-        }
-    }
-
-    match subdirs.as_slice() {
-        [] => Err(anyhow::anyhow!(
-            "Could not find a restored versioned directory under {}",
-            dir.display()
-        )),
-        [only] => Ok(only.clone()),
-        _ => Err(anyhow::anyhow!(
-            "Expected exactly one restored versioned directory under {}, found {}",
-            dir.display(),
-            subdirs.len()
-        )),
-    }
-}
-
-fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
-    if !src.exists() {
-        bail!("Skeleton directory does not exist: {}", src.display());
-    }
-    if !dst.exists() {
-        bail!("Destination directory does not exist: {}", dst.display());
-    }
-
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            if dst_path.exists() {
-                copy_overlay_dir(&src_path, &dst_path)?;
-            }
-        } else {
-            if src_path.extension() == Some(OsStr::new("meta")) {
-                let asset_path = dst_path
-                    .parent()
-                    .expect("dst_path should have a parent")
-                    .join(dst_path.file_stem().expect(".meta file should have a file stem"));
-
-                if asset_path.exists() {
-                    fs::copy(&src_path, &dst_path)?;
-                } else if dst_path.exists() {
-                    fs::remove_file(&dst_path)?;
-                }
-                continue;
-            }
-
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -221,17 +101,16 @@ enum CiCmd {
     Test,
     /// Lints the codebase
     ///
-    /// Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+    /// Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there
+    /// are no warnings.
     Lint,
     /// Tests Wasm bindings
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
-    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
+    /// Deprecated; use `cargo regen csharp dlls`.
     ///
-    /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
-    /// Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored
-    /// versioned package directory, so Unity can associate stable meta files with the most recently built package.
+    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows.
     Dlls,
     /// Runs smoketests
     ///
@@ -274,6 +153,14 @@ enum CiCmd {
 
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
+    /// Checks that publishable crates satisfy publish constraints.
+    PublishChecks,
+    /// Runs TypeScript workspace tests and template build checks.
+    TypescriptTest,
+    /// Verifies that the repository version upgrade tool still works.
+    VersionUpgradeCheck,
+    /// Builds the docs site.
+    Docs,
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -293,6 +180,89 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
+    let output = cmd!("git", "ls-files", "--", path).read()?;
+    Ok(output
+        .lines()
+        .filter(|line| line.ends_with(".rs"))
+        .map(PathBuf::from)
+        .collect())
+}
+
+fn run_publish_checks() -> Result<()> {
+    cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
+    cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
+
+    let crates = cmd!(
+        "venv/bin/python3",
+        "tools/find-publish-list.py",
+        "--recursive",
+        "--directories",
+        "--quiet",
+        "spacetimedb",
+        "spacetimedb-sdk"
+    )
+    .read()?;
+
+    let mut failed = Vec::new();
+    for crate_dir in crates.split_whitespace() {
+        if let Err(err) = cmd!("venv/bin/python3", "tools/crate-publish-checks.py", crate_dir).run() {
+            eprintln!("crate publish checks failed for {crate_dir}: {err}");
+            failed.push(crate_dir.to_string());
+        }
+    }
+
+    if !failed.is_empty() {
+        bail!("crate publish checks failed for: {}", failed.join(", "));
+    }
+
+    Ok(())
+}
+
+fn run_typescript_tests() -> Result<()> {
+    cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
+    cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
+    cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
+    let diff_status = cmd!(
+        "bash",
+        "tools/check-diff.sh",
+        "templates/chat-react-ts/src/module_bindings"
+    )
+    .run()?;
+    if !diff_status.status.success() {
+        bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
+    }
+    cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
+    cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
+        .dir("templates")
+        .run()?;
+    cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
+        .dir("crates/bindings-typescript")
+        .run()?;
+    Ok(())
+}
+
+fn run_docs_build() -> Result<()> {
+    cmd!("pnpm", "install").dir("docs").run()?;
+    cmd!("pnpm", "build").dir("docs").run()?;
+    Ok(())
+}
+
+fn run_version_upgrade_check() -> Result<()> {
+    cmd!(
+        "cargo",
+        "bump-versions",
+        "123.456.789",
+        "--rust-and-cli",
+        "--csharp",
+        "--typescript",
+        "--cpp",
+        "--accept-snapshots"
+    )
+    .run()?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -300,6 +270,8 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
+            cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
+
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
             // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
@@ -326,6 +298,20 @@ fn main() -> Result<()> {
                 "spacetimedb-sdk",
                 "--features",
                 "allow_loopback_http_for_tests",
+                "--",
+                "--test-threads=2",
+                "--skip",
+                "unreal"
+            )
+            .run()?;
+            // Run the same SDK suite against wasm/browser test clients.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-sdk",
+                "--features",
+                "allow_loopback_http_for_tests,browser",
                 "--",
                 "--test-threads=2",
                 "--skip",
@@ -365,7 +351,19 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Lint) => {
-            cmd!("cargo", "fmt", "--all", "--", "--check").run()?;
+            ensure_repo_root()?;
+            // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
+            // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
+            // so this approach properly catches all the files, where `cargo fmt` does not.
+            let mut files = Vec::new();
+            files.extend(tracked_rs_files_under(".")?);
+            const RUSTFMT_BATCH_SIZE: usize = 200;
+            for batch in files.chunks(RUSTFMT_BATCH_SIZE) {
+                let mut args = Vec::<OsString>::with_capacity(batch.len() + 1);
+                args.push("--check".into());
+                args.extend(batch.iter().map(|path| path.as_os_str().to_os_string()));
+                cmd("rustfmt", args).run()?;
+            }
             cmd!(
                 "cargo",
                 "clippy",
@@ -377,10 +375,24 @@ fn main() -> Result<()> {
                 "warnings",
             )
             .run()?;
+            cmd!(
+                "cargo",
+                "clippy",
+                "--no-default-features",
+                "--features=browser",
+                "-pspacetimedb-sdk",
+                "--tests",
+                "--benches",
+                "--",
+                "-D",
+                "warnings",
+            )
+            .run()?;
             cmd!("dotnet", "tool", "restore").dir("crates/bindings-csharp").run()?;
             cmd!("dotnet", "csharpier", "--check", ".")
                 .dir("crates/bindings-csharp")
                 .run()?;
+            cmd!("pnpm", "lint").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
@@ -414,82 +426,12 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Dlls) => {
-            ensure_repo_root()?;
-
-            cmd!(
-                "dotnet",
-                "pack",
-                "crates/bindings-csharp/BSATN.Runtime",
-                "-c",
-                "Release"
-            )
-            .run()?;
-            cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
-
-            let repo_root = env::current_dir()?;
-            let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
-            let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
-
-            let nuget_config_dir = tempfile::tempdir()?;
-            let nuget_config_path = nuget_config_dir.path().join("nuget.config");
-            let nuget_config_contents = format!(
-                r#"<?xml version="1.0" encoding="utf-8"?>
-            <configuration>
-              <packageSources>
-                <clear />
-                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
-                <add key="Local SpacetimeDB.Runtime" value="{}" />
-                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-              </packageSources>
-              <packageSourceMapping>
-                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
-                  <package pattern="SpacetimeDB.BSATN.Runtime" />
-                </packageSource>
-                <packageSource key="Local SpacetimeDB.Runtime">
-                  <package pattern="SpacetimeDB.Runtime" />
-                </packageSource>
-                <packageSource key="nuget.org">
-                  <package pattern="*" />
-                </packageSource>
-              </packageSourceMapping>
-            </configuration>
-            "#,
-                bsatn_source.display(),
-                runtime_source.display(),
-            );
-            fs::write(&nuget_config_path, nuget_config_contents)?;
-
-            let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
-
-            clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
-            clear_restored_package_dirs("spacetimedb.runtime")?;
-
-            cmd!(
-                "dotnet",
-                "restore",
-                "SpacetimeDB.ClientSDK.csproj",
-                "--configfile",
-                &nuget_config_path_str,
-            )
-            .dir("sdks/csharp")
-            .run()?;
-
-            overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
-            overlay_unity_meta_skeleton("spacetimedb.runtime")?;
-
-            cmd!(
-                "dotnet",
-                "pack",
-                "SpacetimeDB.ClientSDK.csproj",
-                "-c",
-                "Release",
-                "--no-restore"
-            )
-            .dir("sdks/csharp")
-            .run()?;
+            eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
+            cmd!("cargo", "regen", "csharp", "dlls").run()?;
         }
 
         Some(CiCmd::Smoketests(args)) => {
+            ensure_repo_root()?;
             smoketest::run(args)?;
         }
 
@@ -531,7 +473,12 @@ fn main() -> Result<()> {
                     .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
             )
             .run()?;
-            cmd!(format!("{}/spacetime", root_dir_string), &root_arg, "help",).run()?;
+
+            let mut spacetime_path = root_dir.path().join("spacetime");
+            if !std::env::consts::EXE_EXTENSION.is_empty() {
+                spacetime_path.set_extension(std::env::consts::EXE_EXTENSION);
+            }
+            cmd(spacetime_path, [&root_arg, "help"]).run()?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
@@ -575,6 +522,22 @@ fn main() -> Result<()> {
 
         Some(CiCmd::GlobalJsonPolicy) => {
             check_global_json_policy()?;
+        }
+
+        Some(CiCmd::PublishChecks) => {
+            run_publish_checks()?;
+        }
+
+        Some(CiCmd::TypescriptTest) => {
+            run_typescript_tests()?;
+        }
+
+        Some(CiCmd::VersionUpgradeCheck) => {
+            run_version_upgrade_check()?;
+        }
+
+        Some(CiCmd::Docs) => {
+            run_docs_build()?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

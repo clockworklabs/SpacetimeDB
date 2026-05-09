@@ -22,6 +22,7 @@ use pgwire::messages::data::DataRow;
 use pgwire::messages::startup::Authentication;
 use pgwire::messages::{PgWireBackendMessage, PgWireFrontendMessage};
 use pgwire::tokio::process_socket;
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api::auth::validate_token;
 use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
@@ -64,6 +65,7 @@ impl From<PgError> for PgWireError {
 struct Metadata {
     database: String,
     caller_identity: Identity,
+    caller_auth: ConnectionAuthCtx,
 }
 
 pub(crate) fn to_rows(
@@ -73,9 +75,8 @@ pub(crate) fn to_rows(
     let mut results = Vec::with_capacity(stmt.rows.len());
     let ty = Typespace::EMPTY.with_type(&stmt.schema);
 
+    let mut encoder = DataRowEncoder::new(header.clone());
     for row in stmt.rows {
-        let mut encoder = DataRowEncoder::new(header.clone());
-
         for (idx, value) in ty.with_values(&row).enumerate() {
             let ty = satn::PsqlType {
                 client: PsqlClient::Postgres,
@@ -86,7 +87,7 @@ pub(crate) fn to_rows(
             let mut fmt = PsqlFormatter { encoder: &mut encoder };
             value.serialize(TypedSerializer { ty: &ty, f: &mut fmt })?;
         }
-        results.push(encoder.finish());
+        results.push(Ok(encoder.take_row()));
     }
     Ok(stream::iter(results))
 }
@@ -163,6 +164,7 @@ where
                 db,
                 SqlQueryParams { confirmed: Some(true) },
                 params.caller_identity,
+                params.caller_auth.clone(),
                 query.to_string(),
             )
             .await,
@@ -182,13 +184,13 @@ where
         let mut result = Vec::with_capacity(sql.len());
         for sql_result in sql {
             let header = row_desc(&sql_result.schema, &Format::UnifiedText);
-            if sql_result.rows.is_empty() && !query.to_uppercase().contains("SELECT") {
-                let tag = Tag::new(&stats(&sql_result));
-                result.push(Response::Execution(tag));
-            } else {
+            if !sql_result.schema.is_empty() {
                 let rows = to_rows(sql_result, header.clone())?;
                 let q = QueryResponse::new(header, rows);
                 result.push(Response::Query(q));
+            } else {
+                let tag = Tag::new(&stats(&sql_result));
+                result.push(Response::Execution(tag));
             }
         }
         Ok(result)
@@ -246,10 +248,13 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 // We don't support `METADATA_USER` because we don't have a user management system.
                 let database = param(METADATA_DATABASE)?;
                 let pwd = pwd.into_password()?;
-                if let Ok(application_name) = param("application_name") {
-                    log::info!("PG: Connecting to database: {database}, by {application_name}",);
-                } else {
-                    log::info!("PG: Connecting to database: {database}");
+                match param("application_name") {
+                    Ok(application_name) => {
+                        log::info!("PG: Connecting to database: {database}, by {application_name}",);
+                    }
+                    _ => {
+                        log::info!("PG: Connecting to database: {database}");
+                    }
                 }
 
                 let name = database::NameOrIdentity::Name(DatabaseName(database.clone()));
@@ -263,8 +268,8 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     }
                 };
 
-                let caller_identity = match validate_token(&self.ctx, &pwd.password).await {
-                    Ok(claims) => claims.identity,
+                let claims = match validate_token(&self.ctx, &pwd.password).await {
+                    Ok(claims) => claims,
                     Err(err) => {
                         log::error!(
                             "PG: Authentication failed for identity `{}` on database {database}: {err}",
@@ -274,12 +279,22 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                         return close_client(client, err).await;
                     }
                 };
+                let caller_identity = claims.identity;
+                let caller_auth = ConnectionAuthCtx::try_from(claims).map_err(|e| {
+                    PgWireError::UserError(Box::new(ErrorInfo::new(
+                        "FATAL".to_owned(),
+                        // "invalid_authorization_specification"
+                        "28000".to_owned(),
+                        e.to_string(),
+                    )))
+                })?;
 
                 log::info!("PG: Connected to database: {database} using identity `{caller_identity}`");
 
                 let metadata = Metadata {
                     database,
                     caller_identity,
+                    caller_auth,
                 };
                 self.cached.lock().await.clone_from(&Some(metadata));
                 finish_authentication(client, &self.parameter_provider).await?;

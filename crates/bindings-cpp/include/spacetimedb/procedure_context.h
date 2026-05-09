@@ -53,16 +53,18 @@ namespace SpacetimeDB {
  * @endcode
  */
 struct ProcedureContext {
+private:
     // Caller's identity - who invoked this procedure
-    Identity sender;
-    
+    Identity sender_;
+
+public:
     // Timestamp when the procedure was invoked
     Timestamp timestamp;
-    
+
     // Connection ID for the caller
     // Used to track which client connection initiated this procedure
     ConnectionId connection_id;
-    
+
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
     // HTTP client for making external requests
     // IMPORTANT: HTTP calls are NOT allowed inside transactions!
@@ -81,7 +83,11 @@ public:
     ProcedureContext() = default;
     
     ProcedureContext(Identity s, Timestamp t, ConnectionId conn_id)
-        : sender(s), timestamp(t), connection_id(conn_id) {}
+        : sender_(s), timestamp(t), connection_id(conn_id) {}
+
+    Identity sender() const {
+        return sender_;
+    }
 
     /**
      * @brief Read the current module's Identity
@@ -91,15 +97,20 @@ public:
      * 
      * Example:
      * @code
-     * auto module_id = ctx.identity();
+     * auto module_id = ctx.database_identity();
      * std::string url = "http://localhost:3000/v1/database/" + 
      *                   module_id.to_hex() + "/schema?version=9";
      * @endcode
      */
-    Identity identity() const {
+    Identity database_identity() const {
         std::array<uint8_t, 32> id_bytes;
         ::identity(id_bytes.data());
         return Identity(id_bytes);
+    }
+
+    [[deprecated("Use database_identity() instead.")]]
+    Identity identity() const {
+        return database_identity();
     }
 
     /**
@@ -197,7 +208,7 @@ public:
         // Create a ReducerContext for this transaction
         // Note: connection_id converted to std::optional
         ReducerContext reducer_ctx(
-            sender,
+            sender(),
             std::optional<ConnectionId>(connection_id),
             Timestamp::from_micros_since_epoch(tx_timestamp)
         );
@@ -260,7 +271,7 @@ public:
         
         // Create a ReducerContext for this transaction
         ReducerContext reducer_ctx(
-            sender,
+            sender(),
             std::optional<ConnectionId>(connection_id),
             Timestamp::from_micros_since_epoch(tx_timestamp)
         );

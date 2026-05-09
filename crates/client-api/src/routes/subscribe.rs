@@ -38,6 +38,7 @@ use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
+use spacetimedb_client_api_messages::websocket::v3 as ws_v3;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use tokio::sync::{mpsc, watch};
@@ -62,6 +63,8 @@ pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::TEXT_PROT
 pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::BIN_PROTOCOL);
 #[allow(clippy::declare_interior_mutable_const)]
 pub const V2_BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v2::BIN_PROTOCOL);
+#[allow(clippy::declare_interior_mutable_const)]
+pub const V3_BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v3::BIN_PROTOCOL);
 
 pub trait HasWebSocketOptions {
     fn websocket_options(&self) -> WebSocketOptions;
@@ -101,7 +104,7 @@ fn resolve_confirmed_reads_default(version: WsVersion, confirmed: Option<bool>) 
     }
     match version {
         WsVersion::V1 => false,
-        WsVersion::V2 => crate::DEFAULT_CONFIRMED_READS,
+        WsVersion::V2 | WsVersion::V3 => crate::DEFAULT_CONFIRMED_READS,
     }
 }
 
@@ -152,6 +155,13 @@ where
 
     let (res, ws_upgrade, protocol) = ws.select_protocol([
         (
+            V3_BIN_PROTOCOL,
+            NegotiatedProtocol {
+                protocol: Protocol::Binary,
+                version: WsVersion::V3,
+            },
+        ),
+        (
             V2_BIN_PROTOCOL,
             NegotiatedProtocol {
                 protocol: Protocol::Binary,
@@ -189,10 +199,10 @@ where
     let database = ctx
         .get_database_by_identity(&db_identity)
         .await
-        .unwrap()
+        .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let leader = ctx.leader(database.id).await.map_err(log_and_500)?;
+    let leader = ctx.leader(database.id).await.map_err(Into::into)?;
 
     let identity_token = auth.creds.token().into();
 
@@ -284,7 +294,7 @@ where
                 };
                 client.send_message(None, OutboundMessage::V1(message.into()))
             }
-            WsVersion::V2 => {
+            WsVersion::V2 | WsVersion::V3 => {
                 let message = ws_v2::ServerMessage::InitialConnection(ws_v2::InitialConnection {
                     identity: client_identity,
                     connection_id,
@@ -642,19 +652,17 @@ async fn ws_main_loop<HotswapWatcher>(
             // [`tokio::task::AbortHandle`]s), the reasonable thing to do is to
             // exit the loop as if the tasks completed normally.
             res = &mut send_task => {
-                if let Err(e) = res {
-                    if e.is_panic() {
+                if let Err(e) = res
+                    && e.is_panic() {
                         panic::resume_unwind(e.into_panic())
                     }
-                }
                 break;
             },
             res = &mut recv_task => {
-                if let Err(e) = res {
-                    if e.is_panic() {
+                if let Err(e) = res
+                    && e.is_panic() {
                         panic::resume_unwind(e.into_panic())
                     }
-                }
                 break;
             },
 
@@ -772,15 +780,15 @@ async fn ws_recv_task<MessageHandler>(
     while let Some((data, timer)) = recv_handler.next().await {
         let result = message_handler(data, timer).await;
         if let Err(e) = result {
-            if ws_version == WsVersion::V1 {
-                if let MessageHandleError::Execution(err) = e {
-                    log::error!("{err:#}");
-                    // If the send task has exited, also exit this recv task.
-                    if unordered_tx.send(err.into()).is_err() {
-                        break;
-                    }
-                    continue;
+            if ws_version == WsVersion::V1
+                && let MessageHandleError::Execution(err) = e
+            {
+                log::error!("{err:#}");
+                // If the send task has exited, also exit this recv task.
+                if unordered_tx.send(err.into()).is_err() {
+                    break;
                 }
+                continue;
             }
             log::debug!("Client caused error: {e}");
             let close = CloseFrame {
@@ -1298,7 +1306,7 @@ async fn ws_encode_task(
     let buf_pool = ArrayQueue::new(BUF_POOL_CAPACITY);
     let mut in_use_bufs: Vec<ScopeGuard<InUseSerializeBuffer, _>> = Vec::with_capacity(BUF_POOL_CAPACITY);
 
-    while let Some(message) = messages.recv().await {
+    'send: while let Some(message) = messages.recv().await {
         // Drop serialize buffers with no external referent,
         // returning them to the pool.
         in_use_bufs.retain(|in_use| !in_use.is_unique());
@@ -1308,16 +1316,22 @@ async fn ws_encode_task(
 
         let in_use_buf = match message {
             OutboundWsMessage::Error(message) => {
-                if config.version == WsVersion::V2 {
-                    log::error!("dropping v1 error message sent to a v2 client: {:?}", message);
+                if config.version != WsVersion::V1 {
+                    log::error!(
+                        "dropping v1 error message sent to a binary websocket client: {:?}",
+                        message
+                    );
                     continue;
                 }
-                let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await;
-                metrics.report(None, None, stats);
-                if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                    break;
-                }
-
+                let Ok(in_use) = ws_forward_frames(
+                    &metrics,
+                    &outgoing_frames,
+                    None,
+                    None,
+                    ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await,
+                ) else {
+                    break 'send;
+                };
                 in_use
             }
             OutboundWsMessage::Message(message) => {
@@ -1325,38 +1339,39 @@ async fn ws_encode_task(
                 let num_rows = message.num_rows();
                 match message {
                     OutboundMessage::V2(server_message) => {
-                        if config.version != WsVersion::V2 {
+                        if config.version == WsVersion::V1 {
                             log::error!("dropping v2 message on v1 connection");
                             continue;
                         }
 
-                        let (stats, in_use, mut frames) =
-                            ws_encode_message_v2(config, buf, server_message, false, &bsatn_rlb_pool).await;
-                        metrics.report(workload, num_rows, stats);
-                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                            break;
-                        }
-
+                        let Ok(in_use) = ws_forward_frames(
+                            &metrics,
+                            &outgoing_frames,
+                            workload,
+                            num_rows,
+                            ws_encode_binary_message(config, buf, server_message, false, &bsatn_rlb_pool).await,
+                        ) else {
+                            break 'send;
+                        };
                         in_use
                     }
                     OutboundMessage::V1(message) => {
-                        if config.version == WsVersion::V2 {
-                            log::error!(
-                                "dropping v1 message for v2 connection until v2 serialization is implemented: {:?}",
-                                message
-                            );
+                        if config.version != WsVersion::V1 {
+                            log::error!("dropping v1 message for a binary websocket connection: {:?}", message);
                             continue;
                         }
 
                         let is_large = num_rows.is_some_and(|n| n > 1024);
 
-                        let (stats, in_use, mut frames) =
-                            ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
-                        metrics.report(workload, num_rows, stats);
-                        if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
-                            break;
-                        }
-
+                        let Ok(in_use) = ws_forward_frames(
+                            &metrics,
+                            &outgoing_frames,
+                            workload,
+                            num_rows,
+                            ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await,
+                        ) else {
+                            break 'send;
+                        };
                         in_use
                     }
                 }
@@ -1370,6 +1385,21 @@ async fn ws_encode_task(
             }));
         }
     }
+}
+
+/// Reports encode metrics for an already-encoded message and forwards its
+/// frames to the websocket send task.
+fn ws_forward_frames(
+    metrics: &SendMetrics,
+    outgoing_frames: &mpsc::UnboundedSender<Frame>,
+    workload: Option<WorkloadType>,
+    num_rows: Option<usize>,
+    encoded: (EncodeMetrics, InUseSerializeBuffer, impl IntoIterator<Item = Frame>),
+) -> Result<InUseSerializeBuffer, mpsc::error::SendError<Frame>> {
+    let (stats, in_use, frames) = encoded;
+    metrics.report(workload, num_rows, stats);
+    frames.into_iter().try_for_each(|frame| outgoing_frames.send(frame))?;
+    Ok(in_use)
 }
 
 /// Some stats about serialization and compression.
@@ -1445,21 +1475,21 @@ async fn ws_encode_message(
     (metrics, msg_alloc, frames)
 }
 
-#[allow(dead_code, unused_variables)]
-async fn ws_encode_message_v2(
+async fn ws_encode_binary_message(
     config: ClientConfig,
     buf: SerializeBuffer,
     message: ws_v2::ServerMessage,
     is_large_message: bool,
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
-) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
     let start = Instant::now();
+    let compression = config.compression;
 
     let (in_use, data) = if is_large_message {
         let bsatn_rlb_pool = bsatn_rlb_pool.clone();
-        spawn_rayon(move || serialize_v2(&bsatn_rlb_pool, buf, message, config.compression)).await
+        spawn_rayon(move || serialize_v2(&bsatn_rlb_pool, buf, message, compression)).await
     } else {
-        serialize_v2(bsatn_rlb_pool, buf, message, config.compression)
+        serialize_v2(bsatn_rlb_pool, buf, message, compression)
     };
 
     let metrics = EncodeMetrics {
@@ -2300,9 +2330,11 @@ mod tests {
 
     #[test]
     fn confirmed_reads_default_depends_on_ws_version() {
+        assert!(resolve_confirmed_reads_default(WsVersion::V3, None));
         assert!(resolve_confirmed_reads_default(WsVersion::V2, None));
         assert!(!resolve_confirmed_reads_default(WsVersion::V1, None));
         assert!(resolve_confirmed_reads_default(WsVersion::V1, Some(true)));
+        assert!(!resolve_confirmed_reads_default(WsVersion::V3, Some(false)));
         assert!(!resolve_confirmed_reads_default(WsVersion::V2, Some(false)));
     }
 

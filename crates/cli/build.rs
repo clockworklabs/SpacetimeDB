@@ -196,20 +196,29 @@ fn generate_template_files() {
     write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 struct TemplateInfo {
     id: String,
     description: String,
+    #[serde(serialize_with = "serialize_option_string_as_empty")]
     server_source: Option<String>,
+    #[serde(serialize_with = "serialize_option_string_as_empty")]
     client_source: Option<String>,
     server_lang: Option<String>,
     client_lang: Option<String>,
+    client_framework: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct TemplatesJson<'a> {
+    templates: &'a [TemplateInfo],
 }
 
 #[derive(serde::Deserialize)]
 struct TemplateMetadata {
     description: String,
     client_lang: Option<String>,
+    client_framework: Option<String>,
     server_lang: Option<String>,
 }
 
@@ -267,6 +276,7 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
                 client_source,
                 server_lang: metadata.server_lang,
                 client_lang: metadata.client_lang,
+                client_framework: metadata.client_framework,
             });
         }
     }
@@ -276,57 +286,15 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
 }
 
 fn generate_templates_json(templates: &[TemplateInfo]) -> String {
-    let mut json = String::from("{\n  \"highlights\": [\n");
+    let payload = TemplatesJson { templates };
+    serde_json::to_string_pretty(&payload).expect("Failed to serialize templates JSON")
+}
 
-    for template in templates {
-        if template.id.contains("react") {
-            json.push_str("    { \"name\": \"React\", \"template_id\": \"");
-            json.push_str(&template.id);
-            json.push_str("\" }\n");
-            break;
-        }
-    }
-
-    json.push_str("  ],\n  \"templates\": [\n");
-
-    for (i, template) in templates.iter().enumerate() {
-        json.push_str("    {\n");
-        json.push_str(&format!("      \"id\": \"{}\",\n", template.id));
-        json.push_str(&format!("      \"description\": \"{}\",\n", template.description));
-
-        if let Some(ref server_source) = template.server_source {
-            json.push_str(&format!("      \"server_source\": \"{}\",\n", server_source));
-        } else {
-            json.push_str("      \"server_source\": \"\",\n");
-        }
-
-        if let Some(ref client_source) = template.client_source {
-            json.push_str(&format!("      \"client_source\": \"{}\",\n", client_source));
-        } else {
-            json.push_str("      \"client_source\": \"\",\n");
-        }
-
-        if let Some(ref server_lang) = template.server_lang {
-            json.push_str(&format!("      \"server_lang\": \"{}\",\n", server_lang));
-        } else {
-            json.push_str("      \"server_lang\": \"\",\n");
-        }
-
-        if let Some(ref client_lang) = template.client_lang {
-            json.push_str(&format!("      \"client_lang\": \"{}\"", client_lang));
-        } else {
-            json.push_str("      \"client_lang\": \"\"");
-        }
-
-        json.push_str("\n    }");
-        if i < templates.len() - 1 {
-            json.push(',');
-        }
-        json.push('\n');
-    }
-
-    json.push_str("  ]\n}");
-    json
+fn serialize_option_string_as_empty<S>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(value.as_deref().unwrap_or(""))
 }
 
 fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
@@ -638,10 +606,10 @@ fn write_if_changed(path: &Path, contents: &[u8]) -> io::Result<()> {
 
 fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
     let src_bytes = fs::read(src)?;
-    if let Ok(existing) = fs::read(dst) {
-        if existing == src_bytes {
-            return Ok(());
-        }
+    if let Ok(existing) = fs::read(dst)
+        && existing == src_bytes
+    {
+        return Ok(());
     }
 
     if let Some(parent) = dst.parent() {

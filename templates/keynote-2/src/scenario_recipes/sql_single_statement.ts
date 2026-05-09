@@ -1,4 +1,4 @@
-﻿export async function sql_single_statement(
+export async function sql_single_statement(
   conn: unknown,
   from: number,
   to: number,

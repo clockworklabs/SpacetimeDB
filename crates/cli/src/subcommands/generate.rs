@@ -48,6 +48,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("js_file").module_specific())
         .key(Key::new("namespace").generate_entry_specific())
         .key(Key::new("unreal_module_name").generate_entry_specific())
+        .key(Key::new("module_prefix").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("include_private"))
         .exclude("json_module")
@@ -235,6 +236,11 @@ pub fn cli() -> clap::Command {
                 .help("The module name that should be used for DLL export macros (required for lang unrealcpp)")
         )
         .arg(
+            Arg::new("module_prefix")
+                .long("module-prefix")
+                .help("The module prefix to use for generated types (only used with --lang unrealcpp)")
+        )
+        .arg(
             Arg::new("lang")
                 .long("lang")
                 .short('l')
@@ -285,6 +291,7 @@ pub struct GenerateRunConfig {
     pub lang: Language,
     pub namespace: String,
     pub module_name: Option<String>,
+    pub module_prefix: Option<String>,
     pub build_options: String,
     pub out_dir: PathBuf,
     pub include_private: bool,
@@ -313,6 +320,7 @@ fn prepare_generate_run_configs<'a>(
             .get_one::<String>("namespace")?
             .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
         let module_name = command_config.get_one::<String>("unreal_module_name")?;
+        let module_prefix = command_config.get_one::<String>("module_prefix")?;
         let build_options = command_config
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
@@ -371,6 +379,7 @@ fn prepare_generate_run_configs<'a>(
             lang,
             namespace,
             module_name,
+            module_prefix,
             build_options,
             out_dir,
             include_private,
@@ -387,13 +396,12 @@ fn detect_default_language(client_project_dir: &Path) -> anyhow::Result<Language
     if client_project_dir.join("Cargo.toml").exists() {
         return Ok(Language::Rust);
     }
-    if let Ok(entries) = fs::read_dir(client_project_dir) {
-        if entries
+    if let Ok(entries) = fs::read_dir(client_project_dir)
+        && entries
             .flatten()
             .any(|entry| entry.path().extension().is_some_and(|e| e == "csproj"))
-        {
-            return Ok(Language::Csharp);
-        }
+    {
+        return Ok(Language::Csharp);
     }
 
     anyhow::bail!(
@@ -512,6 +520,7 @@ pub async fn run_prepared_generate_configs(
                 unreal_cpp_lang = UnrealCpp {
                     module_name: run.module_name.as_ref().unwrap(),
                     uproject_dir: &run.out_dir,
+                    module_prefix: run.module_prefix.as_deref().unwrap_or(""),
                 };
                 &unreal_cpp_lang as &dyn Lang
             }
@@ -835,7 +844,7 @@ mod tests {
         let mut child_fields = HashMap::new();
         child_fields.insert("database".to_string(), serde_json::json!("my-db"));
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -844,7 +853,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            children: Some(vec![make_gen_config(child_fields, vec![gen])]),
+            children: Some(vec![make_gen_config(child_fields, vec![r#gen])]),
             ..Default::default()
         };
 
@@ -864,7 +873,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("typescript"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -876,7 +885,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            generate: Some(vec![gen]),
+            generate: Some(vec![r#gen]),
             children: Some(vec![
                 {
                     let mut f = HashMap::new();
@@ -1217,7 +1226,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("typescript"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/bindings"));
@@ -1229,7 +1238,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            generate: Some(vec![gen]),
+            generate: Some(vec![r#gen]),
             children: Some(vec![
                 {
                     let mut f = HashMap::new();
@@ -1268,7 +1277,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -1284,7 +1293,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m1"));
                         m
                     },
-                    vec![gen.clone()],
+                    vec![r#gen.clone()],
                 ),
                 make_gen_config(
                     {
@@ -1293,7 +1302,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m2"));
                         m
                     },
-                    vec![gen.clone()],
+                    vec![r#gen.clone()],
                 ),
                 make_gen_config(
                     {
@@ -1302,7 +1311,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m3"));
                         m
                     },
-                    vec![gen],
+                    vec![r#gen],
                 ),
             ]),
             ..Default::default()
@@ -1321,7 +1330,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -1335,7 +1344,7 @@ mod tests {
                 m.insert("module-path".to_string(), serde_json::json!("./server"));
                 m
             },
-            vec![gen],
+            vec![r#gen],
         );
 
         let matches = cmd.clone().get_matches_from(vec!["generate", "nonexistent-*"]);

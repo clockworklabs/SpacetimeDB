@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const user = table(
+const user = table(
   {
     name: 'user',
   },
@@ -10,7 +10,7 @@ export const user = table(
   }
 );
 
-export const group = table(
+const group = table(
   {
     name: 'group',
   },
@@ -20,7 +20,7 @@ export const group = table(
   }
 );
 
-export const membership = table(
+const membership = table(
   {
     name: 'membership',
     indexes: [

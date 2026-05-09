@@ -1,10 +1,8 @@
 use crate::client::MessageExecutionError;
 
 use super::{ClientConnection, DataMessage, MessageHandleError};
-use crate::worker_metrics::WORKER_METRICS;
 use serde::de::Error as _;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
-use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::{bsatn, Timestamp};
 use spacetimedb_primitives::ReducerId;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -20,44 +18,29 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             )))
         }
     };
-    let module = client.module();
-    let mod_info = module.info();
-    let mod_metrics = &mod_info.metrics;
-    let database_identity = mod_info.database_identity;
-    let db = &module.replica_ctx().relational_db;
-    let record_metrics = |wl| {
-        move |metrics| {
-            if let Some(metrics) = metrics {
-                db.exec_counters_for(wl).record(&metrics);
-            }
-        }
-    };
-    let sub_metrics = record_metrics(WorkloadType::Subscribe);
-    let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
+    handle_decoded_message(client, message, timer).await
+}
+
+pub(super) async fn handle_decoded_message(
+    client: &ClientConnection,
+    message: ws_v2::ClientMessage,
+    timer: Instant,
+) -> Result<(), MessageHandleError> {
     type HandleResult<'a> = Result<(), (Option<&'a RawIdentifier>, Option<ReducerId>, anyhow::Error)>;
     let res: HandleResult<'_> = match message {
         ws_v2::ClientMessage::Subscribe(subscribe) => {
-            let res = client.subscribe_v2(subscribe, timer).await.map(sub_metrics);
-            mod_metrics
-                .request_round_trip_subscribe
-                .observe(timer.elapsed().as_secs_f64());
-            res.map_err(|e| (None, None, e.into()))
+            let res = client.subscribe_v2(subscribe, timer).await;
+            res.map(drop).map_err(|e| (None, None, e.into()))
         }
         ws_v2::ClientMessage::Unsubscribe(unsubscribe) => {
-            let res = client.unsubscribe_v2(unsubscribe, timer).await.map(unsub_metrics);
-            mod_metrics
-                .request_round_trip_unsubscribe
-                .observe(timer.elapsed().as_secs_f64());
-            res.map_err(|e| (None, None, e.into()))
+            let res = client.unsubscribe_v2(unsubscribe, timer).await;
+            res.map(drop).map_err(|e| (None, None, e.into()))
         }
         ws_v2::ClientMessage::OneOffQuery(ws_v2::OneOffQuery {
             request_id,
             query_string,
         }) => {
             let res = client.one_off_query_v2(&query_string, request_id, timer).await;
-            mod_metrics
-                .request_round_trip_sql
-                .observe(timer.elapsed().as_secs_f64());
             res.map_err(|err| (None, None, err))
         }
         ws_v2::ClientMessage::CallReducer(ws_v2::CallReducer {
@@ -66,11 +49,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             request_id,
             flags,
         }) => {
-            let res = client.call_reducer_v2(reducer, args, request_id, timer, flags).await;
-            WORKER_METRICS
-                .request_round_trip
-                .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
-                .observe(timer.elapsed().as_secs_f64());
+            let res = client.enqueue_reducer_v2(reducer, args, request_id, timer, flags).await;
             match res {
                 Ok(_) => {
                     // If this was not a success, we would have already sent an error message.
@@ -101,10 +80,6 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             let res = client
                 .call_procedure_v2(procedure, args, request_id, timer, flags)
                 .await;
-            WORKER_METRICS
-                .request_round_trip
-                .with_label_values(&WorkloadType::Procedure, &database_identity, procedure)
-                .observe(timer.elapsed().as_secs_f64());
             if let Err(e) = res {
                 log::warn!("Procedure call failed: {e:#}");
             }

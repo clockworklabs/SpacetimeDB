@@ -26,7 +26,7 @@ mod wasm_common;
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
     extract_schema, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage, HostController,
-    MigratePlanResult, ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
+    HostRuntimeConfig, MigratePlanResult, ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
 pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
@@ -177,6 +177,7 @@ pub enum AbiCall {
     DatastoreDeleteByIndexScanPointBsatn,
     DatastoreDeleteByIndexScanRangeBsatn,
     DatastoreDeleteAllByEqBsatn,
+    DatastoreClear,
     BytesSourceRead,
     BytesSourceRemainingLength,
     BytesSinkWrite,

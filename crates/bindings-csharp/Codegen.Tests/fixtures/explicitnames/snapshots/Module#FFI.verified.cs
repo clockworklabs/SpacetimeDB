@@ -57,9 +57,13 @@ namespace SpacetimeDB
 
         // **Note:** must be 0..=u32::MAX
         internal int CounterUuid;
+        public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
 
-        // We need this property to be non-static for parity with client SDK.
-        public Identity Identity => Internal.IReducerContext.GetIdentity();
+        // We keep this property for compatibility with existing module code.
+        [global::System.Obsolete(
+            "ReducerContext.Identity is deprecated. Use DatabaseIdentity instead."
+        )]
+        public Identity Identity => DatabaseIdentity;
 
         internal ReducerContext(
             Identity identity,
@@ -294,6 +298,12 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count =>
             global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoCount();
 
@@ -305,6 +315,9 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public bool Delete(global::DemoTable row) =>
             global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoClear();
 
         public sealed class IdUniqueIndex
             : UniqueIndex<DemoTable, global::DemoTable, int, SpacetimeDB.BSATN.I32>
@@ -366,13 +379,14 @@ sealed class demo_viewViewDispatcher : global::SpacetimeDB.Internal.IView
         try
         {
             var returnValue = Reducers.DemoView((SpacetimeDB.ViewContext)ctx);
-            SpacetimeDB.BSATN.List<DemoTable, DemoTable.BSATN> returnRW = new();
+            var listSerializer = new SpacetimeDB.BSATN.List<DemoTable, DemoTable.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
             var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
             var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             headerRW.Write(writer, header);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
@@ -391,6 +405,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal DemoTableReadOnly()
             : base("DemoTable") { }
 
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
         public ulong Count => DoCount();
 
         public sealed class IdIndex

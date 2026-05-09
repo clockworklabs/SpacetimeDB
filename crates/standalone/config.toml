@@ -18,4 +18,30 @@ directives = [
     "axum::rejection=trace",
 ]
 
+[wasm]
+# Maximum number of WASM procedure instances per database. Omit to use the
+# number of cores reported by the OS.
+# procedure-instance-pool-size = 8
+
+[v8]
+# Maximum number of JS procedure isolates per database. Omit to use the number
+# of cores reported by the OS.
+# procedure-instance-pool-size = 8
+
+[v8-heap-policy]
+# Check the V8 heap after this many requests. Set to 0 to disable.
+# heap-check-request-interval = 65536
+
+# Also check the V8 heap after this much wall-clock time. Set to "0s" to disable.
+# heap-check-time-interval = "30s"
+
+# Trigger a GC when the heap reaches this fraction of the limit.
+# heap-gc-trigger-fraction = 0.67
+
+# Retire the worker if the heap is still this full after GC.
+# heap-retire-fraction = 0.75
+
+# Apply a V8 heap limit in MiB. Set to 0 to use V8's default limit.
+# heap-limit-mb = 0
+
 # vim: set nowritebackup: << otherwise triggers cargo-watch

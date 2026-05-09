@@ -77,7 +77,7 @@ if [ -n "$exe" ]; then
             if [[ "$line" == *.rs ]]; then
 		echo "Formatting changed file: ${line:3}..."
                 # format file
-                rustfmt --edition 2021 "$git_repo/${line:3}"	      
+                rustfmt "$git_repo/${line:3}"
                 # add changes
                 git add "$git_repo/${line:3}"
             fi

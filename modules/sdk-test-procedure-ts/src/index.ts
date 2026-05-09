@@ -91,7 +91,7 @@ export const will_panic = spacetimedb.procedure(t.unit(), _ctx => {
 });
 
 export const read_my_schema = spacetimedb.procedure(t.string(), ctx => {
-  const module_identity = ctx.identity;
+  const module_identity = ctx.databaseIdentity;
   const response = ctx.http.fetch(
     `http://localhost:3000/v1/database/${module_identity}/schema?version=9`
   );

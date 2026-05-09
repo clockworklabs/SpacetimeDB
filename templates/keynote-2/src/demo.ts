@@ -7,87 +7,46 @@ import { CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
 import { initConvex } from './init/init_convex';
 import { sh } from './init/utils';
-import * as fs from 'fs';
+import { setTimeout as sleep } from 'node:timers/promises';
+import EventEmitter from 'node:events';
+import { type ConnectorKey } from './config.ts';
+import { parseDemoOptions } from './opts.ts';
+
+const options = parseDemoOptions();
+const {
+  accounts,
+  alpha,
+  concurrency,
+  convexDir,
+  convexUrl,
+  initialBalance,
+  noAnimation,
+  seconds,
+  skipPrep,
+  stdbModule,
+  stdbModulePath,
+  stdbUrl,
+  systems,
+} = options;
 
 // Simple TCP ping - just check if something is listening on the port
-function ping(port: number, timeoutMs = 2000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = createConnection({ host: '127.0.0.1', port });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      resolve(false);
-    }, timeoutMs);
-    socket.on('connect', () => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(true);
-    });
-    socket.on('error', () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-  });
+function ping(port: number, timeout = 2000): Promise<boolean> {
+  const socket = createConnection({ host: '127.0.0.1', port, timeout });
+  return EventEmitter.once(socket, 'connect').then(
+    () => true,
+    () => false,
+  );
 }
 
 // Use spacetime CLI to ping the server
-function spacetimePing(): boolean {
+async function spacetimePing(): Promise<boolean> {
   try {
-    execSync('spacetime server ping local', { stdio: 'ignore' });
+    execSync('spacetime server ping ' + stdbUrl, { stdio: 'ignore' });
     return true;
   } catch {
     return false;
   }
 }
-
-// ============================================================================
-// CLI Arguments
-// ============================================================================
-
-const args = process.argv.slice(2);
-
-function getArg(name: string, defaultValue: number): number {
-  const idx = args.findIndex(
-    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
-  );
-  if (idx === -1) return defaultValue;
-  const arg = args[idx];
-  if (arg.includes('=')) return Number(arg.split('=')[1]);
-  return Number(args[idx + 1] ?? defaultValue);
-}
-
-function getStringArg(name: string, defaultValue: string): string {
-  const idx = args.findIndex(
-    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
-  );
-  if (idx === -1) return defaultValue;
-  const arg = args[idx];
-  if (arg.includes('=')) return arg.split('=')[1];
-  return args[idx + 1] ?? defaultValue;
-}
-
-function hasFlag(name: string): boolean {
-  return args.includes(`--${name}`);
-}
-
-const seconds = getArg('seconds', 10);
-const concurrency = getArg('concurrency', 10);
-const alpha = getArg('alpha', 0.5);
-const systems = getStringArg('systems', 'convex,spacetimedb')
-  .split(',')
-  .map((s) => s.trim());
-const skipPrep = hasFlag('skip-prep');
-const noAnimation = hasFlag('no-animation');
-
-const accounts = Number(process.env.SEED_ACCOUNTS ?? 100_000);
-const initialBalance = Number(process.env.SEED_INITIAL_BALANCE ?? 10_000_000);
-
-// Force non-Docker mode and use metrics endpoint for TPS counting
-process.env.USE_DOCKER = '0';
-process.env.USE_SPACETIME_METRICS_ENDPOINT = '1';
-
-// Set default SpacetimeDB config if not set
-if (!process.env.STDB_URL) process.env.STDB_URL = 'ws://127.0.0.1:3000';
-if (!process.env.STDB_MODULE) process.env.STDB_MODULE = 'test-1';
 
 // ============================================================================
 // ANSI Colors & Animation
@@ -136,10 +95,6 @@ function createSpinner(label: string): { stop: (finalText: string) => void } {
   };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // ============================================================================
 // Service Health Checks
 // ============================================================================
@@ -154,7 +109,7 @@ interface ServiceConfig {
 const serviceConfigs: Record<string, ServiceConfig> = {
   spacetimedb: {
     name: 'SpacetimeDB',
-    healthCheck: async () => spacetimePing(),
+    healthCheck: spacetimePing,
     startCmd: 'spacetime start',
   },
   convex: {
@@ -223,9 +178,9 @@ async function checkService(system: string): Promise<boolean> {
 // Prep / Seed
 // ============================================================================
 
-async function prepSystem(system: string): Promise<void> {
-  const connector = (CONNECTORS as any)[system];
-  if (!connector) {
+async function prepSystem(system: ConnectorKey): Promise<void> {
+  const makeConnector = CONNECTORS[system];
+  if (!makeConnector) {
     console.log(`  ${system.padEnd(15)} ${c('yellow', '⚠ SKIPPED')}`);
     return;
   }
@@ -234,49 +189,34 @@ async function prepSystem(system: string): Promise<void> {
 
   try {
     if (system === 'spacetimedb') {
-      const moduleName = process.env.STDB_MODULE || 'test-1';
-      const server = process.env.STDB_SERVER || 'local';
-      const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
-      const modulePath = process.env.STDB_MODULE_PATH || './spacetimedb';
-
       // Publish module (creates DB if needed, updates if exists)
       await sh('spacetime', [
         'publish',
+        '-c',
+        '-y',
         '--server',
-        server,
-        moduleName,
+        stdbUrl,
+        stdbModule,
         '--module-path',
-        modulePath,
+        stdbModulePath,
       ]);
-      await sh('cargo', [
-        'run',
-        //"--quiet",
-        "--manifest-path",
-        "spacetimedb-rust-client/Cargo.toml",
-        "--",
-        "seed",
-        //"--quiet",
-        '--server',
-        server2,
-        "--module",
-        moduleName,
-        "--accounts",
-        String(accounts),
-        "--initial-balance",
-        String(initialBalance),
-      ]);
-      console.log('[spacetimedb] seed complete.');
-    } else if (system === 'convex') {
-      await initConvex();
+    }
+
+    if (system === 'convex') {
+      await initConvex({ accounts, convexDir, convexUrl, initialBalance });
     } else {
-      const conn = connector();
+      const conn = makeConnector(options);
       await conn.open();
-      await conn.call('seed', { accounts, initialBalance });
-      await conn.close();
+      try {
+        await conn.call('seed', { accounts, initialBalance });
+      } finally {
+        await conn.close();
+      }
     }
     spinner.stop(c('green', '✓ READY'));
   } catch (err: any) {
     spinner.stop(c('red', `✗ ${err.message}`));
+    throw err;
   }
 }
 
@@ -289,14 +229,16 @@ interface BenchResult {
   tps: number;
 }
 
-async function runBenchmarkOther(system: string): Promise<BenchResult | null> {
-  const connectorFactory = (CONNECTORS as any)[system];
+async function runBenchmarkOther(
+  system: ConnectorKey,
+): Promise<BenchResult | null> {
+  const connectorFactory = CONNECTORS[system];
   if (!connectorFactory) {
     console.log(`  ${system}: Unknown connector`);
     return null;
   }
 
-  const connector = connectorFactory();
+  const connector = connectorFactory(options);
   const testMod = await import(`./tests/test-1/${system}.ts`);
   const scenario = testMod.default.run;
 
@@ -307,6 +249,7 @@ async function runBenchmarkOther(system: string): Promise<BenchResult | null> {
     concurrency,
     accounts,
     alpha,
+    runtimeConfig: options,
   });
 
   return {
@@ -315,51 +258,8 @@ async function runBenchmarkOther(system: string): Promise<BenchResult | null> {
   };
 }
 
-async function runBenchmarkStdb(): Promise<BenchResult | null> {
-  const moduleName = process.env.STDB_MODULE || 'test-1';
-  const server2 = process.env.STDB_SERVER || 'http://localhost:3000';
-
-  await sh('cargo', [
-    'run',
-    //"--quiet",
-    "--manifest-path",
-    "spacetimedb-rust-client/Cargo.toml",
-    "--",
-    "bench",
-    //"--quiet",
-    '--server',
-    server2,
-    "--module",
-    moduleName,
-    "--duration",
-    `${seconds}s`,
-    "--connections",
-    String(concurrency),
-    "--alpha",
-    String(alpha),
-    "--tps-write-path",
-    "spacetimedb-tps.tmp.log",
-  ]);
-
-  const tpsStr = fs.readFileSync("spacetimedb-tps.tmp.log", 'utf-8').trim();
-  const tps = Number(tpsStr);
-  if (isNaN(tps)) {
-    console.warn(`[spacetimedb] Failed to parse TPS from file: ${tpsStr}`);
-    return null;
-  }
-
-  return {
-    system: "spacetimedb",
-    tps: Math.round(tps),
-  };
-}
-
-async function runBenchmark(system: string): Promise<BenchResult | null> {
-  if (system === 'spacetimedb') {
-    return await runBenchmarkStdb();
-  } else {
-    return await runBenchmarkOther(system);
-  }
+async function runBenchmark(system: ConnectorKey): Promise<BenchResult | null> {
+  return await runBenchmarkOther(system);
 }
 
 // ============================================================================
@@ -413,7 +313,12 @@ async function displayResults(results: BenchResult[]): Promise<void> {
   const fastest = results[0];
   const slowest = results[results.length - 1];
 
-  if (fastest && slowest && fastest.system !== slowest.system && slowest.tps > 0) {
+  if (
+    fastest &&
+    slowest &&
+    fastest.system !== slowest.system &&
+    slowest.tps > 0
+  ) {
     const multiplier = Math.round(fastest.tps / slowest.tps);
 
     console.log('');
@@ -435,11 +340,11 @@ async function displayResults(results: BenchResult[]): Promise<void> {
     console.log('  ' + c('cyan', '║') + ' '.repeat(boxWidth) + c('cyan', '║'));
     console.log(
       '  ' +
-      c('cyan', '║') +
-      ' '.repeat(msgPadding) +
-      c('bold', c('green', msgWithEmoji)) +
-      ' '.repeat(rightPadding) +
-      c('cyan', '║'),
+        c('cyan', '║') +
+        ' '.repeat(msgPadding) +
+        c('bold', c('green', msgWithEmoji)) +
+        ' '.repeat(rightPadding) +
+        c('cyan', '║'),
     );
     console.log('  ' + c('cyan', '║') + ' '.repeat(boxWidth) + c('cyan', '║'));
     console.log('  ' + c('cyan', '╚' + '═'.repeat(boxWidth) + '╝'));
@@ -492,8 +397,8 @@ async function main() {
   } else {
     console.log(
       '\n' +
-      c('bold', '  [2/4] Preparing databases...') +
-      c('dim', ' (skipped)\n'),
+        c('bold', '  [2/4] Preparing databases...') +
+        c('dim', ' (skipped)\n'),
     );
   }
 

@@ -1,7 +1,7 @@
 use anyhow::{ensure, Context};
 use clap::Arg;
-use clap::ArgAction::{Set, SetTrue};
-use clap::ArgMatches;
+use clap::ArgAction::{self, Set, SetTrue};
+use clap::{value_parser, ArgMatches, ValueEnum};
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
 use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
@@ -12,12 +12,74 @@ use std::{env, fs};
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::spacetime_config::{
-    find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
-    SpacetimeConfig,
+    find_and_load_with_env, find_and_load_with_env_from, CommandConfig, CommandSchema, CommandSchemaBuilder,
+    FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
+
+/// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+#[clap(rename_all = "kebab-case")]
+pub enum YesValue {
+    /// Equivalent to passing every other option. This is the default when `--yes` is given without a value.
+    All,
+    /// Skip the "publish to a non-local server?" confirmation.
+    Remote,
+    /// Skip migration confirmations (e.g. major version upgrade).
+    Migrate,
+    /// Skip the "this will BREAK existing clients" confirmation.
+    BreakClients,
+    /// Don't prompt the user to log in; act non-interactively for auth.
+    SkipLogin,
+    /// Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation.
+    DeleteData,
+}
+
+/// Decoded `--yes` selections, used at every prompt site.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct YesFlags {
+    pub publish_to_remote: bool,
+    pub migrate_major_version: bool,
+    pub break_clients: bool,
+    pub skip_login: bool,
+    pub delete_data: bool,
+}
+
+impl YesFlags {
+    pub fn all() -> Self {
+        Self {
+            publish_to_remote: true,
+            migrate_major_version: true,
+            break_clients: true,
+            skip_login: true,
+            delete_data: true,
+        }
+    }
+
+    fn merge(&mut self, value: YesValue) {
+        match value {
+            YesValue::All => *self = YesFlags::all(),
+            YesValue::Remote => self.publish_to_remote = true,
+            YesValue::Migrate => self.migrate_major_version = true,
+            YesValue::BreakClients => self.break_clients = true,
+            YesValue::SkipLogin => self.skip_login = true,
+            YesValue::DeleteData => self.delete_data = true,
+        }
+    }
+}
+
+/// Read the parsed `--yes` selections off the matched args.
+fn yes_flags_from_args(args: &ArgMatches) -> YesFlags {
+    let mut flags = YesFlags::default();
+    if let Some(values) = args.get_many::<YesValue>("yes") {
+        for v in values {
+            flags.merge(*v);
+        }
+    }
+    flags
+}
 
 /// Build the CommandSchema for publish command
 pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
@@ -28,13 +90,14 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
         .key(Key::new("js_file").module_specific())
-        .key(Key::new("num_replicas"))
+        .key(Key::new("num_replicas").module_specific())
         .key(Key::new("break_clients"))
         .key(Key::new("anon_identity"))
         .key(Key::new("parent"))
         .key(Key::new("organization"))
+        .key(Key::new("native_aot").module_specific())
         .exclude("clear-database")
-        .exclude("force")
+        .exclude("yes")
         .exclude("no_config")
         .exclude("env")
         .build(command)
@@ -76,19 +139,30 @@ pub fn get_filtered_publish_configs<'a>(
             .collect();
 
         if matched.is_empty() {
-            anyhow::bail!(
-                "No database target matches '{}'. Available databases: {}",
-                cli_database,
-                spacetime_config
-                    .collect_all_targets_with_inheritance()
-                    .iter()
-                    .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            // When there is exactly one target in the config and the CLI-provided
+            // database name doesn't match it, use that target's settings (e.g.
+            // native-aot, module-path, build-options) and let CommandConfig merge
+            // the CLI database name on top.  This handles the common case where
+            // `spacetime init` generated a random database suffix that differs
+            // from the name the user passes on the CLI, while still picking up
+            // module-specific config.
+            let all_targets = spacetime_config.collect_all_targets_with_inheritance();
+            if all_targets.len() == 1 {
+                all_targets
+            } else {
+                anyhow::bail!(
+                    "No database target matches '{}'. Available databases: {}",
+                    cli_database,
+                    all_targets
+                        .iter()
+                        .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+        } else {
+            matched
         }
-
-        matched
     } else {
         all_targets
     };
@@ -167,7 +241,7 @@ pub fn cli() -> clap::Command {
             Arg::new("break_clients")
                 .long("break-clients")
                 .action(SetTrue)
-                .help("Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.")
+                .help("Allow breaking changes when publishing to an existing database identity. Equivalent to --yes=break-clients: skips the \"this will BREAK existing clients\" prompt, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.")
         )
         .arg(
             common_args::anonymous()
@@ -208,7 +282,23 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
         .arg(
-            common_args::yes()
+            Arg::new("yes")
+                .long("yes")
+                .short('y')
+                .action(ArgAction::Append)
+                .num_args(0..=1)
+                .require_equals(true)
+                .value_delimiter(',')
+                .default_missing_value("all")
+                .value_parser(value_parser!(YesValue))
+                .help(
+                    "Skip confirmation prompts. With no value, defaults to 'all' \
+                     (equivalent to --yes=all). To skip specific prompts, pass one or \
+                     more of: all, remote, migrate, break-clients, skip-login, delete-data. \
+                     Multiple values can be comma-separated (--yes=migrate,break-clients) or \
+                     given via repeated flags (--yes=migrate --yes=break-clients). The value \
+                     must be attached with '=' (so `--yes my-db` treats `my-db` as the database name)."
+                )
         )
         .arg(
             Arg::new("no_config")
@@ -223,12 +313,18 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .action(Set)
                 .help("Environment name for config file layering (e.g., dev, staging)")
         )
+        .arg(
+            Arg::new("native_aot")
+                .long("native-aot")
+                .action(SetTrue)
+                .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
 fn confirm_and_clear(
     name_or_identity: &str,
-    force: bool,
+    skip_prompt: bool,
     mut builder: reqwest::RequestBuilder,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
     println!(
@@ -236,7 +332,7 @@ fn confirm_and_clear(
         name_or_identity
     );
     if !y_or_n(
-        force,
+        skip_prompt,
         format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
     )? {
         anyhow::bail!("Aborted.");
@@ -246,13 +342,17 @@ fn confirm_and_clear(
     Ok(builder)
 }
 
-fn confirm_major_version_upgrade() -> Result<(), anyhow::Error> {
+fn confirm_major_version_upgrade(skip_prompt: bool) -> Result<(), anyhow::Error> {
     println!(
         "It looks like you're trying to do a major version upgrade from 1.0 to 2.0. We recommend first looking at the upgrade notes before committing to this upgrade: https://spacetimedb.com/docs/upgrade"
     );
     println!();
     println!("WARNING: Once you publish you cannot revert back to version 1.0.");
     println!();
+
+    if skip_prompt {
+        return Ok(());
+    }
 
     let mut input = String::new();
     print!("Please type 'upgrade' to accept this change: ");
@@ -289,13 +389,23 @@ pub async fn exec_with_options(
     let env = args.get_one::<String>("env").map(|s| s.as_str());
 
     // Get publish configs (from spacetime.json or empty)
-    let owned_loaded;
+    let mut owned_loaded;
     let loaded_config_ref = if no_config {
         None
     } else if let Some(pre) = pre_loaded_config {
         Some(pre)
     } else {
+        // First, try to load config from current directory
         owned_loaded = find_and_load_with_env(env)?;
+
+        // If no config found and --module-path is specified, try loading from module path.
+        if owned_loaded.is_none()
+            && args.contains_id("module_path")
+            && let Some(module_path) = args.get_one::<PathBuf>("module_path")
+        {
+            owned_loaded = find_and_load_with_env_from(env, module_path.clone())?;
+        }
+
         owned_loaded.as_ref().inspect(|loaded| {
             if !quiet_config {
                 for path in &loaded.loaded_files {
@@ -325,7 +435,7 @@ pub async fn exec_with_options(
         .get_one::<ClearMode>("clear-database")
         .copied()
         .unwrap_or(ClearMode::Never);
-    let force = args.get_flag("force");
+    let yes = yes_flags_from_args(args);
     let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
 
     execute_publish_configs(
@@ -334,7 +444,7 @@ pub async fn exec_with_options(
         using_config,
         config_dir,
         clear_database,
-        force,
+        yes,
     )
     .await
 }
@@ -353,15 +463,9 @@ pub async fn exec_from_entry(
     let command_config = CommandConfig::new(&schema, entry, &matches)?;
     command_config.validate()?;
 
-    execute_publish_configs(
-        &mut config,
-        vec![command_config],
-        true,
-        config_dir,
-        clear_database,
-        force,
-    )
-    .await
+    let yes = if force { YesFlags::all() } else { YesFlags::default() };
+
+    execute_publish_configs(&mut config, vec![command_config], true, config_dir, clear_database, yes).await
 }
 
 async fn execute_publish_configs<'a>(
@@ -370,7 +474,7 @@ async fn execute_publish_configs<'a>(
     using_config: bool,
     config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
-    force: bool,
+    yes: YesFlags,
 ) -> Result<(), anyhow::Error> {
     // Execute publish for each config
     for command_config in publish_configs {
@@ -416,22 +520,23 @@ async fn execute_publish_configs<'a>(
         let parent = parent_opt.as_deref();
         let org_opt = command_config.get_one::<String>("organization")?;
         let org = org_opt.as_deref();
+        let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
         // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
         //  easily create a new identity with an email
-        let auth_header = get_auth_header(config, anon_identity, server, !force).await?;
+        let auth_header = get_auth_header(config, anon_identity, server, !yes.skip_login).await?;
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
-        if let Some(path_to_project) = path_to_project.as_ref() {
-            if !path_to_project.exists() {
-                return Err(anyhow::anyhow!(
-                    "Project path does not exist: {}",
-                    path_to_project.display()
-                ));
-            }
+        if let Some(path_to_project) = path_to_project.as_ref()
+            && !path_to_project.exists()
+        {
+            return Err(anyhow::anyhow!(
+                "Project path does not exist: {}",
+                path_to_project.display()
+            ));
         }
 
         // Decide program file path and read program.
@@ -443,6 +548,16 @@ async fn execute_publish_configs<'a>(
             println!("(JS) Skipping build. Instead we are publishing {}", path.display());
             (path.clone(), "Js")
         } else {
+            // Set EXPERIMENTAL_WASM_AOT environment variable if native_aot is enabled
+            // This is read by the C# build system (MSBuild) and by csharp.rs to determine output paths
+            if native_aot {
+                println!("Using NativeAOT-LLVM compilation (experimental)");
+                // SAFETY: We are single-threaded at this point and no other code is reading
+                // this environment variable concurrently.
+                unsafe {
+                    env::set_var("EXPERIMENTAL_WASM_AOT", "1");
+                }
+            }
             build::exec_with_argstring(
                 path_to_project
                     .as_ref()
@@ -459,7 +574,7 @@ async fn execute_publish_configs<'a>(
         };
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
-            if !y_or_n(force, "Are you sure you want to proceed?")? {
+            if !y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?")? {
                 anyhow::bail!("Publish aborted by user.");
             }
         }
@@ -480,7 +595,7 @@ async fn execute_publish_configs<'a>(
 
             // note that this only happens in the case where we've passed a `name_or_identity`, but that's required if we pass `--clear-database`.
             if clear_database == ClearMode::Always {
-                builder = confirm_and_clear(name_or_identity, force, builder)?;
+                builder = confirm_and_clear(name_or_identity, yes.delete_data, builder)?;
             } else {
                 builder = apply_pre_publish_if_needed(
                     builder,
@@ -493,7 +608,7 @@ async fn execute_publish_configs<'a>(
                     &auth_header,
                     clear_database,
                     force_break_clients,
-                    force,
+                    yes,
                 )
                 .await?;
             }
@@ -539,10 +654,10 @@ async fn execute_publish_configs<'a>(
                     println!("{op} database with identity: {database_identity}");
                 }
 
-                if is_maincloud_host(&database_host) {
-                    if let Some(domain) = domain.as_ref() {
-                        println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
-                    }
+                if is_maincloud_host(&database_host)
+                    && let Some(domain) = domain.as_ref()
+                {
+                    println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
                 }
             }
             PublishResult::PermissionDenied { name } => {
@@ -651,7 +766,7 @@ async fn apply_pre_publish_if_needed(
     auth_header: &AuthHeader,
     clear_database: ClearMode,
     force_break_clients: bool,
-    force: bool,
+    yes: YesFlags,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
     // The caller enforces this
     assert!(clear_database != ClearMode::Always);
@@ -671,7 +786,7 @@ async fn apply_pre_publish_if_needed(
             PrePublishResult::ManualMigrate(manual) => manual.major_version_upgrade,
         };
         if major_version_upgrade {
-            confirm_major_version_upgrade()?;
+            confirm_major_version_upgrade(yes.migrate_major_version)?;
         }
 
         match pre {
@@ -684,7 +799,7 @@ async fn apply_pre_publish_if_needed(
                 println!("{}", manual.reason);
                 println!("Proceeding with database clear due to --delete-data=on-conflict.");
 
-                builder = confirm_and_clear(name_or_identity, force, builder)?;
+                builder = confirm_and_clear(name_or_identity, yes.delete_data, builder)?;
             }
             PrePublishResult::AutoMigrate(auto) => {
                 println!("{}", auto.migrate_plan);
@@ -692,7 +807,7 @@ async fn apply_pre_publish_if_needed(
                 // conflict that required manual migration.
                 if auto.break_clients
                     && !y_or_n(
-                        force_break_clients || force,
+                        force_break_clients || yes.break_clients,
                         "The above changes will BREAK existing clients. Do you want to proceed?",
                     )?
                 {
@@ -1140,5 +1255,95 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["publish", ""]);
         let result = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_yes_flag_no_value_is_all() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(
+            yes.publish_to_remote
+                && yes.migrate_major_version
+                && yes.break_clients
+                && yes.skip_login
+                && yes.delete_data
+        );
+    }
+
+    #[test]
+    fn test_yes_flag_explicit_all() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=all"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(
+            yes.publish_to_remote
+                && yes.migrate_major_version
+                && yes.break_clients
+                && yes.skip_login
+                && yes.delete_data
+        );
+    }
+
+    #[test]
+    fn test_yes_flag_single_value() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=remote"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(yes.publish_to_remote);
+        assert!(!yes.migrate_major_version && !yes.break_clients && !yes.skip_login && !yes.delete_data);
+    }
+
+    #[test]
+    fn test_yes_flag_comma_separated_multiple_values() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate,skip-login"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(yes.migrate_major_version && yes.skip_login);
+        assert!(!yes.publish_to_remote && !yes.break_clients && !yes.delete_data);
+    }
+
+    #[test]
+    fn test_yes_flag_repeated_invocations_accumulate() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate", "--yes=skip-login"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(yes.migrate_major_version && yes.skip_login);
+        assert!(!yes.publish_to_remote && !yes.break_clients && !yes.delete_data);
+    }
+
+    #[test]
+    fn test_yes_flag_delete_data_only() {
+        let matches = cli().get_matches_from(vec!["publish", "--yes=delete-data"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(yes.delete_data);
+        assert!(!yes.publish_to_remote && !yes.migrate_major_version && !yes.break_clients && !yes.skip_login);
+    }
+
+    #[test]
+    fn test_yes_flag_unattached_token_is_database_name() {
+        // `--yes` with a following bare token is parsed as `--yes` (no value, defaults to all)
+        // plus the token treated as the positional database name. require_equals enforces this.
+        let matches = cli().get_matches_from(vec!["publish", "--yes", "my-db"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(yes.delete_data && yes.publish_to_remote);
+        assert_eq!(
+            matches.get_one::<String>("name|identity").map(String::as_str),
+            Some("my-db"),
+        );
+    }
+
+    #[test]
+    fn test_yes_flag_invalid_value_errors() {
+        let result = cli().try_get_matches_from(vec!["publish", "--yes=bogus"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_yes_flag_omitted_means_no_skips() {
+        let matches = cli().get_matches_from(vec!["publish", "my-db"]);
+        let yes = yes_flags_from_args(&matches);
+        assert!(
+            !yes.publish_to_remote
+                && !yes.migrate_major_version
+                && !yes.break_clients
+                && !yes.skip_login
+                && !yes.delete_data
+        );
     }
 }

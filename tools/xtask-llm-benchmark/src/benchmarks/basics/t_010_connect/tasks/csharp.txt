@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines one table and two reducers for client lifecycle events.
+Write a SpacetimeDB backend module in C# that defines one table and two reducers for client lifecycle events.
 
 TABLE
 - Event

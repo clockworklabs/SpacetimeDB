@@ -12,5 +12,7 @@ pub fn say_hello(_ctx: &ReducerContext) {
 
 #[spacetimedb::procedure]
 pub fn return_person(_ctx: &mut ProcedureContext) -> Person {
-   return Person { name: "World".to_owned() };
+    return Person {
+        name: "World".to_owned(),
+    };
 }

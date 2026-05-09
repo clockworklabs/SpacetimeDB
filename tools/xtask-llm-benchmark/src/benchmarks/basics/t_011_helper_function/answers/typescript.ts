@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const result = table({
+const result = table({
   name: 'result',
 }, {
   id: t.i32().primaryKey(),

@@ -1,11 +1,19 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Security.Cryptography;
+using System.Threading;
 using CsCheck;
 using SpacetimeDB.BSATN;
 using Xunit;
 
+/// <summary>
+/// Unit and randomized tests for the BSATN.Runtime library. Some tests here also test BSATN.Codegen.
+///
+/// Randomized tests use the CsCheck library to generate large numbers of sample inputs and check that these libraries
+/// maintain certain invariants for all of them.
+/// </summary>
 public static partial class BSATNRuntimeTests
 {
     [Fact]
@@ -178,6 +186,27 @@ public static partial class BSATNRuntimeTests
         Assert.False(laterStamp < stamp);
         Assert.Equal(-1, stamp.CompareTo(laterStamp));
         Assert.Equal(+1, laterStamp.CompareTo(stamp));
+    }
+
+    [Fact]
+    public static void TimestampSqlLiteralUsesInvariantCulture()
+    {
+        var originalCulture = Thread.CurrentThread.CurrentCulture;
+
+        try
+        {
+            // Ensure the format is agnostic to the culture. Using ar-SA because it's different than Gregorian, which is used in UTC.
+            Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo("ar-SA");
+
+            Assert.Equal(
+                "'2025-01-22T21:53:13.990639Z'",
+                SqlLit.Timestamp(new Timestamp(1_737_582_793_990_639L)).ToString()
+            );
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]

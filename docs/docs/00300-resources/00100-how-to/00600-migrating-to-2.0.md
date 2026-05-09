@@ -58,6 +58,20 @@ conn.reducers.on_deal_damage(|ctx, target, amount| {
 ```
 
 </TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+```cpp
+// 1.0-style global reducer callback semantics (no longer true in 2.0)
+UFUNCTION()
+void OnDealDamage(const FReducerEventContext& Context, const FSpacetimeDBIdentity& Target, int32 Amount)
+{
+    UE_LOG(LogTemp, Log, TEXT("Someone called DealDamage with args: (%s, %d)"), *Target.ToString(), Amount);
+}
+
+Conn->Reducers->OnDealDamage.AddDynamic(this, &AMyActor::OnDealDamage);
+```
+
+</TabItem>
 </Tabs>
 
 In 2.0, global reducer callbacks no longer exist. The server does not broadcast reducer argument data to other clients. Instead, you have two options:
@@ -126,6 +140,34 @@ The fire-and-forget form still works:
 // 2.0 -- fire and forget (unchanged)
 ctx.reducers.deal_damage(target, amount).unwrap();
 ```
+
+</TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+```cpp
+// 2.0 -- per-call callback on the calling connection
+UFUNCTION()
+void OnDealDamage(const FReducerEventContext& Context, const FSpacetimeDBIdentity& Target, int32 Amount)
+{
+    if (Context.Event.Status.IsCommitted())
+    {
+        UE_LOG(LogTemp, Log, TEXT("Reducer succeeded"));
+    }
+    else if (Context.Event.Status.IsFailed())
+    {
+        UE_LOG(LogTemp, Error, TEXT("Reducer failed: %s"), *Context.Event.Status.GetAsFailed());
+    }
+    else if (Context.Event.Status.IsOutOfEnergy())
+    {
+        UE_LOG(LogTemp, Error, TEXT("Reducer failed: out of energy"));
+    }
+}
+
+Conn->Reducers->OnDealDamage.AddDynamic(this, &AMyActor::OnDealDamage);
+Conn->Reducers->DealDamage(Target, Amount);
+```
+
+In Unreal, there is no `_then()` method. The generated `On<Reducer>` delegate is correlated by `request_id` and only fires on the connection that called the reducer.
 
 </TabItem>
 </Tabs>
@@ -228,6 +270,39 @@ fn deal_damage(ctx: &ReducerContext, target: Identity, amount: u32) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+**Server (module) -- before:**
+```cpp
+// 1.0-style reducer arguments were effectively observable through reducer callbacks
+SPACETIMEDB_REDUCER(deal_damage, ReducerContext ctx, Identity target, uint32_t amount) {
+    // update game state...
+    return Ok();
+}
+```
+
+**Server (module) -- after:**
+```cpp
+// 2.0 server -- explicitly publish events via an event table
+#include <spacetimedb.h>
+using namespace SpacetimeDB;
+
+struct DamageEvent {
+    Identity target;
+    uint32_t amount;
+};
+SPACETIMEDB_STRUCT(DamageEvent, target, amount);
+SPACETIMEDB_TABLE(DamageEvent, damage_event, Public);
+
+SPACETIMEDB_REDUCER(deal_damage, ReducerContext ctx, Identity target, uint32_t amount) {
+    // update game state...
+
+    ctx.db[damage_event].insert(DamageEvent{target, amount});
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 <Tabs groupId="client-language" queryString>
@@ -291,6 +366,40 @@ conn.reducers.on_deal_damage(|ctx, target, amount| {
 conn.db.damage_event().on_insert(|ctx, event| {
     play_damage_animation(event.target, event.amount);
 });
+```
+
+</TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+**Client -- before:**
+```cpp
+// 1.0 -- NO LONGER VALID in 2.0 (global reducer callback)
+UFUNCTION()
+void OnDealDamage(const FReducerEventContext& Context, const FSpacetimeDBIdentity& Target, int32 Amount)
+{
+    PlayDamageAnimation(Target, Amount);
+}
+
+Conn->Reducers->OnDealDamage.AddDynamic(this, &AMyActor::OnDealDamage);
+```
+
+**Client -- after:**
+```cpp
+// 2.0 client -- event table callback
+// Note that although this callback fires, the `DamageEvent`
+// table will never have any rows present in the client cache
+UFUNCTION()
+void OnDamageEvent(const FEventContext& Context, const FDamageEventType& DamageEvent)
+{
+    PlayDamageAnimation(DamageEvent.Target, DamageEvent.Amount);
+}
+
+Conn->Db->DamageEvent->OnInsert.AddDynamic(this, &AMyActor::OnDamageEvent);
+
+Conn->SubscriptionBuilder()
+    ->OnApplied(OnAppliedDelegate)
+    ->OnError(OnErrorDelegate)
+    ->Subscribe({ TEXT("SELECT * FROM damage_event") });
 ```
 
 </TabItem>
@@ -395,6 +504,31 @@ conn.db.my_table().on_insert(|ctx, row| {
 ```
 
 </TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+In 1.0, table callbacks could receive a reducer event with full reducer information when a reducer caused a table change. In 2.0:
+
+- **The caller** sees `Context.Event.IsReducer()` with `FReducerEvent { Timestamp, Status, Reducer }`.
+- **Other clients** see `Context.Event.IsTransaction()` with no reducer details.
+
+```cpp
+// 2.0 -- checking who caused a table change
+UFUNCTION()
+void OnPersonInsert(const FEventContext& Context, const FPersonType& Row)
+{
+    if (Context.Event.IsReducer())
+    {
+        const auto ReducerEvent = Context.Event.GetAsReducer();
+        UE_LOG(LogTemp, Log, TEXT("Our reducer: %s"), *ReducerEvent.ReducerName);
+    }
+    else if (Context.Event.IsTransaction())
+    {
+        // Another client's action caused this insert.
+    }
+}
+```
+
+</TabItem>
 </Tabs>
 
 If you need metadata about reducers invoked by other clients, update your reducer code to emit an event using an event table.
@@ -448,6 +582,19 @@ ctx.subscription_builder()
 ```
 
 </TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+```cpp
+// 2.0 -- same as 1.0 today
+Conn->SubscriptionBuilder()
+    ->OnApplied(OnAppliedDelegate)
+    ->OnError(OnErrorDelegate)
+    ->Subscribe({ TEXT("SELECT * FROM person") });
+```
+
+The Unreal SDK does not expose typed query builders yet. For now, use SQL strings. Typed query builder support is planned.
+
+</TabItem>
 </Tabs>
 
 Note that subscribing to event tables requires an explicit query:
@@ -483,6 +630,17 @@ ctx.subscription_builder()
     .on_applied(|ctx| { /* ... */ })
     .add_query(|q| q.from.damage_event())
     .subscribe();
+```
+
+</TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+```cpp
+// Event tables are excluded from SubscribeToAllTables(), so subscribe explicitly:
+Conn->SubscriptionBuilder()
+    ->OnApplied(OnAppliedDelegate)
+    ->OnError(OnErrorDelegate)
+    ->Subscribe({ TEXT("SELECT * FROM damage_event") });
 ```
 
 </TabItem>
@@ -603,6 +761,31 @@ struct MyTable {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+The C++ module API does not have a direct `name -> accessor` rename like C# and Rust.
+
+In C++, the second argument to `SPACETIMEDB_TABLE(...)` is already the table accessor you use in module code, and the second argument to `FIELD_NamedMultiColumnIndex(...)` is already the index accessor.
+
+So for this migration step, keep using the accessor names you want in code:
+
+```cpp
+struct MyTable {
+    uint32_t id;
+    uint32_t x;
+    uint32_t y;
+};
+SPACETIMEDB_STRUCT(MyTable, id, x, y);
+
+// 2.0
+SPACETIMEDB_TABLE(MyTable, my_table, Public);
+FIELD_PrimaryKeyAutoInc(my_table, id);
+FIELD_NamedMultiColumnIndex(my_table, position, x, y);
+```
+
+If you also need to preserve or override the canonical SQL names that appear in migrations or SQL, use the explicit-name forms described in Option 2 below.
+
+</TabItem>
 </Tabs>
 
 ### Auto-migrating existing databases
@@ -642,6 +825,15 @@ const CASE_CONVERSION_POLICY: CaseConversionPolicy = CaseConversionPolicy::None;
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+SPACETIMEDB_SETTING_CASE_CONVERSION(SpacetimeDB::CaseConversionPolicy::None)
+```
+
+Use `SPACETIMEDB_SETTING_CASE_CONVERSION(...)` to preserve 1.0-style canonical names when migrating a C++ module.
+
+</TabItem>
 </Tabs>
 
 #### Option 2: overwrite the name of individual tables
@@ -650,6 +842,23 @@ Alternatively, manually specify the correct canonical name of each table:
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { table, schema, t } from 'spacetimedb/server';
+
+const myTable = table(
+  {
+    name: 'MyTable',
+    public: true,
+    indexes: [{ accessor: 'position', columns: ['x', 'y'] }],
+  },
+  {
+    id: t.u32().primaryKey().autoInc(),
+    x: t.u32(),
+    y: t.u32(),
+  }
+);
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -688,6 +897,23 @@ struct MyTable {
     x: u32,
     y: u32,
 }
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+If you need to preserve an existing canonical SQL name during migration, pass it directly to `SPACETIMEDB_TABLE(...)`. Use the `_NAMED` field/index macros only for index canonical names.
+
+```cpp
+struct MyTable {
+    uint32_t id;
+    uint32_t x;
+    uint32_t y;
+};
+SPACETIMEDB_STRUCT(MyTable, id, x, y);
+SPACETIMEDB_TABLE(MyTable, my_table, Public, "MyTable");
+FIELD_PrimaryKeyAutoInc(my_table, id);
+FIELD_MultiColumnIndex_NAMED(my_table, position, "Position", x, y);
 ```
 
 </TabItem>
@@ -761,6 +987,26 @@ let conn = DbConnection::builder()
 ```
 
 </TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+When constructing a `UDbConnection` to a remote database, use `WithDatabaseName` in 2.0. The Unreal 2.0 builder does not expose `WithModuleName`.
+
+```cpp
+// 1.0 terminology in other SDKs / older docs
+// UDbConnection::Builder()
+//     ->WithUri(TEXT("https://maincloud.spacetimedb.com"))
+//     ->WithModuleName(TEXT("my-database"))
+//     ->Build();
+
+// 2.0
+UDbConnection* Conn = UDbConnection::Builder()
+    ->WithUri(TEXT("https://maincloud.spacetimedb.com"))
+    ->WithDatabaseName(TEXT("my-database"))
+    // other options...
+    ->Build();
+```
+
+</TabItem>
 </Tabs>
 
 ## `sender` Is Now A Method, Not A Field
@@ -793,6 +1039,26 @@ fn my_reducer(ctx: &ReducerContext) {
 fn my_reducer(ctx: &ReducerContext) {
     let sender_identity = ctx.sender();
     // Do stuff with `sender_identity`...
+}
+```
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+In C++ modules, the sender is now accessed with `ctx.sender()` rather than a `ctx.sender` field.
+
+```cpp
+// 1.0 -- NO LONGER CORRECT
+SPACETIMEDB_REDUCER(my_reducer, ReducerContext ctx) {
+    auto sender_identity = ctx.sender;
+    // Do stuff with `sender_identity`...
+    return Ok();
+}
+
+// 2.0
+SPACETIMEDB_REDUCER(my_reducer, ReducerContext ctx) {
+    auto sender_identity = ctx.sender();
+    // Do stuff with `sender_identity`...
+    return Ok();
 }
 ```
 </TabItem>
@@ -998,6 +1264,65 @@ fn change_user_identity(ctx: &ReducerContext, name: String, identity: Identity) 
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+In 2.0 modules, updates should go through the primary key index. If you were previously treating another unique index like an update handle, migrate to primary-key updates or an explicit delete-plus-insert.
+
+### Updates which preserve the primary key - update with the primary key index
+
+```cpp
+struct User {
+    Identity identity;
+    std::string name;
+    uint32_t apples_owned;
+};
+SPACETIMEDB_STRUCT(User, identity, name, apples_owned);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKey(user, identity);
+FIELD_Unique(user, name);
+
+// 2.0
+SPACETIMEDB_REDUCER(add_apple, ReducerContext ctx, std::string name) {
+    auto user_row = ctx.db[user_name].find(name);
+    if (!user_row) {
+        return Err("User not found");
+    }
+
+    user_row->apples_owned += 1;
+    ctx.db[user_identity].update(*user_row);
+    return Ok();
+}
+```
+
+### Updates which change the primary key - explicitly delete and insert
+
+```cpp
+struct User {
+    Identity identity;
+    std::string name;
+    uint32_t apples_owned;
+};
+SPACETIMEDB_STRUCT(User, identity, name, apples_owned);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKey(user, identity);
+FIELD_Unique(user, name);
+
+// 2.0
+SPACETIMEDB_REDUCER(change_user_identity, ReducerContext ctx, std::string name, Identity identity) {
+    auto user_row = ctx.db[user_name].find(name);
+    if (!user_row) {
+        return Err("User not found");
+    }
+
+    User updated = *user_row;
+    ctx.db[user_identity].delete_by_key(updated.identity);
+    updated.identity = identity;
+    ctx.db[user].insert(updated);
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Scheduled Functions Are Now Private
@@ -1103,6 +1428,35 @@ fn run_my_timer(ctx: &ReducerContext, timer: MyTimer) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct MyTimer {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+};
+SPACETIMEDB_STRUCT(MyTimer, scheduled_id, scheduled_at);
+SPACETIMEDB_TABLE(MyTimer, my_timer, Private);
+FIELD_PrimaryKeyAutoInc(my_timer, scheduled_id);
+SPACETIMEDB_SCHEDULE(my_timer, 1, run_my_timer);
+
+// 1.0 - SUPERFLUOUS IN 2.0
+SPACETIMEDB_REDUCER(run_my_timer, ReducerContext ctx, MyTimer timer) {
+    if (ctx.sender() != ctx.identity()) {
+        return Err("`run_my_timer` should only be invoked by the database!");
+    }
+    // Do stuff...
+    return Ok();
+}
+
+// 2.0
+SPACETIMEDB_REDUCER(run_my_timer, ReducerContext ctx, MyTimer timer) {
+    // Do stuff...
+    return Ok();
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### Define wrappers for functions that are both scheduled and invoked by clients
@@ -1178,6 +1532,29 @@ fn run_my_timer(ctx: &ReducerContext, timer: MyTimer) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+struct MyTimer {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+};
+SPACETIMEDB_STRUCT(MyTimer, scheduled_id, scheduled_at);
+SPACETIMEDB_TABLE(MyTimer, my_timer, Private);
+FIELD_PrimaryKeyAutoInc(my_timer, scheduled_id);
+SPACETIMEDB_SCHEDULE(my_timer, 1, run_my_timer_private);
+
+SPACETIMEDB_REDUCER(run_my_timer_private, ReducerContext ctx, MyTimer timer) {
+    // Do stuff...
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(run_my_timer, ReducerContext ctx, MyTimer timer) {
+    return run_my_timer_private(ctx, timer);
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Private Items Are Not Code-Generated By Default
@@ -1225,6 +1602,14 @@ DbConnection::builder()
 ```
 
 </TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+```cpp
+// 1.0 equivalent removed in 2.0
+// The Unreal 2.0 builder does not expose WithLightMode(...)
+```
+
+</TabItem>
 </Tabs>
 
 In 2.0, the server never broadcasts reducer argument data to any client, so `light_mode` is no longer necessary. Simply remove the call:
@@ -1266,6 +1651,20 @@ DbConnection::builder()
 ```
 
 </TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+```cpp
+// 2.0
+UDbConnection* Conn = UDbConnection::Builder()
+    ->WithUri(Uri)
+    ->WithDatabaseName(DatabaseName)
+    // no WithLightMode needed
+    ->Build();
+```
+
+This migration item does not apply directly to Unreal. The 2.0 Unreal builder has no public `WithLightMode(...)` API.
+
+</TabItem>
 </Tabs>
 
 ## CallReducerFlags
@@ -1300,6 +1699,11 @@ ctx.reducers.my_reducer(args).unwrap();
 ```
 
 In 2.0, the success notification is lightweight (just `request_id` and `timestamp`, no reducer args or full event data), so there is no need to suppress it. Remove any `set_reducer_flags` calls and `CallReducerFlags` imports.
+
+</TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+This migration item does not apply to Unreal. The 2.0 Unreal SDK has no public `CallReducerFlags` or `setReducerFlags` equivalent.
 
 </TabItem>
 </Tabs>
@@ -1357,6 +1761,11 @@ DbConnection::builder()
 ```
 
 </TabItem>
+<TabItem value="cpp-unreal" label="Unreal C++">
+
+The Unreal SDK gets confirmed reads by default in 2.0. There is currently no Unreal builder method for opting out.
+
+</TabItem>
 </Tabs>
 
 For the CLI:
@@ -1371,6 +1780,7 @@ spacetime sql <database> "SELECT * FROM my_table"
 
 - [ ] Remove all `ctx.reducers.on_<reducer>()` calls
   - Replace with `_then()` callbacks for your own reducer calls
+  - Unreal: replace with generated `On<Reducer>` delegates on the calling connection
   - Replace with event tables + `on_insert` for cross-client notifications
 - [ ] Update `Event::UnknownTransaction` matches to `Event::Transaction`
 - [ ] For each reducer whose args you were observing from other clients:
@@ -1383,7 +1793,7 @@ spacetime sql <database> "SELECT * FROM my_table"
 - [ ] Set your module's case conversion policy to `None`
 - [ ] Change `with_module_name` to `with_database_name`
 - [ ] Change `ctx.sender` to `ctx.sender()`
-  - Only necessary in Rust modules.
+  - Only necessary in Rust and C++ modules.
 - [ ] Remove `update` calls on non-primary key unique indexes
   - When leaving the primary key value unchanged, update using the primary key index
   - When altering the primary key value, delete and insert
@@ -1391,6 +1801,8 @@ spacetime sql <database> "SELECT * FROM my_table"
 - [ ] Define wrappers around scheduled functions which are called by clients
 - [ ] Use `spacetime generate --include-private` if you rely on bindings for private tables or functions
 - [ ] Remove `with_light_mode()` from `DbConnectionBuilder`
+  - Unreal: no action if you are already on the 2.0 Unreal SDK; there is no public `WithLightMode(...)`
 - [ ] Remove `set_reducer_flags()` calls and `CallReducerFlags` imports
+  - Unreal: no action if you are already on the 2.0 Unreal SDK; there is no public reducer-flags API
 - [ ] Remove `unstable::CallReducerFlags` from imports
 - [ ] Note that confirmed reads are now enabled by default (no action needed unless you want to opt out with `.withConfirmedReads(false)`)

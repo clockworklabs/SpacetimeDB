@@ -7,15 +7,16 @@ A benchmark suite comparing SpacetimeDB against traditional web application stac
 See SpacetimeDB's performance advantage with one command:
 
 ```bash
-npm install
-npm run demo
+pnpm install
+pnpm run demo
 ```
 
 The demo compares SpacetimeDB and Convex by default, since both are easy for anyone to set up and run locally without additional infrastructure. Other systems (Postgres, CockroachDB, SQLite, etc.) are also supported but require more setup. The demo checks that required services are running (prompts you to start them if not), seeds databases, and displays animated results.
 
-**Options:** `--systems a,b,c` | `--seconds N` | `--skip-prep` | `--no-animation`
+**Options:** `--systems a,b,c` | `--seconds N` | `--concurrency N` | `--alpha N` | `--skip-prep` | `--no-animation`
 
-**Note:** You will need to [install Rust](https://rust-lang.org/tools/install/) to run the spacetimedb benchmark, because we run a [Rust Client](#rust-client).
+**Note:** `demo` always runs the built-in `test-1` scenario. Use `bench` if you need to specify a test name directly.
+**Note:** `demo` selects targets with `--systems`; `bench` filters test connectors with `--connectors`.
 
 ## Results Summary
 
@@ -23,8 +24,9 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 
 | System                            | TPS (~0% Contention) | TPS (~80% Contention) |
 | --------------------------------- | -------------------- | --------------------- |
-| **SpacetimeDB**                   | **107,850**          | **103,590**           |
-| SQLite + Node HTTP + Drizzle      | 7,845                | 7,652                 |
+| SpacetimeDB (TypeScript Module)   |                      | 307,074               |
+| SpacetimeDB (Rust Module)         |                      | 265,542               |
+| SQLite + Node HTTP + Drizzle      |                      | 3,236                 |
 | Bun + Drizzle + Postgres          | 7,115                | 2,074                 |
 | Postgres + Node HTTP + Drizzle    | 6,429                | 2,798                 |
 | Supabase + Node HTTP + Drizzle    | 6,310                | 1,268                 |
@@ -32,7 +34,7 @@ All tests use 50 concurrent connections with a transfer workload (read-modify-wr
 | PlanetScale + Node HTTP + Drizzle | 477                  | 30                    |
 | Convex                            | 438                  | 58                    |
 
-**Key Finding:** SpacetimeDB achieves **~14x higher throughput** than the next best option (SQLite RPC) and maintains nearly identical performance under high contention (only ~4% drop), while traditional databases suffer significant degradation (CockroachDB drops 96%).
+**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite RPC at 3,236 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
 
 ### Contention Impact
 
@@ -46,9 +48,11 @@ All systems were tested with **out-of-the-box default settings** - no custom tun
 
 For cloud services, we tested paid tiers to give them their best chance:
 
-- **PlanetScale**: PS-256G (32 cores, 256 GB RAM)
+- **PlanetScale**: PS-2560 (32 vCPUs, 256 GB RAM), single node, us-central1.
 - **Supabase**: Pro tier
 - **Convex**: Pro tier
+
+The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
 
 ### Test Architecture
 
@@ -66,6 +70,8 @@ Client → Integrated Platform (compute + storage colocated)
 
 This ensures we're measuring real-world application performance, not raw database throughput.
 
+Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
+
 ### The Transaction
 
 Each transaction performs a **fund transfer** between two accounts:
@@ -81,28 +87,31 @@ This is a classic read-modify-write workload that tests transactional integrity 
 ### Test Command
 
 ```bash
-docker compose run --rm bench --seconds 10 --concurrency 50 --alpha XX --connectors YY
+docker compose run --rm bench -- --seconds 10 --concurrency 50 --alpha XX --connectors YY
 ```
 
 - `--seconds 10`: Duration of benchmark run
 - `--concurrency 50`: Number of concurrent client connections
 - `--alpha 0`: ~0% contention (uniform account distribution)
 - `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
+- `--stdb-compression none|gzip`: SpacetimeDB client compression mode (default: `none`)
 
 ### Hardware Configuration
 
 **Server Machine (Variant A - PhoenixNAP):**
 
-- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory OS: Ubuntu 24.04
+- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory, OS: Ubuntu 24.04
 
 **Server Machine (Variant B - Google Cloud):**
 
 - c4-standard-32-lssd (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
 - RAID 0 on 5 Local SSDs
+- Region: us-central1
 
 **Client Machine:**
 
 - c4-standard-32 (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
+- Region: us-central1
 - Runs on a **separate machine** from the server
 
 **Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
@@ -153,18 +162,11 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 
 PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
 
-### Rust client
-
-When running the benchmark for SpacetimeDB on higher-end hardware we found out that we were actually bottlnecked
-on our test TypeScript client. To get the absolute most out of the performance of SpacetimeDB we wrote a custom
-Rust client that allows us to send a much larger number of requests then we could otherwise. We didn't do this
-for the other backends/databases as they maxed out before the client.
-
 ## Systems Tested
 
 | System                            | Architecture                                            |
 | --------------------------------- | ------------------------------------------------------- |
-| SpacetimeDB                       | Integrated platform (Rust)                              |
+| SpacetimeDB                       | Integrated platform.                                    |
 | SQLite + Node HTTP + Drizzle      | Node.js HTTP server → Drizzle ORM → SQLite              |
 | Bun + Drizzle + Postgres          | Bun HTTP server → Drizzle ORM → PostgreSQL              |
 | Postgres + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → PostgreSQL          |
@@ -175,26 +177,7 @@ for the other backends/databases as they maxed out before the client.
 
 ## Running the Benchmarks
 
-See [DEVELOP.md](./DEVELOP.md) for detailed setup and execution instructions.
-
-### Quick Start
-
-```bash
-# Install dependencies
-pnpm install
-
-# Copy environment config
-cp .env.example .env
-
-# Start services (PostgreSQL, CockroachDB, etc.)
-docker compose up -d pg crdb
-
-# Seed databases
-npm run prep
-
-# Run benchmark
-npm run bench -- --seconds 10 --concurrency 50 --alpha 0 --connectors spacetimedb,postgres_rpc,sqlite_rpc
-```
+See [DEVELOP.md](./DEVELOP.md) for prerequisites, configuration, and full CLI reference.
 
 ## Output
 

@@ -122,7 +122,7 @@ pub trait StateView {
 
     /// Look up an `st_column_accessor` row by its canonical table and column names
     fn find_st_column_accessor_row(&self, table_name: &str, col_name: &str) -> Result<Option<StColumnAccessorRow>> {
-        let row = match self.iter_by_col_eq(
+        match self.iter_by_col_eq(
             ST_COLUMN_ACCESSOR_ID,
             [StColumnAccessorFields::TableName, StColumnAccessorFields::ColName],
             &AlgebraicValue::product([table_name.into(), col_name.into()]),
@@ -137,8 +137,7 @@ pub trait StateView {
             // where missing accessor tables should be surfaced as real errors.
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(None),
             Err(e) => Err(e),
-        };
-        row
+        }
     }
 
     /// Reads the schema information for the specified `table_id` directly from the database.
@@ -494,6 +493,20 @@ pub enum ScanOrIndex<S, I> {
 
     /// When the column has an index.
     Index(I),
+}
+
+impl<R, I, Idx> ScanOrIndex<ApplyFilter<RangeOnColumn<R>, I>, Idx> {
+    /// Returns a scan that applies a `RangeOnColumn` filter to `iter`.
+    pub(super) fn scan_range(cols: ColList, range: R, iter: I) -> Self {
+        Self::Scan(ApplyFilter::new(RangeOnColumn { cols, range }, iter))
+    }
+}
+
+impl<'r, I, Idx> ScanOrIndex<ApplyFilter<EqOnColumn<'r>, I>, Idx> {
+    /// Returns a scan that applies a `EqOnColumn` filter to `iter`.
+    pub(super) fn scan_eq(cols: ColList, val: &'r AlgebraicValue, iter: I) -> Self {
+        Self::Scan(ApplyFilter::new(EqOnColumn { cols, val }, iter))
+    }
 }
 
 impl<'a, S, I> Iterator for ScanOrIndex<S, I>

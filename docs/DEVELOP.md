@@ -1,4 +1,4 @@
-﻿# DEVELOP.md
+# DEVELOP.md
 
 This document explains how to configure the environment, run the LLM benchmark tool, and work with the benchmark suite.
 
@@ -6,11 +6,20 @@ This document explains how to configure the environment, run the LLM benchmark t
 
 ## Table of Contents
 
-1. [Quick Checks & Fixes](#quick-checks-fixes)
-2. [Environment Variables](#environment-variables)
-3. [Benchmark Suite](#benchmark-suite)
-4. [Context Construction](#context-construction)
-5. [Troubleshooting](#troubleshooting)
+1. [Prerequisites](#prerequisites)
+2. [Quick Checks & Fixes](#quick-checks-fixes)
+3. [Environment Variables](#environment-variables)
+4. [Benchmark Suite](#benchmark-suite)
+5. [Context Construction](#context-construction)
+6. [Troubleshooting](#troubleshooting)
+---
+
+## Prerequisites
+
+- **Run from repo root** — `cargo llm` and related commands must be run from the workspace root (this repo).
+- **TypeScript benchmarks** — Run `pnpm build` in `crates/bindings-typescript` first. Rust and C# use local crates that are built as part of the workspace.
+- **Windows (nvm4w)** — If `pnpm` is not found when running TypeScript benchmarks, set `NODEJS_DIR` to your Node.js bin directory (e.g. `C:\nvm\v20.10.0`).
+
 ---
 
 ## Quick Checks & Fixes

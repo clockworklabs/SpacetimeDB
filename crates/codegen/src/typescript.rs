@@ -39,7 +39,12 @@ impl Lang for TypeScript {
     /// table({
     ///   name: 'player',
     ///   indexes: [
-    ///     { name: 'this_is_an_index', algorithm: "btree", columns: [ "ownerId" ] }
+    ///     {
+    ///       accessor: 'this_is_an_index',
+    ///       name: 'this_is_an_index',
+    ///       algorithm: "btree",
+    ///       columns: [ "ownerId" ],
+    ///     }
     ///   ],
     /// }, t.row({
     ///   id: t.u32().primaryKey(),
@@ -289,6 +294,15 @@ impl Lang for TypeScript {
         writeln!(
             out,
             "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
+        );
+        writeln!(out);
+        writeln!(
+            out,
+            "/** The procedures available in this remote SpacetimeDB module. */"
+        );
+        writeln!(
+            out,
+            "export const procedures = __convertToAccessorMap(proceduresSchema.procedures);"
         );
 
         // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
@@ -651,18 +665,12 @@ fn write_table_opts<'a>(
             let name_camel = field_name.deref().to_case(Case::Camel);
             (name_camel, field_type)
         };
-        // TODO(cloutiertyler):
-        // The name users supply is actually the accessor name which will be used
-        // in TypeScript to access the index. This will be used verbatim.
-        // This is confusing because it is not the index name and there is
-        // no actual way for the user to set the actual index name.
-        // I think we should standardize: name and accessorName as the way to set
-        // the name and accessor name of an index across all SDKs.
-        if let Some(accessor_name) = &index_def.accessor_name {
-            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
-        } else {
-            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
-        }
+        let accessor_name = index_def.accessor_name.as_deref().unwrap_or(&index_def.name);
+        writeln!(
+            out,
+            "{{ accessor: '{}', name: '{}', algorithm: 'btree', columns: [",
+            accessor_name, index_def.name
+        );
         out.indent(1);
         for col_id in columns.iter() {
             writeln!(out, "'{}',", get_name_and_type(col_id).0);
@@ -734,6 +742,16 @@ fn write_object_type_builder_fields(
     Ok(())
 }
 
+/// Returns whether `ty` recursively contains an `AlgebraicTypeUse::Ref`
+fn type_contains_ref(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Ref(_) => true,
+        AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => type_contains_ref(inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => type_contains_ref(ok_ty) || type_contains_ref(err_ty),
+        _ => false,
+    }
+}
+
 fn write_type_builder_field(
     module: &ModuleDef,
     out: &mut Indenter,
@@ -742,17 +760,8 @@ fn write_type_builder_field(
     ty: &AlgebraicTypeUse,
     is_primary_key: bool,
 ) -> fmt::Result {
-    // Do we need a getter? (Option/Array only if their inner is a Ref)
-    let needs_getter = match ty {
-        AlgebraicTypeUse::Ref(_) => true,
-        AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => {
-            matches!(inner.as_ref(), AlgebraicTypeUse::Ref(_))
-        }
-        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            matches!(ok_ty.as_ref(), AlgebraicTypeUse::Ref(_)) || matches!(err_ty.as_ref(), AlgebraicTypeUse::Ref(_))
-        }
-        _ => false,
-    };
+    // If the type contains a ref, we need to use a getter to prevent access-before-initialization.
+    let needs_getter = type_contains_ref(ty);
 
     if needs_getter {
         writeln!(out, "get {name}() {{");

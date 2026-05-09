@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Internal;
 
+using System.Buffers;
 using SpacetimeDB.BSATN;
 
 internal abstract class RawTableIterBase<T>
@@ -7,12 +8,18 @@ internal abstract class RawTableIterBase<T>
 {
     public sealed class Enumerator(FFI.RowIter handle) : IDisposable
     {
-        byte[] buffer = new byte[0x20_000];
-        public byte[] Current { get; private set; } = [];
+        private const int InitialBufferSize = 1024;
+        private byte[]? buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+        public ArraySegment<byte> Current { get; private set; } = ArraySegment<byte>.Empty;
 
         public bool MoveNext()
         {
             if (handle == FFI.RowIter.INVALID)
+            {
+                return false;
+            }
+
+            if (buffer is null)
             {
                 return false;
             }
@@ -38,11 +45,10 @@ internal abstract class RawTableIterBase<T>
                 {
                     // Iterator advanced and may also be `EXHAUSTED`.
                     // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
-                    // In both cases, copy over the row data to `Current` from the scratch `buffer`.
+                    // In both cases, update `Current` to point at the valid range in the scratch `buffer`.
                     case Errno.EXHAUSTED
                     or Errno.OK:
-                        Current = new byte[buffer_len];
-                        Array.Copy(buffer, 0, Current, 0, buffer_len);
+                        Current = new ArraySegment<byte>(buffer, 0, (int)buffer_len);
                         return buffer_len != 0;
                     // Couldn't find the iterator, error!
                     case Errno.NO_SUCH_ITER:
@@ -51,7 +57,8 @@ internal abstract class RawTableIterBase<T>
                     // Grow `buffer` and try again.
                     // The `buffer_len` will have been updated with the necessary size.
                     case Errno.BUFFER_TOO_SMALL:
-                        buffer = new byte[buffer_len];
+                        ArrayPool<byte>.Shared.Return(buffer);
+                        buffer = ArrayPool<byte>.Shared.Rent((int)buffer_len);
                         continue;
                     default:
                         throw new UnknownException(ret);
@@ -65,6 +72,12 @@ internal abstract class RawTableIterBase<T>
             {
                 FFI.row_iter_bsatn_close(handle);
                 handle = FFI.RowIter.INVALID;
+            }
+
+            if (buffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+                buffer = null;
             }
         }
 
@@ -87,7 +100,13 @@ internal abstract class RawTableIterBase<T>
     {
         foreach (var chunk in this)
         {
-            using var stream = new MemoryStream(chunk);
+            using var stream = new MemoryStream(
+                chunk.Array!,
+                chunk.Offset,
+                chunk.Count,
+                writable: false,
+                publiclyVisible: true
+            );
             using var reader = new BinaryReader(stream);
             while (stream.Position < stream.Length)
             {
@@ -137,6 +156,8 @@ public interface ITableView<View, T>
 
     bool Delete(T row);
 
+    ulong Clear();
+
     protected static ulong DoCount()
     {
         FFI.datastore_table_row_count(tableId, out var count);
@@ -168,7 +189,7 @@ public interface ITableView<View, T>
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         // `datastore_delete_all_by_eq_bsatn` expects an array-like BSATN.
-        // Write a length of 1 without actually wrapping the `row` into array
+        // Write a length of 1 without actually wrapping the `row` into an array
         // (annoyingly, that would require passing `TRW` through a bunch of APIs).
         writer.Write(1U);
         row.WriteFields(writer);
@@ -179,6 +200,12 @@ public interface ITableView<View, T>
             out var out_
         );
         return out_ > 0;
+    }
+
+    protected static ulong DoClear()
+    {
+        FFI.datastore_clear(tableId, out var count);
+        return count;
     }
 
     protected static RawScheduleDefV10 MakeSchedule(string reducerName, ushort colIndex) =>

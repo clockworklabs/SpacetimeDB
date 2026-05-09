@@ -210,17 +210,15 @@ where
                         .map(|range| range.end)
                         .unwrap_or_default()
                 );
-                let (mut segment, index) = spawn_blocking({
+                let (segment, index) = spawn_blocking({
                     let repo = self.repo.clone();
                     let last_written_tx_range = self.last_written_tx_range.clone();
                     let commitlog_options = self.commitlog_options;
-                    move || create_segment(repo, last_written_tx_range, commitlog_options)
+                    move || create_segment(repo, last_written_tx_range, commitlog_options, header)
                 })
                 .await
                 .unwrap()
                 .map(|(segment, index)| (segment.into_async_writer(), index))?;
-
-                segment.write_all(&buf[..segment::Header::LEN]).await?;
                 stream.consume(segment::Header::LEN as _);
 
                 CurrentSegment {
@@ -228,13 +226,16 @@ where
                     segment,
                     offset_index: index,
                 }
-            } else if let Some(current_segment) = self.current_segment.take() {
-                current_segment
             } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "no current segment, expected segment header",
-                ));
+                match self.current_segment.take() {
+                    Some(current_segment) => current_segment,
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "no current segment, expected segment header",
+                        ));
+                    }
+                }
             };
 
             // What follows is commits to be written to `current_segment`,
@@ -442,26 +443,37 @@ fn create_segment<R: Repo>(
     repo: R,
     last_written_tx_range: Option<Range<u64>>,
     commitlog_options: Options,
+    header: segment::Header,
 ) -> io::Result<(R::SegmentWriter, Option<OffsetIndexWriter>)> {
     let segment_offset = last_written_tx_range
         .as_ref()
         .map(|range| range.end)
         .unwrap_or_default();
-    let mut segment = repo.create_segment(segment_offset).or_else(|e| {
-        if e.kind() == io::ErrorKind::AlreadyExists {
-            trace!("segment already exists");
-            let mut s = repo.open_segment_writer(segment_offset)?;
-            let len = s.segment_len()?;
-            trace!("segment len: {len}");
-            if len <= segment::Header::LEN as _ {
-                trace!("overwriting existing segment");
-                s.ftruncate(0, 0)?;
-                return Ok(s);
-            }
-        }
+    let mut segment = loop {
+        match repo.create_segment(segment_offset, header) {
+            Ok(segment) => break segment,
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                trace!("segment already exists");
+                let mut s = repo.open_segment_writer(segment_offset)?;
+                let len = s.segment_len()?;
+                trace!("segment len: {len}");
+                if len <= segment::Header::LEN as _ {
+                    trace!("overwriting existing segment");
+                    repo.remove_segment(segment_offset)?;
+                    continue;
+                }
 
-        Err(e)
-    })?;
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!(
+                        "repo {}: segment {} already exists and is non-empty: {}",
+                        repo, segment_offset, e
+                    ),
+                ));
+            }
+            Err(e) => return Err(e),
+        }
+    };
     fallocate(&mut segment, &commitlog_options)?;
 
     let index_writer = repo

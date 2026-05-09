@@ -97,6 +97,25 @@ impl SerializeBuffer {
     }
 }
 
+/// Finalize a binary websocket payload by optionally compressing the serialized
+/// bytes after the caller has written the protocol-specific payload body.
+///
+/// Callers are responsible for writing the compression tag before invoking this
+/// helper.
+fn finalize_binary_serialize_buffer(
+    buffer: SerializeBuffer,
+    uncompressed_len: usize,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    match decide_compression(uncompressed_len, compression) {
+        ws_v1::Compression::None => buffer.uncompressed(),
+        ws_v1::Compression::Brotli => {
+            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
+        }
+        ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+    }
+}
+
 type BytesMutWriter<'a> = bytes::buf::Writer<&'a mut BytesMut>;
 
 pub enum InUseSerializeBuffer {
@@ -159,28 +178,20 @@ pub fn serialize(
             let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
                 bsatn::to_writer(w.into_inner(), &msg).unwrap()
             });
+            let srv_msg_len = srv_msg.len();
 
             // At this point, we no longer have a use for `msg`,
             // so try to reclaim its buffers.
             msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 
             // Conditionally compress the message.
-            let (in_use, msg_bytes) = match decide_compression(srv_msg.len(), config.compression) {
-                ws_v1::Compression::None => buffer.uncompressed(),
-                ws_v1::Compression::Brotli => {
-                    buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
-                }
-                ws_v1::Compression::Gzip => {
-                    buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress)
-                }
-            };
+            let (in_use, msg_bytes) = finalize_binary_serialize_buffer(buffer, srv_msg_len, config.compression);
             (in_use, msg_bytes.into())
         }
     }
 }
 
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws_v2::ServerMessage`].
-///
 /// This mirrors the v1 framing by prepending the compression tag and applying
 /// conditional compression when configured.
 pub fn serialize_v2(
@@ -192,18 +203,13 @@ pub fn serialize_v2(
     let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
         bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
     });
+    let srv_msg_len = srv_msg.len();
 
     // At this point, we no longer have a use for `msg`,
     // so try to reclaim its buffers.
     msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 
-    match decide_compression(srv_msg.len(), compression) {
-        ws_v1::Compression::None => buffer.uncompressed(),
-        ws_v1::Compression::Brotli => {
-            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
-        }
-        ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
-    }
+    finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
 }
 
 #[derive(Debug, From)]
@@ -413,7 +419,10 @@ impl ToProtocol for TransactionUpdateMessage {
         let TransactionUpdateMessage { event, database_update } = self;
         let update = database_update.database_update;
         protocol.assert_matches_format_switch(&update);
-        let request_id = database_update.request_id.unwrap_or(0);
+        let request_id = database_update
+            .request_id
+            .or_else(|| event.as_ref().and_then(|event| event.request_id))
+            .unwrap_or(0);
         match update {
             ws_v1::FormatSwitch::Bsatn(update) => {
                 ws_v1::FormatSwitch::Bsatn(convert(event, request_id, update, |args| {

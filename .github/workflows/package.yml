@@ -4,9 +4,10 @@ on:
   push:
     tags:
       - '**'
-    branches:
-      - master
-      - release/*
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-cli:
@@ -24,7 +25,7 @@ jobs:
           # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
-          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
+          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: spacetimedb-windows-runner }
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -49,9 +50,74 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Add signtool.exe to PATH
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $root = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $signtool = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $signtool) { throw "signtool.exe not found under $root" }
+
+          "Found: $($signtool.FullName)"
+          $dir = Split-Path $signtool.FullName
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
+      - name: Decode DigiCert client auth certificate
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        env:
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+        run: |
+          echo "$SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
+
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        uses: digicert/code-signing-software-trust-action@v1
+        env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+
+      - name: Sign binaries for Windows
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
+        env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            Write-Host "Signing $exe..."
+            & smctl sign --keypair-alias $env:DIGICERT_KEYPAIR_ALIAS --input $path
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
+            Write-Host "$exe signed successfully"
+          }
+
+      - name: Verify signatures
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            & signtool.exe verify /v /pa $path
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $exe" }
+          }
 
       - name: Package (unix)
         if: ${{ runner.os != 'Windows' }}

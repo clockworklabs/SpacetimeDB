@@ -14,5 +14,4 @@ export default {
   from: __t.u32(),
   to: __t.u32(),
   amount: __t.i64(),
-  clientTxnId: __t.u64(),
 };
