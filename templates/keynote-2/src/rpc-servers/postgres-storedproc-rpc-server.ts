@@ -2,7 +2,7 @@ import 'dotenv/config';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { RpcRequest, RpcResponse } from '../connectors/rpc/rpc_common.ts';
-import { poolMaxFromEnv } from '../helpers.ts';
+import { getSharedRuntimeDefaults } from '../config.ts';
 
 /**
  * Fair benchmark variant: Postgres RPC server using a stored procedure
@@ -21,10 +21,12 @@ if (!PG_URL) {
   throw new Error('PG_URL not set');
 }
 
+const { poolMax } = getSharedRuntimeDefaults();
+
 const pool = new Pool({
   connectionString: PG_URL,
   application_name: 'pg-storedproc-rpc',
-  max: poolMaxFromEnv(),
+  max: poolMax,
 });
 
 async function ensureStoredProcedure() {

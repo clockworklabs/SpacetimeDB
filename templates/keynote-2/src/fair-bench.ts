@@ -3,12 +3,21 @@
  *
  * Levels the playing field between SpacetimeDB and competitors by:
  *
- * 1. Using the TypeScript client for ALL systems (no custom Rust client)
- * 2. Forcing STDB_CONFIRMED_READS=1 (durable commits, like Postgres with fsync)
- * 3. Forcing USE_SPACETIME_METRICS_ENDPOINT=0 (client-side TPS counting for all)
- * 4. Sequential (non-pipelined) operations for all systems
- * 5. Including postgres_storedproc_rpc (stored procedure, eliminates ORM overhead)
- * 6. Using read_committed isolation for Postgres (its actual default)
+ * 1. Same TypeScript client for ALL systems (SpacetimeDB Rust client was
+ *    already removed from keynote-2 in master via #4753).
+ * 2. STDB_CONFIRMED_READS=1 (durable commits, like Postgres with fsync).
+ *    Confirmed reads is now the default in master (#4682) — kept here for
+ *    belt-and-suspenders.
+ * 3. Sequential / non-pipelined operations for ALL systems
+ *    (BENCH_PIPELINED=0). The master default pipelines SpacetimeDB up to
+ *    its `maxInflightPerWorker` while competitors' connectors don't set
+ *    that field — disabling pipelining everywhere keeps per-conn concurrency
+ *    even.
+ * 4. Includes postgres_storedproc_rpc by default — same architecture as
+ *    SpacetimeDB's reducer (single atomic DB call) instead of 5 ORM
+ *    round-trips via Drizzle.
+ * 5. Postgres uses read_committed isolation + synchronous_commit=on
+ *    (configured in docker-compose-fair.yml).
  *
  * Usage:
  *   npx tsx src/fair-bench.ts [--seconds N] [--concurrency N] [--alpha N] [--systems a,b,c]
@@ -20,80 +29,53 @@ import 'dotenv/config';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
-import { CONNECTORS } from './connectors';
+import { CONNECTORS, type ConnectorKey } from './connectors';
 import { runOne } from './core/runner';
+import { parseBenchOptions } from './opts.ts';
+import type { BaseConnector } from './core/connectors.ts';
 
-// ============================================================================
-// Force fair settings
-// ============================================================================
+type Scenario = (
+  conn: BaseConnector,
+  from: number,
+  to: number,
+  amount: number,
+) => Promise<void>;
 
-// Force SpacetimeDB to use confirmed reads (durable commits)
+// Force fair settings via env BEFORE parsing options, so that
+// getSharedRuntimeDefaults picks them up.
 process.env.STDB_CONFIRMED_READS = '1';
-
-// Use metrics endpoint for SpacetimeDB TPS counting.
-// Note: with confirmedReads=1, each conn.reducers.transfer() call already
-// returns a Promise that awaits the server's TransactionUpdate response
-// (see db_connection_impl.ts:callReducer), so timing is per-round-trip
-// regardless. The Prometheus metric just provides an additional verified count.
-// Setting this to '0' triggers a broken onTransfer callback path in the
-// existing connector, so we use '1' which is functionally equivalent for
-// timing purposes when confirmedReads is enabled.
-process.env.USE_SPACETIME_METRICS_ENDPOINT = '1';
-
-// Non-docker mode
-process.env.USE_DOCKER = '0';
-
-// Set default SpacetimeDB config if not set
+process.env.BENCH_PIPELINED = '0';
+if (!process.env.USE_DOCKER) process.env.USE_DOCKER = '0';
 if (!process.env.STDB_URL) process.env.STDB_URL = 'ws://127.0.0.1:3000';
 if (!process.env.STDB_MODULE) process.env.STDB_MODULE = 'test-1';
 
-// ============================================================================
-// CLI Arguments
-// ============================================================================
+// Reuse the standard bench CLI parser so users get the full option set,
+// then override fairness-relevant options if the user overrode them.
+// Strip fair-bench-specific flags before delegating to the bench parser,
+// which would otherwise reject them as unknown.
+const skipPrep = process.argv.includes('--skip-prep');
+const benchArgv = process.argv.filter((arg) => arg !== '--skip-prep');
+const options = parseBenchOptions(benchArgv);
 
-const args = process.argv.slice(2);
+// Default systems if --connectors / --systems wasn't passed
+const FAIR_DEFAULT_SYSTEMS: readonly ConnectorKey[] = [
+  'spacetimedb',
+  'postgres_rpc',
+  'postgres_storedproc_rpc',
+];
 
-function getArg(name: string, defaultValue: number): number {
-  const idx = args.findIndex(
-    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
-  );
-  if (idx === -1) return defaultValue;
-  const arg = args[idx];
-  const raw = arg.includes('=') ? arg.split('=')[1] : args[idx + 1];
-  const value = Number(raw ?? defaultValue);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`Invalid value for --${name}: "${raw}" (must be a finite number > 0)`);
-  }
-  return value;
-}
+const requestedConnectors: ConnectorKey[] = options.connectors ?? [
+  ...FAIR_DEFAULT_SYSTEMS,
+];
 
-function getStringArg(name: string, defaultValue: string): string {
-  const idx = args.findIndex(
-    (a) => a === `--${name}` || a.startsWith(`--${name}=`),
-  );
-  if (idx === -1) return defaultValue;
-  const arg = args[idx];
-  if (arg.includes('=')) return arg.split('=')[1];
-  return args[idx + 1] ?? defaultValue;
-}
-
-function hasFlag(name: string): boolean {
-  return args.includes(`--${name}`);
-}
-
-const seconds = getArg('seconds', 10);
-const concurrency = getArg('concurrency', 50);
-const alpha = getArg('alpha', 0.5);
-const systems = getStringArg(
-  'systems',
-  'spacetimedb,postgres_rpc,postgres_storedproc_rpc',
-)
-  .split(',')
-  .map((s) => s.trim());
-const skipPrep = hasFlag('skip-prep');
-
-const accounts = Number(process.env.SEED_ACCOUNTS ?? 100_000);
-const initialBalance = Number(process.env.SEED_INITIAL_BALANCE ?? 10_000_000);
+// Force non-pipelined regardless of what was parsed (env above already
+// nudged this, but the user could pass --bench-pipelined on the CLI; we
+// silently override to keep "fair").
+const fairOptions = {
+  ...options,
+  benchPipelined: false,
+  stdbConfirmedReads: true,
+};
 
 // ============================================================================
 // ANSI Colors
@@ -136,7 +118,10 @@ function ping(port: number, timeoutMs = 2000): Promise<boolean> {
   });
 }
 
-const serviceChecks: Record<string, { name: string; port: number; hint: string }> = {
+const serviceChecks: Partial<Record<
+  ConnectorKey,
+  { name: string; port: number; hint: string }
+>> = {
   spacetimedb: {
     name: 'SpacetimeDB',
     port: Number(process.env.STDB_PORT ?? 3000),
@@ -173,31 +158,31 @@ const serviceChecks: Record<string, { name: string; port: number; hint: string }
 // Prep / Seed
 // ============================================================================
 
-async function prepSystem(system: string): Promise<void> {
-  const connectorFactory = (CONNECTORS as any)[system];
-  if (!connectorFactory) {
+async function prepSystem(system: ConnectorKey): Promise<void> {
+  const factory = CONNECTORS[system];
+  if (!factory) {
     console.log(`  ${system.padEnd(28)} ${c('yellow', 'SKIPPED (unknown)')}`);
     return;
   }
 
+  const conn = factory(fairOptions) as BaseConnector & {
+    call?: (name: string, args?: Record<string, unknown>) => Promise<unknown>;
+  };
+
   try {
-    if (system === 'spacetimedb') {
-      const conn = connectorFactory();
-      await conn.open();
-      await conn.reducer('seed', {
-        n: accounts,
-        initial_balance: BigInt(initialBalance),
+    await conn.open();
+    if (typeof conn.call === 'function') {
+      await conn.call('seed', {
+        accounts: fairOptions.accounts,
+        initialBalance: fairOptions.initialBalance,
       });
-      await conn.close();
-    } else {
-      const conn = connectorFactory();
-      await conn.open();
-      await conn.call('seed', { accounts, initialBalance });
-      await conn.close();
     }
+    await conn.close();
     console.log(`  ${system.padEnd(28)} ${c('green', 'SEEDED')}`);
   } catch (err: any) {
-    console.log(`  ${system.padEnd(28)} ${c('red', `FAILED: ${err.message}`)}`);
+    console.log(
+      `  ${system.padEnd(28)} ${c('red', `FAILED: ${err?.message ?? err}`)}`,
+    );
   }
 }
 
@@ -214,25 +199,34 @@ interface BenchResult {
   samples: number;
 }
 
-async function runBenchmark(system: string): Promise<BenchResult | null> {
-  const connectorFactory = (CONNECTORS as any)[system];
-  if (!connectorFactory) {
+async function runBenchmark(system: ConnectorKey): Promise<BenchResult | null> {
+  const factory = CONNECTORS[system];
+  if (!factory) {
     console.log(`  ${system}: Unknown connector`);
     return null;
   }
 
-  const connector = connectorFactory();
+  const connector = factory(fairOptions);
 
-  // Load the test scenario
-  let scenario: any;
+  // Pick the right scenario for the connector kind. RPC connectors and
+  // SpacetimeDB share a `.call(name, args)` interface, so both work with
+  // either recipe — but we prefer the system-specific test if registered.
+  let scenario: Scenario;
   try {
     const testMod = await import(`./tests/test-1/${system}.ts`);
-    scenario = testMod.default.run;
+    scenario = testMod.default.run as Scenario;
   } catch (err: any) {
-    // Only fall back for missing modules; rethrow genuine errors
-    if (err?.code === 'ERR_MODULE_NOT_FOUND' || err?.code === 'MODULE_NOT_FOUND') {
-      const { rpc_single_call } = await import('./scenario_recipes/rpc_single_call.ts');
-      scenario = rpc_single_call;
+    if (
+      err?.code === 'ERR_MODULE_NOT_FOUND' ||
+      err?.code === 'MODULE_NOT_FOUND'
+    ) {
+      const fallbackPath =
+        system === 'spacetimedb'
+          ? './scenario_recipes/reducer_single.ts'
+          : './scenario_recipes/rpc_single_call.ts';
+      const recipeMod = await import(fallbackPath);
+      scenario = (recipeMod.reducer_single ??
+        recipeMod.rpc_single_call) as Scenario;
     } else {
       throw err;
     }
@@ -241,10 +235,11 @@ async function runBenchmark(system: string): Promise<BenchResult | null> {
   const result = await runOne({
     connector,
     scenario,
-    seconds,
-    concurrency,
-    accounts,
-    alpha,
+    seconds: fairOptions.seconds,
+    concurrency: fairOptions.concurrency,
+    accounts: fairOptions.accounts,
+    alpha: fairOptions.alpha,
+    runtimeConfig: fairOptions,
   });
 
   return {
@@ -263,7 +258,7 @@ async function runBenchmark(system: string): Promise<BenchResult | null> {
 
 function renderBar(tps: number, maxTps: number, width = 40): string {
   const filled = Math.max(1, Math.round((tps / maxTps) * width));
-  return c('green', '\u2588'.repeat(filled) + '\u2591'.repeat(width - filled));
+  return c('green', '█'.repeat(filled) + '░'.repeat(width - filled));
 }
 
 // ============================================================================
@@ -273,28 +268,27 @@ function renderBar(tps: number, maxTps: number, width = 40): string {
 async function main() {
   console.log('');
   console.log(c('bold', c('cyan', '  Fair Benchmark: SpacetimeDB vs Competitors')));
-  console.log(c('dim', '  Leveled playing field - same client, same durability, same counting'));
+  console.log(c('dim', '  Leveled playing field - same client, same durability, same pipelining'));
   console.log('');
 
   console.log(c('bold', '  Configuration:'));
-  console.log(`    Duration:          ${seconds}s`);
-  console.log(`    Concurrency:       ${concurrency} connections`);
-  console.log(`    Alpha (contention): ${alpha}`);
-  console.log(`    Systems:           ${systems.join(', ')}`);
+  console.log(`    Duration:          ${fairOptions.seconds}s`);
+  console.log(`    Concurrency:       ${fairOptions.concurrency} connections`);
+  console.log(`    Alpha (contention): ${fairOptions.alpha}`);
+  console.log(`    Systems:           ${requestedConnectors.join(', ')}`);
   console.log('');
 
   console.log(c('bold', '  Fairness guarantees:'));
-  console.log(`    ${c('green', '\u2713')} TypeScript client for ALL systems (no custom Rust client)`);
-  console.log(`    ${c('green', '\u2713')} STDB_CONFIRMED_READS=1 (durable commits)`);
-  console.log(`    ${c('green', '\u2713')} Round-trip-awaited operations for ALL systems`);
-  console.log(`    ${c('green', '\u2713')} Sequential (non-pipelined) operations for all systems`);
-  console.log(`    ${c('green', '\u2713')} Postgres: read_committed isolation (actual default)`);
-  console.log(`    ${c('green', '\u2713')} Postgres: synchronous_commit=on`);
+  console.log(`    ${c('green', '✓')} TypeScript client for ALL systems`);
+  console.log(`    ${c('green', '✓')} STDB_CONFIRMED_READS=1 (durable commits)`);
+  console.log(`    ${c('green', '✓')} Sequential (non-pipelined) operations for all systems`);
+  console.log(`    ${c('green', '✓')} Postgres: read_committed isolation`);
+  console.log(`    ${c('green', '✓')} Postgres: synchronous_commit=on`);
   console.log('');
 
   // Check services
   console.log(c('bold', '  [1/3] Checking services...\n'));
-  for (const system of systems) {
+  for (const system of requestedConnectors) {
     const check = serviceChecks[system];
     if (!check) {
       console.log(`  ${system.padEnd(28)} ${c('yellow', '? (no health check)')}`);
@@ -313,7 +307,7 @@ async function main() {
   // Seed
   if (!skipPrep) {
     console.log('\n' + c('bold', '  [2/3] Seeding databases...\n'));
-    for (const system of systems) {
+    for (const system of requestedConnectors) {
       await prepSystem(system);
     }
   } else {
@@ -324,14 +318,22 @@ async function main() {
   console.log('\n' + c('bold', '  [3/3] Running benchmarks...\n'));
 
   const results: BenchResult[] = [];
-  for (const system of systems) {
+  for (const system of requestedConnectors) {
     console.log(`  Running ${system}...`);
-    const result = await runBenchmark(system);
-    if (result && result.tps > 0) {
-      console.log(`  ${system.padEnd(28)} ${c('green', `${result.tps.toLocaleString()} TPS`)}  (p50=${result.p50_ms.toFixed(1)}ms p95=${result.p95_ms.toFixed(1)}ms p99=${result.p99_ms.toFixed(1)}ms)`);
-      results.push(result);
-    } else {
-      console.log(`  ${system.padEnd(28)} ${c('red', 'FAILED')}`);
+    try {
+      const result = await runBenchmark(system);
+      if (result && result.tps > 0) {
+        console.log(
+          `  ${system.padEnd(28)} ${c('green', `${result.tps.toLocaleString()} TPS`)}  (p50=${result.p50_ms.toFixed(1)}ms p95=${result.p95_ms.toFixed(1)}ms p99=${result.p99_ms.toFixed(1)}ms)`,
+        );
+        results.push(result);
+      } else {
+        console.log(`  ${system.padEnd(28)} ${c('red', 'FAILED')}`);
+      }
+    } catch (err: any) {
+      console.log(
+        `  ${system.padEnd(28)} ${c('red', `FAILED: ${err?.message ?? err}`)}`,
+      );
     }
   }
 
@@ -340,9 +342,9 @@ async function main() {
     results.sort((a, b) => b.tps - a.tps);
     const maxTps = results[0]?.tps || 1;
 
-    console.log('\n' + c('bold', '\u2550'.repeat(70)));
+    console.log('\n' + c('bold', '═'.repeat(70)));
     console.log(c('bold', '  FAIR BENCHMARK RESULTS'));
-    console.log(c('bold', '\u2550'.repeat(70)) + '\n');
+    console.log(c('bold', '═'.repeat(70)) + '\n');
 
     for (const r of results) {
       const bar = renderBar(r.tps, maxTps);
@@ -382,13 +384,17 @@ async function main() {
           timestamp: new Date().toISOString(),
           fairness: {
             confirmed_reads: true,
-            metrics_endpoint: false,
             client: 'typescript (same for all)',
             pipelined: false,
             postgres_isolation: 'read_committed',
             postgres_synchronous_commit: 'on',
           },
-          config: { seconds, concurrency, alpha, accounts },
+          config: {
+            seconds: fairOptions.seconds,
+            concurrency: fairOptions.concurrency,
+            alpha: fairOptions.alpha,
+            accounts: fairOptions.accounts,
+          },
           results: results.map((r) => ({
             system: r.system,
             tps: r.tps,

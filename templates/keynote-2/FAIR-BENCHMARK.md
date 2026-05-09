@@ -1,50 +1,83 @@
 # Fair Benchmark: SpacetimeDB vs Competitors
 
-This is an alternative benchmark configuration that levels the playing field between SpacetimeDB and traditional database stacks. The original benchmark (`demo.ts`) has several asymmetries that compound to inflate SpacetimeDB's advantage far beyond what the architecture alone provides.
+This is an alternative benchmark configuration that levels the playing field
+between SpacetimeDB and traditional database stacks. It runs alongside the
+standard `demo`/`bench` commands without modifying their behaviour.
 
-## What This Changes
+## What's Already Fair in `master`
 
-| Factor | Original Benchmark | Fair Benchmark |
-|--------|-------------------|----------------|
-| **SpacetimeDB client** | Custom Rust client with 16,384 in-flight ops | Same TypeScript client as everyone else |
-| **TPS counting** | Server-side Prometheus metrics (fire-and-forget) | Client-side round-trip counting for ALL systems |
-| **Durability** | `confirmedReads=false` (no durability guarantee) | `confirmedReads=true` (durable commits, like Postgres fsync) |
-| **Concurrency model** | 16,384 in-flight for SpacetimeDB vs 8 for competitors | Sequential (non-pipelined) for all systems |
-| **Postgres isolation** | `serializable` (non-default, worst-case for contention) | `read_committed` (Postgres actual default) |
-| **Postgres sync commit** | `synchronous_commit=off` | `synchronous_commit=on` (matches SpacetimeDB confirmed reads) |
-| **Postgres transfer** | 5 ORM round-trips via Drizzle | Also tested with stored procedure (single DB call) |
-| **Warmup** | 5s warmup for Rust client only | No warmup for any system (equal cold start) |
+When this fork was first opened (Feb 2026), the standard benchmark had
+several asymmetries between SpacetimeDB and competitors. Most have since been
+addressed upstream:
+
+| Asymmetry | Status on master |
+|-----------|------------------|
+| SpacetimeDB used a hand-tuned Rust client; competitors used TypeScript | **Fixed (#4753):** Rust client removed; everyone uses the TypeScript client. |
+| `STDB_CONFIRMED_READS` defaulted to `false` | **Fixed (#4682):** confirmed reads is now the default. |
+| 5s warmup applied only to the SpacetimeDB Rust client | **Fixed (#4757):** warmup removed everywhere. |
+| TypeScript client was missing some optimizations the Rust client had | **Fixed (#4494):** TS client brought to parity. |
+| Compression unspecified | **Fixed (#4743):** compression mode is now an explicit knob. |
+
+What this PR additionally enforces:
+
+| Factor | Standard `bench` | Fair Benchmark |
+|--------|------------------|----------------|
+| **Pipelining** | SpacetimeDB pipelines up to `maxInflightPerWorker` (128) per connection; HTTP RPC connectors do not opt-in to pipelining | **Sequential** for all systems (`BENCH_PIPELINED=0`) so per-connection concurrency is identical |
+| **Postgres isolation** | `serializable` (forced via the standard `docker-compose.yml`) | `read_committed` (Postgres' actual default) — `SELECT … FOR UPDATE` already provides row locking |
+| **Postgres `synchronous_commit`** | `off` | `on` (matches SpacetimeDB confirmed-reads durability) |
+| **Postgres single-call transfer** | 5 ORM round-trips via Drizzle | Adds `postgres_storedproc_rpc`: a single `SELECT do_transfer(...)` PL/pgSQL call |
+| **Confirmed reads** | Default (true) | Explicitly forced to `true` (belt-and-suspenders) |
+
+These remaining differences matter because the **architectural** advantage
+of SpacetimeDB (colocated compute + storage, no network hop for data access)
+is what we want to isolate. Sequential mode and a single-call stored
+procedure remove the most obvious confounds between "platform architecture"
+and "client/protocol/ORM choices."
 
 ## Why These Changes Matter
 
-### 1. Same Client Language (TypeScript for All)
+### 1. Sequential Operations (No Pipelining)
 
-The original benchmark uses a hand-tuned **Rust client** for SpacetimeDB that sends 16,384 concurrent operations per connection via binary WebSocket, while all competitors use a TypeScript client with HTTP/JSON and 8 in-flight operations. This alone is a ~2000x difference in concurrency per connection.
+SpacetimeDB's TypeScript connector advertises `maxInflightPerWorker = 128`,
+which the runner picks up to pipeline 128 in-flight reducer calls per
+connection. RPC connectors (Postgres, CockroachDB, SQLite) leave this unset,
+so their per-connection concurrency is effectively 1. Forcing
+`BENCH_PIPELINED=0` makes both sides sequential per connection, isolating
+the per-call latency comparison.
 
-The README justifies this by saying "we were bottlenecked on our test TypeScript client" — but then no competitor gets the same optimization. A fair comparison uses the same client for all.
+### 2. Postgres Isolation Level
 
-### 2. Confirmed Reads (Durable Commits)
+The standard `docker-compose.yml` sets
+`default_transaction_isolation=serializable` for Postgres. That is **not**
+Postgres' default (`read_committed`). Under the Zipf contention workload,
+serializable causes large transaction-abort/retry storms that
+disproportionately hurt Postgres. The benchmark already uses
+`SELECT … FOR UPDATE` for row-level locking, so serializable is unnecessary
+to get correct results.
 
-The original benchmark defaults `STDB_CONFIRMED_READS` to `false`, meaning SpacetimeDB doesn't wait for durable commits before reporting success. Meanwhile Postgres runs with `fsync=on`. This is comparing "maybe durable" vs "definitely durable" — not a fair durability comparison.
+### 3. Stored Procedure (`postgres_storedproc_rpc`)
 
-### 3. Client-Side TPS Counting
+A SpacetimeDB reducer is a **single atomic call** that runs inside the
+database. The standard Postgres comparison uses Drizzle ORM, which sends
+roughly:
 
-The original `demo.ts` sets `USE_SPACETIME_METRICS_ENDPOINT=1`, which counts committed transactions **on the server** via Prometheus. Combined with the fire-and-forget Rust client, this counts transactions that completed server-side but whose acknowledgments may not have reached the client. All other systems count only after the full round-trip completes.
-
-### 4. Postgres Isolation Level
-
-The original forces `default_transaction_isolation=serializable` on Postgres, which is **not** the default (`read_committed`). Under the Zipf contention workload, serializable causes massive transaction aborts and retries, dramatically hurting Postgres performance. The benchmark already uses `SELECT ... FOR UPDATE` for row-level locking, making serializable unnecessary.
-
-### 5. Stored Procedure vs ORM
-
-SpacetimeDB's reducer executes as a single atomic operation inside the database. The original Postgres benchmark uses Drizzle ORM which requires:
 - `BEGIN`
-- `SELECT ... FOR UPDATE` (fetch both accounts)
+- `SELECT … FOR UPDATE` (fetch both accounts)
 - `UPDATE` (debit)
 - `UPDATE` (credit)
 - `COMMIT`
 
-That's 5 round-trips between the Node.js process and Postgres. A stored procedure (`do_transfer()`) does the same work in a single call — which is the fair equivalent of SpacetimeDB's reducer model.
+i.e. ~5 round-trips between Node and Postgres per transfer. A PL/pgSQL
+stored procedure (`do_transfer`) does the same work in a single round-trip
+— architecturally the same shape as a reducer. Comparing
+`postgres_storedproc_rpc` against `spacetimedb` cleanly isolates the
+"platform architecture" gap from the "ORM round-trip overhead" gap.
+
+### 4. `synchronous_commit=on`
+
+SpacetimeDB with confirmed reads waits for durable acknowledgement before
+returning. Postgres should match: `synchronous_commit=on` (the default;
+the standard compose file overrides it to `off` for raw throughput).
 
 ## Running the Fair Benchmark
 
@@ -54,13 +87,12 @@ That's 5 round-trips between the Node.js process and Postgres. A stored procedur
 # Install dependencies
 pnpm install
 
-# Start services
+# Start services with fair config (Postgres tuned to defaults; stored
+# procedure RPC server included)
 docker compose -f docker-compose-fair.yml up -d
 
-# Start SpacetimeDB
+# If running SpacetimeDB locally instead of in Docker
 spacetime start
-
-# Publish the SpacetimeDB module
 spacetime publish --server local test-1 --module-path ./spacetimedb
 ```
 
@@ -68,19 +100,19 @@ spacetime publish --server local test-1 --module-path ./spacetimedb
 
 ```bash
 # Default: SpacetimeDB vs Postgres (ORM) vs Postgres (stored proc)
-npm run fair-bench
+pnpm run fair-bench
 
-# With options
-npm run fair-bench -- --seconds 10 --concurrency 50 --alpha 0.5
+# With options (these mirror the standard bench CLI; --skip-prep is fair-bench-only)
+pnpm run fair-bench -- --seconds 10 --concurrency 50 --alpha 0.5
 
 # High contention
-npm run fair-bench -- --alpha 1.5
+pnpm run fair-bench -- --alpha 1.5
 
 # Include more systems
-npm run fair-bench -- --systems spacetimedb,postgres_rpc,postgres_storedproc_rpc,sqlite_rpc
+pnpm run fair-bench -- --systems spacetimedb,postgres_rpc,postgres_storedproc_rpc,sqlite_rpc
 
 # Skip seeding (if already seeded)
-npm run fair-bench -- --skip-prep
+pnpm run fair-bench -- --skip-prep
 ```
 
 ### Start the Stored Procedure RPC Server (non-Docker)
@@ -90,22 +122,34 @@ npm run fair-bench -- --skip-prep
 PG_STOREDPROC_RPC_PORT=4105 npx tsx src/rpc-servers/postgres-storedproc-rpc-server.ts
 ```
 
-## Expected Results
+## Postgres Rust Client (Apples-to-Apples Binary Protocol)
 
-With a leveled playing field, SpacetimeDB's genuine architectural advantage (colocated compute+storage, no network hop for data access) should still show a meaningful speedup — likely **2-5x** rather than the claimed **14x**. The remaining advantage is real and architectural:
+Now that `master` has removed the SpacetimeDB Rust client, the original
+"Rust binary protocol vs Node.js HTTP+JSON" gap is no longer present in the
+standard benchmark — both sides use TypeScript. The
+`postgres-rust-client/` directory in this PR is therefore a **standalone
+reference**: it lets you measure how much of any remaining gap is due to
+Node.js client overhead vs. the database itself, by driving Postgres with a
+Rust binary client.
+
+```bash
+cd postgres-rust-client
+cargo run --release -- --seconds 10 --concurrency 50 --alpha 0.5
+```
+
+## What the Numbers Should Show
+
+With the playing field leveled, SpacetimeDB's genuine architectural
+advantage (colocated compute+storage, no network hop for data access)
+should still show a meaningful speedup. The remaining gap reflects:
 
 - Zero-copy in-process data access vs TCP round-trips
-- Rust execution vs Node.js JavaScript
+- Rust execution vs Node.js JavaScript on the server side
 - Binary BSATN protocol vs JSON serialization
 
-The factors that are **not** architectural and were removed:
-- Custom Rust client vs shared TypeScript client
-- 16,384 vs 8 in-flight operations per connection
-- Server-side vs client-side TPS counting
-- Unequal durability guarantees
-- Non-default Postgres isolation level penalizing competitors
-- ORM overhead (5 round-trips) vs single reducer call
+Confounds that are **not** architectural and are normalized away here:
 
-## Detailed Asymmetry Analysis
-
-For a comprehensive breakdown of every asymmetry in the original benchmark, see the table in the PR description.
+- Per-connection pipelining differences
+- Postgres being run at non-default isolation
+- ORM overhead (5 round-trips) vs single-call reducer
+- `synchronous_commit=off` skewing Postgres' durability story
