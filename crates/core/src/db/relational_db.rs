@@ -241,14 +241,12 @@ impl RelationalDB {
     ///
     ///   `None` may be passed to obtain an in-memory only database.
     ///
-    /// - snapshots
+    ///  /// - `snapshot_repo`
     ///
-    ///   Optional snapshot persistence and background snapshot execution,
-    ///   carried through [`Persistence`].
+    ///   The [`SnapshotRepo`] which stores snapshots of this database.
     ///   This is only meaningful if `history` and `durability` are also supplied.
-    ///   If restoring from an existing database, the snapshot repository must
-    ///   store views of the same sequence of TXes as the `history`.
-    ///
+    ///   If restoring from an existing database, the `snapshot_repo` must
+    ///   store views of the same sequence of TXes as the `history`
     /// - `metrics_recorder_queue`
     ///
     ///   The send side of a queue for recording transaction metrics.
@@ -489,7 +487,7 @@ impl RelationalDB {
         // Try to load the `ReconstructedSnapshot` at `snapshot_offset`.
         fn try_load_snapshot(
             database_identity: &Identity,
-            snapshot_repo: &(impl SnapshotRepo + ?Sized),
+            snapshot_repo: &DynSnapshotRepo,
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
@@ -623,7 +621,7 @@ impl RelationalDB {
                 }
             }
         }
-        log::info!("[{database_identity}] DATABASE: no usable snapshot in store");
+        log::info!("[{database_identity}] DATABASE: no usable snapshot in snapshot repo");
 
         // If we didn't find a snapshot and the commitlog doesn't start at the
         // zero-th commit (e.g. due to archiving), there is no way to restore
@@ -2185,11 +2183,7 @@ pub mod tests_utils {
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(|repo| {
-                        SnapshotWorker::new_with_repository(
-                            repo,
-                            snapshot::Compression::Enabled,
-                            Runtime::tokio(rt.clone()),
-                        )
+                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio(rt.clone()))
                     })
                 })
                 .transpose()?;
@@ -2315,11 +2309,7 @@ pub mod tests_utils {
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(|repo| {
-                        SnapshotWorker::new_with_repository(
-                            repo,
-                            snapshot::Compression::Enabled,
-                            Runtime::tokio(rt.clone()),
-                        )
+                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio(rt.clone()))
                     })
                 })
                 .transpose()?;
@@ -2363,7 +2353,7 @@ pub mod tests_utils {
             Arc::new(|_, _| i64::MAX)
         }
 
-        pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>, DBError> {
+        pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>, DBError> {
             Ok(self.inner.take_snapshot(repo)?)
         }
     }

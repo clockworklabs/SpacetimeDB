@@ -14,7 +14,7 @@ use prometheus::{Histogram, IntGauge};
 use spacetimedb_datastore::locking_tx_datastore::{committed_state::CommittedState, datastore::Locking};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo, SnapshotRepository};
+use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
 use tokio::sync::watch;
 
 use crate::{runtime::Runtime, worker_metrics::WORKER_METRICS};
@@ -60,7 +60,7 @@ impl Compression {
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
     request_snapshot: mpsc::UnboundedSender<Request>,
-    snapshot_repo: Arc<DynSnapshotRepo>,
+    snapshot_repository: Arc<DynSnapshotRepo>,
 }
 
 impl SnapshotWorker {
@@ -93,7 +93,7 @@ impl SnapshotWorker {
         Self {
             snapshot_created,
             request_snapshot: request_tx,
-            snapshot_repo,
+            snapshot_repository: snapshot_repo,
         }
     }
 
@@ -107,9 +107,9 @@ impl SnapshotWorker {
             .expect("snapshot worker panicked");
     }
 
-    /// Get the snapshot repository this worker is operating on.
+    /// Get the snapshot repo this worker is operating on.
     pub fn snapshot_repo(&self) -> Arc<DynSnapshotRepo> {
-        self.snapshot_repo.clone()
+        self.snapshot_repository.clone()
     }
 
     /// Request a snapshot to be taken.
@@ -140,40 +140,6 @@ impl SnapshotWorker {
     /// `WatchStream` from the `tokio-stream` crate.
     pub fn subscribe(&self) -> watch::Receiver<TxOffset> {
         self.snapshot_created.subscribe()
-    }
-}
-
-impl SnapshotWorker {
-    pub fn new_with_repository(
-        snapshot_repository: Arc<SnapshotRepository>,
-        compression: Compression,
-        runtime: Runtime,
-    ) -> Self {
-        let database = snapshot_repository.database_identity();
-        let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
-        let (snapshot_created, _) = watch::channel(latest_snapshot);
-        let (request_tx, request_rx) = mpsc::unbounded();
-
-        let actor = SnapshotWorkerActor {
-            snapshot_requests: request_rx,
-            snapshot_repo: snapshot_repository.clone(),
-            snapshot_created: snapshot_created.clone(),
-            metrics: SnapshotMetrics::new(database),
-            runtime: runtime.clone(),
-            compression: compression.is_enabled().then(|| Compressor {
-                snapshot_repo: snapshot_repository.clone(),
-                metrics: CompressionMetrics::new(database),
-                stats: <_>::default(),
-                runtime: runtime.clone(),
-            }),
-        };
-        runtime.spawn(actor.run());
-
-        Self {
-            snapshot_created,
-            request_snapshot: request_tx,
-            snapshot_repo: snapshot_repository,
-        }
     }
 }
 

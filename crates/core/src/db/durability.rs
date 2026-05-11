@@ -35,7 +35,6 @@ pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &Runtime, databa
     let label = format!("[{database_identity}]");
     let runtime = runtime.clone();
     runtime.clone().spawn(async move {
-        log::info!("starting spawn close");
         match runtime.timeout(Duration::from_secs(10), durability.close()).await {
             Err(_elapsed) => {
                 error!("{label} timeout waiting for durability shutdown");
@@ -44,7 +43,6 @@ pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &Runtime, databa
                 info!("{label} durability shut down at tx offset: {offset:?}");
             }
         }
-        log::info!("closing spawn close");
     });
 }
 

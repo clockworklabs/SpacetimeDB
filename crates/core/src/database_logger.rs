@@ -11,7 +11,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, BufReader, ReadBuf};
+use tokio::io::{AsyncRead, BufReader};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
@@ -592,7 +592,7 @@ fn seek_to(file: &mut File, buf: &mut [u8], num_lines: u32) -> io::Result<()> {
     Ok(())
 }
 
-fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+fn read_exact_at(file: &std::fs::File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::FileExt;
@@ -641,7 +641,7 @@ impl MaybeFile {
 }
 
 impl AsyncRead for MaybeFile {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<io::Result<()>> {
         match self.project() {
             MaybeFileProj::File { inner } => inner.poll_read(cx, buf),
             MaybeFileProj::Empty => Poll::Ready(Ok(())),

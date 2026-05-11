@@ -70,7 +70,7 @@ impl Persistence {
         }
     }
 
-    /// If snapshots are enabled, get the snapshot repository they are stored in.
+    /// If snapshots are enabled, get the [SnapshotRepo] they are stored in.
     pub fn snapshot_repo(&self) -> Option<Arc<DynSnapshotRepo>> {
         self.snapshots.as_ref().map(|worker| worker.snapshot_repo())
     }
@@ -157,9 +157,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
         let snapshot_worker =
             asyncify(move || relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id))
                 .await
-                .map(|repo| {
-                    SnapshotWorker::new_with_repository(repo, snapshot::Compression::Enabled, Runtime::tokio_current())
-                })?;
+                .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio_current()))?;
         let (durability, disk_size) = relational_db::local_durability(replica_dir, Some(&snapshot_worker)).await?;
 
         tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
