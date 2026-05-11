@@ -271,6 +271,8 @@ pub trait PendingSnapshot: Send {
     fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError>;
 }
 
+// We pass snapshot repos as `dyn` rather than compile-time generics for convenience,
+// as threading generics through a deep callstack would be a hassle.
 pub type BoxedPendingSnapshot = Box<dyn PendingSnapshot>;
 pub type DynSnapshotRepo = dyn SnapshotRepo<Pending = BoxedPendingSnapshot>;
 
