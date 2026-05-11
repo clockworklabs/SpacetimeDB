@@ -34,5 +34,12 @@ start_window cockroach-rpc  "cd $ROOT && pnpm tsx src/rpc-servers/cockroach-rpc-
 start_window supabase-rpc   "cd $ROOT && pnpm tsx src/rpc-servers/supabase-rpc-server.ts"
 start_window convex         "cd $ROOT/convex-app && npx convex dev --local"
 
+# PlanetScale RPC server: reuses postgres-rpc-server.ts but with PLANETSCALE_PG_URL
+# and a different port (4104) to avoid colliding with local postgres-rpc on 4101.
+# Only starts if PLANETSCALE_PG_URL is set in .env.
+if [ -f "$ROOT/.env" ] && grep -q '^PLANETSCALE_PG_URL=postgres' "$ROOT/.env"; then
+  start_window planetscale-rpc "cd $ROOT && set -a && . ./.env && set +a && PG_URL=\"\$PLANETSCALE_PG_URL\" PG_RPC_PORT=4104 pnpm tsx src/rpc-servers/postgres-rpc-server.ts"
+fi
+
 echo "All windows started in tmux session '$SESSION'."
 echo "Attach: tmux attach -t $SESSION   (then Ctrl+B w to browse)"
