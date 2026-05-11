@@ -167,6 +167,7 @@ impl ControlDb {
         let identity_bytes = database_identity.to_byte_array();
         let tree = self.db.open_tree("dns")?;
         tree.insert(domain.to_lowercase(), &identity_bytes)?;
+        tree.flush()?;
 
         let tree = self.db.open_tree("reverse_dns")?;
         match tree.get(identity_bytes)? {
@@ -179,6 +180,7 @@ impl ControlDb {
                 tree.insert(identity_bytes, serde_json::to_string(&vec![&domain])?.as_bytes())?;
             }
         }
+        tree.flush()?;
 
         Ok(InsertDomainResult::Success {
             domain,
@@ -272,6 +274,10 @@ impl ControlDb {
                 }
                 rev_tx.insert(&database_identity_bytes, serde_json::to_vec(domain_names).unwrap())?;
 
+                dns_tx.flush();
+                tld_tx.flush();
+                rev_tx.flush();
+
                 Ok::<_, ConflictableTransactionError<AbortWith>>(())
             });
 
@@ -309,6 +315,7 @@ impl ControlDb {
             }
             None => {
                 tree.insert(key, &owner_identity.to_byte_array())?;
+                tree.flush()?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -372,9 +379,11 @@ impl ControlDb {
         let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
 
         tree.insert(key, buf.clone())?;
+        tree.flush()?;
 
         let tree = self.db.open_tree("database")?;
         tree.insert(id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
         Ok(id)
     }
@@ -387,23 +396,12 @@ impl ControlDb {
         let tree = self.db.open_tree("database_by_identity")?;
         let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
         tree.insert(stored_database.database_identity.to_be_byte_array(), buf.clone())?;
+        tree.flush()?;
 
         let tree = self.db.open_tree("database")?;
         tree.insert(stored_database.id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
-        Ok(())
-    }
-
-    pub fn is_database_locked(&self, database_identity: &Identity) -> Result<bool> {
-        let tree = self.db.open_tree("database_locks")?;
-        let key = database_identity.to_be_byte_array();
-        Ok(tree.get(key)?.is_some_and(|v| v.as_ref() == [1u8]))
-    }
-
-    pub fn set_database_lock(&self, database_identity: &Identity, locked: bool) -> Result<()> {
-        let tree = self.db.open_tree("database_locks")?;
-        let key = database_identity.to_be_byte_array();
-        tree.insert(key, &[locked as u8])?;
         Ok(())
     }
 
@@ -417,6 +415,7 @@ impl ControlDb {
 
             tree_by_identity.remove(&key[..])?;
             tree.remove(id.to_be_bytes())?;
+            tree.flush()?;
             return Ok(Some(id));
         }
 
@@ -479,6 +478,7 @@ impl ControlDb {
         let buf = bsatn::to_vec(&replica).unwrap();
 
         tree.insert(id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
         Ok(id)
     }
@@ -486,6 +486,7 @@ impl ControlDb {
     pub fn delete_replica(&self, id: u64) -> Result<()> {
         let tree = self.db.open_tree("replica")?;
         tree.remove(id.to_be_bytes())?;
+        tree.flush()?;
         Ok(())
     }
 
@@ -522,6 +523,7 @@ impl ControlDb {
         let buf = bsatn::to_vec(&node).unwrap();
 
         tree.insert(id.to_be_bytes(), buf)?;
+        tree.flush()?;
 
         Ok(id)
     }
@@ -532,12 +534,14 @@ impl ControlDb {
         let buf = bsatn::to_vec(&node)?;
 
         tree.insert(node.id.to_be_bytes(), buf)?;
+        tree.flush()?;
         Ok(())
     }
 
     pub fn _delete_node(&self, id: u64) -> Result<()> {
         let tree = self.db.open_tree("node")?;
         tree.remove(id.to_be_bytes())?;
+        tree.flush()?;
         Ok(())
     }
 
@@ -593,6 +597,7 @@ impl ControlDb {
     pub fn set_energy_balance(&self, identity: Identity, energy_balance: energy::EnergyBalance) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         tree.insert(identity.to_byte_array(), &energy_balance.get().to_be_bytes())?;
+        tree.flush()?;
 
         Ok(())
     }

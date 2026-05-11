@@ -4,6 +4,12 @@
 #include "Tests/TestCounter.h"
 #include "Tests/CommonTestFunctions.h"
 
+#ifdef Nil
+#define SPACETIMEDB_NIL_MACRO_SAVED
+#pragma push_macro("Nil")
+#undef Nil
+#endif
+
 /* Implementation for every primitive ---------------------------------- */
 #define DEFINE_UFUNC(Suffix, Expected, RowStructType) \
 void UInsertPrimitiveHandler::OnInsertOne##Suffix(const FEventContext& Context, const RowStructType& Value) \
@@ -1712,3 +1718,7 @@ void UUuidActionsHandler::OnInsertCallUuidV7(const FEventContext& Context, const
 		Counter->MarkFailure(TEXT("InsertCallUuidV7"), ErrorMessage);
 	}
 }
+#ifdef SPACETIMEDB_NIL_MACRO_SAVED
+#pragma pop_macro("Nil")
+#undef SPACETIMEDB_NIL_MACRO_SAVED
+#endif

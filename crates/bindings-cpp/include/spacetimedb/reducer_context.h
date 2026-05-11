@@ -58,10 +58,15 @@ public:
         return *rng_instance;
     }
 
-    Identity identity() const {
+    Identity database_identity() const {
         std::array<uint8_t, 32> buffer;
         ::identity(buffer.data());
         return Identity(buffer);
+    }
+
+    [[deprecated("Use database_identity() instead.")]]
+    Identity identity() const {
+        return database_identity();
     }
     
     /**

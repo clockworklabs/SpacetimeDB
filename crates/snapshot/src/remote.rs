@@ -727,10 +727,13 @@ where
         Some(file_path) => {
             let dir = file_path.parent().expect("file not in a directory").to_owned();
             fs::create_dir_all(&dir).await?;
-            let (tmp_file, tmp_out) = spawn_blocking(move || {
-                let tmp = NamedTempFile::new_in(dir)?;
-                let out = tmp.reopen()?;
-                Ok::<_, io::Error>((tmp, out))
+            let (tmp_file, tmp_out) = spawn_blocking({
+                let dir = dir.clone();
+                move || {
+                    let tmp = NamedTempFile::new_in(dir)?;
+                    let out = tmp.reopen()?;
+                    Ok::<_, io::Error>((tmp, out))
+                }
             })
             .await
             .unwrap()?;
@@ -743,6 +746,7 @@ where
                 .await
                 .unwrap()
                 .map_err(|e| e.error)?;
+            fs::File::open(dir).await?.sync_all().await?;
         }
 
         None => {

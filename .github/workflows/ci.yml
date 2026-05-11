@@ -102,10 +102,6 @@ jobs:
           cd $env:USERPROFILE\emsdk
           .\emsdk install 4.0.21
           .\emsdk activate 4.0.21
-          # Add emscripten to PATH for subsequent steps and subprocesses
-          $emsdkPath = "$env:USERPROFILE\emsdk\upstream\emscripten"
-          Add-Content -Path $env:GITHUB_PATH -Value $emsdkPath
-          Write-Host "Added $emsdkPath to PATH"
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
@@ -693,7 +689,7 @@ jobs:
           }
 
       - name: Hydrate Unity SDK DLLs
-        run: cargo ci dlls
+        run: cargo regen csharp dlls
 
       - name: Check Unity meta files
         uses: DeNA/unity-meta-check@v3
@@ -834,10 +830,9 @@ jobs:
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Check quickstart-chat bindings are up to date
-        working-directory: sdks/csharp
         run: |
-          bash tools~/gen-quickstart.sh
-          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
+          bash sdks/csharp/tools~/gen-quickstart.sh
+          tools/check-diff.sh templates/chat-console-cs/module_bindings || {
               echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
               exit 1
           }
@@ -891,15 +886,20 @@ jobs:
             const targetRepo = process.env.TARGET_REPO;
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
+            const publicPrNumber = context.payload.pull_request?.number ?? context.payload.inputs?.pr_number;
             const preDispatch = new Date().toISOString();
-  
+            const inputs = { public_ref: publicRef };
+            if (publicPrNumber) {
+              inputs.public_pr_number = String(publicPrNumber);
+            }
+
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
               owner: targetOwner,
               repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
-              inputs: { public_ref: publicRef }
+              inputs,
             });
   
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -1027,36 +1027,6 @@ jobs:
 
       - name: Check global.json policy
         run: cargo ci global-json-policy
-
-  warn-python-smoketests:
-    name: Check for Python smoketest edits
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fail if Python smoketests were modified
-        run: |
-          MERGE_BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
-          PYTHON_SMOKETEST_CHANGES="$(git diff --name-only "$MERGE_BASE" HEAD -- 'smoketests/**.py')"
-
-          if [ -n "$PYTHON_SMOKETEST_CHANGES" ]; then
-            echo "::error::This PR modifies legacy Python smoketests. Please add new tests to the Rust smoketests in crates/smoketests/ instead."
-            echo ""
-            echo "Changed files:"
-            echo "$PYTHON_SMOKETEST_CHANGES"
-            echo ""
-            echo "The Python smoketests are being replaced by Rust smoketests."
-            echo "See crates/smoketests/DEVELOP.md for instructions on adding Rust smoketests."
-            exit 1
-          fi
-
-          echo "No Python smoketest changes detected."
 
   smoketests_mod_rs_complete:
     name: Check smoketests/mod.rs is complete
@@ -1261,3 +1231,24 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
+
+  version_upgrade_check:
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      # pnpm is required for regenerating the typescript bindings
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+      - name: Verify that upgrade-version still works
+        run: cargo ci version-upgrade-check
+      - name: Show diff
+        run: git diff HEAD
