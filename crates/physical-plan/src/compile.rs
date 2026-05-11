@@ -20,6 +20,7 @@ fn compile_expr(expr: Expr, var: &mut impl VarLabel) -> PhysicalExpr {
             let b = Box::new(compile_expr(*b, var));
             PhysicalExpr::BinOp(op, a, b)
         }
+        Expr::Not(inner) => PhysicalExpr::Not(Box::new(compile_expr(*inner, var))),
         Expr::Value(v, _) => PhysicalExpr::Value(v),
         Expr::Field(proj) => PhysicalExpr::Field(compile_field_project(var, proj)),
     }
@@ -138,6 +139,9 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
             let lhs = Box::new(lhs);
             let rhs = Box::new(rhs);
             PhysicalPlan::NLJoin(lhs, rhs)
+        }
+        RelExpr::VariableLengthJoin(_) => {
+            unreachable!("VariableLengthJoin must be expanded before physical planning")
         }
     }
 }

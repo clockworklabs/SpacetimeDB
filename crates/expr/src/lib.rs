@@ -14,7 +14,7 @@ use spacetimedb_data_structures::map::HashCollectionExt as _;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
+use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, GraphId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::uuid::Uuid;
@@ -24,6 +24,7 @@ use spacetimedb_sql_parser::parser::recursion;
 use std::{ops::Deref, str::FromStr};
 
 pub mod check;
+pub mod cypher;
 pub mod errors;
 pub mod expr;
 pub mod rls;
@@ -162,6 +163,7 @@ fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
         || t.is_connection_id()
         || t.is_timestamp()
         || t.is_uuid()
+        || t.is_graph_id()
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -234,6 +236,13 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         Uuid::parse_str(value)
             .map(AlgebraicValue::from)
             .map_err(|err| anyhow!(err))
+    };
+    let to_graph_id = || {
+        value
+            .parse::<u64>()
+            .map(GraphId::from)
+            .map(AlgebraicValue::from)
+            .with_context(|| "Could not parse graph id")
     };
     let to_i256 = |decimal: &BigDecimal| {
         i256::from_str_radix(
@@ -356,6 +365,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         t if t.is_identity() => to_identity(),
         t if t.is_connection_id() => to_connection_id(),
         t if t.is_uuid() => to_uuid(),
+        t if t.is_graph_id() => to_graph_id(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
 }

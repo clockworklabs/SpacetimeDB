@@ -1,3 +1,4 @@
+use crate::graph_id::GraphId;
 use crate::time_duration::TimeDuration;
 use crate::timestamp::Timestamp;
 use crate::uuid::Uuid;
@@ -488,6 +489,8 @@ pub enum PsqlPrintFmt {
     Duration,
     /// Print as `UUID` format
     Uuid,
+    /// Print as [`GraphId`] format
+    GraphId,
     /// Print as `Satn` format
     Satn,
 }
@@ -526,6 +529,13 @@ impl PsqlPrintFmt {
 
         if tuple.is_uuid() || field.algebraic_type.is_uuid() || name.map(ProductType::is_uuid_tag).unwrap_or_default() {
             return PsqlPrintFmt::Uuid;
+        };
+
+        if tuple.is_graph_id()
+            || field.algebraic_type.is_graph_id()
+            || name.map(ProductType::is_graph_id_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::GraphId;
         };
 
         PsqlPrintFmt::Satn
@@ -579,6 +589,7 @@ pub trait TypedWriter {
     fn write_timestamp(&mut self, value: Timestamp) -> Result<(), Self::Error>;
     fn write_duration(&mut self, value: TimeDuration) -> Result<(), Self::Error>;
     fn write_uuid(&mut self, value: Uuid) -> Result<(), Self::Error>;
+    fn write_graph_id(&mut self, value: GraphId) -> Result<(), Self::Error>;
     /// Writes a value as an alternative record format, e.g., for use `JSON` inside `SQL`.
     fn write_alt_record(
         &mut self,
@@ -694,7 +705,10 @@ impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        self.f.write(v)
+        match self.ty.use_fmt() {
+            PsqlPrintFmt::GraphId => self.f.write_graph_id(GraphId::new(v)),
+            _ => self.f.write(v),
+        }
     }
 
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
@@ -891,6 +905,10 @@ impl TypedWriter for SqlFormatter<'_, '_> {
 
     fn write_uuid(&mut self, value: Uuid) -> Result<(), Self::Error> {
         write!(self.fmt, "\"{value}\"")
+    }
+
+    fn write_graph_id(&mut self, value: GraphId) -> Result<(), Self::Error> {
+        write!(self.fmt, "{value}")
     }
 
     fn write_record(

@@ -6,6 +6,9 @@ use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use std::sync::Arc;
 
+/// Maximum allowed hop depth for variable-length path expansion.
+pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 16;
+
 pub trait CollectViews {
     fn collect_views(&self, views: &mut HashSet<ViewId>);
 }
@@ -248,6 +251,39 @@ pub enum RelExpr {
     LeftDeepJoin(LeftDeepJoin),
     /// A left deep binary equi-join
     EqJoin(LeftDeepJoin, FieldProject, FieldProject),
+    /// A bounded variable-length path traversal (e.g. `(a)-[*1..3]->(b)`)
+    VariableLengthJoin(VariableLengthPath),
+}
+
+/// A bounded variable-length path traversal.
+///
+/// Represents `(start)-[*min..max]->(end)` in Cypher. At execution time,
+/// this is expanded into a UNION of fixed-depth EqJoin chains (one per
+/// hop count from `min_hops` to `max_hops`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariableLengthPath {
+    /// The base expression up to (and including) the start node
+    pub lhs: Box<RelExpr>,
+    /// Alias for the start vertex in the path
+    pub start_alias: RawIdentifier,
+    /// Alias for the end vertex (bound in the Cypher query)
+    pub end_alias: RawIdentifier,
+    /// Schema of the Edge table
+    pub edge_schema: Arc<TableOrViewSchema>,
+    /// Schema of the Vertex table
+    pub vertex_schema: Arc<TableOrViewSchema>,
+    /// Optional relationship type filter (e.g. `:KNOWS`)
+    pub rel_type: Option<String>,
+    /// Edge column that joins to the near (start-side) vertex Id
+    pub edge_col_near: String,
+    /// Edge column that joins to the far (end-side) vertex Id
+    pub edge_col_far: String,
+    /// Column name for vertex Id
+    pub vertex_id_col: String,
+    /// Minimum hops (inclusive, >= 1)
+    pub min_hops: u32,
+    /// Maximum hops (inclusive, <= MAX_VARIABLE_LENGTH_HOPS)
+    pub max_hops: u32,
 }
 
 /// A table reference
@@ -273,6 +309,146 @@ impl CollectViews for RelExpr {
     }
 }
 
+impl VariableLengthPath {
+    /// Expand this variable-length path into a list of fixed-depth `RelExpr`
+    /// trees, one per hop count from `min_hops` to `max_hops`. Each tree is
+    /// a chain of EqJoins identical to what the fixed-depth Cypher translator
+    /// produces. The end node always uses `self.end_alias`.
+    pub fn expand(&self) -> Vec<RelExpr> {
+        let mut results = Vec::with_capacity((self.max_hops - self.min_hops + 1) as usize);
+
+        for depth in self.min_hops..=self.max_hops {
+            results.push(self.build_fixed_depth(depth));
+        }
+
+        results
+    }
+
+    fn build_fixed_depth(&self, depth: u32) -> RelExpr {
+        let mut current = (*self.lhs).clone();
+        let mut prev_alias = self.start_alias.clone();
+        let mut anon_counter: usize = 0;
+
+        for hop in 0..depth {
+            let edge_alias = RawIdentifier::new(format!("_vlp_e{}", anon_counter));
+            anon_counter += 1;
+
+            let is_last = hop == depth - 1;
+            let next_alias = if is_last {
+                self.end_alias.clone()
+            } else {
+                let a = RawIdentifier::new(format!("_vlp_v{}", anon_counter));
+                anon_counter += 1;
+                a
+            };
+
+            let (vid_idx, vid_ty) = self.resolve_vertex_id_col();
+            let (near_idx, near_ty) = self.resolve_edge_near_col();
+
+            let prev_id = FieldProject {
+                table: prev_alias.clone(),
+                field: vid_idx,
+                ty: vid_ty.clone(),
+            };
+            let edge_near = FieldProject {
+                table: edge_alias.clone(),
+                field: near_idx,
+                ty: near_ty,
+            };
+
+            current = RelExpr::EqJoin(
+                LeftDeepJoin {
+                    lhs: Box::new(current),
+                    rhs: Relvar {
+                        schema: self.edge_schema.clone(),
+                        alias: edge_alias.clone(),
+                        delta: None,
+                    },
+                },
+                prev_id,
+                edge_near,
+            );
+
+            let (far_idx, far_ty) = self.resolve_edge_far_col();
+            let next_id = FieldProject {
+                table: next_alias.clone(),
+                field: vid_idx,
+                ty: vid_ty,
+            };
+
+            current = RelExpr::EqJoin(
+                LeftDeepJoin {
+                    lhs: Box::new(current),
+                    rhs: Relvar {
+                        schema: self.vertex_schema.clone(),
+                        alias: next_alias.clone(),
+                        delta: None,
+                    },
+                },
+                FieldProject {
+                    table: edge_alias.clone(),
+                    field: far_idx,
+                    ty: far_ty,
+                },
+                next_id,
+            );
+
+            if let Some(ref rel_type) = self.rel_type {
+                let (et_idx, et_ty) = self.resolve_edge_type_col();
+                let edge_type_field = FieldProject {
+                    table: edge_alias,
+                    field: et_idx,
+                    ty: et_ty,
+                };
+                current = RelExpr::Select(
+                    Box::new(current),
+                    Expr::BinOp(
+                        BinOp::Eq,
+                        Box::new(Expr::Field(edge_type_field)),
+                        Box::new(Expr::str(rel_type.clone().into_boxed_str())),
+                    ),
+                );
+            }
+
+            prev_alias = next_alias;
+        }
+
+        current
+    }
+
+    fn resolve_vertex_id_col(&self) -> (usize, AlgebraicType) {
+        let col = self
+            .vertex_schema
+            .get_column_by_name_or_alias(&self.vertex_id_col)
+            .expect("VariableLengthPath: vertex_id_col not found in vertex schema");
+        (col.col_pos.idx(), col.col_type.clone())
+    }
+
+    fn resolve_edge_near_col(&self) -> (usize, AlgebraicType) {
+        let col = self
+            .edge_schema
+            .get_column_by_name_or_alias(&self.edge_col_near)
+            .expect("VariableLengthPath: edge_col_near not found in edge schema");
+        (col.col_pos.idx(), col.col_type.clone())
+    }
+
+    fn resolve_edge_far_col(&self) -> (usize, AlgebraicType) {
+        let col = self
+            .edge_schema
+            .get_column_by_name_or_alias(&self.edge_col_far)
+            .expect("VariableLengthPath: edge_col_far not found in edge schema");
+        (col.col_pos.idx(), col.col_type.clone())
+    }
+
+    fn resolve_edge_type_col(&self) -> (usize, AlgebraicType) {
+        let col = self
+            .edge_schema
+            .get_column_by_name_or_alias("EdgeType")
+            .expect("VariableLengthPath: EdgeType column not found in edge schema");
+        (col.col_pos.idx(), col.col_type.clone())
+    }
+}
+
 impl RelExpr {
     /// Walk the expression tree and call `f` on each node
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
@@ -280,7 +456,8 @@ impl RelExpr {
         match self {
             Self::Select(lhs, _)
             | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
-            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..)
+            | Self::VariableLengthJoin(VariableLengthPath { lhs, .. }) => {
                 lhs.visit(f);
             }
             Self::RelVar(..) => {}
@@ -293,7 +470,8 @@ impl RelExpr {
         match self {
             Self::Select(lhs, _)
             | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
-            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..)
+            | Self::VariableLengthJoin(VariableLengthPath { lhs, .. }) => {
                 lhs.visit_mut(f);
             }
             Self::RelVar(..) => {}
@@ -306,6 +484,7 @@ impl RelExpr {
             Self::RelVar(..) => 1,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => join.lhs.nfields() + 1,
             Self::Select(input, _) => input.nfields(),
+            Self::VariableLengthJoin(vlp) => vlp.lhs.nfields() + 1,
         }
     }
 
@@ -317,6 +496,9 @@ impl RelExpr {
                 join.rhs.alias.as_ref() == field || join.lhs.has_field(field)
             }
             Self::Select(input, _) => input.has_field(field),
+            Self::VariableLengthJoin(vlp) => {
+                vlp.end_alias.as_ref() == field || vlp.lhs.has_field(field)
+            }
         }
     }
 
@@ -329,6 +511,8 @@ impl RelExpr {
             Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => lhs.find_table_schema(alias),
             Self::LeftDeepJoin(LeftDeepJoin { rhs, .. }) if rhs.alias.as_ref() == alias => Some(&rhs.schema),
             Self::LeftDeepJoin(LeftDeepJoin { lhs, .. }) => lhs.find_table_schema(alias),
+            Self::VariableLengthJoin(vlp) if vlp.end_alias.as_ref() == alias => Some(&vlp.vertex_schema),
+            Self::VariableLengthJoin(vlp) => vlp.lhs.find_table_schema(alias),
             _ => None,
         }
     }
@@ -381,6 +565,8 @@ pub enum Expr {
     BinOp(BinOp, Box<Expr>, Box<Expr>),
     /// A binary logic expression
     LogOp(LogOp, Box<Expr>, Box<Expr>),
+    /// A unary NOT expression
+    Not(Box<Expr>),
     /// A typed literal expression
     Value(AlgebraicValue, AlgebraicType),
     /// A field projection
@@ -396,6 +582,7 @@ impl Expr {
                 a.visit(f);
                 b.visit(f);
             }
+            Self::Not(inner) => inner.visit(f),
             Self::Value(..) | Self::Field(..) => {}
         }
     }
@@ -408,6 +595,7 @@ impl Expr {
                 a.visit_mut(f);
                 b.visit_mut(f);
             }
+            Self::Not(inner) => inner.visit_mut(f),
             Self::Value(..) | Self::Field(..) => {}
         }
     }
@@ -425,7 +613,7 @@ impl Expr {
     /// The [AlgebraicType] of this scalar expression
     pub fn ty(&self) -> &AlgebraicType {
         match self {
-            Self::BinOp(..) | Self::LogOp(..) => &AlgebraicType::Bool,
+            Self::BinOp(..) | Self::LogOp(..) | Self::Not(..) => &AlgebraicType::Bool,
             Self::Value(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
         }
     }

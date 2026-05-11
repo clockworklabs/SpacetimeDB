@@ -4,6 +4,8 @@ use crate::parser::{errors::SqlUnsupported, SqlParseResult};
 
 use super::{Project, SqlExpr, SqlFrom, SqlIdent, SqlLiteral};
 
+pub use spacetimedb_cypher_parser::ast::CypherQuery;
+
 /// The AST for the SQL DML and query language
 #[derive(Debug)]
 pub enum SqlAst {
@@ -19,6 +21,8 @@ pub enum SqlAst {
     Set(SqlSet),
     /// SHOW var
     Show(SqlShow),
+    /// cypher('...') — graph query via the Cypher entry point
+    Cypher(CypherQuery),
 }
 
 impl SqlAst {

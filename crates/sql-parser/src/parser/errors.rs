@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use spacetimedb_cypher_parser::CypherParseError;
 use sqlparser::{
     ast::{
         BinaryOperator, Expr, Function, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
@@ -111,6 +112,14 @@ pub enum SqlParseError {
     ParserError(#[from] ParserError),
     #[error(transparent)]
     Recursion(#[from] RecursionError),
+    #[error("Cypher parse error: {0}")]
+    Cypher(Box<CypherParseError>),
+}
+
+impl From<CypherParseError> for SqlParseError {
+    fn from(value: CypherParseError) -> Self {
+        SqlParseError::Cypher(Box::new(value))
+    }
 }
 
 impl From<SubscriptionUnsupported> for SqlParseError {

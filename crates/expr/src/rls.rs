@@ -382,6 +382,10 @@ fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&RawIdentifier) -> RawIde
                 }
             });
         }
+        RelExpr::VariableLengthJoin(vlp) => {
+            vlp.start_alias = f(&vlp.start_alias);
+            vlp.end_alias = f(&vlp.end_alias);
+        }
     });
 }
 
@@ -440,6 +444,10 @@ fn extend_lhs(expr: RelExpr, with: RelExpr) -> RelExpr {
             a,
             b,
         ),
+        RelExpr::VariableLengthJoin(mut vlp) => {
+            vlp.lhs = Box::new(extend_lhs(*vlp.lhs, with));
+            RelExpr::VariableLengthJoin(vlp)
+        }
     }
 }
 
@@ -468,6 +476,10 @@ fn expand_leaf(expr: RelExpr, table_id: TableId, alias: &str, with: &RelExpr) ->
             a,
             b,
         ),
+        RelExpr::VariableLengthJoin(mut vlp) => {
+            vlp.lhs = Box::new(expand_leaf(*vlp.lhs, table_id, alias, with));
+            RelExpr::VariableLengthJoin(vlp)
+        }
     }
 }
 

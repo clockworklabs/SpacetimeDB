@@ -34,7 +34,7 @@ pub trait SchemaView {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Relvars(HashMap<RawIdentifier, Arc<TableOrViewSchema>>);
 
 impl Deref for Relvars {
@@ -195,35 +195,69 @@ pub mod test_utils {
         builder.finish().try_into().expect("failed to generate module def")
     }
 
-    pub struct SchemaViewer(pub ModuleDef);
+    /// Test helper that maps table names to `TableId`s and resolves schemas
+    /// from a `ModuleDef`. The `tables` vec supplies `(name, TableId)` pairs.
+    pub struct SchemaViewer {
+        pub module_def: ModuleDef,
+        pub tables: Vec<(&'static str, TableId)>,
+    }
+
+    impl SchemaViewer {
+        pub fn new(module_def: ModuleDef, tables: Vec<(&'static str, TableId)>) -> Self {
+            Self { module_def, tables }
+        }
+    }
 
     impl SchemaView for SchemaViewer {
         fn table_id(&self, name: &str) -> Option<TableId> {
-            match name {
-                "t" => Some(TableId(0)),
-                "s" => Some(TableId(1)),
-                _ => None,
-            }
+            self.tables.iter().find(|(n, _)| *n == name).map(|(_, id)| *id)
         }
 
         fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
-            match table_id.idx() {
-                0 => Some((TableId(0), "t")),
-                1 => Some((TableId(1), "s")),
-                _ => None,
-            }
-            .and_then(|(table_id, name)| {
-                self.0
-                    .table(name)
-                    .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
-                    .map(TableOrViewSchema::from)
-                    .map(Arc::new)
-            })
+            self.tables
+                .iter()
+                .find(|(_, id)| *id == table_id)
+                .and_then(|&(name, tid)| {
+                    self.module_def
+                        .table(name)
+                        .map(|def| Arc::new(TableSchema::from_module_def(&self.module_def, def, (), tid)))
+                        .map(TableOrViewSchema::from)
+                        .map(Arc::new)
+                })
         }
 
         fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
             Ok(vec![])
         }
+    }
+
+    /// Standard Vertex + Edge graph schema for graph-extension tests.
+    pub fn graph_schema_viewer() -> SchemaViewer {
+        use spacetimedb_lib::{AlgebraicType, ProductType};
+
+        SchemaViewer::new(
+            build_module_def(vec![
+                (
+                    "Vertex",
+                    ProductType::from([
+                        ("Id", AlgebraicType::U64),
+                        ("Label", AlgebraicType::String),
+                        ("Properties", AlgebraicType::String),
+                    ]),
+                ),
+                (
+                    "Edge",
+                    ProductType::from([
+                        ("Id", AlgebraicType::U64),
+                        ("StartId", AlgebraicType::U64),
+                        ("EndId", AlgebraicType::U64),
+                        ("EdgeType", AlgebraicType::String),
+                        ("Properties", AlgebraicType::String),
+                    ]),
+                ),
+            ]),
+            vec![("Vertex", TableId(0)), ("Edge", TableId(1))],
+        )
     }
 }
 
@@ -234,6 +268,7 @@ mod tests {
         expr::ProjectName,
     };
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
+    use spacetimedb_primitives::TableId;
     use spacetimedb_schema::def::ModuleDef;
 
     use super::{SchemaView, TypingResult};
@@ -282,7 +317,7 @@ mod tests {
 
     #[test]
     fn valid_literals() {
-        let tx = SchemaViewer(module_def());
+        let tx = SchemaViewer::new(module_def(), vec![("t", TableId(0)), ("s", TableId(1))]);
 
         struct TestCase {
             sql: &'static str,
@@ -358,7 +393,7 @@ mod tests {
 
     #[test]
     fn valid_literals_for_type() {
-        let tx = SchemaViewer(module_def());
+        let tx = SchemaViewer::new(module_def(), vec![("t", TableId(0)), ("s", TableId(1))]);
 
         for ty in [
             "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "i128", "u128", "i256", "u256",
@@ -371,7 +406,7 @@ mod tests {
 
     #[test]
     fn invalid_literals() {
-        let tx = SchemaViewer(module_def());
+        let tx = SchemaViewer::new(module_def(), vec![("t", TableId(0)), ("s", TableId(1))]);
 
         struct TestCase {
             sql: &'static str,
@@ -407,7 +442,7 @@ mod tests {
 
     #[test]
     fn valid() {
-        let tx = SchemaViewer(module_def());
+        let tx = SchemaViewer::new(module_def(), vec![("t", TableId(0)), ("s", TableId(1))]);
 
         struct TestCase {
             sql: &'static str,
@@ -471,7 +506,7 @@ mod tests {
 
     #[test]
     fn invalid() {
-        let tx = SchemaViewer(module_def());
+        let tx = SchemaViewer::new(module_def(), vec![("t", TableId(0)), ("s", TableId(1))]);
 
         struct TestCase {
             sql: &'static str,

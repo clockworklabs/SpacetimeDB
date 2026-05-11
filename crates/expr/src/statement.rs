@@ -458,6 +458,10 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Ty
         SqlAst::Update(update) => Ok(Statement::DML(DML::Update(type_update(update, tx)?))),
         SqlAst::Set(set) => Ok(Statement::DML(DML::Insert(type_and_rewrite_set(set, tx)?))),
         SqlAst::Show(show) => Ok(Statement::Select(type_and_rewrite_show(show, tx)?)),
+        SqlAst::Cypher(cypher) => {
+            let project_list = crate::cypher::translate_cypher(&cypher, tx)?;
+            Ok(Statement::Select(project_list))
+        }
     }
 }
 
@@ -482,7 +486,7 @@ mod tests {
         Relvars, SchemaView, TypingResult,
     };
     use crate::type_expr;
-    use spacetimedb::TableId;
+    use spacetimedb_primitives::TableId;
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
     use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -520,7 +524,7 @@ mod tests {
 
     #[test]
     fn valid() {
-        let tx = SchemaViewer(module_def());
+        let tx = SchemaViewer::new(module_def(), vec![("t", TableId(0)), ("s", TableId(1))]);
 
         for sql in [
             "select str from t",
@@ -535,7 +539,7 @@ mod tests {
 
     #[test]
     fn invalid() {
-        let tx = SchemaViewer(module_def());
+        let tx = SchemaViewer::new(module_def(), vec![("t", TableId(0)), ("s", TableId(1))]);
 
         for sql in [
             // Unqualified columns in a join
@@ -663,5 +667,65 @@ mod tests {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_err(), "{msg}");
         }
+    }
+
+    // ── Cypher execution via parse_and_type_sql ───────────────────────
+
+    use crate::check::test_utils::graph_schema_viewer;
+
+    #[test]
+    fn cypher_bare_match_produces_select() {
+        let tx = graph_schema_viewer();
+        let result = parse_and_type_sql("MATCH (n) RETURN n", &tx);
+        assert!(result.is_ok(), "bare MATCH should produce a Select: {:?}", result.err());
+        assert!(matches!(result.unwrap(), Statement::Select(_)));
+    }
+
+    #[test]
+    fn cypher_function_wrapper_produces_select() {
+        let tx = graph_schema_viewer();
+        let result = parse_and_type_sql("SELECT * FROM cypher('MATCH (n) RETURN n')", &tx);
+        assert!(result.is_ok(), "cypher() wrapper should produce a Select: {:?}", result.err());
+        assert!(matches!(result.unwrap(), Statement::Select(_)));
+    }
+
+    #[test]
+    fn cypher_single_hop_produces_select() {
+        let tx = graph_schema_viewer();
+        let result = parse_and_type_sql("MATCH (a)-[r]->(b) RETURN a", &tx);
+        assert!(result.is_ok(), "single-hop graph query should succeed: {:?}", result.err());
+        assert!(matches!(result.unwrap(), Statement::Select(_)));
+    }
+
+    #[test]
+    fn cypher_with_where_produces_select() {
+        let tx = graph_schema_viewer();
+        let result = parse_and_type_sql(
+            "MATCH (a:Person)-[r:KNOWS]->(b) WHERE a.Label = 'Alice' RETURN a",
+            &tx,
+        );
+        assert!(result.is_ok(), "graph query with WHERE should succeed: {:?}", result.err());
+        assert!(matches!(result.unwrap(), Statement::Select(_)));
+    }
+
+    #[test]
+    fn cypher_variable_length_produces_select() {
+        let tx = graph_schema_viewer();
+        let result = parse_and_type_sql("MATCH (a)-[*1..3]->(b) RETURN a", &tx);
+        assert!(result.is_ok(), "variable-length path should succeed: {:?}", result.err());
+        assert!(matches!(result.unwrap(), Statement::Select(_)));
+    }
+
+    #[test]
+    fn cypher_missing_table_produces_error() {
+        let tx = SchemaViewer::new(
+            build_module_def(vec![(
+                "SomeTable",
+                ProductType::from([("id", AlgebraicType::U64)]),
+            )]),
+            vec![("SomeTable", TableId(0))],
+        );
+        let result = parse_and_type_sql("MATCH (n) RETURN n", &tx);
+        assert!(result.is_err(), "Cypher without Vertex table should fail");
     }
 }

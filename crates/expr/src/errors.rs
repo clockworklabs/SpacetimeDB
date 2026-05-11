@@ -1,3 +1,4 @@
+use super::cypher::CypherTranslateError;
 use super::statement::InvalidVar;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
@@ -144,6 +145,8 @@ pub enum TypingError {
     InsertFields(#[from] InsertFieldsError),
     #[error(transparent)]
     ParseError(#[from] SqlParseError),
+    #[error(transparent)]
+    CypherTranslate(#[from] CypherTranslateError),
 
     #[error(transparent)]
     DmlOnView(#[from] DmlOnView),

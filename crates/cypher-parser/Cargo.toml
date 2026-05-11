@@ -1,0 +1,13 @@
+[package]
+name = "spacetimedb-cypher-parser"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "An openCypher subset parser for SpacetimeDB graph queries"
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

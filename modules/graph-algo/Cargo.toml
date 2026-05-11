@@ -1,0 +1,10 @@
+[package]
+name = "graph-algo"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+
+[[bench]]
+name = "traversal"
+harness = false

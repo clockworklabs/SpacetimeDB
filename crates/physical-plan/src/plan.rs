@@ -1284,6 +1284,8 @@ pub enum PhysicalExpr {
     LogOp(LogOp, Vec<PhysicalExpr>),
     /// A binary expression
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
+    /// A unary NOT expression
+    Not(Box<PhysicalExpr>),
     /// A constant algebraic value
     Value(AlgebraicValue),
     /// A field projection expression
@@ -1324,6 +1326,7 @@ impl PhysicalExpr {
                     expr.visit(f);
                 }
             }
+            Self::Not(inner) => inner.visit(f),
             _ => {}
         }
     }
@@ -1341,6 +1344,7 @@ impl PhysicalExpr {
                     expr.visit_mut(f);
                 }
             }
+            Self::Not(inner) => inner.visit_mut(f),
             _ => {}
         }
     }
@@ -1352,6 +1356,7 @@ impl PhysicalExpr {
             field @ Self::Field(..) => field,
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
+            Self::Not(inner) => Self::Not(Box::new(inner.map(f))),
         }
     }
 
@@ -1404,6 +1409,7 @@ impl PhysicalExpr {
                     // ANY is equivalent to OR
                     .any(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
+            Self::Not(inner) => into(!inner.eval_bool_with_metrics(row, bytes_scanned)),
             Self::Field(field) => {
                 let value = row.project(field);
                 *bytes_scanned += value.size_of();
@@ -1428,6 +1434,7 @@ impl PhysicalExpr {
                     .collect(),
             ),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
+            Self::Not(inner) => Self::Not(Box::new(inner.flatten())),
             Self::Field(..) | Self::Value(..) => self,
         }
     }
@@ -1469,7 +1476,7 @@ mod tests {
         plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
     };
 
-    use super::{PhysicalExpr, ProjectPlan, TableScan};
+    use super::{Label, PhysicalExpr, ProjectPlan, TableScan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableOrViewSchema>>,
@@ -2313,5 +2320,44 @@ mod tests {
 
         assert!(plan.plan_iter().any(|plan| plan.has_filter()));
         assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
+    }
+
+    #[test]
+    fn not_expr_eval() {
+        use spacetimedb_lib::ProductValue;
+
+        let row = ProductValue::from(vec![AlgebraicValue::Bool(true), AlgebraicValue::U64(42)]);
+
+        let field_0 = TupleField {
+            label: Label(0),
+            label_pos: Some(0),
+            field_pos: 0,
+        };
+
+        // NOT true → false
+        let not_true = PhysicalExpr::Not(Box::new(PhysicalExpr::Field(field_0.clone())));
+        assert!(!not_true.eval_bool(&&row));
+
+        // NOT false → true
+        let not_false = PhysicalExpr::Not(Box::new(PhysicalExpr::Value(AlgebraicValue::Bool(false))));
+        assert!(not_false.eval_bool(&&row));
+
+        // NOT (42 == 42) → false
+        let field_1 = TupleField {
+            label: Label(0),
+            label_pos: Some(1),
+            field_pos: 1,
+        };
+        let eq_expr = PhysicalExpr::BinOp(
+            BinOp::Eq,
+            Box::new(PhysicalExpr::Field(field_1)),
+            Box::new(PhysicalExpr::Value(AlgebraicValue::U64(42))),
+        );
+        let not_eq = PhysicalExpr::Not(Box::new(eq_expr.clone()));
+        assert!(!not_eq.eval_bool(&&row));
+
+        // Double negation: NOT NOT (42 == 42) → true
+        let not_not_eq = PhysicalExpr::Not(Box::new(not_eq));
+        assert!(not_not_eq.eval_bool(&&row));
     }
 }

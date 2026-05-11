@@ -1,0 +1,12 @@
+[package]
+name = "graph-module"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { workspace = true, features = ["unstable"] }
+log = { workspace = true }
+graph-algo = { path = "../graph-algo" }

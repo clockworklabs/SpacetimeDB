@@ -137,7 +137,7 @@ use sqlparser::{
 };
 
 use crate::ast::{
-    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
+    sql::{CypherQuery, SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
     SqlIdent,
 };
 
@@ -146,8 +146,21 @@ use super::{
     SqlParseResult,
 };
 
-/// Parse a SQL string
+/// Parse a SQL string.
+///
+/// Supports standard SQL DML as well as two Cypher entry points:
+/// - Bare `MATCH … RETURN …` (direct openCypher syntax)
+/// - `SELECT * FROM cypher('MATCH … RETURN …')` (AGE-style SQL wrapper)
 pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
+    let trimmed = sql.trim();
+
+    if trimmed.len() >= 5
+        && trimmed[..5].eq_ignore_ascii_case("MATCH")
+        && trimmed.as_bytes().get(5).map_or(true, |b| b.is_ascii_whitespace() || *b == b'(')
+    {
+        return Ok(SqlAst::Cypher(spacetimedb_cypher_parser::parse_cypher(trimmed)?));
+    }
+
     let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)?;
     if stmts.len() > 1 {
         return Err(SqlUnsupported::MultiStatement.into());
@@ -155,9 +168,75 @@ pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
     if stmts.is_empty() {
         return Err(SqlUnsupported::Empty.into());
     }
-    parse_statement(stmts.swap_remove(0))
+
+    let stmt = stmts.swap_remove(0);
+
+    if let Some(cypher_ast) = try_parse_cypher_function(&stmt)? {
+        return Ok(SqlAst::Cypher(cypher_ast));
+    }
+
+    parse_statement(stmt)
         .map(|ast| ast.qualify_vars())
         .and_then(|ast| ast.find_unqualified_vars())
+}
+
+/// Detect `SELECT * FROM cypher('...')` and parse the inner Cypher string.
+fn try_parse_cypher_function(stmt: &Statement) -> SqlParseResult<Option<CypherQuery>> {
+    let Statement::Query(query) = stmt else {
+        return Ok(None);
+    };
+    let Query {
+        with: None,
+        body,
+        order_by,
+        limit: None,
+        offset: None,
+        fetch: None,
+        locks,
+        ..
+    } = query.as_ref()
+    else {
+        return Ok(None);
+    };
+    if !order_by.is_empty() || !locks.is_empty() {
+        return Ok(None);
+    }
+    let SetExpr::Select(select) = body.as_ref() else {
+        return Ok(None);
+    };
+    use sqlparser::ast::SelectItem;
+    if select.projection.len() != 1 || !matches!(select.projection[0], SelectItem::Wildcard(_)) {
+        return Ok(None);
+    }
+    if select.from.len() != 1 {
+        return Ok(None);
+    }
+    let TableWithJoins { relation, joins } = &select.from[0];
+    if !joins.is_empty() {
+        return Ok(None);
+    }
+    let TableFactor::Table {
+        name,
+        args: Some(args),
+        ..
+    } = relation
+    else {
+        return Ok(None);
+    };
+    if name.0.len() != 1 || !name.0[0].value.eq_ignore_ascii_case("cypher") {
+        return Ok(None);
+    }
+    use sqlparser::ast::{FunctionArg, FunctionArgExpr};
+    if args.len() != 1 {
+        return Ok(None);
+    }
+    let cypher_str = match &args[0] {
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::Value(Value::SingleQuotedString(s)))) => s,
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::Value(Value::DollarQuotedString(s)))) => &s.value,
+        _ => return Ok(None),
+    };
+    let ast = spacetimedb_cypher_parser::parse_cypher(cypher_str)?;
+    Ok(Some(ast))
 }
 
 /// Parse a SQL statement
@@ -478,5 +557,97 @@ mod tests {
         ] {
             assert!(parse_sql(sql).is_err());
         }
+    }
+
+    // ── Cypher entry point tests ────────────────────────────────────────
+
+    #[test]
+    fn cypher_bare_match() {
+        let ast = parse_sql("MATCH (n:Person) RETURN n").unwrap();
+        assert!(matches!(ast, super::SqlAst::Cypher(_)));
+    }
+
+    #[test]
+    fn cypher_bare_match_case_insensitive() {
+        let ast = parse_sql("match (n) WHERE n.x = 1 return n").unwrap();
+        assert!(matches!(ast, super::SqlAst::Cypher(_)));
+    }
+
+    #[test]
+    fn cypher_bare_match_with_leading_whitespace() {
+        let ast = parse_sql("  MATCH (a)-[:KNOWS]->(b) RETURN a, b").unwrap();
+        assert!(matches!(ast, super::SqlAst::Cypher(_)));
+    }
+
+    #[test]
+    fn cypher_function_single_quoted() {
+        let ast = parse_sql("SELECT * FROM cypher('MATCH (n) RETURN n')").unwrap();
+        assert!(matches!(ast, super::SqlAst::Cypher(_)));
+    }
+
+    #[test]
+    fn cypher_function_case_insensitive_name() {
+        let ast = parse_sql("SELECT * FROM CYPHER('MATCH (n) RETURN n')").unwrap();
+        assert!(matches!(ast, super::SqlAst::Cypher(_)));
+    }
+
+    #[test]
+    fn cypher_function_with_complex_query() {
+        let ast =
+            parse_sql("SELECT * FROM cypher('MATCH (a:Person)-[r:KNOWS]->(b) WHERE a.age > 25 RETURN a, b')")
+                .unwrap();
+        assert!(matches!(ast, super::SqlAst::Cypher(_)));
+    }
+
+    #[test]
+    fn cypher_function_dollar_quoted() {
+        let ast = parse_sql("SELECT * FROM cypher($$MATCH (n) RETURN n$$)").unwrap();
+        assert!(matches!(ast, super::SqlAst::Cypher(_)));
+    }
+
+    #[test]
+    fn cypher_bare_match_produces_correct_ast() {
+        use spacetimedb_cypher_parser::ast::*;
+        let ast = parse_sql("MATCH (p:Person) WHERE p.age > 30 RETURN p.name").unwrap();
+        let super::SqlAst::Cypher(query) = ast else {
+            panic!("expected Cypher variant");
+        };
+        assert_eq!(query.match_clause.patterns.len(), 1);
+        assert_eq!(
+            query.match_clause.patterns[0].nodes[0].label.as_deref(),
+            Some("Person")
+        );
+        assert!(query.where_clause.is_some());
+        assert!(matches!(query.return_clause, ReturnClause::Items(ref items) if items.len() == 1));
+    }
+
+    #[test]
+    fn cypher_error_invalid_match_syntax() {
+        let err = parse_sql("MATCH (n) WHERE");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn cypher_error_function_with_invalid_inner() {
+        let err = parse_sql("SELECT * FROM cypher('MATCH (n) WHERE')");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn cypher_function_does_not_hijack_normal_from() {
+        let ast = parse_sql("select a from t").unwrap();
+        assert!(matches!(ast, super::SqlAst::Select(_)));
+    }
+
+    #[test]
+    fn cypher_bare_match_prefix_does_not_trigger_cypher() {
+        let err = parse_sql("MATCHING (n:Person) RETURN n");
+        assert!(err.is_err(), "MATCHING should not be treated as a MATCH keyword");
+    }
+
+    #[test]
+    fn cypher_function_non_wildcard_projection_falls_through() {
+        let err = parse_sql("SELECT a.name FROM cypher('MATCH (n) RETURN n')");
+        assert!(err.is_err(), "non-wildcard projection should not be intercepted as cypher");
     }
 }

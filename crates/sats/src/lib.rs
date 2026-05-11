@@ -8,6 +8,7 @@ pub mod bsatn;
 pub mod buffer;
 pub mod convert;
 pub mod de;
+pub mod graph_id;
 pub mod hash;
 pub mod hex;
 pub mod layout;

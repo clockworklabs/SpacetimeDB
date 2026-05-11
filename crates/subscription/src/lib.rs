@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context as _, Result};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_execution::{
     pipelined::{
@@ -7,9 +7,16 @@ use spacetimedb_execution::{
     },
     Datastore, DeltaStore, Row,
 };
-use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
+use spacetimedb_expr::{
+    check::SchemaView,
+    cypher::translate_cypher,
+    expr::{CollectViews, ProjectList},
+};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
-use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
+use spacetimedb_physical_plan::{
+    compile::compile_select,
+    plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField},
+};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_schema::table_name::TableName;
@@ -162,93 +169,77 @@ impl Fragments {
     /// dv(+) = R'ds(+) U dr(+)S' U dr(+)ds(-) U dr(-)ds(+)
     /// dv(-) = R'ds(-) U dr(-)S' U dr(+)ds(+) U dr(-)ds(-)
     /// ```
-    fn compile_from_plan(plan: &ProjectPlan, tables: &[Label], auth: &AuthCtx) -> Result<Self> {
-        /// Mutate a query plan by turning a table scan into a delta scan
-        fn mut_plan(plan: &mut ProjectPlan, relvar: Label, delta: Delta) {
-            plan.visit_mut(&mut |plan| match plan {
-                PhysicalPlan::TableScan(
-                    scan @ TableScan {
-                        limit: None,
-                        delta: None,
-                        ..
-                    },
-                    alias,
-                ) if alias == &relvar => {
-                    scan.delta = Some(delta);
-                }
-                _ => {}
-            });
+    /// Build delta fragments for incremental view maintenance.
+    ///
+    /// `table_ids` and `table_aliases` are parallel slices: `table_ids[i]` is
+    /// the underlying `TableId` for the scan labelled `table_aliases[i]`.
+    ///
+    /// When multiple aliases share the same `TableId` (self-join, e.g. a
+    /// graph query scanning `Vertex` twice), they are grouped together so
+    /// that a single table mutation sets the delta flag on **all** aliases of
+    /// that table simultaneously.  The IVM formula then operates on the
+    /// number of *distinct* tables (≤ 2 for subscriptions).
+    fn compile_from_plan(
+        plan: &ProjectPlan,
+        table_ids: &[TableId],
+        table_aliases: &[Label],
+        auth: &AuthCtx,
+    ) -> Result<Self> {
+        let groups = group_aliases_by_table(table_ids, table_aliases);
+
+        fn mut_plan_group(plan: &mut ProjectPlan, labels: &[Label], delta: Delta) {
+            for &label in labels {
+                plan.visit_mut(&mut |plan| match plan {
+                    PhysicalPlan::TableScan(
+                        scan @ TableScan {
+                            limit: None,
+                            delta: None,
+                            ..
+                        },
+                        alias,
+                    ) if alias == &label => {
+                        scan.delta = Some(delta);
+                    }
+                    _ => {}
+                });
+            }
         }
 
-        /// Return a new plan with delta scans for the given tables
-        fn new_plan(plan: &ProjectPlan, tables: &[(Label, Delta)], auth: &AuthCtx) -> Result<PipelinedProject> {
+        fn new_plan(
+            plan: &ProjectPlan,
+            specs: &[(&[Label], Delta)],
+            auth: &AuthCtx,
+        ) -> Result<PipelinedProject> {
             let mut plan = plan.clone();
-            for (alias, delta) in tables {
-                mut_plan(&mut plan, *alias, *delta);
+            for (labels, delta) in specs {
+                mut_plan_group(&mut plan, labels, *delta);
             }
             plan.optimize(auth).map(PipelinedProject::from)
         }
 
-        match tables {
+        match groups.as_slice() {
             [dr] => Ok(Fragments {
-                insert_plans: vec![new_plan(plan, &[(*dr, Delta::Inserts)], auth)?],
-                delete_plans: vec![new_plan(plan, &[(*dr, Delta::Deletes)], auth)?],
+                insert_plans: vec![new_plan(plan, &[(dr, Delta::Inserts)], auth)?],
+                delete_plans: vec![new_plan(plan, &[(dr, Delta::Deletes)], auth)?],
             }),
             [dr, ds] => Ok(Fragments {
                 insert_plans: vec![
-                    new_plan(
-                        // dr(+)S'
-                        plan,
-                        &[(*dr, Delta::Inserts)],
-                        auth,
-                    )?,
-                    new_plan(
-                        // R'ds(+)
-                        plan,
-                        &[(*ds, Delta::Inserts)],
-                        auth,
-                    )?,
-                    new_plan(
-                        // dr(+)ds(-)
-                        plan,
-                        &[(*dr, Delta::Inserts), (*ds, Delta::Deletes)],
-                        auth,
-                    )?,
-                    new_plan(
-                        // dr(-)ds(+)
-                        plan,
-                        &[(*dr, Delta::Deletes), (*ds, Delta::Inserts)],
-                        auth,
-                    )?,
+                    new_plan(plan, &[(dr, Delta::Inserts)], auth)?,
+                    new_plan(plan, &[(ds, Delta::Inserts)], auth)?,
+                    new_plan(plan, &[(dr, Delta::Inserts), (ds, Delta::Deletes)], auth)?,
+                    new_plan(plan, &[(dr, Delta::Deletes), (ds, Delta::Inserts)], auth)?,
                 ],
                 delete_plans: vec![
-                    new_plan(
-                        // dr(-)S'
-                        plan,
-                        &[(*dr, Delta::Deletes)],
-                        auth,
-                    )?,
-                    new_plan(
-                        // R'ds(-)
-                        plan,
-                        &[(*ds, Delta::Deletes)],
-                        auth,
-                    )?,
-                    new_plan(
-                        // dr(+)ds(+)
-                        plan,
-                        &[(*dr, Delta::Inserts), (*ds, Delta::Inserts)],
-                        auth,
-                    )?,
-                    new_plan(
-                        // dr(-)ds(-)
-                        plan,
-                        &[(*dr, Delta::Deletes), (*ds, Delta::Deletes)],
-                        auth,
-                    )?,
+                    new_plan(plan, &[(dr, Delta::Deletes)], auth)?,
+                    new_plan(plan, &[(ds, Delta::Deletes)], auth)?,
+                    new_plan(plan, &[(dr, Delta::Inserts), (ds, Delta::Inserts)], auth)?,
+                    new_plan(plan, &[(dr, Delta::Deletes), (ds, Delta::Deletes)], auth)?,
                 ],
             }),
-            _ => bail!("Invalid number of tables in subscription: {}", tables.len()),
+            _ => bail!(
+                "Subscriptions support at most 2 distinct tables, found {}",
+                groups.len()
+            ),
         }
     }
 }
@@ -476,40 +467,6 @@ impl SubscriptionPlan {
     pub fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<(Vec<Self>, bool)> {
         let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
-        /// Does this plan have any non-index joins?
-        fn has_non_index_join(plan: &PhysicalPlan) -> bool {
-            plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
-        }
-
-        /// What tables are involved in this plan?
-        fn table_ids_for_plan(plan: &PhysicalPlan) -> (Vec<TableId>, Vec<Label>) {
-            let mut table_aliases = vec![];
-            let mut table_ids = vec![];
-            plan.visit(&mut |plan| match plan {
-                PhysicalPlan::TableScan(
-                    TableScan {
-                        // What table are we reading?
-                        schema,
-                        ..
-                    },
-                    alias,
-                )
-                | PhysicalPlan::IxScan(
-                    IxScan {
-                        // What table are we reading?
-                        schema,
-                        ..
-                    },
-                    alias,
-                ) => {
-                    table_aliases.push(*alias);
-                    table_ids.push(schema.table_id);
-                }
-                _ => {}
-            });
-            (table_ids, table_aliases)
-        }
-
         let mut subscriptions = vec![];
 
         for plan in plans {
@@ -525,7 +482,7 @@ impl SubscriptionPlan {
 
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);
 
-            let fragments = Fragments::compile_from_plan(&plan, &table_aliases, auth)?;
+            let fragments = Fragments::compile_from_plan(&plan, &table_ids, &table_aliases, auth)?;
 
             subscriptions.push(Self {
                 return_id,
@@ -537,5 +494,397 @@ impl SubscriptionPlan {
         }
 
         Ok((subscriptions, has_param))
+    }
+
+    /// Generate subscription plans from a Cypher graph query.
+    ///
+    /// Fixed-depth graph queries (e.g. `MATCH (a)-[r]->(b) RETURN a`)
+    /// lower to `EqJoin` chains over `Vertex` and `Edge` tables. These
+    /// are compiled into subscription fragments using the standard 2-table
+    /// incremental view maintenance formula, with aliases grouped by their
+    /// underlying `TableId` so that self-joins (same table scanned under
+    /// multiple aliases) share deltas correctly.
+    ///
+    /// Variable-length path queries (`[*1..k]`) are expanded into a UNION
+    /// of fixed-depth plans — one `SubscriptionPlan` per depth.
+    pub fn compile_cypher(
+        cypher: &str,
+        tx: &impl SchemaView,
+        auth: &AuthCtx,
+    ) -> Result<Vec<Self>> {
+        let query = spacetimedb_cypher_parser::parse_cypher(cypher)
+            .context("Failed to parse Cypher query")?;
+
+        let project_list = translate_cypher(&query, tx)
+            .context("Failed to translate Cypher query")?;
+
+        let names = match project_list {
+            ProjectList::Name(names) => names,
+            _ => bail!("Graph subscriptions must return whole table rows (RETURN * or RETURN <var>)"),
+        };
+
+        if names.is_empty() {
+            bail!("Empty Cypher query result");
+        }
+
+        let return_id = names
+            .first()
+            .and_then(|n| n.return_table_id())
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine return TableId for Cypher subscription"))?;
+
+        debug_assert!(
+            names.iter().all(|n| n.return_table_id() == Some(return_id)),
+            "All depth levels must share the same return table"
+        );
+
+        let return_name = tx
+            .schema_for_table(return_id)
+            .map(|s| s.table_name.clone())
+            .ok_or_else(|| anyhow::anyhow!("TableId `{return_id}` does not exist"))?;
+
+        let mut subscriptions = vec![];
+
+        for name in names {
+            let plan = compile_select(name);
+            let plan_opt = plan.clone().optimize(auth)?;
+
+            if has_non_index_join(&plan_opt) {
+                bail!("Graph subscriptions require indexes on join columns")
+            }
+
+            if plan_opt.reads_from_event_table() {
+                bail!("Event tables cannot be used as the lookup table in graph subscription joins")
+            }
+
+            let (table_ids, table_aliases) = table_ids_for_plan(&plan);
+
+            let fragments = Fragments::compile_from_plan(&plan, &table_ids, &table_aliases, auth)?;
+
+            subscriptions.push(Self {
+                return_id,
+                return_name: return_name.clone(),
+                table_ids,
+                plan_opt,
+                fragments,
+            });
+        }
+
+        Ok(subscriptions)
+    }
+}
+
+/// Does this plan have any non-index joins?
+fn has_non_index_join(plan: &PhysicalPlan) -> bool {
+    plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
+}
+
+/// Collect `(TableId, Label)` pairs from all scans in a physical plan.
+fn table_ids_for_plan(plan: &PhysicalPlan) -> (Vec<TableId>, Vec<Label>) {
+    let mut table_aliases = vec![];
+    let mut table_ids = vec![];
+    plan.visit(&mut |plan| match plan {
+        PhysicalPlan::TableScan(TableScan { schema, .. }, alias)
+        | PhysicalPlan::IxScan(IxScan { schema, .. }, alias) => {
+            table_aliases.push(*alias);
+            table_ids.push(schema.table_id);
+        }
+        _ => {}
+    });
+    (table_ids, table_aliases)
+}
+
+/// Group labels by their underlying `TableId`.
+///
+/// Returns a `Vec<Vec<Label>>` where each inner vec contains all labels
+/// that scan the same physical table. This allows the IVM formula to
+/// treat self-joins correctly: when a table mutates, ALL aliases of that
+/// table see the same delta.
+fn group_aliases_by_table(table_ids: &[TableId], table_aliases: &[Label]) -> Vec<Vec<Label>> {
+    let mut groups: Vec<Vec<Label>> = Vec::new();
+    let mut seen: Vec<TableId> = Vec::new();
+
+    for (&tid, &alias) in table_ids.iter().zip(table_aliases.iter()) {
+        if let Some(pos) = seen.iter().position(|&id| id == tid) {
+            groups[pos].push(alias);
+        } else {
+            seen.push(tid);
+            groups.push(vec![alias]);
+        }
+    }
+
+    groups
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_expr::check::test_utils::SchemaViewer;
+    use spacetimedb_lib::{
+        db::raw_def::v9::{btree, RawModuleDefV9Builder},
+        identity::AuthCtx,
+        AlgebraicType, ProductType,
+    };
+    use spacetimedb_primitives::TableId;
+
+    fn graph_tx() -> SchemaViewer {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Vertex",
+                ProductType::from([
+                    ("Id", AlgebraicType::U64),
+                    ("Label", AlgebraicType::String),
+                    ("Properties", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_index_no_accessor_name(btree(ColId(0)));
+        builder
+            .build_table_with_new_type(
+                "Edge",
+                ProductType::from([
+                    ("Id", AlgebraicType::U64),
+                    ("StartId", AlgebraicType::U64),
+                    ("EndId", AlgebraicType::U64),
+                    ("EdgeType", AlgebraicType::String),
+                    ("Properties", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_index_no_accessor_name(btree(ColId(1)))
+            .with_index_no_accessor_name(btree(ColId(2)));
+        let module_def = builder.finish().try_into().expect("valid module def");
+        SchemaViewer::new(module_def, vec![("Vertex", TableId(0)), ("Edge", TableId(1))])
+    }
+
+    #[test]
+    fn group_aliases_single_table() {
+        let ids = vec![TableId(0)];
+        let labels = vec![Label(1)];
+        let groups = group_aliases_by_table(&ids, &labels);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0], vec![Label(1)]);
+    }
+
+    #[test]
+    fn group_aliases_two_distinct_tables() {
+        let ids = vec![TableId(0), TableId(1)];
+        let labels = vec![Label(1), Label(2)];
+        let groups = group_aliases_by_table(&ids, &labels);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0], vec![Label(1)]);
+        assert_eq!(groups[1], vec![Label(2)]);
+    }
+
+    #[test]
+    fn group_aliases_self_join() {
+        let ids = vec![TableId(0), TableId(1), TableId(0)];
+        let labels = vec![Label(1), Label(2), Label(3)];
+        let groups = group_aliases_by_table(&ids, &labels);
+        assert_eq!(groups.len(), 2, "3 aliases over 2 tables should produce 2 groups");
+        assert_eq!(groups[0], vec![Label(1), Label(3)], "both Vertex aliases grouped");
+        assert_eq!(groups[1], vec![Label(2)], "Edge alias in its own group");
+    }
+
+    #[test]
+    fn compile_cypher_single_hop() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let result = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[r]->(b) RETURN a",
+            &tx,
+            &auth,
+        );
+        let plans = result.expect("single-hop graph subscription should compile");
+        assert_eq!(plans.len(), 1, "fixed-depth single-hop produces 1 plan");
+
+        let plan = &plans[0];
+        assert!(plan.is_join(), "graph query is a join subscription");
+        assert_eq!(
+            plan.fragments.insert_plans.len(),
+            4,
+            "2-table IVM produces 4 insert fragments"
+        );
+        assert_eq!(
+            plan.fragments.delete_plans.len(),
+            4,
+            "2-table IVM produces 4 delete fragments"
+        );
+    }
+
+    #[test]
+    fn compile_cypher_two_hop() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let result = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[r]->(b)-[s]->(c) RETURN a",
+            &tx,
+            &auth,
+        );
+        let plans = result.expect("two-hop graph subscription should compile");
+        assert_eq!(plans.len(), 1, "fixed-depth two-hop produces 1 plan");
+        assert!(plans[0].is_join());
+    }
+
+    #[test]
+    fn compile_cypher_return_star_single_node() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let plans = SubscriptionPlan::compile_cypher("MATCH (a) RETURN *", &tx, &auth)
+            .expect("RETURN * on single node should compile");
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].subscribed_table_id(), TableId(0));
+    }
+
+    #[test]
+    fn compile_cypher_return_star_join_rejected() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let result = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[r]->(b) RETURN *",
+            &tx,
+            &auth,
+        );
+        assert!(
+            result.is_err(),
+            "RETURN * on a join should fail (ambiguous return table)"
+        );
+    }
+
+    #[test]
+    fn compile_cypher_variable_length_produces_union() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let result = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[*1..3]->(b) RETURN a",
+            &tx,
+            &auth,
+        );
+        let plans = result.expect("variable-length subscription should compile");
+        assert_eq!(
+            plans.len(),
+            3,
+            "[*1..3] expands to 3 fixed-depth plans (depths 1, 2, 3)"
+        );
+        for plan in &plans {
+            assert_eq!(plan.fragments.insert_plans.len(), 4);
+            assert_eq!(plan.fragments.delete_plans.len(), 4);
+        }
+    }
+
+    #[test]
+    fn compile_cypher_with_label_filter() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let result = SubscriptionPlan::compile_cypher(
+            "MATCH (a:Person)-[r:KNOWS]->(b:Person) RETURN a",
+            &tx,
+            &auth,
+        );
+        let plans = result.expect("labelled graph subscription should compile");
+        assert_eq!(plans.len(), 1);
+        assert!(plans[0].is_join());
+    }
+
+    #[test]
+    fn compile_cypher_subscribed_table_is_vertex() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let plans = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[r]->(b) RETURN a",
+            &tx,
+            &auth,
+        )
+        .unwrap();
+        assert_eq!(
+            plans[0].subscribed_table_id(),
+            TableId(0),
+            "RETURN a should subscribe to Vertex (TableId 0)"
+        );
+    }
+
+    #[test]
+    fn compile_cypher_rejects_property_projection() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let result = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[r]->(b) RETURN a.Label",
+            &tx,
+            &auth,
+        );
+        assert!(
+            result.is_err(),
+            "property projections should be rejected for subscriptions"
+        );
+    }
+
+    fn graph_tx_no_indexes() -> SchemaViewer {
+        use spacetimedb_expr::check::test_utils::build_module_def;
+        SchemaViewer::new(
+            build_module_def(vec![
+                (
+                    "Vertex",
+                    ProductType::from([
+                        ("Id", AlgebraicType::U64),
+                        ("Label", AlgebraicType::String),
+                        ("Properties", AlgebraicType::String),
+                    ]),
+                ),
+                (
+                    "Edge",
+                    ProductType::from([
+                        ("Id", AlgebraicType::U64),
+                        ("StartId", AlgebraicType::U64),
+                        ("EndId", AlgebraicType::U64),
+                        ("EdgeType", AlgebraicType::String),
+                        ("Properties", AlgebraicType::String),
+                    ]),
+                ),
+            ]),
+            vec![("Vertex", TableId(0)), ("Edge", TableId(1))],
+        )
+    }
+
+    #[test]
+    fn compile_cypher_rejects_non_index_join() {
+        let tx = graph_tx_no_indexes();
+        let auth = AuthCtx::for_testing();
+        let result = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[r]->(b) RETURN a",
+            &tx,
+            &auth,
+        );
+        assert!(
+            result.is_err(),
+            "graph joins without indexes should be rejected"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("indexes on join columns"),
+            "error should mention missing indexes, got: {err}"
+        );
+    }
+
+    #[test]
+    fn compile_cypher_single_hop_table_ids() {
+        let tx = graph_tx();
+        let auth = AuthCtx::for_testing();
+        let plans = SubscriptionPlan::compile_cypher(
+            "MATCH (a)-[r]->(b) RETURN a",
+            &tx,
+            &auth,
+        )
+        .unwrap();
+
+        let plan = &plans[0];
+        let tids: Vec<TableId> = plan.table_ids().collect();
+        assert!(
+            tids.contains(&TableId(0)),
+            "should read from Vertex table"
+        );
+        assert!(
+            tids.contains(&TableId(1)),
+            "should read from Edge table"
+        );
     }
 }

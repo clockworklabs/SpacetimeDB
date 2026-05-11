@@ -32,6 +32,7 @@ members = [
   "sdks/unreal",
   "crates/snapshot",
   "crates/sqltest",
+  "crates/cypher-parser",
   "crates/sql-parser",
   "crates/standalone",
   "crates/subscription",
@@ -42,6 +43,8 @@ members = [
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
+  "modules/graph",
+  "modules/graph-algo",
   "templates/basic-rs/spacetimedb",
   "templates/chat-console-rs/spacetimedb",
   "modules/sdk-test",
@@ -51,6 +54,8 @@ members = [
   "modules/sdk-test-case-conversion",
   "modules/sdk-test-view-pk",
   "modules/sdk-test-event-table",
+  "modules/graph",
+  "modules/graph-algo",
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",
@@ -142,6 +147,7 @@ spacetimedb-query = { path = "crates/query", version = "=2.2.0" }
 spacetimedb-sats = { path = "crates/sats", version = "=2.2.0" }
 spacetimedb-schema = { path = "crates/schema", version = "=2.2.0" }
 spacetimedb-standalone = { path = "crates/standalone", version = "=2.2.0" }
+spacetimedb-cypher-parser = { path = "crates/cypher-parser", version = "=2.2.0" }
 spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.2.0" }
 spacetimedb-table = { path = "crates/table", version = "=2.2.0" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.2.0" }
