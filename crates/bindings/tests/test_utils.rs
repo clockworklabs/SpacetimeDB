@@ -705,3 +705,78 @@ fn procedure_context_http_responder_can_interleave_reducer() {
         }]
     );
 }
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_sleep_advances_test_clock() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let start = Timestamp::from_micros_since_unix_epoch(100);
+    let wake_time = Timestamp::from_micros_since_unix_epoch(500);
+    test.clock.set(start);
+    let mut procedure = test.procedure_context(TestAuth::internal());
+
+    procedure.sleep_until(wake_time);
+
+    assert_eq!(procedure.timestamp, wake_time);
+    assert_eq!(test.clock.now(), wake_time);
+}
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_on_sleep_hook_can_interleave_reducer() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let wake_time = Timestamp::from_micros_since_unix_epoch(500);
+    let seen_wake_time = std::rc::Rc::new(std::cell::Cell::new(None));
+    let hooks = spacetimedb::test_utils::ProcedureTestHooks::new().on_sleep({
+        let seen_wake_time = seen_wake_time.clone();
+        move |test, wake_time| {
+            seen_wake_time.set(Some(wake_time));
+            test.with_reducer_tx(TestAuth::internal(), |ctx| {
+                ctx.db.test_utils_user().insert(TestUtilsUser {
+                    id: 28,
+                    name: "Sleep interleaved reducer".to_owned(),
+                });
+                Ok::<_, ()>(())
+            })
+            .expect("interleaved reducer should commit");
+            Ok(())
+        }
+    });
+    let mut procedure = test
+        .procedure_context_builder(TestAuth::internal())
+        .hooks(hooks)
+        .build();
+
+    procedure.sleep_until(wake_time);
+
+    assert_eq!(seen_wake_time.get(), Some(wake_time));
+    assert_eq!(procedure.timestamp, wake_time);
+    assert_eq!(
+        test.db.test_utils_user().iter().collect::<Vec<_>>(),
+        vec![TestUtilsUser {
+            id: 28,
+            name: "Sleep interleaved reducer".to_owned(),
+        }]
+    );
+}
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_sleep_does_not_move_clock_back_after_hook() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let wake_time = Timestamp::from_micros_since_unix_epoch(500);
+    let later_time = Timestamp::from_micros_since_unix_epoch(900);
+    let hooks = spacetimedb::test_utils::ProcedureTestHooks::new().on_sleep(move |test, _wake_time| {
+        test.clock.set(later_time);
+        Ok(())
+    });
+    let mut procedure = test
+        .procedure_context_builder(TestAuth::internal())
+        .hooks(hooks)
+        .build();
+
+    procedure.sleep_until(wake_time);
+
+    assert_eq!(procedure.timestamp, later_time);
+    assert_eq!(test.clock.now(), later_time);
+}

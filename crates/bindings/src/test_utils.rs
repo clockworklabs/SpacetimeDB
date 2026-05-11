@@ -237,6 +237,7 @@ impl std::error::Error for TestAuthError {}
 #[derive(Default)]
 pub struct ProcedureTestHooks {
     after_tx_commit: Vec<Box<dyn FnMut(&TestContext) -> anyhow::Result<()>>>,
+    on_sleep: Vec<Box<dyn FnMut(&TestContext, crate::Timestamp) -> anyhow::Result<()>>>,
 }
 
 #[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
@@ -254,10 +255,28 @@ impl ProcedureTestHooks {
         self
     }
 
+    /// Add a hook that runs when a test procedure sleeps.
+    ///
+    /// Hook failures panic before the procedure resumes.
+    pub fn on_sleep(
+        mut self,
+        hook: impl FnMut(&TestContext, crate::Timestamp) -> anyhow::Result<()> + 'static,
+    ) -> Self {
+        self.on_sleep.push(Box::new(hook));
+        self
+    }
+
     #[doc(hidden)]
     pub fn __run_after_tx_commit(&mut self, ctx: &TestContext) {
         for hook in &mut self.after_tx_commit {
             hook(ctx).unwrap_or_else(|err| panic!("procedure test after_tx_commit hook failed: {err}"));
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __run_on_sleep(&mut self, ctx: &TestContext, wake_time: crate::Timestamp) {
+        for hook in &mut self.on_sleep {
+            hook(ctx, wake_time).unwrap_or_else(|err| panic!("procedure test on_sleep hook failed: {err}"));
         }
     }
 }

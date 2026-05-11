@@ -1399,9 +1399,30 @@ impl ProcedureContext {
     // TODO(procedure-sleep-until): remove this method
     #[cfg(feature = "unstable")]
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
-        let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
-        let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
-        self.timestamp = new_time;
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        if let Some(test_context) = self.test_context.as_ref() {
+            if let Some(hooks) = self.test_hooks.as_mut() {
+                hooks.__run_on_sleep(test_context, timestamp);
+            }
+
+            let wake_time = test_context.clock.now().max(timestamp);
+            test_context.clock.set(wake_time);
+            self.timestamp = wake_time;
+            return;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
+            let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
+            self.timestamp = new_time;
+        }
+
+        #[cfg(all(not(feature = "test-utils"), not(target_arch = "wasm32")))]
+        {
+            let _ = timestamp;
+            panic!("ProcedureContext::sleep_until() is only available in wasm or native test-utils contexts")
+        }
     }
 
     /// Acquire a mutable transaction
