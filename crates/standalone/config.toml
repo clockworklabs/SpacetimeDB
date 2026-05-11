@@ -18,6 +18,11 @@ directives = [
     "axum::rejection=trace",
 ]
 
+[wasm]
+# Maximum number of WASM procedure instances per database. Omit to use the
+# number of cores reported by the OS.
+# procedure-instance-pool-size = 8
+
 [v8]
 # Maximum number of JS procedure isolates per database. Omit to use the number
 # of cores reported by the OS.
