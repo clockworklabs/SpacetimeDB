@@ -163,16 +163,6 @@ struct HttpResponse {
     uint16_t code;        // Field 2: HTTP status code
 };
 
-struct RequestAndBody {
-    HttpRequest request;
-    std::vector<uint8_t> body;
-};
-
-struct ResponseAndBody {
-    HttpResponse response;
-    std::vector<uint8_t> body;
-};
-
 } // namespace wire
 } // namespace SpacetimeDB
 
@@ -187,8 +177,6 @@ template<> struct bsatn_traits<wire::HttpHeaderPair>;
 template<> struct bsatn_traits<wire::HttpHeaders>;
 template<> struct bsatn_traits<wire::HttpRequest>;
 template<> struct bsatn_traits<wire::HttpResponse>;
-template<> struct bsatn_traits<wire::RequestAndBody>;
-template<> struct bsatn_traits<wire::ResponseAndBody>;
 
 // HttpMethod enum serialization
 template<>
@@ -357,50 +345,6 @@ struct bsatn_traits<wire::HttpResponse> {
         builder.with_field<wire::HttpHeaders>("headers");
         builder.with_field<wire::HttpVersion>("version");
         builder.with_field<uint16_t>("code");
-        return AlgebraicType::make_product(builder.build());
-    }
-};
-
-template<>
-struct bsatn_traits<wire::RequestAndBody> {
-    static void serialize(Writer& writer, const wire::RequestAndBody& value) {
-        bsatn::serialize(writer, value.request);
-        bsatn::serialize(writer, value.body);
-    }
-
-    static wire::RequestAndBody deserialize(Reader& reader) {
-        wire::RequestAndBody result;
-        result.request = bsatn::deserialize<wire::HttpRequest>(reader);
-        result.body = bsatn::deserialize<std::vector<uint8_t>>(reader);
-        return result;
-    }
-
-    static AlgebraicType algebraic_type() {
-        ProductTypeBuilder builder;
-        builder.with_field<wire::HttpRequest>("request");
-        builder.with_field<std::vector<uint8_t>>("body");
-        return AlgebraicType::make_product(builder.build());
-    }
-};
-
-template<>
-struct bsatn_traits<wire::ResponseAndBody> {
-    static void serialize(Writer& writer, const wire::ResponseAndBody& value) {
-        bsatn::serialize(writer, value.response);
-        bsatn::serialize(writer, value.body);
-    }
-
-    static wire::ResponseAndBody deserialize(Reader& reader) {
-        wire::ResponseAndBody result;
-        result.response = bsatn::deserialize<wire::HttpResponse>(reader);
-        result.body = bsatn::deserialize<std::vector<uint8_t>>(reader);
-        return result;
-    }
-
-    static AlgebraicType algebraic_type() {
-        ProductTypeBuilder builder;
-        builder.with_field<wire::HttpResponse>("response");
-        builder.with_field<std::vector<uint8_t>>("body");
         return AlgebraicType::make_product(builder.build());
     }
 };

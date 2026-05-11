@@ -668,7 +668,9 @@ int16_t Module::__call_http_handler__(
     uint32_t id,
     uint64_t timestamp_microseconds,
     BytesSource request_source,
-    BytesSink result_sink
+    BytesSource request_body_source,
+    BytesSink response_sink,
+    BytesSink response_body_sink
 ) {
     if (id >= g_http_handlers.size()) {
         fprintf(stderr, "ERROR: Invalid http handler ID %u (have %zu handlers)\n",
@@ -681,18 +683,19 @@ int16_t Module::__call_http_handler__(
 
     std::vector<uint8_t> request_bytes = ConsumeBytes(request_source);
     bsatn::Reader request_reader(request_bytes.data(), request_bytes.size());
-    wire::RequestAndBody wire_request = bsatn::deserialize<wire::RequestAndBody>(request_reader);
-    HttpRequest request = convert::from_wire(wire_request);
+    wire::HttpRequest wire_request = bsatn::deserialize<wire::HttpRequest>(request_reader);
+    HttpRequest request = convert::from_wire(wire_request, ConsumeBytes(request_body_source));
 
     HttpResponse response = g_http_handlers[id].handler(ctx, std::move(request));
-    wire::ResponseAndBody wire_response = convert::to_wire_with_body(response);
+    auto [wire_response, response_body] = convert::to_wire_split(response);
 
-    std::vector<uint8_t> result_data;
+    std::vector<uint8_t> response_metadata;
     {
-        bsatn::Writer writer(result_data);
+        bsatn::Writer writer(response_metadata);
         bsatn::serialize(writer, wire_response);
     }
-    WriteBytes(result_sink, result_data);
+    WriteBytes(response_sink, response_metadata);
+    WriteBytes(response_body_sink, response_body);
     return 0;
 }
 

@@ -80,7 +80,9 @@ public:
         uint32_t id,
         uint64_t timestamp_microseconds,
         BytesSource request_source,
-        BytesSink result_sink
+        BytesSource request_body_source,
+        BytesSink response_sink,
+        BytesSink response_body_sink
     );
     
     // Internal registration methods (inline to avoid linking issues)
