@@ -2312,17 +2312,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flume"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
-dependencies = [
- "futures-core",
- "futures-sink",
- "spin",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8003,6 +7992,7 @@ dependencies = [
  "bitflags 2.10.0",
  "bytes",
  "crc32c",
+ "criterion",
  "env_logger 0.10.2",
  "futures",
  "itertools 0.12.1",
@@ -8014,6 +8004,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
+ "scopeguard",
  "serde",
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
@@ -8057,7 +8048,6 @@ dependencies = [
  "env_logger 0.10.2",
  "faststr",
  "flate2",
- "flume",
  "fs2",
  "fs_extra",
  "futures",
@@ -8864,9 +8854,6 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-dependencies = [
- "lock_api",
-]
 
 [[package]]
 name = "sqllogictest"
