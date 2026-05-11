@@ -6,7 +6,8 @@ use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
 use spacetimedb_snapshot::DynSnapshotRepo;
 
-use crate::{messages::control_db::Database, runtime::Runtime, util::asyncify};
+use crate::{messages::control_db::Database, util::asyncify};
+use spacetimedb_runtime::Runtime;
 
 use super::{
     relational_db::{self, Txdata},
@@ -152,13 +153,15 @@ impl PersistenceProvider for LocalPersistenceProvider {
     async fn persistence(&self, database: &Database, replica_id: u64) -> anyhow::Result<Persistence> {
         let replica_dir = self.data_dir.replica(replica_id);
         let snapshot_dir = replica_dir.snapshots();
+        let runtime = Runtime::tokio_current();
 
         let database_identity = database.database_identity;
         let snapshot_worker =
             asyncify(move || relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id))
                 .await
-                .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio_current()))?;
-        let (durability, disk_size) = relational_db::local_durability(replica_dir, Some(&snapshot_worker)).await?;
+                .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled, runtime.clone()))?;
+        let (durability, disk_size) =
+            relational_db::local_durability(replica_dir, runtime.clone(), Some(&snapshot_worker)).await?;
 
         tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
             snapshot_worker.subscribe(),
@@ -171,7 +174,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
             durability,
             disk_size,
             snapshots: Some(snapshot_worker),
-            runtime: Runtime::tokio_current(),
+            runtime,
         })
     }
 }

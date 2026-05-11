@@ -1,7 +1,6 @@
 use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::runtime::Runtime;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -45,6 +44,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
+use spacetimedb_runtime::Runtime;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -54,7 +54,7 @@ use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepo, SnapshotRepository};
+use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
@@ -143,8 +143,6 @@ impl Drop for RelationalDB {
         if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
             spawn_durability_close(durability, &runtime, self.database_identity);
         }
-
-        log::info!("drop done");
     }
 }
 
@@ -241,12 +239,13 @@ impl RelationalDB {
     ///
     ///   `None` may be passed to obtain an in-memory only database.
     ///
-    ///  /// - `snapshot_repo`
+    /// - `snapshot_repo`
     ///
     ///   The [`SnapshotRepo`] which stores snapshots of this database.
     ///   This is only meaningful if `history` and `durability` are also supplied.
     ///   If restoring from an existing database, the `snapshot_repo` must
     ///   store views of the same sequence of TXes as the `history`
+    ///
     /// - `metrics_recorder_queue`
     ///
     ///   The send side of a queue for recording transaction metrics.
@@ -1681,9 +1680,9 @@ const COMMITLOG_COMPRESSION_FORCE_SEGMENT_BACKLOG: usize = 8;
 /// of the commitlog.
 pub async fn local_durability(
     replica_dir: ReplicaDir,
+    runtime: Runtime,
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
-    let runtime = Runtime::tokio_current();
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -2188,14 +2187,16 @@ pub mod tests_utils {
                 })
                 .transpose()?;
 
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let runtime = Runtime::tokio(rt.clone());
+            let (local, disk_size_fn) =
+                rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
             let history = local.as_history();
 
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
-                runtime: Runtime::tokio(rt),
+                runtime,
             };
 
             let (db, _) = RelationalDB::open(
@@ -2313,13 +2314,15 @@ pub mod tests_utils {
                     })
                 })
                 .transpose()?;
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let runtime = Runtime::tokio(rt.clone());
+            let (local, disk_size_fn) =
+                rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
             let history = local.as_history();
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
-                runtime: Runtime::tokio(rt),
+                runtime,
             };
             let db = Self::open_db(history, Some(persistence), None, 0)?;
 

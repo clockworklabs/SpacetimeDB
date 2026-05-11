@@ -18,7 +18,6 @@ pub mod estimation;
 pub mod host;
 pub mod module_host_context;
 pub mod replica_context;
-pub mod runtime;
 pub mod startup;
 pub mod subscription;
 pub mod util;

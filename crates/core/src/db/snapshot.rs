@@ -17,7 +17,8 @@ use spacetimedb_lib::Identity;
 use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
 use tokio::sync::watch;
 
-use crate::{runtime::Runtime, worker_metrics::WORKER_METRICS};
+use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_runtime::Runtime;
 
 pub type SnapshotDatabaseState = Arc<RwLock<CommittedState>>;
 
