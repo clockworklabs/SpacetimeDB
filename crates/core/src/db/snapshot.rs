@@ -17,7 +17,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo, SnapshotRepository};
 use tokio::sync::watch;
 
-use crate::{runtime::RuntimeDispatch, worker_metrics::WORKER_METRICS};
+use crate::{runtime::Runtime, worker_metrics::WORKER_METRICS};
 
 pub type SnapshotDatabaseState = Arc<RwLock<CommittedState>>;
 
@@ -69,7 +69,7 @@ impl SnapshotWorker {
     /// The handle is only partially initialized, as it is lacking the
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
-    pub fn new(snapshot_repo: Arc<DynSnapshotRepo>, runtime: RuntimeDispatch) -> Self {
+    pub fn new(snapshot_repo: Arc<DynSnapshotRepo>, runtime: Runtime) -> Self {
         let database = snapshot_repo.database_identity();
         let latest_snapshot = snapshot_repo.latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
@@ -142,7 +142,7 @@ impl SnapshotWorker {
     pub fn new_with_repository(
         snapshot_repository: Arc<SnapshotRepository>,
         compression: Compression,
-        runtime: RuntimeDispatch,
+        runtime: Runtime,
     ) -> Self {
         let database = snapshot_repository.database_identity();
         let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
@@ -200,7 +200,7 @@ struct SnapshotWorkerActor {
     snapshot_repo: Arc<DynSnapshotRepo>,
     snapshot_created: watch::Sender<TxOffset>,
     metrics: SnapshotMetrics,
-    runtime: RuntimeDispatch,
+    runtime: Runtime,
     compression: Option<Compressor>,
 }
 
@@ -345,7 +345,7 @@ struct Compressor {
     snapshot_repo: Arc<SnapshotRepository>,
     metrics: CompressionMetrics,
     stats: Option<CompressionStats>,
-    runtime: RuntimeDispatch,
+    runtime: Runtime,
 }
 
 impl Compressor {
@@ -378,15 +378,16 @@ impl Compressor {
         let mut stats = self.stats.take().unwrap_or_default();
 
         let runtime = self.runtime.clone();
-        let (mut stats, res) = runtime.spawn_blocking({
-            let range = range.clone();
-            move || {
-                let _timer = inner_timer.start_timer();
-                let res = snapshot_repo.compress_snapshots(&mut stats, range);
-                (stats, res)
-            }
-        })
-        .await;
+        let (mut stats, res) = runtime
+            .spawn_blocking({
+                let range = range.clone();
+                move || {
+                    let _timer = inner_timer.start_timer();
+                    let res = snapshot_repo.compress_snapshots(&mut stats, range);
+                    (stats, res)
+                }
+            })
+            .await;
         let elapsed = Duration::from_secs_f64(timer.stop_and_record());
         self.metrics.report_and_reset(&mut stats);
         // Store stats for reuse.

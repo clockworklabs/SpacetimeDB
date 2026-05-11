@@ -161,7 +161,7 @@ async fn local_durability(
 ) -> Result<spacetimedb_durability::Local<[u8; 1024 * 1024]>, spacetimedb_durability::local::OpenError> {
     spacetimedb_durability::Local::open(
         dir,
-        spacetimedb_runtime::RuntimeDispatch::tokio_current(),
+        spacetimedb_runtime::Runtime::tokio_current(),
         spacetimedb_durability::local::Options {
             commitlog: spacetimedb_commitlog::Options {
                 max_segment_size,

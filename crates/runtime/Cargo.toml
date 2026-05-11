@@ -10,15 +10,16 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-anyhow.workspace = true
 futures.workspace = true
 futures-util.workspace = true
 tokio = { workspace = true, optional = true }
 async-task = { version = "4.4", optional = true }
+spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
 libc = { version = "0.2", optional = true }
 tracing = { workspace = true, optional = true }
 
 [features]
 default = ["tokio"]
 tokio = ["dep:tokio"]
-simulation = ["dep:async-task", "dep:libc", "dep:tracing"]
+simulation = ["dep:async-task", "dep:spin"]
+simulation-std = ["simulation", "dep:libc", "dep:tracing"]

@@ -4,20 +4,13 @@
 //! futures are scheduled as runnable tasks and the ready queue is sampled by a
 //! deterministic RNG instead of being driven by a package-level async runtime.
 
+pub mod buggify;
+mod config;
 mod executor;
 mod rng;
-mod system_thread;
 pub mod time;
 
-use std::time::Duration;
-
+pub use config::RuntimeConfig;
 pub use executor::{yield_now, Handle, JoinHandle, NodeId, Runtime};
-pub use rng::{DecisionSource, Rng};
-
-pub fn advance_time(duration: Duration) {
-    time::advance(duration);
-}
-
-pub fn decision_source(seed: u64) -> DecisionSource {
-    DecisionSource::new(seed)
-}
+pub(crate) use rng::DeterminismLog;
+pub use rng::{GlobalRng, Rng};

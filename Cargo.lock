@@ -8470,11 +8470,11 @@ dependencies = [
 name = "spacetimedb-runtime"
 version = "2.2.0"
 dependencies = [
- "anyhow",
  "async-task",
  "futures",
  "futures-util",
  "libc",
+ "spin",
  "tokio",
  "tracing",
 ]

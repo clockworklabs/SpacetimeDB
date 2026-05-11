@@ -1,7 +1,7 @@
 use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::runtime::RuntimeDispatch;
+use crate::runtime::Runtime;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -41,9 +41,9 @@ use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 #[cfg(test)]
 use spacetimedb_paths::server::SnapshotDirPath;
+use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -102,7 +102,7 @@ pub struct RelationalDB {
 
     inner: Locking,
     durability: Option<Arc<Durability>>,
-    durability_runtime: Option<RuntimeDispatch>,
+    durability_runtime: Option<Runtime>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -1678,7 +1678,7 @@ pub async fn local_durability(
     replica_dir: ReplicaDir,
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
-    let runtime = RuntimeDispatch::tokio_current();
+    let runtime = Runtime::tokio_current();
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1957,14 +1957,13 @@ pub mod tests_utils {
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let snapshots = want_snapshot_repo
                 .then(|| {
-                    open_snapshot_repo(root.snapshots(), db_identity, replica_id)
-                        .map(|repo| {
-                            SnapshotWorker::new_with_repository(
-                                repo,
-                                snapshot::Compression::Disabled,
-                                RuntimeDispatch::tokio(rt.clone()),
-                            )
-                        })
+                    open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(|repo| {
+                        SnapshotWorker::new_with_repository(
+                            repo,
+                            snapshot::Compression::Disabled,
+                            Runtime::tokio(rt.clone()),
+                        )
+                    })
                 })
                 .transpose()?;
 
@@ -1975,7 +1974,7 @@ pub mod tests_utils {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
-                runtime: RuntimeDispatch::tokio(rt),
+                runtime: Runtime::tokio(rt),
             };
 
             let (db, _) = RelationalDB::open(
@@ -2086,14 +2085,13 @@ pub mod tests_utils {
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let snapshots = want_snapshot_repo
                 .then(|| {
-                    open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)
-                        .map(|repo| {
-                            SnapshotWorker::new_with_repository(
-                                repo,
-                                snapshot::Compression::Disabled,
-                                RuntimeDispatch::tokio(rt.clone()),
-                            )
-                        })
+                    open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(|repo| {
+                        SnapshotWorker::new_with_repository(
+                            repo,
+                            snapshot::Compression::Disabled,
+                            Runtime::tokio(rt.clone()),
+                        )
+                    })
                 })
                 .transpose()?;
             let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
@@ -2102,7 +2100,7 @@ pub mod tests_utils {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
-                runtime: RuntimeDispatch::tokio(rt),
+                runtime: Runtime::tokio(rt),
             };
             let db = Self::open_db(history, Some(persistence), None, 0)?;
 

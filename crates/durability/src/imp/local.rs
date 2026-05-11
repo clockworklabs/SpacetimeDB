@@ -18,7 +18,7 @@ use spacetimedb_commitlog::{
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
-use spacetimedb_runtime::RuntimeDispatch;
+use spacetimedb_runtime::Runtime;
 use thiserror::Error;
 use tokio::sync::{oneshot, watch};
 use tracing::{instrument, Span};
@@ -122,7 +122,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
     /// This is used to capture a snapshot each new segment.
     pub fn open(
         replica_dir: ReplicaDir,
-        runtime: RuntimeDispatch,
+        runtime: Runtime,
         opts: Options,
         on_new_segment: Option<Arc<OnNewSegmentFn>>,
     ) -> Result<Self, OpenError> {
@@ -148,7 +148,7 @@ where
 {
     fn open_inner(
         clog: Arc<Commitlog<Txdata<T>, R>>,
-        runtime: RuntimeDispatch,
+        runtime: Runtime,
         opts: Options,
         lock: Option<LockedFile>,
     ) -> Result<Self, OpenError> {
@@ -190,7 +190,7 @@ where
     R: RepoWithoutLockFile + Send + Sync + 'static,
 {
     /// Create a [`Local`] instance backed by the provided commitlog repo.
-    pub fn open_with_repo(repo: R, runtime: RuntimeDispatch, opts: Options) -> Result<Self, OpenError> {
+    pub fn open_with_repo(repo: R, runtime: Runtime, opts: Options) -> Result<Self, OpenError> {
         info!("open local durability");
         let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
         Self::open_inner(clog, runtime, opts, None)
@@ -241,7 +241,7 @@ where
     queue_depth: Arc<AtomicU64>,
 
     batch_capacity: NonZeroUsize,
-    runtime: RuntimeDispatch,
+    runtime: Runtime,
 
     _lock: Option<LockedFile>,
 }
@@ -277,14 +277,15 @@ where
             let ready_len = tx_buf.len();
             self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
             let runtime = self.runtime.clone();
-            tx_buf = runtime.spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
-                for tx in tx_buf.drain(..) {
-                    clog.commit([tx.into_transaction()])?;
-                }
-                Ok(tx_buf)
-            })
-            .await
-            .expect("commitlog write failed");
+            tx_buf = runtime
+                .spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
+                    for tx in tx_buf.drain(..) {
+                        clog.commit([tx.into_transaction()])?;
+                    }
+                    Ok(tx_buf)
+                })
+                .await
+                .expect("commitlog write failed");
             if self.flush_and_sync().await.is_err() {
                 sync_on_exit = false;
                 break;
@@ -317,19 +318,19 @@ where
         let runtime = self.runtime.clone();
         runtime
             .spawn_blocking(move || {
-            let _span = span.enter();
-            clog.flush_and_sync()
-        })
-        .await
-        .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
-        .inspect(|maybe_offset| {
-            if let Some(new_offset) = maybe_offset {
-                trace!("synced to offset {new_offset}");
-                self.durable_offset.send_modify(|val| {
-                    val.replace(*new_offset);
-                });
-            }
-        })
+                let _span = span.enter();
+                clog.flush_and_sync()
+            })
+            .await
+            .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
+            .inspect(|maybe_offset| {
+                if let Some(new_offset) = maybe_offset {
+                    trace!("synced to offset {new_offset}");
+                    self.durable_offset.send_modify(|val| {
+                        val.replace(*new_offset);
+                    });
+                }
+            })
     }
 }
 
