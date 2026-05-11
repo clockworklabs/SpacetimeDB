@@ -17,7 +17,7 @@ use spacetimedb_commitlog::{
     error,
     payload::Txdata,
     repo::{Fs, Repo, RepoWithSizeOnDisk},
-    Commit, Commitlog, Decoder, Encode, Transaction,
+    Commit, Commitlog, CompressionStats, Decoder, Encode, Transaction,
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
@@ -168,10 +168,6 @@ impl Repo for LockedFsRepo {
         self.repo.remove_segment(offset)
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
-        self.repo.compress_segment(offset)
-    }
-
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
         self.repo.existing_offsets()
     }
@@ -190,6 +186,14 @@ impl Repo for LockedFsRepo {
 
     fn get_offset_index(&self, offset: TxOffset) -> io::Result<spacetimedb_commitlog::repo::TxOffsetIndex> {
         self.repo.get_offset_index(offset)
+    }
+
+    fn compress_segment_with(
+        &self,
+        offset: u64,
+        f: impl spacetimedb_commitlog::repo::CompressOnce,
+    ) -> io::Result<CompressionStats> {
+        self.repo.compress_segment_with(offset, f)
     }
 }
 
@@ -290,7 +294,7 @@ where
     }
 
     /// Compress the segments at the offsets provided, marking them as immutable.
-    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
+    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<CompressionStats> {
         self.clog.compress_segments(offsets)
     }
 }

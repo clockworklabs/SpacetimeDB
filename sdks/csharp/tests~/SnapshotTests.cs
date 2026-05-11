@@ -257,8 +257,8 @@ public class SnapshotTests
         return [.. o.ToArray()];
     }
 
-    private static readonly string USER_TABLE_NAME = "User";
-    private static readonly string MESSAGE_TABLE_NAME = "Message";
+    private static readonly string USER_TABLE_NAME = "user";
+    private static readonly string MESSAGE_TABLE_NAME = "message";
 
 
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
