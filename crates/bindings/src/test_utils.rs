@@ -232,57 +232,11 @@ impl std::fmt::Display for TestAuthError {
 #[cfg(not(target_arch = "wasm32"))]
 impl std::error::Error for TestAuthError {}
 
-/// Context passed to procedure transaction hooks.
-///
-/// This is a lightweight handle to the same test datastore and execution
-/// defaults as the `TestContext` that created the procedure context.
-#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
-pub struct ProcedureHookContext {
-    datastore: std::sync::Arc<TestDatastore>,
-    clock: TestClock,
-    #[cfg(feature = "rand08")]
-    rng: TestRng,
-    identity: crate::Identity,
-}
-
-#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
-impl ProcedureHookContext {
-    fn new(test: &TestContext) -> Self {
-        Self {
-            datastore: test.datastore.clone(),
-            clock: test.clock.clone(),
-            #[cfg(feature = "rand08")]
-            rng: test.rng.clone(),
-            identity: test.identity,
-        }
-    }
-
-    /// Run `body` with a reducer context backed by a single mutable transaction.
-    ///
-    /// This is intended for interleaving reducer calls between procedure
-    /// transactions from a procedure transaction hook.
-    pub fn with_reducer_tx<T, E>(
-        &self,
-        auth: TestAuth,
-        body: impl FnOnce(&crate::ReducerContext) -> Result<T, E>,
-    ) -> Result<T, E> {
-        with_reducer_tx(
-            &self.datastore,
-            self.identity,
-            self.clock.now(),
-            #[cfg(feature = "rand08")]
-            self.rng.seed(),
-            auth,
-            body,
-        )
-    }
-}
-
 /// Hooks invoked at procedure transaction boundaries in native unit tests.
 #[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
 #[derive(Default)]
 pub struct ProcedureTestHooks {
-    after_tx_commit: Vec<Box<dyn FnMut(&ProcedureHookContext) -> anyhow::Result<()>>>,
+    after_tx_commit: Vec<Box<dyn FnMut(&TestContext) -> anyhow::Result<()>>>,
 }
 
 #[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
@@ -295,13 +249,13 @@ impl ProcedureTestHooks {
     /// Add a hook that runs after each successful procedure transaction commit.
     ///
     /// Hook failures panic after the transaction has already committed.
-    pub fn after_tx_commit(mut self, hook: impl FnMut(&ProcedureHookContext) -> anyhow::Result<()> + 'static) -> Self {
+    pub fn after_tx_commit(mut self, hook: impl FnMut(&TestContext) -> anyhow::Result<()> + 'static) -> Self {
         self.after_tx_commit.push(Box::new(hook));
         self
     }
 
     #[doc(hidden)]
-    pub fn __run_after_tx_commit(&mut self, ctx: &ProcedureHookContext) {
+    pub fn __run_after_tx_commit(&mut self, ctx: &TestContext) {
         for hook in &mut self.after_tx_commit {
             hook(ctx).unwrap_or_else(|err| panic!("procedure test after_tx_commit hook failed: {err}"));
         }
@@ -340,7 +294,23 @@ pub struct TestContext {
     pub identity: crate::Identity,
     datastore: std::sync::Arc<TestDatastore>,
     #[cfg(feature = "unstable")]
-    http_responder: std::cell::RefCell<Option<crate::http::TestHttpResponder>>,
+    http_responder: std::rc::Rc<std::cell::RefCell<Option<crate::http::TestHttpResponder>>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Clone for TestContext {
+    fn clone(&self) -> Self {
+        Self {
+            db: self.db.clone(),
+            clock: self.clock.clone(),
+            #[cfg(feature = "rand08")]
+            rng: self.rng.clone(),
+            identity: self.identity,
+            datastore: self.datastore.clone(),
+            #[cfg(feature = "unstable")]
+            http_responder: self.http_responder.clone(),
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -361,7 +331,7 @@ impl TestContext {
             identity: crate::Identity::ZERO,
             datastore,
             #[cfg(feature = "unstable")]
-            http_responder: std::cell::RefCell::new(None),
+            http_responder: std::rc::Rc::new(std::cell::RefCell::new(None)),
         })
     }
 
@@ -374,17 +344,17 @@ impl TestContext {
     #[cfg(feature = "unstable")]
     pub fn set_http_responder(
         &self,
-        responder: impl Fn(crate::http::Request) -> Result<crate::http::Response, crate::http::Error> + 'static,
+        responder: impl Fn(&TestContext, crate::http::Request) -> Result<crate::http::Response, crate::http::Error>
+            + 'static,
     ) {
-        self.http_responder.replace(Some(std::rc::Rc::new(responder)));
+        self.http_responder.borrow_mut().replace(std::rc::Rc::new(responder));
     }
 
     #[cfg(feature = "unstable")]
     fn http_responder(&self) -> crate::http::TestHttpResponder {
-        self.http_responder
-            .borrow()
-            .clone()
-            .unwrap_or_else(|| std::rc::Rc::new(|_| Err(crate::http::Error::new("no test HTTP responder configured"))))
+        self.http_responder.borrow().clone().unwrap_or_else(|| {
+            std::rc::Rc::new(|_, _| Err(crate::http::Error::new("no test HTTP responder configured")))
+        })
     }
 
     /// Run `body` with a reducer context backed by a single mutable transaction.
@@ -433,8 +403,8 @@ impl TestContext {
             connection_id,
             self.clock.now(),
             self.identity,
-            crate::http::HttpClient::test(self.http_responder()),
-            ProcedureHookContext::new(self),
+            crate::http::HttpClient::test(self.clone(), self.http_responder()),
+            self.clone(),
             hooks,
             #[cfg(feature = "rand08")]
             self.rng.seed(),

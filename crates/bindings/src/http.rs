@@ -34,11 +34,14 @@ pub struct HttpClient {
 enum HttpClientBackend {
     Host,
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-    Test(TestHttpResponder),
+    Test {
+        context: crate::test_utils::TestContext,
+        responder: TestHttpResponder,
+    },
 }
 
 #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-pub type TestHttpResponder = Rc<dyn Fn(Request) -> Result<Response, Error>>;
+pub type TestHttpResponder = Rc<dyn Fn(&crate::test_utils::TestContext, Request) -> Result<Response, Error>>;
 
 impl HttpClient {
     pub(crate) fn host() -> Self {
@@ -48,9 +51,9 @@ impl HttpClient {
     }
 
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-    pub(crate) fn test(responder: TestHttpResponder) -> Self {
+    pub(crate) fn test(context: crate::test_utils::TestContext, responder: TestHttpResponder) -> Self {
         Self {
-            backend: HttpClientBackend::Test(responder),
+            backend: HttpClientBackend::Test { context, responder },
         }
     }
 
@@ -147,7 +150,7 @@ impl HttpClient {
                 }
             }
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-            HttpClientBackend::Test(responder) => responder(request),
+            HttpClientBackend::Test { context, responder } => responder(context, request),
         }
     }
 

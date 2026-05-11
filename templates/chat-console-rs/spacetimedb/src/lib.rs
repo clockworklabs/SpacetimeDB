@@ -303,7 +303,7 @@ mod tests {
     fn test_procedure_context_can_mock_http() {
         let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
 
-        test.set_http_responder(|request| {
+        test.set_http_responder(|_, request| {
             assert_eq!(request.method().as_str(), "GET");
             assert_eq!(request.uri().to_string(), "https://example.invalid/status");
 

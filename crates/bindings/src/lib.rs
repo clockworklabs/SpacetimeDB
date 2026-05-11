@@ -1256,7 +1256,7 @@ pub struct ProcedureContext {
     test_datastore: Option<std::sync::Arc<spacetimedb_test_datastore::TestDatastore>>,
 
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-    test_hook_context: Option<crate::test_utils::ProcedureHookContext>,
+    test_context: Option<crate::test_utils::TestContext>,
 
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     test_hooks: Option<crate::test_utils::ProcedureTestHooks>,
@@ -1292,7 +1292,7 @@ impl ProcedureContext {
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             test_datastore: None,
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-            test_hook_context: None,
+            test_context: None,
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             test_hooks: None,
             #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
@@ -1315,7 +1315,7 @@ impl ProcedureContext {
         timestamp: Timestamp,
         module_identity: Identity,
         http: http::HttpClient,
-        hook_context: crate::test_utils::ProcedureHookContext,
+        test_context: crate::test_utils::TestContext,
         hooks: crate::test_utils::ProcedureTestHooks,
         #[cfg(feature = "rand08")] rng_seed: Option<u64>,
     ) -> Self {
@@ -1326,7 +1326,7 @@ impl ProcedureContext {
             sender_auth,
             module_identity,
             test_datastore: Some(datastore),
-            test_hook_context: Some(hook_context),
+            test_context: Some(test_context),
             test_hooks: Some(hooks),
             #[cfg(feature = "rand08")]
             test_rng_seed: rng_seed,
@@ -1515,10 +1515,10 @@ impl ProcedureContext {
                     match res {
                         Ok(_) => {
                             retry_tx.commit().expect("test transaction retry failed again");
-                            if let (Some(hooks), Some(hook_context)) =
-                                (self.test_hooks.as_mut(), self.test_hook_context.as_ref())
+                            if let (Some(hooks), Some(test_context)) =
+                                (self.test_hooks.as_mut(), self.test_context.as_ref())
                             {
-                                hooks.__run_after_tx_commit(hook_context);
+                                hooks.__run_after_tx_commit(test_context);
                             }
                         }
                         Err(_) => retry_tx
@@ -1527,10 +1527,8 @@ impl ProcedureContext {
                     }
                 }
                 Ok(_) => {
-                    if let (Some(hooks), Some(hook_context)) =
-                        (self.test_hooks.as_mut(), self.test_hook_context.as_ref())
-                    {
-                        hooks.__run_after_tx_commit(hook_context);
+                    if let (Some(hooks), Some(test_context)) = (self.test_hooks.as_mut(), self.test_context.as_ref()) {
+                        hooks.__run_after_tx_commit(test_context);
                     }
                 }
                 Err(_) => tx.rollback().expect("should have a pending mutable test transaction"),
@@ -1709,6 +1707,7 @@ impl DbContext for ViewContext {
 /// The `#[table]` macro uses the trait system to add table accessors to this type.
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
+#[derive(Clone)]
 pub struct Local {
     backend: table::LocalBackend,
 }

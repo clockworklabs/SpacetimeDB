@@ -645,7 +645,7 @@ fn procedure_context_uses_test_http_responder() {
 
     test.set_http_responder({
         let seen_request = seen_request.clone();
-        move |request| {
+        move |_test, request| {
             seen_request.replace(Some((request.method().as_str().to_owned(), request.uri().to_string())));
             Ok(spacetimedb::http::Response::builder()
                 .status(201)
@@ -667,5 +667,41 @@ fn procedure_context_uses_test_http_responder() {
     assert_eq!(
         seen_request.borrow().as_ref(),
         Some(&("GET".to_owned(), "https://example.invalid/create".to_owned()))
+    );
+}
+
+#[cfg(feature = "unstable")]
+#[test]
+fn procedure_context_http_responder_can_interleave_reducer() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+
+    test.set_http_responder(|test, _request| {
+        test.with_reducer_tx(TestAuth::internal(), |ctx| {
+            ctx.db.test_utils_user().insert(TestUtilsUser {
+                id: 27,
+                name: "HTTP interleaved reducer".to_owned(),
+            });
+            Ok::<_, ()>(())
+        })
+        .expect("interleaved reducer should commit");
+
+        Ok(spacetimedb::http::Response::builder()
+            .status(200)
+            .body(spacetimedb::http::Body::empty())
+            .expect("test response should be valid"))
+    });
+
+    let procedure = test.procedure_context(TestAuth::internal());
+    procedure
+        .http
+        .get("https://example.invalid/interleave")
+        .expect("test HTTP responder should return a response");
+
+    assert_eq!(
+        test.db.test_utils_user().iter().collect::<Vec<_>>(),
+        vec![TestUtilsUser {
+            id: 27,
+            name: "HTTP interleaved reducer".to_owned(),
+        }]
     );
 }
