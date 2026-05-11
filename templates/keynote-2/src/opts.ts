@@ -159,7 +159,6 @@ function addSharedRuntimeOptions(parser: CLIParser): CLIParser {
     )
     .option('--no-stdb-confirmed-reads', 'Disable confirmed reads')
     .option('--use-docker', 'Use docker')
-    .option('--no-use-spacetime-metrics-endpoint', '')
     .option('--pool-max <num>', 'Max pool size for postgres', num())
     .option('--bun-url <url>', 'Bun server url', str())
     .option('--convex-url <url>', 'Convex server url', str())
@@ -200,9 +199,6 @@ function resolveRuntimeOptions(
     stdbConfirmedReads:
       options.stdbConfirmedReads ?? defaults.stdbConfirmedReads,
     useDocker: options.useDocker ?? defaults.useDocker,
-    useSpacetimeMetricsEndpoint:
-      options.useSpacetimeMetricsEndpoint ??
-      defaults.useSpacetimeMetricsEndpoint,
     poolMax: options.poolMax ?? defaults.poolMax,
     bunUrl: options.bunUrl ?? defaults.bunUrl,
     convexUrl: options.convexUrl ?? defaults.convexUrl,

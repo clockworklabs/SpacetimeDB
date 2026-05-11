@@ -23,6 +23,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use log::warn;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::compression::{
@@ -43,8 +44,10 @@ use spacetimedb_table::{
     page_pool::PagePool,
     table::Table,
 };
-use std::fs;
+use std::fs::{self, File};
+use std::io;
 use std::ops::RangeBounds;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{
     collections::BTreeMap,
@@ -171,6 +174,85 @@ struct BlobEntry {
 struct TableEntry {
     table_id: TableId,
     pages: Vec<blake3::Hash>,
+}
+
+/// A non-durable snapshot created via [SnapshotRepository::create_snapshot].
+///
+/// When [SnapshotRepository::create_snapshot] returns, all objects will have
+/// been written to the underlying object repository, but not `fsync`'ed.
+///
+/// Because this means that the snapshot may be incomplete, the [Snapshot] file
+/// will _not_ have been written, and the snapshot remains locked (via a [Lockfile]).
+///
+/// To turn an [UnflushedSnapshot] into a durable snapshot, call
+/// [UnflushedSnapshot::sync_all]. This will:
+///
+/// - sync all objects the snapshot references
+/// - sync the object repository root
+/// - write and sync the snapshot file
+/// - drop the lock file
+///
+/// This ensures that the snapshot file is present only if all objects are
+/// present and durable, and that the snapshot is considered invalid otherwise.
+///
+/// If [UnflushedSnapshot] is dropped without calling `sync_all`, the [Drop]
+/// impl will attempt to call `sync_all` and log any errors.
+///
+/// This two-stage snapshot creation exists in order to not introduce additional
+/// latency while the datastore is locked for snapshotting.
+#[must_use = "snapshots are not durable until `sync_all` is called"]
+pub struct UnflushedSnapshot {
+    inner: Option<UnflushedSnapshotInner>,
+}
+
+impl UnflushedSnapshot {
+    /// Sync all objects in the snapshot and write out the snapshot file.
+    ///
+    /// Returns the [SnapshotDirPath] on success.
+    pub fn sync_all(mut self) -> Result<SnapshotDirPath, SnapshotError> {
+        self.inner.take().unwrap().sync_all()
+    }
+}
+
+impl Drop for UnflushedSnapshot {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.take()
+            && let Err(e) = inner.sync_all()
+        {
+            warn!("failed to sync unflushed snapshot dropped without syncing: {e}");
+        }
+    }
+}
+
+struct UnflushedSnapshotInner {
+    snapshot: Snapshot,
+    snapshot_dir: SnapshotDirPath,
+    snapshot_repo: SnapshotRepository,
+    object_repo: DirTrie,
+    lockfile: Lockfile,
+}
+
+impl UnflushedSnapshotInner {
+    fn sync_all(self) -> Result<SnapshotDirPath, SnapshotError> {
+        // Sync all objects and their parent directories.
+        // The paths yielded by the [Snapshot::files] iterator are constructed
+        // by [DirTree::file_path], which creates a path with a parent.
+        // `parent()` is thus known to succeed.
+        for (_, path) in self.snapshot.files(&self.object_repo) {
+            FileOrDirPath::File(&path).sync_all()?;
+            FileOrDirPath::Dir(path.parent().unwrap()).sync_all()?;
+        }
+        // Sync the root directory of the object repo
+        FileOrDirPath::Dir(self.object_repo.root()).sync_all()?;
+        // Write out the snapshot file (syncs internally).
+        self.snapshot_repo
+            .write_snapshot_file(&self.snapshot_dir, self.snapshot)?;
+
+        // We can now drop the lockfile.
+        drop(self.lockfile);
+
+        Ok(self.snapshot_dir)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -564,6 +646,8 @@ impl fmt::Debug for SnapshotSize {
 pub struct ObjectCompressionStats {
     /// Number of objects freshly compressed.
     pub compressed: usize,
+    /// Cumulative stats of the compressed objects.
+    pub compression_stats: spacetimedb_fs_utils::compression::CompressionStats,
     /// Number of objects hardlinked from a parent repository.
     pub hardlinked: usize,
 }
@@ -579,8 +663,16 @@ impl ObjectCompressionStats {
 }
 
 impl AddAssign for ObjectCompressionStats {
-    fn add_assign(&mut self, Self { compressed, hardlinked }: Self) {
+    fn add_assign(
+        &mut self,
+        Self {
+            compressed,
+            compression_stats,
+            hardlinked,
+        }: Self,
+    ) {
         self.compressed += compressed;
+        self.compression_stats += compression_stats;
         self.hardlinked += hardlinked;
     }
 }
@@ -650,15 +742,19 @@ impl SnapshotRepository {
     /// where `tables` is the committed state of all the tables in the database,
     /// and `blobs` is the committed state's blob store.
     ///
-    /// Returns the path of the newly-created snapshot directory.
+    /// The returned [UnflushedSnapshot] is **not** durable -- call
+    /// [UnflushedSnapshot::sync_all] to finalize it (see the struct docs for
+    /// more details).
     ///
-    /// **NOTE**: The current snapshot is uncompressed to avoid the potential slowdown.
+    /// Also note that the snapshot remains locked for as long as [UnflushedSnapshot]
+    /// is alive. It will not appear in [Self::all_snapshots] nor can it be
+    /// modified by methods in [SnapshotRepository].
     pub fn create_snapshot<'db>(
         &self,
         tables: impl Iterator<Item = &'db mut Table>,
         blobs: &'db dyn BlobStore,
         tx_offset: TxOffset,
-    ) -> Result<SnapshotDirPath, SnapshotError> {
+    ) -> Result<UnflushedSnapshot, SnapshotError> {
         // Invalidate equal to or newer than `tx_offset`.
         //
         // This is because snapshots don't currently track the epoch in which
@@ -692,7 +788,7 @@ impl SnapshotRepository {
         // Before performing any observable operations,
         // acquire a lockfile on the snapshot you want to create.
         // Because we could be compressing the snapshot.
-        let _lock = Lockfile::for_file(&snapshot_dir)?;
+        let lockfile = Lockfile::for_file(&snapshot_dir)?;
 
         // Create the snapshot directory.
         snapshot_dir.create()?;
@@ -708,8 +804,6 @@ impl SnapshotRepository {
         snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
         snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
 
-        self.write_snapshot_file(&snapshot_dir, snapshot)?;
-
         log::info!(
             "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
             self.database_identity,
@@ -718,9 +812,15 @@ impl SnapshotRepository {
             counter.objects_written,
         );
 
-        // Success! return the directory of the newly-created snapshot.
-        // The lockfile will be dropped here.
-        Ok(snapshot_dir)
+        Ok(UnflushedSnapshot {
+            inner: Some(UnflushedSnapshotInner {
+                snapshot,
+                snapshot_dir,
+                snapshot_repo: self.clone(),
+                object_repo,
+                lockfile,
+            }),
+        })
     }
 
     /// Write the on-disk snapshot file containing the BSATN-encoded `snapshot`
@@ -744,6 +844,12 @@ impl SnapshotRepository {
             snapshot_file.write_all(hash.as_bytes())?;
             snapshot_file.write_all(&snapshot_bsatn)?;
             snapshot_file.flush()?;
+            // fsync file + enclosing directory.
+            snapshot_file
+                .into_inner()
+                .expect("buffered writer just flushed")
+                .sync_all()?;
+            FileOrDirPath::Dir(&snapshot_dir.0).sync_all()?;
         }
 
         Ok(())
@@ -1102,6 +1208,7 @@ impl SnapshotRepository {
                 if old_file.is_compressed() {
                     std::fs::hard_link(old_path, src.with_extension("_tmp"))?;
                     std::fs::rename(src.with_extension("_tmp"), src)?;
+                    File::open(src.parent().unwrap())?.sync_all()?;
                     if let Some(stats) = stats {
                         stats.hardlinked += 1;
                     }
@@ -1112,10 +1219,11 @@ impl SnapshotRepository {
             let dst = src.with_extension("_tmp");
             let mut write = BufWriter::new(o_excl().open(&dst)?);
             // The default frame size compress better.
-            compress_with_zstd(read, &mut write, None)?;
+            let compression_stats = compress_with_zstd(read, &mut write, None)?;
             std::fs::rename(dst, src)?;
             if let Some(stats) = stats {
                 stats.compressed += 1;
+                stats.compression_stats += compression_stats;
             }
 
             Ok(())
@@ -1134,6 +1242,7 @@ impl SnapshotRepository {
                 log::error!("Failed to compress object file {path:?}: {err}");
             })?;
         }
+        File::open(dir.root())?.sync_all()?;
 
         // Compress the snapshot file last,
         // which marks the whole snapshot as compressed.
@@ -1142,6 +1251,7 @@ impl SnapshotRepository {
         compress(&old, &snapshot_file.0, None, None).inspect_err(|err| {
             log::error!("Failed to compress snapshot file {snapshot_file:?}: {err}");
         })?;
+        File::open(&snapshot_dir.0)?.sync_all()?;
 
         log::info!(
             "Compressed snapshot {snapshot_dir:?} of replica {}: {compress_type:?}",
@@ -1245,6 +1355,32 @@ pub struct ReconstructedSnapshot {
     pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
+}
+
+/// A [Path] statically known to point to either a file or a directory.
+enum FileOrDirPath<'a> {
+    File(&'a Path),
+    Dir(&'a Path),
+}
+
+impl FileOrDirPath<'_> {
+    /// `fsync` the file or directory at path `self`.
+    ///
+    /// On *nix systems, both a file and its enclosing directory should be
+    /// `fsync`ed to make the file durable.
+    ///
+    /// On Windows, only the file needs to be synced, and it's even an error to
+    /// sync a directory. Passing in [Self::Dir] is thus a no-op on Windows.
+    fn sync_all(&self) -> io::Result<()> {
+        #[cfg(target_os = "windows")]
+        if let Self::Dir(_) = self {
+            return Ok(());
+        }
+        let (Self::File(path) | Self::Dir(path)) = self;
+        File::open(path)
+            .and_then(|fd| fd.sync_all())
+            .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync {}: {}", path.display(), e)))
+    }
 }
 
 #[cfg(test)]

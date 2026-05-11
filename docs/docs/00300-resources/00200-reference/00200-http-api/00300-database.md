@@ -4,7 +4,7 @@ slug: /http/database
 
 # `/v1/database`
 
-The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries.
+The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries. These APIs are intended primarily for management, debugging and interactive developer use, and have not been optimized for performance to the same extent as the WebSocket API used by [the SpacetimeDB client SDKs](../../../00200-core-concepts/00600-clients.md).
 
 ## At a glance
 

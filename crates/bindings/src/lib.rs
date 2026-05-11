@@ -687,7 +687,7 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// #[reducer]
 /// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
-///     if ctx.sender() != ctx.identity() {
+///     if ctx.sender() != ctx.database_identity() {
 ///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.".into());
 ///     }
 ///     // Reducer body...
@@ -1081,7 +1081,7 @@ impl ReducerContext {
     }
 
     /// Read the current module's [`Identity`].
-    pub fn identity(&self) -> Identity {
+    pub fn database_identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
         // However, this would be:
         // - Onerous, because we have no tooling to inspect the system tables from module code.
@@ -1091,6 +1091,12 @@ impl ReducerContext {
         // As such, we've just defined a host call
         // which reads the module identity out of the `InstanceEnv`.
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Read the current module's [`Identity`].
+    #[deprecated(note = "Use `ReducerContext::database_identity` instead.")]
+    pub fn identity(&self) -> Identity {
+        self.database_identity()
     }
 
     /// Create an anonymous (no sender) read-only view context
@@ -1110,9 +1116,10 @@ impl ReducerContext {
     /// use spacetimedb::{reducer, ReducerContext, Uuid};
     ///
     /// #[reducer]
-    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Uuid {
-    ///     let uuid = ctx.new_uuid_v4();
+    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
+    ///     let uuid = ctx.new_uuid_v4()?;
     ///     log::info!(uuid);
+    ///     Ok(())
     /// }
     /// # }
     /// ```
@@ -1131,9 +1138,10 @@ impl ReducerContext {
     /// use spacetimedb::{reducer, ReducerContext, Uuid};
     ///
     /// #[reducer]
-    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v7()?;
     ///     log::info!(uuid);
+    ///     Ok(())
     /// }
     /// # }
     /// ```
@@ -1454,15 +1462,25 @@ pub trait DbContext {
     ///
     /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
     /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
-    /// Currently, being this generic is only meaningful in clients,
-    /// as `ReducerContext` is the only implementor of `DbContext` within modules.
     fn db(&self) -> &Self::DbView;
+
+    /// Get a read-only view into the tables.
+    ///
+    /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
+    /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly;
 }
 
 impl DbContext for AnonymousViewContext {
     type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
 }
@@ -1473,6 +1491,11 @@ impl DbContext for ReducerContext {
     fn db(&self) -> &Self::DbView {
         &self.db
     }
+
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly {
+        self.db.get_read_only()
+    }
 }
 
 #[cfg(feature = "unstable")]
@@ -1482,12 +1505,21 @@ impl DbContext for TxContext {
     fn db(&self) -> &Self::DbView {
         &self.db
     }
+
+    fn db_read_only(&self) -> &LocalReadOnly {
+        self.db.get_read_only()
+    }
 }
 
 impl DbContext for ViewContext {
     type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+
+    #[cfg(feature = "unstable")]
+    fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
 }
@@ -1502,6 +1534,13 @@ impl DbContext for ViewContext {
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
 pub struct Local {}
+
+impl Local {
+    #[cfg(feature = "unstable")]
+    fn get_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
 
 /// The [JWT] of an [`AuthCtx`].
 ///
