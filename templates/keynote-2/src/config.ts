@@ -72,7 +72,20 @@ export interface BenchOptions extends SharedRuntimeConfig {
   testName: string;
   seconds: number;
   concurrency: number;
-  alpha: number;
+  /**
+   * Alphas to sweep. The basic-bench code path writes one JSON per (connector,
+   * alpha, run) tuple. For backward compatibility, a single `--alpha N` argument
+   * resolves to a single-element array.
+   */
+  alphas: number[];
+  /** Number of times to repeat each (connector, alpha) combination. */
+  runs: number;
+  /**
+   * If true, runs `pnpm run prep` before each (connector, alpha) combination
+   * to reset DB state. Each repeat run within the same (connector, alpha) uses
+   * the same prepped state (so inter-run variance is meaningful).
+   */
+  prepBetweenAlphas: boolean;
   connectors: ConnectorKey[] | null;
   contentionTests: ContentionTests | null;
   concurrencyTests: ConcurrencyTests | null;
@@ -191,6 +204,23 @@ export function readOptionalBooleanEnv(
   const raw = env[name];
   if (raw === undefined) return undefined;
   return parseBooleanLike(raw);
+}
+
+export function parseAlphaList(
+  raw: string | number | string[] | undefined,
+  label: string,
+): number[] | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'number') return [raw];
+
+  const values = (Array.isArray(raw) ? raw : [raw])
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (values.length === 0) return undefined;
+
+  return values.map((value) => parseFiniteNumber(value, label));
 }
 
 export function parseConnectorList(

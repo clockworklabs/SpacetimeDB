@@ -11,8 +11,7 @@
     "prep": "tsx src/init/init-all.ts",
     "down": "docker compose down || exit 0",
     "test-1": "tsx src/cli.ts test-1",
-    "bench": "tsx src/cli.ts",
-    "bench:all": "bash scripts/run-all-benches.sh"
+    "bench": "tsx src/cli.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

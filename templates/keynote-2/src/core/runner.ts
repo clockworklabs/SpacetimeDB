@@ -347,18 +347,21 @@ export async function runOne({
       worker(i),
     );
 
-    // Wait for all workers to reach end of test window (before they wait for in-flight ops)
-    await testWindowEndPromise;
+    try {
+      // Wait for all workers to reach end of test window (before they wait for in-flight ops)
+      await testWindowEndPromise;
 
-    const testWindowEndTime = performance.now();
-    console.log(
-      `[${connector.name}] Test window ended at ${((testWindowEndTime - start) / 1000).toFixed(2)}s; waiting for in-flight operations...`,
-    );
+      const testWindowEndTime = performance.now();
+      console.log(
+        `[${connector.name}] Test window ended at ${((testWindowEndTime - start) / 1000).toFixed(2)}s; waiting for in-flight operations...`,
+      );
 
-    // Now wait for all workers to fully complete (including in-flight ops)
-    await Promise.all(workerPromises);
-
-    clearInterval(intervalTimer);
+      // Now wait for all workers to fully complete (including in-flight ops)
+      await Promise.all(workerPromises);
+    } finally {
+      // Ensure the per-second sampler stops even if a worker throws.
+      clearInterval(intervalTimer);
+    }
 
     return { start, completedWithinWindow, completedTotal, series };
   };

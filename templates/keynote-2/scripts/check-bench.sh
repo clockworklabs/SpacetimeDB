@@ -2,7 +2,8 @@
 # Health-check every backend the bench needs.
 # Prints one line per service. Returns 0 even on failures — visual inspection.
 
-CONVEX_URL=$(grep '^CONVEX_URL=' ~/SpacetimeDB/templates/keynote-2/convex-app/.env.local 2>/dev/null | cut -d= -f2)
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd)"
+CONVEX_URL=$(grep '^CONVEX_URL=' "$ROOT/convex-app/.env.local" 2>/dev/null | cut -d= -f2)
 
 checks=(
   "sqlite_rpc|http://127.0.0.1:4103/rpc|{\"name\":\"health\",\"args\":{}}"

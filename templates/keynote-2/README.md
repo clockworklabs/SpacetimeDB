@@ -41,7 +41,9 @@ Each cell shows **mean TPS ± sample standard deviation** of the per-second thro
 
 ## Methodology
 
-All systems were tested with **out-of-the-box default settings**, with one exception: Postgres (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'` for an apples-to-apples comparison. No other custom tuning or configuration optimization was applied.
+All systems were tested with **out-of-the-box default settings**, with one exception: the local Postgres instance (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'`. No other custom tuning or configuration optimization was applied.
+
+The managed Postgres services (Supabase, PlanetScale) run at their default isolation level of `READ COMMITTED`.
 
 The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
 
@@ -77,23 +79,25 @@ This is a classic read-modify-write workload that tests transactional integrity 
 
 ### Test Command
 
-The numbers in the table above were collected by running each connector directly with `pnpm`:
+The numbers in the table above were collected with `pnpm run bench`:
 
 ```bash
 pnpm install
-pnpm run prep                                                # seed all backing databases once
-pnpm run bench:all 1 300 <connector> 0,1.5 <output-tag>     # 1 run × 300s × both alphas
+pnpm run prep                                                              # seed all backing databases once
+pnpm run bench --alpha 0,1.5 --connectors <connectors> --seconds 300       # one JSON per (connector, alpha)
 ```
 
-The `bench:all` script wraps `scripts/run-all-benches.sh` with positional args: `RUNS SECONDS CONNECTORS_CSV ALPHAS_CSV OUT_NAME`. Multiple connectors and alphas can be passed comma-separated.
+`--alpha` and `--connectors` both accept comma-separated values. The bench writes one JSON per (connector, alpha, run) tuple into `runs/`.
 
-- `300`: Duration of each benchmark run, in seconds
-- `--concurrency 50`: Number of concurrent client connections
-- `--alpha 0`: ~0% contention (uniform account distribution)
-- `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
-- `--stdb-compression none|gzip`: SpacetimeDB client compression mode (default: `none`)
+Useful flags:
 
-The Docker workflow (`docker compose run --rm bench -- ...`) produces equivalent numbers.
+- `--alpha <csv>`: Zipf alpha. This benchmark reports `0` (uniform / ~0% contention) and `1.5` (Zipf / ~80% contention).
+- `--connectors <csv>`: which connectors to run. Defaults to every test in `src/tests/test-1/`.
+- `--seconds <num>`: duration of each run.
+- `--concurrency <num>`: number of concurrent clients (default: `50`).
+- `--runs <num>`: repeat each (connector, alpha) combination this many times (default: `1`). Each repeat writes its own JSON.
+- `--prep-between-alphas`: run `pnpm run prep` before each (connector, alpha) combination to reset DB state.
+- `--stdb-compression <none|gzip>`: SpacetimeDB client compression mode (default: `none`).
 
 ### Hardware Configuration
 

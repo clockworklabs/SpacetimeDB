@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { readdir, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
 import type { TestCaseModule } from './tests/types';
@@ -14,7 +15,9 @@ const {
   seconds,
   concurrency,
   accounts,
-  alpha,
+  alphas,
+  runs,
+  prepBetweenAlphas,
   connectors,
   contentionTests,
   concurrencyTests,
@@ -62,7 +65,7 @@ class BenchmarkTester {
 
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    const avg = {
+    const avg: RunResult = {
       tps: totals.tps / runs,
       samples: totals.samples / runs,
       p50_ms: totals.p50_ms / runs,
@@ -71,6 +74,9 @@ class BenchmarkTester {
       collision_ops: totals.collision_ops / runs,
       collision_count: totals.collision_count / runs,
       collision_rate: totals.collision_rate / runs,
+      // timeSeries can't be meaningfully averaged across runs (each run has its
+      // own t=0..N curve), so the aggregated avg drops it.
+      timeSeries: [],
     };
     return avg;
   }
@@ -130,15 +136,42 @@ class BenchmarkTester {
   }
 }
 
+/** Subprocess `pnpm run prep` to reset DB state. Inherits stdio so output is visible. */
+function runPrep(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('pnpm', ['run', 'prep'], {
+      stdio: 'inherit',
+      shell: true,
+    });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`prep exited with code ${code}`));
+    });
+    child.on('error', reject);
+  });
+}
+
 const testDirUrl = new URL(`./tests/${testName}/`, import.meta.url);
 const testDirPath = fileURLToPath(testDirUrl);
+const runsDir = fileURLToPath(new URL('../runs/', import.meta.url));
+
+async function writeRunJson(payload: object, connectorName: string, alpha: number) {
+  await mkdir(runsDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const outFile = join(runsDir, `${testName}-${connectorName}-a${alpha}-${ts}.json`);
+  await writeFile(outFile, JSON.stringify(payload, null, 2));
+  console.log(`Wrote results to ${outFile}`);
+  return outFile;
+}
 
 (async () => {
   const files = (await readdir(testDirPath)).filter(
     (f) => (f.endsWith('.ts') || f.endsWith('.js')) && !f.endsWith('.d.ts'),
   );
 
-  const results: any[] = [];
+  // Sweep-mode results accumulate into a single combined JSON (legacy behavior).
+  const sweepResults: any[] = [];
+  let sweepAlpha: number | null = null;
 
   for (const file of files) {
     const mod = (await import(
@@ -151,74 +184,114 @@ const testDirPath = fileURLToPath(testDirUrl);
     const makeConnector = CONNECTORS[tc.system];
     if (!makeConnector) throw new Error(`Unknown connector ${tc.system}`);
 
-    const connector = makeConnector(options);
-
-    let res: any;
-
-    const config = {
-      connector,
-      scenario: tc.run,
-      seconds,
-      accounts,
-      runtimeConfig: options,
-    };
-
-    const tester = new BenchmarkTester(config);
-
-    if (contentionTests) {
-      res = await tester.contentionTests(
-        contentionTests.startAlpha,
-        contentionTests.endAlpha,
-        contentionTests.step,
-        contentionTests.concurrency,
-      );
-    } else if (concurrencyTests) {
-      res = await tester.concurrencyTestsMutiply(
-        concurrencyTests.startConc,
-        concurrencyTests.endConc,
-        concurrencyTests.step,
-        concurrencyTests.alpha,
-      );
-    } else {
-      res = await runOne({
+    if (contentionTests || concurrencyTests) {
+      // Sweep modes: one connector, one combined result, accumulate for a single JSON.
+      const connector = makeConnector(options);
+      const config = {
         connector,
         scenario: tc.run,
         seconds,
+        accounts,
+        runtimeConfig: options,
+      };
+      const tester = new BenchmarkTester(config);
+
+      let res: any;
+      if (contentionTests) {
+        res = await tester.contentionTests(
+          contentionTests.startAlpha,
+          contentionTests.endAlpha,
+          contentionTests.step,
+          contentionTests.concurrency,
+        );
+      } else if (concurrencyTests) {
+        res = await tester.concurrencyTestsMutiply(
+          concurrencyTests.startConc,
+          concurrencyTests.endConc,
+          concurrencyTests.step,
+          concurrencyTests.alpha,
+        );
+        sweepAlpha = concurrencyTests.alpha;
+      }
+
+      sweepResults.push({
+        system: connector.name,
+        label: tc.label ?? file,
+        file,
+        seconds,
         concurrency,
         accounts,
-        alpha,
-        runtimeConfig: options,
+        alpha: sweepAlpha ?? alphas[0],
+        res,
       });
+      console.log(`${file}:`, res);
+      continue;
     }
 
-    results.push({
-      system: connector.name,
-      label: tc.label ?? file,
-      file,
+    // Basic mode: sweep alphas and repeat runs, writing one JSON per
+    // (connector, alpha, run) tuple. Optionally prep before each alpha.
+    for (const alpha of alphas) {
+      if (prepBetweenAlphas) {
+        console.log(`[bench] prep before ${tc.system} alpha=${alpha}`);
+        await runPrep();
+      }
+
+      for (let r = 0; r < runs; r++) {
+        // Create the connector fresh per (alpha, run) so that prep-induced
+        // schema/state changes don't get cached on a stale connector instance.
+        const connector = makeConnector(options);
+        const res = await runOne({
+          connector,
+          scenario: tc.run,
+          seconds,
+          concurrency,
+          accounts,
+          alpha,
+          runtimeConfig: options,
+        });
+
+        const payload = {
+          test: testName,
+          seconds,
+          concurrency,
+          accounts,
+          alpha,
+          run: r + 1,
+          runs,
+          results: [
+            {
+              system: connector.name,
+              label: tc.label ?? file,
+              file,
+              seconds,
+              concurrency,
+              accounts,
+              alpha,
+              res,
+            },
+          ],
+        };
+        await writeRunJson(payload, connector.name, alpha);
+        console.log(
+          `[bench] ${tc.system} alpha=${alpha} run ${r + 1}/${runs} done`,
+        );
+      }
+    }
+  }
+
+  if (sweepResults.length > 0) {
+    const payload = {
+      test: testName,
       seconds,
       concurrency,
       accounts,
-      alpha,
-      res,
-    });
-    console.log(`${file}:`, res);
+      alpha: sweepAlpha ?? alphas[0],
+      results: sweepResults,
+    };
+    await mkdir(runsDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const outFile = join(runsDir, `${testName}-${ts}.json`);
+    await writeFile(outFile, JSON.stringify(payload, null, 2));
+    console.log(`Wrote sweep results to ${outFile}`);
   }
-
-  const runData = {
-    test: testName,
-    seconds,
-    concurrency,
-    accounts,
-    alpha,
-    results,
-  };
-  const runsDir = fileURLToPath(new URL('../runs/', import.meta.url));
-  await mkdir(runsDir, { recursive: true });
-  const outFile = join(
-    runsDir,
-    `${testName}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
-  );
-  await writeFile(outFile, JSON.stringify(runData, null, 2));
-
-  console.log(`Wrote results to ${outFile}`);
 })();

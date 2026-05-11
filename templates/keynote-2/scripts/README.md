@@ -7,8 +7,10 @@ Helpers for running the keynote benchmark on a single host.
 | `start-bench.sh` | Bring up every backend service (sqlite-rpc, postgres-rpc, bun-rpc, cockroach + cockroach-rpc, supabase-rpc, convex local) in its own tmux window inside session `bench`. |
 | `stop-bench.sh` | Kill every foreground bench process and the tmux session. Leaves Postgres (systemd) and Supabase (Docker) running. |
 | `check-bench.sh` | Health-check each service with a single HTTP call. |
-| `run-all-benches.sh` | Run the bench across connectors and alphas, capturing per-run TPS/latency/verify output to `/tmp/bench-results.tsv`. |
-| `plot-bench.py` | Read the `timeSeries` field from `runs/test-1-*.json` and produce per-alpha TPS + p99-latency charts. Requires matplotlib. |
+| `bench-stats.py` | Read `runs/test-1-*.json` and emit a TSV with aggregate, steady-state, tail-window, and time-series stats. Detects collapse/death points. |
+| `plot-bench.py` | Read the `timeSeries` field from `runs/test-1-*.json` and produce per-alpha TPS + latency-percentile charts. Requires matplotlib. |
+
+Sweep orchestration (multiple alphas, multiple runs, optional state reset) is now built into `pnpm run bench` itself. See the project README's "Test Command" section.
 
 ## Typical flow
 
@@ -23,15 +25,16 @@ scripts/start-bench.sh
 tmux attach -t bench                  # poke around if needed
 scripts/check-bench.sh                # confirm all green
 
-# seed (one-time, or after wiping a DB)
+# seed once, then sweep alphas and connectors
 pnpm run prep
+pnpm run bench --alpha 0,1.5 --connectors postgres_rpc,bun --seconds 300
 
-# benchmark — args: RUNS SECONDS CONNECTORS_CSV ALPHAS_CSV
-scripts/run-all-benches.sh 3 60       # 3 runs x 60s, all connectors, both alphas
-scripts/run-all-benches.sh 5 60 sqlite_rpc,postgres_rpc 1.5
+# multi-run sweep with auto-reset between alphas
+pnpm run bench --alpha 0,1.5 --connectors postgres_rpc --seconds 300 --runs 3 --prep-between-alphas
 
-# plot
-python3 scripts/plot-bench.py 0       # writes bench-alpha0.0.png
+# stats + plots from the per-run JSONs
+python3 scripts/bench-stats.py --runs-dir runs
+python3 scripts/plot-bench.py 0
 python3 scripts/plot-bench.py 1.5
 
 # tear down
@@ -40,6 +43,6 @@ scripts/stop-bench.sh
 
 ## Notes
 
-- `run-all-benches.sh` overwrites `/tmp/bench-results.tsv` on each invocation. Archive it first if you want to preserve a prior sweep.
-- All scripts assume the repo lives at `~/SpacetimeDB`. Edit the hardcoded paths if your checkout is elsewhere.
-- `plot-bench.py` requires the `timeSeries` field added to `core/runner.ts`. Older `runs/*.json` files without that field are silently skipped.
+- `bench-stats.py` and `plot-bench.py` glob `runs/test-1-*.json`. To keep separate sweeps from mixing, organize JSONs into subdirectories per sweep and point `--runs-dir` at each one.
+- `plot-bench.py` requires the `timeSeries` field on each run, added by the current `core/runner.ts`. Older JSON files without that field are silently skipped.
+- All scripts resolve paths relative to the script file, so the checkout can live anywhere.

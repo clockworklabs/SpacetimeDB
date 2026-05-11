@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-DEFAULT_RUNS_DIR = Path.home() / "SpacetimeDB/templates/keynote-2/runs"
+DEFAULT_RUNS_DIR = Path(__file__).resolve().parent.parent / "runs"
 
 
 def load_run(path):

@@ -11,7 +11,7 @@
 set -uo pipefail
 
 SESSION=bench
-ROOT=~/SpacetimeDB/templates/keynote-2
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd)"
 
 tmux has-session -t "$SESSION" 2>/dev/null || tmux new-session -d -s "$SESSION" -n bench
 
