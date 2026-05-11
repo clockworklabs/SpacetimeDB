@@ -270,7 +270,7 @@ fn run_csharp_tests() -> Result<()> {
         .run()?;
 
     cmd!("cargo", "regen", "csharp", "quickstart").run()?;
-    if has_git_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
+    if has_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
         bail!("quickstart bindings have changed. Please run `cargo regen csharp quickstart`.");
     }
 
@@ -298,7 +298,7 @@ fn run_csharp_tests() -> Result<()> {
     .dir("sdks/csharp")
     .run()?;
 
-    if has_git_diff(Path::new("sdks/csharp/examples~/regression-tests"))? {
+    if has_diff(Path::new("sdks/csharp/examples~/regression-tests"))? {
         bail!("Bindings are dirty. Please run `cargo regen csharp regression-tests`.");
     }
     Ok(())
