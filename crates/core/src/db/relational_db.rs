@@ -2232,11 +2232,12 @@ pub mod tests_utils {
             drop(self.db);
 
             if let Some(DurableState {
-                durability: _,
+                durability,
                 rt,
                 replica_dir,
             }) = self.durable
             {
+                drop(durability);
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
                 let (db, handle) = Self::durable_internal(&replica_dir, rt.handle().clone(), self.want_snapshot_repo)?;
