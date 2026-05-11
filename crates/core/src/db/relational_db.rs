@@ -2187,7 +2187,7 @@ pub mod tests_utils {
                     open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(|repo| {
                         SnapshotWorker::new_with_repository(
                             repo,
-                            snapshot::Compression::Disabled,
+                            snapshot::Compression::Enabled,
                             Runtime::tokio(rt.clone()),
                         )
                     })
@@ -2317,7 +2317,7 @@ pub mod tests_utils {
                     open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(|repo| {
                         SnapshotWorker::new_with_repository(
                             repo,
-                            snapshot::Compression::Disabled,
+                            snapshot::Compression::Enabled,
                             Runtime::tokio(rt.clone()),
                         )
                     })

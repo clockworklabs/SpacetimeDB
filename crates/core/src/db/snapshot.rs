@@ -69,7 +69,7 @@ impl SnapshotWorker {
     /// The handle is only partially initialized, as it is lacking the
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
-    pub fn new(snapshot_repo: Arc<DynSnapshotRepo>, runtime: Runtime) -> Self {
+    pub fn new(snapshot_repo: Arc<DynSnapshotRepo>, compression: Compression, runtime: Runtime) -> Self {
         let database = snapshot_repo.database_identity();
         let latest_snapshot = snapshot_repo.latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
@@ -81,7 +81,12 @@ impl SnapshotWorker {
             snapshot_created: snapshot_created.clone(),
             metrics: SnapshotMetrics::new(database),
             runtime: runtime.clone(),
-            compression: None,
+            compression: compression.is_enabled().then(|| Compressor {
+                snapshot_repo: snapshot_repo.clone(),
+                metrics: CompressionMetrics::new(database),
+                stats: <_>::default(),
+                runtime: runtime.clone(),
+            }),
         };
         runtime.spawn(actor.run());
 
@@ -342,7 +347,7 @@ impl CompressionMetrics {
 }
 
 struct Compressor {
-    snapshot_repo: Arc<SnapshotRepository>,
+    snapshot_repo: Arc<DynSnapshotRepo>,
     metrics: CompressionMetrics,
     stats: Option<CompressionStats>,
     runtime: Runtime,
