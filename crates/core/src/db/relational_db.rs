@@ -2031,7 +2031,7 @@ pub mod tests_utils {
 
     use super::*;
     use core::ops::Deref;
-    use durability::EmptyHistory;
+    use durability::{Durability, EmptyHistory};
     use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
@@ -2250,6 +2250,7 @@ pub mod tests_utils {
                 replica_dir,
             }) = self.durable
             {
+                rt.block_on(durability.close());
                 drop(durability);
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
