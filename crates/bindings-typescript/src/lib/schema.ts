@@ -7,10 +7,20 @@ import {
 } from './algebraic_type';
 import type {
   CaseConversionPolicy,
+  ExplicitNames,
+  RawLifeCycleReducerDefV10,
+  RawModuleDefV10Mount,
   RawModuleDefV10,
   RawModuleDefV10Section,
+  RawProcedureDefV10,
+  RawReducerDefV10,
+  RawRowLevelSecurityDefV9,
+  RawScheduleDefV10,
   RawScopedTypeNameV10,
   RawTableDefV10,
+  RawTypeDefV10,
+  RawViewDefV10,
+  Typespace,
 } from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
@@ -174,7 +184,18 @@ type CompoundTypeCache = Map<
 >;
 
 export type ModuleDef = {
-  [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
+  typespace: Typespace;
+  types: RawTypeDefV10[];
+  tables: RawTableDefV10[];
+  reducers: RawReducerDefV10[];
+  procedures: RawProcedureDefV10[];
+  views: RawViewDefV10[];
+  schedules: RawScheduleDefV10[];
+  lifeCycleReducers: RawLifeCycleReducerDefV10[];
+  rowLevelSecurity: RawRowLevelSecurityDefV9[];
+  caseConversionPolicy: CaseConversionPolicy;
+  explicitNames: ExplicitNames;
+  mounts: RawModuleDefV10Mount[];
 };
 
 type Section = RawModuleDefV10Section;
@@ -199,6 +220,7 @@ export class ModuleContext {
     explicitNames: {
       entries: [],
     },
+    mounts: [],
   };
 
   get moduleDef(): ModuleDef {
@@ -245,7 +267,17 @@ export class ModuleContext {
         value: module.caseConversionPolicy,
       }
     );
+    push(
+      module.mounts && {
+        tag: 'Mounts',
+        value: module.mounts,
+      }
+    );
     return { sections };
+  }
+
+  addMount(mount: RawModuleDefV10Mount) {
+    this.#moduleDef.mounts.push(mount);
   }
 
   /**

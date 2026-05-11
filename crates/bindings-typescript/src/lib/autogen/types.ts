@@ -316,15 +316,50 @@ export const RawModuleDef = __t.enum('RawModuleDef', {
 });
 export type RawModuleDef = __Infer<typeof RawModuleDef>;
 
-export const RawModuleDefV10 = __t.object('RawModuleDefV10', {
-  get sections() {
-    return __t.array(RawModuleDefV10Section);
-  },
-});
-export type RawModuleDefV10 = __Infer<typeof RawModuleDefV10>;
+export type RawModuleDefV10 = {
+  sections: RawModuleDefV10Section[];
+};
+
+export const RawModuleDefV10: any = __t.lazy(() =>
+  __t.object('RawModuleDefV10', {
+    get sections(): any {
+      return __t.array(RawModuleDefV10Section);
+    },
+  })
+);
+
+export type RawModuleDefV10Mount = {
+  namespace: string;
+  module: RawModuleDefV10;
+};
+
+export const RawModuleDefV10Mount: any = __t.lazy(() =>
+  __t.object('RawModuleDefV10Mount', {
+    get namespace(): any {
+      return __t.string();
+    },
+    get module(): any {
+      return RawModuleDefV10;
+    },
+  })
+);
+
+export type RawModuleDefV10Section =
+  | { tag: 'Typespace'; value: Typespace }
+  | { tag: 'Types'; value: RawTypeDefV10[] }
+  | { tag: 'Tables'; value: RawTableDefV10[] }
+  | { tag: 'Reducers'; value: RawReducerDefV10[] }
+  | { tag: 'Procedures'; value: RawProcedureDefV10[] }
+  | { tag: 'Views'; value: RawViewDefV10[] }
+  | { tag: 'Schedules'; value: RawScheduleDefV10[] }
+  | { tag: 'LifeCycleReducers'; value: RawLifeCycleReducerDefV10[] }
+  | { tag: 'RowLevelSecurity'; value: RawRowLevelSecurityDefV9[] }
+  | { tag: 'CaseConversionPolicy'; value: CaseConversionPolicy }
+  | { tag: 'ExplicitNames'; value: ExplicitNames }
+  | { tag: 'Mounts'; value: RawModuleDefV10Mount[] };
 
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
-export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
+export const RawModuleDefV10Section: any = __t.enum('RawModuleDefV10Section', {
   get Typespace() {
     return Typespace;
   },
@@ -358,8 +393,10 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get ExplicitNames() {
     return ExplicitNames;
   },
+  get Mounts(): any {
+    return __t.array(RawModuleDefV10Mount);
+  },
 });
-export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
 export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
   get typespace() {

@@ -1,5 +1,6 @@
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
 import { CaseConversionPolicy, Lifecycle } from '../lib/autogen/types';
+import type { RawModuleDefV10 } from '../lib/autogen/types';
 import {
   type ParamsAsObject,
   type ParamsObj,
@@ -14,6 +15,7 @@ import {
 } from '../lib/schema';
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
+import { hasOwn } from '../lib/util';
 import {
   makeProcedureExport,
   type ProcedureExport,
@@ -46,6 +48,8 @@ export class SchemaInner<
   S extends UntypedSchemaDef = UntypedSchemaDef,
 > extends ModuleContext {
   schemaType: S;
+  exportsRegistered = false;
+  schedulesResolved = false;
   existingFunctions = new Set<string>();
   reducers: Reducers = [];
   procedures: Procedures = [];
@@ -77,6 +81,10 @@ export class SchemaInner<
   }
 
   resolveSchedules() {
+    if (this.schedulesResolved) {
+      return;
+    }
+    this.schedulesResolved = true;
     for (const { reducer, scheduleAtCol, tableName } of this.pendingSchedules) {
       const functionName = this.functionExports.get(reducer());
       if (functionName === undefined) {
@@ -138,22 +146,8 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   }
 
   [moduleHooks](exports: object) {
-    // if (!(hasOwn(exports, 'default') && exports.default instanceof Schema)) {
-    //   throw new TypeError('must export schema as default export');
-    // }
-    const registeredSchema = this.#ctx;
-    for (const [name, moduleExport] of Object.entries(exports)) {
-      if (name === 'default') continue;
-      if (!isModuleExport(moduleExport)) {
-        throw new TypeError(
-          'exporting something that is not a spacetime export'
-        );
-      }
-      checkExportContext(moduleExport, registeredSchema);
-      moduleExport[registerExport](registeredSchema, name);
-    }
-    registeredSchema.resolveSchedules();
-    return makeHooks(registeredSchema);
+    this.buildRawModuleDefV10(exports);
+    return makeHooks(this.#ctx);
   }
 
   get schemaType(): S {
@@ -166,6 +160,18 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
 
   get typespace() {
     return this.#ctx.typespace;
+  }
+
+  /** Internal: register exports and materialize the RawModuleDefV10 for upload. */
+  buildRawModuleDefV10(
+    exports: object,
+    opts?: { ignoreNonModuleExports?: boolean }
+  ): RawModuleDefV10 {
+    registerModuleExports(this.#ctx, exports, {
+      ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
+    });
+    this.#ctx.resolveSchedules();
+    return this.#ctx.rawModuleDefV10();
   }
 
   /**
@@ -543,18 +549,89 @@ export interface ModuleSettings {
   CASE_CONVERSION_POLICY?: CaseConversionPolicy;
 }
 
-export function schema<const H extends Record<string, UntypedTableSchema>>(
-  tables: H,
+type MountedModuleNamespace = {
+  default: Schema<any>;
+  [key: string]: unknown;
+};
+
+type SchemaEntry = UntypedTableSchema | MountedModuleNamespace;
+
+type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
+  [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
+    H[K],
+    UntypedTableSchema
+  >;
+};
+
+function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
+  return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
+}
+
+function isMountedModuleNamespace(x: unknown): x is MountedModuleNamespace {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    hasOwn(x, 'default') &&
+    x.default instanceof Schema
+  );
+}
+
+function registerModuleExports(
+  schema: SchemaInner,
+  exports: object,
+  opts?: { ignoreNonModuleExports?: boolean }
+) {
+  if (schema.exportsRegistered) {
+    return;
+  }
+  schema.exportsRegistered = true;
+
+  for (const [name, moduleExport] of Object.entries(exports)) {
+    if (name === 'default') continue;
+    if (!isModuleExport(moduleExport)) {
+      if (opts?.ignoreNonModuleExports) {
+        continue;
+      }
+      throw new TypeError('exporting something that is not a spacetime export');
+    }
+    checkExportContext(moduleExport, schema);
+    moduleExport[registerExport](schema, name);
+  }
+}
+
+export function schema<const H extends Record<string, SchemaEntry>>(
+  entries: H,
   moduleSettings?: ModuleSettings
-): Schema<TablesToSchema<H>> {
-  const ctx = new SchemaInner<TablesToSchema<H>>(ctx => {
+): Schema<TablesToSchema<ExtractTableEntries<H>>> {
+  const ctx = new SchemaInner<TablesToSchema<ExtractTableEntries<H>>>(ctx => {
     // Apply module settings.
     if (moduleSettings?.CASE_CONVERSION_POLICY != null) {
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
     }
 
     const tableSchemas: Record<string, UntypedTableDef> = {};
-    for (const [accName, table] of Object.entries(tables)) {
+    for (const [accName, entry] of Object.entries(entries)) {
+      if (entry instanceof Schema) {
+        throw new TypeError(
+          `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the mount can see the library's named reducer exports.`
+        );
+      }
+      if (isMountedModuleNamespace(entry)) {
+        ctx.addMount({
+          namespace: accName,
+          module: entry.default.buildRawModuleDefV10(entry, {
+            ignoreNonModuleExports: true,
+          }),
+        });
+        continue;
+      }
+      if (!isUntypedTableSchema(entry)) {
+        throw new TypeError(
+          `schema entry '${accName}' must be a table or a mounted module namespace object`
+        );
+      }
+
+      const table = entry;
       const tableDef = table.tableDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
       ctx.moduleDef.tables.push(tableDef);
@@ -574,7 +651,7 @@ export function schema<const H extends Record<string, UntypedTableSchema>>(
         });
       }
     }
-    return { tables: tableSchemas } as TablesToSchema<H>;
+    return { tables: tableSchemas } as TablesToSchema<ExtractTableEntries<H>>;
   });
 
   return new Schema(ctx);
