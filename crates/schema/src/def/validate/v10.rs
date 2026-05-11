@@ -81,6 +81,12 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
+    let mounts = def
+        .mounts()
+        .into_iter()
+        .flat_map(|mounts| mounts.iter().cloned())
+        .map(validate_mount)
+        .collect_all_errors::<Vec<_>>();
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -263,8 +269,12 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (tables, types, reducers, procedures, views) =
-        (tables_types_reducers_procedures_views).map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers, procedures, views, mounts) = (tables_types_reducers_procedures_views, mounts)
+        .combine_errors()
+        .map(|((tables, types, reducers, procedures, views), mounts)| {
+            (tables, types, reducers, procedures, views, mounts)
+        })
+        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -281,7 +291,15 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         lifecycle_reducers,
         procedures,
         raw_module_def_version: RawModuleDefVersion::V10,
+        mounts,
     })
+}
+
+fn validate_mount((namespace, module): (String, RawModuleDefV10)) -> Result<(String, ModuleDef)> {
+    Identifier::new(namespace.clone().into())
+        .map_err(|error| ValidationErrors::from(ValidationError::IdentifierError { error }))?;
+
+    Ok((namespace, validate(module)?))
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -1253,6 +1271,44 @@ mod tests {
             &table[..] == "Bananas" &&
             &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
+        });
+    }
+
+    #[test]
+    fn validates_mounted_submodules_recursively() {
+        let mut mounted_builder = RawModuleDefV10Builder::new();
+        mounted_builder
+            .build_table_with_new_type("Sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![(
+                "authlib".to_string(),
+                mounted_builder.finish(),
+            )])],
+        };
+
+        let def: ModuleDef = raw.try_into().expect("mounted module should validate");
+        let mounts = def.mounts();
+
+        assert_eq!(mounts.len(), 1);
+        assert_eq!(mounts[0].0, "authlib");
+        assert!(mounts[0].1.table(&expect_identifier("sessions")).is_some());
+    }
+
+    #[test]
+    fn invalid_mount_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![(
+                "".to_string(),
+                RawModuleDefV10::default(),
+            )])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
         });
     }
 

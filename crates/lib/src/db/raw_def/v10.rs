@@ -89,6 +89,9 @@ pub enum RawModuleDefV10Section {
 
     /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
+
+    /// Mounted submodules, keyed by the namespace they are mounted under.
+    Mounts(Vec<(String, RawModuleDefV10)>),
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -510,6 +513,14 @@ pub struct RawViewDefV10 {
 }
 
 impl RawModuleDefV10 {
+    /// Get the mounted submodules for this module definition.
+    pub fn mounts(&self) -> Option<&Vec<(String, RawModuleDefV10)>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Mounts(mounts) => Some(mounts),
+            _ => None,
+        })
+    }
+
     /// Get the types section, if present.
     pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
         self.sections.iter().find_map(|s| match s {
