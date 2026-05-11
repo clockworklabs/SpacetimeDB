@@ -115,18 +115,6 @@ public:
         , right_join_ref_(right_join_ref)
         , where_expr_(std::move(where_expr)) {}
 
-    template<typename TFn>
-    [[nodiscard]] LeftSemiJoin where_col(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TLeftRow>(std::forward<TFn>(predicate)(left_.cols()));
-        return LeftSemiJoin(left_, right_, left_join_ref_, right_join_ref_, where_expr_ ? where_expr_->and_(extra) : std::optional<BoolExpr<TLeftRow>>(std::move(extra)));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] LeftSemiJoin where_ix(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TLeftRow>(std::forward<TFn>(predicate)(left_.cols(), left_.ix_cols()));
-        return LeftSemiJoin(left_, right_, left_join_ref_, right_join_ref_, where_expr_ ? where_expr_->and_(extra) : std::optional<BoolExpr<TLeftRow>>(std::move(extra)));
-    }
-
     // `where` is the ergonomic entry point: it dispatches to `where_col` or
     // `where_ix` based on the predicate signature.
     template<typename TFn>
@@ -180,6 +168,18 @@ public:
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] LeftSemiJoin where_col(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TLeftRow>(std::forward<TFn>(predicate)(left_.cols()));
+        return LeftSemiJoin(left_, right_, left_join_ref_, right_join_ref_, where_expr_ ? where_expr_->and_(extra) : std::optional<BoolExpr<TLeftRow>>(std::move(extra)));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] LeftSemiJoin where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TLeftRow>(std::forward<TFn>(predicate)(left_.cols(), left_.ix_cols()));
+        return LeftSemiJoin(left_, right_, left_join_ref_, right_join_ref_, where_expr_ ? where_expr_->and_(extra) : std::optional<BoolExpr<TLeftRow>>(std::move(extra)));
+    }
+
     Table<TLeftRow, TLeftCols, TLeftIxCols> left_;
     Table<TRightRow, TRightCols, TRightIxCols> right_;
     ColumnRef<TLeftRow> left_join_ref_;
@@ -205,18 +205,6 @@ public:
         , right_join_ref_(right_join_ref)
         , left_where_expr_(std::move(left_where_expr))
         , right_where_expr_(std::move(right_where_expr)) {}
-
-    template<typename TFn>
-    [[nodiscard]] RightSemiJoin where_col(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRightRow>(std::forward<TFn>(predicate)(right_.cols()));
-        return RightSemiJoin(left_, right_, left_join_ref_, right_join_ref_, left_where_expr_, right_where_expr_ ? right_where_expr_->and_(extra) : std::optional<BoolExpr<TRightRow>>(std::move(extra)));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] RightSemiJoin where_ix(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRightRow>(std::forward<TFn>(predicate)(right_.cols(), right_.ix_cols()));
-        return RightSemiJoin(left_, right_, left_join_ref_, right_join_ref_, left_where_expr_, right_where_expr_ ? right_where_expr_->and_(extra) : std::optional<BoolExpr<TRightRow>>(std::move(extra)));
-    }
 
     // `where` is the ergonomic entry point: it dispatches to `where_col` or
     // `where_ix` based on the predicate signature.
@@ -282,6 +270,18 @@ public:
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] RightSemiJoin where_col(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRightRow>(std::forward<TFn>(predicate)(right_.cols()));
+        return RightSemiJoin(left_, right_, left_join_ref_, right_join_ref_, left_where_expr_, right_where_expr_ ? right_where_expr_->and_(extra) : std::optional<BoolExpr<TRightRow>>(std::move(extra)));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] RightSemiJoin where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRightRow>(std::forward<TFn>(predicate)(right_.cols(), right_.ix_cols()));
+        return RightSemiJoin(left_, right_, left_join_ref_, right_join_ref_, left_where_expr_, right_where_expr_ ? right_where_expr_->and_(extra) : std::optional<BoolExpr<TRightRow>>(std::move(extra)));
+    }
+
     Table<TLeftRow, TLeftCols, TLeftIxCols> left_;
     Table<TRightRow, TRightCols, TRightIxCols> right_;
     ColumnRef<TLeftRow> left_join_ref_;

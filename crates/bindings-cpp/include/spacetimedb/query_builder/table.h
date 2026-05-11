@@ -118,18 +118,6 @@ public:
 
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
-    template<typename TFn>
-    [[nodiscard]] auto where_col(TFn&& predicate) const {
-        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
-        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] auto where_ix(TFn&& predicate) const {
-        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_, ix_cols_));
-        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
-    }
-
     // `where` is the ergonomic entry point: it dispatches to `where_col` or
     // `where_ix` based on the predicate signature.
     template<typename TFn>
@@ -173,6 +161,18 @@ public:
     }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] auto where_col(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] auto where_ix(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_, ix_cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
+    }
+
     const char* table_name_;
     TCols cols_;
     TIxCols ix_cols_;
@@ -204,18 +204,6 @@ public:
     }
 
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
-
-    template<typename TFn>
-    [[nodiscard]] FromWhere where_col(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
-        return FromWhere(table_, expr_.and_(extra));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] FromWhere where_ix(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols(), table_.ix_cols()));
-        return FromWhere(table_, expr_.and_(extra));
-    }
 
     // `where` is the ergonomic entry point: it dispatches to `where_col` or
     // `where_ix` based on the predicate signature.
@@ -260,6 +248,18 @@ public:
     }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] FromWhere where_col(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] FromWhere where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols(), table_.ix_cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
     Table<TRow, TCols, TIxCols> table_;
     BoolExpr<TRow> expr_;
 };
