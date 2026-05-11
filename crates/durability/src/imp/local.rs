@@ -11,8 +11,6 @@ use futures::FutureExt as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
 use scopeguard::ScopeGuard;
-#[cfg(any(test, feature = "test"))]
-use spacetimedb_commitlog::repo::Memory;
 use spacetimedb_commitlog::{
     error,
     payload::Txdata,
