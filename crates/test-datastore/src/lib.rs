@@ -8,11 +8,18 @@ use std::sync::Arc;
 
 use spacetimedb_core::db::relational_db::{MutTx, RelationalDB, Tx};
 use spacetimedb_core::error::{DBError, DatastoreError, IndexError, SequenceError};
+use spacetimedb_core::estimation::{check_row_limit, estimate_rows_scanned};
+use spacetimedb_core::sql::ast::SchemaViewer;
 use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
+use spacetimedb_datastore::{execution_context::Workload, traits::IsolationLevel};
+use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::bsatn::ToBsatn;
-use spacetimedb_lib::{ProductValue, RawModuleDef};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::{Identity, ProductValue, RawModuleDef};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_query::{compile_sql_stmt, execute_select_stmt};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -226,6 +233,55 @@ impl TestDatastore {
             Ok(row_ref.project_product(&generated_cols)?.to_bsatn_vec()?)
         })
     }
+
+    /// Execute a read-only SQL select against the current datastore state.
+    pub fn run_select_query(
+        &self,
+        sql: &str,
+        database_identity: Identity,
+    ) -> Result<Vec<ProductValue>, TestDatastoreError> {
+        let auth = AuthCtx::for_current(database_identity);
+        let (tx, stmt) = self.db.with_auto_rollback(
+            self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql),
+            |tx| compile_sql_stmt(sql, &SchemaViewer::new(tx, &auth), &auth).map_err(TestDatastoreError::Query),
+        )?;
+
+        let Statement::Select(stmt) = stmt else {
+            let _ = self.db.rollback_mut_tx(tx);
+            return Err(TestDatastoreError::NonSelectQuery);
+        };
+
+        let (tx_data, tx_metrics_mut, tx) = self.db.commit_tx_downgrade(tx, Workload::Sql);
+        self.db.report_mut_tx_metrics(None, tx_metrics_mut, Some(tx_data));
+
+        let db = self.db.clone();
+        let mut tx = scopeguard::guard(tx, |tx| {
+            let (_, metrics, reducer) = db.release_tx(tx);
+            db.report_read_tx_metrics(reducer, metrics);
+        });
+
+        let mut metrics = ExecutionMetrics::default();
+        let rows = execute_select_stmt(
+            &auth,
+            stmt,
+            &spacetimedb_core::subscription::tx::DeltaTx::from(&*tx),
+            &mut metrics,
+            |plan| {
+                check_row_limit(
+                    &[&plan],
+                    &self.db,
+                    &tx,
+                    |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
+                    &auth,
+                )?;
+                Ok(plan)
+            },
+        )
+        .map_err(TestDatastoreError::Query)?;
+
+        tx.metrics.merge(metrics);
+        Ok(rows)
+    }
 }
 
 impl TestTransaction {
@@ -408,6 +464,10 @@ pub enum TestDatastoreError {
     InvalidProjection(#[from] spacetimedb_lib::sats::product_value::InvalidFieldError),
     #[error("BSATN encode error: {0}")]
     BsatnEncode(#[from] EncodeError),
+    #[error("query error: {0}")]
+    Query(anyhow::Error),
+    #[error("test query must be a SELECT statement")]
+    NonSelectQuery,
     #[error("transaction already finished")]
     TransactionAlreadyFinished,
 }
@@ -440,6 +500,18 @@ mod tests {
             .build_table_with_new_type(
                 "person",
                 ProductType::from([("id", AlgebraicType::I64), ("value", AlgebraicType::I64)]),
+                true,
+            )
+            .with_unique_constraint(0)
+            .with_index_no_accessor_name(btree(0));
+        builder
+            .build_table_with_new_type(
+                "pet",
+                ProductType::from([
+                    ("id", AlgebraicType::I64),
+                    ("owner_id", AlgebraicType::I64),
+                    ("name", AlgebraicType::String),
+                ]),
                 true,
             )
             .with_unique_constraint(0)
@@ -491,6 +563,87 @@ mod tests {
 
         let err = TestDatastore::from_module_def(RawModuleDef::V9(builder.finish())).unwrap_err();
         assert!(matches!(err, TestDatastoreError::ModuleDef(_)));
+    }
+
+    #[test]
+    fn run_select_query_returns_rows() {
+        let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
+        let person = datastore.table_id("person").unwrap();
+        datastore
+            .insert_bsatn(person, &bsatn::to_vec(&(1_i64, 10_i64)).unwrap())
+            .unwrap();
+        datastore
+            .insert_bsatn(person, &bsatn::to_vec(&(2_i64, 20_i64)).unwrap())
+            .unwrap();
+
+        let rows = datastore
+            .run_select_query(r#"SELECT * FROM "person""#, Identity::ZERO)
+            .unwrap();
+
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn run_select_query_filters_rows() {
+        let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
+        let person = datastore.table_id("person").unwrap();
+        datastore
+            .insert_bsatn(person, &bsatn::to_vec(&(1_i64, 10_i64)).unwrap())
+            .unwrap();
+        datastore
+            .insert_bsatn(person, &bsatn::to_vec(&(2_i64, 20_i64)).unwrap())
+            .unwrap();
+
+        let rows = datastore
+            .run_select_query(r#"SELECT * FROM "person" WHERE "person"."value" = 20"#, Identity::ZERO)
+            .unwrap();
+
+        assert_eq!(rows, vec![ProductValue::from([2_i64.into(), 20_i64.into()])]);
+    }
+
+    #[test]
+    fn run_select_query_supports_joins() {
+        let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
+        let person = datastore.table_id("person").unwrap();
+        let pet = datastore.table_id("pet").unwrap();
+        datastore
+            .insert_bsatn(person, &bsatn::to_vec(&(1_i64, 10_i64)).unwrap())
+            .unwrap();
+        datastore
+            .insert_bsatn(person, &bsatn::to_vec(&(2_i64, 20_i64)).unwrap())
+            .unwrap();
+        datastore
+            .insert_bsatn(pet, &bsatn::to_vec(&(1_i64, 2_i64, "Mochi")).unwrap())
+            .unwrap();
+
+        let rows = datastore
+            .run_select_query(
+                r#"SELECT "person".* FROM "person" JOIN "pet" ON "person"."id" = "pet"."owner_id""#,
+                Identity::ZERO,
+            )
+            .unwrap();
+
+        assert_eq!(rows, vec![ProductValue::from([2_i64.into(), 20_i64.into()])]);
+    }
+
+    #[test]
+    fn run_select_query_rejects_non_select_sql() {
+        let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
+        let err = datastore
+            .run_select_query(r#"INSERT INTO "person" ("id", "value") VALUES (1, 10)"#, Identity::ZERO)
+            .unwrap_err();
+
+        assert!(matches!(err, TestDatastoreError::NonSelectQuery));
+    }
+
+    #[test]
+    fn run_select_query_returns_query_errors() {
+        let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
+        let err = datastore
+            .run_select_query(r#"SELECT * FROM "missing""#, Identity::ZERO)
+            .unwrap_err();
+
+        assert!(matches!(err, TestDatastoreError::Query(_)));
     }
 
     #[test]

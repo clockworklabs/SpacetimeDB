@@ -299,6 +299,83 @@ mod tests {
         response.into_body().into_string().map_err(|err| err.to_string())
     }
 
+    fn online_users_query(from: spacetimedb::QueryBuilder) -> impl spacetimedb::Query<User> {
+        from.user().r#where(|user| user.online).build()
+    }
+
+    #[test]
+    fn test_context_can_run_typed_query() {
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let alice = Identity::from_claims("issuer", "alice");
+        let bob = Identity::from_claims("issuer", "bob");
+
+        test.db.user().insert(User {
+            identity: alice,
+            name: Some("Alice".to_string()),
+            online: true,
+        });
+        test.db.user().insert(User {
+            identity: bob,
+            name: Some("Bob".to_string()),
+            online: false,
+        });
+
+        let rows: Vec<User> = test
+            .run_query(spacetimedb::QueryBuilder {}.user().build())
+            .expect("typed query should execute");
+
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|user| user.identity == alice));
+        assert!(rows.iter().any(|user| user.identity == bob));
+    }
+
+    #[test]
+    fn test_context_can_run_filtered_query() {
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let alice = Identity::from_claims("issuer", "alice");
+        let bob = Identity::from_claims("issuer", "bob");
+
+        test.db.user().insert(User {
+            identity: alice,
+            name: Some("Alice".to_string()),
+            online: true,
+        });
+        test.db.user().insert(User {
+            identity: bob,
+            name: Some("Bob".to_string()),
+            online: false,
+        });
+
+        let rows: Vec<User> = test
+            .run_query(spacetimedb::QueryBuilder {}.user().r#where(|user| user.online).build())
+            .expect("filtered query should execute");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].identity, alice);
+        assert_eq!(rows[0].name.as_deref(), Some("Alice"));
+        assert!(rows[0].online);
+    }
+
+    #[test]
+    fn test_context_can_run_query_returning_view_pattern() {
+        let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+        let sender = Identity::ZERO;
+        test.db.user().insert(User {
+            identity: sender,
+            name: Some("Alice".to_string()),
+            online: true,
+        });
+
+        let rows: Vec<User> = test
+            .run_query(online_users_query(spacetimedb::QueryBuilder {}))
+            .expect("query-returning view pattern should execute");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].identity, sender);
+        assert_eq!(rows[0].name.as_deref(), Some("Alice"));
+        assert!(rows[0].online);
+    }
+
     #[test]
     fn test_procedure_context_can_mock_http() {
         let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");

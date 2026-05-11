@@ -232,6 +232,34 @@ impl std::fmt::Display for TestAuthError {
 #[cfg(not(target_arch = "wasm32"))]
 impl std::error::Error for TestAuthError {}
 
+/// Errors returned when executing typed test queries.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+pub enum TestQueryError {
+    Datastore(TestDatastoreError),
+    Decode(spacetimedb_lib::sats::algebraic_value::de::ValueDeserializeError),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::fmt::Display for TestQueryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Datastore(error) => write!(f, "{error}"),
+            Self::Decode(error) => write!(f, "query row decode error: {error:?}"),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::error::Error for TestQueryError {}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<TestDatastoreError> for TestQueryError {
+    fn from(error: TestDatastoreError) -> Self {
+        Self::Datastore(error)
+    }
+}
+
 /// Hooks invoked at procedure transaction boundaries in native unit tests.
 #[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
 #[derive(Default)]
@@ -357,6 +385,25 @@ impl TestContext {
     /// The underlying in-memory datastore.
     pub fn datastore(&self) -> &std::sync::Arc<TestDatastore> {
         &self.datastore
+    }
+
+    /// Execute a typed querybuilder query against the current test database.
+    pub fn run_query<Row, Q>(&self, query: Q) -> Result<Vec<Row>, TestQueryError>
+    where
+        Q: crate::Query<Row>,
+        Row: crate::SpacetimeType + crate::DeserializeOwned,
+    {
+        let rows = self.datastore.run_select_query(&query.into_sql(), self.identity)?;
+        rows.into_iter()
+            .map(|row| {
+                <Row as crate::Deserialize>::deserialize(
+                    spacetimedb_lib::sats::algebraic_value::de::ValueDeserializer::new(
+                        spacetimedb_lib::AlgebraicValue::product(row),
+                    ),
+                )
+                .map_err(TestQueryError::Decode)
+            })
+            .collect()
     }
 
     /// Set the HTTP responder used by future procedure contexts created from this test context.

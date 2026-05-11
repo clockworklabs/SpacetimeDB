@@ -8760,10 +8760,14 @@ dependencies = [
 name = "spacetimedb-test-datastore"
 version = "2.1.0"
 dependencies = [
+ "anyhow",
+ "scopeguard",
  "spacetimedb-core",
  "spacetimedb-datastore",
+ "spacetimedb-expr",
  "spacetimedb-lib 2.1.0",
  "spacetimedb-primitives 2.1.0",
+ "spacetimedb-query",
  "spacetimedb-schema",
  "thiserror 1.0.69",
 ]

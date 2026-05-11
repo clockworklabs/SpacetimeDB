@@ -1,6 +1,6 @@
 use spacetimedb::spacetimedb_lib::RawModuleDef;
-use spacetimedb::test_utils::TestAuth;
-use spacetimedb::{reducer, table, ReducerContext, Table, Timestamp};
+use spacetimedb::test_utils::{TestAuth, TestQueryError};
+use spacetimedb::{reducer, table, Query, ReducerContext, Table, Timestamp};
 
 #[table(accessor = test_utils_user, public)]
 #[derive(Debug, PartialEq, Eq)]
@@ -22,6 +22,12 @@ pub struct TestUtilsEvent {
 #[reducer]
 pub fn add_test_utils_user(_ctx: &ReducerContext, id: u64, name: String) {
     let _ = (id, name);
+}
+
+fn query_test_utils_users_by_name(from: spacetimedb::QueryBuilder, name: &str) -> impl Query<TestUtilsUser> {
+    from.test_utils_user()
+        .r#where(|user| user.name.eq(name.to_owned()))
+        .build()
 }
 
 // You can run these with `cargo test -p spacetimedb --features test-utils --test test_utils`
@@ -83,6 +89,106 @@ fn test_context_supports_basic_table_insert_and_iter() {
         vec![TestUtilsUser {
             id: 1,
             name: "Ada".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn test_context_run_query_returns_typed_rows() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 1,
+        name: "Ada".to_owned(),
+    });
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 2,
+        name: "Grace".to_owned(),
+    });
+
+    let rows: Vec<TestUtilsUser> = test
+        .run_query(spacetimedb::QueryBuilder {}.test_utils_user().build())
+        .expect("query should execute");
+
+    assert_eq!(
+        rows,
+        vec![
+            TestUtilsUser {
+                id: 1,
+                name: "Ada".to_owned(),
+            },
+            TestUtilsUser {
+                id: 2,
+                name: "Grace".to_owned(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn test_context_run_query_supports_query_returning_view_pattern() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 1,
+        name: "Ada".to_owned(),
+    });
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 2,
+        name: "Grace".to_owned(),
+    });
+
+    let query = query_test_utils_users_by_name(spacetimedb::QueryBuilder {}, "Ada");
+    let rows: Vec<TestUtilsUser> = test.run_query(query).expect("query should execute");
+
+    assert_eq!(
+        rows,
+        vec![TestUtilsUser {
+            id: 1,
+            name: "Ada".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn test_context_run_query_decode_mismatch_returns_error() {
+    #[derive(Debug, spacetimedb::SpacetimeType)]
+    struct WrongRow {
+        id: u64,
+        name: u64,
+    }
+
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 1,
+        name: "Ada".to_owned(),
+    });
+
+    let query = spacetimedb::RawQuery::<WrongRow>::new(r#"SELECT * FROM "test_utils_user""#.to_owned());
+    let err = test.run_query(query).unwrap_err();
+
+    assert!(matches!(err, TestQueryError::Decode(_)));
+}
+
+#[test]
+fn test_context_run_query_sees_reducer_committed_state() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
+        ctx.db.test_utils_user().insert(TestUtilsUser {
+            id: 3,
+            name: "Reducer committed".to_owned(),
+        });
+        Ok(())
+    })
+    .expect("transaction should commit");
+
+    let rows: Vec<TestUtilsUser> = test
+        .run_query(spacetimedb::QueryBuilder {}.test_utils_user().build())
+        .expect("query should execute");
+
+    assert_eq!(
+        rows,
+        vec![TestUtilsUser {
+            id: 3,
+            name: "Reducer committed".to_owned(),
         }]
     );
 }
