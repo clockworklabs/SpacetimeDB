@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that uses multiple product types as table columns.
+Write a SpacetimeDB backend module in TypeScript that defines product types and uses them as columns in a table.
 
 TYPES
 - Address
@@ -11,13 +11,13 @@ TYPES
 TABLE
 - profile
   - Fields:
-    - id: number (i32, primary key)
+    - id: number (u64, primary key, autoInc)
     - home: Address
     - work: Address
     - pos: Position
 
 REDUCERS
-- seed: insert one row with all nested types:
+- seed: insert one row with all nested types (id is auto-assigned):
   - home: { street: "1 Main", zip: 11111 }
   - work: { street: "2 Broad", zip: 22222 }
   - pos: { x: 7, y: 9 }

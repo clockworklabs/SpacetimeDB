@@ -1,16 +1,16 @@
-﻿Write a SpacetimeDB backend module in Rust that defines one table and seeds two rows.
+Write a SpacetimeDB backend module in Rust that defines one table and seeds two rows.
 
 TABLE
 - account
   - Struct: Account
   - Columns:
-    - id: i32 (primary key)
+    - id: u64 (primary key, auto_inc)
     - email: String (unique)
     - name: String
   - Indexes:
     - by_name: btree(name)
 
 REDUCERS
-- seed: insert exactly these rows into account
-  - (1, "a@example.com", "Alice")
-  - (2, "b@example.com", "Bob")
+- seed: insert exactly these rows into account (IDs are auto-assigned)
+  - (email="a@example.com", name="Alice")
+  - (email="b@example.com", name="Bob")

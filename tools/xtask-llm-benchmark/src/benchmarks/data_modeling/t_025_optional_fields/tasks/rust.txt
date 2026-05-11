@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in Rust that defines a table with optional (nullable) fields and a reducer that inserts rows with and without optional values.
+
+TABLES
+- player
+  - Struct: Player
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - name: String
+    - nickname: Option<String>
+    - high_score: Option<u32>
+
+REDUCERS
+- create_player(ctx, name: String, nickname: Option<String>, high_score: Option<u32>)
+  - Insert a Player row, passing through the optional fields as-is
+  - Use id: 0 for auto_inc
