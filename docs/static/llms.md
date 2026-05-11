@@ -154,7 +154,7 @@ Getting started with SpacetimeDB involves a few key steps:
       # Note: `--network host` is often needed to connect to a local server from the container.
       ```
 
-    - For more details or troubleshooting, see the official [Getting Started Guide](https://spacetimedb.com/docs/getting-started) and [Installation Page](https://spacetimedb.com/install).
+    - For more details or troubleshooting, see the official [Getting Started Guide](https://spacetimedb.com/docs/) and [Installation Page](https://spacetimedb.com/install).
 
 1.b **Log In (If Necessary):** If you plan to publish to a server that requires authentication (like the public Maincloud at `maincloud.spacetimedb.com`), you generally need to log in first using `spacetime login`. This associates your actions with your global SpacetimeDB identity (e.g., linked to your spacetimedb.com account).
 `bash
