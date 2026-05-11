@@ -10,7 +10,7 @@ use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
     ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance,
-    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    SqlCommand, SqlCommandResult, ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
@@ -23,7 +23,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
-use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, CommitAndBroadcastEventSuccess};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
@@ -33,6 +33,7 @@ use core::future::Future;
 use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
@@ -550,6 +551,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.trapped = trapped;
         res
     }
+
+    pub(in crate::host) fn call_sql(&mut self, cmd: SqlCommand) -> SqlCommandResult {
+        let (res, trapped) = self.common.handle_sql_cmd(cmd, &mut self.instance);
+        self.trapped = trapped;
+        res
+    }
 }
 
 pub struct InstanceCommon {
@@ -617,8 +624,6 @@ impl InstanceCommon {
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
         let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
-        let mut energy_quanta_used = FunctionBudget::ZERO;
-        let mut host_execution_duration = Duration::ZERO;
 
         match res {
             Err(e) => {
@@ -631,14 +636,42 @@ impl InstanceCommon {
             Ok(res) => {
                 system_logger.info("Database updated");
                 log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
+
+                let succeed = |info: Arc<ModuleInfo>,
+                               energy_quanta_used: EnergyQuanta,
+                               host_execution_duration: Duration,
+                               tx: MutTxId|
+                 -> TransactionOffset {
+                    let event = ModuleEvent {
+                        timestamp: Timestamp::now(),
+                        caller_identity: info.owner_identity,
+                        caller_connection_id: None,
+                        function_call: ModuleFunctionCall::update(),
+                        status: EventStatus::Committed(DatabaseUpdate::default()),
+                        reducer_return_value: None,
+                        energy_quanta_used,
+                        host_execution_duration,
+                        request_id: None,
+                        timer: None,
+                    };
+                    let CommitAndBroadcastEventSuccess { tx_offset, .. } =
+                        commit_and_broadcast_event(&info.subscriptions, None, event, tx);
+
+                    tx_offset
+                };
+                let durable_offset = stdb.durable_tx_offset();
+
                 let res: UpdateDatabaseResult = match res {
-                    crate::db::update::UpdateResult::Success => UpdateDatabaseResult::UpdatePerformed,
+                    crate::db::update::UpdateResult::Success => {
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        UpdateDatabaseResult::UpdatePerformed {
+                            tx_offset,
+                            durable_offset,
+                        }
+                    }
                     crate::db::update::UpdateResult::EvaluateSubscribedViews => {
                         let (out, trapped) = self.evaluate_subscribed_views(tx, inst)?;
                         tx = out.tx;
-                        energy_quanta_used = out.energy_used;
-                        host_execution_duration = out.total_duration;
-
                         if trapped || out.outcome != ViewOutcome::Success {
                             let msg = match trapped {
                                 true => "Trapped while evaluating views during database update".to_string(),
@@ -648,35 +681,26 @@ impl InstanceCommon {
                                 ),
                             };
 
+                            let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                            stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                             UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
                         } else {
-                            UpdateDatabaseResult::UpdatePerformed
+                            let tx_offset = succeed(self.info.clone(), out.energy_used.into(), out.total_duration, tx);
+                            UpdateDatabaseResult::UpdatePerformed {
+                                tx_offset,
+                                durable_offset,
+                            }
                         }
                     }
                     crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                            tx_offset,
+                            durable_offset,
+                        }
                     }
                 };
 
-                if res.was_successful() {
-                    let event = ModuleEvent {
-                        timestamp: Timestamp::now(),
-                        caller_identity: self.info.owner_identity,
-                        caller_connection_id: None,
-                        function_call: ModuleFunctionCall::update(),
-                        status: EventStatus::Committed(DatabaseUpdate::default()),
-                        reducer_return_value: None,
-                        energy_quanta_used: energy_quanta_used.into(),
-                        host_execution_duration,
-                        request_id: None,
-                        timer: None,
-                    };
-                    //TODO: Return back event in `UpdateDatabaseResult`?
-                    let _ = commit_and_broadcast_event(&self.info.subscriptions, None, event, tx);
-                } else {
-                    let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                    stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
-                }
                 Ok(res)
             }
         }
@@ -1018,111 +1042,126 @@ impl InstanceCommon {
 
     pub(crate) fn handle_cmd<I: WasmInstance>(&mut self, cmds: ViewCommand, inst: &mut I) -> (ViewCommandResult, bool) {
         let info = self.info.clone();
+        let error_target = cmds.error_target();
         let mut inst = RefInstance {
             instance: inst,
             common: self,
         };
-        match cmds {
+        let (res, trapped) = match cmds {
             ViewCommand::AddSingleSubscription {
                 sender,
                 auth,
                 request,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_single_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .add_single_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::AddLegacySubscription {
                 sender,
                 auth,
                 subscribe,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_legacy_subscriber_with_instance(&mut inst, sender, auth, subscribe, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (
-                        ViewCommandResult::Subscription {
-                            result: Ok(Some(metrics)),
-                        },
-                        trapped,
-                    ),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .add_legacy_subscriber_with_instance(&mut inst, sender, auth, subscribe, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(Some(metrics)), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::AddSubscriptionV2 {
                 sender,
                 auth,
                 request,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
+            ViewCommand::RemoveSingleSubscription {
+                sender,
+                auth,
+                request,
+                timer,
+            } => (
+                info.subscriptions
+                    .remove_single_subscription(sender, auth, request, timer),
+                false,
+            ),
             ViewCommand::RemoveSubscriptionV2 {
                 sender,
                 auth,
                 request,
                 timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
+            ViewCommand::RemoveMultiSubscription {
+                sender,
+                auth,
+                request,
+                timer,
+            } => (
+                info.subscriptions
+                    .remove_multi_subscription(sender, auth, request, timer),
+                false,
+            ),
             ViewCommand::AddMultiSubscription {
                 sender,
                 auth,
                 request,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_multi_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
+            } => match info
+                .subscriptions
+                .add_multi_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
+        };
+        if let Err(err) = &res {
+            error_target.send(&info.subscriptions, err);
+        }
+        (res, trapped)
+    }
 
-                match res {
-                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
-                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
-                }
-            }
-            ViewCommand::Sql {
-                db,
-                sql_text,
-                auth,
-                subs,
-            } => {
-                let mut head = vec![];
-                let res = run_with_instance(&mut inst, db, sql_text, auth, subs, &mut head);
+    pub(in crate::host) fn handle_sql_cmd<I: WasmInstance>(
+        &mut self,
+        cmd: SqlCommand,
+        inst: &mut I,
+    ) -> (SqlCommandResult, bool) {
+        let mut inst = RefInstance {
+            instance: inst,
+            common: self,
+        };
+        let SqlCommand {
+            db,
+            sql_text,
+            auth,
+            subs,
+        } = cmd;
+        let mut head = vec![];
+        let res = run_with_instance(&mut inst, db, sql_text, auth, subs, &mut head);
 
-                match res {
-                    Ok((result, trapped)) => (
-                        ViewCommandResult::Sql {
-                            result: Ok(result),
-                            head,
-                        },
-                        trapped,
-                    ),
-                    Err(err) => (ViewCommandResult::Sql { result: Err(err), head }, false),
-                }
-            }
+        match res {
+            Ok((result, trapped)) => (
+                SqlCommandResult {
+                    result: Ok(result),
+                    head,
+                },
+                trapped,
+            ),
+            Err(err) => (SqlCommandResult { result: Err(err), head }, false),
         }
     }
 

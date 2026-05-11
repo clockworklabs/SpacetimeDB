@@ -319,10 +319,10 @@ impl Cores {
     /// Get the cores of the local host, as reported by the operating system.
     ///
     /// Returns `None` if `num_cpus` is less than 8
-    /// or if core pinning is disabled.
+    /// or if core pinning is not enabled.
     /// If `Some` is returned, the `Vec` is non-empty.
     pub fn get_core_ids() -> Option<Vec<CoreId>> {
-        if cfg!(feature = "no-core-pinning") {
+        if cfg!(not(feature = "core-pinning")) {
             return None;
         }
 

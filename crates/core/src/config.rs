@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::time::Duration;
 use std::{fmt, io};
@@ -132,15 +133,47 @@ impl fmt::Display for MetadataFile {
     }
 }
 
+#[derive(Default)]
+pub struct ConfigFile {
+    pub certificate_authority: Option<CertificateAuthority>,
+    pub logs: LogConfig,
+    pub wasm: WasmConfig,
+    pub v8: V8Config,
+}
+
 #[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct ConfigFile {
+struct ConfigFileToml {
     #[serde(default)]
-    pub certificate_authority: Option<CertificateAuthority>,
+    certificate_authority: Option<CertificateAuthority>,
     #[serde(default)]
-    pub logs: LogConfig,
+    logs: LogConfig,
     #[serde(default)]
-    pub v8_heap_policy: V8HeapPolicyConfig,
+    wasm: WasmConfigToml,
+    #[serde(default)]
+    v8: V8ConfigToml,
+    #[serde(default)]
+    v8_heap_policy: V8HeapPolicyConfig,
+}
+
+impl<'de> serde::Deserialize<'de> for ConfigFile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let config = ConfigFileToml::deserialize(deserializer)?;
+        Ok(Self {
+            certificate_authority: config.certificate_authority,
+            logs: config.logs,
+            wasm: WasmConfig {
+                procedure_instance_pool_size: config.wasm.procedure_instance_pool_size,
+            },
+            v8: V8Config {
+                procedure_instance_pool_size: config.v8.procedure_instance_pool_size,
+                heap_policy: config.v8_heap_policy,
+            },
+        })
+    }
 }
 
 impl ConfigFile {
@@ -177,6 +210,77 @@ pub struct LogConfig {
     pub level: Option<tracing_core::LevelFilter>,
     #[serde(default)]
     pub directives: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WasmConfig {
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for WasmConfig {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct WasmConfigToml {
+    #[serde(
+        default = "default_wasm_procedure_instance_pool_size",
+        deserialize_with = "de_nz_usize"
+    )]
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for WasmConfigToml {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct V8Config {
+    pub procedure_instance_pool_size: NonZeroUsize,
+    pub heap_policy: V8HeapPolicyConfig,
+}
+
+impl Default for V8Config {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
+            heap_policy: V8HeapPolicyConfig::default(),
+        }
+    }
+}
+
+impl V8Config {
+    pub fn normalized(mut self) -> Self {
+        self.heap_policy = self.heap_policy.normalized();
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct V8ConfigToml {
+    #[serde(
+        default = "default_v8_procedure_instance_pool_size",
+        deserialize_with = "de_nz_usize"
+    )]
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for V8ConfigToml {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -250,6 +354,22 @@ fn def_retire() -> f64 {
 fn def_heap_limit() -> usize {
     // 1 GiB
     1024 * 1024 * 1024
+}
+
+fn default_v8_procedure_instance_pool_size() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
+}
+
+fn default_wasm_procedure_instance_pool_size() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
+}
+
+fn de_nz_usize<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = usize::deserialize(deserializer)?;
+    NonZeroUsize::new(value).ok_or_else(|| serde::de::Error::custom("value must be greater than 0"))
 }
 
 fn de_nz_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -442,19 +562,33 @@ mod tests {
     fn v8_heap_policy_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
 
-        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(4_096));
         assert_eq!(
-            config.v8_heap_policy.heap_check_time_interval,
+            config.wasm.procedure_instance_pool_size,
+            default_wasm_procedure_instance_pool_size()
+        );
+        assert_eq!(
+            config.v8.procedure_instance_pool_size,
+            default_v8_procedure_instance_pool_size()
+        );
+        assert_eq!(config.v8.heap_policy.heap_check_request_interval, Some(4_096));
+        assert_eq!(
+            config.v8.heap_policy.heap_check_time_interval,
             Some(Duration::from_secs(5))
         );
-        assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.67);
-        assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.75);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 1024 * 1024 * 1024);
+        assert_eq!(config.v8.heap_policy.heap_gc_trigger_fraction, 0.67);
+        assert_eq!(config.v8.heap_policy.heap_retire_fraction, 0.75);
+        assert_eq!(config.v8.heap_policy.heap_limit_bytes, 1024 * 1024 * 1024);
     }
 
     #[test]
     fn v8_heap_policy_parses_from_toml() {
         let toml = r#"
+            [wasm]
+            procedure-instance-pool-size = 4
+
+            [v8]
+            procedure-instance-pool-size = 3
+
             [v8-heap-policy]
             heap-check-request-interval = 0
             heap-check-time-interval = "45s"
@@ -465,13 +599,15 @@ mod tests {
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
 
-        assert_eq!(config.v8_heap_policy.heap_check_request_interval, None);
+        assert_eq!(config.wasm.procedure_instance_pool_size.get(), 4);
+        assert_eq!(config.v8.procedure_instance_pool_size.get(), 3);
+        assert_eq!(config.v8.heap_policy.heap_check_request_interval, None);
         assert_eq!(
-            config.v8_heap_policy.heap_check_time_interval,
+            config.v8.heap_policy.heap_check_time_interval,
             Some(Duration::from_secs(45))
         );
-        assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
-        assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, 256 * 1024 * 1024);
+        assert_eq!(config.v8.heap_policy.heap_gc_trigger_fraction, 0.6);
+        assert_eq!(config.v8.heap_policy.heap_retire_fraction, 0.8);
+        assert_eq!(config.v8.heap_policy.heap_limit_bytes, 256 * 1024 * 1024);
     }
 }

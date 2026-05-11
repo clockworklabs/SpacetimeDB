@@ -280,7 +280,7 @@ SPACETIMEDB_REDUCER(list_over_age, ReducerContext ctx, uint8_t age) {
 
 // Log module identity
 SPACETIMEDB_REDUCER(log_module_identity, ReducerContext ctx) {
-    LOG_INFO("Module identity: " + ctx.identity().to_string());
+    LOG_INFO("Module identity: " + ctx.database_identity().to_string());
     return Ok();
 }
 
@@ -550,8 +550,8 @@ SPACETIMEDB_REDUCER(test_btree_index_args, ReducerContext ctx) {
 
 // Test reducer for assertions
 SPACETIMEDB_REDUCER(assert_caller_identity_is_module_identity, ReducerContext ctx) {
-    LOG_INFO("Sender: " + ctx.sender().to_string() + " Identity: " + ctx.identity().to_string());
-    if (ctx.sender() != ctx.identity()) {
+    LOG_INFO("Sender: " + ctx.sender().to_string() + " Identity: " + ctx.database_identity().to_string());
+    if (ctx.sender() != ctx.database_identity()) {
         LOG_ERROR("Assertion failed: caller identity does not match module identity");
     } else {
         LOG_INFO("Assertion passed: caller identity matches module identity");
@@ -693,7 +693,7 @@ SPACETIMEDB_PROCEDURE(Unit, with_tx, ProcedureContext ctx) {
 
 // Hit SpacetimeDB's schema HTTP route and return its result as a string
 SPACETIMEDB_PROCEDURE(std::string, get_my_schema_via_http, ProcedureContext ctx) {
-    Identity module_identity = ctx.identity();
+    Identity module_identity = ctx.database_identity();
     std::string url = "http://localhost:3000/v1/database/" + module_identity.to_string() + "/schema?version=9";
     
     auto result = ctx.http.get(url);
