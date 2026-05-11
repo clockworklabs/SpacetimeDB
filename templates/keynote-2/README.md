@@ -41,6 +41,8 @@ Each cell shows **mean TPS ± sample standard deviation** across 3 × 60-second 
 
 All systems were tested with **out-of-the-box default settings**, with one exception: Postgres (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'` for an apples-to-apples comparison. No other custom tuning or configuration optimization was applied.
 
+Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
+
 The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
 
 ### Test Architecture
@@ -59,7 +61,15 @@ Client → Integrated Platform (compute + storage colocated)
 
 This ensures we're measuring real-world application performance, not raw database throughput.
 
-Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
+### Machine Topology
+
+The reported numbers use a single benchmark host wherever possible. This means client, server, and database were all run on the same machine.
+
+We did this mainly for ease of testing and reproducibility, but also because it was a more favorable set up for the other platforms we tested against.
+
+We also tested separated-machine topologies, where the benchmark client, server, and database processes were not colocated on one machine. However that did not improve the throughput of the other systems. The added network hop actually made those systems slower.
+
+The platforms that cannot use this exact topology are PlanetScale and CockroachDB. Both are managed cloud database, so the benchmark client and RPC server are colocated on the benchmark host while the database/cluster is remote.
 
 ### The Transaction
 
