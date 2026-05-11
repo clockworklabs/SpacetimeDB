@@ -1255,6 +1255,12 @@ pub struct ProcedureContext {
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     test_datastore: Option<std::sync::Arc<spacetimedb_test_datastore::TestDatastore>>,
 
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test_hook_context: Option<crate::test_utils::ProcedureHookContext>,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test_hooks: Option<crate::test_utils::ProcedureTestHooks>,
+
     #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
     test_rng_seed: Option<u64>,
 
@@ -1285,6 +1291,10 @@ impl ProcedureContext {
             module_identity: Identity::ZERO,
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             test_datastore: None,
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            test_hook_context: None,
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            test_hooks: None,
             #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
             test_rng_seed: None,
             http: http::HttpClient::host(),
@@ -1305,6 +1315,8 @@ impl ProcedureContext {
         timestamp: Timestamp,
         module_identity: Identity,
         http: http::HttpClient,
+        hook_context: crate::test_utils::ProcedureHookContext,
+        hooks: crate::test_utils::ProcedureTestHooks,
         #[cfg(feature = "rand08")] rng_seed: Option<u64>,
     ) -> Self {
         Self {
@@ -1314,6 +1326,8 @@ impl ProcedureContext {
             sender_auth,
             module_identity,
             test_datastore: Some(datastore),
+            test_hook_context: Some(hook_context),
+            test_hooks: Some(hooks),
             #[cfg(feature = "rand08")]
             test_rng_seed: rng_seed,
             http,
@@ -1499,13 +1513,26 @@ impl ProcedureContext {
                     let (retry_res, retry_tx) = run();
                     res = retry_res;
                     match res {
-                        Ok(_) => retry_tx.commit().expect("test transaction retry failed again"),
+                        Ok(_) => {
+                            retry_tx.commit().expect("test transaction retry failed again");
+                            if let (Some(hooks), Some(hook_context)) =
+                                (self.test_hooks.as_mut(), self.test_hook_context.as_ref())
+                            {
+                                hooks.__run_after_tx_commit(hook_context);
+                            }
+                        }
                         Err(_) => retry_tx
                             .rollback()
                             .expect("should have a pending mutable test transaction"),
                     }
                 }
-                Ok(_) => {}
+                Ok(_) => {
+                    if let (Some(hooks), Some(hook_context)) =
+                        (self.test_hooks.as_mut(), self.test_hook_context.as_ref())
+                    {
+                        hooks.__run_after_tx_commit(hook_context);
+                    }
+                }
                 Err(_) => tx.rollback().expect("should have a pending mutable test transaction"),
             }
 
@@ -1702,14 +1729,14 @@ impl Local {
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     fn __test(datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>) -> Self {
         Self {
-            backend: table::LocalBackend::Test(datastore),
+            backend: table::LocalBackend::Test { datastore },
         }
     }
 
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     fn __test_tx(tx: std::rc::Rc<spacetimedb_test_datastore::TestTransaction>) -> Self {
         Self {
-            backend: table::LocalBackend::TestTx(tx),
+            backend: table::LocalBackend::TestTx { tx },
         }
     }
 }

@@ -220,9 +220,10 @@ mod tests {
         let timestamp = Timestamp::from_micros_since_unix_epoch(123);
         test.clock.set(timestamp);
 
-        // spacetimedb::test_utils::TestAuth::from_jwt_payload(jwt_payload, connection_id)
-        let ctx = test.reducer_context(spacetimedb::test_utils::TestAuth::internal());
-        send_message(&ctx, "Hello from a reducer".to_string()).expect("send_message should succeed");
+        test.with_reducer_tx::<_, String>(spacetimedb::test_utils::TestAuth::internal(), |ctx| {
+            send_message(ctx, "Hello from a reducer".to_string())
+        })
+        .expect("send_message should succeed");
 
         let messages = test.db.message().iter().collect::<Vec<_>>();
         assert_eq!(messages.len(), 1);
@@ -242,12 +243,10 @@ mod tests {
         let timestamp = Timestamp::from_micros_since_unix_epoch(123);
         test.clock.set(timestamp);
 
-        // spacetimedb::test_utils::TestAuth::from_jwt_payload(jwt_payload, connection_id)
-        let ctx = test.reducer_context(
-            spacetimedb::test_utils::TestAuth::from_jwt_payload(payload, connection_id)
-                .expect("JWT payload should be valid for tests"),
-        );
-        send_message(&ctx, "Hello from a reducer".to_string()).expect("send_message should succeed");
+        let auth = spacetimedb::test_utils::TestAuth::from_jwt_payload(payload, connection_id)
+            .expect("JWT payload should be valid for tests");
+        test.with_reducer_tx::<_, String>(auth, |ctx| send_message(ctx, "Hello from a reducer".to_string()))
+            .expect("send_message should succeed");
 
         let messages = test.db.message().iter().collect::<Vec<_>>();
         assert_eq!(messages.len(), 1);

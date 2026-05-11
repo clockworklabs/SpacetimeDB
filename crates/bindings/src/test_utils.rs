@@ -21,7 +21,7 @@ pub use spacetimedb_test_datastore::{TestDatastore, TestDatastoreError};
 /// A deterministic clock for module unit tests.
 #[cfg(not(target_arch = "wasm32"))]
 pub struct TestClock {
-    now: std::cell::Cell<crate::Timestamp>,
+    now: std::rc::Rc<std::cell::Cell<crate::Timestamp>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -29,7 +29,7 @@ impl TestClock {
     /// Create a clock initialized to `timestamp`.
     pub fn new(timestamp: crate::Timestamp) -> Self {
         Self {
-            now: std::cell::Cell::new(timestamp),
+            now: std::rc::Rc::new(std::cell::Cell::new(timestamp)),
         }
     }
 
@@ -60,10 +60,17 @@ impl Default for TestClock {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl Clone for TestClock {
+    fn clone(&self) -> Self {
+        Self { now: self.now.clone() }
+    }
+}
+
 /// A deterministic RNG seed source for module unit tests.
 #[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
 pub struct TestRng {
-    seed: std::cell::Cell<Option<u64>>,
+    seed: std::rc::Rc<std::cell::Cell<Option<u64>>>,
 }
 
 #[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
@@ -71,7 +78,7 @@ impl TestRng {
     /// Create a test RNG seed source initialized to `seed`.
     pub fn new(seed: u64) -> Self {
         Self {
-            seed: std::cell::Cell::new(Some(seed)),
+            seed: std::rc::Rc::new(std::cell::Cell::new(Some(seed))),
         }
     }
 
@@ -95,7 +102,16 @@ impl TestRng {
 impl Default for TestRng {
     fn default() -> Self {
         Self {
-            seed: std::cell::Cell::new(None),
+            seed: std::rc::Rc::new(std::cell::Cell::new(None)),
+        }
+    }
+}
+
+#[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
+impl Clone for TestRng {
+    fn clone(&self) -> Self {
+        Self {
+            seed: self.seed.clone(),
         }
     }
 }
@@ -126,14 +142,12 @@ impl TestAuth {
         connection_id: crate::ConnectionId,
     ) -> Result<Self, TestAuthError> {
         let jwt_payload = jwt_payload.into();
-        let claims: spacetimedb_auth::identity::IncomingClaims =
-            serde_json::from_str(&jwt_payload).map_err(TestAuthError::InvalidPayload)?;
-        let claims: spacetimedb_auth::identity::SpacetimeIdentityClaims =
-            claims.try_into().map_err(TestAuthError::InvalidClaims)?;
+        let claims: serde_json::Value = serde_json::from_str(&jwt_payload).map_err(TestAuthError::InvalidPayload)?;
+        let sender = validate_test_jwt_claims(&claims).map_err(TestAuthError::InvalidClaims)?;
         Ok(Self::Authenticated {
             jwt_payload,
             connection_id,
-            sender: claims.identity,
+            sender,
         })
     }
 
@@ -156,6 +170,47 @@ impl TestAuth {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_test_jwt_claims(claims: &serde_json::Value) -> anyhow::Result<crate::Identity> {
+    let issuer = required_claim(claims, "iss")?;
+    let subject = required_claim(claims, "sub")?;
+
+    if issuer.len() > 128 {
+        anyhow::bail!("Issuer too long: {issuer:?}");
+    }
+    if subject.len() > 128 {
+        anyhow::bail!("Subject too long: {subject:?}");
+    }
+    if issuer.is_empty() {
+        anyhow::bail!("Issuer empty");
+    }
+    if subject.is_empty() {
+        anyhow::bail!("Subject empty");
+    }
+
+    let computed_identity = crate::Identity::from_claims(issuer, subject);
+    if let Some(token_identity) = claims.get("hex_identity") {
+        let token_identity: crate::Identity = serde_json::from_value(token_identity.clone())
+            .map_err(|err| anyhow::anyhow!("invalid hex_identity claim: {err}"))?;
+        if token_identity != computed_identity {
+            anyhow::bail!(
+                "Identity mismatch: token identity {token_identity:?} does not match computed identity {computed_identity:?}",
+            );
+        }
+    }
+
+    Ok(computed_identity)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn required_claim<'a>(claims: &'a serde_json::Value, name: &str) -> anyhow::Result<&'a str> {
+    claims
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Missing `{name}` claim"))?
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Claim `{name}` must be a string"))
+}
+
 /// Errors returned when constructing test reducer authentication.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
@@ -176,6 +231,104 @@ impl std::fmt::Display for TestAuthError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl std::error::Error for TestAuthError {}
+
+/// Context passed to procedure transaction hooks.
+///
+/// This is a lightweight handle to the same test datastore and execution
+/// defaults as the `TestContext` that created the procedure context.
+#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+pub struct ProcedureHookContext {
+    datastore: std::sync::Arc<TestDatastore>,
+    clock: TestClock,
+    #[cfg(feature = "rand08")]
+    rng: TestRng,
+    identity: crate::Identity,
+}
+
+#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+impl ProcedureHookContext {
+    fn new(test: &TestContext) -> Self {
+        Self {
+            datastore: test.datastore.clone(),
+            clock: test.clock.clone(),
+            #[cfg(feature = "rand08")]
+            rng: test.rng.clone(),
+            identity: test.identity,
+        }
+    }
+
+    /// Run `body` with a reducer context backed by a single mutable transaction.
+    ///
+    /// This is intended for interleaving reducer calls between procedure
+    /// transactions from a procedure transaction hook.
+    pub fn with_reducer_tx<T, E>(
+        &self,
+        auth: TestAuth,
+        body: impl FnOnce(&crate::ReducerContext) -> Result<T, E>,
+    ) -> Result<T, E> {
+        with_reducer_tx(
+            &self.datastore,
+            self.identity,
+            self.clock.now(),
+            #[cfg(feature = "rand08")]
+            self.rng.seed(),
+            auth,
+            body,
+        )
+    }
+}
+
+/// Hooks invoked at procedure transaction boundaries in native unit tests.
+#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+#[derive(Default)]
+pub struct ProcedureTestHooks {
+    after_tx_commit: Vec<Box<dyn FnMut(&ProcedureHookContext) -> anyhow::Result<()>>>,
+}
+
+#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+impl ProcedureTestHooks {
+    /// Create an empty hook set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a hook that runs after each successful procedure transaction commit.
+    ///
+    /// Hook failures panic after the transaction has already committed.
+    pub fn after_tx_commit(mut self, hook: impl FnMut(&ProcedureHookContext) -> anyhow::Result<()> + 'static) -> Self {
+        self.after_tx_commit.push(Box::new(hook));
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn __run_after_tx_commit(&mut self, ctx: &ProcedureHookContext) {
+        for hook in &mut self.after_tx_commit {
+            hook(ctx).unwrap_or_else(|err| panic!("procedure test after_tx_commit hook failed: {err}"));
+        }
+    }
+}
+
+/// Builder for a native unit-test procedure context.
+#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+pub struct ProcedureContextBuilder<'a> {
+    test: &'a TestContext,
+    auth: TestAuth,
+    hooks: ProcedureTestHooks,
+}
+
+#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+impl<'a> ProcedureContextBuilder<'a> {
+    /// Install transaction hooks used by this procedure context.
+    pub fn hooks(mut self, hooks: ProcedureTestHooks) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
+    /// Build the procedure context.
+    pub fn build(self) -> crate::ProcedureContext {
+        self.test.procedure_context_with_hooks(self.auth, self.hooks)
+    }
+}
 
 /// A native unit-test context with an in-memory module datastore.
 #[cfg(not(target_arch = "wasm32"))]
@@ -234,21 +387,6 @@ impl TestContext {
             .unwrap_or_else(|| std::rc::Rc::new(|_| Err(crate::http::Error::new("no test HTTP responder configured"))))
     }
 
-    /// Create a reducer context backed by this test context's datastore.
-    pub fn reducer_context(&self, auth: TestAuth) -> crate::ReducerContext {
-        let (auth, connection_id, sender) = auth.into_parts(self.identity);
-        crate::ReducerContext::__test(
-            crate::Local::__test(self.datastore.clone()),
-            sender,
-            auth,
-            connection_id,
-            self.clock.now(),
-            self.identity,
-            #[cfg(feature = "rand08")]
-            self.rng.seed(),
-        )
-    }
-
     /// Run `body` with a reducer context backed by a single mutable transaction.
     ///
     /// The transaction commits when `body` returns `Ok`, rolls back when `body`
@@ -258,57 +396,35 @@ impl TestContext {
         auth: TestAuth,
         body: impl FnOnce(&crate::ReducerContext) -> Result<T, E>,
     ) -> Result<T, E> {
-        use core::mem;
-
-        let test_tx = std::rc::Rc::new(self.datastore.begin_mut_tx());
-        let rollback_tx = test_tx.clone();
-
-        struct DoOnDrop<F: Fn()>(F);
-        impl<F: Fn()> Drop for DoOnDrop<F> {
-            fn drop(&mut self) {
-                (self.0)();
-            }
-        }
-
-        let rollback_guard = DoOnDrop(move || {
-            rollback_tx
-                .rollback()
-                .expect("should have a pending mutable test transaction")
-        });
-
-        let (auth, connection_id, sender) = auth.into_parts(self.identity);
-        let ctx = crate::ReducerContext::__test(
-            crate::Local::__test_tx(test_tx.clone()),
-            sender,
-            auth,
-            connection_id,
-            self.clock.now(),
+        with_reducer_tx(
+            &self.datastore,
             self.identity,
+            self.clock.now(),
             #[cfg(feature = "rand08")]
             self.rng.seed(),
-        );
-
-        let res = body(&ctx);
-        mem::forget(rollback_guard);
-        match res {
-            Ok(value) => {
-                test_tx
-                    .commit()
-                    .expect("committing mutable test reducer transaction failed");
-                Ok(value)
-            }
-            Err(error) => {
-                test_tx
-                    .rollback()
-                    .expect("should have a pending mutable test transaction");
-                Err(error)
-            }
-        }
+            auth,
+            body,
+        )
     }
 
     /// Create a procedure context backed by this test context's datastore.
     #[cfg(feature = "unstable")]
     pub fn procedure_context(&self, auth: TestAuth) -> crate::ProcedureContext {
+        self.procedure_context_with_hooks(auth, ProcedureTestHooks::new())
+    }
+
+    /// Create a builder for a procedure context backed by this test context's datastore.
+    #[cfg(feature = "unstable")]
+    pub fn procedure_context_builder(&self, auth: TestAuth) -> ProcedureContextBuilder<'_> {
+        ProcedureContextBuilder {
+            test: self,
+            auth,
+            hooks: ProcedureTestHooks::new(),
+        }
+    }
+
+    #[cfg(feature = "unstable")]
+    fn procedure_context_with_hooks(&self, auth: TestAuth, hooks: ProcedureTestHooks) -> crate::ProcedureContext {
         let (auth, connection_id, sender) = auth.into_parts(self.identity);
         crate::ProcedureContext::__test(
             self.datastore.clone(),
@@ -318,9 +434,68 @@ impl TestContext {
             self.clock.now(),
             self.identity,
             crate::http::HttpClient::test(self.http_responder()),
+            ProcedureHookContext::new(self),
+            hooks,
             #[cfg(feature = "rand08")]
             self.rng.seed(),
         )
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn with_reducer_tx<T, E>(
+    datastore: &std::sync::Arc<TestDatastore>,
+    identity: crate::Identity,
+    timestamp: crate::Timestamp,
+    #[cfg(feature = "rand08")] rng_seed: Option<u64>,
+    auth: TestAuth,
+    body: impl FnOnce(&crate::ReducerContext) -> Result<T, E>,
+) -> Result<T, E> {
+    use core::mem;
+
+    let test_tx = std::rc::Rc::new(datastore.begin_mut_tx());
+    let rollback_tx = test_tx.clone();
+
+    struct DoOnDrop<F: Fn()>(F);
+    impl<F: Fn()> Drop for DoOnDrop<F> {
+        fn drop(&mut self) {
+            (self.0)();
+        }
+    }
+
+    let rollback_guard = DoOnDrop(move || {
+        rollback_tx
+            .rollback()
+            .expect("should have a pending mutable test transaction")
+    });
+
+    let (auth, connection_id, sender) = auth.into_parts(identity);
+    let ctx = crate::ReducerContext::__test(
+        crate::Local::__test_tx(test_tx.clone()),
+        sender,
+        auth,
+        connection_id,
+        timestamp,
+        identity,
+        #[cfg(feature = "rand08")]
+        rng_seed,
+    );
+
+    let res = body(&ctx);
+    mem::forget(rollback_guard);
+    match res {
+        Ok(value) => {
+            test_tx
+                .commit()
+                .expect("committing mutable test reducer transaction failed");
+            Ok(value)
+        }
+        Err(error) => {
+            test_tx
+                .rollback()
+                .expect("should have a pending mutable test transaction");
+            Err(error)
+        }
     }
 }
 
