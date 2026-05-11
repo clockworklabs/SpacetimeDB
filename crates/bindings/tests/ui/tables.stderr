@@ -25,12 +25,12 @@ help: the trait `SpacetimeType` is not implemented for `Test`
   = help: the following other types implement trait `SpacetimeType`:
             &T
             ()
+            (T, U)
             AlgebraicType
             AlgebraicTypeRef
             Alpha
             Arc<T>
             ArrayType
-            Box<T>
           and $N others
 
 error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
@@ -190,12 +190,12 @@ help: the trait `SpacetimeType` is not implemented for `Test`
   = help: the following other types implement trait `SpacetimeType`:
             &T
             ()
+            (T, U)
             AlgebraicType
             AlgebraicTypeRef
             Alpha
             Arc<T>
             ArrayType
-            Box<T>
           and $N others
   = note: required for `Test` to implement `TableColumn`
 

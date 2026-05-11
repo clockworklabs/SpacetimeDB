@@ -895,7 +895,7 @@ mod tests {
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section};
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
