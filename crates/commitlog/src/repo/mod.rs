@@ -4,6 +4,8 @@ use std::{
 };
 
 use log::{debug, warn};
+use spacetimedb_fs_utils::compression::Zstd;
+pub use spacetimedb_fs_utils::compression::{CompressOnce, CompressionStats};
 
 use crate::{
     commit::Commit,
@@ -121,7 +123,13 @@ pub trait Repo: Clone + fmt::Display {
     fn remove_segment(&self, offset: u64) -> io::Result<()>;
 
     /// Compress a segment in storage, marking it as immutable.
-    fn compress_segment(&self, offset: u64) -> io::Result<()>;
+    fn compress_segment(&self, offset: u64) -> io::Result<CompressionStats> {
+        self.compress_segment_with(offset, segment_compressor())
+    }
+
+    /// Compress a segment using a supplied [CompressOnce], marking it as
+    /// immutable.
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats>;
 
     /// Traverse all segments in this repository and return list of their
     /// offsets, sorted in ascending order.
@@ -144,18 +152,19 @@ pub trait Repo: Clone + fmt::Display {
     }
 }
 
-/// Marker for repos that do not require an external lock file.
-///
-/// Durability implementations can use this to expose repo-backed opening
-/// only for storage backends where skipping the filesystem `db.lock` cannot
-/// violate single-writer safety.
-pub trait RepoWithoutLockFile: Repo {}
+/// Capability trait for repos that can report storage usage.
+pub trait RepoWithSizeOnDisk: Repo {
+    fn size_on_disk(&self) -> io::Result<SizeOnDisk>;
+}
 
-impl<T: RepoWithoutLockFile> RepoWithoutLockFile for &T {}
-
-#[cfg(any(test, feature = "test"))]
-impl RepoWithoutLockFile for Memory {}
-
+impl<T> RepoWithSizeOnDisk for &T
+where
+    T: RepoWithSizeOnDisk,
+{
+    fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        T::size_on_disk(self)
+    }
+}
 impl<T: Repo> Repo for &T {
     type SegmentWriter = T::SegmentWriter;
     type SegmentReader = T::SegmentReader;
@@ -176,8 +185,8 @@ impl<T: Repo> Repo for &T {
         T::remove_segment(self, offset)
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
-        T::compress_segment(self, offset)
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats> {
+        T::compress_segment_with(self, offset, f)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
@@ -418,6 +427,17 @@ pub fn open_segment_reader<R: Repo>(
         .map_err(|source| with_segment_context("opening segment for read", repo, offset, source))?;
     Reader::new(max_log_format_version, offset, storage)
         .map_err(|source| with_segment_context("reading segment header", repo, offset, source))
+}
+
+/// Obtain the canonical [CompressOnce] compressor for segments.
+///
+/// The compressor will create seekable [Zstd] archives with a max frame size
+/// of 4KiB. That is, seeking to an arbitrary byte offset (of the uncompressed
+/// segment) within the archive will decompress 4KiB of data on average.
+pub fn segment_compressor() -> Zstd {
+    Zstd {
+        max_frame_size: Some(0x1000),
+    }
 }
 
 fn segment_label<R: Repo>(repo: &R, offset: u64) -> String {
