@@ -8,6 +8,23 @@ pub(crate) fn parse_major_version(version: &str) -> Option<u8> {
     version.split('.').next()?.parse::<u8>().ok()
 }
 
+/// Read the `<TargetFramework>` major version directly from the project's `.csproj` file.
+/// Returns `Some(8)` for `net8.0`, `Some(10)` for `net10.0`, etc., or `None` if unreadable.
+/// This is the most reliable project-level signal of intended .NET version and takes
+/// precedence over the system-default `dotnet --version`.
+fn read_tfm_major_from_csproj(project_path: &Path) -> Option<u8> {
+    let csproj = std::fs::read_dir(project_path)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .find(|e| e.path().extension().and_then(|x| x.to_str()) == Some("csproj"))?
+        .path();
+    let content = std::fs::read_to_string(csproj).ok()?;
+    // Match "<TargetFramework>netN." — handles net8.0, net10.0, etc.
+    let tag = "<TargetFramework>net";
+    let start = content.find(tag)? + tag.len();
+    content[start..].split(['.', '<']).next()?.parse().ok()
+}
+
 /// Describes which C# build path to use.
 enum CsharpBuildPath {
     /// .NET 8 JIT via the `wasi-experimental` workload (Mono WASM).
@@ -33,8 +50,11 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     // This takes precedence over auto-detection.
     let dotnet_version_override = std::env::var("SPACETIMEDB_DOTNET_VERSION").ok();
 
-    // Detect the .NET SDK version. Run from project directory only if global.json exists,
-    // otherwise run from current directory. .NET 10 SDK crashes if global.json is missing.
+    // Detect the system-default .NET SDK version as a last-resort fallback.
+    // Run from the project directory only if global.json exists there, so that
+    // any user-authored SDK pin is respected. Otherwise run from the current
+    // directory to avoid the .NET 10 SDK crash that occurs when it is invoked
+    // in a directory without a global.json.
     let global_json_exists = project_path.join("global.json").exists();
     let dotnet_version_result = if global_json_exists {
         dotnet!("--version").read()
@@ -49,10 +69,14 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         Err(error) => anyhow::bail!("{error}"),
     };
 
-    // Use explicit version if provided, otherwise auto-detect from dotnet --version
+    // Resolution order:
+    //   1. --dotnet-version CLI flag (explicit user override)
+    //   2. <TargetFramework> in the project's .csproj (project author's intent)
+    //   3. dotnet --version system default (last resort fallback)
     let dotnet_major = dotnet_version_override
         .as_deref()
         .and_then(|v| v.parse().ok())
+        .or_else(|| read_tfm_major_from_csproj(project_path))
         .or_else(|| parse_major_version(&dotnet_version_str));
 
     // Determine the build path based on SDK version and --native-aot flag.
@@ -79,6 +103,29 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         }
     };
 
+    // For the Net8Jit path the .NET 8 SDK must be active (wasi-experimental is .NET 8 only).
+    // If the active SDK is not .NET 8 and no global.json exists, auto-create one to pin .NET 8
+    // and inform the user — mirroring the auto-global.json behaviour used for Net10Aot.
+    if matches!(build_path, CsharpBuildPath::Net8Jit) {
+        let active_sdk_major = parse_major_version(&dotnet_version_str);
+        if active_sdk_major != Some(8) && !project_path.join("global.json").exists() {
+            let active = dotnet_version_str.trim();
+            let global_json_path = project_path.join("global.json");
+            fs::write(
+                &global_json_path,
+                r#"{"sdk":{"version":"8.0.100","rollForward":"latestMinor"}}"#,
+            )?;
+            // Only print the note when the user hasn't already declared intent via --dotnet-version 8.
+            if dotnet_version_override.is_none() {
+                println!(
+                    "Note: created {} to pin the .NET 8 SDK (active SDK is .NET {active}).\n\
+                     To suppress this message, add a global.json to your project or pass --dotnet-version 8.",
+                    global_json_path.display()
+                );
+            }
+        }
+    }
+
     // For NativeAOT paths, ensure EXPERIMENTAL_WASM_AOT is set in the environment so MSBuild
     // conditionals in .csproj/.props/.targets files activate correctly.
     match &build_path {
@@ -90,16 +137,6 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
             }
         }
         CsharpBuildPath::Net8Jit => {}
-    }
-
-    // .NET 10 SDK crashes if global.json doesn't exist in the working directory.
-    // Create one in the project directory if using .NET 10 and none exists.
-    if matches!(build_path, CsharpBuildPath::Net10Aot) {
-        let global_json_path = project_path.join("global.json");
-        if !global_json_path.exists() {
-            let global_json_content = r#"{"sdk":{"version":"10.0.100","rollForward":"latestMinor"}}"#;
-            fs::write(&global_json_path, global_json_content)?;
-        }
     }
 
     // For the JIT path, ensure the wasi-experimental workload is installed.
@@ -141,12 +178,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         )
     })?;
 
-    // JIT and AOT builds use the same `dotnet publish` command.
-    // Build-specific configuration (TFM, AOT settings, ILCompiler packages)
-    // is handled by build_path detection and MSBuild props/targets.
-    dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
-
-    // Determine output path based on build path.
+    // Determine the target framework moniker and output subdirectory for this build path.
     // Both JIT and AOT builds produce StdbModule.wasm, but in different subdirectories:
     // - JIT (wasi-experimental): AppBundle/StdbModule.wasm
     // - AOT (NativeAOT-LLVM): publish/StdbModule.wasm
@@ -155,6 +187,14 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         CsharpBuildPath::Net8Aot => ("net8.0", "publish"),
         CsharpBuildPath::Net8Jit => ("net8.0", "AppBundle"),
     };
+
+    // JIT and AOT builds use the same `dotnet publish` command.
+    // Build-specific configuration (TFM, AOT settings, ILCompiler packages)
+    // is handled by build_path detection and MSBuild props/targets.
+    // We pass -f {target_framework} explicitly so that the correct TFM is used
+    // even when the system-default SDK version differs from the csproj TFM
+    // (e.g. system is .NET 10 but csproj says net8.0 → must publish as net8.0).
+    dotnet!("publish", "-c", config_name, "-f", target_framework, "-v", "quiet").run()?;
 
     // check for the old .NET 7 path for projects that haven't migrated yet
     let bad_output_paths = [
