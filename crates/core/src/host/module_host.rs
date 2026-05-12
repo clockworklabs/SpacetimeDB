@@ -1529,11 +1529,6 @@ pub enum HttpHandlerCallError {
     NoSuchModule(#[from] NoSuchModule),
     #[error("no such http handler")]
     NoSuchHandler,
-
-    // TODO(v8-http-handlers): Remove this error variant.
-    #[error("http handlers are not supported for this host type")]
-    UnsupportedHostType,
-
     #[error("The module instance encountered a fatal error: {0}")]
     InternalError(String),
 }
@@ -2766,8 +2761,7 @@ impl ModuleHost {
             "http handler",
             params,
             |params, inst| inst.call_http_handler(params).await,
-            // TODO(v8-http-handlers): Do something useful here.
-            |_params, _inst| Err(HttpHandlerCallError::UnsupportedHostType),
+            |params, inst| inst.call_http_handler(params).await,
         )?
     }
 

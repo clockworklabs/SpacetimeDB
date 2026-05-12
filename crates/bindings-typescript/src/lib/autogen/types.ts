@@ -107,6 +107,15 @@ export const HttpMethod = __t.enum('HttpMethod', {
 });
 export type HttpMethod = __Infer<typeof HttpMethod>;
 
+// The tagged union or sum type for the algebraic type `MethodOrAny`.
+export const MethodOrAny = __t.enum('MethodOrAny', {
+  Any: __t.unit(),
+  get Method() {
+    return HttpMethod;
+  },
+});
+export type MethodOrAny = __Infer<typeof MethodOrAny>;
+
 export const HttpRequest = __t.object('HttpRequest', {
   get method() {
     return HttpMethod;
@@ -323,6 +332,20 @@ export const RawModuleDefV10 = __t.object('RawModuleDefV10', {
 });
 export type RawModuleDefV10 = __Infer<typeof RawModuleDefV10>;
 
+export const RawHttpHandlerDefV10 = __t.object('RawHttpHandlerDefV10', {
+  sourceName: __t.string(),
+});
+export type RawHttpHandlerDefV10 = __Infer<typeof RawHttpHandlerDefV10>;
+
+export const RawHttpRouteDefV10 = __t.object('RawHttpRouteDefV10', {
+  handlerFunction: __t.string(),
+  get method() {
+    return MethodOrAny;
+  },
+  path: __t.string(),
+});
+export type RawHttpRouteDefV10 = __Infer<typeof RawHttpRouteDefV10>;
+
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
 export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get Typespace() {
@@ -357,6 +380,12 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   },
   get ExplicitNames() {
     return ExplicitNames;
+  },
+  get HttpHandlers() {
+    return __t.array(RawHttpHandlerDefV10);
+  },
+  get HttpRoutes() {
+    return __t.array(RawHttpRouteDefV10);
   },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;

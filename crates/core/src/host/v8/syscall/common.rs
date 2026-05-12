@@ -17,7 +17,8 @@ use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{
-    deserialize_view_rows, run_query_for_view, AnonymousViewOp, ProcedureOp, ViewOp, ViewResult, ViewReturnData,
+    deserialize_view_rows, run_query_for_view, AnonymousViewOp, HttpHandlerOp, ProcedureOp, ViewOp, ViewResult,
+    ViewReturnData,
 };
 use crate::host::wasm_common::{RowIterIdx, TimingSpan, TimingSpanIdx};
 use anyhow::Context;
@@ -63,6 +64,63 @@ pub fn call_call_procedure(
     let bytes = ret.get_contents(&mut []);
 
     Ok(Bytes::copy_from_slice(bytes))
+}
+
+/// Calls the `__call_http_handler__` function `fun`.
+pub fn call_call_http_handler(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: HttpHandlerOp,
+) -> Result<(Bytes, Bytes), ErrorOrException<ExceptionThrown>> {
+    let fun = hooks
+        .call_http_handler
+        .context("`__call_http_handler__` was never defined")?;
+
+    let HttpHandlerOp {
+        id,
+        name: _,
+        timestamp,
+        request_bytes,
+        request_body_bytes,
+    } = op;
+
+    let handler_id = serialize_to_js(scope, &id.0)?;
+    let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
+    let request = serialize_to_js(scope, &request_bytes)?;
+    let request_body = serialize_to_js(scope, &request_body_bytes)?;
+    let args = &[handler_id, timestamp, request, request_body];
+
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
+    let ret = cast!(scope, ret, v8::Array, "tuple return from `__call_http_handler__`").map_err(|e| e.throw(scope))?;
+
+    if ret.length() != 2 {
+        return Err(TypeError("`__call_http_handler__` must return a two-element array")
+            .throw(scope)
+            .into());
+    }
+
+    let response = ret.get_index(scope, 0).ok_or_else(exception_already_thrown)?;
+    let response = cast!(
+        scope,
+        response,
+        v8::Uint8Array,
+        "response bytes return from `__call_http_handler__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    let body = ret.get_index(scope, 1).ok_or_else(exception_already_thrown)?;
+    let body = cast!(
+        scope,
+        body,
+        v8::Uint8Array,
+        "response body bytes return from `__call_http_handler__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    Ok((
+        Bytes::copy_from_slice(response.get_contents(&mut [])),
+        Bytes::copy_from_slice(body.get_contents(&mut [])),
+    ))
 }
 
 /// Calls the registered `__describe_module__` function hook.

@@ -61,12 +61,13 @@ use self::error::{
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
-    call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    call_call_http_handler, call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon,
+    call_describe_module, get_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
-    CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo, ModuleWithInstance,
+    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo,
+    ModuleWithInstance,
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
@@ -74,13 +75,13 @@ use crate::config::{V8Config, V8HeapPolicyConfig};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, ClientConnectedError, OneOffQueryRequest, SqlCommand, SqlCommandResult,
-    ViewCommand, ViewCommandMetric, ViewCommandResult,
+    call_identity_connected, init_database, ClientConnectedError, HttpHandlerCallError, OneOffQueryRequest, SqlCommand,
+    SqlCommandResult, ViewCommand, ViewCommandMetric, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
     HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
@@ -702,6 +703,16 @@ impl JsProcedureInstance {
         .await
     }
 
+    pub async fn call_http_handler(
+        &self,
+        params: CallHttpHandlerParams,
+    ) -> Result<(spacetimedb_lib::http::Response, bytes::Bytes), HttpHandlerCallError> {
+        self.send_request("call_http_handler", |reply_tx| {
+            JsProcedureWorkerRequest::CallHttpHandler { reply_tx, params }
+        })
+        .await
+    }
+
     pub(in crate::host) async fn enqueue_procedure(&self, params: CallProcedureParams) -> JsProcedureCall {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
@@ -835,7 +846,7 @@ enum JsMainWorkerRequest {
         request: OneOffQueryRequest,
         on_panic: JsFatalHook,
     },
-    /// See [`JsMainInstance::clear_all_clients`].
+    /// See [`JsInstance::clear_all_clients`].
     ClearAllClients(JsReplyTx<anyhow::Result<()>>),
     /// See [`JsMainInstance::call_identity_connected`].
     CallIdentityConnected {
@@ -872,6 +883,11 @@ enum JsProcedureWorkerRequest {
     ScheduledProcedure {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
+    },
+    /// See [`JsInstance::call_http_handler`].
+    CallHttpHandler {
+        reply_tx: JsReplyTx<Result<(spacetimedb_lib::http::Response, bytes::Bytes), HttpHandlerCallError>>,
+        params: CallHttpHandlerParams,
     },
 }
 
@@ -1460,6 +1476,15 @@ fn handle_procedure_worker_request(
                 (res, trapped)
             })
         }
+        JsProcedureWorkerRequest::CallHttpHandler { reply_tx, params } => {
+            handle_worker_request("call_http_handler", reply_tx, || {
+                let (res, trapped) = instance_common
+                    .call_http_handler(params, inst)
+                    .now_or_never()
+                    .expect("our call_http_handler implementation is not actually async");
+                (res, trapped)
+            })
+        }
         JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params } => {
             handle_worker_request("scheduled_procedure", reply_tx, || {
                 let (res, trapped) = instance_common
@@ -1852,17 +1877,18 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
     async fn call_http_handler(
         &mut self,
-        _op: HttpHandlerOp,
-        _budget: FunctionBudget,
+        op: HttpHandlerOp,
+        budget: FunctionBudget,
     ) -> (HttpHandlerExecuteResult, Option<TransactionOffset>) {
-        let result = ExecutionResult {
-            stats: ExecutionStats {
-                energy: EnergyStats::ZERO,
-                timings: ExecutionTimings::zero(),
-                memory_allocation: 0,
-            },
-            call_result: Err(anyhow::anyhow!("HTTP handlers are not supported for JS modules")),
-        };
+        let result = common_call(self, budget, op, |scope, hooks, op| {
+            call_call_http_handler(scope, hooks, op)
+        })
+        .map_result(|call_result| {
+            call_result.map_err(|e| match e {
+                ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
+            })
+        });
         (result, None)
     }
 }

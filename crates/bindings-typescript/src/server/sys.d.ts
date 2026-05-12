@@ -37,6 +37,13 @@ declare module 'spacetime:sys@2.0' {
       timestamp: bigint,
       args: Uint8Array
     ): Uint8Array;
+
+    __call_http_handler__(
+      id: u32,
+      timestamp: bigint,
+      request: Uint8Array,
+      body: Uint8Array
+    ): [response: Uint8Array, body: Uint8Array];
   }
 
   export function register_hooks(hooks: ModuleHooks);

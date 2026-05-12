@@ -58,6 +58,9 @@ pub(in super::super) fn set_registered_hooks(scope: &mut PinScope<'_, '_>, hooks
     if let Some(call_procedure) = hooks.call_procedure {
         to_register.push((ModuleHookKey::CallProcedure, call_procedure));
     }
+    if let Some(call_http_handler) = hooks.call_http_handler {
+        to_register.push((ModuleHookKey::CallHttpHandler, call_http_handler));
+    }
     if let Some(get_error_constructor) = hooks.get_error_constructor {
         to_register.push((ModuleHookKey::GetErrorConstructor, get_error_constructor));
     }
@@ -80,6 +83,7 @@ pub(in super::super) enum ModuleHookKey {
     CallView,
     CallAnonymousView,
     CallProcedure,
+    CallHttpHandler,
     GetErrorConstructor,
     SenderErrorClass,
 }
@@ -143,6 +147,7 @@ pub(in super::super) struct HookFunctions<'scope> {
     pub call_view: Option<Local<'scope, Function>>,
     pub call_view_anon: Option<Local<'scope, Function>>,
     pub call_procedure: Option<Local<'scope, Function>>,
+    pub call_http_handler: Option<Local<'scope, Function>>,
 }
 
 /// Returns the hook function previously registered in [`register_hooks`].
@@ -172,5 +177,6 @@ pub(in super::super) fn get_registered_hooks<'scope>(
         call_view: get(ModuleHookKey::CallView),
         call_view_anon: get(ModuleHookKey::CallAnonymousView),
         call_procedure: get(ModuleHookKey::CallProcedure),
+        call_http_handler: get(ModuleHookKey::CallHttpHandler),
     })
 }

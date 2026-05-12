@@ -28,6 +28,10 @@ import {
 } from '../lib/indexes';
 import { callProcedure } from './procedures';
 import {
+  deserializeHttpHandlerRequest,
+  serializeHttpHandlerResponse,
+} from './http_handlers';
+import {
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
@@ -417,6 +421,18 @@ class ModuleHooksImpl implements ModuleHooks {
       args,
       () => this.#dbView
     );
+  }
+
+  __call_http_handler__(
+    id: u32,
+    _timestamp: bigint,
+    request: Uint8Array,
+    body: Uint8Array
+  ): [response: Uint8Array, body: Uint8Array] {
+    const handler = this.#schema.httpHandlers[id];
+    const inboundRequest = deserializeHttpHandlerRequest(request, body);
+    const response = callUserFunction(handler, inboundRequest);
+    return serializeHttpHandlerResponse(response);
   }
 }
 
