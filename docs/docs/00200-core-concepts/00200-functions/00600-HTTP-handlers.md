@@ -16,6 +16,29 @@ External clients can make HTTP requests to routes nested under [`/v1/database/:n
 ## Defining HTTP Handlers
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+Define an HTTP handler with `spacetimedb.httpHandler`.
+
+The function must accept exactly two arguments:
+
+1. A `HandlerContext`.
+2. A `Request`.
+
+The function must return a `SyncResponse`.
+
+```typescript
+import { schema, SyncResponse } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const say_hello = spacetimedb.httpHandler((_ctx, _req) => {
+    return new SyncResponse("Hello!");
+});
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 Because HTTP handlers are unstable, Rust modules that define them must opt in to the `unstable` feature in their `Cargo.toml`:
@@ -51,6 +74,26 @@ fn say_hello(_ctx: &mut HandlerContext, _req: Request) -> Response {
 Once you've [defined an HTTP handler](#defining-http-handlers), you must register it to a route in order to make it reachable for requests.
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+All routes exposed by your module are declared in a `Router`. Register the `Router` for your database by passing it to `spacetimedb.httpRouter`.
+
+```typescript
+import { Router } from "spacetimedb/server";
+
+export const router = spacetimedb.httpRouter(
+    new Router()
+        .get("/say-hello", say_hello)
+);
+```
+
+Add routes within a router with the `get`, `head`, `options`, `put`, `delete`, `post`, `patch` and `any` methods, which register an HTTP handler for that HTTP method at a given path.
+
+Nest routers with `router.nest(prefix, subRouter)`, which causes `subRouter` to handle routing for all paths that start with `prefix`.
+
+Combine routers with `router.merge(otherRouter)`, which combines both routers.
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 All routes exposed by your module are declared in a `spacetimedb::http::Router`. Register the `Router` for your database by returning it from a function annotated with `#[spacetimedb::http::router]`.
