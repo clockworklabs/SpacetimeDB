@@ -61,7 +61,7 @@ impl Compression {
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
     request_snapshot: mpsc::UnboundedSender<Request>,
-    snapshot_repository: Arc<DynSnapshotRepo>,
+    snapshot_repo: Arc<DynSnapshotRepo>,
 }
 
 impl SnapshotWorker {
@@ -94,7 +94,7 @@ impl SnapshotWorker {
         Self {
             snapshot_created,
             request_snapshot: request_tx,
-            snapshot_repository: snapshot_repo,
+            snapshot_repo,
         }
     }
 
@@ -110,7 +110,7 @@ impl SnapshotWorker {
 
     /// Get the snapshot repo this worker is operating on.
     pub fn snapshot_repo(&self) -> Arc<DynSnapshotRepo> {
-        self.snapshot_repository.clone()
+        self.snapshot_repo.clone()
     }
 
     /// Request a snapshot to be taken.

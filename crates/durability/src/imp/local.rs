@@ -107,8 +107,8 @@ where
     /// This is mainly for observability purposes, and can thus be updated with
     /// relaxed memory ordering.
     queue_depth: Arc<AtomicU64>,
-    /// [`JoinHandle`] for the background actor task. Contains `None` once
-    /// consumed by [`Durability::close`].
+    /// [JoinHandle] for the actor task. Contains `None` if already cancelled
+    /// (via [Durability::close]).
     actor: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -276,11 +276,6 @@ where
     /// to be applied to the underlying [`Commitlog`].
     pub fn queue_depth(&self) -> u64 {
         self.queue_depth.load(Relaxed)
-    }
-
-    /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T, R> {
-        self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
     /// Get a list of segment offsets, sorted in ascending order.
