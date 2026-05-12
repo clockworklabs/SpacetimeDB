@@ -170,6 +170,20 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
 
     let config_name = if build_debug { "Debug" } else { "Release" };
 
+    // For AOT paths, force a re-restore by deleting any cached project.assets.json.
+    // If a prior `dotnet restore` ran without EXPERIMENTAL_WASM_AOT=1 (e.g. as part of a
+    // solution restore), the cached assets won't include ILCompiler.LLVM, causing
+    // `dotnet publish` to silently fall back to the net8.0 Mono wasi-experimental path.
+    // Deleting the file makes dotnet re-restore with the correct environment.
+    if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net10Aot) {
+        for obj_dir in ["obj", "obj~"] {
+            let assets = project_path.join(obj_dir).join("project.assets.json");
+            if assets.exists() {
+                let _ = fs::remove_file(&assets);
+            }
+        }
+    }
+
     // Ensure the project path exists.
     fs::metadata(project_path).with_context(|| {
         format!(
