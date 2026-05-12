@@ -6,7 +6,7 @@ use std::{
 };
 
 use log::trace;
-use repo::{fs::OnNewSegmentFn, Repo, RepoWithSizeOnDisk};
+use repo::{fs::OnNewSegmentFn, Repo};
 use spacetimedb_paths::server::CommitLogDir;
 
 pub use spacetimedb_fs_utils::compression::CompressionStats;
@@ -189,6 +189,12 @@ impl<T> Commitlog<T, repo::Fs> {
         }
         Self::open_with_repo(repo::Fs::new(root, on_new_segment)?, opts)
     }
+
+    /// Determine the size on disk of this commitlog.
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        let inner = self.inner.read().unwrap();
+        inner.repo.size_on_disk()
+    }
 }
 
 impl<T, R> Commitlog<T, R>
@@ -206,29 +212,7 @@ where
             inner: RwLock::new(inner),
         })
     }
-}
 
-impl<T, R> Commitlog<T, R>
-where
-    R: RepoWithSizeOnDisk,
-{
-    /// Determine the size on disk of this commitlog.
-    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
-        let inner = self.inner.read().unwrap();
-        inner.repo.size_on_disk()
-    }
-}
-
-impl RepoWithSizeOnDisk for repo::Fs {
-    fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
-        Self::size_on_disk(self)
-    }
-}
-
-impl<T, R> Commitlog<T, R>
-where
-    R: Repo,
-{
     /// Determine the maximum transaction offset considered durable.
     ///
     /// The offset is `None` if the log hasn't been flushed to disk yet.
