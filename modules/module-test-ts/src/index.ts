@@ -331,7 +331,7 @@ export const listOverAge = spacetimedb.reducer(
 
 // log_module_identity()
 export const log_module_identity = spacetimedb.reducer(ctx => {
-  console.info(`Module identity: ${ctx.identity}`);
+  console.info(`Module identity: ${ctx.databaseIdentity}`);
 });
 
 // test(arg: TestAlias(TestA), arg2: TestB, arg3: TestC, arg4: TestF)
@@ -494,7 +494,7 @@ export const test_btree_index_args = spacetimedb.reducer(ctx => {
 export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
   ctx => {
     const caller = ctx.sender;
-    const owner = ctx.identity;
+    const owner = ctx.databaseIdentity;
     if (String(caller) !== String(owner)) {
       throw new Error(`Caller ${caller} is not the owner ${owner}`);
     } else {
@@ -507,7 +507,7 @@ export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
 //
 // This is a silly thing to do, but an effective test of the procedure HTTP API.
 export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
-  const module_identity = ctx.identity;
+  const module_identity = ctx.databaseIdentity;
   try {
     const response = ctx.http.fetch(
       `http://localhost:3000/v1/database/${module_identity}/schema?version=9`
