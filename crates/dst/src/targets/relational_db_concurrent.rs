@@ -271,11 +271,11 @@ impl<'a> RoundMachine<'a> {
     fn multi_reader_snapshot(&mut self, round: &RoundPlan) -> Result<(), String> {
         self.begin_read(client(0))?;
         self.begin_read(client(1))?;
-        let rows_0 = self.full_scan(client(0))?;
-        let rows_1 = self.full_scan(client(1))?;
-        if rows_0 != rows_1 {
+        let snapshot_0 = self.full_scan(client(0))?;
+        let snapshot_1 = self.full_scan(client(1))?;
+        if snapshot_0 != snapshot_1 {
             return Err(format!(
-                "[ConcurrentRelationalDb] round={} readers observed different snapshots: left={rows_0:?} right={rows_1:?}",
+                "[ConcurrentRelationalDb] round={} readers observed different snapshots: left={snapshot_0:?} right={snapshot_1:?}",
                 self.round
             ));
         }
@@ -478,34 +478,28 @@ impl<'a> RoundMachine<'a> {
         }
     }
 
-    fn full_scan(&mut self, client: SessionId) -> Result<Vec<SimRow>, String> {
+    fn full_scan(&mut self, client: SessionId) -> Result<ReadSummary, String> {
         self.record_action(client, "full_scan");
-        let rows = self.with_reader(client, |tx| collect_rows_in_tx(self.db, self.table_id, tx, "full scan"))?;
+        let summary = self.with_reader(client, |tx| scan_summary_in_tx(self.db, self.table_id, tx, "full scan"))?;
         self.events.push(RoundEvent::Read {
             round: self.round,
             client,
             kind: ReadKind::FullScan,
-            rows: rows.clone(),
+            summary,
         });
-        Ok(rows)
+        Ok(summary)
     }
 
-    fn point_lookup(&mut self, client: SessionId, id: u64) -> Result<Vec<SimRow>, String> {
+    fn point_lookup(&mut self, client: SessionId, id: u64) -> Result<ReadSummary, String> {
         self.record_action(client, "point_lookup");
-        let rows = self
-            .with_reader(client, |tx| {
-                collect_rows_in_tx(self.db, self.table_id, tx, "point lookup")
-            })?
-            .into_iter()
-            .filter(|row| row.id() == Some(id))
-            .collect::<Vec<_>>();
+        let summary = self.with_reader(client, |tx| point_lookup_summary_in_tx(self.db, self.table_id, tx, id))?;
         self.events.push(RoundEvent::Read {
             round: self.round,
             client,
             kind: ReadKind::PointLookup { id },
-            rows: rows.clone(),
+            summary,
         });
-        Ok(rows)
+        Ok(summary)
     }
 
     fn with_writer<T>(
@@ -708,7 +702,7 @@ enum RoundEvent {
         round: u64,
         client: SessionId,
         kind: ReadKind,
-        rows: Vec<SimRow>,
+        summary: ReadSummary,
     },
 }
 
@@ -723,6 +717,20 @@ enum ConflictReason {
 enum ReadKind {
     FullScan,
     PointLookup { id: u64 },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ReadSummary {
+    row_count: usize,
+    checksum: u64,
+}
+
+impl ReadSummary {
+    fn add_row(&mut self, row: &SimRow, label: &'static str) -> Result<(), String> {
+        self.row_count += 1;
+        self.checksum = self.checksum.wrapping_add(concurrent_row_checksum(row, label)?);
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -808,13 +816,13 @@ impl StreamingProperties<RoundPlan, RoundObservation, ConcurrentRelationalDbEngi
         for event in &observation.events {
             if let RoundEvent::Read {
                 kind: ReadKind::PointLookup { id },
-                rows,
+                summary,
                 ..
             } = event
             {
-                if rows.len() > 1 || rows.iter().any(|row| row.id() != Some(*id)) {
+                if summary.row_count > 1 {
                     return Err(format!(
-                        "[ConcurrentRelationalDb] round={} invalid point lookup id={id}: {rows:?}",
+                        "[ConcurrentRelationalDb] round={} invalid point lookup id={id}: {summary:?}",
                         observation.round
                     ));
                 }
@@ -860,6 +868,67 @@ fn collect_rows_in_tx(
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.id().unwrap_or_default());
     Ok(rows)
+}
+
+fn scan_summary_in_tx(
+    db: &RelationalDB,
+    table_id: TableId,
+    tx: &RelTx,
+    label: &'static str,
+) -> Result<ReadSummary, String> {
+    let mut summary = ReadSummary::default();
+    for row_ref in db.iter(tx, table_id).map_err(|err| format!("{label} failed: {err}"))? {
+        let row = SimRow::from_product_value(row_ref.to_product_value());
+        summary.add_row(&row, label)?;
+    }
+    Ok(summary)
+}
+
+fn point_lookup_summary_in_tx(
+    db: &RelationalDB,
+    table_id: TableId,
+    tx: &RelTx,
+    id: u64,
+) -> Result<ReadSummary, String> {
+    let value = AlgebraicValue::U64(id);
+    let mut summary = ReadSummary::default();
+    for row_ref in db
+        .iter_by_col_eq(tx, table_id, 0u16, &value)
+        .map_err(|err| format!("point lookup failed: {err}"))?
+    {
+        let row = SimRow::from_product_value(row_ref.to_product_value());
+        if row.id() != Some(id) {
+            return Err(format!(
+                "[ConcurrentRelationalDb] point lookup id={id} returned different row: {row:?}"
+            ));
+        }
+        summary.add_row(&row, "point lookup")?;
+    }
+    Ok(summary)
+}
+
+fn concurrent_row_checksum(row: &SimRow, label: &'static str) -> Result<u64, String> {
+    let id = row
+        .id()
+        .ok_or_else(|| format!("[ConcurrentRelationalDb] {label} row missing u64 id: {row:?}"))?;
+    let value = match row.values.get(1) {
+        Some(AlgebraicValue::U64(value)) => *value,
+        other => {
+            return Err(format!(
+                "[ConcurrentRelationalDb] {label} row has invalid value column: {other:?} in {row:?}"
+            ));
+        }
+    };
+
+    Ok(mix64(id)
+        .wrapping_add(mix64(value ^ 0xa076_1d64_78bd_642f))
+        .wrapping_add(mix64(row.values.len() as u64)))
+}
+
+fn mix64(mut value: u64) -> u64 {
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 fn expected_rows_from_events(events: &[RoundEvent]) -> Vec<SimRow> {
