@@ -244,7 +244,7 @@ impl RelationalDB {
     ///   The [`SnapshotRepo`] which stores snapshots of this database.
     ///   This is only meaningful if `history` and `durability` are also supplied.
     ///   If restoring from an existing database, the `snapshot_repo` must
-    ///   store views of the same sequence of TXes as the `history`
+    ///   store views of the same sequence of TXes as the `history`.
     ///
     /// - `metrics_recorder_queue`
     ///
@@ -2182,7 +2182,7 @@ pub mod tests_utils {
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(|repo| {
-                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio(rt.clone()))
+                        SnapshotWorker::new(repo, snapshot::Compression::Disabled, Runtime::tokio(rt.clone()))
                     })
                 })
                 .transpose()?;

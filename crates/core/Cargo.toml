@@ -134,7 +134,6 @@ tikv-jemalloc-ctl = {workspace = true}
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { workspace = true, features = ["sched"] }
 
-
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []

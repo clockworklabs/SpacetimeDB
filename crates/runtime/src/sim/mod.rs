@@ -11,6 +11,6 @@ mod rng;
 pub mod time;
 
 pub use config::RuntimeConfig;
-pub use executor::{yield_now, Handle, JoinHandle, NodeId, Runtime};
+pub use executor::{yield_now, AbortHandle, Handle, JoinError, JoinHandle, NodeId, Runtime};
 pub(crate) use rng::DeterminismLog;
 pub use rng::{GlobalRng, Rng};

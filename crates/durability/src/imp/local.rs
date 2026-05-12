@@ -10,6 +10,7 @@ use std::{
 use futures::FutureExt as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
+use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{
     error,
     payload::Txdata,
@@ -18,9 +19,9 @@ use spacetimedb_commitlog::{
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
-use spacetimedb_runtime::Runtime;
+use spacetimedb_runtime::{JoinHandle, Runtime};
 use thiserror::Error;
-use tokio::sync::{oneshot, watch};
+use tokio::sync::watch;
 use tracing::{instrument, Span};
 
 use crate::{Close, Durability, DurableOffset, History, PreparedTx, TxOffset};
@@ -106,9 +107,9 @@ where
     /// This is mainly for observability purposes, and can thus be updated with
     /// relaxed memory ordering.
     queue_depth: Arc<AtomicU64>,
-    /// Completion notification for the background actor. Contains `None` once
+    /// [`JoinHandle`] for the background actor task. Contains `None` once
     /// consumed by [`Durability::close`].
-    actor_done: Mutex<Option<oneshot::Receiver<()>>>,
+    actor: Mutex<Option<JoinHandle<()>>>,
 }
 
 /// Commitlog repo backed by [`Fs`] and protected by a [`LockedFile`].
@@ -225,17 +226,12 @@ where
     T: Encode + Send + Sync + 'static,
     R: Repo + Send + Sync + 'static,
 {
-    fn open_inner(
-        clog: Arc<Commitlog<Txdata<T>, R>>,
-        runtime: Runtime,
-        opts: Options,
-    ) -> Result<Self, OpenError> {
+    fn open_inner(clog: Arc<Commitlog<Txdata<T>, R>>, runtime: Runtime, opts: Options) -> Result<Self, OpenError> {
         let queue_capacity = opts.queue_capacity();
         let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
-        let (actor_done_tx, actor_done_rx) = oneshot::channel();
-        runtime.spawn(
+        let actor = runtime.spawn(
             Actor {
                 clog: clog.clone(),
                 durable_offset: durable_tx,
@@ -243,7 +239,7 @@ where
                 batch_capacity: opts.batch_capacity,
                 runtime: runtime.clone(),
             }
-            .run(txdata_rx, actor_done_tx),
+            .run(txdata_rx),
         );
 
         Ok(Self {
@@ -251,7 +247,7 @@ where
             durable_offset: durable_rx,
             queue,
             queue_depth,
-            actor_done: Mutex::new(Some(actor_done_rx)),
+            actor: Mutex::new(Some(actor)),
         })
     }
 
@@ -324,7 +320,7 @@ where
     R: Repo + Send + Sync + 'static,
 {
     #[instrument(name = "durability::local::actor", skip_all)]
-    async fn run(self, transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>, done: oneshot::Sender<()>) {
+    async fn run(self, transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>) {
         info!("starting durability actor");
 
         let mut tx_buf = Vec::with_capacity(self.batch_capacity.get());
@@ -373,7 +369,6 @@ where
         }
 
         info!("exiting durability actor");
-        let _ = done.send(());
     }
 
     #[instrument(skip_all)]
@@ -426,14 +421,29 @@ where
         info!("close local durability");
 
         let durable_offset = self.durable_tx_offset();
-        let maybe_actor_done = self.actor_done.lock().unwrap().take();
+        let maybe_actor = self.actor.lock().unwrap().take();
+        // Abort actor if shutdown future is dropped.
+        let abort = scopeguard::guard(
+            maybe_actor.as_ref().map(|join_handle| join_handle.abort_handle()),
+            |maybe_abort_handle| {
+                if let Some(abort_handle) = maybe_abort_handle {
+                    warn!("close future dropped, aborting durability actor");
+                    abort_handle.abort();
+                }
+            },
+        );
         self.queue.close();
         async move {
-            if let Some(actor_done) = maybe_actor_done
-                && actor_done.await.is_err()
+            if let Some(actor) = maybe_actor
+                && let Err(e) = actor.await
             {
-                warn!("durability actor completion signal dropped");
+                // Will print "durability actor: task was cancelled"
+                // or "durability actor: task panicked [...]"
+                warn!("durability actor: {e}");
             }
+            // Don't abort if the actor completed.
+            let _ = ScopeGuard::into_inner(abort);
+
             durable_offset.last_seen()
         }
         .boxed()
