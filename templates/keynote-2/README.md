@@ -22,6 +22,8 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 All tests run for 300 seconds with 50 concurrent connections, with a transfer workload (read-modify-write transaction between two accounts).
 
+The SpacetimeDB rows were obtained using a single-node SpacetimeDB Standalone instance, so the published numbers are reproducible with the public, downloadable server.
+
 Each cell shows **mean TPS ± sample standard deviation** of the per-second throughput within a single 300-second run, with the sample variance in parentheses. Cells where the standard deviation approaches or exceeds the mean (e.g. CockroachDB and Convex at ~80% contention) indicate that the system's throughput is unstable across the run.
 
 | System                                  | Mean TPS ± σ (Var) (~0% Contention) | Mean TPS ± σ (Var) (~80% Contention) |
@@ -46,8 +48,6 @@ All systems were tested with **out-of-the-box default settings**, with one excep
 The managed Postgres services (Supabase, PlanetScale) run at their default isolation level of `READ COMMITTED`.
 
 Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
-
-The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
 
 ### Test Architecture
 
@@ -122,7 +122,7 @@ Useful flags:
 ### Account Seeding
 
 - 100,000 accounts seeded before each benchmark
-- Initial balance: 10,000,000 per account
+- Initial balance: 1,000,000,000 per account
 - Zipf distribution controls which accounts are selected for transfers
 
 ## Technical Notes
@@ -161,7 +161,7 @@ PlanetScale results (~280 TPS under high contention, regardless of cluster tier)
 
 | System                            | Architecture                                            |
 | --------------------------------- | ------------------------------------------------------- |
-| SpacetimeDB                       | Integrated platform.                                    |
+| SpacetimeDB Standalone            | Integrated platform; single-node downloadable server.   |
 | SQLite + Node HTTP + Drizzle      | Node.js HTTP server → Drizzle ORM → SQLite              |
 | Bun + Drizzle + Postgres          | Bun HTTP server → Drizzle ORM → PostgreSQL              |
 | Postgres + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → PostgreSQL          |
