@@ -836,6 +836,10 @@ jobs:
           echo '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}' > global.json
           dotnet workload install wasi-experimental
           rm global.json
+          # Reinstall wasi-experimental for .NET 10 SDK: the .NET 8 install above triggers garbage
+          # collection that removes the .NET 10 workload packs installed by `workload update`.
+          # The regression-test server targets net10.0, so we need the .NET 10 packs restored.
+          dotnet workload install wasi-experimental
 
       # Install native WASI SDK toolchain (needed by WasiApp.Native.targets to compile native files).
       - name: Install WASI SDK
