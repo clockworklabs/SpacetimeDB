@@ -46,7 +46,7 @@ public partial class Instantiator : Node
 
     public override void _ExitTree()
     {
-        GD.PrintErr("Instantiator Exit Tree");
+        GD.Print("Instantiator Exit Tree");
         Conn = null;
     }
 
