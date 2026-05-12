@@ -262,7 +262,7 @@ export function getSharedRuntimeDefaults(
     ),
     stdbConfirmedReads: readBooleanEnv('STDB_CONFIRMED_READS', true, env),
     useDocker: readBooleanEnv('USE_DOCKER', false, env),
-    poolMax: readNumberEnv('MAX_POOL', 1000, env),
+    poolMax: readNumberEnv('MAX_POOL', 64, env),
     bunUrl: readStringEnv('BUN_URL', 'http://127.0.0.1:4000', env),
     convexUrl: readStringEnv('CONVEX_URL', 'http://127.0.0.1:3210', env),
     convexDir: readStringEnv('CONVEX_DIR', './convex-app', env),

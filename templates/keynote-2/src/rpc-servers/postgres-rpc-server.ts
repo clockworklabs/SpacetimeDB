@@ -5,10 +5,13 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { RpcRequest, RpcResponse } from '../connectors/rpc/rpc_common.ts';
+import { getSharedRuntimeDefaults } from '../config.ts';
 const PG_URL = process.env.PG_URL;
 if (!PG_URL) {
   throw new Error('PG_URL not set');
 }
+
+const { poolMax } = getSharedRuntimeDefaults();
 
 const accounts = pgTable('accounts', {
   id: integer('id').primaryKey(),
@@ -18,6 +21,7 @@ const accounts = pgTable('accounts', {
 const pool = new Pool({
   connectionString: PG_URL,
   application_name: 'pg-rpc-drizzle',
+  max: poolMax,
 });
 
 const db = drizzle(pool, { schema: { accounts } });
