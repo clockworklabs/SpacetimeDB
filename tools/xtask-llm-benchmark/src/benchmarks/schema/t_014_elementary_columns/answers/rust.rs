@@ -3,7 +3,8 @@ use spacetimedb::{reducer, table, ReducerContext, Table};
 #[table(accessor = primitive)]
 pub struct Primitive {
     #[primary_key]
-    pub id: i32,
+    #[auto_inc]
+    pub id: u64,
     pub count: i32,
     pub total: i64,
     pub price: f32,
@@ -15,7 +16,7 @@ pub struct Primitive {
 #[reducer]
 pub fn seed(ctx: &ReducerContext) {
     ctx.db.primitive().insert(Primitive {
-        id: 1,
+        id: 0,
         count: 2,
         total: 3_000_000_000,
         price: 1.5,

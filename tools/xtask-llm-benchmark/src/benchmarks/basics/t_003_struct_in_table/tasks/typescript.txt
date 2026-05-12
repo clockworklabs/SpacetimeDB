@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that defines a custom struct type used as a table column.
+Write a SpacetimeDB backend module in TypeScript that defines a struct type and uses it in a table.
 
 TYPES
 - Position

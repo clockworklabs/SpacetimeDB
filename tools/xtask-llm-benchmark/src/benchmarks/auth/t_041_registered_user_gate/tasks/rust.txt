@@ -1,0 +1,26 @@
+Write a SpacetimeDB backend module in Rust that gates actions behind a registration check.
+
+TABLES
+- user
+  - Struct: User
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+    - name: String
+
+- message
+  - Struct: Message
+  - public table
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - sender: Identity (index btree)
+    - text: String
+
+REDUCERS
+- register(ctx, name: String)
+  - If a User row already exists for ctx.sender, panic with "already registered"
+  - Otherwise insert a new User with identity = ctx.sender and the given name
+
+- post_message(ctx, text: String)
+  - If no User row exists for ctx.sender, panic with "not registered"
+  - Otherwise insert a Message with sender = ctx.sender and the given text, id = 0 for auto_inc
