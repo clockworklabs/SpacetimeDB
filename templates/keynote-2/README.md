@@ -27,7 +27,7 @@ Each cell shows **mean TPS ± sample standard deviation** of the per-second thro
 | System                                  | Mean TPS ± σ (Var) (~0% Contention) | Mean TPS ± σ (Var) (~80% Contention) |
 | --------------------------------------- | ----------------------------------- | ------------------------------------ |
 | SpacetimeDB (TypeScript Module)         | 294,827 ± 5,266 (27,728,435)        | 304,865 ± 4,751 (22,569,090)         |
-| SpacetimeDB (Rust Module)               |                                     | 265,542                              |
+| SpacetimeDB (Rust Module)               | 266,139 ± 4,662 (21,730,912)        | 278,070 ± 4,279 (18,312,134)         |
 | SQLite + Node HTTP + Drizzle            | 3,109 ± 86 (7,326)                  | 3,228 ± 80 (6,396)                   |
 | Bun + Drizzle + Postgres                | 10,662 ± 215 (46,418)               | 2,773 ± 83 (6,930)                   |
 | Supabase + Node HTTP + Drizzle          | 6,853 ± 1,017 (1,034,915)           | 2,896 ± 111 (12,414)                 |
