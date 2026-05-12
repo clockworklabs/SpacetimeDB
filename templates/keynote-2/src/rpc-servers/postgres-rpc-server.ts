@@ -47,6 +47,7 @@ async function rpcTransfer(args: Record<string, unknown>) {
       .select()
       .from(accounts)
       .where(inArray(accounts.id, [fromId, toId]))
+      .for('update')
       .orderBy(accounts.id);
 
     if (rows.length !== 2) {
@@ -61,15 +62,15 @@ async function rpcTransfer(args: Record<string, unknown>) {
       return;
     }
 
-    // await tx
-    //   .update(accounts)
-    //   .set({ balance: fromRow.balance - delta })
-    //   .where(eq(accounts.id, fromId));
-    //
-    // await tx
-    //   .update(accounts)
-    //   .set({ balance: toRow.balance + delta })
-    //   .where(eq(accounts.id, toId));
+    await tx
+      .update(accounts)
+      .set({ balance: fromRow.balance - delta })
+      .where(eq(accounts.id, fromId));
+
+    await tx
+      .update(accounts)
+      .set({ balance: toRow.balance + delta })
+      .where(eq(accounts.id, toId));
   });
 }
 
