@@ -4,7 +4,10 @@ use std::{cell::Cell, collections::BTreeMap, io, num::NonZeroU64, ops::Bound, sy
 
 use spacetimedb_commitlog::repo::{Memory as MemoryCommitlogRepo, SizeOnDisk};
 use spacetimedb_core::{
-    db::relational_db::{MutTx as RelMutTx, Persistence, RelationalDB, SnapshotWorker, Tx as RelTx},
+    db::{
+        relational_db::{MutTx as RelMutTx, Persistence, RelationalDB, SnapshotWorker, Tx as RelTx},
+        snapshot,
+    },
     error::{DBError, DatastoreError, IndexError},
     messages::control_db::HostType,
 };
@@ -18,6 +21,7 @@ use spacetimedb_lib::{
     Identity,
 };
 use spacetimedb_primitives::{SequenceId, TableId};
+use spacetimedb_runtime::Runtime;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
     def::BTreeAlgorithm,
@@ -43,9 +47,7 @@ use crate::{
         snapshot::{is_injected_snapshot_error_text, BuggifiedSnapshotRepo, SnapshotFaultConfig},
     },
     workload::{
-        commitlog_ops::{
-            CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary,
-        },
+        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DiskFaultSummary, DurableReplaySummary},
         commitlog_ops::{InteractionSummary, RuntimeSummary, SchemaSummary, TableOperationSummary, TransactionSummary},
         table_ops::{
             ConnectionWriteState, TableErrorKind, TableInteractionCase, TableOperation, TableScenario, TableScenarioId,
@@ -426,10 +428,11 @@ impl RelationalDbEngine {
     }
 
     fn reopen_from_history(&self) -> Result<ReopenedRelationalDb, String> {
+        let runtime = Runtime::simulation_current();
         let durability = Arc::new(
             InMemoryCommitlogDurability::open_with_repo(
                 self.commitlog_repo.clone(),
-                spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+                runtime.clone(),
                 self.durability_opts,
             )
             .map_err(|err| format!("reopen in-memory durability failed: {err}"))?,
@@ -438,13 +441,15 @@ impl RelationalDbEngine {
         let snapshot_restore = self.snapshot_repo.repo_for_restore(durable_offset)?;
         let snapshot_worker = SnapshotWorker::new(
             Arc::new(self.snapshot_repo.clone()),
-            spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+            snapshot::Compression::Disabled,
+            runtime.clone(),
         );
         let persistence = Persistence {
             durability: durability.clone(),
             disk_size: Arc::new(in_memory_size_on_disk),
+            snapshot_store: snapshot_restore.store.clone(),
             snapshots: Some(snapshot_worker.clone()),
-            runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+            runtime,
         };
         let (db, connected_clients) = RelationalDB::open(
             Identity::ZERO,
@@ -1488,6 +1493,7 @@ fn bootstrap_relational_db(
     commitlog_fault_config: CommitlogFaultConfig,
     snapshot_fault_config: SnapshotFaultConfig,
 ) -> anyhow::Result<RelationalDbBootstrap> {
+    let runtime = Runtime::simulation_current();
     let commitlog_repo = FaultableRepo::new(
         MemoryCommitlogRepo::new(8 * 1024 * 1024),
         commitlog_fault_config,
@@ -1496,22 +1502,20 @@ fn bootstrap_relational_db(
     let snapshot_repo = BuggifiedSnapshotRepo::new(snapshot_fault_config, seed.fork(703))?;
     let durability_opts = commitlog_stress_options(seed.fork(701));
     let durability = Arc::new(
-        InMemoryCommitlogDurability::open_with_repo(
-            commitlog_repo.clone(),
-            spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
-            durability_opts,
-        )
-        .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?,
+        InMemoryCommitlogDurability::open_with_repo(commitlog_repo.clone(), runtime.clone(), durability_opts)
+            .map_err(|err| anyhow::anyhow!("open in-memory durability failed: {err}"))?,
     );
     let snapshot_worker = SnapshotWorker::new(
         Arc::new(snapshot_repo.clone()),
-        spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+        snapshot::Compression::Disabled,
+        runtime.clone(),
     );
     let persistence = Persistence {
         durability: durability.clone(),
         disk_size: Arc::new(in_memory_size_on_disk),
+        snapshot_store: Some(snapshot_worker.snapshot_store()),
         snapshots: Some(snapshot_worker.clone()),
-        runtime: spacetimedb_core::runtime::RuntimeDispatch::simulation_current(),
+        runtime,
     };
     let (db, connected_clients) = RelationalDB::open(
         Identity::ZERO,

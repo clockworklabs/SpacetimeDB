@@ -6233,6 +6233,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "regen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "tempfile",
+]
+
+[[package]]
 name = "regex"
 version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8221,6 +8231,7 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.2.0",
  "tempfile",
  "thiserror 1.0.69",
@@ -8493,11 +8504,11 @@ dependencies = [
 name = "spacetimedb-runtime"
 version = "2.2.0"
 dependencies = [
- "anyhow",
  "async-task",
  "futures",
  "futures-util",
  "libc",
+ "spin",
  "tokio",
  "tracing",
 ]
@@ -8682,6 +8693,7 @@ dependencies = [
  "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
  "spacetimedb-primitives 2.2.0",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-table",

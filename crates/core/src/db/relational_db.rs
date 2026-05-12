@@ -1,7 +1,6 @@
 use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::runtime::RuntimeDispatch;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -42,9 +41,8 @@ use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
-#[cfg(test)]
-use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::*;
+use spacetimedb_runtime::Runtime;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -54,15 +52,17 @@ use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepo, SnapshotRepository};
+use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository, SnapshotStore};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::io;
 use std::ops::RangeBounds;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 pub use super::persistence::{DiskSizeFn, Durability, Persistence};
@@ -102,7 +102,7 @@ pub struct RelationalDB {
 
     inner: Locking,
     durability: Option<Arc<Durability>>,
-    durability_runtime: Option<RuntimeDispatch>,
+    durability_runtime: Option<Runtime>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -141,8 +141,6 @@ impl Drop for RelationalDB {
         if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
             spawn_durability_close(durability, &runtime, self.database_identity);
         }
-
-        log::info!("drop done");
     }
 }
 
@@ -239,13 +237,12 @@ impl RelationalDB {
     ///
     ///   `None` may be passed to obtain an in-memory only database.
     ///
-    /// - snapshots
+    /// - `snapshot_repo`
     ///
-    ///   Optional snapshot persistence and background snapshot execution,
-    ///   carried through [`Persistence`].
+    ///   The [`SnapshotRepo`] which stores snapshots of this database.
     ///   This is only meaningful if `history` and `durability` are also supplied.
-    ///   If restoring from an existing database, the snapshot repository must
-    ///   store views of the same sequence of TXes as the `history`.
+    ///   If restoring from an existing database, the `snapshot_repo` must
+    ///   store views of the same sequence of TXes as the `history`
     ///
     /// - `metrics_recorder_queue`
     ///
@@ -285,10 +282,10 @@ impl RelationalDB {
 
         let start_time = std::time::Instant::now();
 
-        let snapshot_repo = persistence.as_ref().and_then(|p| p.snapshot_repo());
+        let snapshot_store = persistence.as_ref().and_then(|p| p.snapshot_store());
         let inner = Self::restore_from_snapshot_or_bootstrap(
             database_identity,
-            snapshot_repo.as_deref(),
+            snapshot_store.as_deref(),
             durable_tx_offset,
             min_commitlog_offset,
             page_pool,
@@ -479,7 +476,7 @@ impl RelationalDB {
 
     fn restore_from_snapshot_or_bootstrap(
         database_identity: Identity,
-        snapshot_repo: Option<&dyn SnapshotRepo>,
+        snapshot_store: Option<&dyn SnapshotStore>,
         durable_tx_offset: Option<TxOffset>,
         min_commitlog_offset: TxOffset,
         page_pool: PagePool,
@@ -487,14 +484,14 @@ impl RelationalDB {
         // Try to load the `ReconstructedSnapshot` at `snapshot_offset`.
         fn try_load_snapshot(
             database_identity: &Identity,
-            snapshot_repo: &(impl SnapshotRepo + ?Sized),
+            snapshot_store: &dyn SnapshotStore,
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
 
-            let snapshot = snapshot_repo
+            let snapshot = snapshot_store
                 .read_snapshot(snapshot_offset, page_pool)
                 .map_err(Box::new)?;
 
@@ -560,11 +557,11 @@ impl RelationalDB {
             }
         }
 
-        if let Some((snapshot_repo, durable_tx_offset)) = snapshot_repo.zip(durable_tx_offset) {
+        if let Some((snapshot_store, durable_tx_offset)) = snapshot_store.zip(durable_tx_offset) {
             // Mark any newer snapshots as invalid, as the history past
             // `durable_tx_offset` may have been reset and thus diverge from
             // any snapshots taken earlier.
-            snapshot_repo
+            snapshot_store
                 .invalidate_newer_snapshots(durable_tx_offset)
                 .map_err(|e| RestoreSnapshotError::Invalidate {
                     offset: durable_tx_offset,
@@ -575,7 +572,7 @@ impl RelationalDB {
             // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
             let mut upper_bound = durable_tx_offset;
             loop {
-                let Some(snapshot_offset) = snapshot_repo
+                let Some(snapshot_offset) = snapshot_store
                     .latest_snapshot_older_than(upper_bound)
                     .map_err(Box::new)?
                 else {
@@ -585,7 +582,7 @@ impl RelationalDB {
                     log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
                 }
-                match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &page_pool) {
+                match try_load_snapshot(&database_identity, snapshot_store, snapshot_offset, &page_pool) {
                     Ok(snapshot) if snapshot.database_identity != database_identity => {
                         return Err(RestoreSnapshotError::IdentityMismatch {
                             expected: database_identity,
@@ -601,7 +598,7 @@ impl RelationalDB {
                         // Newly created snapshots should not depend on it.
                         if !is_transient_error(&e) {
                             log::info!("invalidating bad snapshot at {snapshot_offset}");
-                            snapshot_repo.invalidate_snapshot(snapshot_offset).map_err(|e| {
+                            snapshot_store.invalidate_snapshot(snapshot_offset).map_err(|e| {
                                 RestoreSnapshotError::Invalidate {
                                     offset: snapshot_offset,
                                     source: Box::new(e),
@@ -621,7 +618,7 @@ impl RelationalDB {
                 }
             }
         }
-        log::info!("[{database_identity}] DATABASE: no usable snapshot in store");
+        log::info!("[{database_identity}] DATABASE: no usable snapshot in snapshot repo");
 
         // If we didn't find a snapshot and the commitlog doesn't start at the
         // zero-th commit (e.g. due to archiving), there is no way to restore
@@ -1668,6 +1665,11 @@ fn apply_history(
 }
 
 pub type LocalDurability = Arc<durability::Local<ProductValue>>;
+
+const COMMITLOG_COMPRESSION_IDLE_WINDOW: Duration = Duration::from_millis(500);
+const COMMITLOG_COMPRESSION_IDLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const COMMITLOG_COMPRESSION_FORCE_SEGMENT_BACKLOG: usize = 8;
+
 /// Initialize local durability with the default parameters.
 ///
 /// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
@@ -1676,9 +1678,9 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// of the commitlog.
 pub async fn local_durability(
     replica_dir: ReplicaDir,
+    runtime: Runtime,
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
-    let runtime = RuntimeDispatch::tokio_current();
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1715,61 +1717,281 @@ pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<
     asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
 
-/// Watches snapshot creation events and compresses all commitlog segments older
-/// than the snapshot.
+async fn commitlog_segments_to_compress(
+    durability: LocalDurability,
+    prev_snapshot_offset: TxOffset,
+    snapshot_offset: TxOffset,
+) -> io::Result<Vec<TxOffset>> {
+    // Return segment start offsets in `[prev_snapshot_offset, snapshot_offset)`.
+    // If either offset falls inside a segment, round down to the containing
+    // segment. The segment containing `snapshot_offset` must stay uncompressed,
+    // because it can contain transactions newer than the snapshot.
+    asyncify(move || {
+        let segment_offsets = durability.existing_segment_offsets()?;
+        let start_idx = segment_offsets
+            .binary_search(&prev_snapshot_offset)
+            // if the snapshot is in the middle of a segment, we want to round down.
+            // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
+            .unwrap_or_else(|i| i.saturating_sub(1));
+        let segment_offsets = &segment_offsets[start_idx..];
+        let end_idx = segment_offsets
+            .binary_search(&snapshot_offset)
+            .unwrap_or_else(|i| i.saturating_sub(1));
+        // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
+        // which we don't want to compress, so an exclusive range is correct.
+        Ok(segment_offsets[..end_idx].to_vec())
+    })
+    .await
+}
+
+#[derive(Default)]
+struct CommitlogCompressionState {
+    // Latest snapshot offset whose older segments have all been processed.
+    compressed_snapshot_offset: TxOffset,
+    // Newest snapshot offset represented by `pending_segments`. Once the queue is
+    // drained, this is promoted into `compressed_snapshot_offset`.
+    pending_snapshot_offset: Option<TxOffset>,
+    // Segment start offsets waiting for compression, processed oldest first.
+    pending_segments: VecDeque<TxOffset>,
+    // Time at which write load first appeared idle during the current idle window.
+    idle_since: Option<Instant>,
+}
+
+impl CommitlogCompressionState {
+    async fn enqueue_snapshot(&mut self, durability: LocalDurability, snapshot_offset: TxOffset) -> io::Result<()> {
+        // Coalesce snapshot events while compression is behind. If work is already
+        // pending, only enqueue the segment offsets between the previous pending
+        // snapshot and the new one.
+        let prev_snapshot_offset = self.pending_snapshot_offset.unwrap_or(self.compressed_snapshot_offset);
+        self.pending_segments
+            .extend(commitlog_segments_to_compress(durability, prev_snapshot_offset, snapshot_offset).await?);
+        self.pending_snapshot_offset = Some(snapshot_offset);
+        Ok(())
+    }
+
+    fn mark_caught_up(&mut self) {
+        // Only advance the checkpoint after every segment for the pending snapshot
+        // has been attempted successfully.
+        if self.pending_segments.is_empty()
+            && let Some(snapshot_offset) = self.pending_snapshot_offset.take()
+        {
+            self.compressed_snapshot_offset = snapshot_offset;
+        }
+    }
+
+    fn has_pending_segments(&self) -> bool {
+        !self.pending_segments.is_empty()
+    }
+
+    fn pending_segment_count(&self) -> usize {
+        self.pending_segments.len()
+    }
+
+    fn reset_idle(&mut self) {
+        self.idle_since = None;
+    }
+
+    fn idle_window_elapsed(&mut self) -> bool {
+        // The first idle poll starts the timer; later idle polls measure against
+        // that same instant until new writes are queued or compression work is done.
+        let now = Instant::now();
+        self.idle_since.get_or_insert(now).elapsed() >= COMMITLOG_COMPRESSION_IDLE_WINDOW
+    }
+
+    async fn compress_next_segment(
+        &mut self,
+        durability: LocalDurability,
+        clog_tx: &mut Option<tokio::sync::mpsc::Sender<u64>>,
+    ) -> bool {
+        // Return `false` on compression failure so the caller can back off before
+        // retrying the same segment.
+        let Some(segment_offset) = self.pending_segments.front().copied() else {
+            return true;
+        };
+
+        if let Err(err) = asyncify(move || durability.compress_segments(&[segment_offset])).await {
+            tracing::warn!("failed to compress commitlog segment {segment_offset}: {err}");
+            return false;
+        }
+
+        self.pending_segments.pop_front();
+        self.mark_caught_up();
+
+        if let Some(clog_tx) = clog_tx
+            && let Err(err) = clog_tx.try_send(segment_offset)
+        {
+            tracing::warn!("failed to send offset {segment_offset} after compression: {err}");
+        }
+
+        true
+    }
+
+    async fn compress_segments_while_idle(
+        &mut self,
+        durability: LocalDurability,
+        clog_tx: &mut Option<tokio::sync::mpsc::Sender<u64>>,
+    ) -> bool {
+        while self.has_pending_segments() {
+            if durability.queue_depth() != 0 {
+                return true;
+            }
+            if !self.compress_next_segment(durability.clone(), clog_tx).await {
+                return false;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        true
+    }
+}
+
+async fn handle_commitlog_snapshot_event(
+    state: &mut CommitlogCompressionState,
+    durability: LocalDurability,
+    snap_tx: &mut Option<tokio::sync::mpsc::Sender<u64>>,
+    snapshot_offset: TxOffset,
+) {
+    // Keep the test hooks in the same place as the state transition so callers
+    // can't forget to reset the idle window after new work is enqueued.
+    if let Some(snap_tx) = snap_tx
+        && let Err(err) = snap_tx.try_send(snapshot_offset)
+    {
+        tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
+    }
+
+    if let Err(err) = state.enqueue_snapshot(durability, snapshot_offset).await {
+        tracing::warn!("failed to get commitlog segments to compress: {err}");
+    }
+    state.reset_idle();
+}
+
+/// Watches snapshot creation events and compresses commitlog segments older
+/// than the snapshot once write load appears idle.
 ///
 /// Suitable **only** for non-replicated databases.
+///
+/// Commitlog compression state machine:
+///
+/// ```text
+///   startup
+///      |
+///      | enqueue segments in [0, latest snapshot)
+///      v
+///   +------------------+       no work / queue drained       +------------------+
+///   | pending segments | ----------------------------------> | no pending work  |
+///   | in memory        |                                     | wait for snapshot|
+///   +--------+---------+ <---------------------------------- +---------+--------+
+///            |                snapshot created
+///            |                enqueue older segments
+///            v
+///   backlog >= threshold?
+///        /        \
+///     yes          no -----------------------+
+///      |                                     |
+///      v                                     v
+///   +------------------------+   +------------------------+
+///   | compress one segment   |   | wait until durability  |
+///   | immediately            |   | queue is empty for     |
+///   +------------+-----------+   | IDLE_WINDOW            |
+///                |               +-----------+------------+
+///                |                           |
+///                |                           v
+///                |               +------------------------+
+///                |               | compress next only     |
+///                |               | while queue is empty   |
+///                |               +-----------+------------+
+///                |                           |
+///                +---------------------------+
+///                            |
+///                            v
+///                   re-check pending segments
+///
+///   snapshot observed while pending:
+///     enqueue new older segments and reset the idle timer
+/// ```
+///
+/// Compression is treated as write-load idle maintenance unless the uncompressed
+/// segment backlog grows large enough to force bounded progress under load.
+/// Startup is handled as an initial catch-up pass because pending compression
+/// work is not persisted across restarts; recompressing an already-compressed
+/// segment is a no-op in the commitlog storage layer.
 pub async fn snapshot_watching_commitlog_compressor(
     mut snapshot_rx: watch::Receiver<u64>,
     mut clog_tx: Option<tokio::sync::mpsc::Sender<u64>>,
     mut snap_tx: Option<tokio::sync::mpsc::Sender<u64>>,
     durability: LocalDurability,
 ) {
-    let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
-    while snapshot_rx.changed().await.is_ok() {
-        let snapshot_offset = *snapshot_rx.borrow_and_update();
-        let durability = durability.clone();
+    let initial_snapshot_offset = *snapshot_rx.borrow_and_update();
+    let mut state = CommitlogCompressionState::default();
 
-        if let Some(snap_tx) = &mut snap_tx
-            && let Err(err) = snap_tx.try_send(snapshot_offset)
-        {
-            tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
+    // `snapshot_rx` starts at the latest snapshot already on disk. Treat that as
+    // an initial catch-up target rather than a completed compression checkpoint,
+    // because pending compression work is not persisted across restarts.
+    if initial_snapshot_offset > 0
+        && let Err(err) = state
+            .enqueue_snapshot(durability.clone(), initial_snapshot_offset)
+            .await
+    {
+        tracing::warn!("failed to get initial commitlog segments to compress: {err}");
+    }
+
+    loop {
+        state.mark_caught_up();
+
+        if !state.has_pending_segments() {
+            // With no backlog, block until a new snapshot creates more work.
+            if snapshot_rx.changed().await.is_err() {
+                break;
+            }
+            let snapshot_offset = *snapshot_rx.borrow_and_update();
+            handle_commitlog_snapshot_event(&mut state, durability.clone(), &mut snap_tx, snapshot_offset).await;
+            continue;
         }
 
-        let res: io::Result<_> = asyncify(move || {
-            let segment_offsets = durability.existing_segment_offsets()?;
-            let start_idx = segment_offsets
-                .binary_search(&prev_snapshot_offset)
-                // if the snapshot is in the middle of a segment, we want to round down.
-                // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
-                .unwrap_or_else(|i| i.saturating_sub(1));
-            let segment_offsets = &segment_offsets[start_idx..];
-            let end_idx = segment_offsets
-                .binary_search(&snapshot_offset)
-                .unwrap_or_else(|i| i.saturating_sub(1));
-            // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
-            // which we don't want to compress, so an exclusive range is correct.
-            let segment_offsets = &segment_offsets[..end_idx];
-            durability.compress_segments(segment_offsets)?;
-            let n = segment_offsets.len();
-            let last_compressed_segment = if n > 0 { Some(segment_offsets[n - 1]) } else { None };
-            Ok(last_compressed_segment)
-        })
-        .await;
-
-        let last_compressed_segment = match res {
-            Ok(opt_offset) => opt_offset,
-            Err(err) => {
-                tracing::warn!("failed to compress segments: {err}");
-                continue;
+        if state.pending_segment_count() >= COMMITLOG_COMPRESSION_FORCE_SEGMENT_BACKLOG {
+            // Under sustained write load we still need bounded progress so old
+            // uncompressed segments do not accumulate forever.
+            tracing::debug!(
+                pending_segments = state.pending_segment_count(),
+                "forcing commitlog compression; segment backlog exceeded threshold"
+            );
+            if !state.compress_next_segment(durability.clone(), &mut clog_tx).await {
+                tokio::time::sleep(COMMITLOG_COMPRESSION_IDLE_WINDOW).await;
             }
-        };
-        prev_snapshot_offset = snapshot_offset;
+            state.reset_idle();
+            tokio::task::yield_now().await;
+            continue;
+        }
 
-        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
-            && let Err(err) = clog_tx.try_send(last_compressed_segment)
-        {
-            tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
+        tokio::select! {
+            res = snapshot_rx.changed() => {
+                // New snapshots extend the pending range and restart the idle window.
+                if res.is_err() {
+                    break;
+                }
+                let snapshot_offset = *snapshot_rx.borrow_and_update();
+                handle_commitlog_snapshot_event(
+                    &mut state,
+                    durability.clone(),
+                    &mut snap_tx,
+                    snapshot_offset,
+                )
+                .await;
+            }
+            _ = tokio::time::sleep(COMMITLOG_COMPRESSION_IDLE_POLL_INTERVAL) => {
+                if durability.queue_depth() == 0 {
+                    // Once no writes have been queued for long enough, drain as
+                    // many segments as possible, but stop if write load resumes.
+                    if state.idle_window_elapsed() {
+                        if !state.compress_segments_while_idle(durability.clone(), &mut clog_tx).await {
+                            tokio::time::sleep(COMMITLOG_COMPRESSION_IDLE_WINDOW).await;
+                        }
+                        state.reset_idle();
+                    }
+                } else {
+                    state.reset_idle();
+                }
+            }
         }
     }
 }
@@ -1804,13 +2026,12 @@ pub mod tests_utils {
 
     use super::*;
     use core::ops::Deref;
-    use durability::EmptyHistory;
+    use durability::{Durability, EmptyHistory};
     use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::server::ReplicaDir;
-    use spacetimedb_paths::server::SnapshotDirPath;
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
@@ -1957,25 +2178,23 @@ pub mod tests_utils {
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let snapshots = want_snapshot_repo
                 .then(|| {
-                    open_snapshot_repo(root.snapshots(), db_identity, replica_id)
-                        .map(|repo| {
-                            SnapshotWorker::new_with_repository(
-                                repo,
-                                snapshot::Compression::Disabled,
-                                RuntimeDispatch::tokio(rt.clone()),
-                            )
-                        })
+                    open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(|repo| {
+                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio(rt.clone()))
+                    })
                 })
                 .transpose()?;
 
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let runtime = Runtime::tokio(rt.clone());
+            let (local, disk_size_fn) =
+                rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
             let history = local.as_history();
 
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
+                snapshot_store: snapshots.as_ref().map(SnapshotWorker::snapshot_store),
                 snapshots,
-                runtime: RuntimeDispatch::tokio(rt),
+                runtime,
             };
 
             let (db, _) = RelationalDB::open(
@@ -2019,11 +2238,13 @@ pub mod tests_utils {
             drop(self.db);
 
             if let Some(DurableState {
-                durability: _,
+                durability,
                 rt,
                 replica_dir,
             }) = self.durable
             {
+                rt.block_on(durability.close());
+                drop(durability);
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
                 let (db, handle) = Self::durable_internal(&replica_dir, rt.handle().clone(), self.want_snapshot_repo)?;
@@ -2086,23 +2307,21 @@ pub mod tests_utils {
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let snapshots = want_snapshot_repo
                 .then(|| {
-                    open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)
-                        .map(|repo| {
-                            SnapshotWorker::new_with_repository(
-                                repo,
-                                snapshot::Compression::Disabled,
-                                RuntimeDispatch::tokio(rt.clone()),
-                            )
-                        })
+                    open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(|repo| {
+                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio(rt.clone()))
+                    })
                 })
                 .transpose()?;
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let runtime = Runtime::tokio(rt.clone());
+            let (local, disk_size_fn) =
+                rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
             let history = local.as_history();
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
+                snapshot_store: snapshots.as_ref().map(SnapshotWorker::snapshot_store),
                 snapshots,
-                runtime: RuntimeDispatch::tokio(rt),
+                runtime,
             };
             let db = Self::open_db(history, Some(persistence), None, 0)?;
 
@@ -2136,7 +2355,7 @@ pub mod tests_utils {
             Arc::new(|_, _| i64::MAX)
         }
 
-        pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>, DBError> {
+        pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>, DBError> {
             Ok(self.inner.take_snapshot(repo)?)
         }
     }

@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
-use spacetimedb_snapshot::SnapshotRepo;
+use spacetimedb_runtime::Runtime;
+use spacetimedb_snapshot::{DynSnapshotRepo, SnapshotStore};
 
-use crate::{messages::control_db::Database, runtime::RuntimeDispatch, util::asyncify};
+use crate::{messages::control_db::Database, util::asyncify};
 
 use super::{
     relational_db::{self, Txdata},
@@ -35,6 +36,8 @@ pub struct Persistence {
     /// Currently the expectation is that the reported size is the commitlog
     /// size only.
     pub disk_size: DiskSizeFn,
+    /// Optional snapshot store used during database restore.
+    pub snapshot_store: Option<Arc<dyn SnapshotStore>>,
     /// An optional [SnapshotWorker].
     ///
     /// The current expectation is that snapshots are only enabled for
@@ -42,7 +45,7 @@ pub struct Persistence {
     /// this type.
     pub snapshots: Option<SnapshotWorker>,
     /// Runtime onto which durability-related tasks shall be spawned.
-    pub runtime: RuntimeDispatch,
+    pub runtime: Runtime,
 }
 
 impl Persistence {
@@ -53,26 +56,35 @@ impl Persistence {
         snapshots: Option<SnapshotWorker>,
         runtime: tokio::runtime::Handle,
     ) -> Self {
-        Self::new_with_runtime(durability, disk_size, snapshots, RuntimeDispatch::tokio(runtime))
+        Self::new_with_runtime(durability, disk_size, snapshots, Runtime::tokio(runtime))
     }
 
     pub fn new_with_runtime(
         durability: impl spacetimedb_durability::Durability<TxData = Txdata> + 'static,
         disk_size: impl Fn() -> io::Result<SizeOnDisk> + Send + Sync + 'static,
         snapshots: Option<SnapshotWorker>,
-        runtime: RuntimeDispatch,
+        runtime: Runtime,
     ) -> Self {
+        let snapshot_store = snapshots.as_ref().map(SnapshotWorker::snapshot_store);
         Self {
             durability: Arc::new(durability),
             disk_size: Arc::new(disk_size),
+            snapshot_store,
             snapshots,
             runtime,
         }
     }
 
-    /// If snapshots are enabled, get the snapshot repository they are stored in.
-    pub fn snapshot_repo(&self) -> Option<Arc<dyn SnapshotRepo>> {
+    /// If snapshots are enabled, get the [SnapshotRepo] they are stored in.
+    pub fn snapshot_repo(&self) -> Option<Arc<DynSnapshotRepo>> {
         self.snapshots.as_ref().map(|worker| worker.snapshot_repo())
+    }
+
+    /// If snapshot restore is enabled, get the [SnapshotStore] to read from.
+    pub fn snapshot_store(&self) -> Option<Arc<dyn SnapshotStore>> {
+        self.snapshot_store
+            .clone()
+            .or_else(|| self.snapshots.as_ref().map(SnapshotWorker::snapshot_store))
     }
 
     /// Get the [TxOffset] reported as durable by the [Durability] impl.
@@ -100,12 +112,13 @@ impl Persistence {
         Option<Arc<Durability>>,
         Option<DiskSizeFn>,
         Option<SnapshotWorker>,
-        Option<RuntimeDispatch>,
+        Option<Runtime>,
     ) {
         this.map(
             |Self {
                  durability,
                  disk_size,
+                 snapshot_store: _,
                  snapshots,
                  runtime,
              }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
@@ -152,19 +165,15 @@ impl PersistenceProvider for LocalPersistenceProvider {
     async fn persistence(&self, database: &Database, replica_id: u64) -> anyhow::Result<Persistence> {
         let replica_dir = self.data_dir.replica(replica_id);
         let snapshot_dir = replica_dir.snapshots();
+        let runtime = Runtime::tokio_current();
 
         let database_identity = database.database_identity;
         let snapshot_worker =
             asyncify(move || relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id))
                 .await
-                .map(|repo| {
-                    SnapshotWorker::new_with_repository(
-                        repo,
-                        snapshot::Compression::Enabled,
-                        RuntimeDispatch::tokio_current(),
-                    )
-                })?;
-        let (durability, disk_size) = relational_db::local_durability(replica_dir, Some(&snapshot_worker)).await?;
+                .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled, runtime.clone()))?;
+        let (durability, disk_size) =
+            relational_db::local_durability(replica_dir, runtime.clone(), Some(&snapshot_worker)).await?;
 
         tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
             snapshot_worker.subscribe(),
@@ -176,8 +185,9 @@ impl PersistenceProvider for LocalPersistenceProvider {
         Ok(Persistence {
             durability,
             disk_size,
+            snapshot_store: Some(snapshot_worker.snapshot_store()),
             snapshots: Some(snapshot_worker),
-            runtime: RuntimeDispatch::tokio_current(),
+            runtime,
         })
     }
 }

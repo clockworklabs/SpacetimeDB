@@ -25,7 +25,7 @@ spacetimedb_durability = { package = "spacetimedb-durability", path = "../durabi
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-runtime = { workspace = true, features = ["simulation"] }
+spacetimedb-runtime = { workspace = true, features = ["simulation", "simulation-std"] }
 spacetimedb-sats.workspace = true
 spacetimedb-schema = { workspace = true, features = ["test"] }
 spacetimedb-snapshot.workspace = true

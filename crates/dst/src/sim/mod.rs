@@ -11,7 +11,7 @@ pub mod time;
 
 use std::{future::Future, time::Duration};
 
-pub use spacetimedb_runtime::sim::{yield_now, DecisionSource, Handle, JoinHandle, NodeId, Rng};
+pub use spacetimedb_runtime::sim::{yield_now, Handle, JoinHandle, NodeId, Rng};
 
 use crate::seed::DstSeed;
 
@@ -23,12 +23,12 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(seed: DstSeed) -> anyhow::Result<Self> {
         Ok(Self {
-            inner: spacetimedb_runtime::sim::Runtime::new(seed.0)?,
+            inner: spacetimedb_runtime::sim::Runtime::new(seed.0),
         })
     }
 
     pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
-        self.inner.block_on(future)
+        spacetimedb_runtime::adapter::sim_std::block_on(&mut self.inner, future)
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -64,7 +64,7 @@ impl Runtime {
         F: Future + 'static,
         F::Output: Send + 'static,
     {
-        spacetimedb_runtime::sim::Runtime::check_determinism(seed.0, make_future)
+        spacetimedb_runtime::adapter::sim_std::check_determinism(seed.0, make_future)
     }
 
     pub fn check_determinism_with<M, F>(seed: DstSeed, make_future: M) -> F::Output
@@ -73,7 +73,7 @@ impl Runtime {
         F: Future + 'static,
         F::Output: Send + 'static,
     {
-        spacetimedb_runtime::sim::Runtime::check_determinism_with(seed.0, make_future)
+        spacetimedb_runtime::adapter::sim_std::check_determinism_with(seed.0, make_future)
     }
 }
 
@@ -81,6 +81,6 @@ pub(crate) fn advance_time(duration: Duration) {
     time::advance(duration);
 }
 
-pub(crate) fn decision_source(seed: DstSeed) -> DecisionSource {
-    DecisionSource::new(seed.0)
+pub(crate) fn decision_source(seed: DstSeed) -> Rng {
+    Rng::new(seed.0)
 }

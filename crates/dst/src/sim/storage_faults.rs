@@ -134,12 +134,12 @@ impl StorageFaultDomain {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct StorageFaultController {
     config: StorageFaultConfig,
     domain: StorageFaultDomain,
     counters: Arc<FaultCounters>,
-    decisions: Arc<sim::DecisionSource>,
+    decisions: Arc<sim::Rng>,
     time: Option<sim::time::TimeHandle>,
     armed: Arc<AtomicBool>,
     suspended: Arc<AtomicUsize>,

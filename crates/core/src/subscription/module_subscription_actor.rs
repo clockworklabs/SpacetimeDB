@@ -37,6 +37,7 @@ use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
@@ -1136,6 +1137,47 @@ impl ModuleSubscriptions {
             .send_client_message_v2(recipient, Some(tx_offset), message)
     }
 
+    pub fn send_subscription_error_v1(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_id: Option<ws_v1::QueryId>,
+        timer: Option<Instant>,
+        message: Box<str>,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message_v1(
+            recipient,
+            None,
+            SubscriptionMessage {
+                request_id,
+                query_id,
+                timer,
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            },
+        )
+    }
+
+    pub fn send_subscription_error_v2(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_set_id: ws_v2::QuerySetId,
+        message: Box<str>,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message_v2(
+            recipient,
+            None,
+            ws_v2::SubscriptionError {
+                request_id,
+                query_set_id,
+                error: message,
+            },
+        )
+    }
+
     /// Add a subscription consisting of multiple queries.
     ///
     /// Read more in [`Self::add_single_subscription`].
@@ -2060,8 +2102,9 @@ mod tests {
             Some(Persistence {
                 durability: durability.clone(),
                 disk_size: Arc::new(|| Ok(<_>::default())),
+                snapshot_store: None,
                 snapshots: None,
-                runtime: crate::runtime::RuntimeDispatch::tokio(rt),
+                runtime: spacetimedb_runtime::Runtime::tokio(rt),
             }),
             None,
             0,

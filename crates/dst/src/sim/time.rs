@@ -1,8 +1,12 @@
 //! Virtual time for the local DST simulator.
 
-pub use spacetimedb_runtime::sim::time::{
-    advance, now, sleep, timeout, try_current_handle, TimeHandle, TimeoutElapsed,
-};
+pub use spacetimedb_runtime::adapter::sim_std::{advance_time as advance, now, sleep, timeout};
+pub use spacetimedb_runtime::sim::time::TimeoutElapsed;
+pub use spacetimedb_runtime::sim::Handle as TimeHandle;
+
+pub fn try_current_handle() -> Option<TimeHandle> {
+    spacetimedb_runtime::adapter::sim_std::current_handle()
+}
 
 #[cfg(test)]
 mod tests {

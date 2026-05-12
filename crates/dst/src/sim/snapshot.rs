@@ -4,11 +4,14 @@
 //! keeps DST snapshot bytes inside controlled memory storage, while still using
 //! the same snapshot capture/restore shape as production.
 
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_snapshot::{MemorySnapshotRepository, ReconstructedSnapshot, SnapshotError, SnapshotRepo};
+use spacetimedb_snapshot::{
+    BoxedPendingSnapshot, CompressionStats, MemorySnapshotRepository, PendingSnapshot, ReconstructedSnapshot,
+    SnapshotError, SnapshotRepo, SnapshotStore,
+};
 use spacetimedb_table::{blob_store::BlobStore, page_pool::PagePool, table::Table};
 
 use crate::{
@@ -27,7 +30,7 @@ pub(crate) fn is_injected_snapshot_error_text(text: &str) -> bool {
 }
 
 pub(crate) struct SnapshotRestoreRepo {
-    pub(crate) store: Option<Arc<dyn SnapshotRepo>>,
+    pub(crate) store: Option<Arc<dyn SnapshotStore>>,
     pub(crate) restored_snapshot_offset: Option<TxOffset>,
     pub(crate) latest_snapshot_offset: Option<TxOffset>,
 }
@@ -113,7 +116,7 @@ impl BuggifiedSnapshotRepo {
     }
 }
 
-impl SnapshotRepo for BuggifiedSnapshotRepo {
+impl SnapshotStore for BuggifiedSnapshotRepo {
     fn database_identity(&self) -> Identity {
         self.repo.database_identity()
     }
@@ -181,6 +184,34 @@ impl SnapshotRepo for BuggifiedSnapshotRepo {
             .maybe_error(StorageFaultKind::Metadata)
             .map_err(SnapshotError::Io)?;
         self.repo.invalidate_snapshot(tx_offset)
+    }
+}
+
+struct BuggifiedPendingSnapshot {
+    tx_offset: TxOffset,
+}
+
+impl PendingSnapshot for BuggifiedPendingSnapshot {
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError> {
+        Ok(self.tx_offset)
+    }
+}
+
+impl SnapshotRepo for BuggifiedSnapshotRepo {
+    type Pending = BoxedPendingSnapshot;
+
+    fn create_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<Self::Pending, SnapshotError> {
+        self.capture_snapshot(tables, blobs, tx_offset)?;
+        Ok(Box::new(BuggifiedPendingSnapshot { tx_offset }))
+    }
+
+    fn compress_snapshots(&self, _stats: &mut CompressionStats, _range: Range<TxOffset>) -> Result<(), SnapshotError> {
+        Ok(())
     }
 }
 

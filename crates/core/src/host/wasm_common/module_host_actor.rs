@@ -1042,56 +1042,48 @@ impl InstanceCommon {
 
     pub(crate) fn handle_cmd<I: WasmInstance>(&mut self, cmds: ViewCommand, inst: &mut I) -> (ViewCommandResult, bool) {
         let info = self.info.clone();
+        let error_target = cmds.error_target();
         let mut inst = RefInstance {
             instance: inst,
             common: self,
         };
-        match cmds {
+        let (res, trapped) = match cmds {
             ViewCommand::AddSingleSubscription {
                 sender,
                 auth,
                 request,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_single_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
-                    Err(err) => (Err(err), false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .add_single_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::AddLegacySubscription {
                 sender,
                 auth,
                 subscribe,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_legacy_subscriber_with_instance(&mut inst, sender, auth, subscribe, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (Ok(Some(metrics)), trapped),
-                    Err(err) => (Err(err), false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .add_legacy_subscriber_with_instance(&mut inst, sender, auth, subscribe, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(Some(metrics)), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::AddSubscriptionV2 {
                 sender,
                 auth,
                 request,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
-                    Err(err) => (Err(err), false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .add_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::RemoveSingleSubscription {
                 sender,
                 auth,
@@ -1107,16 +1099,13 @@ impl InstanceCommon {
                 auth,
                 request,
                 timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
-                    Err(err) => (Err(err), false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .remove_v2_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::RemoveMultiSubscription {
                 sender,
                 auth,
@@ -1132,17 +1121,18 @@ impl InstanceCommon {
                 auth,
                 request,
                 _timer: timer,
-            } => {
-                let res = info
-                    .subscriptions
-                    .add_multi_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
-
-                match res {
-                    Ok((metrics, trapped)) => (Ok(metrics), trapped),
-                    Err(err) => (Err(err), false),
-                }
-            }
+            } => match info
+                .subscriptions
+                .add_multi_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
+        };
+        if let Err(err) = &res {
+            error_target.send(&info.subscriptions, err);
         }
+        (res, trapped)
     }
 
     pub(in crate::host) fn handle_sql_cmd<I: WasmInstance>(

@@ -279,7 +279,10 @@ impl TableOracle {
                     return Err(format!("connection {conn} already has open write tx"));
                 }
                 if self.active_writer.is_some()
-                    || self.connections.iter().any(|connection| connection.read_snapshot.is_some())
+                    || self
+                        .connections
+                        .iter()
+                        .any(|connection| connection.read_snapshot.is_some())
                 {
                     return Ok(PredictedOutcome::Error {
                         kind: TableErrorKind::WriteConflict,

@@ -6,9 +6,12 @@ use std::{
 };
 
 use spacetimedb_commitlog::{
-    repo::{Repo, RepoWithoutLockFile, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut},
+    repo::{
+        CompressOnce, CompressionStats, Repo, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut,
+    },
     segment::{FileLike, Header},
 };
+use spacetimedb_durability::local::RepoWithoutLockFile;
 
 use crate::{
     seed::DstSeed,
@@ -32,7 +35,7 @@ pub(crate) fn is_injected_disk_error_text(text: &str) -> bool {
 /// reads/writes may complete partially, and configured calls may return transient I/O errors.
 /// The wrapper deliberately avoids corruption or crash-style partial persistence; those need a
 /// stronger durability model before we enable them.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct FaultableRepo<R> {
     inner: R,
     faults: StorageFaultController,
@@ -103,10 +106,10 @@ impl<R: Repo> Repo for FaultableRepo<R> {
         self.inner.remove_segment(offset)
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats> {
         self.faults.maybe_latency();
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
-        self.inner.compress_segment(offset)
+        self.inner.compress_segment_with(offset, f)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {

@@ -1,19 +1,22 @@
+#![cfg_attr(not(any(feature = "tokio", feature = "simulation-std")), no_std)]
+
 //! Runtime and deterministic simulation utilities shared by core and DST.
 
-use std::{fmt, future::Future, time::Duration};
+extern crate alloc;
 
+use core::{fmt, future::Future, time::Duration};
+
+pub mod adapter;
 #[cfg(feature = "simulation")]
 pub mod sim;
 
 #[cfg(feature = "tokio")]
-pub type Handle = tokio::runtime::Handle;
-#[cfg(feature = "tokio")]
-pub type Runtime = tokio::runtime::Runtime;
+pub use adapter::tokio::{current_handle_or_new_runtime, TokioHandle, TokioRuntime};
 
 #[derive(Clone)]
-pub enum RuntimeDispatch {
+pub enum Runtime {
     #[cfg(feature = "tokio")]
-    Tokio(Handle),
+    Tokio(TokioHandle),
     #[cfg(feature = "simulation")]
     Simulation(sim::Handle),
 }
@@ -27,17 +30,18 @@ impl fmt::Display for RuntimeTimeout {
     }
 }
 
+#[cfg(any(feature = "tokio", feature = "simulation-std"))]
 impl std::error::Error for RuntimeTimeout {}
 
-impl RuntimeDispatch {
+impl Runtime {
     #[cfg(feature = "tokio")]
-    pub fn tokio(handle: Handle) -> Self {
+    pub fn tokio(handle: TokioHandle) -> Self {
         Self::Tokio(handle)
     }
 
     #[cfg(feature = "tokio")]
     pub fn tokio_current() -> Self {
-        Self::tokio(Handle::current())
+        Self::tokio(TokioHandle::current())
     }
 
     #[cfg(feature = "simulation")]
@@ -45,9 +49,9 @@ impl RuntimeDispatch {
         Self::Simulation(handle)
     }
 
-    #[cfg(feature = "simulation")]
+    #[cfg(feature = "simulation-std")]
     pub fn simulation_current() -> Self {
-        Self::simulation(sim::Handle::current().expect("simulation runtime is not active on this thread"))
+        adapter::sim_std::simulation_current()
     }
 
     pub fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) {
@@ -102,21 +106,9 @@ impl RuntimeDispatch {
                 .await
                 .map_err(|_| RuntimeTimeout),
             #[cfg(feature = "simulation")]
-            Self::Simulation(_) => sim::time::timeout(timeout_after, future)
-                .await
-                .map_err(|_| RuntimeTimeout),
+            Self::Simulation(handle) => handle.timeout(timeout_after, future).await.map_err(|_| RuntimeTimeout),
             #[cfg(not(any(feature = "tokio", feature = "simulation")))]
             _ => unreachable!("runtime dispatch has no enabled backend"),
         }
     }
-}
-
-#[cfg(feature = "tokio")]
-pub fn current_handle_or_new_runtime() -> anyhow::Result<(Handle, Option<Runtime>)> {
-    if let Ok(handle) = Handle::try_current() {
-        return Ok((handle, None));
-    }
-
-    let runtime = Runtime::new()?;
-    Ok((runtime.handle().clone(), Some(runtime)))
 }

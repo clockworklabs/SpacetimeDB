@@ -46,7 +46,7 @@ use spacetimedb_table::{
 };
 use std::fs::{self, File};
 use std::io;
-use std::ops::RangeBounds;
+use std::ops::{Range, RangeBounds};
 use std::path::Path;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
@@ -207,6 +207,11 @@ pub struct UnflushedSnapshot {
 }
 
 impl UnflushedSnapshot {
+    /// Return the transaction offset this pending snapshot will finalize at.
+    pub fn tx_offset(&self) -> TxOffset {
+        self.inner.as_ref().unwrap().snapshot.tx_offset
+    }
+
     /// Sync all objects in the snapshot and write out the snapshot file.
     ///
     /// Returns the [SnapshotDirPath] on success.
@@ -259,6 +264,28 @@ impl UnflushedSnapshotInner {
         drop(self.lockfile);
 
         Ok(self.snapshot_dir)
+    }
+}
+
+pub trait PendingSnapshot: Send {
+    /// Sync all snapshot state and return the finalized transaction offset.
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError>;
+}
+
+pub type BoxedPendingSnapshot = Box<dyn PendingSnapshot>;
+pub type DynSnapshotRepo = dyn SnapshotRepo<Pending = BoxedPendingSnapshot>;
+
+impl PendingSnapshot for BoxedPendingSnapshot {
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError> {
+        (*self).sync_all()
+    }
+}
+
+impl PendingSnapshot for UnflushedSnapshot {
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError> {
+        let tx_offset = self.tx_offset();
+        UnflushedSnapshot::sync_all(*self)?;
+        Ok(tx_offset)
     }
 }
 
@@ -653,6 +680,8 @@ impl fmt::Debug for SnapshotSize {
 pub struct ObjectCompressionStats {
     /// Number of objects freshly compressed.
     pub compressed: usize,
+    /// Cumulative stats of the compressed objects.
+    pub compression_stats: spacetimedb_fs_utils::compression::CompressionStats,
     /// Number of objects hardlinked from a parent repository.
     pub hardlinked: usize,
 }
@@ -668,8 +697,16 @@ impl ObjectCompressionStats {
 }
 
 impl AddAssign for ObjectCompressionStats {
-    fn add_assign(&mut self, Self { compressed, hardlinked }: Self) {
+    fn add_assign(
+        &mut self,
+        Self {
+            compressed,
+            compression_stats,
+            hardlinked,
+        }: Self,
+    ) {
         self.compressed += compressed;
+        self.compression_stats += compression_stats;
         self.hardlinked += hardlinked;
     }
 }
@@ -1222,10 +1259,11 @@ impl SnapshotRepository {
             let dst = src.with_extension("_tmp");
             let mut write = BufWriter::new(o_excl().open(&dst)?);
             // The default frame size compress better.
-            compress_with_zstd(read, &mut write, None)?;
+            let compression_stats = compress_with_zstd(read, &mut write, None)?;
             std::fs::rename(dst, src)?;
             if let Some(stats) = stats {
                 stats.compressed += 1;
+                stats.compression_stats += compression_stats;
             }
 
             Ok(())
@@ -1336,15 +1374,17 @@ impl SnapshotRepository {
     }
 }
 
-/// Snapshot storage backend.
+/// Snapshot storage backend that can capture, read, list, and invalidate snapshots.
 ///
 /// Production uses the filesystem-backed [`SnapshotRepository`]. DST can use
 /// [`MemorySnapshotRepository`] to keep snapshot storage inside the simulator
 /// boundary instead of depending on temporary directories or host filesystem
 /// behavior.
-pub trait SnapshotRepo: Send + Sync {
+pub trait SnapshotStore: Send + Sync {
+    /// Return the database identity associated with this snapshot backend.
     fn database_identity(&self) -> Identity;
 
+    /// Capture and finalize a snapshot at `tx_offset`.
     fn capture_snapshot<'db>(
         &self,
         tables: &mut dyn Iterator<Item = &'db mut Table>,
@@ -1352,20 +1392,47 @@ pub trait SnapshotRepo: Send + Sync {
         tx_offset: TxOffset,
     ) -> Result<TxOffset, SnapshotError>;
 
+    /// Reconstruct the snapshot at `tx_offset` using the supplied page pool.
     fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError>;
 
+    /// Return the latest snapshot at or before `upper_bound`, if one exists.
     fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError>;
 
+    /// Return the latest snapshot in this backend, if one exists.
     fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
         self.latest_snapshot_older_than(TxOffset::MAX)
     }
 
+    /// Invalidate every snapshot newer than `upper_bound`.
     fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError>;
 
+    /// Invalidate the snapshot at `tx_offset`.
     fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError>;
 }
 
-impl SnapshotRepo for SnapshotRepository {
+/// Filesystem-style snapshot backend with a pending snapshot phase and optional compression.
+pub trait SnapshotRepo: SnapshotStore {
+    type Pending: PendingSnapshot;
+
+    /// Start creating a snapshot at `tx_offset` from the provided tables and blob store.
+    fn create_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<Self::Pending, SnapshotError>;
+
+    /// Attempt to compress all snapshots that fall into `range`, and record
+    /// the outcome in `stats`.
+    ///
+    /// The snapshots in `range` are traversed in ascending order.
+    /// If an error occurs, processing stops and the error is returned.
+    ///
+    /// See [CompressionStats] for how to interpret the results.
+    fn compress_snapshots(&self, stats: &mut CompressionStats, range: Range<TxOffset>) -> Result<(), SnapshotError>;
+}
+
+impl SnapshotStore for SnapshotRepository {
     fn database_identity(&self) -> Identity {
         SnapshotRepository::database_identity(self)
     }
@@ -1398,6 +1465,25 @@ impl SnapshotRepo for SnapshotRepository {
 
     fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
         SnapshotRepository::invalidate_snapshot(self, tx_offset)
+    }
+}
+
+impl SnapshotRepo for SnapshotRepository {
+    type Pending = BoxedPendingSnapshot;
+
+    fn create_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<Self::Pending, SnapshotError> {
+        Ok(Box::new(SnapshotRepository::create_snapshot(
+            self, tables, blobs, tx_offset,
+        )?))
+    }
+
+    fn compress_snapshots(&self, stats: &mut CompressionStats, range: Range<TxOffset>) -> Result<(), SnapshotError> {
+        SnapshotRepository::compress_snapshots(self, stats, range)
     }
 }
 
@@ -1483,7 +1569,7 @@ impl MemorySnapshotRepository {
     }
 }
 
-impl SnapshotRepo for MemorySnapshotRepository {
+impl SnapshotStore for MemorySnapshotRepository {
     fn database_identity(&self) -> Identity {
         MemorySnapshotRepository::database_identity(self)
     }
@@ -1518,7 +1604,33 @@ impl SnapshotRepo for MemorySnapshotRepository {
     }
 }
 
-pub use SnapshotRepo as SnapshotStore;
+struct MemoryPendingSnapshot {
+    tx_offset: TxOffset,
+}
+
+impl PendingSnapshot for MemoryPendingSnapshot {
+    fn sync_all(self: Box<Self>) -> Result<TxOffset, SnapshotError> {
+        Ok(self.tx_offset)
+    }
+}
+
+impl SnapshotRepo for MemorySnapshotRepository {
+    type Pending = BoxedPendingSnapshot;
+
+    fn create_snapshot<'db>(
+        &self,
+        tables: &mut dyn Iterator<Item = &'db mut Table>,
+        blobs: &'db dyn BlobStore,
+        tx_offset: TxOffset,
+    ) -> Result<Self::Pending, SnapshotError> {
+        self.capture_snapshot(tables, blobs, tx_offset)?;
+        Ok(Box::new(MemoryPendingSnapshot { tx_offset }))
+    }
+
+    fn compress_snapshots(&self, _stats: &mut CompressionStats, _range: Range<TxOffset>) -> Result<(), SnapshotError> {
+        Ok(())
+    }
+}
 
 #[derive(Clone)]
 struct MemorySnapshot {

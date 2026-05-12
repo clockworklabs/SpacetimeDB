@@ -125,6 +125,11 @@ pub(super) fn get_hooks<'scope>(
     scope: &mut PinScope<'scope, '_>,
     exports_obj: Local<'_, v8::Object>,
 ) -> Result<Option<HookFunctions<'scope>>, ErrorOrException<ExceptionThrown>> {
+    // We only set RECV_SLOT_INDEX in set_registered_hooks, which is only called in
+    // the v2 code path. Set it to undefined ahead of time so it's not a garbage value.
+    scope
+        .get_current_context()
+        .set_embedder_data(hooks::RECV_SLOT_INDEX, v8::undefined(scope).into());
     if let Some(hooks) = get_registered_hooks(scope) {
         return Ok(Some(hooks));
     }
