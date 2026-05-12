@@ -1,0 +1,17 @@
+Write a SpacetimeDB backend module in TypeScript that defines a table of user profiles and a per-user view that returns only the calling user's profile.
+
+TABLES
+- profile
+  - public table
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - identity: Identity (unique)
+    - name: string
+    - bio: string
+
+VIEWS
+- my_profile
+  - per-user view (uses spacetimedb.view, not spacetimedb.anonymousView)
+  - public
+  - Returns: option of profile row (the single profile matching ctx.sender(), or undefined)
+  - Logic: find the profile by the identity column matching ctx.sender()

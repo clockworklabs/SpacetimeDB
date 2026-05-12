@@ -1,13 +1,14 @@
-Write a SpacetimeDB backend module in C# that defines one table and a reducer that deletes a row.
+Write a SpacetimeDB backend module in C# that defines one table and two reducers: one that inserts a row and one that deletes a row.
 
 TABLE
 - User
   - Struct: User
   - Fields:
-    - Id: int (primary key)
+    - Id: ulong (primary key, auto-increment)
     - Name: string
     - Age: int
     - Active: bool
 
 REDUCERS
-- DeleteUser: given id:int, delete the row in User with that Id
+- InsertUser: given name:string, age:int, active:bool, insert a new row (Id is auto-assigned)
+- DeleteUser: given id:ulong, delete the row in User with that Id
