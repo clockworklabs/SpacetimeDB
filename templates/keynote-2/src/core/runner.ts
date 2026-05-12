@@ -134,7 +134,7 @@ export async function runOne({
         : maxInflightPerWorker;
 
   console.log(
-    `[${connector.name}] max inflight per worker: ${MAX_INFLIGHT_PER_WORKER}`,
+    `[${connector.name}] pipelined=${PIPELINED} max-inflight-per-worker=${MAX_INFLIGHT_PER_WORKER} pool-max=${runtimeConfig.poolMax}`,
   );
   const run = async (seconds: number) => {
     const start = performance.now();

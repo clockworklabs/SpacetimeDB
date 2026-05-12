@@ -119,6 +119,7 @@ export type RunnerRuntimeConfig = Pick<
   | 'maxInflightPerWorker'
   | 'minOpTimeoutMs'
   | 'opTimeoutMs'
+  | 'poolMax'
   | 'precomputedTransferPairs'
   | 'tailSlackMs'
   | 'verifyTransactions'

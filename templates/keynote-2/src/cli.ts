@@ -258,6 +258,13 @@ async function writeRunJson(payload: object, connectorName: string, alpha: numbe
           alpha,
           run: r + 1,
           runs,
+          config: {
+            benchPipelined: options.benchPipelined,
+            maxInflightPerWorker: options.maxInflightPerWorker,
+            poolMax: options.poolMax,
+            stdbConfirmedReads: options.stdbConfirmedReads,
+            stdbCompression: options.stdbCompression,
+          },
           results: [
             {
               system: connector.name,
