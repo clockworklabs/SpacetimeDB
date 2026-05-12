@@ -1529,11 +1529,6 @@ pub enum HttpHandlerCallError {
     NoSuchModule(#[from] NoSuchModule),
     #[error("no such http handler")]
     NoSuchHandler,
-
-    // TODO(v8-http-handlers): Remove this error variant.
-    #[error("http handlers are not supported for this host type")]
-    UnsupportedHostType,
-
     #[error("The module instance encountered a fatal error: {0}")]
     InternalError(String),
 }

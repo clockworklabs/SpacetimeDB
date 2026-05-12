@@ -299,14 +299,6 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
         Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchHandler) => {
             return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());
         }
-        // TODO(v8-http-handlers): Remove.
-        Err(spacetimedb::host::module_host::HttpHandlerCallError::UnsupportedHostType) => {
-            return Err((
-                StatusCode::NOT_IMPLEMENTED,
-                "HTTP handlers are not supported for this module",
-            )
-                .into());
-        }
         Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchModule(_)) => {
             return Err(NO_SUCH_DATABASE.into());
         }
