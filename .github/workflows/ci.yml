@@ -891,6 +891,8 @@ jobs:
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
+        env:
+          EXPERIMENTAL_WASM_AOT: 1
         run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
       - name: Run .NET tests
