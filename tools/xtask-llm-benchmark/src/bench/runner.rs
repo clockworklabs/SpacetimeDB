@@ -11,13 +11,12 @@ use tokio::sync::Mutex;
 use tokio::task;
 
 use crate::bench::publishers::{DotnetPublisher, SpacetimeRustPublisher, TypeScriptPublisher};
-use crate::bench::results_merge::merge_task_runs;
 use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
-    bench_concurrency, bench_csharp_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name,
-    task_slug, work_server_dir_scoped,
+    bench_concurrency, bench_csharp_concurrency, bench_rust_concurrency, category_slug, debug_llm, fmt_dur,
+    print_llm_output, sanitize_db_name, task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
 use crate::eval::{Lang, ScoreDetails};
@@ -32,6 +31,11 @@ pub struct TaskRunner {
 }
 
 static BUILT_KEYS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+struct PendingRetry {
+    task: TaskPaths,
+    error: anyhow::Error,
+}
 
 fn build_key(lang: Lang, selectors: Option<&[String]>) -> String {
     let v = match selectors {
@@ -175,7 +179,7 @@ impl TaskRunner {
 
         let category = category_slug(&task.root);
         let task_id = task_slug(&task.root);
-        let route_tag = sanitize_db_name(cfg.route.display_name);
+        let route_tag = sanitize_db_name(&cfg.route.display_name);
         let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
         let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
 
@@ -187,16 +191,80 @@ impl TaskRunner {
 
         let prompt_builder = (spec.make_prompt)(cfg.lang);
         println!("→ [{}] {}: building prompt", cfg.lang_name, cfg.route.display_name);
-        let prompt = prompt_builder.build_segmented(cfg.context);
+        let prompt = prompt_builder.build_segmented(cfg.mode, cfg.context);
 
         println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
-        let llm_output = tokio::time::timeout(std::time::Duration::from_secs(90), cfg.llm.generate(cfg.route, &prompt))
-            .await
-            .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
-            .map_err(RunOneError::Other)?;
+        let mut gen_start = Instant::now();
+        let llm_result = {
+            const MAX_ATTEMPTS: u32 = 3;
+            // Slow models (Gemini 3.1 Pro, DeepSeek Reasoner) can take 8+ minutes on large contexts.
+            let timeout_secs = match cfg.route.display_name.to_ascii_lowercase() {
+                n if n.contains("gemini") || n.contains("deepseek") => 600,
+                _ => 300,
+            };
+            let mut last_err: anyhow::Error = anyhow!("no attempts made");
+            let mut result = None;
+            for attempt in 1..=MAX_ATTEMPTS {
+                gen_start = Instant::now();
+                let r = tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_secs),
+                    cfg.llm.generate(cfg.route, &prompt),
+                )
+                .await;
+                match r {
+                    Ok(Ok(output)) => {
+                        result = Some(output);
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        let msg = format!("{e:#}");
+                        let retryable = msg.contains("timed out")
+                            || msg.contains("429")
+                            || msg.contains("502")
+                            || msg.contains("503")
+                            || msg.contains("504")
+                            || msg.contains("rate limit");
+                        if retryable && attempt < MAX_ATTEMPTS {
+                            let delay = if msg.contains("429") || msg.contains("rate limit") {
+                                60
+                            } else {
+                                30
+                            };
+                            eprintln!(
+                                "⚠️ [{}/{}] provider error (attempt {}/{}), retrying in {delay}s: {}",
+                                cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS, msg
+                            );
+                            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                            last_err = e;
+                        } else {
+                            return Err(RunOneError::Other(e));
+                        }
+                    }
+                    Err(_) => {
+                        if attempt < MAX_ATTEMPTS {
+                            eprintln!(
+                                "⚠️ [{}/{}] LLM call timed out after {timeout_secs}s (attempt {}/{}), retrying in 30s",
+                                cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS
+                            );
+                            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                            last_err = anyhow!("LLM call timed out after {timeout_secs}s");
+                        } else {
+                            return Err(RunOneError::Other(anyhow!(
+                                "LLM call timed out after {timeout_secs}s ({MAX_ATTEMPTS} attempts)"
+                            )));
+                        }
+                    }
+                }
+            }
+            result.ok_or_else(|| RunOneError::Other(last_err))?
+        };
+        let generation_duration_ms = Some(gen_start.elapsed().as_millis() as u64);
+        let input_tokens = llm_result.input_tokens;
+        let output_tokens = llm_result.output_tokens;
+        let llm_output = llm_result.text;
 
         if debug_llm() {
-            print_llm_output(cfg.route.display_name, &task_id, &llm_output);
+            print_llm_output(&cfg.route.display_name, &task_id, &llm_output);
         }
 
         let publish_error: Option<String> = self
@@ -296,10 +364,113 @@ impl TaskRunner {
                     .into_owned(),
             ),
             scorer_details: Some(scorer_details),
+            input_tokens,
+            output_tokens,
+            generation_duration_ms,
             started_at: Some(started),
             finished_at: Some(finished),
         })
     }
+}
+
+/// Partition task results into completed outcomes and retry candidates.
+/// Tasks where the LLM never responded (provider/setup error) are returned for retry.
+/// Tasks where the LLM responded but the code failed to compile/score are kept as outcomes.
+fn partition_results(
+    results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)>,
+    lang_name: &str,
+    route: &ModelRoute,
+    hash: &str,
+) -> (Vec<RunOutcome>, Vec<PendingRetry>) {
+    let mut good = Vec::new();
+    let mut retry = Vec::new();
+
+    for (task, r) in results {
+        match r {
+            Ok(v) => good.push(v),
+            Err(RunOneError::WithOutput { msg, llm_output }) => {
+                // LLM responded but something else failed — keep as a result
+                eprintln!("\u{26a0}\u{fe0f} task failed but has output: {msg}");
+                good.push(build_fail_outcome(
+                    &task,
+                    lang_name,
+                    route,
+                    hash,
+                    anyhow::anyhow!(msg),
+                    Some(llm_output),
+                ));
+            }
+            Err(RunOneError::Other(e)) => {
+                // No output at all — provider error, retry
+                eprintln!("\u{26a0}\u{fe0f} provider error, will retry: {e:?}");
+                retry.push(PendingRetry { task, error: e });
+            }
+        }
+    }
+
+    (good, retry)
+}
+
+fn pending_retries_to_outcomes(
+    pending: Vec<PendingRetry>,
+    lang_name: &str,
+    route: &ModelRoute,
+    hash: &str,
+) -> Vec<RunOutcome> {
+    pending
+        .into_iter()
+        .map(|pending| build_fail_outcome(&pending.task, lang_name, route, hash, pending.error, None))
+        .collect()
+}
+
+fn dry_run_analysis_path(run_id: &str, lang_name: &str, mode: &str, route: &ModelRoute) -> PathBuf {
+    let route_tag = sanitize_db_name(&route.display_name);
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("runs")
+        .join(format!("run-{run_id}-{lang_name}-{mode}-{route_tag}-analysis.md"))
+}
+
+async fn maybe_generate_analysis(cfg: &BenchRunContext<'_>, outcomes: &[RunOutcome]) -> Result<Option<String>> {
+    let should_run = if cfg.dry_run {
+        cfg.local_analysis
+    } else {
+        cfg.api_client.is_some()
+    };
+
+    if !should_run {
+        return Ok(None);
+    }
+
+    let analysis = crate::bench::analysis::run_analysis(
+        outcomes,
+        cfg.lang.as_str(),
+        cfg.mode,
+        &cfg.route.display_name,
+        cfg.bench_root,
+        cfg.llm,
+    )
+    .await?;
+
+    if cfg.dry_run
+        && let (Some(text), Some(run_id)) = (analysis.as_deref(), cfg.dry_run_id.as_deref())
+    {
+        let path = dry_run_analysis_path(run_id, cfg.lang.as_str(), cfg.mode, cfg.route);
+        let _ = fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")));
+        let contents = format!(
+            "# Local Benchmark Analysis\n\n- Lang: {}\n- Mode: {}\n- Model: {}\n\n{}",
+            cfg.lang.as_str(),
+            cfg.mode,
+            cfg.route.display_name,
+            text
+        );
+        match fs::write(&path, contents) {
+            Ok(()) => println!("Local analysis: {}", path.display()),
+            Err(e) => eprintln!("[warn] failed to write local analysis: {e}"),
+        }
+        return Ok(None);
+    }
+
+    Ok(analysis)
 }
 
 pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {
@@ -316,6 +487,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -335,6 +507,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                 let run_cfg = RunContext {
                     lang_name: &lang_name,
                     lang,
+                    mode: cfg.mode,
                     route,
                     context,
                     hash,
@@ -356,42 +529,120 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         .collect()
         .await;
 
-    let mut outcomes = Vec::new();
-    let mut errs = 0usize;
+    let (mut outcomes, mut retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash);
 
-    for (task, r) in results {
-        match r {
-            Ok(v) => outcomes.push(v),
-            Err(RunOneError::WithOutput { msg, llm_output }) => {
-                errs += 1;
-                eprintln!("⚠️ task failed but continuing: {msg}");
-                outcomes.push(build_fail_outcome(
-                    &task,
-                    lang_name,
-                    cfg.route,
-                    cfg.hash,
-                    anyhow::anyhow!(msg),
-                    Some(llm_output),
-                ));
-            }
-            Err(RunOneError::Other(e)) => {
-                errs += 1;
-                eprintln!("⚠️ task failed but continuing: {e:?}");
-                outcomes.push(build_fail_outcome(&task, lang_name, cfg.route, cfg.hash, e, None));
-            }
+    // Retry provider-error tasks until all pass or none make progress
+    const MAX_RETRY_ROUNDS: usize = 3;
+    for round in 1..=MAX_RETRY_ROUNDS {
+        if retry_tasks.is_empty() {
+            break;
         }
+        eprintln!(
+            "[runner] retry round {}/{}: {} tasks with provider errors",
+            round,
+            MAX_RETRY_ROUNDS,
+            retry_tasks.len()
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+        let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
+            futures::stream::iter(retry_tasks.drain(..).map(|pending| {
+                let runner = &runner;
+                let route = cfg.route;
+                let lang = cfg.lang;
+                let lang_name = lang_name.to_string();
+                let context = cfg.context;
+                let hash = cfg.hash;
+                let llm = cfg.llm;
+                let host = cfg.host.clone();
+                let task = pending.task;
+
+                async move {
+                    let started = Utc::now();
+                    let run_cfg = RunContext {
+                        lang_name: &lang_name,
+                        lang,
+                        mode: cfg.mode,
+                        route,
+                        context,
+                        hash,
+                        llm,
+                        host,
+                    };
+                    let res = runner.run_one(&task, &run_cfg).await;
+                    (
+                        task,
+                        res.map(|mut o| {
+                            o.started_at.get_or_insert(started);
+                            o
+                        }),
+                    )
+                }
+            }))
+            .buffer_unordered(buf)
+            .collect()
+            .await;
+
+        let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash);
+
+        if new_outcomes.is_empty() && !still_failing.is_empty() {
+            // No progress — provider is likely down. Keep the failures and stop retrying.
+            eprintln!(
+                "[runner] no tasks recovered in retry round {} — provider may be down, keeping {} failures",
+                round,
+                still_failing.len()
+            );
+            retry_tasks = still_failing;
+            break;
+        }
+
+        outcomes.extend(new_outcomes);
+        if still_failing.is_empty() {
+            retry_tasks = still_failing;
+            break;
+        }
+        retry_tasks = still_failing;
     }
 
-    println!("[runner] completed batch: ok={} err={}", outcomes.len(), errs);
+    let dropped = retry_tasks.len();
+    if dropped > 0 {
+        eprintln!(
+            "[runner] {} tasks still failing after retries — recording as provider failures",
+            dropped
+        );
+        outcomes.extend(pending_retries_to_outcomes(retry_tasks, lang_name, cfg.route, cfg.hash));
+    }
 
-    if !outcomes.is_empty() {
-        merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
+    println!("[runner] completed batch: {} results", outcomes.len());
+
+    if cfg.dry_run {
+        let _ = match maybe_generate_analysis(cfg, &outcomes).await {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
+        eprintln!("[dry-run] skipping upload ({} outcomes)", outcomes.len());
+    } else if !outcomes.is_empty() {
+        let analysis = match maybe_generate_analysis(cfg, &outcomes).await {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
+        if let Some(ref api) = cfg.api_client {
+            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref())?;
+        } else {
+            eprintln!("[runner] no API client configured; skipping upload");
+        }
     } else {
-        eprintln!("[runner] no successful runs; not calling merge_task_runs");
+        eprintln!("[runner] no results; skipping upload");
     }
 
     println!(
-        "✓ [{}] {}: total {}",
+        "\u{2713} [{}] {}: total {}",
         lang_name,
         cfg.route.display_name,
         fmt_dur(total_wall.elapsed())
@@ -415,7 +666,11 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let selected: Vec<TaskPaths> = tasks
         .into_iter()
         .filter(|t| {
-            let name = t.root.file_name().and_then(|x| x.to_str()).unwrap_or("");
+            let name = t
+                .root
+                .file_name()
+                .and_then(|x: &std::ffi::OsStr| x.to_str())
+                .unwrap_or("");
             wanted.iter().any(|w| name.starts_with(w))
         })
         .collect();
@@ -433,6 +688,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -451,6 +707,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                 let run_cfg = RunContext {
                     lang_name: &lang_name,
                     lang,
+                    mode: cfg.mode,
                     route,
                     context,
                     hash,
@@ -472,42 +729,120 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         .collect()
         .await;
 
-    let mut outcomes = Vec::with_capacity(results.len());
-    let mut errs = 0usize;
+    let (mut outcomes, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash);
 
-    for (task, r) in results {
-        match r {
-            Ok(v) => outcomes.push(v),
-            Err(RunOneError::WithOutput { msg, llm_output }) => {
-                errs += 1;
-                eprintln!("⚠️ task failed but continuing: {msg}");
-                outcomes.push(build_fail_outcome(
-                    &task,
-                    lang_name,
-                    cfg.route,
-                    cfg.hash,
-                    anyhow::anyhow!(msg),
-                    Some(llm_output),
-                ));
+    // Retry provider-error tasks until all pass or none make progress
+    let dropped;
+    {
+        const MAX_RETRY_ROUNDS: usize = 3;
+        let mut pending = retry_tasks;
+        for round in 1..=MAX_RETRY_ROUNDS {
+            if pending.is_empty() {
+                break;
             }
-            Err(RunOneError::Other(e)) => {
-                errs += 1;
-                eprintln!("⚠️ task failed but continuing: {e:?}");
-                outcomes.push(build_fail_outcome(&task, lang_name, cfg.route, cfg.hash, e, None));
+            eprintln!(
+                "[runner] retry round {}/{}: {} tasks with provider errors",
+                round,
+                MAX_RETRY_ROUNDS,
+                pending.len()
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+            let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
+                futures::stream::iter(pending.drain(..).map(|pending_retry| {
+                    let runner = &runner;
+                    let route = cfg.route;
+                    let lang = cfg.lang;
+                    let lang_name = lang_name.to_string();
+                    let context = cfg.context;
+                    let hash = cfg.hash;
+                    let llm = cfg.llm;
+                    let host = cfg.host.clone();
+                    let task = pending_retry.task;
+
+                    async move {
+                        let started = Utc::now();
+                        let run_cfg = RunContext {
+                            lang_name: &lang_name,
+                            lang,
+                            mode: cfg.mode,
+                            route,
+                            context,
+                            hash,
+                            llm,
+                            host,
+                        };
+                        let res = runner.run_one(&task, &run_cfg).await;
+                        (
+                            task,
+                            res.map(|mut o| {
+                                o.started_at.get_or_insert(started);
+                                o
+                            }),
+                        )
+                    }
+                }))
+                .buffer_unordered(buf)
+                .collect()
+                .await;
+
+            let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash);
+
+            if new_outcomes.is_empty() && !still_failing.is_empty() {
+                eprintln!(
+                    "[runner] no tasks recovered in retry round {} — provider may be down, recording {} failures",
+                    round,
+                    still_failing.len()
+                );
+                pending = still_failing;
+                break;
             }
+
+            outcomes.extend(new_outcomes);
+            pending = still_failing;
+        }
+        dropped = pending.len();
+        if dropped > 0 {
+            outcomes.extend(pending_retries_to_outcomes(pending, lang_name, cfg.route, cfg.hash));
         }
     }
 
-    if !outcomes.is_empty() {
-        merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
+    if dropped > 0 {
+        eprintln!(
+            "[runner] {} tasks still failing after retries — recording as provider failures",
+            dropped
+        );
+    }
+
+    if cfg.dry_run {
+        let _ = match maybe_generate_analysis(cfg, &outcomes).await {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
+        eprintln!("[dry-run] skipping upload ({} outcomes)", outcomes.len());
+    } else if !outcomes.is_empty() {
+        let analysis = match maybe_generate_analysis(cfg, &outcomes).await {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("[runner] analysis failed (non-fatal): {e}");
+                None
+            }
+        };
+        if let Some(ref api) = cfg.api_client {
+            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref())?;
+        } else {
+            eprintln!("[runner] no API client configured; skipping upload");
+        }
     }
 
     println!(
-        "✓ [{}] {}: total {} (err={})",
+        "\u{2713} [{}] {}: total {}",
         lang_name,
         cfg.route.display_name,
         fmt_dur(total_wall.elapsed()),
-        errs
     );
     Ok(outcomes)
 }
@@ -526,7 +861,10 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
             lang: ctx.lang,
             selectors: Option::from(sels),
             host: ctx.host.clone(),
-            details_path: ctx.details_path.clone(),
+            api_client: ctx.api_client.clone(),
+            dry_run: ctx.dry_run,
+            local_analysis: ctx.local_analysis,
+            dry_run_id: ctx.dry_run_id.clone(),
         };
         return run_selected_for_model_async_for_lang(&sel_cfg).await;
     }
@@ -546,7 +884,11 @@ pub async fn build_goldens_only_for_lang(
         let filtered: Vec<TaskPaths> = all
             .into_iter()
             .filter(|t| {
-                let name = t.root.file_name().and_then(|x| x.to_str()).unwrap_or("");
+                let name = t
+                    .root
+                    .file_name()
+                    .and_then(|x: &std::ffi::OsStr| x.to_str())
+                    .unwrap_or("");
                 wanted.iter().any(|w| name.starts_with(w))
             })
             .collect();
@@ -567,6 +909,7 @@ pub async fn build_goldens_only_for_lang(
     let lang_name = lang.as_str();
     let buf = match lang {
         Lang::CSharp => bench_csharp_concurrency(),
+        Lang::Rust => bench_rust_concurrency(),
         _ => bench_concurrency(),
     };
 
@@ -654,6 +997,9 @@ fn build_fail_outcome(
         scorer_details: Some(sd),
 
         vendor: route.vendor.slug().to_string(),
+        input_tokens: None,
+        output_tokens: None,
+        generation_duration_ms: None,
         started_at: Some(now),
         finished_at: Some(now),
     }

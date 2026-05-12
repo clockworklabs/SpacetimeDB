@@ -1,0 +1,118 @@
+name: Periodic LLM benchmarks
+
+on:
+  schedule:
+    # Daily at midnight UTC. Change to '0 */6 * * *' for every 6h,
+    # or '0 */4 * * *' for every 4h.
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      models:
+        description: 'Models to run (provider:model format, comma-separated, or "all")'
+        required: false
+        default: 'all'
+      languages:
+        description: 'Languages to benchmark (comma-separated: rust,csharp,typescript)'
+        required: false
+        default: 'rust,csharp,typescript'
+      modes:
+        description: 'Modes to run (comma-separated: guidelines,no_context,docs,...)'
+        required: false
+        default: 'guidelines,no_context'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: llm-benchmark-periodic
+  cancel-in-progress: true
+
+jobs:
+  run-benchmarks:
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    timeout-minutes: 180
+
+    steps:
+      - name: Install spacetime CLI
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install WASI workload
+        env:
+          DOTNET_MULTILEVEL_LOOKUP: "0"
+          DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
+          DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+        run: |
+          dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Build llm-benchmark tool
+        run: cargo install --path tools/xtask-llm-benchmark --locked
+
+      - name: Run benchmarks
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_BENCHMARK_API_KEY: ${{ secrets.LLM_BENCHMARK_API_KEY }}
+          LLM_BENCHMARK_UPLOAD_URL: ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}
+          MSBUILDDISABLENODEREUSE: "1"
+          DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
+          INPUT_MODELS: ${{ inputs.models || 'all' }}
+          INPUT_MODES: ${{ inputs.modes || 'guidelines,no_context' }}
+        run: |
+          LANGS="$INPUT_LANGUAGES"
+          MODELS="$INPUT_MODELS"
+          MODES="$INPUT_MODES"
+
+          SUCCEEDED=0
+          FAILED=0
+          for LANG in $(echo "$LANGS" | tr ',' ' '); do
+            if [ "$MODELS" = "all" ]; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES"; then
+                SUCCEEDED=$((SUCCEEDED + 1))
+              else
+                echo "::warning::Benchmark run failed for lang=$LANG"
+                FAILED=$((FAILED + 1))
+              fi
+            else
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS"; then
+                SUCCEEDED=$((SUCCEEDED + 1))
+              else
+                echo "::warning::Benchmark run failed for lang=$LANG models=$MODELS"
+                FAILED=$((FAILED + 1))
+              fi
+            fi
+          done
+          echo "Benchmark runs: $SUCCEEDED succeeded, $FAILED failed"
+          if [ "$SUCCEEDED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
+            echo "::error::All benchmark runs failed"
+            exit 1
+          fi

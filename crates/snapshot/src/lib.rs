@@ -239,22 +239,16 @@ struct UnflushedSnapshotInner {
 
 impl UnflushedSnapshotInner {
     fn sync_all(self) -> Result<SnapshotDirPath, SnapshotError> {
-        fn fsync(path: &Path) -> io::Result<()> {
-            File::open(path)
-                .and_then(|fd| fd.sync_all())
-                .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync {}: {}", path.display(), e)))
-        }
-
         // Sync all objects and their parent directories.
         // The paths yielded by the [Snapshot::files] iterator are constructed
         // by [DirTree::file_path], which creates a path with a parent.
         // `parent()` is thus known to succeed.
         for (_, path) in self.snapshot.files(&self.object_repo) {
-            fsync(&path)?;
-            fsync(path.parent().unwrap())?;
+            FileOrDirPath::File(&path).sync_all()?;
+            FileOrDirPath::Dir(path.parent().unwrap()).sync_all()?;
         }
         // Sync the root directory of the object repo
-        fsync(self.object_repo.root())?;
+        FileOrDirPath::Dir(self.object_repo.root()).sync_all()?;
         // Write out the snapshot file (syncs internally).
         self.snapshot_repo
             .write_snapshot_file(&self.snapshot_dir, self.snapshot)?;
@@ -884,7 +878,7 @@ impl SnapshotRepository {
                 .into_inner()
                 .expect("buffered writer just flushed")
                 .sync_all()?;
-            File::open(&snapshot_dir.0)?.sync_all()?;
+            FileOrDirPath::Dir(&snapshot_dir.0).sync_all()?;
         }
 
         Ok(())
@@ -1481,6 +1475,32 @@ pub struct ReconstructedSnapshot {
     pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
+}
+
+/// A [Path] statically known to point to either a file or a directory.
+enum FileOrDirPath<'a> {
+    File(&'a Path),
+    Dir(&'a Path),
+}
+
+impl FileOrDirPath<'_> {
+    /// `fsync` the file or directory at path `self`.
+    ///
+    /// On *nix systems, both a file and its enclosing directory should be
+    /// `fsync`ed to make the file durable.
+    ///
+    /// On Windows, only the file needs to be synced, and it's even an error to
+    /// sync a directory. Passing in [Self::Dir] is thus a no-op on Windows.
+    fn sync_all(&self) -> io::Result<()> {
+        #[cfg(target_os = "windows")]
+        if let Self::Dir(_) = self {
+            return Ok(());
+        }
+        let (Self::File(path) | Self::Dir(path)) = self;
+        File::open(path)
+            .and_then(|fd| fd.sync_all())
+            .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync {}: {}", path.display(), e)))
+    }
 }
 
 #[cfg(test)]
