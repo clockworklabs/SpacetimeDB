@@ -191,6 +191,7 @@ pub fn headroom_tokens_env(vendor: Vendor) -> usize {
         Vendor::Xai => std::env::var("XAI_HEADROOM_TOKENS").ok(),
         Vendor::DeepSeek => std::env::var("DEEPSEEK_HEADROOM_TOKENS").ok(),
         Vendor::Meta => std::env::var("META_HEADROOM_TOKENS").ok(),
+        Vendor::OpenRouter => std::env::var("OPENROUTER_HEADROOM_TOKENS").ok(),
     };
 
     let raw = per_vendor
@@ -206,7 +207,7 @@ pub fn headroom_tokens_env(vendor: Vendor) -> usize {
 fn default_headroom(vendor: Vendor) -> usize {
     match vendor {
         // Conservative floors tuned for typical max-context models
-        Vendor::OpenAi | Vendor::Xai | Vendor::DeepSeek | Vendor::Meta => 3_000,
+        Vendor::OpenAi | Vendor::Xai | Vendor::DeepSeek | Vendor::Meta | Vendor::OpenRouter => 3_000,
         Vendor::Anthropic => 5_000,
         Vendor::Google => 10_000,
     }
@@ -255,6 +256,7 @@ pub fn non_context_reserve_tokens_env(vendor: Vendor) -> usize {
         Vendor::Xai => "XAI_RESERVE_TOKENS",
         Vendor::DeepSeek => "DEEPSEEK_RESERVE_TOKENS",
         Vendor::Meta => "META_RESERVE_TOKENS",
+        Vendor::OpenRouter => "OPENROUTER_RESERVE_TOKENS",
     };
     if let Ok(v) = std::env::var(key)
         && let Ok(n) = v.parse::<usize>()
@@ -276,6 +278,7 @@ pub fn non_context_reserve_tokens_env(vendor: Vendor) -> usize {
         Vendor::Xai => 12_000,
         Vendor::DeepSeek => 12_000,
         Vendor::Meta => 12_000,
+        Vendor::OpenRouter => 12_000,
     };
     round_500(def)
 }

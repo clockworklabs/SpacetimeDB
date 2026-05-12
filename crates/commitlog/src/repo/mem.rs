@@ -11,6 +11,7 @@ use crate::repo::{
 
 mod segment;
 pub use segment::{ReadOnlySegment, Segment};
+use spacetimedb_fs_utils::compression::CompressionStats;
 
 pub const PAGE_SIZE: usize = 4096;
 
@@ -54,26 +55,28 @@ impl Repo for Memory {
     type SegmentWriter = Segment;
     type SegmentReader = ReadOnlySegment;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
+    fn create_segment(&self, offset: u64, header: crate::segment::Header) -> io::Result<Self::SegmentWriter> {
         let mut inner = self.segments.write().unwrap();
-        match inner.entry(offset) {
+        let mut segment = match inner.entry(offset) {
             btree_map::Entry::Occupied(entry) => {
                 let entry = entry.get();
-                let read_guard = entry.read().unwrap();
-                if read_guard.is_empty() {
-                    Ok(Segment::from_shared(self.space.clone(), entry.clone()))
+                if entry.read().unwrap().is_empty() {
+                    Segment::from_shared(self.space.clone(), entry.clone())
                 } else {
-                    Err(io::Error::new(
+                    return Err(io::Error::new(
                         io::ErrorKind::AlreadyExists,
                         format!("segment {offset} already exists"),
-                    ))
+                    ));
                 }
             }
             btree_map::Entry::Vacant(entry) => {
-                let segment = entry.insert(Arc::new(RwLock::new(Storage::new())));
-                Ok(Segment::from_shared(self.space.clone(), segment.clone()))
+                let storage = entry.insert(Arc::new(RwLock::new(Storage::new())));
+                Segment::from_shared(self.space.clone(), storage.clone())
             }
-        }
+        };
+        header.write(&mut segment)?;
+
+        Ok(segment)
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
@@ -103,8 +106,8 @@ impl Repo for Memory {
         Ok(())
     }
 
-    fn compress_segment(&self, _offset: u64) -> io::Result<()> {
-        Ok(())
+    fn compress_segment_with(&self, _: u64, _: impl super::CompressOnce) -> io::Result<CompressionStats> {
+        Ok(<_>::default())
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {

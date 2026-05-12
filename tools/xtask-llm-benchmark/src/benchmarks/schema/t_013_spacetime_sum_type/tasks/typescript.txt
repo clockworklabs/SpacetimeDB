@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that demonstrates sum types (enums) used in tables.
+Write a SpacetimeDB backend module in TypeScript that defines a new sum type and uses it in a table.
 
 TYPES
 - Rect

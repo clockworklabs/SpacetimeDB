@@ -86,7 +86,7 @@ impl JobCores {
     /// and runs all databases in the `global_runtime`.
     pub fn from_pinned_cores(cores: impl IntoIterator<Item = CoreId>) -> Self {
         let cores: IndexMap<_, _> = cores.into_iter().map(|id| (id, CoreInfo::default())).collect();
-        let inner = if cfg!(feature = "no-job-core-pinning") || cores.is_empty() {
+        let inner = if cfg!(not(feature = "core-pinning")) || cores.is_empty() {
             JobCoresInner::NoPinning
         } else {
             JobCoresInner::PinnedCores(Arc::new(Mutex::new(PinnedCoresExecutorManager {
@@ -221,7 +221,12 @@ pub struct AllocatedJobCore {
 impl AllocatedJobCore {
     /// Spawn a [`SingleCoreExecutor`] allocated to this core.
     pub fn spawn_async_executor(self) -> SingleCoreExecutor {
-        SingleCoreExecutor::spawn(self)
+        SingleCoreExecutor::spawn(self, None)
+    }
+
+    /// Spawn a named [`SingleCoreExecutor`] allocated to this core.
+    pub fn spawn_named_async_executor(self, name: impl Into<String>) -> SingleCoreExecutor {
+        SingleCoreExecutor::spawn(self, Some(name.into()))
     }
 }
 
@@ -293,7 +298,7 @@ struct SingleCoreExecutorInner {
 
 impl SingleCoreExecutor {
     /// Spawn a `SingleCoreExecutor` on the given core.
-    fn spawn(core: AllocatedJobCore) -> Self {
+    fn spawn(core: AllocatedJobCore, name: Option<String>) -> Self {
         let AllocatedJobCore { guard, mut pinner } = core;
 
         let (job_tx, mut job_rx) = mpsc::unbounded_channel();
@@ -301,7 +306,11 @@ impl SingleCoreExecutor {
         let inner = Arc::new(SingleCoreExecutorInner { job_tx });
 
         let rt = runtime::Handle::current();
-        std::thread::spawn(move || {
+        let mut thread = std::thread::Builder::new();
+        if let Some(name) = name {
+            thread = thread.name(name);
+        }
+        let worker = move || {
             let _guard = guard;
             pinner.pin_now();
 
@@ -322,7 +331,8 @@ impl SingleCoreExecutor {
             // This is very important to do - otherwise, in-progress tasks will be
             // dropped and cancelled.
             rt.block_on(local)
-        });
+        };
+        thread.spawn(worker).expect("failed to spawn SingleCoreExecutor thread");
 
         Self { inner }
     }
@@ -334,7 +344,7 @@ impl SingleCoreExecutor {
     /// This method should only be used for short-lived instances which do not perform intense computation,
     /// e.g. to extract the schema by calling `describe_module`.
     pub fn in_current_tokio_runtime() -> Self {
-        Self::spawn(AllocatedJobCore::default())
+        Self::spawn(AllocatedJobCore::default(), None)
     }
 
     /// Run a job for this database executor.
@@ -363,6 +373,26 @@ impl SingleCoreExecutor {
             Ok(r) => r,
             Err(e) => std::panic::resume_unwind(e),
         }
+    }
+
+    /// Enqueue a job for this database executor without waiting for its result.
+    pub fn enqueue_job<F>(&self, f: F)
+    where
+        F: AsyncFnOnce() + Send + 'static,
+    {
+        let span = tracing::Span::current();
+
+        self.inner
+            .job_tx
+            .send(Box::new(move || {
+                async move {
+                    if AssertUnwindSafe(f().instrument(span)).catch_unwind().await.is_err() {
+                        tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+                    }
+                }
+                .boxed_local()
+            }))
+            .unwrap_or_else(|_| panic!("job thread exited"));
     }
 
     /// Run `f` on this database executor and return its result.

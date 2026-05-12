@@ -9,6 +9,8 @@ use log::trace;
 use repo::{fs::OnNewSegmentFn, Repo};
 use spacetimedb_paths::server::CommitLogDir;
 
+pub use spacetimedb_fs_utils::compression::CompressionStats;
+
 pub mod commit;
 pub mod commitlog;
 mod index;
@@ -330,16 +332,41 @@ impl<T> Commitlog<T> {
     }
 
     /// Compress the segments at the offsets provided, marking them as immutable.
-    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
-        // even though `compress_segment` takes &self, we take an
-        // exclusive lock to avoid any weirdness happening.
-        #[allow(clippy::readonly_write_lock)]
-        let inner = self.inner.write().unwrap();
-        assert!(!offsets.contains(&inner.head.min_tx_offset()));
-        // TODO: parallelize, maybe
-        offsets
-            .iter()
-            .try_for_each(|&offset| inner.repo.compress_segment(offset))
+    ///
+    /// `offsets` must contain the exact segment offsets, no rounding to the
+    /// nearest offset is performed. If a segment is not found on disk, an error
+    /// is returned and no further segments from the list are processed.
+    ///
+    /// The latest, writable segment will not be compressed. If `offsets`
+    /// contains its offset, an error is returned.
+    ///
+    /// This method acquires a read lock on this `Commitlog` instance, but
+    /// releases it once the compression work starts. Concurrent compression
+    /// tasks on the same segment are safe, but external coordination is
+    /// required to avoid duplicate work.
+    ///
+    /// Attempting to compress a segment that is already compressed incurs a
+    /// small overhead to open the file and determining its format, but
+    /// otherwise does nothing.
+    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<CompressionStats> {
+        let (repo, head_offset) = {
+            let inner = self.inner.read().unwrap();
+            let repo = inner.repo.clone();
+            let head_offset = inner.head.min_tx_offset();
+
+            (repo, head_offset)
+        };
+        if offsets.contains(&head_offset) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("refusing to compress mutable segment {head_offset}"),
+            ));
+        }
+        let mut stats = <_>::default();
+        for offset in offsets {
+            stats += repo.compress_segment(*offset)?;
+        }
+        Ok(stats)
     }
 
     /// Remove all data from the log and reopen it.
