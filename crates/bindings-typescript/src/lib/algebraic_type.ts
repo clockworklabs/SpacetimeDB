@@ -78,14 +78,42 @@ export type Serializer<T> = (writer: BinaryWriter, value: T) => void;
 export type Deserializer<T> = (reader: BinaryReader) => T;
 
 // Caches to prevent `makeSerializer`/`makeDeserializer` from recursing
-// infinitely when called on recursive types.
+// infinitely when called on recursive types, and to allow codegen to
+// pre-register static serializers/deserializers for named compound types so
+// they don't have to be built at runtime via a tree walker.
 //
 // We check for recursion in `{Product,Sum}Type.make{Deser,Ser}ializer` rather
 // than in `AlgebraciType.make{Deser,Ser}ializer` because we need to store the
 // [de]serializer in the cache before recursing into its fields/variants, and
 // we wouldn't be able to do that in the `AlgebraicType` functions.
-const SERIALIZERS = new Map<ProductType | SumType, Serializer<any>>();
-const DESERIALIZERS = new Map<ProductType | SumType, Deserializer<any>>();
+export const SERIALIZERS = new Map<
+  ProductType | SumType,
+  Serializer<any>
+>();
+export const DESERIALIZERS = new Map<
+  ProductType | SumType,
+  Deserializer<any>
+>();
+
+/**
+ * Register a static serializer/deserializer for a `Product` or `Sum`
+ * algebraic type, so that future calls to
+ * {@link AlgebraicType.makeSerializer}/{@link AlgebraicType.makeDeserializer}
+ * (and the corresponding `ProductType`/`SumType` variants) return the
+ * provided functions instead of building closures at runtime.
+ *
+ * This is intended for use by code generation, which knows the full structure
+ * of every emitted type and can produce static, inlined (de)serialization
+ * functions ahead of time.
+ */
+export function registerSerde<T>(
+  ty: ProductType | SumType,
+  serializer: Serializer<T>,
+  deserializer: Deserializer<T>
+): void {
+  SERIALIZERS.set(ty, serializer);
+  DESERIALIZERS.set(ty, deserializer);
+}
 
 // A value with helper functions to construct the type.
 export const AlgebraicType = {
@@ -300,62 +328,6 @@ Object.freeze(primitiveDeserializers);
 
 const deserializeUint8Array = bindCall(BinaryReader.prototype.readUInt8Array);
 
-type FixedSizePrimitives = Exclude<Primitives, 'String'>;
-
-const primitiveSizes: Record<FixedSizePrimitives, number> = {
-  Bool: 1,
-  I8: 1,
-  U8: 1,
-  I16: 2,
-  U16: 2,
-  I32: 4,
-  U32: 4,
-  I64: 8,
-  U64: 8,
-  I128: 16,
-  U128: 16,
-  I256: 32,
-  U256: 32,
-  F32: 4,
-  F64: 8,
-};
-
-const fixedSizePrimitives = new Set(Object.keys(primitiveSizes));
-
-type FixedSizeProductType = {
-  elements: { name: string; algebraicType: { tag: FixedSizePrimitives } }[];
-};
-
-const isFixedSizeProduct = (ty: ProductType): ty is FixedSizeProductType =>
-  ty.elements.every(({ algebraicType }) =>
-    fixedSizePrimitives.has(algebraicType.tag)
-  );
-
-const productSize = (ty: FixedSizeProductType): number =>
-  ty.elements.reduce(
-    (acc, { algebraicType }) => acc + primitiveSizes[algebraicType.tag],
-    0
-  );
-
-type JSPrimitives = Exclude<
-  FixedSizePrimitives,
-  'I128' | 'U128' | 'I256' | 'U256'
->;
-
-const primitiveJSName: Record<JSPrimitives, string> = {
-  Bool: 'Uint8',
-  I8: 'Int8',
-  U8: 'Uint8',
-  I16: 'Int16',
-  U16: 'Uint16',
-  I32: 'Int32',
-  U32: 'Uint32',
-  I64: 'BigInt64',
-  U64: 'BigUint64',
-  F32: 'Float32',
-  F64: 'Float64',
-};
-
 type SpecialProducts = {
   __time_duration_micros__: TimeDuration;
   __timestamp_micros_since_unix_epoch__: Timestamp;
@@ -377,41 +349,6 @@ const specialProductDeserializers: {
 Object.freeze(specialProductDeserializers);
 
 const unitDeserializer: Deserializer<{}> = () => ({});
-
-const getElementInitializer = (element: ProductTypeElement) => {
-  let init: string;
-  switch (element.algebraicType.tag) {
-    case 'String':
-      init = "''";
-      break;
-    case 'Bool':
-      init = 'false';
-      break;
-    case 'I8':
-    case 'U8':
-    case 'I16':
-    case 'U16':
-    case 'I32':
-    case 'U32':
-      init = '0';
-      break;
-    case 'I64':
-    case 'U64':
-    case 'I128':
-    case 'U128':
-    case 'I256':
-    case 'U256':
-      init = '0n';
-      break;
-    case 'F32':
-    case 'F64':
-      init = '0.0';
-      break;
-    default:
-      init = 'undefined';
-  }
-  return `${element.name!}: ${init}`;
-};
 
 /**
  * A structural product type  of the factors given by `elements`.
@@ -448,55 +385,23 @@ export const ProductType = {
     let serializer = SERIALIZERS.get(ty);
     if (serializer != null) return serializer;
 
-    if (isFixedSizeProduct(ty)) {
-      const size = productSize(ty);
-      const body = `\
-"use strict";
-writer.expandBuffer(${size});
-const view = writer.view;
-${ty.elements
-  .map(({ name, algebraicType: { tag } }) =>
-    tag in primitiveJSName
-      ? `\
-view.set${primitiveJSName[tag as JSPrimitives]}(writer.offset, value.${name!}, ${primitiveSizes[tag] > 1 ? 'true' : ''});
-writer.offset += ${primitiveSizes[tag]};`
-      : `writer.write${tag}(value.${name});`
-  )
-  .join('\n')}`;
-      serializer = Function('writer', 'value', body) as Serializer<any>;
-      SERIALIZERS.set(ty, serializer);
-      return serializer;
-    }
-
-    // Because V8 forces us to generate our code as a string, rather than a proper syntax tree,
-    // we can't have our `body` close over values.
-    // Instead, we construct an object with the values we'd otherwise "close over" in `serializers`,
-    // and use `Function.prototype.bind` to pass it as the `this` argument.
-    //
-    // We populate `serializers` after constructing this type's `serializer`
-    // so that it can close over itself, in the case that `ty` is recursive.
-    const serializers: Record<string, Serializer<any>> = {};
-    const body =
-      '"use strict";\n' +
-      ty.elements
-        .map(
-          element => `this.${element.name!}(writer, value.${element.name!});`
-        )
-        .join('\n');
-    serializer = Function('writer', 'value', body).bind(
-      serializers
-    ) as Serializer<any>;
-    // In case `ty` is recursive, we cache the function *before* before computing
-    // `serializers`, so that a recursive `makeSerializer` with the same `ty` has
-    // an exit condition.
+    // We populate `fieldNames`/`fieldSerializers` after caching the closure
+    // so that it can recursively reference itself for recursive types.
+    const fieldNames: string[] = [];
+    const fieldSerializers: Serializer<any>[] = [];
+    const numFields = ty.elements.length;
+    serializer = (writer, value) => {
+      for (let i = 0; i < numFields; i++) {
+        fieldSerializers[i](writer, value[fieldNames[i]]);
+      }
+    };
     SERIALIZERS.set(ty, serializer);
     for (const { name, algebraicType } of ty.elements) {
-      serializers[name!] = AlgebraicType.makeSerializer(
-        algebraicType,
-        typespace
+      fieldNames.push(name!);
+      fieldSerializers.push(
+        AlgebraicType.makeSerializer(algebraicType, typespace)
       );
     }
-    Object.freeze(serializers);
     return serializer;
   },
   /** @deprecated Use `makeSerializer` instead. */
@@ -527,57 +432,25 @@ writer.offset += ${primitiveSizes[tag]};`
     let deserializer = DESERIALIZERS.get(ty);
     if (deserializer != null) return deserializer;
 
-    if (isFixedSizeProduct(ty)) {
-      const body = `\
-"use strict";
-const result = { ${ty.elements.map(getElementInitializer).join(', ')} };
-const view = reader.view;
-${ty.elements
-  .map(({ name, algebraicType: { tag } }) =>
-    tag in primitiveJSName
-      ? tag === 'Bool'
-        ? `\
-result.${name} = view.getUint8(reader.offset) !== 0;
-reader.offset += 1;`
-        : `\
-result.${name} = view.get${primitiveJSName[tag as JSPrimitives]}(reader.offset, ${primitiveSizes[tag] > 1 ? 'true' : ''});
-reader.offset += ${primitiveSizes[tag]};`
-      : `result.${name} = reader.read${tag}();`
-  )
-  .join('\n')}
-return result;`;
-      deserializer = Function('reader', body) as Deserializer<any>;
-      DESERIALIZERS.set(ty, deserializer);
-      return deserializer;
-    }
-
-    // Because V8 forces us to generate our code as a string, rather than a proper syntax tree,
-    // we can't have our `body` close over values.
-    // Instead, we construct an object with the values we'd otherwise "close over" in `deserializers`,
-    // and use `Function.prototype.bind` to pass it as the `this` argument.
-    //
-    // We populate `deserializers` after constructing this type's `deserializer`
-    // so that it can close over itself, in the case that `ty` is recursive.
-    const deserializers: Record<string, Deserializer<any>> = {};
-    deserializer = Function(
-      'reader',
-      `\
-"use strict";
-const result = { ${ty.elements.map(getElementInitializer).join(', ')} };
-${ty.elements.map(({ name }) => `result.${name!} = this.${name!}(reader);`).join('\n')}
-return result;`
-    ).bind(deserializers) as Deserializer<any>;
-    // In case `ty` is recursive, we cache the function *before* before computing
-    // `deserializers`, so that a recursive `makeDeserializer` with the same `ty` has
-    // an exit condition.
+    // We populate `fieldNames`/`fieldDeserializers` after caching the closure
+    // so that it can recursively reference itself for recursive types.
+    const fieldNames: string[] = [];
+    const fieldDeserializers: Deserializer<any>[] = [];
+    const numFields = ty.elements.length;
+    deserializer = reader => {
+      const result: any = {};
+      for (let i = 0; i < numFields; i++) {
+        result[fieldNames[i]] = fieldDeserializers[i](reader);
+      }
+      return result;
+    };
     DESERIALIZERS.set(ty, deserializer);
     for (const { name, algebraicType } of ty.elements) {
-      deserializers[name!] = AlgebraicType.makeDeserializer(
-        algebraicType,
-        typespace
+      fieldNames.push(name!);
+      fieldDeserializers.push(
+        AlgebraicType.makeDeserializer(algebraicType, typespace)
       );
     }
-    Object.freeze(deserializers);
     return deserializer;
   },
   /** @deprecated Use `makeDeserializer` instead. */
@@ -678,41 +551,30 @@ export const SumType = {
       let serializer = SERIALIZERS.get(ty);
       if (serializer != null) return serializer;
 
-      const serializers: Record<string, Serializer<any>> = {};
-
-      const body = `\
-switch (value.tag) {
-${ty.variants
-  .map(
-    ({ name }, i) => `\
-  case ${JSON.stringify(name!)}:
-    writer.writeByte(${i});
-    return this.${name!}(writer, value.value);`
-  )
-  .join('\n')}
-  default:
-    throw new TypeError(
-      \`Could not serialize sum type; unknown tag \${value.tag}\`
-    )
-}
-`;
-
-      serializer = Function('writer', 'value', body).bind(
-        serializers
-      ) as Serializer<any>;
-
-      // In case `ty` is recursive, we cache the function *before* before computing
-      // `variants`, so that a recursive `makeSerializer` with the same `ty` has
-      // an exit condition.
+      // Map of tag name -> { index, serialize } for O(1) dispatch on `value.tag`.
+      // Populated after caching the closure so that recursive types can
+      // reference themselves through the cache.
+      const variantSerializers: Record<
+        string,
+        { index: number; serialize: Serializer<any> }
+      > = Object.create(null);
+      serializer = (writer, value) => {
+        const variant = variantSerializers[value.tag];
+        if (variant === undefined) {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+        writer.writeByte(variant.index);
+        variant.serialize(writer, value.value);
+      };
       SERIALIZERS.set(ty, serializer);
-
-      for (const { name, algebraicType } of ty.variants) {
-        serializers[name!] = AlgebraicType.makeSerializer(
-          algebraicType,
-          typespace
-        );
-      }
-      Object.freeze(serializers);
+      ty.variants.forEach(({ name, algebraicType }, i) => {
+        variantSerializers[name!] = {
+          index: i,
+          serialize: AlgebraicType.makeSerializer(algebraicType, typespace),
+        };
+      });
       return serializer;
     }
   },
@@ -782,27 +644,31 @@ ${ty.variants
     } else {
       let deserializer = DESERIALIZERS.get(ty);
       if (deserializer != null) return deserializer;
-      const deserializers: Record<string, Deserializer<any>> = {};
-      deserializer = Function(
-        'reader',
-        `switch (reader.readU8()) {\n${ty.variants
-          .map(
-            ({ name }, i) =>
-              `case ${i}: return { tag: ${JSON.stringify(name!)}, value: this.${name!}(reader) };`
-          )
-          .join('\n')} }`
-      ).bind(deserializers) as Deserializer<any>;
-      // In case `ty` is recursive, we cache the function *before* before computing
-      // `deserializers`, so that a recursive `makeDeserializer` with the same `ty` has
-      // an exit condition.
+      // Parallel arrays of variant names and their deserializers, indexed by
+      // wire tag. Populated after caching so recursive types resolve through
+      // the cache.
+      const variantNames: string[] = [];
+      const variantDeserializers: Deserializer<any>[] = [];
+      const numVariants = ty.variants.length;
+      deserializer = reader => {
+        const tag = reader.readU8();
+        if (tag >= numVariants) {
+          // Preserve original behavior: out-of-range tags return undefined
+          // (the prior `switch`-based implementation simply fell through).
+          return undefined;
+        }
+        return {
+          tag: variantNames[tag],
+          value: variantDeserializers[tag](reader),
+        };
+      };
       DESERIALIZERS.set(ty, deserializer);
       for (const { name, algebraicType } of ty.variants) {
-        deserializers[name!] = AlgebraicType.makeDeserializer(
-          algebraicType,
-          typespace
+        variantNames.push(name!);
+        variantDeserializers.push(
+          AlgebraicType.makeDeserializer(algebraicType, typespace)
         );
       }
-      Object.freeze(deserializers);
       return deserializer;
     }
   },

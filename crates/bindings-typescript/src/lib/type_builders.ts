@@ -1,4 +1,10 @@
-import { AlgebraicType, type AlgebraicTypeVariants } from './algebraic_type';
+import {
+  AlgebraicType,
+  registerSerde,
+  type AlgebraicTypeVariants,
+  type Deserializer,
+  type Serializer,
+} from './algebraic_type';
 import type BinaryReader from './binary_reader';
 import type BinaryWriter from './binary_writer';
 import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
@@ -11,6 +17,10 @@ import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
 import { Timestamp, type TimestampAlgebraicType } from './timestamp';
 import { set, type Prettify, type SetField } from './type_util';
 import { Uuid, type UuidAlgebraicType } from './uuid';
+
+// Re-export the wrapper classes used by codegen-emitted static
+// serializers/deserializers (e.g. `new __Identity(reader.readU256())`).
+export { ConnectionId, Identity, TimeDuration, Timestamp, Uuid };
 
 // Used in codegen files
 export { type AlgebraicTypeType } from './algebraic_type';
@@ -189,6 +199,30 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
       this.algebraicType
     ));
     return deserialize(reader);
+  }
+
+  /**
+   * Install a precomputed serializer/deserializer for this type builder.
+   *
+   * Code generation calls this for named compound types (`Product` and `Sum`)
+   * so that the runtime never has to build serializers via a tree walker. The
+   * provided functions are both attached to this builder *and* registered in
+   * the shared {@link registerSerde} cache keyed by `this.algebraicType.value`,
+   * so direct callers of `AlgebraicType.makeSerializer` / `makeDeserializer`
+   * (e.g. the client SDK looking up a table row deserializer) pick them up
+   * automatically.
+   */
+  withSerde(
+    serialize: Serializer<Type>,
+    deserialize: Deserializer<Type>
+  ): this {
+    this.serialize = serialize as (writer: BinaryWriter, value: Type) => void;
+    this.deserialize = deserialize as (reader: BinaryReader) => Type;
+    const at: AlgebraicType = this.algebraicType;
+    if (at.tag === 'Product' || at.tag === 'Sum') {
+      registerSerde(at.value, serialize, deserialize);
+    }
+    return this;
   }
 }
 
