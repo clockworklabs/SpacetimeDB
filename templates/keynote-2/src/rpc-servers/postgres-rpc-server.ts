@@ -61,15 +61,15 @@ async function rpcTransfer(args: Record<string, unknown>) {
       return;
     }
 
-    await tx
-      .update(accounts)
-      .set({ balance: fromRow.balance - delta })
-      .where(eq(accounts.id, fromId));
-
-    await tx
-      .update(accounts)
-      .set({ balance: toRow.balance + delta })
-      .where(eq(accounts.id, toId));
+    // await tx
+    //   .update(accounts)
+    //   .set({ balance: fromRow.balance - delta })
+    //   .where(eq(accounts.id, fromId));
+    //
+    // await tx
+    //   .update(accounts)
+    //   .set({ balance: toRow.balance + delta })
+    //   .where(eq(accounts.id, toId));
   });
 }
 
