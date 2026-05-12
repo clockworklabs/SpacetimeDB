@@ -815,6 +815,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      EXPERIMENTAL_WASM_AOT: 1
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -891,8 +892,6 @@ jobs:
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
-        env:
-          EXPERIMENTAL_WASM_AOT: 1
         run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
       - name: Run .NET tests
