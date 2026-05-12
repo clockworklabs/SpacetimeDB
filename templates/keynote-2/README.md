@@ -69,11 +69,11 @@ This ensures we're measuring real-world application performance, not raw databas
 
 The reported numbers use a single benchmark host wherever possible. This means client, server, and database were all run on the same machine.
 
-We did this mainly for ease of testing and reproducibility, but also because it was a more favorable set up for the other platforms we tested against.
+We did this mainly because it was the most favorable benchmarking setup for the competitor platforms, because it minimizes server to database latency, but also because it allows others to easily reproduce the results.
 
-We also tested separated-machine topologies, where the benchmark client, server, and database processes were not colocated on one machine. However that did not improve the throughput of the other systems. The added network hop actually made those systems slower.
+For completeness, we also tested separated-machine topologies, where the benchmark client, server, and database processes were not colocated on one machine. However, in each case we found that doing so either did not change or reduced the throughput of other systems due to the additional network hop. We published the most favorable numbers for our competitors.
 
-The platforms that cannot use this exact topology are PlanetScale and CockroachDB. Both are managed cloud database, so the benchmark client and RPC server are colocated on the benchmark host while the database/cluster is remote.
+The platforms that cannot use this exact topology are PlanetScale and CockroachDB. PlanetScale operates a managed cloud database and does not have a self-hosted variant of the service, so the benchmark client and RPC server are colocated on a benchmark host in the same region and availability zone as the database host. CockroachDB is a distributed database running across multiple nodes, so the benchmark client and RPC server cannot be colocated with the database on a single node.
 
 ### The Transaction
 
