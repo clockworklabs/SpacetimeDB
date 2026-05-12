@@ -17,6 +17,10 @@ target_include_directories(bindings_cpp_unit_tests PRIVATE
     ../../include
 )
 
+target_compile_definitions(bindings_cpp_unit_tests PRIVATE
+    SPACETIMEDB_UNSTABLE_FEATURES
+)
+
 if(MSVC)
     target_compile_options(bindings_cpp_unit_tests PRIVATE /W4)
 else()

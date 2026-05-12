@@ -1,6 +1,10 @@
 #ifndef SPACETIMEDB_HANDLER_CONTEXT_H
 #define SPACETIMEDB_HANDLER_CONTEXT_H
 
+#ifndef SPACETIMEDB_UNSTABLE_FEATURES
+#error "spacetimedb/handler_context.h requires SPACETIMEDB_UNSTABLE_FEATURES to be enabled"
+#endif
+
 #include <spacetimedb/abi/FFI.h>
 #include <spacetimedb/bsatn/timestamp.h>
 #include <spacetimedb/bsatn/uuid.h>

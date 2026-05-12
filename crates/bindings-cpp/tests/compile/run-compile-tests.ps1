@@ -35,7 +35,12 @@ function Invoke-LoggedCommand {
     }
 
     try {
-        & $FilePath @Arguments *> $LogPath
+        $quotedParts = @($FilePath) + $Arguments | ForEach-Object {
+            '"' + ($_ -replace '"', '\"') + '"'
+        }
+        $commandLine = ($quotedParts -join ' ') + " > `"$LogPath`" 2>&1"
+
+        cmd /c $commandLine | Out-Null
         return $LASTEXITCODE
     } finally {
         if ($WorkingDirectory) {
@@ -59,6 +64,11 @@ function New-CompileCase {
         Expectation = $Expectation
         Marker = $Marker
     }
+}
+
+function Convert-ToCMakePath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return $Path.Replace('\', '/')
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -126,6 +136,9 @@ foreach ($case in $cases) {
     $caseBuildDir = Join-Path $buildRoot $case.Name
     $configureLog = Join-Path $caseBuildDir "configure.log"
     $buildLog = Join-Path $caseBuildDir "build.log"
+    $caseSourceCMake = Convert-ToCMakePath $caseSource
+    $libraryBuildDirCMake = Convert-ToCMakePath $libraryBuildDir
+    $includeDirCMake = Convert-ToCMakePath $includeDir
 
     if (Test-Path $caseBuildDir) {
         Remove-Item $caseBuildDir -Recurse -Force
@@ -139,10 +152,10 @@ foreach ($case in $cases) {
         "cmake",
         "-S", $caseBuildDir,
         "-B", $caseBuildDir,
-        "-DMODULE_SOURCE=$caseSource",
+        "-DMODULE_SOURCE=$caseSourceCMake",
         "-DOUTPUT_NAME=$($case.Name)",
-        "-DSPACETIMEDB_LIBRARY_DIR=$libraryBuildDir",
-        "-DSPACETIMEDB_INCLUDE_DIR=$includeDir"
+        "-DSPACETIMEDB_LIBRARY_DIR=$libraryBuildDirCMake",
+        "-DSPACETIMEDB_INCLUDE_DIR=$includeDirCMake"
     ) -LogPath $configureLog -WorkingDirectory $scriptDir
 
     $buildExit = 0

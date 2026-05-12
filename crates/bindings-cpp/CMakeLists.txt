@@ -30,6 +30,7 @@ target_sources(spacetimedb_cpp_library PRIVATE ${LIBRARY_SOURCES})
 
 # Require C++20 for consumers of this library without forcing global flags
 target_compile_features(spacetimedb_cpp_library PUBLIC cxx_std_20)
+target_compile_definitions(spacetimedb_cpp_library PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
 
 # Set include directories
 target_include_directories(spacetimedb_cpp_library

@@ -3,6 +3,10 @@
 
 #pragma once
 
+#ifndef SPACETIMEDB_UNSTABLE_FEATURES
+#error "spacetimedb/http.h requires SPACETIMEDB_UNSTABLE_FEATURES to be enabled"
+#endif
+
 #include <string>
 #include <vector>
 #include <optional>

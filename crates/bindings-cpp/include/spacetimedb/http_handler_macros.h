@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef SPACETIMEDB_UNSTABLE_FEATURES
+#error "spacetimedb/http_handler_macros.h requires SPACETIMEDB_UNSTABLE_FEATURES to be enabled"
+#endif
+
 #include "spacetimedb/handler_context.h"
 #include "spacetimedb/http.h"
 #include "spacetimedb/internal/runtime_registration.h"

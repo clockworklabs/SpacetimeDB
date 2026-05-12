@@ -16,6 +16,29 @@ External clients can make HTTP requests to routes nested under [`/v1/database/:n
 ## Defining HTTP Handlers
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+Define an HTTP handler with `spacetimedb.httpHandler`.
+
+The function must accept exactly two arguments:
+
+1. A `HandlerContext`.
+2. A `Request`.
+
+The function must return a `SyncResponse`.
+
+```typescript
+import { schema, SyncResponse } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const say_hello = spacetimedb.httpHandler((_ctx, _req) => {
+    return new SyncResponse("Hello!");
+});
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 Because HTTP handlers are unstable, Rust modules that define them must opt in to the `unstable` feature in their `Cargo.toml`:
@@ -44,6 +67,37 @@ fn say_hello(_ctx: &mut HandlerContext, _req: Request) -> Response {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+Because HTTP handlers are unstable, C++ modules that define them must enable `SPACETIMEDB_UNSTABLE_FEATURES` when compiling.
+
+Define an HTTP handler with `SPACETIMEDB_HTTP_HANDLER`.
+
+The function must accept exactly two arguments:
+
+1. A `SpacetimeDB::HandlerContext`.
+2. A `SpacetimeDB::HttpRequest`.
+
+The function must return a `SpacetimeDB::HttpResponse`.
+
+```cpp
+#include "spacetimedb.h"
+
+using namespace SpacetimeDB;
+
+SPACETIMEDB_HTTP_HANDLER(say_hello, HandlerContext ctx, HttpRequest request) {
+    (void)ctx;
+    (void)request;
+    return HttpResponse{
+        200,
+        HttpVersion::Http11,
+        { HttpHeader{"content-type", "text/plain; charset=utf-8"} },
+        HttpBody::from_string("Hello!"),
+    };
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Registering Handlers to Routes
@@ -51,6 +105,26 @@ fn say_hello(_ctx: &mut HandlerContext, _req: Request) -> Response {
 Once you've [defined an HTTP handler](#defining-http-handlers), you must register it to a route in order to make it reachable for requests.
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+All routes exposed by your module are declared in a `Router`. Register the `Router` for your database by passing it to `spacetimedb.httpRouter`.
+
+```typescript
+import { Router } from "spacetimedb/server";
+
+export const router = spacetimedb.httpRouter(
+    new Router()
+        .get("/say-hello", say_hello)
+);
+```
+
+Add routes within a router with the `get`, `head`, `options`, `put`, `delete`, `post`, `patch` and `any` methods, which register an HTTP handler for that HTTP method at a given path.
+
+Nest routers with `router.nest(prefix, subRouter)`, which causes `subRouter` to handle routing for all paths that start with `prefix`.
+
+Combine routers with `router.merge(otherRouter)`, which combines both routers.
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 All routes exposed by your module are declared in a `spacetimedb::http::Router`. Register the `Router` for your database by returning it from a function annotated with `#[spacetimedb::http::router]`.
@@ -66,6 +140,24 @@ fn router() -> Router {
 ```
 
 Add routes within a router with the `get`, `head`, `options`, `put`, `delete`, `post`, `patch` and `any` methods, which register an HTTP handler for that HTTP method at a given path.
+
+Nest routers with `router.nest(prefix, sub_router)`, which causes `sub_router` to handle routing for all paths that start with `prefix`.
+
+Combine routers with `router.merge(other_router)`, which combines both routers.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+All routes exposed by your module are declared in a `SpacetimeDB::Router`. Register the `Router` for your database by returning it from a function defined with `SPACETIMEDB_HTTP_ROUTER`.
+
+```cpp
+SPACETIMEDB_HTTP_ROUTER(router) {
+    return Router()
+        .get("/say-hello", say_hello);
+}
+```
+
+Add routes within a router with the `get`, `head`, `options`, `put`, `delete_`, `post`, `patch` and `any` methods, which register an HTTP handler for that HTTP method at a given path.
 
 Nest routers with `router.nest(prefix, sub_router)`, which causes `sub_router` to handle routing for all paths that start with `prefix`.
 

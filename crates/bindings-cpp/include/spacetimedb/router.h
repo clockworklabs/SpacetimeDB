@@ -1,6 +1,10 @@
 #ifndef SPACETIMEDB_ROUTER_H
 #define SPACETIMEDB_ROUTER_H
 
+#ifndef SPACETIMEDB_UNSTABLE_FEATURES
+#error "spacetimedb/router.h requires SPACETIMEDB_UNSTABLE_FEATURES to be enabled"
+#endif
+
 #include <spacetimedb/http.h>
 #include <spacetimedb/http_convert.h>
 #include <spacetimedb/internal/autogen/MethodOrAny.g.h>
