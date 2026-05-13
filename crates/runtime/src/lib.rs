@@ -245,10 +245,6 @@ impl Runtime {
     pub fn simulation(handle: sim::Handle) -> Self {
         Self::Simulation(handle)
     }
-
-    pub fn simulation_current() -> Self {
-        sim_std::simulation_current()
-    }
 }
 
 impl Runtime {
@@ -284,8 +280,16 @@ impl Runtime {
                     Ok(panic_payload) => std::panic::resume_unwind(panic_payload),
                     Err(e) => panic!("Unexpected JoinError: {e}"),
                 }),
+            // This is only a facade placeholder for simulation today. It
+            // delegates to a normal simulated task, so the closure still runs
+            // on the single executor thread and can block overall runtime
+            // progress. Callers should not expect blocking-pool semantics on
+            // the simulation backend.
             #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => handle.spawn_on(sim::NodeId::MAIN, async move { f() }).await,
+            Self::Simulation(handle) => handle
+                .spawn_on(sim::NodeId::MAIN, async move { f() })
+                .await
+                .expect("simulation spawn_blocking task should not be cancelled"),
             #[cfg(not(any(feature = "tokio", feature = "simulation")))]
             _ => unreachable!("runtime dispatch has no enabled backend"),
         }

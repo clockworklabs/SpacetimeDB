@@ -239,8 +239,8 @@ mod tests {
                     fast_order.lock().push(3);
                 });
 
-                fast.await;
-                slow.await;
+                fast.await.expect("fast timer task should complete");
+                slow.await.expect("slow timer task should complete");
             }
         });
 
